@@ -1,0 +1,28 @@
+# Never bake secrets or local state into the image
+.env
+.env.*
+!.env.example
+
+# Data and profiles (mounted as volumes)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Dev artifacts
+.git/
+.github/
+*.test
+*.out
+coverage.html
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

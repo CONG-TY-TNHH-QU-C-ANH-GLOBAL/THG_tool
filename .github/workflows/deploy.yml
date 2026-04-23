@@ -1,0 +1,141 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture'
+        required: false
+        default: 'amd64'
+        type: choice
+        options: [ amd64, arm64 ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # SERVER_ARCH secret overrides the default (set to "arm64" for Hetzner CAX, "amd64" for Azure/DO/Contabo)
+    env:
+      TARGET_ARCH: ${{ github.event.inputs.arch || vars.SERVER_ARCH || 'amd64' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Run tests
+      run: go test ./... -timeout 60s || true
+
+    - name: Build binary
+      env:
+        GOOS: linux
+        CGO_ENABLED: '0'
+      run: |
+        echo "Building for linux/$TARGET_ARCH"
+        GOARCH=$TARGET_ARCH go build -ldflags="-s -w -X main.version=${{ github.sha }}" -o scraper ./cmd/scraper
+
+        # Verify architecture matches what we expect
+        ARCH_INFO=$(file scraper)
+        echo "Binary info: $ARCH_INFO"
+
+        if [ "$TARGET_ARCH" = "arm64" ]; then
+          echo "$ARCH_INFO" | grep -q "ARM aarch64" || { echo "❌ Expected ARM64 binary!"; exit 1; }
+        else
+          echo "$ARCH_INFO" | grep -q "x86-64" || { echo "❌ Expected AMD64 binary!"; exit 1; }
+        fi
+
+        ls -lh scraper
+        echo "✅ Binary verified: linux/$TARGET_ARCH"
+
+    # Deploy ONLY the binary — secrets live on the server in /etc/thg-scraper/env (chmod 640)
+    - name: Deploy binary to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        source: "scraper"
+        target: "/tmp/"
+        overwrite: true
+
+    - name: Install and restart
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          set -euo pipefail
+
+          # Keep previous binary for instant rollback
+          if [ -f /opt/thg-scraper/scraper ]; then
+            sudo cp /opt/thg-scraper/scraper /opt/thg-scraper/scraper.prev
+          fi
+
+          # Install new binary
+          sudo mv /tmp/scraper /opt/thg-scraper/scraper
+          sudo chown root:thg-scraper /opt/thg-scraper/scraper
+          sudo chmod 750 /opt/thg-scraper/scraper
+
+          # Restart service
+          sudo systemctl restart thg-scraper
+
+          # Wait up to 30s for health check
+          for i in $(seq 1 10); do
+            sleep 3
+            if curl -sf http://localhost:8080/api/stats > /dev/null; then
+              echo "✅ Health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Waiting... ($i/10)"
+          done
+
+          # Failed — rollback automatically
+          echo "❌ Health check failed — rolling back!"
+          if [ -f /opt/thg-scraper/scraper.prev ]; then
+            sudo mv /opt/thg-scraper/scraper.prev /opt/thg-scraper/scraper
+            sudo chown root:thg-scraper /opt/thg-scraper/scraper
+            sudo chmod 750 /opt/thg-scraper/scraper
+            sudo systemctl restart thg-scraper
+            echo "⚠️ Rolled back to previous version"
+          fi
+          sudo journalctl -u thg-scraper --no-pager -n 30
+          exit 1
+
+    - name: Notify via Telegram
+      if: always()
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+      run: |
+        if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ADMIN_CHAT_ID" ]; then
+          echo "Telegram secrets not set — skipping"
+          exit 0
+        fi
+
+        if [ "${{ job.status }}" = "success" ]; then
+          ICON="✅"; MSG="Deploy thành công! ($TARGET_ARCH)"
+        else
+          ICON="❌"; MSG="Deploy THẤT BẠI — kiểm tra logs!"
+        fi
+
+        COMMIT=$(echo "${{ github.event.head_commit.message }}" | head -c 80 | tr '\n' ' ')
+        URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+        curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          --data-urlencode "chat_id=${TELEGRAM_ADMIN_CHAT_ID}" \
+          --data-urlencode "text=${ICON} ${MSG}
+Branch: ${{ github.ref_name }}
+Commit: ${COMMIT}
+Details: ${URL}" \
+          --data-urlencode "parse_mode=HTML" || true

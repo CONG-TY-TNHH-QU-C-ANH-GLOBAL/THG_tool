@@ -1,0 +1,15 @@
+# ~/.cloudflared/config.yml
+# Cloudflare Tunnel config for sale.thgfulfill.com
+#
+# Replace TUNNEL_ID_HERE with your actual tunnel ID after running:
+#   cloudflared tunnel create thg-scraper
+
+tunnel: TUNNEL_ID_HERE
+credentials-file: /root/.cloudflared/TUNNEL_ID_HERE.json
+
+ingress:
+  - hostname: sale.thgfulfill.com
+    service: http://localhost:8080
+    originRequest:
+      connectTimeout: 30s
+  - service: http_status:404

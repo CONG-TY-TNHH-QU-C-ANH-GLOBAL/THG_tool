@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THG Agentic Scraper — Dashboard</title>
+    <meta name="description" content="THG Agentic Scraper control panel and dashboard">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .table-wrapper {
+            overflow-x: scroll !important;
+            overflow-y: auto !important;
+            max-height: calc(100vh - 240px) !important;
+            width: 100% !important;
+            display: block !important;
+            scrollbar-width: auto !important;
+            scrollbar-color: #8b5cf6 #1f2937 !important;
+        }
+        .table-wrapper::-webkit-scrollbar {
+            height: 12px !important;
+            width: 8px !important;
+            display: block !important;
+        }
+        .table-wrapper::-webkit-scrollbar-track {
+            background: #1f2937 !important;
+            border-radius: 0 !important;
+        }
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background: #8b5cf6 !important;
+            border-radius: 4px !important;
+            border: 2px solid #1f2937 !important;
+        }
+        .data-table {
+            min-width: 1400px !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">🕷️</div>
+                <span class="brand-text">THG Scraper</span>
+            </div>
+            <div class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
+                    <span class="nav-icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-page="leads" onclick="switchPage('leads')">
+                    <span class="nav-icon">🎯</span>
+                    <span>Leads</span>
+                </a>
+                <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
+                    <span class="nav-icon">📝</span>
+                    <span>Posts</span>
+                </a>
+                <a href="#" class="nav-item" data-page="groups" onclick="switchPage('groups')">
+                    <span class="nav-icon">👥</span>
+                    <span>Groups</span>
+                </a>
+                <a href="#" class="nav-item" data-page="jobs" onclick="switchPage('jobs')">
+                    <span class="nav-icon">⚡</span>
+                    <span>Jobs</span>
+                </a>
+                <a href="#" class="nav-item" data-page="accounts" onclick="switchPage('accounts')">
+                    <span class="nav-icon">🔑</span>
+                    <span>Accounts</span>
+                </a>
+                <a href="#" class="nav-item" data-page="aichat" onclick="switchPage('aichat')">
+                    <span class="nav-icon">💬</span>
+                    <span>AI Chat</span>
+                </a>
+                <a href="#" class="nav-item" data-page="outbox" onclick="switchPage('outbox')">
+                    <span class="nav-icon">📤</span>
+                    <span>Outbox</span>
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <div class="system-status" id="systemStatus">
+                    <span class="status-dot online"></span>
+                    <span>System Online</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1 id="pageTitle">Dashboard</h1>
+                    <span class="header-subtitle" id="pageSubtitle">Real-time overview</span>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-primary" id="scanAllBtn" onclick="triggerScanAll()">
+                        <span>🚀</span> Scan All
+                    </button>
+                    <button class="btn btn-ghost" onclick="refreshData()">
+                        <span>🔄</span> Refresh
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Page -->
+            <section class="page active" id="page-dashboard">
+                <div class="stats-grid">
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statGroups">0</span>
+                            <span class="stat-label">Active Groups</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📝</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statPosts">0</span>
+                            <span class="stat-label">Total Posts</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🎯</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statLeads">0</span>
+                            <span class="stat-label">Total Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass hot">
+                        <div class="stat-icon">🔥</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statHotLeads">0</span>
+                            <span class="stat-label">Hot Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📝</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statTodayPosts">0</span>
+                            <span class="stat-label">Today Posts</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statRunning">0</span>
+                            <span class="stat-label">Running Jobs</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>🔥 Recent Hot Leads</h2>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="dashboardLeadsTable">
+                            <thead>
+                                <tr>
+                                    <th>Score</th>
+                                    <th>Author</th>
+                                    <th>Content</th>
+                                    <th>Service</th>
+                                    <th>Time</th>
+                                    <th>FB Post</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Leads Page -->
+            <section class="page" id="page-leads">
+                <!-- Niche Tabs -->
+                <div class="niche-tabs-bar glass" style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-radius:12px;margin-bottom:16px;flex-wrap:wrap">
+                    <button class="niche-tab active" data-niche="" onclick="setActiveNiche(this,'')">📋 Tất cả</button>
+                    <div id="nicheTabsContainer" style="display:contents"></div>
+                    <button id="btnRecruitCandidates" class="btn btn-sm btn-primary" onclick="recruitAllCandidates()" style="display:none;margin-left:4px">💼 Comment ứng viên</button>
+                    <button id="btnCreateJobPost" class="btn btn-sm btn-primary" onclick="showJobPostModal()" style="display:none;margin-left:4px">📋 Tạo JD</button>
+                    <button class="btn btn-sm btn-primary" onclick="showAddNicheModal()" style="margin-left:auto">+ Thêm lĩnh vực</button>
+                </div>
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2 id="leadsTitle">🎯 Classified Leads</h2>
+                        <div class="filter-bar" style="display:flex;gap:8px;align-items:center">
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllLeads()" title="Xóa tất cả leads">🗑️ Xóa tất cả</button>
+                            <select id="leadScoreFilter" onchange="loadLeads()">
+                                <option value="">All Scores</option>
+                                <option value="hot">🔥 Hot</option>
+                                <option value="warm">🟡 Warm</option>
+                                <option value="cold">🔵 Cold</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="leadsTable">
+                            <thead>
+                                <tr>
+                                    <th>Score</th>
+                                    <th>Lĩnh vực</th>
+                                    <th>Author</th>
+                                    <th>Content</th>
+                                    <th>Service</th>
+                                    <th>Role</th>
+                                    <th>Pain Point</th>
+                                    <th>Commented</th>
+                                    <th>Time</th>
+                                    <th>FB Post</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Posts Page -->
+            <section class="page" id="page-posts">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>📝 Scraped Posts</h2>
+                        <div class="filter-bar">
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllPosts()"
+                                title="Xóa tất cả posts">🗑️ Xóa tất cả</button>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="postsTable">
+                            <thead>
+                                <tr>
+                                    <th>Group</th>
+                                    <th>Author</th>
+                                    <th>Content</th>
+                                    <th>Reactions</th>
+                                    <th>Scraped</th>
+                                    <th>Link</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Groups Page -->
+            <section class="page" id="page-groups">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>👥 Managed Groups</h2>
+                        <button class="btn btn-primary btn-sm" onclick="showAddGroupModal()">
+                            + Add Group
+                        </button>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="groupsTable">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Name</th>
+                                    <th>Platform</th>
+                                    <th>URL</th>
+                                    <th>Last Scan</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Jobs Page -->
+            <section class="page" id="page-jobs">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>⚡ Job Queue</h2>
+                        <div class="filter-bar">
+                            <select id="jobStatusFilter" onchange="loadJobs()">
+                                <option value="">All Status</option>
+                                <option value="running">Running</option>
+                                <option value="done">Done</option>
+                                <option value="failed">Failed</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="jobsTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Type</th>
+                                    <th>Platform</th>
+                                    <th>Target</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Accounts Page -->
+            <section class="page" id="page-accounts">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>🔑 Facebook Accounts</h2>
+                        <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Add Account</button>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="accountsTable">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Platform</th>
+                                    <th>Proxy</th>
+                                    <th>Last Used</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Chat Page -->
+            <section class="page" id="page-aichat">
+                <div class="chat-container glass">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-msg system">
+                            <div class="chat-bubble">
+                                🤖 <strong>AI Agent sẵn sàng!</strong><br>
+                                Gửi prompt để tôi thực thi. Ví dụ:<br>
+                                • "Cào tất cả group facebook"<br>
+                                • "Thêm group ship hàng mỹ"<br>
+                                • "Xem thống kê hôm nay"<br>
+                                • "Check inbox acc 1"
+                            </div>
+                        </div>
+                    </div>
+                    <form class="chat-input-bar" onsubmit="sendAIPrompt(event)">
+                        <input type="text" id="chatInput"
+                            placeholder="Nhập prompt... (ví dụ: cào facebook group ship VN-US)" autocomplete="off">
+                        <button type="submit" class="btn btn-primary" id="chatSendBtn">🚀 Gửi</button>
+                    </form>
+                </div>
+                <div class="section-card glass" style="margin-top:16px">
+                    <div class="section-header">
+                        <h2>📋 Prompt History</h2>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="promptHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Prompt</th>
+                                    <th>Action</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Outbox Page -->
+            <section class="page" id="page-outbox">
+                <div class="stats-grid" style="margin-bottom:16px">
+                    <div class="stat-card glass">
+                        <div class="stat-icon">✏️</div>
+                        <div class="stat-info"><span class="stat-value" id="statDraft">0</span><span
+                                class="stat-label">Drafts</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info"><span class="stat-value" id="statApproved">0</span><span
+                                class="stat-label">Approved</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🚀</div>
+                        <div class="stat-info"><span class="stat-value" id="statSentOut">0</span><span
+                                class="stat-label">Sent</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">❌</div>
+                        <div class="stat-info"><span class="stat-value" id="statRejected">0</span><span
+                                class="stat-label">Rejected</span></div>
+                    </div>
+                </div>
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>📤 Outbound Messages</h2>
+                        <div class="filter-bar" style="display:flex;gap:8px;align-items:center">
+                            <button class="btn btn-sm btn-danger" onclick="resetAllComments()" title="Xóa toàn bộ outbound comments để comment lại từ đầu">🗑️ Reset comments</button>
+                            <select id="outboxStatusFilter" onchange="loadOutbox()">
+                                <option value="">All</option>
+                                <option value="draft" selected>✏️ Draft</option>
+                                <option value="approved">✅ Approved</option>
+                                <option value="sent">🚀 Sent</option>
+                                <option value="rejected">❌ Rejected</option>
+                                <option value="failed">⚠️ Failed</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="outboxTable">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Target</th>
+                                    <th>Content</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add Group Modal -->
+    <div class="modal-overlay" id="addGroupModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Add New Group</h3>
+                <button class="btn-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form onsubmit="submitAddGroup(event)">
+                <div class="form-group">
+                    <label>Platform</label>
+                    <select id="groupPlatform" required>
+                        <option value="facebook">Facebook</option>
+                        <option value="tiktok">TikTok</option>
+                        <option value="zalo">Zalo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Group Name</label>
+                    <input type="text" id="groupName" placeholder="Group name" required>
+                </div>
+                <div class="form-group">
+                    <label>URL</label>
+                    <input type="url" id="groupURL" placeholder="https://facebook.com/groups/..." required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Group</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Account Modal -->
+    <div class="modal-overlay" id="addAccountModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Add Facebook Account</h3>
+                <button class="btn-close" onclick="closeAccountModal()">&times;</button>
+            </div>
+            <form onsubmit="submitAddAccount(event)">
+                <div class="form-group">
+                    <label>Account Name</label>
+                    <input type="text" id="accName" placeholder="e.g. THG Main Account" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="text" id="accEmail" placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Cookies JSON (from EditThisCookie extension)</label>
+                    <textarea id="accCookies" rows="4"
+                        placeholder='[{"name":"c_user","value":"...","domain":".facebook.com"}]'></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Proxy URL (optional)</label>
+                    <input type="text" id="accProxy" placeholder="http://user:pass@host:port">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create Job Post Modal -->
+    <div class="modal-overlay" id="jobPostModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>📋 Tạo bài đăng tuyển dụng</h3>
+                <button class="btn-close" onclick="closeJobPostModal()">&times;</button>
+            </div>
+            <form onsubmit="submitJobPost(event)">
+                <div class="form-group">
+                    <label>Vị trí tuyển dụng *</label>
+                    <input type="text" id="jpTitle" placeholder="vd: Nhân viên Kho, Sales Executive" required>
+                </div>
+                <div class="form-group">
+                    <label>Mô tả công việc</label>
+                    <textarea id="jpDesc" rows="2" placeholder="Mô tả ngắn về công việc..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Yêu cầu ứng viên</label>
+                    <textarea id="jpReqs" rows="2" placeholder="Kinh nghiệm, kỹ năng, bằng cấp..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Quyền lợi</label>
+                    <input type="text" id="jpBenefits" placeholder="Lương thưởng, bảo hiểm, môi trường...">
+                </div>
+                <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                    <div>
+                        <label>Mức lương</label>
+                        <input type="text" id="jpSalary" placeholder="vd: 12-15 triệu, thỏa thuận">
+                    </div>
+                    <div>
+                        <label>Email nhận CV</label>
+                        <input type="email" id="jpEmail" placeholder="career@thgfulfill.com">
+                    </div>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+                    💡 AI sẽ soạn bài đăng chuyên nghiệp. Kết quả lưu vào Outbox để copy và đăng.
+                </p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeJobPostModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">✨ Tạo bài đăng</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Niche Modal -->
+    <div class="modal-overlay" id="addNicheModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Thêm lĩnh vực mới</h3>
+                <button class="btn-close" onclick="closeNicheModal()">&times;</button>
+            </div>
+            <form onsubmit="submitAddNiche(event)">
+                <div class="form-group">
+                    <label>Slug (ID nội bộ, không dấu, viết liền)</label>
+                    <input type="text" id="nicheSlug" placeholder="vd: bds, thuc_pham, may_mac" required pattern="[a-z0-9_]+">
+                </div>
+                <div class="form-group">
+                    <label>Tên hiển thị</label>
+                    <input type="text" id="nicheName" placeholder="vd: Bất động sản" required>
+                </div>
+                <div class="form-group">
+                    <label>Emoji</label>
+                    <input type="text" id="nicheEmoji" placeholder="🏠" maxlength="4">
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+                    💡 Sau khi tạo, nói với bot: <strong>"cào group [lĩnh vực] [tên_slug]"</strong> để AI gắn đúng lĩnh vực cho leads
+                </p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeNicheModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Thêm lĩnh vực</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

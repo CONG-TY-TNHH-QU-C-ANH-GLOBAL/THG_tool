@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      platforms:
+        - linux/arm64   # Oracle Cloud Always Free (Ampere A1)
+    image: thg-scraper:latest
+    container_name: thg-scraper
+    restart: unless-stopped
+
+    # Secrets come from .env — NEVER baked into the image
+    env_file: .env
+
+    ports:
+      # Only bind to localhost — Nginx handles public traffic
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      # Persist SQLite DB, Chrome profiles, and backups across restarts
+      - scraper-data:/app/data
+
+    # Resource limits (Oracle Always Free: 4 vCPU, 24 GB RAM)
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '2'
+
+    # Chromium requires these to run in a container
+    security_opt:
+      - seccomp:unconfined
+    shm_size: '512mb'
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # Optional: Nginx reverse proxy (for Docker-based deployment)
+  # For bare-metal deployment, use deploy/nginx.conf directly
+  nginx:
+    image: nginx:alpine
+    container_name: thg-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/sites-available/thg-scraper:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    profiles:
+      - with-nginx   # Start with: docker compose --profile with-nginx up
+
+volumes:
+  scraper-data:
+    driver: local
