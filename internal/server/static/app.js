@@ -442,50 +442,126 @@ async function loadJobs() {
 async function loadAccounts() {
     const res = await fetchAPI('/api/accounts');
     if (!res || !res.accounts) return;
-    renderTable('accountsTable', res.accounts, acc => {
-        const statusBadge = {
-            active: 'badge-done', cooldown: 'badge-warm',
-            banned: 'badge-failed', inactive: 'badge-cold'
-        };
+    const accounts = res.accounts;
+
+    // Update summary stats
+    const counts = { active: 0, cooldown: 0, banned: 0, inactive: 0 };
+    accounts.forEach(a => { if (counts[a.status] !== undefined) counts[a.status]++; });
+    document.getElementById('accStatActive').textContent = counts.active;
+    document.getElementById('accStatCooldown').textContent = counts.cooldown;
+    document.getElementById('accStatBanned').textContent = counts.banned;
+    document.getElementById('accStatInactive').textContent = counts.inactive;
+
+    const statusConfig = {
+        active:   { badge: 'background:rgba(16,185,129,0.15);color:#6ee7b7', icon: '✅' },
+        cooldown: { badge: 'background:rgba(245,158,11,0.15);color:#fcd34d', icon: '⏳' },
+        banned:   { badge: 'background:rgba(239,68,68,0.15);color:#fca5a5', icon: '🚫' },
+        inactive: { badge: 'background:rgba(100,116,139,0.15);color:#94a3b8', icon: '💤' },
+    };
+
+    renderTable('accountsTable', accounts, acc => {
+        const cfg = statusConfig[acc.status] || statusConfig.inactive;
+        const hasCookie = acc.cookies_json && acc.cookies_json !== '(redacted)' || acc.has_cookie;
+        const cookieAge = acc.last_used ? Math.floor((Date.now() - new Date(acc.last_used)) / 86400000) : null;
+        const cookieWarning = cookieAge !== null && cookieAge > 14;
         return `
-            <td><span class="badge ${statusBadge[acc.status] || ''}">${accStatusIcon(acc.status)} ${acc.status}</span></td>
-            <td>${esc(acc.name)}</td>
-            <td>${esc(acc.email || '-')}</td>
-            <td>${esc(acc.platform)}</td>
-            <td>${esc(acc.proxy_url ? '🔒 Set' : '-')}</td>
-            <td>${acc.last_used ? timeAgo(acc.last_used) : 'Never'}</td>
-            <td>
-                <button class="btn btn-sm btn-ghost" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶'}</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteAccount(${acc.id})">🗑</button>
+            <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;${cfg.badge}">${cfg.icon} ${acc.status}</span></td>
+            <td style="font-weight:500">${esc(acc.name)}</td>
+            <td style="color:var(--text-muted);font-size:13px">${esc(acc.email || '—')}</td>
+            <td><span style="font-size:12px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.1);color:#93c5fd">${esc(acc.platform)}</span></td>
+            <td>${cookieWarning
+                ? `<span style="color:#fcd34d" title="Cookie có thể đã hết hạn (${cookieAge} ngày)">⚠️ ${cookieAge}d</span>`
+                : acc.last_used ? `<span style="color:#6ee7b7">🟢 OK</span>` : '<span style="color:var(--text-muted)">Chưa dùng</span>'
+            }</td>
+            <td style="font-size:12px;color:var(--text-muted)">${acc.proxy_url ? `<span title="${esc(acc.proxy_url)}">🔒 Có proxy</span>` : '—'}</td>
+            <td style="font-size:13px">${acc.last_used ? timeAgo(acc.last_used) : '<span style="color:var(--text-muted)">Chưa dùng</span>'}</td>
+            <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(acc.notes || '')}">${esc(acc.notes || '—')}</td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap">
+                <button class="btn btn-sm btn-ghost" title="Cập nhật cookie" onclick="showUpdateCookieModal(${acc.id})">🔄</button>
+                <button class="btn btn-sm btn-ghost" title="${acc.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶️'}</button>
+                <button class="btn btn-sm btn-danger" title="Xóa tài khoản" onclick="deleteAccount(${acc.id})">🗑</button>
             </td>
         `;
     });
 }
 
-function showAddAccountModal() { document.getElementById('addAccountModal').classList.add('active'); }
+function showAddAccountModal() {
+    document.getElementById('addAccountModal').classList.add('active');
+    ['accName','accEmail','accCookies','accProxy','accNotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('accError').style.display = 'none';
+    document.getElementById('cookieValidation').style.display = 'none';
+}
 function closeAccountModal() { document.getElementById('addAccountModal').classList.remove('active'); }
+
+function validateCookieJSON() {
+    const raw = document.getElementById('accCookies').value.trim();
+    const el = document.getElementById('cookieValidation');
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error('Phải là array JSON');
+        const hasCUser = parsed.some(c => c.name === 'c_user');
+        const hasXS = parsed.some(c => c.name === 'xs');
+        if (!hasCUser || !hasXS) {
+            el.style.display = 'block';
+            el.style.color = '#fcd34d';
+            el.textContent = `⚠️ Tìm thấy ${parsed.length} cookies nhưng thiếu trường quan trọng (c_user: ${hasCUser?'✅':'❌'}, xs: ${hasXS?'✅':'❌'}). Vẫn có thể thử nhưng có thể không hoạt động.`;
+        } else {
+            el.style.display = 'block';
+            el.style.color = '#6ee7b7';
+            el.textContent = `✅ JSON hợp lệ — ${parsed.length} cookies (c_user: ✅, xs: ✅)`;
+        }
+    } catch (err) {
+        el.style.display = 'block';
+        el.style.color = '#fca5a5';
+        el.textContent = `❌ JSON không hợp lệ: ${err.message}`;
+    }
+}
 
 async function submitAddAccount(e) {
     e.preventDefault();
+    const cookieRaw = document.getElementById('accCookies').value.trim();
+    try { JSON.parse(cookieRaw); } catch {
+        document.getElementById('accError').style.display = 'block';
+        document.getElementById('accError').textContent = 'Cookies JSON không hợp lệ. Kiểm tra lại format.';
+        return;
+    }
     const data = {
-        platform: 'facebook',
+        platform: document.getElementById('accPlatform').value || 'facebook',
         name: document.getElementById('accName').value,
         email: document.getElementById('accEmail').value,
-        cookies_json: document.getElementById('accCookies').value,
+        cookies_json: cookieRaw,
         proxy_url: document.getElementById('accProxy').value,
+        notes: document.getElementById('accNotes').value,
     };
     const res = await fetchAPI('/api/accounts', 'POST', data);
     if (res) {
-        showToast('Account added!', 'success');
+        showToast('Đã thêm tài khoản!', 'success');
         closeAccountModal();
-        ['accName', 'accEmail', 'accCookies', 'accProxy'].forEach(id => document.getElementById(id).value = '');
         loadAccounts();
     }
 }
 
+function showUpdateCookieModal(id) {
+    document.getElementById('updateCookieAccId').value = id;
+    document.getElementById('updateCookieJSON').value = '';
+    document.getElementById('updateCookieModal').classList.add('active');
+}
+function closeUpdateCookieModal() { document.getElementById('updateCookieModal').classList.remove('active'); }
+
+async function submitUpdateCookie(e) {
+    e.preventDefault();
+    const id = document.getElementById('updateCookieAccId').value;
+    const cookieRaw = document.getElementById('updateCookieJSON').value.trim();
+    try { JSON.parse(cookieRaw); } catch {
+        showToast('Cookies JSON không hợp lệ', 'error'); return;
+    }
+    const res = await fetchAPI(`/api/accounts/${id}/cookies`, 'PUT', { cookies_json: cookieRaw });
+    if (res) { showToast('Đã cập nhật cookie!', 'success'); closeUpdateCookieModal(); loadAccounts(); }
+}
+
 async function toggleAccountStatus(id, status) {
     await fetchAPI(`/api/accounts/${id}/status`, 'PUT', { status });
-    showToast(`Account ${status}`, 'info');
+    showToast(`Tài khoản đã ${status === 'active' ? 'kích hoạt' : 'tạm dừng'}`, 'info');
     loadAccounts();
 }
 

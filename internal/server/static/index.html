@@ -320,23 +320,50 @@
                 </div>
             </section>
 
-            <!-- Accounts Page -->
+            <!-- Accounts Page (CDP) -->
             <section class="page" id="page-accounts">
+                <!-- Summary Stats -->
+                <div class="stats-grid" style="margin-bottom:16px" id="accountStatsGrid">
+                    <div class="stat-card glass">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatActive">0</span><span class="stat-label">Active</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatCooldown">0</span><span class="stat-label">Cooldown</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🚫</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatBanned">0</span><span class="stat-label">Banned</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">💤</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatInactive">0</span><span class="stat-label">Inactive</span></div>
+                    </div>
+                </div>
+                <!-- Account Table -->
                 <div class="section-card glass">
                     <div class="section-header">
                         <h2>🔑 Facebook Accounts</h2>
-                        <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Add Account</button>
+                        <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Thêm tài khoản</button>
                     </div>
-                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                    <!-- Security notice -->
+                    <div style="padding:10px 24px;background:rgba(139,92,246,0.08);border-bottom:1px solid var(--border-glass);font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px">
+                        <span>🔒</span>
+                        <span>Cookies được mã hóa AES-256-GCM. Chỉ admin mới thấy trạng thái — nội dung cookie không bao giờ hiển thị trên UI.</span>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
                         <table class="data-table" id="accountsTable">
                             <thead>
                                 <tr>
-                                    <th>Status</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
+                                    <th>Trạng thái</th>
+                                    <th>Tên tài khoản</th>
+                                    <th>Email FB</th>
                                     <th>Platform</th>
+                                    <th>Cookie</th>
                                     <th>Proxy</th>
-                                    <th>Last Used</th>
+                                    <th>Lần dùng cuối</th>
+                                    <th>Ghi chú</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -488,7 +515,9 @@
                     <div class="section-card glass" id="userMgmtSection" style="display:none">
                         <div class="section-header">
                             <h2>👥 Quản lý tài khoản nhân viên</h2>
-                            <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Tạo tài khoản</button>
+                        </div>
+                        <div style="padding:12px 24px;border-bottom:1px solid var(--border-glass)">
+                            <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Tạo tài khoản mới</button>
                         </div>
                         <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
                             <table class="data-table" id="usersTable">
@@ -621,34 +650,76 @@
         </div>
     </div>
 
-    <!-- Add Account Modal -->
+    <!-- Add Account Modal (CDP) -->
     <div class="modal-overlay" id="addAccountModal">
-        <div class="modal glass">
+        <div class="modal glass" style="max-width:560px">
             <div class="modal-header">
-                <h3>Add Facebook Account</h3>
+                <h3>🔑 Thêm tài khoản Facebook</h3>
                 <button class="btn-close" onclick="closeAccountModal()">&times;</button>
             </div>
-            <form onsubmit="submitAddAccount(event)">
-                <div class="form-group">
-                    <label>Account Name</label>
-                    <input type="text" id="accName" placeholder="e.g. THG Main Account" required>
+            <form onsubmit="submitAddAccount(event)" style="padding:0 24px 24px">
+                <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#93c5fd">
+                    <strong>Cách lấy cookies:</strong> Đăng nhập Facebook → Cài extension <strong>EditThisCookie</strong> → Click icon → Export → Copy JSON
                 </div>
                 <div class="form-group">
-                    <label>Email</label>
-                    <input type="text" id="accEmail" placeholder="email@example.com">
+                    <label>Tên tài khoản <span style="color:#ef4444">*</span></label>
+                    <input type="text" id="accName" placeholder="vd: THG Main, Sale Acc 1" required>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div class="form-group">
+                        <label>Email Facebook</label>
+                        <input type="text" id="accEmail" placeholder="email@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Platform</label>
+                        <select id="accPlatform">
+                            <option value="facebook">Facebook</option>
+                            <option value="tiktok">TikTok</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label>Cookies JSON (from EditThisCookie extension)</label>
-                    <textarea id="accCookies" rows="4"
-                        placeholder='[{"name":"c_user","value":"...","domain":".facebook.com"}]'></textarea>
+                    <label>Cookies JSON <span style="color:#ef4444">*</span> <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256 khi lưu)</span></label>
+                    <textarea id="accCookies" rows="5" placeholder='[{"name":"c_user","value":"123456","domain":".facebook.com"},{"name":"xs","value":"..."}]' required style="font-family:monospace;font-size:12px"></textarea>
+                    <div id="cookieValidation" style="font-size:12px;margin-top:4px;display:none"></div>
                 </div>
                 <div class="form-group">
-                    <label>Proxy URL (optional)</label>
-                    <input type="text" id="accProxy" placeholder="http://user:pass@host:port">
+                    <label>Proxy URL <span style="color:var(--text-muted);font-size:11px">(tùy chọn, dùng IP riêng để tránh checkpoint)</span></label>
+                    <input type="text" id="accProxy" placeholder="http://user:pass@ip:port hoặc socks5://...">
+                </div>
+                <div class="form-group">
+                    <label>Ghi chú</label>
+                    <input type="text" id="accNotes" placeholder="vd: Acc chính, dùng cho logistics">
+                </div>
+                <div id="accError" style="display:none;color:#ef4444;font-size:13px;padding:8px 12px;background:rgba(239,68,68,0.1);border-radius:8px;margin-bottom:12px"></div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Hủy</button>
+                    <button type="button" class="btn btn-ghost" onclick="validateCookieJSON()">🔍 Kiểm tra JSON</button>
+                    <button type="submit" class="btn btn-primary">Thêm tài khoản</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Update Cookie Modal -->
+    <div class="modal-overlay" id="updateCookieModal">
+        <div class="modal glass" style="max-width:520px">
+            <div class="modal-header">
+                <h3>🔄 Cập nhật Cookie</h3>
+                <button class="btn-close" onclick="closeUpdateCookieModal()">&times;</button>
+            </div>
+            <form onsubmit="submitUpdateCookie(event)" style="padding:0 24px 24px">
+                <input type="hidden" id="updateCookieAccId">
+                <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fcd34d">
+                    ⚠️ Cookie cũ sẽ bị thay thế hoàn toàn. Đảm bảo bạn đang đăng nhập trên Facebook trước khi export cookies.
+                </div>
+                <div class="form-group">
+                    <label>Cookies JSON mới <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256)</span></label>
+                    <textarea id="updateCookieJSON" rows="6" placeholder='[{"name":"c_user","value":"..."}]' required style="font-family:monospace;font-size:12px"></textarea>
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Account</button>
+                    <button type="button" class="btn btn-ghost" onclick="closeUpdateCookieModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Cập nhật Cookie</button>
                 </div>
             </form>
         </div>
@@ -761,7 +832,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
 </body>
 
 </html>
