@@ -119,6 +119,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	protected := authGroup.Group("", authpkg.RequireAuth(cfg.JWTSecret))
 	protected.Post("/logout", s.logout)
 	protected.Get("/me", s.me)
+	protected.Put("/me", s.updateOwnProfile)
 	protected.Put("/me/password", s.changeOwnPassword)
 
 	// Admin-only auth routes

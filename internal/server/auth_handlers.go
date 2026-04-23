@@ -193,6 +193,28 @@ func (s *Server) me(c *fiber.Ctx) error {
 	})
 }
 
+// updateOwnProfile handles PUT /api/auth/me — user updates their own name.
+func (s *Server) updateOwnProfile(c *fiber.Ctx) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.Name == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
+	}
+	userID, _ := c.Locals("user_id").(int64)
+	user, err := s.db.GetUserByID(userID)
+	if err != nil || user == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	if err := s.db.UpdateUser(userID, req.Name, user.Role, user.Active); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "update failed"})
+	}
+	return c.JSON(fiber.Map{"status": "updated", "name": req.Name})
+}
+
 // changeOwnPassword handles PUT /api/auth/me/password — user changes their own password.
 func (s *Server) changeOwnPassword(c *fiber.Ctx) error {
 	var req struct {

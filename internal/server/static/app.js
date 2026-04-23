@@ -90,10 +90,14 @@ async function loadSettingsPage() {
 async function saveProfile() {
     const name = document.getElementById('profileName').value.trim();
     if (!name) return showToast('Vui lòng nhập tên', 'error');
-    const user = JSON.parse(localStorage.getItem('thg_user') || '{}');
-    const active = true;
-    const res = await fetchAPI(`/api/auth/users/${user.id}`, 'PUT', { name });
-    if (res) { showToast('Đã lưu thay đổi', 'success'); localStorage.setItem('thg_user', JSON.stringify({...user, name})); updateSidebarUser({...user, name}); }
+    const res = await fetchAPI('/api/auth/me', 'PUT', { name });
+    if (res) {
+        const user = JSON.parse(localStorage.getItem('thg_user') || '{}');
+        const updated = {...user, name};
+        localStorage.setItem('thg_user', JSON.stringify(updated));
+        updateSidebarUser(updated);
+        showToast('Đã lưu thay đổi', 'success');
+    }
 }
 
 async function changePassword() {
