@@ -459,9 +459,11 @@ async function loadAccounts() {
         inactive: { badge: 'background:rgba(100,116,139,0.15);color:#94a3b8', icon: '💤' },
     };
 
+    const currentUser = JSON.parse(localStorage.getItem('thg_user') || '{}');
+    const isAdmin = currentUser.role === 'admin';
+
     renderTable('accountsTable', accounts, acc => {
         const cfg = statusConfig[acc.status] || statusConfig.inactive;
-        const hasCookie = acc.cookies_json && acc.cookies_json !== '(redacted)' || acc.has_cookie;
         const cookieAge = acc.last_used ? Math.floor((Date.now() - new Date(acc.last_used)) / 86400000) : null;
         const cookieWarning = cookieAge !== null && cookieAge > 14;
         return `
@@ -477,7 +479,8 @@ async function loadAccounts() {
             <td style="font-size:13px">${acc.last_used ? timeAgo(acc.last_used) : '<span style="color:var(--text-muted)">Chưa dùng</span>'}</td>
             <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(acc.notes || '')}">${esc(acc.notes || '—')}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap">
-                <button class="btn btn-sm btn-ghost" title="Cập nhật cookie" onclick="showUpdateCookieModal(${acc.id})">🔄</button>
+                ${isAdmin ? `<button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Đăng nhập Chrome Profile" onclick="startChromeLogin(${acc.id},'${esc(acc.name)}')">🖥️</button>` : ''}
+                <button class="btn btn-sm btn-ghost" title="Cập nhật cookie thủ công" onclick="showUpdateCookieModal(${acc.id})">🔄</button>
                 <button class="btn btn-sm btn-ghost" title="${acc.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶️'}</button>
                 <button class="btn btn-sm btn-danger" title="Xóa tài khoản" onclick="deleteAccount(${acc.id})">🗑</button>
             </td>
@@ -570,6 +573,97 @@ async function deleteAccount(id) {
     await fetchAPI(`/api/accounts/${id}`, 'DELETE');
     showToast('Account deleted', 'info');
     loadAccounts();
+}
+
+// ===== Chrome Profile Login =====
+
+let chromeLoginPoll = null;
+let chromeLoginAccId = null;
+
+async function startChromeLogin(id, name) {
+    chromeLoginAccId = id;
+    document.getElementById('chromeAccName').textContent = name;
+    document.getElementById('chromeTunnelCmd').textContent = 'Đang khởi động...';
+    document.getElementById('captureSessionBtn').disabled = true;
+    document.getElementById('fbUserIdRow').style.display = 'none';
+    setChromeStatus('starting');
+    document.getElementById('chromeLoginModal').classList.add('active');
+
+    const res = await fetchAPI(`/api/accounts/${id}/start-login`, 'POST', {});
+    if (!res) { closeChromeLoginModal(); return; }
+
+    document.getElementById('chromeTunnelCmd').textContent = res.tunnel;
+
+    // Start polling login status every 3 seconds
+    if (chromeLoginPoll) clearInterval(chromeLoginPoll);
+    chromeLoginPoll = setInterval(pollChromeLoginStatus, 3000);
+    setTimeout(pollChromeLoginStatus, 2000); // first check after 2s
+}
+
+function setChromeStatus(status, fbUserId) {
+    const el = document.getElementById('chromeLoginStatus');
+    const textEl = document.getElementById('chromeStatusText');
+    const cfgs = {
+        starting: { text: 'Chrome đang khởi động...', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
+        checking: { text: 'Đang kiểm tra trạng thái...', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
+        waiting:  { text: 'Chờ đăng nhập Facebook... (hãy làm theo hướng dẫn bên dưới)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
+        logged_in:{ text: `Đã đăng nhập thành công! Nhấn "Capture & Save Cookies" để lưu.`, bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅' },
+        no_session:{ text: 'Không có phiên Chrome nào đang chạy.', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.3)', color: '#fca5a5', icon: '❌' },
+    };
+    const cfg = cfgs[status] || cfgs.checking;
+    el.style.background = cfg.bg;
+    el.style.borderColor = cfg.border;
+    el.style.color = cfg.color;
+    textEl.textContent = `${cfg.icon} ${cfg.text}`;
+    if (fbUserId) {
+        document.getElementById('fbUserIdRow').style.display = 'block';
+        document.getElementById('fbUserIdText').textContent = fbUserId;
+    }
+}
+
+async function pollChromeLoginStatus() {
+    if (!chromeLoginAccId) return;
+    const res = await fetchAPI(`/api/accounts/${chromeLoginAccId}/login-status`).catch(() => null);
+    if (!res) return;
+    setChromeStatus(res.status, res.fb_user_id);
+    if (res.logged_in) {
+        document.getElementById('captureSessionBtn').disabled = false;
+        if (chromeLoginPoll) { clearInterval(chromeLoginPoll); chromeLoginPoll = null; }
+    }
+}
+
+async function captureChromeSession() {
+    if (!chromeLoginAccId) return;
+    const btn = document.getElementById('captureSessionBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang lưu...';
+    const res = await fetchAPI(`/api/accounts/${chromeLoginAccId}/capture-session`, 'POST', {});
+    if (res) {
+        showToast(`✅ Đã lưu ${res.cookies_count} cookies cho tài khoản FB: ${res.fb_user_id}`, 'success');
+        closeChromeLoginModal();
+        loadAccounts();
+    } else {
+        btn.disabled = false;
+        btn.textContent = '💾 Capture & Save Cookies';
+    }
+}
+
+async function stopChromeSession() {
+    if (chromeLoginPoll) { clearInterval(chromeLoginPoll); chromeLoginPoll = null; }
+    if (chromeLoginAccId) {
+        fetchAPI(`/api/accounts/${chromeLoginAccId}/stop-login`, 'POST', {}).catch(() => {});
+    }
+    closeChromeLoginModal();
+}
+
+function closeChromeLoginModal() {
+    chromeLoginAccId = null;
+    document.getElementById('chromeLoginModal').classList.remove('active');
+}
+
+function copyTunnelCmd() {
+    const text = document.getElementById('chromeTunnelCmd').textContent;
+    navigator.clipboard.writeText(text).then(() => showToast('Đã sao chép lệnh SSH tunnel', 'info'));
 }
 
 // ===== AI Chat =====

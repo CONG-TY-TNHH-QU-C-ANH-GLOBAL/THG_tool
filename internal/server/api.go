@@ -29,6 +29,8 @@ type Config struct {
 	Port           int
 	JWTSecret      string
 	AllowedOrigins string
+	ChromePath     string // path to Chrome/Chromium binary for login sessions
+	ProfileDir     string // base dir for Chrome persistent profiles
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -168,6 +170,12 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	r.Put("/accounts/:id/status", adminOnly, s.updateAccountStatus)
 	r.Put("/accounts/:id/cookies", adminOnly, s.updateAccountCookies)
 	r.Delete("/accounts/:id", adminOnly, s.deleteAccount)
+
+	// Chrome Profile Login Sessions — admin only
+	r.Post("/accounts/:id/start-login", adminOnly, s.startLoginSession)
+	r.Get("/accounts/:id/login-status", adminOnly, s.loginStatus)
+	r.Post("/accounts/:id/capture-session", adminOnly, s.captureLoginSession)
+	r.Post("/accounts/:id/stop-login", adminOnly, s.stopLoginSession)
 
 	// AI Agent — all authenticated users
 	r.Post("/ai/prompt", s.aiPrompt)

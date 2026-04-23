@@ -160,6 +160,8 @@ func main() {
 		Port:           cfg.WebPort,
 		JWTSecret:      cfg.JWTSecret,
 		AllowedOrigins: cfg.AllowedOrigins,
+		ChromePath:     cfg.ChromePath,
+		ProfileDir:     cfg.ProfileDir,
 	})
 	go func() {
 		if err := srv.Start(); err != nil {

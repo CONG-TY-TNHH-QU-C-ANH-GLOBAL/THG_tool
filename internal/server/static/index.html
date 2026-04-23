@@ -725,6 +725,62 @@
         </div>
     </div>
 
+    <!-- Chrome Profile Login Modal -->
+    <div class="modal-overlay" id="chromeLoginModal">
+        <div class="modal glass" style="max-width:620px">
+            <div class="modal-header">
+                <h3>🖥️ Đăng nhập Chrome Profile</h3>
+                <button class="btn-close" onclick="stopChromeSession()">&times;</button>
+            </div>
+            <div style="padding:0 24px 24px">
+                <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+                    Tài khoản: <strong id="chromeAccName" style="color:var(--text-primary)">—</strong>
+                </p>
+
+                <!-- Status banner -->
+                <div id="chromeLoginStatus" style="border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:14px;border:1px solid;display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#fcd34d">
+                    ⏳ <span id="chromeStatusText">Đang khởi động Chrome...</span>
+                </div>
+
+                <!-- Step 1: SSH Tunnel -->
+                <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">BƯỚC 1 — MỞ SSH TUNNEL</p>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <code id="chromeTunnelCmd" style="flex:1;font-size:11px;color:#a78bfa;background:rgba(139,92,246,0.08);padding:8px 10px;border-radius:6px;word-break:break-all;display:block"></code>
+                        <button class="btn btn-sm btn-ghost" onclick="copyTunnelCmd()" style="flex-shrink:0" title="Sao chép">📋</button>
+                    </div>
+                    <p style="font-size:11px;color:var(--text-muted);margin-top:6px">Chạy lệnh này trong terminal trên máy tính của bạn (giữ cửa sổ này mở).</p>
+                </div>
+
+                <!-- Step 2: DevTools -->
+                <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">BƯỚC 2 — ĐIỀU KHIỂN CHROME</p>
+                    <p style="font-size:13px;margin-bottom:6px">Mở Chrome trên máy tính của bạn, vào địa chỉ:</p>
+                    <code style="font-size:12px;color:#93c5fd;background:rgba(59,130,246,0.08);padding:6px 10px;border-radius:6px;display:block;margin-bottom:8px">chrome://inspect/#devices</code>
+                    <p style="font-size:12px;color:var(--text-muted)">→ Tìm target "facebook.com" → Click <strong style="color:var(--text-primary)">inspect</strong> → Chrome DevTools mở ra.</p>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:6px">Trong DevTools, dùng tab <strong style="color:var(--text-primary)">Console</strong> để điền thông tin đăng nhập:</p>
+                    <code style="display:block;font-size:11px;color:#6ee7b7;background:rgba(16,185,129,0.06);padding:8px 10px;border-radius:6px;margin-top:6px;word-break:break-all">document.querySelector('[name="email"]').value='email@facebook.com';<br>document.querySelector('[name="pass"]').value='password';<br>document.querySelector('[name="login"]').click();</code>
+                </div>
+
+                <!-- Step 3: Capture -->
+                <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:20px;border:1px solid var(--border-glass)">
+                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600;letter-spacing:0.05em">BƯỚC 3 — LƯU SESSION</p>
+                    <p style="font-size:13px;color:var(--text-muted)">Sau khi đăng nhập thành công, hệ thống tự phát hiện và kích hoạt nút bên dưới.</p>
+                    <p id="fbUserIdRow" style="display:none;font-size:13px;margin-top:6px;color:#6ee7b7">
+                        ✅ Phát hiện tài khoản FB: <strong id="fbUserIdText">—</strong>
+                    </p>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-ghost" onclick="stopChromeSession()">Huỷ / Dừng Chrome</button>
+                    <button id="captureSessionBtn" class="btn btn-primary" onclick="captureChromeSession()" disabled>
+                        💾 Capture & Save Cookies
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Create Job Post Modal -->
     <div class="modal-overlay" id="jobPostModal">
         <div class="modal glass">
@@ -832,7 +888,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=6"></script>
 </body>
 
 </html>
