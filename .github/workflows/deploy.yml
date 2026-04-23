@@ -132,10 +132,8 @@ jobs:
         COMMIT=$(echo "${{ github.event.head_commit.message }}" | head -c 80 | tr '\n' ' ')
         URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
+        TEXT="${ICON} ${MSG}%0ABranch: ${{ github.ref_name }}%0ACommit: ${COMMIT}%0ADetails: ${URL}"
         curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           --data-urlencode "chat_id=${TELEGRAM_ADMIN_CHAT_ID}" \
-          --data-urlencode "text=${ICON} ${MSG}
-Branch: ${{ github.ref_name }}
-Commit: ${COMMIT}
-Details: ${URL}" \
+          --data-urlencode "text=${TEXT}" \
           --data-urlencode "parse_mode=HTML" || true
