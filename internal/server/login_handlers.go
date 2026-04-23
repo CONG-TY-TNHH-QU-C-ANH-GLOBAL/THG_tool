@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 )
 
 type loginSession struct {
+	cmd    *exec.Cmd
 	port   int
 	cancel context.CancelFunc
 }
@@ -118,50 +120,48 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "cannot create profile dir"})
 	}
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(),
-		chromedp.Flag("headless", "new"),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("disable-default-apps", true),
-		chromedp.Flag("remote-debugging-port", fmt.Sprintf("%d", port)),
-		chromedp.Flag("remote-debugging-address", "127.0.0.1"),
-		chromedp.ExecPath(s.resolveChromePath()),
-		chromedp.UserDataDir(profileDir),
-		chromedp.WindowSize(1280, 800),
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	cmd := exec.CommandContext(ctx, s.resolveChromePath(),
+		"--user-data-dir="+profileDir,
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		"--remote-debugging-address=127.0.0.1",
+		"--no-sandbox",
+		"--disable-dev-shm-usage",
+		"--disable-gpu",
+		"--disable-blink-features=AutomationControlled",
+		"--no-first-run",
+		"--disable-default-apps",
+		"--window-size=1280,800",
+		"--headless=new",
 	)
 
-	// Keep the session running for up to 10 minutes
-	ctx, cancel := context.WithTimeout(allocCtx, 10*time.Minute)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	// Create context to start Chrome
-	bCtx, bCancel := chromedp.NewContext(ctx)
-
-	// Navigate to facebook
-	if err := chromedp.Run(bCtx, chromedp.Navigate("https://www.facebook.com/login")); err != nil {
-		bCancel()
+	if err := cmd.Start(); err != nil {
 		cancel()
-		allocCancel()
 		return c.Status(500).JSON(fiber.Map{"error": "failed to start Chrome: " + err.Error()})
 	}
 
-	// We pass a composite cancel function that stops the browser and allocator
-	fullCancel := func() {
-		bCancel()
-		cancel()
-		allocCancel()
-	}
+	// Keep Chrome alive via about:blank, but navigate to Facebook via CDP
+	go func() {
+		// Wait for Chrome remote debugging to come up
+		time.Sleep(2 * time.Second)
+		bCtx, bCancel, err := cdpContext(port, 30*time.Second)
+		if err == nil {
+			defer bCancel()
+			_ = chromedp.Run(bCtx, chromedp.Navigate("https://www.facebook.com/login"))
+		}
+	}()
 
-	sess := &loginSession{port: port, cancel: fullCancel}
+	sess := &loginSession{cmd: cmd, port: port, cancel: cancel}
 	loginSessions.Store(id, sess)
 
 	go func() {
-		<-ctx.Done()
+		err := cmd.Wait()
 		loginSessions.Delete(id)
-		fullCancel()
-		log.Printf("[Login] Chrome session ended for account %d.", id)
+		cancel()
+		log.Printf("[Login] Chrome session ended for account %d. Process error: %v", id, err)
 	}()
 
 	log.Printf("[Login] Chrome started for account %d on port %d (profile: %s)", id, port, profileDir)

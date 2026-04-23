@@ -21,7 +21,6 @@ func main() {
 		"--disable-default-apps",
 		"--window-size=1280,800",
 		"--headless=new",
-		"https://www.facebook.com/login",
 	)
 
 	out, err := cmd.CombinedOutput()
