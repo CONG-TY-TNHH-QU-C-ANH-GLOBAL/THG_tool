@@ -341,6 +341,8 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN niche TEXT DEFAULT 'logistics'`)
 	// Auto-migrate: add source_url to company_images if missing
 	s.db.Exec(`ALTER TABLE company_images ADD COLUMN source_url TEXT DEFAULT ''`)
+	// Auto-migrate: add assigned_user_id to accounts (which staff owns this FB account)
+	s.db.Exec(`ALTER TABLE accounts ADD COLUMN assigned_user_id INTEGER DEFAULT 0`)
 
 	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches
 	// These are logistics groups that must not be touched by the recruitment pipeline
@@ -1015,8 +1017,8 @@ func (s *Store) AddAccount(a *models.Account) (int64, error) {
 		return 0, fmt.Errorf("encrypt cookies: %w", err)
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO accounts (platform, name, email, cookies_json, proxy_url, user_agent, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.Platform, a.Name, a.Email, encCookies, a.ProxyURL, a.UserAgent, a.Status, a.Notes,
+		`INSERT INTO accounts (platform, name, email, cookies_json, proxy_url, user_agent, status, notes, assigned_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.Platform, a.Name, a.Email, encCookies, a.ProxyURL, a.UserAgent, a.Status, a.Notes, a.AssignedUserID,
 	)
 	if err != nil {
 		return 0, err
@@ -1029,8 +1031,13 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	var a models.Account
 	var lastUsed string
 	err := s.db.QueryRow(
-		`SELECT id, platform, name, email, cookies_json, proxy_url, user_agent, status, notes, COALESCE(last_used,''), created_at FROM accounts WHERE id = ?`, id,
-	).Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt)
+		`SELECT a.id, a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
+		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
+		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
+		 WHERE a.id = ?`, id,
+	).Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent,
+		&a.Status, &a.Notes, &lastUsed, &a.CreatedAt, &a.AssignedUserID, &a.AssignedUserName)
 	if err != nil {
 		return nil, err
 	}
@@ -1041,10 +1048,14 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	return &a, nil
 }
 
-// GetAllAccounts returns all accounts with decrypted cookies.
+// GetAllAccounts returns all accounts with decrypted cookies and assigned staff names.
 func (s *Store) GetAllAccounts() ([]models.Account, error) {
 	rows, err := s.db.Query(
-		`SELECT id, platform, name, email, cookies_json, proxy_url, user_agent, status, notes, COALESCE(last_used,''), created_at FROM accounts ORDER BY created_at DESC`,
+		`SELECT a.id, a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
+		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
+		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
+		 ORDER BY a.created_at DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -1055,7 +1066,9 @@ func (s *Store) GetAllAccounts() ([]models.Account, error) {
 	for rows.Next() {
 		var a models.Account
 		var lastUsed string
-		if err := rows.Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
+			&a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt,
+			&a.AssignedUserID, &a.AssignedUserName); err != nil {
 			return nil, err
 		}
 		if lastUsed != "" {
@@ -1070,7 +1083,11 @@ func (s *Store) GetAllAccounts() ([]models.Account, error) {
 // GetActiveAccounts returns active accounts for a platform with decrypted cookies.
 func (s *Store) GetActiveAccounts(platform models.Platform) ([]models.Account, error) {
 	rows, err := s.db.Query(
-		`SELECT id, platform, name, email, cookies_json, proxy_url, user_agent, status, notes, COALESCE(last_used,''), created_at FROM accounts WHERE status = 'active' AND platform = ? ORDER BY last_used ASC`,
+		`SELECT a.id, a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
+		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
+		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
+		 WHERE a.status = 'active' AND a.platform = ? ORDER BY a.last_used ASC`,
 		platform,
 	)
 	if err != nil {
@@ -1082,7 +1099,9 @@ func (s *Store) GetActiveAccounts(platform models.Platform) ([]models.Account, e
 	for rows.Next() {
 		var a models.Account
 		var lastUsed string
-		if err := rows.Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
+			&a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt,
+			&a.AssignedUserID, &a.AssignedUserName); err != nil {
 			return nil, err
 		}
 		if lastUsed != "" {

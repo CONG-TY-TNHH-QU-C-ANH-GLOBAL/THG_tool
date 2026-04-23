@@ -59,7 +59,7 @@ async function doLogin(e) {
 }
 
 function doLogout() {
-    fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` } }).catch(() => {});
+    fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` } }).catch(() => { });
     accessToken = '';
     localStorage.removeItem('thg_token');
     localStorage.removeItem('thg_user');
@@ -93,7 +93,7 @@ async function saveProfile() {
     const res = await fetchAPI('/api/auth/me', 'PUT', { name });
     if (res) {
         const user = JSON.parse(localStorage.getItem('thg_user') || '{}');
-        const updated = {...user, name};
+        const updated = { ...user, name };
         localStorage.setItem('thg_user', JSON.stringify(updated));
         updateSidebarUser(updated);
         showToast('Đã lưu thay đổi', 'success');
@@ -123,8 +123,8 @@ async function loadUsersTable() {
     renderTable('usersTable', res.users || [], u => `
         <td>${esc(u.name)}</td>
         <td>${esc(u.email)}</td>
-        <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:${u.role==='admin'?'rgba(139,92,246,0.2)':'rgba(16,185,129,0.2)'};color:${u.role==='admin'?'#a78bfa':'#6ee7b7'}">${u.role}</span></td>
-        <td><span style="color:${u.active?'#6ee7b7':'#f87171'}">${u.active?'Hoạt động':'Vô hiệu'}</span></td>
+        <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:${u.role === 'admin' ? 'rgba(139,92,246,0.2)' : 'rgba(16,185,129,0.2)'};color:${u.role === 'admin' ? '#a78bfa' : '#6ee7b7'}">${u.role}</span></td>
+        <td><span style="color:${u.active ? '#6ee7b7' : '#f87171'}">${u.active ? 'Hoạt động' : 'Vô hiệu'}</span></td>
         <td>${timeAgo(u.created_at)}</td>
         <td style="display:flex;gap:4px">
             <button class="btn btn-sm btn-ghost" onclick="showEditUserModal(${u.id},'${esc(u.name)}','${esc(u.email)}','${u.role}',${u.active})">✏️</button>
@@ -333,7 +333,7 @@ async function submitJobPost(e) {
     showToast('Đang tạo bài tuyển dụng...', 'info');
     const res = await fetchAPI('/api/ai/prompt', 'POST', { prompt, source: 'dashboard' });
     if (res) showToast('Đã tạo bài tuyển dụng — xem tại Outbox', 'success');
-    ['jpTitle','jpDesc','jpReqs','jpBenefits','jpSalary','jpEmail'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    ['jpTitle', 'jpDesc', 'jpReqs', 'jpBenefits', 'jpSalary', 'jpEmail'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 }
 
 function showAddNicheModal() { document.getElementById('addNicheModal').classList.add('active'); }
@@ -453,9 +453,9 @@ async function loadAccounts() {
     document.getElementById('accStatInactive').textContent = counts.inactive;
 
     const statusConfig = {
-        active:   { badge: 'background:rgba(16,185,129,0.15);color:#6ee7b7', icon: '✅' },
+        active: { badge: 'background:rgba(16,185,129,0.15);color:#6ee7b7', icon: '✅' },
         cooldown: { badge: 'background:rgba(245,158,11,0.15);color:#fcd34d', icon: '⏳' },
-        banned:   { badge: 'background:rgba(239,68,68,0.15);color:#fca5a5', icon: '🚫' },
+        banned: { badge: 'background:rgba(239,68,68,0.15);color:#fca5a5', icon: '🚫' },
         inactive: { badge: 'background:rgba(100,116,139,0.15);color:#94a3b8', icon: '💤' },
     };
 
@@ -466,23 +466,26 @@ async function loadAccounts() {
         const cfg = statusConfig[acc.status] || statusConfig.inactive;
         const cookieAge = acc.last_used ? Math.floor((Date.now() - new Date(acc.last_used)) / 86400000) : null;
         const cookieWarning = cookieAge !== null && cookieAge > 14;
+        const staffBadge = acc.assigned_user_name
+            ? `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(139,92,246,0.12);color:#a78bfa">${esc(acc.assigned_user_name)}</span>`
+            : '<span style="color:var(--text-muted);font-size:12px">—</span>';
         return `
             <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;${cfg.badge}">${cfg.icon} ${acc.status}</span></td>
             <td style="font-weight:500">${esc(acc.name)}</td>
+            <td>${staffBadge}</td>
             <td style="color:var(--text-muted);font-size:13px">${esc(acc.email || '—')}</td>
             <td><span style="font-size:12px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.1);color:#93c5fd">${esc(acc.platform)}</span></td>
             <td>${cookieWarning
                 ? `<span style="color:#fcd34d" title="Cookie có thể đã hết hạn (${cookieAge} ngày)">⚠️ ${cookieAge}d</span>`
-                : acc.last_used ? `<span style="color:#6ee7b7">🟢 OK</span>` : '<span style="color:var(--text-muted)">Chưa dùng</span>'
+                : acc.last_used ? `<span style="color:#6ee7b7">🟢 OK</span>` : '<span style="color:var(--text-muted)">Chưa login</span>'
             }</td>
-            <td style="font-size:12px;color:var(--text-muted)">${acc.proxy_url ? `<span title="${esc(acc.proxy_url)}">🔒 Có proxy</span>` : '—'}</td>
-            <td style="font-size:13px">${acc.last_used ? timeAgo(acc.last_used) : '<span style="color:var(--text-muted)">Chưa dùng</span>'}</td>
+            <td style="font-size:13px">${acc.last_used ? timeAgo(acc.last_used) : '<span style="color:var(--text-muted)">—</span>'}</td>
             <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(acc.notes || '')}">${esc(acc.notes || '—')}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap">
-                ${isAdmin ? `<button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Đăng nhập Chrome Profile" onclick="startChromeLogin(${acc.id},'${esc(acc.name)}')">🖥️</button>` : ''}
-                <button class="btn btn-sm btn-ghost" title="Cập nhật cookie thủ công" onclick="showUpdateCookieModal(${acc.id})">🔄</button>
-                <button class="btn btn-sm btn-ghost" title="${acc.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶️'}</button>
-                <button class="btn btn-sm btn-danger" title="Xóa tài khoản" onclick="deleteAccount(${acc.id})">🗑</button>
+                <button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Đăng nhập Chrome Profile" onclick="startChromeLogin(${acc.id},'${esc(acc.name)}')">🖥️ Login</button>
+                ${isAdmin ? `<button class="btn btn-sm btn-ghost" title="Cập nhật cookie thủ công" onclick="showUpdateCookieModal(${acc.id})">🔄</button>` : ''}
+                ${isAdmin ? `<button class="btn btn-sm btn-ghost" title="${acc.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶️'}</button>` : ''}
+                ${isAdmin ? `<button class="btn btn-sm btn-danger" title="Xóa tài khoản" onclick="deleteAccount(${acc.id})">🗑</button>` : ''}
             </td>
         `;
     });
@@ -490,7 +493,7 @@ async function loadAccounts() {
 
 function showAddAccountModal() {
     document.getElementById('addAccountModal').classList.add('active');
-    ['accName','accEmail','accCookies','accProxy','accNotes'].forEach(id => document.getElementById(id).value = '');
+    ['accName', 'accEmail', 'accCookies', 'accProxy', 'accNotes'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('accError').style.display = 'none';
     document.getElementById('cookieValidation').style.display = 'none';
 }
@@ -507,7 +510,7 @@ function validateCookieJSON() {
         if (!hasCUser || !hasXS) {
             el.style.display = 'block';
             el.style.color = '#fcd34d';
-            el.textContent = `⚠️ Tìm thấy ${parsed.length} cookies nhưng thiếu trường quan trọng (c_user: ${hasCUser?'✅':'❌'}, xs: ${hasXS?'✅':'❌'}). Vẫn có thể thử nhưng có thể không hoạt động.`;
+            el.textContent = `⚠️ Tìm thấy ${parsed.length} cookies nhưng thiếu trường quan trọng (c_user: ${hasCUser ? '✅' : '❌'}, xs: ${hasXS ? '✅' : '❌'}). Vẫn có thể thử nhưng có thể không hoạt động.`;
         } else {
             el.style.display = 'block';
             el.style.color = '#6ee7b7';
@@ -521,12 +524,14 @@ function validateCookieJSON() {
 }
 
 async function submitAddAccount(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const cookieRaw = document.getElementById('accCookies').value.trim();
-    try { JSON.parse(cookieRaw); } catch {
-        document.getElementById('accError').style.display = 'block';
-        document.getElementById('accError').textContent = 'Cookies JSON không hợp lệ. Kiểm tra lại format.';
-        return;
+    if (cookieRaw) {
+        try { JSON.parse(cookieRaw); } catch {
+            document.getElementById('accError').style.display = 'block';
+            document.getElementById('accError').textContent = 'Cookies JSON không hợp lệ. Kiểm tra lại format.';
+            return;
+        }
     }
     const data = {
         platform: document.getElementById('accPlatform').value || 'facebook',
@@ -541,6 +546,41 @@ async function submitAddAccount(e) {
         showToast('Đã thêm tài khoản!', 'success');
         closeAccountModal();
         loadAccounts();
+    }
+}
+
+async function submitAddAccountAndLogin() {
+    const nameEl = document.getElementById('accName');
+    if (!nameEl.value.trim()) {
+        document.getElementById('accError').style.display = 'block';
+        document.getElementById('accError').textContent = 'Vui lòng nhập Tên tài khoản FB';
+        return;
+    }
+
+    const cookieRaw = document.getElementById('accCookies').value.trim();
+    if (cookieRaw) {
+        try { JSON.parse(cookieRaw); } catch {
+            document.getElementById('accError').style.display = 'block';
+            document.getElementById('accError').textContent = 'Cookies JSON không hợp lệ. Kiểm tra lại format.';
+            return;
+        }
+    }
+
+    const data = {
+        platform: document.getElementById('accPlatform').value || 'facebook',
+        name: nameEl.value.trim(),
+        email: document.getElementById('accEmail').value.trim(),
+        cookies_json: cookieRaw,
+        proxy_url: document.getElementById('accProxy').value.trim(),
+        notes: document.getElementById('accNotes').value.trim(),
+    };
+
+    const res = await fetchAPI('/api/accounts', 'POST', data);
+    if (res && res.account_id) {
+        showToast('Đã tạo tài khoản, đang khởi động Chrome...', 'success');
+        closeAccountModal();
+        loadAccounts();
+        startChromeLogin(res.account_id, data.name);
     }
 }
 
@@ -606,9 +646,9 @@ function setChromeStatus(status, fbUserId) {
     const cfgs = {
         starting: { text: 'Chrome đang khởi động...', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
         checking: { text: 'Đang kiểm tra trạng thái...', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
-        waiting:  { text: 'Chờ đăng nhập Facebook... (hãy làm theo hướng dẫn bên dưới)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
-        logged_in:{ text: `Đã đăng nhập thành công! Nhấn "Capture & Save Cookies" để lưu.`, bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅' },
-        no_session:{ text: 'Không có phiên Chrome nào đang chạy.', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.3)', color: '#fca5a5', icon: '❌' },
+        waiting: { text: 'Chờ đăng nhập Facebook... (hãy làm theo hướng dẫn bên dưới)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
+        logged_in: { text: `Đã đăng nhập thành công! Nhấn "Capture & Save Cookies" để lưu.`, bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅' },
+        no_session: { text: 'Không có phiên Chrome nào đang chạy.', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.3)', color: '#fca5a5', icon: '❌' },
     };
     const cfg = cfgs[status] || cfgs.checking;
     el.style.background = cfg.bg;
@@ -651,7 +691,7 @@ async function captureChromeSession() {
 async function stopChromeSession() {
     if (chromeLoginPoll) { clearInterval(chromeLoginPoll); chromeLoginPoll = null; }
     if (chromeLoginAccId) {
-        fetchAPI(`/api/accounts/${chromeLoginAccId}/stop-login`, 'POST', {}).catch(() => {});
+        fetchAPI(`/api/accounts/${chromeLoginAccId}/stop-login`, 'POST', {}).catch(() => { });
     }
     closeChromeLoginModal();
 }
@@ -866,20 +906,20 @@ function roleTag(role, niche) {
     if (!role) return '<span style="color:var(--text-muted)">—</span>';
     const isHR = niche === 'tuyen_dung';
     const styles = {
-        candidate:  'background:rgba(34,197,94,0.15);color:#4ade80',
-        recruiter:  'background:rgba(239,68,68,0.15);color:#f87171',
-        buyer:      'background:rgba(59,130,246,0.15);color:#60a5fa',
-        seller:     'background:rgba(239,68,68,0.15);color:#f87171',
-        provider:   'background:rgba(168,85,247,0.15);color:#c084fc',
-        unknown:    'background:rgba(107,114,128,0.15);color:#9ca3af',
+        candidate: 'background:rgba(34,197,94,0.15);color:#4ade80',
+        recruiter: 'background:rgba(239,68,68,0.15);color:#f87171',
+        buyer: 'background:rgba(59,130,246,0.15);color:#60a5fa',
+        seller: 'background:rgba(239,68,68,0.15);color:#f87171',
+        provider: 'background:rgba(168,85,247,0.15);color:#c084fc',
+        unknown: 'background:rgba(107,114,128,0.15);color:#9ca3af',
     };
     const labels = {
         candidate: '👤 Ứng viên',
-        recruiter:  '🏢 Nhà tuyển dụng',
-        buyer:      '🛒 Buyer',
-        seller:     '📢 Seller',
-        provider:   '🔧 Provider',
-        unknown:    '❓ Unknown',
+        recruiter: '🏢 Nhà tuyển dụng',
+        buyer: '🛒 Buyer',
+        seller: '📢 Seller',
+        provider: '🔧 Provider',
+        unknown: '❓ Unknown',
     };
     const style = styles[role] || styles.unknown;
     const label = labels[role] || role;

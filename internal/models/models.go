@@ -168,17 +168,19 @@ const (
 
 // Account represents a social media account used for scraping.
 type Account struct {
-	ID          int64         `json:"id" db:"id"`
-	Platform    Platform      `json:"platform" db:"platform"`
-	Name        string        `json:"name" db:"name"`
-	Email       string        `json:"email" db:"email"`
-	CookiesJSON string        `json:"cookies_json" db:"cookies_json"` // encrypted JSON cookies
-	ProxyURL    string        `json:"proxy_url" db:"proxy_url"`
-	UserAgent   string        `json:"user_agent" db:"user_agent"`
-	Status      AccountStatus `json:"status" db:"status"`
-	Notes       string        `json:"notes" db:"notes"`
-	LastUsed    time.Time     `json:"last_used" db:"last_used"`
-	CreatedAt   time.Time     `json:"created_at" db:"created_at"`
+	ID               int64         `json:"id" db:"id"`
+	Platform         Platform      `json:"platform" db:"platform"`
+	Name             string        `json:"name" db:"name"`
+	Email            string        `json:"email" db:"email"`
+	CookiesJSON      string        `json:"cookies_json" db:"cookies_json"` // encrypted JSON cookies
+	ProxyURL         string        `json:"proxy_url" db:"proxy_url"`
+	UserAgent        string        `json:"user_agent" db:"user_agent"`
+	Status           AccountStatus `json:"status" db:"status"`
+	Notes            string        `json:"notes" db:"notes"`
+	LastUsed         time.Time     `json:"last_used" db:"last_used"`
+	CreatedAt        time.Time     `json:"created_at" db:"created_at"`
+	AssignedUserID   int64         `json:"assigned_user_id"`   // staff who owns this FB account
+	AssignedUserName string        `json:"assigned_user_name"` // resolved from users JOIN
 }
 
 // PromptLog records every AI prompt interaction for learning.

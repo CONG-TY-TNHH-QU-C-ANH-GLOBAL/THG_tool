@@ -357,11 +357,11 @@
                             <thead>
                                 <tr>
                                     <th>Trạng thái</th>
-                                    <th>Tên tài khoản</th>
+                                    <th>Tên FB</th>
+                                    <th>Nhân viên</th>
                                     <th>Email FB</th>
                                     <th>Platform</th>
                                     <th>Cookie</th>
-                                    <th>Proxy</th>
                                     <th>Lần dùng cuối</th>
                                     <th>Ghi chú</th>
                                     <th>Actions</th>
@@ -654,20 +654,21 @@
     <div class="modal-overlay" id="addAccountModal">
         <div class="modal glass" style="max-width:560px">
             <div class="modal-header">
-                <h3>🔑 Thêm tài khoản Facebook</h3>
+                <h3>🔑 Đăng ký tài khoản Facebook</h3>
                 <button class="btn-close" onclick="closeAccountModal()">&times;</button>
             </div>
             <form onsubmit="submitAddAccount(event)" style="padding:0 24px 24px">
-                <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#93c5fd">
-                    <strong>Cách lấy cookies:</strong> Đăng nhập Facebook → Cài extension <strong>EditThisCookie</strong> → Click icon → Export → Copy JSON
+                <!-- Quick mode banner -->
+                <div style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#a78bfa">
+                    🖥️ <strong>Cách nhanh nhất:</strong> Điền tên → nhấn <strong>"Tạo & Đăng nhập Chrome"</strong> → đăng nhập Facebook → xong!
                 </div>
                 <div class="form-group">
-                    <label>Tên tài khoản <span style="color:#ef4444">*</span></label>
-                    <input type="text" id="accName" placeholder="vd: THG Main, Sale Acc 1" required>
+                    <label>Tên tài khoản FB <span style="color:#ef4444">*</span></label>
+                    <input type="text" id="accName" placeholder="vd: Nguyễn Văn A — Sale, THG Main Account" required>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                     <div class="form-group">
-                        <label>Email Facebook</label>
+                        <label>Email Facebook <span style="color:var(--text-muted);font-size:11px">(tùy chọn)</span></label>
                         <input type="text" id="accEmail" placeholder="email@example.com">
                     </div>
                     <div class="form-group">
@@ -679,23 +680,28 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Cookies JSON <span style="color:#ef4444">*</span> <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256 khi lưu)</span></label>
-                    <textarea id="accCookies" rows="5" placeholder='[{"name":"c_user","value":"123456","domain":".facebook.com"},{"name":"xs","value":"..."}]' required style="font-family:monospace;font-size:12px"></textarea>
-                    <div id="cookieValidation" style="font-size:12px;margin-top:4px;display:none"></div>
+                    <label>Ghi chú <span style="color:var(--text-muted);font-size:11px">(tùy chọn)</span></label>
+                    <input type="text" id="accNotes" placeholder="vd: Acc chính logistics, Sale Acc Nguyễn Văn A">
                 </div>
-                <div class="form-group">
-                    <label>Proxy URL <span style="color:var(--text-muted);font-size:11px">(tùy chọn, dùng IP riêng để tránh checkpoint)</span></label>
-                    <input type="text" id="accProxy" placeholder="http://user:pass@ip:port hoặc socks5://...">
-                </div>
-                <div class="form-group">
-                    <label>Ghi chú</label>
-                    <input type="text" id="accNotes" placeholder="vd: Acc chính, dùng cho logistics">
-                </div>
+                <!-- Advanced: manual cookie import (collapsed by default) -->
+                <details style="margin-bottom:12px">
+                    <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;padding:4px 0">
+                        ⚙️ Nâng cao — nhập cookie thủ công (không cần Chrome login)
+                    </summary>
+                    <div style="margin-top:10px">
+                        <div class="form-group">
+                            <label>Cookies JSON <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256 khi lưu)</span></label>
+                            <textarea id="accCookies" rows="4" placeholder='[{"name":"c_user","value":"123456","domain":".facebook.com"},{"name":"xs","value":"..."}]' style="font-family:monospace;font-size:12px"></textarea>
+                            <div id="cookieValidation" style="font-size:12px;margin-top:4px;display:none"></div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-ghost" onclick="validateCookieJSON()">🔍 Kiểm tra JSON</button>
+                    </div>
+                </details>
                 <div id="accError" style="display:none;color:#ef4444;font-size:13px;padding:8px 12px;background:rgba(239,68,68,0.1);border-radius:8px;margin-bottom:12px"></div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Hủy</button>
-                    <button type="button" class="btn btn-ghost" onclick="validateCookieJSON()">🔍 Kiểm tra JSON</button>
-                    <button type="submit" class="btn btn-primary">Thêm tài khoản</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🖥️ Tạo & Đăng nhập Chrome</button>
+                    <button type="submit" class="btn btn-ghost" style="font-size:13px">Tạo (không login ngay)</button>
                 </div>
             </form>
         </div>

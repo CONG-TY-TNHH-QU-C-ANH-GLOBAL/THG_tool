@@ -164,18 +164,18 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	r.Put("/groups/:id/toggle", adminOnly, s.toggleGroup)
 	r.Delete("/groups/:id", adminOnly, s.deleteGroup)
 
-	// Accounts — sales can view (cookies redacted); admin manages
+	// Accounts — all staff can add their own; admin manages all
 	r.Get("/accounts", s.getAccounts)
-	r.Post("/accounts", adminOnly, s.addAccount)
+	r.Post("/accounts", s.addAccount)                              // any staff can register their FB account
 	r.Put("/accounts/:id/status", adminOnly, s.updateAccountStatus)
 	r.Put("/accounts/:id/cookies", adminOnly, s.updateAccountCookies)
 	r.Delete("/accounts/:id", adminOnly, s.deleteAccount)
 
-	// Chrome Profile Login Sessions — admin only
-	r.Post("/accounts/:id/start-login", adminOnly, s.startLoginSession)
-	r.Get("/accounts/:id/login-status", adminOnly, s.loginStatus)
-	r.Post("/accounts/:id/capture-session", adminOnly, s.captureLoginSession)
-	r.Post("/accounts/:id/stop-login", adminOnly, s.stopLoginSession)
+	// Chrome Profile Login Sessions — any staff can log in their own account
+	r.Post("/accounts/:id/start-login", s.startLoginSession)
+	r.Get("/accounts/:id/login-status", s.loginStatus)
+	r.Post("/accounts/:id/capture-session", s.captureLoginSession)
+	r.Post("/accounts/:id/stop-login", s.stopLoginSession)
 
 	// AI Agent — all authenticated users
 	r.Post("/ai/prompt", s.aiPrompt)
@@ -468,26 +468,36 @@ func (s *Server) addAccount(c *fiber.Ctx) error {
 		Platform    string `json:"platform"`
 		Name        string `json:"name"`
 		Email       string `json:"email"`
-		CookiesJSON string `json:"cookies_json"`
+		CookiesJSON string `json:"cookies_json"` // optional — staff uses Chrome login instead
 		ProxyURL    string `json:"proxy_url"`
 		Notes       string `json:"notes"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-
+	if req.Name == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name required"})
+	}
 	if req.Platform == "" {
 		req.Platform = "facebook"
 	}
 
+	// Auto-assign to the user creating this account
+	userID, _ := c.Locals("user_id").(int64)
+
 	acc := &models.Account{
-		Platform:    models.Platform(req.Platform),
-		Name:        req.Name,
-		Email:       req.Email,
-		CookiesJSON: req.CookiesJSON,
-		ProxyURL:    req.ProxyURL,
-		Status:      models.AccountActive,
-		Notes:       req.Notes,
+		Platform:       models.Platform(req.Platform),
+		Name:           req.Name,
+		Email:          req.Email,
+		CookiesJSON:    req.CookiesJSON,
+		ProxyURL:       req.ProxyURL,
+		Status:         models.AccountInactive, // inactive until Chrome login completes
+		Notes:          req.Notes,
+		AssignedUserID: userID,
+	}
+	// If cookies provided upfront, mark active immediately
+	if req.CookiesJSON != "" {
+		acc.Status = models.AccountActive
 	}
 
 	id, err := s.db.AddAccount(acc)
@@ -495,6 +505,7 @@ func (s *Server) addAccount(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	log.Printf("[Accounts] Account created: %s (id=%d) by user %d", req.Name, id, userID)
 	return c.Status(201).JSON(fiber.Map{"account_id": id})
 }
 
