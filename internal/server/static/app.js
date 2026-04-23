@@ -625,22 +625,15 @@ let chromeLoginAccId = null;
 
 async function startChromeLogin(id, name) {
     chromeLoginAccId = id;
-    document.getElementById('chromeAccName').textContent = name;
-    document.getElementById('chromeTunnelCmd').textContent = 'Đang khởi động...';
-    document.getElementById('captureSessionBtn').disabled = true;
-    document.getElementById('fbUserIdRow').style.display = 'none';
-    setChromeStatus('starting');
+
+    // Instead of calling backend, we just tell the user to use THG_Login.exe
+    document.getElementById('chromeLoginAccName').textContent = name;
+
+    // Set hint name in the instructions
+    const hintEl = document.getElementById('chromeLoginAgentHintName');
+    if (hintEl) hintEl.textContent = name;
+
     document.getElementById('chromeLoginModal').classList.add('active');
-
-    const res = await fetchAPI(`/api/accounts/${id}/start-login`, 'POST', {});
-    if (!res) { closeChromeLoginModal(); return; }
-
-    document.getElementById('chromeTunnelCmd').textContent = res.tunnel;
-
-    // Start polling login status every 3 seconds
-    if (chromeLoginPoll) clearInterval(chromeLoginPoll);
-    chromeLoginPoll = setInterval(pollChromeLoginStatus, 3000);
-    setTimeout(pollChromeLoginStatus, 2000); // first check after 2s
 }
 
 function setChromeStatus(status, fbUserId) {

@@ -779,189 +779,167 @@
                 <h3>🖥️ Đăng nhập Chrome Profile</h3>
                 <button class="btn-close" onclick="stopChromeSession()">&times;</button>
             </div>
-            <div style="padding:0 24px 24px">
-                <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-                    Tài khoản: <strong id="chromeAccName" style="color:var(--text-primary)">—</strong>
-                </p>
-
-                <!-- Status banner -->
-                <div id="chromeLoginStatus"
-                    style="border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:14px;border:1px solid;display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#fcd34d">
-                    ⏳ <span id="chromeStatusText">Đang khởi động Chrome...</span>
+            <div class="modal-content" style="max-width:550px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                    <h3 style="margin:0;font-size:18px;display:flex;align-items:center;gap:8px">
+                        🖥️ Đăng nhập qua THG Login Agent
+                    </h3>
+                    <span class="close" onclick="closeChromeLoginModal()">&times;</span>
                 </div>
 
-                <!-- Step 1: SSH Tunnel -->
+                <div style="margin-bottom:16px;font-size:14px;color:var(--text-muted)">
+                    Tài khoản: <strong style="color:var(--text-primary)" id="chromeLoginAccName">---</strong>
+                </div>
+
+                <div id="chromeSessionStatus"
+                    style="padding:12px;border-radius:6px;margin-bottom:20px;font-size:14px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.3);color:#a78bfa;display:flex;align-items:center;gap:8px">
+                    ℹ️ Vui lòng sử dụng phần mềm THG Local Agent
+                </div>
+
                 <div
-                    style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
-                    <p
-                        style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">
-                        BƯỚC 1 — MỞ SSH TUNNEL</p>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <code id="chromeTunnelCmd"
-                            style="flex:1;font-size:11px;color:#a78bfa;background:rgba(139,92,246,0.08);padding:8px 10px;border-radius:6px;word-break:break-all;display:block"></code>
-                        <button class="btn btn-sm btn-ghost" onclick="copyTunnelCmd()" style="flex-shrink:0"
-                            title="Sao chép">📋</button>
+                    style="padding:16px;background:var(--bg-secondary);border-radius:8px;margin-bottom:16px;border:1px solid var(--border-color)">
+                    <h4 style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted);letter-spacing:0.5px">HƯỚNG DẪN
+                        DÀNH CHO SALE</h4>
+                    <div style="font-size:14px;line-height:1.5;color:var(--text-primary)">
+                        <p style="margin-top:0">Quy trình đăng nhập qua SSH đã được thay thế bằng phương thức bảo mật
+                            nội bộ.</p>
+                        <p>Để thêm tài khoản Facebook này vào hệ thống và kích hoạt hoàn toàn:</p>
+                        <ol style="margin-bottom:0;padding-left:20px">
+                            <li style="margin-bottom:8px">Nháy đúp chạy phần mềm <strong>THG_Login.exe</strong> trên màn
+                                hình máy tính của bạn.</li>
+                            <li style="margin-bottom:8px">Nhập Email quản lý THG và mật khẩu của bạn vào cửa sổ hiện ra.
+                            </li>
+                            <li style="margin-bottom:8px">Nhập đúng tên: <strong
+                                    id="chromeLoginAgentHintName">...</strong></li>
+                            <li style="margin-bottom:0">Đăng nhập tài khoản Facebook trên cửa sổ Chrome vừa mở ra. Hệ
+                                thống sẽ lấy cookie và tự động ghi nhận!</li>
+                        </ol>
                     </div>
-                    <p style="font-size:11px;color:var(--text-muted);margin-top:6px">Chạy lệnh này trong terminal trên
-                        máy tính của bạn (giữ cửa sổ này mở).</p>
                 </div>
 
-                <!-- Step 2: DevTools -->
-                <div
-                    style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
-                    <p
-                        style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">
-                        BƯỚC 2 — ĐIỀU KHIỂN CHROME</p>
-                    <p style="font-size:13px;margin-bottom:6px">Mở Chrome trên máy tính của bạn, vào địa chỉ:</p>
-                    <code
-                        style="font-size:12px;color:#93c5fd;background:rgba(59,130,246,0.08);padding:6px 10px;border-radius:6px;display:block;margin-bottom:8px">chrome://inspect/#devices</code>
-                    <p style="font-size:12px;color:var(--text-muted)">→ Tìm target "facebook.com" → Click <strong
-                            style="color:var(--text-primary)">inspect</strong> → Chrome DevTools mở ra.</p>
-                    <p style="font-size:12px;color:var(--text-muted);margin-top:6px">Trong DevTools, dùng tab <strong
-                            style="color:var(--text-primary)">Console</strong> để điền thông tin đăng nhập:</p>
-                    <code
-                        style="display:block;font-size:11px;color:#6ee7b7;background:rgba(16,185,129,0.06);padding:8px 10px;border-radius:6px;margin-top:6px;word-break:break-all">document.querySelector('[name="email"]').value='email@facebook.com';<br>document.querySelector('[name="pass"]').value='password';<br>document.querySelector('[name="login"]').click();</code>
-                </div>
-
-                <!-- Step 3: Capture -->
-                <div
-                    style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:20px;border:1px solid var(--border-glass)">
-                    <p
-                        style="font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600;letter-spacing:0.05em">
-                        BƯỚC 3 — LƯU SESSION</p>
-                    <p style="font-size:13px;color:var(--text-muted)">Sau khi đăng nhập thành công, hệ thống tự phát
-                        hiện và kích hoạt nút bên dưới.</p>
-                    <p id="fbUserIdRow" style="display:none;font-size:13px;margin-top:6px;color:#6ee7b7">
-                        ✅ Phát hiện tài khoản FB: <strong id="fbUserIdText">—</strong>
-                    </p>
-                </div>
-
-                <div class="form-actions">
-                    <button class="btn btn-ghost" onclick="stopChromeSession()">Huỷ / Dừng Chrome</button>
-                    <button id="captureSessionBtn" class="btn btn-primary" onclick="captureChromeSession()" disabled>
-                        💾 Capture & Save Cookies
-                    </button>
+                <div style="display:flex;justify-content:flex-end">
+                    <button type="button" class="btn btn-ghost" onclick="closeChromeLoginModal()">Đóng Cửa Sổ</button>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Create Job Post Modal -->
-    <div class="modal-overlay" id="jobPostModal">
-        <div class="modal glass">
-            <div class="modal-header">
-                <h3>📋 Tạo bài đăng tuyển dụng</h3>
-                <button class="btn-close" onclick="closeJobPostModal()">&times;</button>
-            </div>
-            <form onsubmit="submitJobPost(event)">
-                <div class="form-group">
-                    <label>Vị trí tuyển dụng *</label>
-                    <input type="text" id="jpTitle" placeholder="vd: Nhân viên Kho, Sales Executive" required>
+        <!-- Create Job Post Modal -->
+        <div class="modal-overlay" id="jobPostModal">
+            <div class="modal glass">
+                <div class="modal-header">
+                    <h3>📋 Tạo bài đăng tuyển dụng</h3>
+                    <button class="btn-close" onclick="closeJobPostModal()">&times;</button>
                 </div>
-                <div class="form-group">
-                    <label>Mô tả công việc</label>
-                    <textarea id="jpDesc" rows="2" placeholder="Mô tả ngắn về công việc..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Yêu cầu ứng viên</label>
-                    <textarea id="jpReqs" rows="2" placeholder="Kinh nghiệm, kỹ năng, bằng cấp..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Quyền lợi</label>
-                    <input type="text" id="jpBenefits" placeholder="Lương thưởng, bảo hiểm, môi trường...">
-                </div>
-                <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                    <div>
-                        <label>Mức lương</label>
-                        <input type="text" id="jpSalary" placeholder="vd: 12-15 triệu, thỏa thuận">
-                    </div>
-                    <div>
-                        <label>Email nhận CV</label>
-                        <input type="email" id="jpEmail" placeholder="career@thgfulfill.com">
-                    </div>
-                </div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
-                    💡 AI sẽ soạn bài đăng chuyên nghiệp. Kết quả lưu vào Outbox để copy và đăng.
-                </p>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-ghost" onclick="closeJobPostModal()">Hủy</button>
-                    <button type="submit" class="btn btn-primary">✨ Tạo bài đăng</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Add Niche Modal -->
-    <div class="modal-overlay" id="addNicheModal">
-        <div class="modal glass">
-            <div class="modal-header">
-                <h3>Thêm lĩnh vực mới</h3>
-                <button class="btn-close" onclick="closeNicheModal()">&times;</button>
-            </div>
-            <form onsubmit="submitAddNiche(event)">
-                <div class="form-group">
-                    <label>Slug (ID nội bộ, không dấu, viết liền)</label>
-                    <input type="text" id="nicheSlug" placeholder="vd: bds, thuc_pham, may_mac" required
-                        pattern="[a-z0-9_]+">
-                </div>
-                <div class="form-group">
-                    <label>Tên hiển thị</label>
-                    <input type="text" id="nicheName" placeholder="vd: Bất động sản" required>
-                </div>
-                <div class="form-group">
-                    <label>Emoji</label>
-                    <input type="text" id="nicheEmoji" placeholder="🏠" maxlength="4">
-                </div>
-                <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
-                    💡 Sau khi tạo, nói với bot: <strong>"cào group [lĩnh vực] [tên_slug]"</strong> để AI gắn đúng lĩnh
-                    vực cho leads
-                </p>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-ghost" onclick="closeNicheModal()">Hủy</button>
-                    <button type="submit" class="btn btn-primary">Thêm lĩnh vực</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Toast -->
-    <div class="toast-container" id="toastContainer"></div>
-
-    <!-- Login Page (full screen) -->
-    <div id="loginPage"
-        style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
-        <div style="width:100%;max-width:420px;padding:20px">
-            <div class="glass" style="padding:40px;border-radius:20px">
-                <div style="text-align:center;margin-bottom:32px">
-                    <div style="font-size:52px;margin-bottom:12px">🕷️</div>
-                    <h1 style="font-size:22px;font-weight:700;margin:0 0 6px">THG Scraper</h1>
-                    <p style="color:var(--text-muted,#94a3b8);margin:0;font-size:14px">Đăng nhập để tiếp tục</p>
-                </div>
-                <form onsubmit="doLogin(event)">
+                <form onsubmit="submitJobPost(event)">
                     <div class="form-group">
-                        <label>Email</label>
-                        <input type="email" id="loginEmail" placeholder="admin@thgfulfill.com" required
-                            autocomplete="email" style="width:100%">
+                        <label>Vị trí tuyển dụng *</label>
+                        <input type="text" id="jpTitle" placeholder="vd: Nhân viên Kho, Sales Executive" required>
                     </div>
                     <div class="form-group">
-                        <label>Mật khẩu</label>
-                        <input type="password" id="loginPassword" placeholder="••••••••" required
-                            autocomplete="current-password" style="width:100%">
+                        <label>Mô tả công việc</label>
+                        <textarea id="jpDesc" rows="2" placeholder="Mô tả ngắn về công việc..."></textarea>
                     </div>
-                    <div id="loginError"
-                        style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)">
+                    <div class="form-group">
+                        <label>Yêu cầu ứng viên</label>
+                        <textarea id="jpReqs" rows="2" placeholder="Kinh nghiệm, kỹ năng, bằng cấp..."></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary" id="loginBtn"
-                        style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
-                    <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
-                        Quên mật khẩu? Liên hệ <strong>Admin</strong> để được reset
+                    <div class="form-group">
+                        <label>Quyền lợi</label>
+                        <input type="text" id="jpBenefits" placeholder="Lương thưởng, bảo hiểm, môi trường...">
+                    </div>
+                    <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div>
+                            <label>Mức lương</label>
+                            <input type="text" id="jpSalary" placeholder="vd: 12-15 triệu, thỏa thuận">
+                        </div>
+                        <div>
+                            <label>Email nhận CV</label>
+                            <input type="email" id="jpEmail" placeholder="career@thgfulfill.com">
+                        </div>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+                        💡 AI sẽ soạn bài đăng chuyên nghiệp. Kết quả lưu vào Outbox để copy và đăng.
                     </p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" onclick="closeJobPostModal()">Hủy</button>
+                        <button type="submit" class="btn btn-primary">✨ Tạo bài đăng</button>
+                    </div>
                 </form>
             </div>
         </div>
-    </div>
 
-    <script src="app.js?v=9"></script>
+        <!-- Add Niche Modal -->
+        <div class="modal-overlay" id="addNicheModal">
+            <div class="modal glass">
+                <div class="modal-header">
+                    <h3>Thêm lĩnh vực mới</h3>
+                    <button class="btn-close" onclick="closeNicheModal()">&times;</button>
+                </div>
+                <form onsubmit="submitAddNiche(event)">
+                    <div class="form-group">
+                        <label>Slug (ID nội bộ, không dấu, viết liền)</label>
+                        <input type="text" id="nicheSlug" placeholder="vd: bds, thuc_pham, may_mac" required
+                            pattern="[a-z0-9_]+">
+                    </div>
+                    <div class="form-group">
+                        <label>Tên hiển thị</label>
+                        <input type="text" id="nicheName" placeholder="vd: Bất động sản" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Emoji</label>
+                        <input type="text" id="nicheEmoji" placeholder="🏠" maxlength="4">
+                    </div>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+                        💡 Sau khi tạo, nói với bot: <strong>"cào group [lĩnh vực] [tên_slug]"</strong> để AI gắn đúng
+                        lĩnh
+                        vực cho leads
+                    </p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" onclick="closeNicheModal()">Hủy</button>
+                        <button type="submit" class="btn btn-primary">Thêm lĩnh vực</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast-container" id="toastContainer"></div>
+
+        <!-- Login Page (full screen) -->
+        <div id="loginPage"
+            style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
+            <div style="width:100%;max-width:420px;padding:20px">
+                <div class="glass" style="padding:40px;border-radius:20px">
+                    <div style="text-align:center;margin-bottom:32px">
+                        <div style="font-size:52px;margin-bottom:12px">🕷️</div>
+                        <h1 style="font-size:22px;font-weight:700;margin:0 0 6px">THG Scraper</h1>
+                        <p style="color:var(--text-muted,#94a3b8);margin:0;font-size:14px">Đăng nhập để tiếp tục</p>
+                    </div>
+                    <form onsubmit="doLogin(event)">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="loginEmail" placeholder="admin@thgfulfill.com" required
+                                autocomplete="email" style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Mật khẩu</label>
+                            <input type="password" id="loginPassword" placeholder="••••••••" required
+                                autocomplete="current-password" style="width:100%">
+                        </div>
+                        <div id="loginError"
+                            style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="loginBtn"
+                            style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
+                        <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
+                            Quên mật khẩu? Liên hệ <strong>Admin</strong> để được reset
+                        </p>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js?v=10"></script>
 </body>
 
 </html>
