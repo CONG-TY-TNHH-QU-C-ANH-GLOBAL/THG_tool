@@ -536,10 +536,10 @@ async function submitAddAccount(e) {
     const data = {
         platform: document.getElementById('accPlatform').value || 'facebook',
         name: document.getElementById('accName').value,
-        email: document.getElementById('accEmail').value,
+        email: (document.getElementById('accEmail')?.value || ''),
         cookies_json: cookieRaw,
-        proxy_url: document.getElementById('accProxy').value,
-        notes: document.getElementById('accNotes').value,
+        proxy_url: (document.getElementById('accProxy')?.value || ''),
+        notes: (document.getElementById('accNotes')?.value || ''),
     };
     const res = await fetchAPI('/api/accounts', 'POST', data);
     if (res) {
@@ -569,10 +569,10 @@ async function submitAddAccountAndLogin() {
     const data = {
         platform: document.getElementById('accPlatform').value || 'facebook',
         name: nameEl.value.trim(),
-        email: document.getElementById('accEmail').value.trim(),
+        email: (document.getElementById('accEmail')?.value || '').trim(),
         cookies_json: cookieRaw,
-        proxy_url: document.getElementById('accProxy').value.trim(),
-        notes: document.getElementById('accNotes').value.trim(),
+        proxy_url: (document.getElementById('accProxy')?.value || '').trim(),
+        notes: (document.getElementById('accNotes')?.value || '').trim(),
     };
 
     const res = await fetchAPI('/api/accounts', 'POST', data);
