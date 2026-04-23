@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -190,6 +191,108 @@ func (s *Server) me(c *fiber.Ctx) error {
 		"role":       user.Role,
 		"created_at": user.CreatedAt,
 	})
+}
+
+// changeOwnPassword handles PUT /api/auth/me/password — user changes their own password.
+func (s *Server) changeOwnPassword(c *fiber.Ctx) error {
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+		ConfirmPassword string `json:"confirm_password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.NewPassword != req.ConfirmPassword {
+		return c.Status(400).JSON(fiber.Map{"error": "passwords do not match"})
+	}
+	userID, _ := c.Locals("user_id").(int64)
+	user, err := s.db.GetUserByID(userID)
+	if err != nil || user == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	if !auth.CheckPassword(user.PasswordHash, req.CurrentPassword) {
+		return c.Status(401).JSON(fiber.Map{"error": "current password is incorrect"})
+	}
+	if err := auth.ValidatePasswordStrength(req.NewPassword); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "password hashing failed"})
+	}
+	if err := s.db.UpdateUserPassword(userID, hash); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "update failed"})
+	}
+	s.db.InsertAuditLog(userID, "password_changed", c.IP(), `{}`)
+	return c.JSON(fiber.Map{"status": "password updated"})
+}
+
+// adminUpdateUser handles PUT /api/auth/users/:id — admin edits a user account.
+func (s *Server) adminUpdateUser(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid user id"})
+	}
+	var req struct {
+		Name        string `json:"name"`
+		Role        string `json:"role"`
+		Active      *bool  `json:"active"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	user, err := s.db.GetUserByID(id)
+	if err != nil || user == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	name := user.Name
+	if req.Name != "" {
+		name = req.Name
+	}
+	role := user.Role
+	if req.Role == "admin" || req.Role == "sales" {
+		role = models.UserRole(req.Role)
+	}
+	active := user.Active
+	if req.Active != nil {
+		active = *req.Active
+	}
+	if err := s.db.UpdateUser(id, name, role, active); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "update failed"})
+	}
+	if req.NewPassword != "" {
+		if err := auth.ValidatePasswordStrength(req.NewPassword); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		hash, err := auth.HashPassword(req.NewPassword)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "password hashing failed"})
+		}
+		s.db.UpdateUserPassword(id, hash)
+		s.db.DeleteUserRefreshTokens(id)
+	}
+	adminID, _ := c.Locals("user_id").(int64)
+	s.db.InsertAuditLog(adminID, "user_updated", c.IP(), fmt.Sprintf(`{"target_id":%d}`, id))
+	return c.JSON(fiber.Map{"status": "updated"})
+}
+
+// adminDeleteUser handles DELETE /api/auth/users/:id — admin removes a user.
+func (s *Server) adminDeleteUser(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid user id"})
+	}
+	adminID, _ := c.Locals("user_id").(int64)
+	if id == adminID {
+		return c.Status(400).JSON(fiber.Map{"error": "cannot delete your own account"})
+	}
+	if err := s.db.DeleteUser(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "delete failed"})
+	}
+	s.db.InsertAuditLog(adminID, "user_deleted", c.IP(), fmt.Sprintf(`{"deleted_id":%d}`, id))
+	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
 // createUser handles POST /api/auth/users — admin creates a new user account.

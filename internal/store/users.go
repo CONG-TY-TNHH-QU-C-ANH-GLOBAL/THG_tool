@@ -83,6 +83,25 @@ func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
 	return err
 }
 
+// UpdateUserPassword sets a new bcrypt hash for the user.
+func (s *Store) UpdateUserPassword(id int64, newHash string) error {
+	_, err := s.db.Exec(`UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, newHash, id)
+	return err
+}
+
+// UpdateUser updates name, role and active status for a user.
+func (s *Store) UpdateUser(id int64, name string, role models.UserRole, active bool) error {
+	_, err := s.db.Exec(`UPDATE users SET name = ?, role = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, name, string(role), active, id)
+	return err
+}
+
+// DeleteUser permanently removes a user and all their sessions.
+func (s *Store) DeleteUser(id int64) error {
+	s.db.Exec(`DELETE FROM refresh_tokens WHERE user_id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+	return err
+}
+
 // IncrementFailedLogins bumps the failed login counter and optionally applies a lockout.
 func (s *Store) IncrementFailedLogins(id int64, newCount int, lockedUntil time.Time) error {
 	var lockVal any

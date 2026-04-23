@@ -8,7 +8,7 @@
     <meta name="description" content="THG Agentic Scraper control panel and dashboard">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=3">
     <style>
         .table-wrapper {
             overflow-x: scroll !important;
@@ -80,8 +80,13 @@
                     <span class="nav-icon">📤</span>
                     <span>Outbox</span>
                 </a>
+                <a href="#" class="nav-item" data-page="settings" onclick="switchPage('settings')">
+                    <span class="nav-icon">⚙️</span>
+                    <span>Settings</span>
+                </a>
             </div>
             <div class="sidebar-footer">
+                <div id="sidebarUser" style="font-size:12px;color:var(--text-muted);padding:4px 0;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
                 <div class="system-status" id="systemStatus">
                     <span class="status-dot online"></span>
                     <span>System Online</span>
@@ -438,7 +443,150 @@
                     </div>
                 </div>
             </section>
+            <!-- Settings Page -->
+            <section class="page" id="page-settings">
+                <div style="display:grid;gap:16px;max-width:820px">
+                    <!-- Profile -->
+                    <div class="section-card glass">
+                        <div class="section-header"><h2>👤 Hồ sơ cá nhân</h2></div>
+                        <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:420px">
+                            <div class="form-group">
+                                <label>Tên hiển thị</label>
+                                <input type="text" id="profileName" placeholder="Tên của bạn">
+                            </div>
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input type="email" id="profileEmail" disabled style="opacity:0.6;cursor:not-allowed">
+                            </div>
+                            <div class="form-group">
+                                <label>Vai trò</label>
+                                <input type="text" id="profileRole" disabled style="opacity:0.6;cursor:not-allowed">
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="saveProfile()">Lưu thay đổi</button>
+                        </div>
+                    </div>
+                    <!-- Change Password -->
+                    <div class="section-card glass">
+                        <div class="section-header"><h2>🔑 Đổi mật khẩu</h2></div>
+                        <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:420px">
+                            <div class="form-group">
+                                <label>Mật khẩu hiện tại</label>
+                                <input type="password" id="currentPassword" placeholder="••••••••">
+                            </div>
+                            <div class="form-group">
+                                <label>Mật khẩu mới</label>
+                                <input type="password" id="newPassword" placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt">
+                            </div>
+                            <div class="form-group">
+                                <label>Xác nhận mật khẩu mới</label>
+                                <input type="password" id="confirmPassword" placeholder="••••••••">
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="changePassword()">Đổi mật khẩu</button>
+                        </div>
+                    </div>
+                    <!-- User Management (admin only) -->
+                    <div class="section-card glass" id="userMgmtSection" style="display:none">
+                        <div class="section-header">
+                            <h2>👥 Quản lý tài khoản nhân viên</h2>
+                            <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Tạo tài khoản</button>
+                        </div>
+                        <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
+                            <table class="data-table" id="usersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Tên</th>
+                                        <th>Email</th>
+                                        <th>Vai trò</th>
+                                        <th>Trạng thái</th>
+                                        <th>Ngày tạo</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
+    </div>
+
+    <!-- Create User Modal -->
+    <div class="modal-overlay" id="createUserModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Tạo tài khoản nhân viên</h3>
+                <button class="btn-close" onclick="closeCreateUserModal()">&times;</button>
+            </div>
+            <form onsubmit="submitCreateUser(event)" style="padding:0 24px 24px">
+                <div class="form-group">
+                    <label>Họ tên</label>
+                    <input type="text" id="newUserName" placeholder="Nguyễn Văn A" required>
+                </div>
+                <div class="form-group">
+                    <label>Email đăng nhập</label>
+                    <input type="email" id="newUserEmail" placeholder="nhanvien@thgfulfill.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Mật khẩu</label>
+                    <input type="password" id="newUserPassword" placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt" required>
+                </div>
+                <div class="form-group">
+                    <label>Vai trò</label>
+                    <select id="newUserRole">
+                        <option value="sales">Sales (xem + duyệt comment)</option>
+                        <option value="admin">Admin (toàn quyền)</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeCreateUserModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Tạo tài khoản</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal-overlay" id="editUserModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Chỉnh sửa tài khoản</h3>
+                <button class="btn-close" onclick="closeEditUserModal()">&times;</button>
+            </div>
+            <form onsubmit="submitEditUser(event)" style="padding:0 24px 24px">
+                <input type="hidden" id="editUserId">
+                <div class="form-group">
+                    <label>Họ tên</label>
+                    <input type="text" id="editUserName" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="editUserEmail" disabled style="opacity:0.6">
+                </div>
+                <div class="form-group">
+                    <label>Vai trò</label>
+                    <select id="editUserRole">
+                        <option value="sales">Sales</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Trạng thái</label>
+                    <select id="editUserActive">
+                        <option value="true">Hoạt động</option>
+                        <option value="false">Vô hiệu hóa</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Đặt lại mật khẩu <small style="color:var(--text-muted)">(để trống nếu không đổi)</small></label>
+                    <input type="password" id="editUserPassword" placeholder="Mật khẩu mới (tùy chọn)">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeEditUserModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Add Group Modal -->
@@ -585,28 +733,35 @@
     <!-- Toast -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <!-- Login Overlay -->
-    <div id="loginOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);align-items:center;justify-content:center">
-        <div class="modal glass" style="max-width:400px;width:90%">
-            <div class="modal-header">
-                <h3>🔐 Đăng nhập THG Scraper</h3>
+    <!-- Login Page (full screen) -->
+    <div id="loginPage" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
+        <div style="width:100%;max-width:420px;padding:20px">
+            <div class="glass" style="padding:40px;border-radius:20px">
+                <div style="text-align:center;margin-bottom:32px">
+                    <div style="font-size:52px;margin-bottom:12px">🕷️</div>
+                    <h1 style="font-size:22px;font-weight:700;margin:0 0 6px">THG Scraper</h1>
+                    <p style="color:var(--text-muted,#94a3b8);margin:0;font-size:14px">Đăng nhập để tiếp tục</p>
+                </div>
+                <form onsubmit="doLogin(event)">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="loginEmail" placeholder="admin@thgfulfill.com" required autocomplete="email" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>Mật khẩu</label>
+                        <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" style="width:100%">
+                    </div>
+                    <div id="loginError" style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)"></div>
+                    <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
+                    <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
+                        Quên mật khẩu? Liên hệ <strong>Admin</strong> để được reset
+                    </p>
+                </form>
             </div>
-            <form onsubmit="doLogin(event)" style="padding:0 24px 24px">
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="loginEmail" placeholder="admin@example.com" required autocomplete="email">
-                </div>
-                <div class="form-group">
-                    <label>Mật khẩu</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password">
-                </div>
-                <div id="loginError" style="color:#ef4444;font-size:13px;margin-bottom:12px;display:none"></div>
-                <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%">Đăng nhập</button>
-            </form>
         </div>
     </div>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
 </body>
 
 </html>

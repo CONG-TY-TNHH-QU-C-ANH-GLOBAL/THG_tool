@@ -119,11 +119,14 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	protected := authGroup.Group("", authpkg.RequireAuth(cfg.JWTSecret))
 	protected.Post("/logout", s.logout)
 	protected.Get("/me", s.me)
+	protected.Put("/me/password", s.changeOwnPassword)
 
 	// Admin-only auth routes
 	adminOnly := authpkg.RequireRole("admin")
 	protected.Post("/users", adminOnly, s.createUser)
 	protected.Get("/users", adminOnly, s.listUsers)
+	protected.Put("/users/:id", adminOnly, s.adminUpdateUser)
+	protected.Delete("/users/:id", adminOnly, s.adminDeleteUser)
 	protected.Get("/audit", adminOnly, s.getAuditLogs)
 
 	// Public health check (no auth required)

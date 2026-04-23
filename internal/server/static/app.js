@@ -9,13 +9,12 @@ let accessToken = localStorage.getItem('thg_token') || '';
 // ===== Auth =====
 
 function showLogin() {
-    const el = document.getElementById('loginOverlay');
-    el.style.display = 'flex';
+    document.getElementById('loginPage').style.display = 'flex';
     document.getElementById('loginEmail').focus();
 }
 
 function hideLogin() {
-    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('loginPage').style.display = 'none';
 }
 
 async function doLogin(e) {
@@ -43,8 +42,13 @@ async function doLogin(e) {
         }
         accessToken = data.access_token;
         localStorage.setItem('thg_token', accessToken);
+        if (data.user) {
+            localStorage.setItem('thg_user', JSON.stringify(data.user));
+            updateSidebarUser(data.user);
+        }
         hideLogin();
-        refreshData();
+        loadDashboard();
+        loadNicheTabs();
     } catch {
         errEl.textContent = 'Lỗi kết nối server';
         errEl.style.display = 'block';
@@ -58,7 +62,126 @@ function doLogout() {
     fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` } }).catch(() => {});
     accessToken = '';
     localStorage.removeItem('thg_token');
+    localStorage.removeItem('thg_user');
     showLogin();
+}
+
+function updateSidebarUser(user) {
+    const el = document.getElementById('sidebarUser');
+    if (el && user) el.textContent = `${user.name || user.email} (${user.role})`;
+}
+
+// ===== Settings Page =====
+
+async function loadSettingsPage() {
+    const user = await fetchAPI('/api/auth/me');
+    if (!user) return;
+    localStorage.setItem('thg_user', JSON.stringify(user));
+    updateSidebarUser(user);
+    document.getElementById('profileName').value = user.name || '';
+    document.getElementById('profileEmail').value = user.email || '';
+    document.getElementById('profileRole').value = user.role === 'admin' ? 'Admin' : 'Sales';
+    if (user.role === 'admin') {
+        document.getElementById('userMgmtSection').style.display = '';
+        loadUsersTable();
+    }
+}
+
+async function saveProfile() {
+    const name = document.getElementById('profileName').value.trim();
+    if (!name) return showToast('Vui lòng nhập tên', 'error');
+    const user = JSON.parse(localStorage.getItem('thg_user') || '{}');
+    const active = true;
+    const res = await fetchAPI(`/api/auth/users/${user.id}`, 'PUT', { name });
+    if (res) { showToast('Đã lưu thay đổi', 'success'); localStorage.setItem('thg_user', JSON.stringify({...user, name})); updateSidebarUser({...user, name}); }
+}
+
+async function changePassword() {
+    const current = document.getElementById('currentPassword').value;
+    const newPw = document.getElementById('newPassword').value;
+    const confirm = document.getElementById('confirmPassword').value;
+    if (!current || !newPw || !confirm) return showToast('Vui lòng điền đầy đủ', 'error');
+    if (newPw !== confirm) return showToast('Mật khẩu mới không khớp', 'error');
+    const res = await fetchAPI('/api/auth/me/password', 'PUT', { current_password: current, new_password: newPw, confirm_password: confirm });
+    if (res) {
+        showToast('Đổi mật khẩu thành công! Vui lòng đăng nhập lại', 'success');
+        document.getElementById('currentPassword').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('confirmPassword').value = '';
+        setTimeout(doLogout, 2000);
+    }
+}
+
+async function loadUsersTable() {
+    const res = await fetchAPI('/api/auth/users');
+    if (!res) return;
+    const currentUser = JSON.parse(localStorage.getItem('thg_user') || '{}');
+    renderTable('usersTable', res.users || [], u => `
+        <td>${esc(u.name)}</td>
+        <td>${esc(u.email)}</td>
+        <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:${u.role==='admin'?'rgba(139,92,246,0.2)':'rgba(16,185,129,0.2)'};color:${u.role==='admin'?'#a78bfa':'#6ee7b7'}">${u.role}</span></td>
+        <td><span style="color:${u.active?'#6ee7b7':'#f87171'}">${u.active?'Hoạt động':'Vô hiệu'}</span></td>
+        <td>${timeAgo(u.created_at)}</td>
+        <td style="display:flex;gap:4px">
+            <button class="btn btn-sm btn-ghost" onclick="showEditUserModal(${u.id},'${esc(u.name)}','${esc(u.email)}','${u.role}',${u.active})">✏️</button>
+            ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id},'${esc(u.name)}')">🗑️</button>` : ''}
+        </td>
+    `);
+}
+
+function showCreateUserModal() {
+    document.getElementById('createUserModal').style.display = 'flex';
+    document.getElementById('newUserName').value = '';
+    document.getElementById('newUserEmail').value = '';
+    document.getElementById('newUserPassword').value = '';
+    document.getElementById('newUserRole').value = 'sales';
+}
+function closeCreateUserModal() { document.getElementById('createUserModal').style.display = 'none'; }
+
+async function submitCreateUser(e) {
+    e.preventDefault();
+    const res = await fetchAPI('/api/auth/users', 'POST', {
+        name: document.getElementById('newUserName').value,
+        email: document.getElementById('newUserEmail').value,
+        password: document.getElementById('newUserPassword').value,
+        role: document.getElementById('newUserRole').value,
+    });
+    if (res) {
+        showToast(`Đã tạo tài khoản: ${res.email}`, 'success');
+        closeCreateUserModal();
+        loadUsersTable();
+    }
+}
+
+function showEditUserModal(id, name, email, role, active) {
+    document.getElementById('editUserModal').style.display = 'flex';
+    document.getElementById('editUserId').value = id;
+    document.getElementById('editUserName').value = name;
+    document.getElementById('editUserEmail').value = email;
+    document.getElementById('editUserRole').value = role;
+    document.getElementById('editUserActive').value = String(active);
+    document.getElementById('editUserPassword').value = '';
+}
+function closeEditUserModal() { document.getElementById('editUserModal').style.display = 'none'; }
+
+async function submitEditUser(e) {
+    e.preventDefault();
+    const id = document.getElementById('editUserId').value;
+    const newPw = document.getElementById('editUserPassword').value;
+    const payload = {
+        name: document.getElementById('editUserName').value,
+        role: document.getElementById('editUserRole').value,
+        active: document.getElementById('editUserActive').value === 'true',
+    };
+    if (newPw) payload.new_password = newPw;
+    const res = await fetchAPI(`/api/auth/users/${id}`, 'PUT', payload);
+    if (res) { showToast('Đã cập nhật tài khoản', 'success'); closeEditUserModal(); loadUsersTable(); }
+}
+
+async function deleteUser(id, name) {
+    if (!confirm(`Xóa tài khoản "${name}"? Hành động này không thể hoàn tác.`)) return;
+    const res = await fetchAPI(`/api/auth/users/${id}`, 'DELETE');
+    if (res) { showToast(`Đã xóa tài khoản ${name}`, 'success'); loadUsersTable(); }
 }
 
 // ===== Page Navigation =====
@@ -79,10 +202,12 @@ function switchPage(page) {
         accounts: ['Accounts', 'Facebook account management'],
         aichat: ['AI Chat', 'Gửi prompt để AI agents thực thi'],
         outbox: ['Outbox', 'Auto-comment & auto-inbox queue'],
+        settings: ['Settings', 'Tài khoản và cài đặt hệ thống'],
     };
     document.getElementById('pageTitle').textContent = titles[page][0];
     document.getElementById('pageSubtitle').textContent = titles[page][1];
     if (page === 'leads') loadNicheTabs();
+    if (page === 'settings') loadSettingsPage();
     refreshData();
 }
 
@@ -602,6 +727,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!accessToken) {
         showLogin();
     } else {
+        const savedUser = localStorage.getItem('thg_user');
+        if (savedUser) updateSidebarUser(JSON.parse(savedUser));
         loadDashboard();
         loadNicheTabs();
     }
