@@ -493,7 +493,10 @@ async function loadAccounts() {
 
 function showAddAccountModal() {
     document.getElementById('addAccountModal').classList.add('active');
-    ['accName', 'accEmail', 'accCookies', 'accProxy', 'accNotes'].forEach(id => document.getElementById(id).value = '');
+    ['accName', 'accEmail', 'accCookies', 'accProxy', 'accNotes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
     document.getElementById('accError').style.display = 'none';
     document.getElementById('cookieValidation').style.display = 'none';
 }
