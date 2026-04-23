@@ -3,7 +3,63 @@
 const API = '';
 let currentPage = 'dashboard';
 let refreshInterval = null;
-let activeNicheFilter = '';  // current niche tab filter
+let activeNicheFilter = '';
+let accessToken = localStorage.getItem('thg_token') || '';
+
+// ===== Auth =====
+
+function showLogin() {
+    const el = document.getElementById('loginOverlay');
+    el.style.display = 'flex';
+    document.getElementById('loginEmail').focus();
+}
+
+function hideLogin() {
+    document.getElementById('loginOverlay').style.display = 'none';
+}
+
+async function doLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    const btn = document.getElementById('loginBtn');
+    const errEl = document.getElementById('loginError');
+
+    btn.disabled = true;
+    btn.textContent = 'Đang đăng nhập...';
+    errEl.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            errEl.textContent = data.error || 'Email hoặc mật khẩu không đúng';
+            errEl.style.display = 'block';
+            return;
+        }
+        accessToken = data.access_token;
+        localStorage.setItem('thg_token', accessToken);
+        hideLogin();
+        refreshData();
+    } catch {
+        errEl.textContent = 'Lỗi kết nối server';
+        errEl.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Đăng nhập';
+    }
+}
+
+function doLogout() {
+    fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` } }).catch(() => {});
+    accessToken = '';
+    localStorage.removeItem('thg_token');
+    showLogin();
+}
 
 // ===== Page Navigation =====
 
@@ -172,7 +228,7 @@ async function submitAddNiche(e) {
 
 async function deleteLead(id) {
     if (!confirm('Xóa lead này?')) return;
-    const res = await fetch('/api/leads/' + id, { method: 'DELETE' });
+    const res = await fetch('/api/leads/' + id, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
     if (res.ok) { loadLeads(); loadDashboard(); }
 }
 
@@ -192,13 +248,13 @@ async function loadPosts() {
 
 async function deletePost(id) {
     if (!confirm('Xóa post này?')) return;
-    const res = await fetch('/api/posts/' + id, { method: 'DELETE' });
+    const res = await fetch('/api/posts/' + id, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
     if (res.ok) loadPosts();
 }
 
 async function deleteAllPosts() {
     if (!confirm('⚠️ Xóa TẤT CẢ posts? (Groups sẽ được giữ lại)')) return;
-    const res = await fetch('/api/posts/all', { method: 'DELETE' });
+    const res = await fetch('/api/posts/all', { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
     if (res.ok) {
         const data = await res.json();
         showToast(`Đã xóa ${data.deleted} posts`, 'success');
@@ -212,7 +268,7 @@ async function deleteAllLeads() {
     const scopeLabel = niche ? `lĩnh vực "${niche}"` : 'TẤT CẢ lĩnh vực';
     if (!confirm(`⚠️ Xóa leads của ${scopeLabel}? (Posts và groups sẽ được giữ lại)`)) return;
     const url = '/api/leads/all' + (niche ? `?niche=${encodeURIComponent(niche)}` : '');
-    const res = await fetch(url, { method: 'DELETE' });
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` } });
     if (res.ok) {
         const data = await res.json();
         showToast(`Đã xóa ${data.deleted} leads (${data.scope})`, 'success');
@@ -473,8 +529,10 @@ async function submitAddGroup(e) {
 async function fetchAPI(url, method = 'GET', body = null) {
     try {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (accessToken) opts.headers['Authorization'] = `Bearer ${accessToken}`;
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(API + url, opts);
+        if (res.status === 401) { showLogin(); return null; }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     } catch (e) { console.error(`API [${method} ${url}]:`, e); return null; }
@@ -541,7 +599,11 @@ function showToast(msg, type = 'info') {
 
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
-    loadDashboard();
-    loadNicheTabs();
+    if (!accessToken) {
+        showLogin();
+    } else {
+        loadDashboard();
+        loadNicheTabs();
+    }
     refreshInterval = setInterval(refreshData, 15000);
 });
