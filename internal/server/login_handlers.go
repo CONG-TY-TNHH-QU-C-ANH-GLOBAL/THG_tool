@@ -132,7 +132,7 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		"--no-first-run",
 		"--disable-default-apps",
 		"--window-size=1280,800",
-		"--headless=new",
+		"--headless",
 	)
 
 	cmd.Stdout = os.Stdout

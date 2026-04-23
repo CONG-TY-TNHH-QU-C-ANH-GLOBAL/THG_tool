@@ -12,7 +12,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "chrome",
+	cmd := exec.CommandContext(ctx, "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
 		"--no-sandbox",
 		"--disable-dev-shm-usage",
 		"--disable-gpu",
