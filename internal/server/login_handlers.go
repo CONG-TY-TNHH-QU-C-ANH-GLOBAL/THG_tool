@@ -133,6 +133,7 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		"--disable-default-apps",
 		"--window-size=1280,800",
 		"--headless",
+		"about:blank",
 	)
 
 	cmd.Stdout = os.Stdout
