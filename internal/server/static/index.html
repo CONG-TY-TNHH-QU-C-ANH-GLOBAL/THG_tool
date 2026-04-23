@@ -19,20 +19,24 @@
             scrollbar-width: auto !important;
             scrollbar-color: #8b5cf6 #1f2937 !important;
         }
+
         .table-wrapper::-webkit-scrollbar {
             height: 12px !important;
             width: 8px !important;
             display: block !important;
         }
+
         .table-wrapper::-webkit-scrollbar-track {
             background: #1f2937 !important;
             border-radius: 0 !important;
         }
+
         .table-wrapper::-webkit-scrollbar-thumb {
             background: #8b5cf6 !important;
             border-radius: 4px !important;
             border: 2px solid #1f2937 !important;
         }
+
         .data-table {
             min-width: 1400px !important;
         }
@@ -86,12 +90,15 @@
                 </a>
             </div>
             <div class="sidebar-footer">
-                <div id="sidebarUser" style="font-size:12px;color:var(--text-muted);padding:4px 0;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+                <div id="sidebarUser"
+                    style="font-size:12px;color:var(--text-muted);padding:4px 0;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                </div>
                 <div class="system-status" id="systemStatus">
                     <span class="status-dot online"></span>
                     <span>System Online</span>
                 </div>
-                <button class="btn btn-ghost" onclick="doLogout()" style="width:100%;margin-top:8px;font-size:13px">🚪 Đăng xuất</button>
+                <button class="btn btn-ghost" onclick="doLogout()" style="width:100%;margin-top:8px;font-size:13px">🚪
+                    Đăng xuất</button>
             </div>
         </nav>
 
@@ -187,18 +194,23 @@
             <!-- Leads Page -->
             <section class="page" id="page-leads">
                 <!-- Niche Tabs -->
-                <div class="niche-tabs-bar glass" style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-radius:12px;margin-bottom:16px;flex-wrap:wrap">
+                <div class="niche-tabs-bar glass"
+                    style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-radius:12px;margin-bottom:16px;flex-wrap:wrap">
                     <button class="niche-tab active" data-niche="" onclick="setActiveNiche(this,'')">📋 Tất cả</button>
                     <div id="nicheTabsContainer" style="display:contents"></div>
-                    <button id="btnRecruitCandidates" class="btn btn-sm btn-primary" onclick="recruitAllCandidates()" style="display:none;margin-left:4px">💼 Comment ứng viên</button>
-                    <button id="btnCreateJobPost" class="btn btn-sm btn-primary" onclick="showJobPostModal()" style="display:none;margin-left:4px">📋 Tạo JD</button>
-                    <button class="btn btn-sm btn-primary" onclick="showAddNicheModal()" style="margin-left:auto">+ Thêm lĩnh vực</button>
+                    <button id="btnRecruitCandidates" class="btn btn-sm btn-primary" onclick="recruitAllCandidates()"
+                        style="display:none;margin-left:4px">💼 Comment ứng viên</button>
+                    <button id="btnCreateJobPost" class="btn btn-sm btn-primary" onclick="showJobPostModal()"
+                        style="display:none;margin-left:4px">📋 Tạo JD</button>
+                    <button class="btn btn-sm btn-primary" onclick="showAddNicheModal()" style="margin-left:auto">+ Thêm
+                        lĩnh vực</button>
                 </div>
                 <div class="section-card glass">
                     <div class="section-header">
                         <h2 id="leadsTitle">🎯 Classified Leads</h2>
                         <div class="filter-bar" style="display:flex;gap:8px;align-items:center">
-                            <button class="btn btn-sm btn-danger" onclick="deleteAllLeads()" title="Xóa tất cả leads">🗑️ Xóa tất cả</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllLeads()"
+                                title="Xóa tất cả leads">🗑️ Xóa tất cả</button>
                             <select id="leadScoreFilter" onchange="loadLeads()">
                                 <option value="">All Scores</option>
                                 <option value="hot">🔥 Hot</option>
@@ -326,19 +338,23 @@
                 <div class="stats-grid" style="margin-bottom:16px" id="accountStatsGrid">
                     <div class="stat-card glass">
                         <div class="stat-icon">✅</div>
-                        <div class="stat-info"><span class="stat-value" id="accStatActive">0</span><span class="stat-label">Active</span></div>
+                        <div class="stat-info"><span class="stat-value" id="accStatActive">0</span><span
+                                class="stat-label">Active</span></div>
                     </div>
                     <div class="stat-card glass">
                         <div class="stat-icon">⏳</div>
-                        <div class="stat-info"><span class="stat-value" id="accStatCooldown">0</span><span class="stat-label">Cooldown</span></div>
+                        <div class="stat-info"><span class="stat-value" id="accStatCooldown">0</span><span
+                                class="stat-label">Cooldown</span></div>
                     </div>
                     <div class="stat-card glass">
                         <div class="stat-icon">🚫</div>
-                        <div class="stat-info"><span class="stat-value" id="accStatBanned">0</span><span class="stat-label">Banned</span></div>
+                        <div class="stat-info"><span class="stat-value" id="accStatBanned">0</span><span
+                                class="stat-label">Banned</span></div>
                     </div>
                     <div class="stat-card glass">
                         <div class="stat-icon">💤</div>
-                        <div class="stat-info"><span class="stat-value" id="accStatInactive">0</span><span class="stat-label">Inactive</span></div>
+                        <div class="stat-info"><span class="stat-value" id="accStatInactive">0</span><span
+                                class="stat-label">Inactive</span></div>
                     </div>
                 </div>
                 <!-- Account Table -->
@@ -348,9 +364,11 @@
                         <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Thêm tài khoản</button>
                     </div>
                     <!-- Security notice -->
-                    <div style="padding:10px 24px;background:rgba(139,92,246,0.08);border-bottom:1px solid var(--border-glass);font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px">
+                    <div
+                        style="padding:10px 24px;background:rgba(139,92,246,0.08);border-bottom:1px solid var(--border-glass);font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px">
                         <span>🔒</span>
-                        <span>Cookies được mã hóa AES-256-GCM. Chỉ admin mới thấy trạng thái — nội dung cookie không bao giờ hiển thị trên UI.</span>
+                        <span>Cookies được mã hóa AES-256-GCM. Chỉ admin mới thấy trạng thái — nội dung cookie không bao
+                            giờ hiển thị trên UI.</span>
                     </div>
                     <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
                         <table class="data-table" id="accountsTable">
@@ -442,7 +460,8 @@
                     <div class="section-header">
                         <h2>📤 Outbound Messages</h2>
                         <div class="filter-bar" style="display:flex;gap:8px;align-items:center">
-                            <button class="btn btn-sm btn-danger" onclick="resetAllComments()" title="Xóa toàn bộ outbound comments để comment lại từ đầu">🗑️ Reset comments</button>
+                            <button class="btn btn-sm btn-danger" onclick="resetAllComments()"
+                                title="Xóa toàn bộ outbound comments để comment lại từ đầu">🗑️ Reset comments</button>
                             <select id="outboxStatusFilter" onchange="loadOutbox()">
                                 <option value="">All</option>
                                 <option value="draft" selected>✏️ Draft</option>
@@ -475,7 +494,9 @@
                 <div style="display:grid;gap:16px;max-width:820px">
                     <!-- Profile -->
                     <div class="section-card glass">
-                        <div class="section-header"><h2>👤 Hồ sơ cá nhân</h2></div>
+                        <div class="section-header">
+                            <h2>👤 Hồ sơ cá nhân</h2>
+                        </div>
                         <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:420px">
                             <div class="form-group">
                                 <label>Tên hiển thị</label>
@@ -494,7 +515,9 @@
                     </div>
                     <!-- Change Password -->
                     <div class="section-card glass">
-                        <div class="section-header"><h2>🔑 Đổi mật khẩu</h2></div>
+                        <div class="section-header">
+                            <h2>🔑 Đổi mật khẩu</h2>
+                        </div>
                         <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:420px">
                             <div class="form-group">
                                 <label>Mật khẩu hiện tại</label>
@@ -502,7 +525,8 @@
                             </div>
                             <div class="form-group">
                                 <label>Mật khẩu mới</label>
-                                <input type="password" id="newPassword" placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt">
+                                <input type="password" id="newPassword"
+                                    placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt">
                             </div>
                             <div class="form-group">
                                 <label>Xác nhận mật khẩu mới</label>
@@ -517,7 +541,8 @@
                             <h2>👥 Quản lý tài khoản nhân viên</h2>
                         </div>
                         <div style="padding:12px 24px;border-bottom:1px solid var(--border-glass)">
-                            <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Tạo tài khoản mới</button>
+                            <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Tạo tài khoản
+                                mới</button>
                         </div>
                         <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
                             <table class="data-table" id="usersTable">
@@ -558,7 +583,8 @@
                 </div>
                 <div class="form-group">
                     <label>Mật khẩu</label>
-                    <input type="password" id="newUserPassword" placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt" required>
+                    <input type="password" id="newUserPassword"
+                        placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt" required>
                 </div>
                 <div class="form-group">
                     <label>Vai trò</label>
@@ -607,7 +633,8 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Đặt lại mật khẩu <small style="color:var(--text-muted)">(để trống nếu không đổi)</small></label>
+                    <label>Đặt lại mật khẩu <small style="color:var(--text-muted)">(để trống nếu không
+                            đổi)</small></label>
                     <input type="password" id="editUserPassword" placeholder="Mật khẩu mới (tùy chọn)">
                 </div>
                 <div class="form-actions">
@@ -659,8 +686,10 @@
             </div>
             <form onsubmit="submitAddAccount(event)" style="padding:0 24px 24px">
                 <!-- Quick mode banner -->
-                <div style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#a78bfa">
-                    🖥️ <strong>Cách nhanh nhất:</strong> Điền tên → nhấn <strong>"Tạo & Đăng nhập Chrome"</strong> → đăng nhập Facebook → xong!
+                <div
+                    style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#a78bfa">
+                    🖥️ <strong>Cách nhanh nhất:</strong> Điền tên → nhấn <strong>"Tạo & Đăng nhập Chrome"</strong> →
+                    đăng nhập Facebook → xong!
                 </div>
                 <div class="form-group">
                     <label>Tên tài khoản FB <span style="color:#ef4444">*</span></label>
@@ -668,7 +697,8 @@
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                     <div class="form-group">
-                        <label>Email Facebook <span style="color:var(--text-muted);font-size:11px">(tùy chọn)</span></label>
+                        <label>Email Facebook <span style="color:var(--text-muted);font-size:11px">(tùy
+                                chọn)</span></label>
                         <input type="text" id="accEmail" placeholder="email@example.com">
                     </div>
                     <div class="form-group">
@@ -690,17 +720,24 @@
                     </summary>
                     <div style="margin-top:10px">
                         <div class="form-group">
-                            <label>Cookies JSON <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256 khi lưu)</span></label>
-                            <textarea id="accCookies" rows="4" placeholder='[{"name":"c_user","value":"123456","domain":".facebook.com"},{"name":"xs","value":"..."}]' style="font-family:monospace;font-size:12px"></textarea>
+                            <label>Cookies JSON <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256 khi
+                                    lưu)</span></label>
+                            <textarea id="accCookies" rows="4"
+                                placeholder='[{"name":"c_user","value":"123456","domain":".facebook.com"},{"name":"xs","value":"..."}]'
+                                style="font-family:monospace;font-size:12px"></textarea>
                             <div id="cookieValidation" style="font-size:12px;margin-top:4px;display:none"></div>
                         </div>
-                        <button type="button" class="btn btn-sm btn-ghost" onclick="validateCookieJSON()">🔍 Kiểm tra JSON</button>
+                        <button type="button" class="btn btn-sm btn-ghost" onclick="validateCookieJSON()">🔍 Kiểm tra
+                            JSON</button>
                     </div>
                 </details>
-                <div id="accError" style="display:none;color:#ef4444;font-size:13px;padding:8px 12px;background:rgba(239,68,68,0.1);border-radius:8px;margin-bottom:12px"></div>
+                <div id="accError"
+                    style="display:none;color:#ef4444;font-size:13px;padding:8px 12px;background:rgba(239,68,68,0.1);border-radius:8px;margin-bottom:12px">
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Hủy</button>
-                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🖥️ Tạo & Đăng nhập Chrome</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🖥️ Tạo & Đăng
+                        nhập Chrome</button>
                     <button type="submit" class="btn btn-ghost" style="font-size:13px">Tạo (không login ngay)</button>
                 </div>
             </form>
@@ -716,12 +753,16 @@
             </div>
             <form onsubmit="submitUpdateCookie(event)" style="padding:0 24px 24px">
                 <input type="hidden" id="updateCookieAccId">
-                <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fcd34d">
-                    ⚠️ Cookie cũ sẽ bị thay thế hoàn toàn. Đảm bảo bạn đang đăng nhập trên Facebook trước khi export cookies.
+                <div
+                    style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fcd34d">
+                    ⚠️ Cookie cũ sẽ bị thay thế hoàn toàn. Đảm bảo bạn đang đăng nhập trên Facebook trước khi export
+                    cookies.
                 </div>
                 <div class="form-group">
-                    <label>Cookies JSON mới <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256)</span></label>
-                    <textarea id="updateCookieJSON" rows="6" placeholder='[{"name":"c_user","value":"..."}]' required style="font-family:monospace;font-size:12px"></textarea>
+                    <label>Cookies JSON mới <span style="color:var(--text-muted);font-size:11px">(mã hóa
+                            AES-256)</span></label>
+                    <textarea id="updateCookieJSON" rows="6" placeholder='[{"name":"c_user","value":"..."}]' required
+                        style="font-family:monospace;font-size:12px"></textarea>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="closeUpdateCookieModal()">Hủy</button>
@@ -744,34 +785,52 @@
                 </p>
 
                 <!-- Status banner -->
-                <div id="chromeLoginStatus" style="border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:14px;border:1px solid;display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#fcd34d">
+                <div id="chromeLoginStatus"
+                    style="border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:14px;border:1px solid;display:flex;align-items:center;gap:8px;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.3);color:#fcd34d">
                     ⏳ <span id="chromeStatusText">Đang khởi động Chrome...</span>
                 </div>
 
                 <!-- Step 1: SSH Tunnel -->
-                <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
-                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">BƯỚC 1 — MỞ SSH TUNNEL</p>
+                <div
+                    style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
+                    <p
+                        style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">
+                        BƯỚC 1 — MỞ SSH TUNNEL</p>
                     <div style="display:flex;gap:8px;align-items:center">
-                        <code id="chromeTunnelCmd" style="flex:1;font-size:11px;color:#a78bfa;background:rgba(139,92,246,0.08);padding:8px 10px;border-radius:6px;word-break:break-all;display:block"></code>
-                        <button class="btn btn-sm btn-ghost" onclick="copyTunnelCmd()" style="flex-shrink:0" title="Sao chép">📋</button>
+                        <code id="chromeTunnelCmd"
+                            style="flex:1;font-size:11px;color:#a78bfa;background:rgba(139,92,246,0.08);padding:8px 10px;border-radius:6px;word-break:break-all;display:block"></code>
+                        <button class="btn btn-sm btn-ghost" onclick="copyTunnelCmd()" style="flex-shrink:0"
+                            title="Sao chép">📋</button>
                     </div>
-                    <p style="font-size:11px;color:var(--text-muted);margin-top:6px">Chạy lệnh này trong terminal trên máy tính của bạn (giữ cửa sổ này mở).</p>
+                    <p style="font-size:11px;color:var(--text-muted);margin-top:6px">Chạy lệnh này trong terminal trên
+                        máy tính của bạn (giữ cửa sổ này mở).</p>
                 </div>
 
                 <!-- Step 2: DevTools -->
-                <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
-                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">BƯỚC 2 — ĐIỀU KHIỂN CHROME</p>
+                <div
+                    style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border-glass)">
+                    <p
+                        style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:0.05em">
+                        BƯỚC 2 — ĐIỀU KHIỂN CHROME</p>
                     <p style="font-size:13px;margin-bottom:6px">Mở Chrome trên máy tính của bạn, vào địa chỉ:</p>
-                    <code style="font-size:12px;color:#93c5fd;background:rgba(59,130,246,0.08);padding:6px 10px;border-radius:6px;display:block;margin-bottom:8px">chrome://inspect/#devices</code>
-                    <p style="font-size:12px;color:var(--text-muted)">→ Tìm target "facebook.com" → Click <strong style="color:var(--text-primary)">inspect</strong> → Chrome DevTools mở ra.</p>
-                    <p style="font-size:12px;color:var(--text-muted);margin-top:6px">Trong DevTools, dùng tab <strong style="color:var(--text-primary)">Console</strong> để điền thông tin đăng nhập:</p>
-                    <code style="display:block;font-size:11px;color:#6ee7b7;background:rgba(16,185,129,0.06);padding:8px 10px;border-radius:6px;margin-top:6px;word-break:break-all">document.querySelector('[name="email"]').value='email@facebook.com';<br>document.querySelector('[name="pass"]').value='password';<br>document.querySelector('[name="login"]').click();</code>
+                    <code
+                        style="font-size:12px;color:#93c5fd;background:rgba(59,130,246,0.08);padding:6px 10px;border-radius:6px;display:block;margin-bottom:8px">chrome://inspect/#devices</code>
+                    <p style="font-size:12px;color:var(--text-muted)">→ Tìm target "facebook.com" → Click <strong
+                            style="color:var(--text-primary)">inspect</strong> → Chrome DevTools mở ra.</p>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:6px">Trong DevTools, dùng tab <strong
+                            style="color:var(--text-primary)">Console</strong> để điền thông tin đăng nhập:</p>
+                    <code
+                        style="display:block;font-size:11px;color:#6ee7b7;background:rgba(16,185,129,0.06);padding:8px 10px;border-radius:6px;margin-top:6px;word-break:break-all">document.querySelector('[name="email"]').value='email@facebook.com';<br>document.querySelector('[name="pass"]').value='password';<br>document.querySelector('[name="login"]').click();</code>
                 </div>
 
                 <!-- Step 3: Capture -->
-                <div style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:20px;border:1px solid var(--border-glass)">
-                    <p style="font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600;letter-spacing:0.05em">BƯỚC 3 — LƯU SESSION</p>
-                    <p style="font-size:13px;color:var(--text-muted)">Sau khi đăng nhập thành công, hệ thống tự phát hiện và kích hoạt nút bên dưới.</p>
+                <div
+                    style="background:rgba(15,23,42,0.6);border-radius:8px;padding:14px;margin-bottom:20px;border:1px solid var(--border-glass)">
+                    <p
+                        style="font-size:12px;color:var(--text-muted);margin-bottom:4px;font-weight:600;letter-spacing:0.05em">
+                        BƯỚC 3 — LƯU SESSION</p>
+                    <p style="font-size:13px;color:var(--text-muted)">Sau khi đăng nhập thành công, hệ thống tự phát
+                        hiện và kích hoạt nút bên dưới.</p>
                     <p id="fbUserIdRow" style="display:none;font-size:13px;margin-top:6px;color:#6ee7b7">
                         ✅ Phát hiện tài khoản FB: <strong id="fbUserIdText">—</strong>
                     </p>
@@ -842,7 +901,8 @@
             <form onsubmit="submitAddNiche(event)">
                 <div class="form-group">
                     <label>Slug (ID nội bộ, không dấu, viết liền)</label>
-                    <input type="text" id="nicheSlug" placeholder="vd: bds, thuc_pham, may_mac" required pattern="[a-z0-9_]+">
+                    <input type="text" id="nicheSlug" placeholder="vd: bds, thuc_pham, may_mac" required
+                        pattern="[a-z0-9_]+">
                 </div>
                 <div class="form-group">
                     <label>Tên hiển thị</label>
@@ -853,7 +913,8 @@
                     <input type="text" id="nicheEmoji" placeholder="🏠" maxlength="4">
                 </div>
                 <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
-                    💡 Sau khi tạo, nói với bot: <strong>"cào group [lĩnh vực] [tên_slug]"</strong> để AI gắn đúng lĩnh vực cho leads
+                    💡 Sau khi tạo, nói với bot: <strong>"cào group [lĩnh vực] [tên_slug]"</strong> để AI gắn đúng lĩnh
+                    vực cho leads
                 </p>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="closeNicheModal()">Hủy</button>
@@ -867,7 +928,8 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- Login Page (full screen) -->
-    <div id="loginPage" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
+    <div id="loginPage"
+        style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
         <div style="width:100%;max-width:420px;padding:20px">
             <div class="glass" style="padding:40px;border-radius:20px">
                 <div style="text-align:center;margin-bottom:32px">
@@ -878,14 +940,19 @@
                 <form onsubmit="doLogin(event)">
                     <div class="form-group">
                         <label>Email</label>
-                        <input type="email" id="loginEmail" placeholder="admin@thgfulfill.com" required autocomplete="email" style="width:100%">
+                        <input type="email" id="loginEmail" placeholder="admin@thgfulfill.com" required
+                            autocomplete="email" style="width:100%">
                     </div>
                     <div class="form-group">
                         <label>Mật khẩu</label>
-                        <input type="password" id="loginPassword" placeholder="••••••••" required autocomplete="current-password" style="width:100%">
+                        <input type="password" id="loginPassword" placeholder="••••••••" required
+                            autocomplete="current-password" style="width:100%">
                     </div>
-                    <div id="loginError" style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)"></div>
-                    <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
+                    <div id="loginError"
+                        style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)">
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="loginBtn"
+                        style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
                     <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
                         Quên mật khẩu? Liên hệ <strong>Admin</strong> để được reset
                     </p>
@@ -894,7 +961,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
 </body>
 
 </html>
