@@ -1,6 +1,6 @@
 # Binary
-scraper
-scraper.exe
+/scraper
+/scraper.exe
 *.exe
 
 # Environment (contains secrets!)
