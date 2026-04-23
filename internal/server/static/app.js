@@ -868,16 +868,61 @@ async function submitAddGroup(e) {
 
 // ===== Utilities =====
 
-async function fetchAPI(url, method = 'GET', body = null) {
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+function subscribeTokenRefresh(cb) { refreshSubscribers.push(cb); }
+function onRefreshed(token) { refreshSubscribers.forEach(cb => cb(token)); refreshSubscribers = []; }
+
+async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
     try {
         const opts = { method, headers: { 'Content-Type': 'application/json' } };
         if (accessToken) opts.headers['Authorization'] = `Bearer ${accessToken}`;
         if (body) opts.body = JSON.stringify(body);
+
         const res = await fetch(API + url, opts);
-        if (res.status === 401) { showLogin(); return null; }
+
+        if (res.status === 401) {
+            if (retryCount >= 1) {
+                showLogin();
+                return null;
+            }
+            if (url === '/api/auth/refresh') {
+                showLogin();
+                return null;
+            }
+
+            if (!isRefreshing) {
+                isRefreshing = true;
+                try {
+                    const refreshRes = await fetch(API + '/api/auth/refresh', { method: 'POST' });
+                    if (!refreshRes.ok) throw new Error('Refresh failed');
+                    const data = await refreshRes.json();
+                    accessToken = data.access_token;
+                    localStorage.setItem('thg_token', accessToken);
+                    isRefreshing = false;
+                    onRefreshed(accessToken);
+                } catch (e) {
+                    isRefreshing = false;
+                    showLogin();
+                    return null;
+                }
+            }
+
+            // Wait for refresh to finish if another request triggered it
+            return new Promise(resolve => {
+                subscribeTokenRefresh(newToken => {
+                    resolve(fetchAPI(url, method, body, retryCount + 1));
+                });
+            });
+        }
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
-    } catch (e) { console.error(`API [${method} ${url}]:`, e); return null; }
+    } catch (e) {
+        if (retryCount === 0) console.error(`API [${method} ${url}]:`, e);
+        return null;
+    }
 }
 
 function renderTable(id, data, renderer) {
