@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -80,17 +81,49 @@ func (s *Server) resolveChromePath() string {
 	if s.cfg.ChromePath != "" {
 		return s.cfg.ChromePath
 	}
-	for _, p := range []string{
-		"/usr/bin/chromium-browser",
-		"/usr/bin/chromium",
-		"/usr/bin/google-chrome-stable",
-		"/usr/bin/google-chrome",
-	} {
-		if _, err := os.Stat(p); err == nil {
+
+	switch runtime.GOOS {
+	case "windows":
+		for _, p := range []string{
+			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+			`C:\Program Files\Chromium\Application\chrome.exe`,
+			`C:\Program Files (x86)\Chromium\Application\chrome.exe`,
+		} {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+		// Fallback: try "chrome" which may be on PATH via Windows App Paths registry
+		if p, err := exec.LookPath("chrome"); err == nil {
 			return p
 		}
+		return "chrome"
+
+	case "darwin":
+		for _, p := range []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+		} {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+		return "google-chrome"
+
+	default: // linux
+		for _, p := range []string{
+			"/usr/bin/chromium-browser",
+			"/usr/bin/chromium",
+			"/usr/bin/google-chrome-stable",
+			"/usr/bin/google-chrome",
+		} {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+		return "chromium-browser"
 	}
-	return "chromium-browser"
 }
 
 // startLoginSession launches a headless Chrome with the account's profile and remote debugging.
@@ -129,6 +162,9 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "cannot create profile dir"})
 	}
 
+	chromePath := s.resolveChromePath()
+	log.Printf("[Login] Chrome path resolved: %q (OS: %s, headless: %v)", chromePath, runtime.GOOS, s.cfg.Headless)
+
 	// Build Chrome launch args — add --headless=new when running on a VPS without display
 	chromArgs := []string{
 		"--user-data-dir=" + profileDir,
@@ -148,14 +184,20 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	cmd := exec.CommandContext(ctx, s.resolveChromePath(), chromArgs...)
+	cmd := exec.CommandContext(ctx, chromePath, chromArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		return c.Status(500).JSON(fiber.Map{"error": "failed to start Chrome: " + err.Error()})
+		log.Printf("[Login] ❌ Chrome start failed (path=%q): %v", chromePath, err)
+		return c.Status(500).JSON(fiber.Map{
+			"error":       fmt.Sprintf("Không thể mở Chrome: %v", err),
+			"chrome_path": chromePath,
+			"hint":        "Kiểm tra Chrome đã được cài đặt, hoặc set CHROME_PATH trong .env",
+		})
 	}
+	log.Printf("[Login] ✅ Chrome PID=%d started for account %d on port %d", cmd.Process.Pid, id, port)
 
 	// Navigate to Facebook login page after Chrome is ready
 	go func() {

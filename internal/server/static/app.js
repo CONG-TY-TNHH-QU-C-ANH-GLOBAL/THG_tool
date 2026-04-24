@@ -639,9 +639,21 @@ async function openDirectLogin(accountId) {
     setDlStatus('starting', 'Đang khởi động Chrome...', 'Vui lòng chờ trong giây lát');
     setDlStep(1, 'active'); setDlStep(2, 'inactive'); setDlStep(3, 'inactive');
 
-    const res = await fetchAPI(`/api/accounts/${accountId}/start-login`, 'POST');
-    if (!res) {
-        setDlStatus('error', 'Không thể khởi động Chrome', 'Kiểm tra Chrome đã được cài đặt chưa');
+    // Use raw fetch so we can read the error body on failure
+    let startData;
+    try {
+        const r = await fetch(`/api/accounts/${accountId}/start-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` }
+        });
+        startData = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            const hint = startData.hint || 'Kiểm tra Chrome đã cài đặt, hoặc set CHROME_PATH trong .env';
+            setDlStatus('error', startData.error || `Lỗi ${r.status}`, hint);
+            return;
+        }
+    } catch (e) {
+        setDlStatus('error', 'Lỗi kết nối server', e.message);
         return;
     }
 
