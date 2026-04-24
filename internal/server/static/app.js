@@ -42,6 +42,7 @@ async function doLogin(e) {
         }
         accessToken = data.access_token;
         localStorage.setItem('thg_token', accessToken);
+        if (data.refresh_token) localStorage.setItem('thg_refresh', data.refresh_token);
         if (data.user) {
             localStorage.setItem('thg_user', JSON.stringify(data.user));
             updateSidebarUser(data.user);
@@ -63,15 +64,16 @@ async function doLogin(e) {
 function doLogout() {
     if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
     const token = accessToken;
+    const refreshToken = localStorage.getItem('thg_refresh');
     accessToken = '';
     localStorage.removeItem('thg_token');
+    localStorage.removeItem('thg_refresh');
     localStorage.removeItem('thg_user');
     showLogin();
-    // Fire-and-forget — clear the refresh token cookie on server side
-    fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-    }).catch(() => { });
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (refreshToken) headers['X-Refresh-Token'] = refreshToken;
+    fetch('/api/auth/logout', { method: 'POST', headers }).catch(() => { });
 }
 
 function updateSidebarUser(user) {
@@ -928,25 +930,29 @@ async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
             if (!isRefreshing) {
                 isRefreshing = true;
                 try {
-                    const refreshRes = await fetch(API + '/api/auth/refresh', { method: 'POST' });
+                    const storedRefresh = localStorage.getItem('thg_refresh');
+                    const refreshHeaders = storedRefresh ? { 'X-Refresh-Token': storedRefresh } : {};
+                    const refreshRes = await fetch(API + '/api/auth/refresh', { method: 'POST', headers: refreshHeaders });
                     if (refreshRes.status === 429) {
                         console.warn('Refresh rate limited (429). Waiting for next interval.');
                         isRefreshing = false;
-                        onRefreshed(null); // Signal failure to subscribers
+                        onRefreshed(null);
                         return null;
                     }
                     if (!refreshRes.ok) throw new Error('Refresh failed');
                     const data = await refreshRes.json();
                     accessToken = data.access_token;
                     localStorage.setItem('thg_token', accessToken);
+                    if (data.refresh_token) localStorage.setItem('thg_refresh', data.refresh_token);
                     isRefreshing = false;
                     onRefreshed(accessToken);
                 } catch (e) {
                     isRefreshing = false;
                     accessToken = '';
                     localStorage.removeItem('thg_token');
+                    localStorage.removeItem('thg_refresh');
                     localStorage.removeItem('thg_user');
-                    onRefreshed(null); // release any queued requests
+                    onRefreshed(null);
                     if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
                     showLogin();
                     return null;
@@ -1048,14 +1054,18 @@ async function loadSystemInfo() {
 // ===== Session Restore =====
 
 // Always calls /api/auth/refresh on page load to get a server-verified fresh token.
-// The httpOnly refresh cookie (30-day TTL) is the source of truth — not localStorage.
+// Sends the refresh token via X-Refresh-Token header (works even when Cookie header
+// is stripped by a reverse proxy like nginx). Cookie is also sent as a fallback.
 // Returns true if a valid session was established.
 async function tryRestoreSession() {
+    const storedRefresh = localStorage.getItem('thg_refresh');
+    const headers = storedRefresh ? { 'X-Refresh-Token': storedRefresh } : {};
     try {
-        const res = await fetch('/api/auth/refresh', { method: 'POST' });
+        const res = await fetch('/api/auth/refresh', { method: 'POST', headers });
         if (!res.ok) {
             accessToken = '';
             localStorage.removeItem('thg_token');
+            localStorage.removeItem('thg_refresh');
             localStorage.removeItem('thg_user');
             return false;
         }
@@ -1063,6 +1073,7 @@ async function tryRestoreSession() {
         if (!data?.access_token) return false;
         accessToken = data.access_token;
         localStorage.setItem('thg_token', accessToken);
+        if (data.refresh_token) localStorage.setItem('thg_refresh', data.refresh_token);
         const savedUser = localStorage.getItem('thg_user');
         if (savedUser) updateSidebarUser(JSON.parse(savedUser));
         return true;
@@ -1080,6 +1091,7 @@ async function tryRestoreSession() {
         }
         accessToken = '';
         localStorage.removeItem('thg_token');
+        localStorage.removeItem('thg_refresh');
         localStorage.removeItem('thg_user');
         return false;
     }

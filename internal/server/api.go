@@ -112,7 +112,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
 		AllowMethods:     "GET,POST,PUT,DELETE",
-		AllowHeaders:     "Content-Type,Authorization",
+		AllowHeaders:     "Content-Type,Authorization,X-Refresh-Token",
 		ExposeHeaders:    "Content-Length",
 		AllowCredentials: true, // needed for httpOnly cookie refresh token
 	}))

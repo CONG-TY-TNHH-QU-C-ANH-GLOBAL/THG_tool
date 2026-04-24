@@ -96,8 +96,9 @@ func (s *Server) login(c *fiber.Ctx) error {
 	log.Printf("[Auth] Login: %s (role=%s) from %s", user.Email, user.Role, ip)
 
 	return c.JSON(fiber.Map{
-		"access_token": accessToken,
-		"expires_in":   int(auth.AccessTokenTTL.Seconds()),
+		"access_token":  accessToken,
+		"refresh_token": refreshToken, // also in body so clients behind cookie-stripping proxies can store it
+		"expires_in":    int(auth.AccessTokenTTL.Seconds()),
 		"user": fiber.Map{
 			"id":    user.ID,
 			"email": user.Email,
@@ -108,8 +109,13 @@ func (s *Server) login(c *fiber.Ctx) error {
 }
 
 // refresh handles POST /api/auth/refresh — rotates the refresh token, issues new access token.
+// Token is read from the httpOnly cookie first, then falls back to X-Refresh-Token header
+// (for clients behind reverse proxies that strip Cookie headers).
 func (s *Server) refresh(c *fiber.Ctx) error {
 	token := c.Cookies(refreshCookie)
+	if token == "" {
+		token = c.Get("X-Refresh-Token")
+	}
 	if token == "" {
 		return c.Status(401).JSON(fiber.Map{"error": "no refresh token"})
 	}
@@ -152,14 +158,18 @@ func (s *Server) refresh(c *fiber.Ctx) error {
 	})
 
 	return c.JSON(fiber.Map{
-		"access_token": accessToken,
-		"expires_in":   int(auth.AccessTokenTTL.Seconds()),
+		"access_token":  accessToken,
+		"refresh_token": newRefresh, // also in body for clients that can't rely on cookies
+		"expires_in":    int(auth.AccessTokenTTL.Seconds()),
 	})
 }
 
 // logout handles POST /api/auth/logout — deletes the refresh token and clears the cookie.
 func (s *Server) logout(c *fiber.Ctx) error {
 	token := c.Cookies(refreshCookie)
+	if token == "" {
+		token = c.Get("X-Refresh-Token")
+	}
 	if token != "" {
 		s.db.DeleteRefreshToken(token)
 	}
