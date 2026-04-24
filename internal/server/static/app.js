@@ -491,7 +491,7 @@ async function loadAccounts() {
             <td style="font-size:13px">${acc.last_used ? timeAgo(acc.last_used) : '<span style="color:var(--text-muted)">—</span>'}</td>
             <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(acc.notes || '')}">${esc(acc.notes || '—')}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap">
-                <button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Kết nối lại qua THG Login Agent" onclick="openAgentModal()">🔑 Login</button>
+                <button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Kết nối Facebook (mở Chrome tự động)" onclick="openDirectLogin(${acc.id})">🔑 Login</button>
                 ${isAdmin ? `<button class="btn btn-sm btn-ghost" title="Cập nhật cookie thủ công" onclick="showUpdateCookieModal(${acc.id})">🔄</button>` : ''}
                 ${isAdmin ? `<button class="btn btn-sm btn-ghost" title="${acc.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶️'}</button>` : ''}
                 ${isAdmin ? `<button class="btn btn-sm btn-danger" title="Xóa tài khoản" onclick="deleteAccount(${acc.id})">🗑</button>` : ''}
@@ -589,10 +589,9 @@ async function submitAddAccountAndLogin() {
 
     const res = await fetchAPI('/api/accounts', 'POST', data);
     if (res && res.account_id) {
-        showToast('Đã tạo tài khoản — hãy chạy THG Login Agent để đăng nhập Facebook', 'success');
         closeAccountModal();
         loadAccounts();
-        openAgentModal();
+        openDirectLogin(res.account_id);
     }
 }
 
@@ -627,67 +626,87 @@ async function deleteAccount(id) {
     loadAccounts();
 }
 
-// ===== Agent Login Modal =====
-// Staff downloads THG Login Agent, runs it on their local machine.
-// Agent opens Chrome locally, staff logs into Facebook, agent pushes cookies to server.
-// Dashboard polls /api/accounts until count increases = success.
+// ===== Direct Chrome Login =====
+let dlAccountId = null;
+let dlPoll = null;
 
-let agentPoll = null;
-let agentBaseCount = 0;
-
-async function openAgentModal() {
+async function openDirectLogin(accountId) {
+    dlAccountId = accountId;
     document.getElementById('chromeLoginModal').classList.add('active');
-    document.getElementById('agentSuccessBanner').style.display = 'none';
-    setAgentStatus('waiting');
+    document.getElementById('dlSuccess').style.display = 'none';
+    document.getElementById('dlDoneBtn').style.display = 'none';
+    document.getElementById('dlCancelBtn').style.display = '';
+    setDlStatus('starting', 'Đang khởi động Chrome...', 'Vui lòng chờ trong giây lát');
+    setDlStep(1, 'active'); setDlStep(2, 'inactive'); setDlStep(3, 'inactive');
 
-    // Show download buttons based on available agent builds
-    const info = await fetch('/api/system/info').then(r => r.json()).catch(() => ({}));
-    const builds = info.agent_builds || {};
-    const hasAny = builds.windows || builds.mac_intel || builds.mac_m1 || builds.linux;
-    document.getElementById('dlWindows').style.display = builds.windows ? '' : 'none';
-    document.getElementById('dlMacIntel').style.display = builds.mac_intel ? '' : 'none';
-    document.getElementById('dlMacM1').style.display = builds.mac_m1 ? '' : 'none';
-    document.getElementById('dlLinux').style.display = builds.linux ? '' : 'none';
-    document.getElementById('dlNoBuilds').style.display = hasAny ? 'none' : '';
+    const res = await fetchAPI(`/api/accounts/${accountId}/start-login`, 'POST');
+    if (!res) {
+        setDlStatus('error', 'Không thể khởi động Chrome', 'Kiểm tra Chrome đã được cài đặt chưa');
+        return;
+    }
 
-    // Snapshot current account count for change detection
-    const accRes = await fetchAPI('/api/accounts');
-    agentBaseCount = accRes ? (accRes.count || 0) : 0;
+    setDlStatus('waiting', 'Chrome đã mở! Hãy đăng nhập Facebook', 'Đăng nhập bình thường trong cửa sổ Chrome vừa mở');
+    setDlStep(1, 'done'); setDlStep(2, 'active');
 
-    if (agentPoll) clearInterval(agentPoll);
-    agentPoll = setInterval(pollForNewAccount, 3000);
+    if (dlPoll) clearInterval(dlPoll);
+    dlPoll = setInterval(pollChromeLogin, 2500);
 }
 
-function setAgentStatus(type) {
-    const banner = document.getElementById('agentStatusBanner');
-    const text = document.getElementById('agentStatusText');
-    const configs = {
-        waiting: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳', msg: 'Đang chờ đăng nhập từ THG Login Agent...' },
-        success: { bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅', msg: 'Tài khoản đã kết nối thành công!' },
-    };
-    const cfg = configs[type] || configs.waiting;
-    banner.style.background = cfg.bg;
-    banner.style.borderColor = cfg.border;
-    banner.style.color = cfg.color;
-    text.textContent = `${cfg.icon} ${cfg.msg}`;
-}
-
-async function pollForNewAccount() {
-    const res = await fetchAPI('/api/accounts');
+async function pollChromeLogin() {
+    if (!dlAccountId) return;
+    const res = await fetchAPI(`/api/accounts/${dlAccountId}/login-status`).catch(() => null);
     if (!res) return;
-    const newCount = res.count || 0;
-    if (newCount > agentBaseCount) {
-        clearInterval(agentPoll);
-        agentPoll = null;
-        setAgentStatus('success');
-        document.getElementById('agentSuccessBanner').style.display = '';
-        showToast('✅ Tài khoản Facebook đã được kết nối!', 'success');
-        loadAccounts();
+
+    if (res.logged_in) {
+        clearInterval(dlPoll); dlPoll = null;
+        setDlStatus('saving', 'Phát hiện đăng nhập! Đang lưu phiên...', '');
+        setDlStep(2, 'done'); setDlStep(3, 'active');
+
+        const cap = await fetchAPI(`/api/accounts/${dlAccountId}/capture-session`, 'POST');
+        if (cap && cap.status === 'saved') {
+            setDlStatus('success', 'Kết nối thành công!', `Đã lưu ${cap.cookies_count} cookies`);
+            setDlStep(3, 'done');
+            document.getElementById('dlSuccess').style.display = '';
+            document.getElementById('dlCancelBtn').style.display = 'none';
+            document.getElementById('dlDoneBtn').style.display = '';
+            showToast('✅ Tài khoản Facebook đã được kết nối!', 'success');
+            loadAccounts();
+        } else {
+            setDlStatus('error', 'Lưu phiên thất bại', cap?.error || 'Thử lại');
+        }
     }
 }
 
-function closeAgentModal() {
-    if (agentPoll) { clearInterval(agentPoll); agentPoll = null; }
+function setDlStatus(type, text, sub) {
+    const banner = document.getElementById('dlStatusBanner');
+    const cfgs = {
+        starting: { bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.3)',  color: '#93c5fd', icon: '🔄' },
+        waiting:  { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.3)',  color: '#fcd34d', icon: '⏳' },
+        saving:   { bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.3)', color: '#c4b5fd', icon: '💾' },
+        success:  { bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅' },
+        error:    { bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.3)',  color: '#fca5a5', icon: '❌' },
+    };
+    const c = cfgs[type] || cfgs.waiting;
+    banner.style.cssText = `padding:14px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px;background:${c.bg};border:1px solid ${c.border};color:${c.color}`;
+    document.getElementById('dlStatusIcon').textContent = c.icon;
+    document.getElementById('dlStatusText').textContent = text;
+    document.getElementById('dlStatusSub').textContent = sub || '';
+}
+
+const DL_STEP_TEXT = ['', 'Chrome đang mở trang đăng nhập Facebook', 'Đăng nhập Facebook trong cửa sổ Chrome', 'Hệ thống tự động lưu và kích hoạt tài khoản 🎉'];
+function setDlStep(n, state) {
+    const el = document.getElementById(`dlStep${n}`);
+    if (!el) return;
+    const colors = { active: '#c4b5fd', done: '#6ee7b7', inactive: 'var(--text-muted)' };
+    const prefix = { active: '▶ ', done: '✅ ', inactive: '' }[state] || '';
+    el.style.color = colors[state] || colors.inactive;
+    el.textContent = prefix + DL_STEP_TEXT[n];
+}
+
+function closeDirectLogin() {
+    if (dlPoll) { clearInterval(dlPoll); dlPoll = null; }
+    if (dlAccountId) fetchAPI(`/api/accounts/${dlAccountId}/stop-login`, 'POST').catch(() => {});
+    dlAccountId = null;
     document.getElementById('chromeLoginModal').classList.remove('active');
 }
 

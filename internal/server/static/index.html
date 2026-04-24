@@ -361,7 +361,7 @@
                 <div class="section-card glass">
                     <div class="section-header">
                         <h2>🔑 Facebook Accounts</h2>
-                        <button class="btn btn-primary btn-sm" onclick="openAgentModal()">+ Kết nối tài khoản Facebook</button>
+                        <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Kết nối tài khoản Facebook</button>
                     </div>
                     <!-- Security notice -->
                     <div
@@ -736,7 +736,7 @@
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Hủy</button>
-                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🔑 Tạo & Mở Agent Login</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🔑 Tạo & Mở Chrome Login</button>
                     <button type="submit" class="btn btn-ghost" style="font-size:13px">Tạo (không login ngay)</button>
                 </div>
             </form>
@@ -771,51 +771,41 @@
         </div>
     </div>
 
-    <!-- THG Login Agent Modal — staff adds Facebook account via local agent app -->
+    <!-- Direct Chrome Login Modal -->
     <div class="modal-overlay" id="chromeLoginModal">
-        <div class="modal glass" style="max-width:560px">
+        <div class="modal glass" style="max-width:480px">
             <div class="modal-header">
                 <h3>🔑 Kết nối tài khoản Facebook</h3>
-                <button class="btn-close" onclick="closeAgentModal()">&times;</button>
+                <button class="btn-close" onclick="closeDirectLogin()">&times;</button>
             </div>
             <div class="modal-content">
 
                 <!-- Status banner -->
-                <div id="agentStatusBanner" style="padding:12px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);color:#fcd34d">
-                    <span style="font-size:18px">⏳</span>
-                    <span id="agentStatusText">Đang chờ đăng nhập từ THG Login Agent...</span>
-                </div>
-
-                <!-- Step 1: Download -->
-                <div style="margin-bottom:20px">
-                    <div style="font-size:12px;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:10px;font-weight:600">BƯỚC 1 — TẢI ỨNG DỤNG VỀ MÁY CỦA BẠN</div>
-                    <div id="agentDownloadBtns" style="display:flex;flex-wrap:wrap;gap:8px">
-                        <a id="dlWindows" href="/downloads/thg-login-windows.exe" download class="btn btn-ghost" style="display:none;text-decoration:none">💻 Windows (.exe)</a>
-                        <a id="dlMacIntel" href="/downloads/thg-login-mac-intel" download class="btn btn-ghost" style="display:none;text-decoration:none">🍎 macOS Intel</a>
-                        <a id="dlMacM1" href="/downloads/thg-login-mac-m1" download class="btn btn-ghost" style="display:none;text-decoration:none">🍎 macOS M1/M2</a>
-                        <a id="dlLinux" href="/downloads/thg-login-linux" download class="btn btn-ghost" style="display:none;text-decoration:none">🐧 Linux</a>
-                        <span id="dlNoBuilds" style="display:none;font-size:13px;color:var(--text-muted);padding:8px 0">Liên hệ admin để nhận file THG Login Agent.</span>
+                <div id="dlStatusBanner" style="padding:14px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);color:#93c5fd">
+                    <span id="dlStatusIcon" style="font-size:22px">🔄</span>
+                    <div>
+                        <div id="dlStatusText" style="font-weight:500">Đang khởi động Chrome...</div>
+                        <div id="dlStatusSub" style="font-size:12px;margin-top:3px;opacity:0.75">Vui lòng chờ trong giây lát</div>
                     </div>
                 </div>
 
-                <!-- Step 2: Run -->
+                <!-- Steps -->
                 <div style="margin-bottom:20px;padding:16px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color)">
-                    <div style="font-size:12px;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:12px;font-weight:600">BƯỚC 2 — CHẠY ỨNG DỤNG VÀ ĐĂNG NHẬP</div>
-                    <ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.9;color:var(--text-primary)">
-                        <li>Mở file <strong>THG Login Agent</strong> vừa tải</li>
-                        <li>Nhập <strong>email &amp; mật khẩu</strong> đăng nhập bảng điều khiển THG</li>
-                        <li>Chrome tự động mở → đăng nhập <strong>Facebook</strong> bình thường</li>
-                        <li>Xong! Hệ thống tự động lưu và kích hoạt tài khoản 🎉</li>
+                    <ol style="margin:0;padding-left:20px;font-size:14px;line-height:2.1;color:var(--text-muted)">
+                        <li id="dlStep1">Chrome đang mở trang đăng nhập Facebook</li>
+                        <li id="dlStep2">Đăng nhập Facebook trong cửa sổ Chrome</li>
+                        <li id="dlStep3">Hệ thống tự động lưu và kích hoạt tài khoản 🎉</li>
                     </ol>
                 </div>
 
-                <!-- Success state (shown when account detected) -->
-                <div id="agentSuccessBanner" style="display:none;padding:14px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7">
+                <!-- Success -->
+                <div id="dlSuccess" style="display:none;padding:14px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7">
                     ✅ Tài khoản Facebook đã được kết nối thành công!
                 </div>
 
-                <div style="display:flex;justify-content:flex-end">
-                    <button type="button" class="btn btn-primary" onclick="closeAgentModal()">Đóng</button>
+                <div style="display:flex;justify-content:space-between">
+                    <button type="button" class="btn btn-ghost" id="dlCancelBtn" onclick="closeDirectLogin()">Hủy</button>
+                    <button type="button" class="btn btn-primary" id="dlDoneBtn" style="display:none" onclick="closeDirectLogin()">Đóng</button>
                 </div>
             </div>
         </div>
