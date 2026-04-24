@@ -946,6 +946,8 @@ async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
                     accessToken = '';
                     localStorage.removeItem('thg_token');
                     localStorage.removeItem('thg_user');
+                    onRefreshed(null); // release any queued requests
+                    if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
                     showLogin();
                     return null;
                 }
@@ -1045,24 +1047,18 @@ async function loadSystemInfo() {
 
 // ===== Session Restore =====
 
-// Tries to restore session on page load:
-// 1. If stored token is still valid (>30s remaining), use it directly.
-// 2. Otherwise, call /api/auth/refresh — the httpOnly cookie (30-day TTL) does the auth.
+// Always calls /api/auth/refresh on page load to get a server-verified fresh token.
+// The httpOnly refresh cookie (30-day TTL) is the source of truth — not localStorage.
 // Returns true if a valid session was established.
 async function tryRestoreSession() {
-    if (accessToken) {
-        try {
-            const payload = JSON.parse(atob(accessToken.split('.')[1]));
-            if (payload.exp * 1000 > Date.now() + 30000) {
-                const savedUser = localStorage.getItem('thg_user');
-                if (savedUser) updateSidebarUser(JSON.parse(savedUser));
-                return true;
-            }
-        } catch { /* malformed token — fall through */ }
-    }
     try {
         const res = await fetch('/api/auth/refresh', { method: 'POST' });
-        if (!res.ok) return false;
+        if (!res.ok) {
+            accessToken = '';
+            localStorage.removeItem('thg_token');
+            localStorage.removeItem('thg_user');
+            return false;
+        }
         const data = await res.json().catch(() => null);
         if (!data?.access_token) return false;
         accessToken = data.access_token;
@@ -1071,6 +1067,20 @@ async function tryRestoreSession() {
         if (savedUser) updateSidebarUser(JSON.parse(savedUser));
         return true;
     } catch {
+        // Network error: fall back to localStorage token if still valid
+        if (accessToken) {
+            try {
+                const payload = JSON.parse(atob(accessToken.split('.')[1]));
+                if (payload.exp * 1000 > Date.now() + 10000) {
+                    const savedUser = localStorage.getItem('thg_user');
+                    if (savedUser) updateSidebarUser(JSON.parse(savedUser));
+                    return true;
+                }
+            } catch { }
+        }
+        accessToken = '';
+        localStorage.removeItem('thg_token');
+        localStorage.removeItem('thg_user');
         return false;
     }
 }
