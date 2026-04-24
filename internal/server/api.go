@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -31,6 +33,9 @@ type Config struct {
 	AllowedOrigins string
 	ChromePath     string // path to Chrome/Chromium binary for login sessions
 	ProfileDir     string // base dir for Chrome persistent profiles
+	Headless       bool   // true = VPS without display; Chrome login uses SSH tunnel flow
+	ServerHost     string // public hostname/IP for SSH tunnel instructions
+	SSHPort        int    // SSH port for tunnel (default 22)
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -66,6 +71,32 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 		cfg:   cfg,
 	}
 
+	// Health check — no auth, no rate limiting, for load balancers / monitors
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok", "ts": time.Now().Unix()})
+	})
+
+	// System info — tells frontend which login mode and which agent downloads are available
+	app.Get("/api/system/info", func(c *fiber.Ctx) error {
+		downloadsDir := filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads")
+		agentBuilds := fiber.Map{
+			"windows":   fileExists(filepath.Join(downloadsDir, "thg-login-windows.exe")),
+			"mac_intel": fileExists(filepath.Join(downloadsDir, "thg-login-mac-intel")),
+			"mac_m1":    fileExists(filepath.Join(downloadsDir, "thg-login-mac-m1")),
+			"linux":     fileExists(filepath.Join(downloadsDir, "thg-login-linux")),
+		}
+		return c.JSON(fiber.Map{
+			"headless":     cfg.Headless,
+			"agent_builds": agentBuilds,
+		})
+	})
+
+	// Serve THG Login Agent binaries for staff download (built via `make build-agent`)
+	app.Static("/downloads", filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads"), fiber.Static{
+		Browse: false,
+		Download: true,
+	})
+
 	// --- Global Middleware ---
 
 	// 1. Request logging
@@ -87,9 +118,12 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	}))
 	log.Printf("[Server] CORS allowed origins: %s", corsOrigins)
 
-	// 3. General rate limiting — 100 req / 15 min per IP
-	app.Use(limiter.New(limiter.Config{
-		Max:        100,
+	// --- Route Groups ---
+	api := app.Group("/api")
+
+	// 3. General rate limiting — 1000 req / 15 min per IP (Applied to API only)
+	api.Use(limiter.New(limiter.Config{
+		Max:        1000,
 		Expiration: 15 * time.Minute,
 		KeyGenerator: func(c *fiber.Ctx) string {
 			return c.IP()
@@ -98,9 +132,6 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 			return c.Status(429).JSON(fiber.Map{"error": "too many requests — slow down"})
 		},
 	}))
-
-	// --- Route Groups ---
-	api := app.Group("/api")
 
 	// Auth routes (public) — stricter rate limit: 10 req / 15 min per IP
 	authLimiter := limiter.New(limiter.Config{
@@ -115,7 +146,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	})
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
-	authGroup.Post("/refresh", authLimiter, s.refresh)
+	authGroup.Post("/refresh", s.refresh)
 
 	// Auth routes (require valid JWT)
 	protected := authGroup.Group("", authpkg.RequireAuth(cfg.JWTSecret))
@@ -166,7 +197,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 
 	// Accounts — all staff can add their own; admin manages all
 	r.Get("/accounts", s.getAccounts)
-	r.Post("/accounts", s.addAccount)                              // any staff can register their FB account
+	r.Post("/accounts", s.addAccount) // any staff can register their FB account
 	r.Put("/accounts/:id/status", adminOnly, s.updateAccountStatus)
 	r.Put("/accounts/:id/cookies", adminOnly, s.updateAccountCookies)
 	r.Delete("/accounts/:id", adminOnly, s.deleteAccount)
@@ -699,4 +730,9 @@ func (s *Server) deleteAllOutboundComments(c *fiber.Ctx) error {
 	}
 	log.Printf("[API] Reset all outbound comments: %d deleted", count)
 	return c.JSON(fiber.Map{"ok": true, "deleted": count})
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

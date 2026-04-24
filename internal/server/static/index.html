@@ -361,7 +361,7 @@
                 <div class="section-card glass">
                     <div class="section-header">
                         <h2>🔑 Facebook Accounts</h2>
-                        <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Thêm tài khoản</button>
+                        <button class="btn btn-primary btn-sm" onclick="openAgentModal()">+ Kết nối tài khoản Facebook</button>
                     </div>
                     <!-- Security notice -->
                     <div
@@ -736,8 +736,7 @@
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Hủy</button>
-                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🖥️ Tạo & Đăng
-                        nhập Chrome</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🔑 Tạo & Mở Agent Login</button>
                     <button type="submit" class="btn btn-ghost" style="font-size:13px">Tạo (không login ngay)</button>
                 </div>
             </form>
@@ -772,53 +771,51 @@
         </div>
     </div>
 
-    <!-- Chrome Profile Login Modal -->
+    <!-- THG Login Agent Modal — staff adds Facebook account via local agent app -->
     <div class="modal-overlay" id="chromeLoginModal">
-        <div class="modal glass" style="max-width:620px">
+        <div class="modal glass" style="max-width:560px">
             <div class="modal-header">
-                <h3>🖥️ Đăng nhập Chrome Profile</h3>
-                <button class="btn-close" onclick="stopChromeSession()">&times;</button>
+                <h3>🔑 Kết nối tài khoản Facebook</h3>
+                <button class="btn-close" onclick="closeAgentModal()">&times;</button>
             </div>
-            <div class="modal-content" style="max-width:550px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-                    <h3 style="margin:0;font-size:18px;display:flex;align-items:center;gap:8px">
-                        🖥️ Đăng nhập qua THG Login Agent
-                    </h3>
-                    <span class="close" onclick="closeChromeLoginModal()">&times;</span>
+            <div class="modal-content">
+
+                <!-- Status banner -->
+                <div id="agentStatusBanner" style="padding:12px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);color:#fcd34d">
+                    <span style="font-size:18px">⏳</span>
+                    <span id="agentStatusText">Đang chờ đăng nhập từ THG Login Agent...</span>
                 </div>
 
-                <div style="margin-bottom:16px;font-size:14px;color:var(--text-muted)">
-                    Tài khoản: <strong style="color:var(--text-primary)" id="chromeLoginAccName">---</strong>
-                </div>
-
-                <div id="chromeSessionStatus"
-                    style="padding:12px;border-radius:6px;margin-bottom:20px;font-size:14px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.3);color:#a78bfa;display:flex;align-items:center;gap:8px">
-                    ℹ️ Vui lòng sử dụng phần mềm THG Local Agent
-                </div>
-
-                <div
-                    style="padding:16px;background:var(--bg-secondary);border-radius:8px;margin-bottom:16px;border:1px solid var(--border-color)">
-                    <h4 style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted);letter-spacing:0.5px">HƯỚNG DẪN
-                        DÀNH CHO SALE</h4>
-                    <div style="font-size:14px;line-height:1.5;color:var(--text-primary)">
-                        <p style="margin-top:0">Quy trình đăng nhập qua SSH đã được thay thế bằng phương thức bảo mật
-                            nội bộ.</p>
-                        <p>Để thêm tài khoản Facebook này vào hệ thống và kích hoạt hoàn toàn:</p>
-                        <ol style="margin-bottom:0;padding-left:20px">
-                            <li style="margin-bottom:8px">Nháy đúp chạy phần mềm <strong>THG_Login.exe</strong> trên màn
-                                hình máy tính của bạn.</li>
-                            <li style="margin-bottom:8px">Nhập Email quản lý THG và mật khẩu của bạn vào cửa sổ hiện ra.
-                            </li>
-                            <li style="margin-bottom:8px">Nhập đúng tên: <strong
-                                    id="chromeLoginAgentHintName">...</strong></li>
-                            <li style="margin-bottom:0">Đăng nhập tài khoản Facebook trên cửa sổ Chrome vừa mở ra. Hệ
-                                thống sẽ lấy cookie và tự động ghi nhận!</li>
-                        </ol>
+                <!-- Step 1: Download -->
+                <div style="margin-bottom:20px">
+                    <div style="font-size:12px;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:10px;font-weight:600">BƯỚC 1 — TẢI ỨNG DỤNG VỀ MÁY CỦA BẠN</div>
+                    <div id="agentDownloadBtns" style="display:flex;flex-wrap:wrap;gap:8px">
+                        <a id="dlWindows" href="/downloads/thg-login-windows.exe" download class="btn btn-ghost" style="display:none;text-decoration:none">💻 Windows (.exe)</a>
+                        <a id="dlMacIntel" href="/downloads/thg-login-mac-intel" download class="btn btn-ghost" style="display:none;text-decoration:none">🍎 macOS Intel</a>
+                        <a id="dlMacM1" href="/downloads/thg-login-mac-m1" download class="btn btn-ghost" style="display:none;text-decoration:none">🍎 macOS M1/M2</a>
+                        <a id="dlLinux" href="/downloads/thg-login-linux" download class="btn btn-ghost" style="display:none;text-decoration:none">🐧 Linux</a>
+                        <span id="dlNoBuilds" style="display:none;font-size:13px;color:var(--text-muted);padding:8px 0">Liên hệ admin để nhận file THG Login Agent.</span>
                     </div>
                 </div>
 
+                <!-- Step 2: Run -->
+                <div style="margin-bottom:20px;padding:16px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color)">
+                    <div style="font-size:12px;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:12px;font-weight:600">BƯỚC 2 — CHẠY ỨNG DỤNG VÀ ĐĂNG NHẬP</div>
+                    <ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.9;color:var(--text-primary)">
+                        <li>Mở file <strong>THG Login Agent</strong> vừa tải</li>
+                        <li>Nhập <strong>email &amp; mật khẩu</strong> đăng nhập bảng điều khiển THG</li>
+                        <li>Chrome tự động mở → đăng nhập <strong>Facebook</strong> bình thường</li>
+                        <li>Xong! Hệ thống tự động lưu và kích hoạt tài khoản 🎉</li>
+                    </ol>
+                </div>
+
+                <!-- Success state (shown when account detected) -->
+                <div id="agentSuccessBanner" style="display:none;padding:14px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7">
+                    ✅ Tài khoản Facebook đã được kết nối thành công!
+                </div>
+
                 <div style="display:flex;justify-content:flex-end">
-                    <button type="button" class="btn btn-ghost" onclick="closeChromeLoginModal()">Đóng Cửa Sổ</button>
+                    <button type="button" class="btn btn-primary" onclick="closeAgentModal()">Đóng</button>
                 </div>
             </div>
         </div>
@@ -939,7 +936,7 @@
             </div>
         </div>
 
-        <script src="app.js?v=10"></script>
+        <script src="app.js?v=13"></script>
 </body>
 
 </html>

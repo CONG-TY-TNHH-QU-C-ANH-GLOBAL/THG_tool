@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -34,6 +35,9 @@ type Config struct {
 	// Chrome
 	ChromePath string
 	ProfileDir string // persistent Chrome profile directory
+	Headless   bool   // true = no display server; auto-detected or forced via HEADLESS=true
+	ServerHost string // public hostname/IP used in SSH tunnel instructions
+	SSHPort    int    // SSH port for tunnel instructions (default 22)
 
 	// Web
 	WebPort int
@@ -65,6 +69,9 @@ func Load() *Config {
 		AdminName:          getEnv("ADMIN_NAME", "Admin"),
 		ChromePath:         getEnv("CHROME_PATH", ""),
 		ProfileDir:         getEnv("PROFILE_DIR", "data/profiles"),
+		Headless:           detectHeadless(),
+		ServerHost:         getEnv("SERVER_HOST", ""),
+		SSHPort:            getEnvInt("SSH_PORT", 22),
 		WebPort:            getEnvInt("WEB_PORT", 8080),
 		DBPath:             getEnv("DB_PATH", "data/scraper.db"),
 		BackupEnabled:      getEnv("BACKUP_ENABLED", "true") == "true",
@@ -81,6 +88,18 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+// detectHeadless returns true when forced via HEADLESS=true env var, or when
+// running on Linux without an X11/Wayland display (i.e. a headless VPS).
+func detectHeadless() bool {
+	if strings.ToLower(os.Getenv("HEADLESS")) == "true" {
+		return true
+	}
+	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return true
+	}
+	return false
 }
 
 func getEnv(key, fallback string) string {

@@ -49,6 +49,8 @@ async function doLogin(e) {
         hideLogin();
         loadDashboard();
         loadNicheTabs();
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(() => { if (!document.hidden) refreshData(); }, 15000);
     } catch {
         errEl.textContent = 'Lỗi kết nối server';
         errEl.style.display = 'block';
@@ -59,10 +61,11 @@ async function doLogin(e) {
 }
 
 function doLogout() {
-    fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}` } }).catch(() => { });
+    if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
     accessToken = '';
     localStorage.removeItem('thg_token');
     localStorage.removeItem('thg_user');
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => { });
     showLogin();
 }
 
@@ -298,8 +301,14 @@ async function loadNicheTabs() {
     if (!res || !res.niches) return;
     const container = document.getElementById('nicheTabsContainer');
     container.innerHTML = res.niches.map(n =>
-        `<button class="niche-tab" data-niche="${esc(n.slug)}" onclick="setActiveNiche(this,'${esc(n.slug)}')">${esc(n.emoji)} ${esc(n.name)}</button>`
+        `<button class="niche-tab ${activeNicheFilter === n.slug ? 'active' : ''}" data-niche="${esc(n.slug)}" onclick="setActiveNiche(this,'${esc(n.slug)}')">${esc(n.emoji)} ${esc(n.name)}</button>`
     ).join('');
+
+    // Ensure "Tất cả" tab has active if no specific niche is selected
+    if (activeNicheFilter === '') {
+        const allBtn = document.querySelector('.niche-tab[data-niche=""]');
+        if (allBtn) allBtn.classList.add('active');
+    }
 }
 
 function setActiveNiche(el, niche) {
@@ -482,7 +491,7 @@ async function loadAccounts() {
             <td style="font-size:13px">${acc.last_used ? timeAgo(acc.last_used) : '<span style="color:var(--text-muted)">—</span>'}</td>
             <td style="font-size:12px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(acc.notes || '')}">${esc(acc.notes || '—')}</td>
             <td style="display:flex;gap:4px;flex-wrap:wrap">
-                <button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Đăng nhập Chrome Profile" onclick="startChromeLogin(${acc.id},'${esc(acc.name)}')">🖥️ Login</button>
+                <button class="btn btn-sm" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3)" title="Kết nối lại qua THG Login Agent" onclick="openAgentModal()">🔑 Login</button>
                 ${isAdmin ? `<button class="btn btn-sm btn-ghost" title="Cập nhật cookie thủ công" onclick="showUpdateCookieModal(${acc.id})">🔄</button>` : ''}
                 ${isAdmin ? `<button class="btn btn-sm btn-ghost" title="${acc.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}" onclick="toggleAccountStatus(${acc.id}, '${acc.status === 'active' ? 'inactive' : 'active'}')">${acc.status === 'active' ? '⏸' : '▶️'}</button>` : ''}
                 ${isAdmin ? `<button class="btn btn-sm btn-danger" title="Xóa tài khoản" onclick="deleteAccount(${acc.id})">🗑</button>` : ''}
@@ -580,10 +589,10 @@ async function submitAddAccountAndLogin() {
 
     const res = await fetchAPI('/api/accounts', 'POST', data);
     if (res && res.account_id) {
-        showToast('Đã tạo tài khoản, đang khởi động Chrome...', 'success');
+        showToast('Đã tạo tài khoản — hãy chạy THG Login Agent để đăng nhập Facebook', 'success');
         closeAccountModal();
         loadAccounts();
-        startChromeLogin(res.account_id, data.name);
+        openAgentModal();
     }
 }
 
@@ -618,88 +627,68 @@ async function deleteAccount(id) {
     loadAccounts();
 }
 
-// ===== Chrome Profile Login =====
+// ===== Agent Login Modal =====
+// Staff downloads THG Login Agent, runs it on their local machine.
+// Agent opens Chrome locally, staff logs into Facebook, agent pushes cookies to server.
+// Dashboard polls /api/accounts until count increases = success.
 
-let chromeLoginPoll = null;
-let chromeLoginAccId = null;
+let agentPoll = null;
+let agentBaseCount = 0;
 
-async function startChromeLogin(id, name) {
-    chromeLoginAccId = id;
-
-    // Instead of calling backend, we just tell the user to use THG_Login.exe
-    document.getElementById('chromeLoginAccName').textContent = name;
-
-    // Set hint name in the instructions
-    const hintEl = document.getElementById('chromeLoginAgentHintName');
-    if (hintEl) hintEl.textContent = name;
-
+async function openAgentModal() {
     document.getElementById('chromeLoginModal').classList.add('active');
+    document.getElementById('agentSuccessBanner').style.display = 'none';
+    setAgentStatus('waiting');
+
+    // Show download buttons based on available agent builds
+    const info = await fetch('/api/system/info').then(r => r.json()).catch(() => ({}));
+    const builds = info.agent_builds || {};
+    const hasAny = builds.windows || builds.mac_intel || builds.mac_m1 || builds.linux;
+    document.getElementById('dlWindows').style.display = builds.windows ? '' : 'none';
+    document.getElementById('dlMacIntel').style.display = builds.mac_intel ? '' : 'none';
+    document.getElementById('dlMacM1').style.display = builds.mac_m1 ? '' : 'none';
+    document.getElementById('dlLinux').style.display = builds.linux ? '' : 'none';
+    document.getElementById('dlNoBuilds').style.display = hasAny ? 'none' : '';
+
+    // Snapshot current account count for change detection
+    const accRes = await fetchAPI('/api/accounts');
+    agentBaseCount = accRes ? (accRes.count || 0) : 0;
+
+    if (agentPoll) clearInterval(agentPoll);
+    agentPoll = setInterval(pollForNewAccount, 3000);
 }
 
-function setChromeStatus(status, fbUserId) {
-    const el = document.getElementById('chromeLoginStatus');
-    const textEl = document.getElementById('chromeStatusText');
-    const cfgs = {
-        starting: { text: 'Chrome đang khởi động...', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
-        checking: { text: 'Đang kiểm tra trạng thái...', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
-        waiting: { text: 'Chờ đăng nhập Facebook... (hãy làm theo hướng dẫn bên dưới)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳' },
-        logged_in: { text: `Đã đăng nhập thành công! Nhấn "Capture & Save Cookies" để lưu.`, bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅' },
-        no_session: { text: 'Không có phiên Chrome nào đang chạy.', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.3)', color: '#fca5a5', icon: '❌' },
+function setAgentStatus(type) {
+    const banner = document.getElementById('agentStatusBanner');
+    const text = document.getElementById('agentStatusText');
+    const configs = {
+        waiting: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.3)', color: '#fcd34d', icon: '⏳', msg: 'Đang chờ đăng nhập từ THG Login Agent...' },
+        success: { bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.3)', color: '#6ee7b7', icon: '✅', msg: 'Tài khoản đã kết nối thành công!' },
     };
-    const cfg = cfgs[status] || cfgs.checking;
-    el.style.background = cfg.bg;
-    el.style.borderColor = cfg.border;
-    el.style.color = cfg.color;
-    textEl.textContent = `${cfg.icon} ${cfg.text}`;
-    if (fbUserId) {
-        document.getElementById('fbUserIdRow').style.display = 'block';
-        document.getElementById('fbUserIdText').textContent = fbUserId;
-    }
+    const cfg = configs[type] || configs.waiting;
+    banner.style.background = cfg.bg;
+    banner.style.borderColor = cfg.border;
+    banner.style.color = cfg.color;
+    text.textContent = `${cfg.icon} ${cfg.msg}`;
 }
 
-async function pollChromeLoginStatus() {
-    if (!chromeLoginAccId) return;
-    const res = await fetchAPI(`/api/accounts/${chromeLoginAccId}/login-status`).catch(() => null);
+async function pollForNewAccount() {
+    const res = await fetchAPI('/api/accounts');
     if (!res) return;
-    setChromeStatus(res.status, res.fb_user_id);
-    if (res.logged_in) {
-        document.getElementById('captureSessionBtn').disabled = false;
-        if (chromeLoginPoll) { clearInterval(chromeLoginPoll); chromeLoginPoll = null; }
-    }
-}
-
-async function captureChromeSession() {
-    if (!chromeLoginAccId) return;
-    const btn = document.getElementById('captureSessionBtn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Đang lưu...';
-    const res = await fetchAPI(`/api/accounts/${chromeLoginAccId}/capture-session`, 'POST', {});
-    if (res) {
-        showToast(`✅ Đã lưu ${res.cookies_count} cookies cho tài khoản FB: ${res.fb_user_id}`, 'success');
-        closeChromeLoginModal();
+    const newCount = res.count || 0;
+    if (newCount > agentBaseCount) {
+        clearInterval(agentPoll);
+        agentPoll = null;
+        setAgentStatus('success');
+        document.getElementById('agentSuccessBanner').style.display = '';
+        showToast('✅ Tài khoản Facebook đã được kết nối!', 'success');
         loadAccounts();
-    } else {
-        btn.disabled = false;
-        btn.textContent = '💾 Capture & Save Cookies';
     }
 }
 
-async function stopChromeSession() {
-    if (chromeLoginPoll) { clearInterval(chromeLoginPoll); chromeLoginPoll = null; }
-    if (chromeLoginAccId) {
-        fetchAPI(`/api/accounts/${chromeLoginAccId}/stop-login`, 'POST', {}).catch(() => { });
-    }
-    closeChromeLoginModal();
-}
-
-function closeChromeLoginModal() {
-    chromeLoginAccId = null;
+function closeAgentModal() {
+    if (agentPoll) { clearInterval(agentPoll); agentPoll = null; }
     document.getElementById('chromeLoginModal').classList.remove('active');
-}
-
-function copyTunnelCmd() {
-    const text = document.getElementById('chromeTunnelCmd').textContent;
-    navigator.clipboard.writeText(text).then(() => showToast('Đã sao chép lệnh SSH tunnel', 'info'));
 }
 
 // ===== AI Chat =====
@@ -889,6 +878,12 @@ async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
                 isRefreshing = true;
                 try {
                     const refreshRes = await fetch(API + '/api/auth/refresh', { method: 'POST' });
+                    if (refreshRes.status === 429) {
+                        console.warn('Refresh rate limited (429). Waiting for next interval.');
+                        isRefreshing = false;
+                        onRefreshed(null); // Signal failure to subscribers
+                        return null;
+                    }
                     if (!refreshRes.ok) throw new Error('Refresh failed');
                     const data = await refreshRes.json();
                     accessToken = data.access_token;
@@ -897,6 +892,9 @@ async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
                     onRefreshed(accessToken);
                 } catch (e) {
                     isRefreshing = false;
+                    accessToken = '';
+                    localStorage.removeItem('thg_token');
+                    localStorage.removeItem('thg_user');
                     showLogin();
                     return null;
                 }
@@ -905,7 +903,11 @@ async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
             // Wait for refresh to finish if another request triggered it
             return new Promise(resolve => {
                 subscribeTokenRefresh(newToken => {
-                    resolve(fetchAPI(url, method, body, retryCount + 1));
+                    if (newToken) {
+                        resolve(fetchAPI(url, method, body, retryCount + 1));
+                    } else {
+                        resolve(null);
+                    }
                 });
             });
         }
@@ -977,8 +979,22 @@ function showToast(msg, type = 'info') {
     setTimeout(() => t.remove(), 3000);
 }
 
+// ===== System Info (headless mode detection) =====
+let serverHeadless = false;
+
+async function loadSystemInfo() {
+    try {
+        const res = await fetch('/api/system/info');
+        if (res.ok) {
+            const data = await res.json();
+            serverHeadless = !!data.headless;
+        }
+    } catch { /* non-critical */ }
+}
+
 // ===== Init =====
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadSystemInfo();
     if (!accessToken) {
         showLogin();
     } else {
@@ -987,5 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadDashboard();
         loadNicheTabs();
     }
-    refreshInterval = setInterval(refreshData, 15000);
+    if (accessToken) {
+        refreshInterval = setInterval(() => { if (!document.hidden) refreshData(); }, 15000);
+    }
 });

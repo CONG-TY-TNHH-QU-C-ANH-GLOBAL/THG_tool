@@ -88,8 +88,8 @@ func (s *Server) login(c *fiber.Ctx) error {
 		Path:     cookiePath,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "Strict",
+		Secure:   false, // set to true only in production with HTTPS
+		SameSite: "Lax",
 	})
 
 	s.db.InsertAuditLog(user.ID, "login_success", ip, `{}`)
@@ -147,8 +147,8 @@ func (s *Server) refresh(c *fiber.Ctx) error {
 		Path:     cookiePath,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "Strict",
+		Secure:   false, // set to true only in production with HTTPS
+		SameSite: "Lax",
 	})
 
 	return c.JSON(fiber.Map{
@@ -169,8 +169,8 @@ func (s *Server) logout(c *fiber.Ctx) error {
 		Path:     cookiePath,
 		Expires:  time.Unix(0, 0),
 		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "Strict",
+		Secure:   false, // set to true only in production with HTTPS
+		SameSite: "Lax",
 	})
 	userID, _ := c.Locals("user_id").(int64)
 	s.db.InsertAuditLog(userID, "logout", c.IP(), `{}`)

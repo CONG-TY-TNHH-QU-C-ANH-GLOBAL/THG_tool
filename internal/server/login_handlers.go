@@ -28,6 +28,9 @@ type loginSession struct {
 
 var loginSessions sync.Map // map[int64]*loginSession
 
+// maxConcurrentSessions prevents OOM on VPS when users click Login multiple times.
+const maxConcurrentSessions = 5
+
 func findFreePort() (int, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -39,7 +42,7 @@ func findFreePort() (int, error) {
 
 // chromeBrowserWS returns the browser-level WebSocket URL from Chrome's debug endpoint.
 func chromeBrowserWS(port int) (string, error) {
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
 	if err != nil {
 		return "", fmt.Errorf("chrome not ready: %w", err)
@@ -98,11 +101,17 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
 
-	// Kill any existing session for this account
+	// Enforce global cap to prevent OOM from multiple concurrent Chrome processes
 	if old, ok := loginSessions.Load(id); ok {
 		old.(*loginSession).cancel()
 		loginSessions.Delete(id)
 		time.Sleep(600 * time.Millisecond)
+	} else {
+		count := 0
+		loginSessions.Range(func(_, _ any) bool { count++; return true })
+		if count >= maxConcurrentSessions {
+			return c.Status(429).JSON(fiber.Map{"error": "too many Chrome sessions active — please stop another session first"})
+		}
 	}
 
 	account, err := s.db.GetAccount(id)
@@ -120,9 +129,9 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "cannot create profile dir"})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	cmd := exec.CommandContext(ctx, s.resolveChromePath(),
-		"--user-data-dir="+profileDir,
+	// Build Chrome launch args — add --headless=new when running on a VPS without display
+	chromArgs := []string{
+		"--user-data-dir=" + profileDir,
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		"--remote-debugging-address=127.0.0.1",
 		"--no-sandbox",
@@ -132,10 +141,14 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		"--no-first-run",
 		"--disable-default-apps",
 		"--window-size=1280,800",
-		"--headless",
 		"about:blank",
-	)
+	}
+	if s.cfg.Headless {
+		chromArgs = append([]string{"--headless=new"}, chromArgs...)
+	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	cmd := exec.CommandContext(ctx, s.resolveChromePath(), chromArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -144,9 +157,8 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to start Chrome: " + err.Error()})
 	}
 
-	// Keep Chrome alive via about:blank, but navigate to Facebook via CDP
+	// Navigate to Facebook login page after Chrome is ready
 	go func() {
-		// Wait for Chrome remote debugging to come up
 		time.Sleep(2 * time.Second)
 		bCtx, bCancel, err := cdpContext(port, 30*time.Second)
 		if err == nil {
@@ -165,12 +177,25 @@ func (s *Server) startLoginSession(c *fiber.Ctx) error {
 		log.Printf("[Login] Chrome session ended for account %d. Process error: %v", id, err)
 	}()
 
-	log.Printf("[Login] Chrome started for account %d on port %d (profile: %s)", id, port, profileDir)
+	// Build SSH tunnel command using configurable server host
+	serverHost := s.cfg.ServerHost
+	if serverHost == "" {
+		serverHost = c.Hostname()
+	}
+	sshPort := s.cfg.SSHPort
+	if sshPort == 0 {
+		sshPort = 22
+	}
+	tunnelCmd := fmt.Sprintf("ssh -L %d:127.0.0.1:%d root@%s -p %d -N", port, port, serverHost, sshPort)
+
+	log.Printf("[Login] Chrome started for account %d on port %d (headless=%v, profile: %s)", id, port, s.cfg.Headless, profileDir)
 	return c.JSON(fiber.Map{
-		"port":         port,
-		"status":       "starting",
-		"account_name": account.Name,
-		"tunnel":       fmt.Sprintf("ssh -L %d:127.0.0.1:%d -p 24700 -N root@103.216.117.194", port, port),
+		"port":          port,
+		"status":        "starting",
+		"account_name":  account.Name,
+		"headless":      s.cfg.Headless,
+		"tunnel":        tunnelCmd,
+		"devtools_host": fmt.Sprintf("localhost:%d", port),
 	})
 }
 

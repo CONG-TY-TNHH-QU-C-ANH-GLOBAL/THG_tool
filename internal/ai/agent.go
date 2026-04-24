@@ -54,11 +54,14 @@ func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (strin
 	// Load dynamic user context (business rules, niche, etc.)
 	userContext := a.loadUserContext()
 
+	// Load accounts for AI account mapping
+	accounts, _ := a.db.GetAllAccounts()
+
 	// Get semantically relevant few-shot examples
 	fewShots := a.getFewShotExamples(prompt)
 
 	// Build system prompt with dynamic context injected
-	sysPrompt := buildDynamicSystemPrompt(userContext)
+	sysPrompt := buildDynamicSystemPrompt(userContext, accounts)
 
 	// Build messages
 	messages := []map[string]string{
@@ -212,7 +215,7 @@ func (a *Agent) learnFromPrompt(prompt string) {
 
 // buildDynamicSystemPrompt creates the AI Operator system prompt.
 // Fully driven by BusinessProfile — no hardcoded niche strings.
-func buildDynamicSystemPrompt(userCtx map[string]string) string {
+func buildDynamicSystemPrompt(userCtx map[string]string, accounts []models.Account) string {
 	profile := ProfileFromContext(userCtx)
 	var sb strings.Builder
 
@@ -258,6 +261,25 @@ KHÔNG hành xử như generic assistant. Mọi action phải phục vụ busine
 	}
 	if userCtx["last_image_upload"] != "" {
 		sb.WriteString("Có ảnh doanh nghiệp trong DB để đính kèm comment/inbox.\n\n")
+	}
+
+	// ── ACCOUNTS ─────────────────────────────────────────────────────────────
+	if len(accounts) > 0 {
+		sb.WriteString("## TÀI KHOẢN FACEBOOK (ACCOUNT MAPPING)\n")
+		sb.WriteString("Danh sách accounts hiện có. Khi user đề cập đến account, map về account_id và LUÔN truyền vào tool call:\n\n")
+		for i, acc := range accounts {
+			letter := string(rune('A' + i))
+			sb.WriteString(fmt.Sprintf("- Account %s / Tài khoản %d → ID=%d | Tên: %s | Trạng thái: %s\n",
+				letter, i+1, acc.ID, acc.Name, string(acc.Status)))
+		}
+		sb.WriteString(`
+Ví dụ mapping (QUAN TRỌNG — luôn truyền account_id đúng vào tool call):
+- "account A tìm khách" → search_groups(query="...", account_id=<ID account A>)
+- "dùng account B inbox hết" → inbox_all_leads(account_id=<ID account B>)
+- "account 2 comment tất cả leads" → comment_all_leads(account_id=<ID account B>)
+- "tài khoản Nguyen Van A outreach ứng viên" → recruit_all_candidates(account_id=<ID của Nguyen Van A>)
+
+`)
 	}
 
 	// ── 4. INTENT CLASSIFICATION ─────────────────────────────────────────────
@@ -726,13 +748,14 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "comment_all_leads",
-			"description": "Comment tất cả leads hiện tại. AI soạn comment riêng cho từng lead, hoặc dùng template user cung cấp. Nếu auto_comment_mode=true thì comment ngay không cần duyệt. Dùng khi user nói 'comment tất cả leads', 'bình luận hết', 'comment all', 'comment leads kèm ảnh'.",
+			"description": "Comment tất cả leads hiện tại. AI soạn comment riêng cho từng lead, hoặc dùng template user cung cấp. Nếu auto_comment_mode=true thì comment ngay không cần duyệt. Dùng khi user nói 'comment tất cả leads', 'bình luận hết', 'comment all', 'comment leads kèm ảnh'. Nếu user chỉ định account, truyền account_id.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"template":     map[string]string{"type": "string", "description": "Mẫu comment (nếu có). Để trống = AI tự soạn phù hợp từng lead"},
 					"score_filter": map[string]string{"type": "string", "description": "Lọc theo score: hot, warm, cold, hoặc all (mặc định: all)"},
 					"with_image":   map[string]string{"type": "boolean", "description": "Kèm ảnh thực tế từ database khi comment. true/false"},
+					"account_id":   map[string]string{"type": "integer", "description": "ID account dùng để comment (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
 				},
 			},
 		},
@@ -758,12 +781,13 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "inbox_all_leads",
-			"description": "Inbox tất cả leads hiện tại. AI soạn tin nhắn riêng cho từng lead và gửi luôn qua Messenger. Dùng khi user nói 'inbox tất cả leads', 'nhắn tin hết leads', 'inbox all', 'gửi tin nhắn tất cả'.",
+			"description": "Inbox tất cả leads hiện tại. AI soạn tin nhắn riêng cho từng lead và gửi luôn qua Messenger. Dùng khi user nói 'inbox tất cả leads', 'nhắn tin hết leads', 'inbox all', 'gửi tin nhắn tất cả'. Nếu user chỉ định account, truyền account_id.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"score_filter": map[string]string{"type": "string", "description": "Lọc theo score: hot, warm, cold, hoặc all (mặc định: hot)"},
 					"skip_sent":    map[string]string{"type": "boolean", "description": "Bỏ qua leads đã inbox rồi. true/false (mặc định: true)"},
+					"account_id":   map[string]string{"type": "integer", "description": "ID account dùng để inbox (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
 				},
 			},
 		},
@@ -794,11 +818,12 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "recruit_all_candidates",
-			"description": "Comment outreach tất cả ứng viên (candidates) đang tìm việc. AI soạn comment cá nhân hóa dựa trên JD đang có, gửi đến từng bài của ứng viên. Dùng khi user nói 'comment ứng viên', 'outreach candidates', 'tiếp cận ứng viên', 'comment tất cả ứng viên'.",
+			"description": "Comment outreach tất cả ứng viên (candidates) đang tìm việc. AI soạn comment cá nhân hóa dựa trên JD đang có, gửi đến từng bài của ứng viên. Dùng khi user nói 'comment ứng viên', 'outreach candidates', 'tiếp cận ứng viên', 'comment tất cả ứng viên'. Nếu user chỉ định account, truyền account_id.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"score_filter": map[string]string{"type": "string", "description": "Lọc theo score: hot, warm, cold, hoặc all (mặc định: hot)"},
+					"account_id":   map[string]string{"type": "integer", "description": "ID account dùng để comment (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
 				},
 			},
 		},
@@ -881,12 +906,13 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "search_groups",
-			"description": "Tìm kiếm nhóm Facebook theo keywords. AI tự sinh keywords từ prompt của user. Tool tự add groups vào danh sách theo dõi và tự submit cào ngay.",
+			"description": "Tìm kiếm nhóm Facebook theo keywords. AI tự sinh keywords từ prompt của user. Tool tự add groups vào danh sách theo dõi và tự submit cào ngay. Nếu user chỉ định account, truyền account_id để tìm kiếm bằng session của account đó.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"query": map[string]string{"type": "string", "description": "Keywords để tìm FB groups (VD: 'tuyển dụng kho vận', 'việc làm logistics')"},
-					"niche": map[string]string{"type": "string", "description": "Lĩnh vực đang làm (VD: 'tuyen_dung', 'logistics'). Tool này sẽ auto set_context active_niche luôn."},
+					"query":      map[string]string{"type": "string", "description": "Keywords để tìm FB groups (VD: 'tuyển dụng kho vận', 'việc làm logistics')"},
+					"niche":      map[string]string{"type": "string", "description": "Lĩnh vực đang làm (VD: 'tuyen_dung', 'logistics'). Tool này sẽ auto set_context active_niche luôn."},
+					"account_id": map[string]string{"type": "integer", "description": "ID account dùng để tìm kiếm (từ ACCOUNT MAPPING). Bỏ trống = dùng session mặc định."},
 				},
 				"required": []string{"query"},
 			},

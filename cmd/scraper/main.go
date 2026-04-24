@@ -26,7 +26,11 @@ func main() {
 	log.Println("🕷️  THG Agentic Scraper v2 — Starting...")
 
 	// Load .env file (optional)
-	_ = godotenv.Load()
+	if err := godotenv.Load(); err != nil {
+		log.Printf("ℹ️  Note: .env file not found or could not be loaded: %v", err)
+	} else {
+		log.Println("✅ .env file loaded successfully")
+	}
 
 	// Load configuration
 	cfg := config.Load()
@@ -162,6 +166,9 @@ func main() {
 		AllowedOrigins: cfg.AllowedOrigins,
 		ChromePath:     cfg.ChromePath,
 		ProfileDir:     cfg.ProfileDir,
+		Headless:       cfg.Headless,
+		ServerHost:     cfg.ServerHost,
+		SSHPort:        cfg.SSHPort,
 	})
 	go func() {
 		if err := srv.Start(); err != nil {

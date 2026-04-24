@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,8 +50,13 @@ func NewPool(size int, chromePath, proxyURL, profileDir string) (*Pool, error) {
 		profileDir: profileDir,
 	}
 
-	// Determine headless mode: default=false (visible), set HEADLESS=true for headless
+	// Determine headless mode.
+	// Priority: HEADLESS=true env → Linux without display → visible (local dev)
 	headless := strings.ToLower(os.Getenv("HEADLESS")) == "true"
+	if !headless && runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		headless = true
+		log.Println("[BrowserPool] No display server detected — auto-switching to HEADLESS mode")
+	}
 	if headless {
 		log.Println("[BrowserPool] Running in HEADLESS mode")
 	} else {
