@@ -587,8 +587,23 @@ async function submitAddAccountAndLogin() {
         notes: (document.getElementById('accNotes')?.value || '').trim(),
     };
 
-    const res = await fetchAPI('/api/accounts', 'POST', data);
-    if (res && res.account_id) {
+    const r = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify(data)
+    }).catch(e => { showToast('Lỗi kết nối: ' + e.message, 'error'); return null; });
+
+    if (!r) return;
+
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        const errEl = document.getElementById('accError');
+        errEl.textContent = res.error || `Lỗi ${r.status} — thử đăng xuất và đăng nhập lại`;
+        errEl.style.display = 'block';
+        return;
+    }
+
+    if (res.account_id) {
         closeAccountModal();
         loadAccounts();
         openDirectLogin(res.account_id);
