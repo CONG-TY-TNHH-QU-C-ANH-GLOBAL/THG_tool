@@ -1043,18 +1043,51 @@ async function loadSystemInfo() {
     } catch { /* non-critical */ }
 }
 
-// ===== Init =====
-document.addEventListener('DOMContentLoaded', async () => {
-    await loadSystemInfo();
-    if (!accessToken) {
-        showLogin();
-    } else {
+// ===== Session Restore =====
+
+// Tries to restore session on page load:
+// 1. If stored token is still valid (>30s remaining), use it directly.
+// 2. Otherwise, call /api/auth/refresh — the httpOnly cookie (30-day TTL) does the auth.
+// Returns true if a valid session was established.
+async function tryRestoreSession() {
+    if (accessToken) {
+        try {
+            const payload = JSON.parse(atob(accessToken.split('.')[1]));
+            if (payload.exp * 1000 > Date.now() + 30000) {
+                const savedUser = localStorage.getItem('thg_user');
+                if (savedUser) updateSidebarUser(JSON.parse(savedUser));
+                return true;
+            }
+        } catch { /* malformed token — fall through */ }
+    }
+    try {
+        const res = await fetch('/api/auth/refresh', { method: 'POST' });
+        if (!res.ok) return false;
+        const data = await res.json().catch(() => null);
+        if (!data?.access_token) return false;
+        accessToken = data.access_token;
+        localStorage.setItem('thg_token', accessToken);
         const savedUser = localStorage.getItem('thg_user');
         if (savedUser) updateSidebarUser(JSON.parse(savedUser));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// ===== Init =====
+document.addEventListener('DOMContentLoaded', async () => {
+    // Show login immediately — hide only after session is confirmed
+    showLogin();
+    await loadSystemInfo();
+
+    const restored = await tryRestoreSession();
+    if (restored) {
+        hideLogin();
         loadDashboard();
         loadNicheTabs();
-    }
-    if (accessToken) {
+        if (refreshInterval) clearInterval(refreshInterval);
         refreshInterval = setInterval(() => { if (!document.hidden) refreshData(); }, 15000);
     }
+    // If restore failed, login form stays visible — user must log in manually
 });

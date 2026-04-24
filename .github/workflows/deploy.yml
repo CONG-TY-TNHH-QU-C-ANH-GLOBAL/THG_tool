@@ -111,29 +111,3 @@ jobs:
           fi
           sudo journalctl -u thg-scraper --no-pager -n 30
           exit 1
-
-    - name: Notify via Telegram
-      if: always()
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
-      run: |
-        if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ADMIN_CHAT_ID" ]; then
-          echo "Telegram secrets not set — skipping"
-          exit 0
-        fi
-
-        if [ "${{ job.status }}" = "success" ]; then
-          ICON="✅"; MSG="Deploy thành công! ($TARGET_ARCH)"
-        else
-          ICON="❌"; MSG="Deploy THẤT BẠI — kiểm tra logs!"
-        fi
-
-        COMMIT=$(echo "${{ github.event.head_commit.message }}" | head -c 80 | tr '\n' ' ')
-        URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-        TEXT="${ICON} ${MSG}%0ABranch: ${{ github.ref_name }}%0ACommit: ${COMMIT}%0ADetails: ${URL}"
-        curl -sf -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-          --data-urlencode "chat_id=${TELEGRAM_ADMIN_CHAT_ID}" \
-          --data-urlencode "text=${TEXT}" \
-          --data-urlencode "parse_mode=HTML" || true

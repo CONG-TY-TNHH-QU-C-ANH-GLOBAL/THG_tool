@@ -13,7 +13,7 @@ import (
 
 const (
 	AccessTokenTTL  = 15 * time.Minute
-	RefreshTokenTTL = 7 * 24 * time.Hour
+	RefreshTokenTTL = 30 * 24 * time.Hour
 	BcryptCost      = 12
 
 	MaxFailedAttempts = 5
