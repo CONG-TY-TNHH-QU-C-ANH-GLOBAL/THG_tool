@@ -147,10 +147,10 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
 	authGroup.Post("/refresh", s.refresh)
+	authGroup.Post("/logout", s.logout) // no JWT required — only needs refresh token cookie
 
 	// Auth routes (require valid JWT)
 	protected := authGroup.Group("", authpkg.RequireAuth(cfg.JWTSecret))
-	protected.Post("/logout", s.logout)
 	protected.Get("/me", s.me)
 	protected.Put("/me", s.updateOwnProfile)
 	protected.Put("/me/password", s.changeOwnPassword)

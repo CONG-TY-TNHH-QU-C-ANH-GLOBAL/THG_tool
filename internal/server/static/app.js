@@ -62,11 +62,16 @@ async function doLogin(e) {
 
 function doLogout() {
     if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
+    const token = accessToken;
     accessToken = '';
     localStorage.removeItem('thg_token');
     localStorage.removeItem('thg_user');
-    fetch('/api/auth/logout', { method: 'POST' }).catch(() => { });
     showLogin();
+    // Fire-and-forget — clear the refresh token cookie on server side
+    fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    }).catch(() => { });
 }
 
 function updateSidebarUser(user) {
