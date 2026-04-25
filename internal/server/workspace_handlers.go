@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"runtime"
 	"strconv"
@@ -70,7 +71,8 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 
 	inst, err := s.workspace.Start(id, acc.Name)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		log.Printf("[Workspace] Failed to start Chrome for account %d: %v", id, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Chrome start failed: %v", err)})
 	}
 
 	cdpPort := inst.CDPPort

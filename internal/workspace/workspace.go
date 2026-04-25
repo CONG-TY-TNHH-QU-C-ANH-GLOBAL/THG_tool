@@ -102,10 +102,17 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 	profileDir := m.profileDirLocked(accountID)
 	_ = os.MkdirAll(profileDir, 0755)
 
+	// Remove Chrome singleton lock files left by crashed sessions — without this,
+	// Chrome refuses to start a second time against the same profile directory.
+	for _, lockFile := range []string{"SingletonLock", "SingletonCookie", "SingletonSocket"} {
+		_ = os.Remove(filepath.Join(profileDir, lockFile))
+	}
+
 	chromePath := m.chromePath
 	if chromePath == "" {
 		chromePath = defaultChromePath()
 	}
+	log.Printf("[Workspace] Chrome binary: %s", chromePath)
 
 	args := []string{
 		"--no-first-run",

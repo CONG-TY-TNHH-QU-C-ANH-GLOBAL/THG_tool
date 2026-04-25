@@ -256,14 +256,14 @@ func (s *Server) dispatchCDPInput(accountID int64, evt map[string]any) {
 
 // waitForChromeWS polls the Chrome CDP endpoint until it responds (up to 10s).
 func waitForChromeWS(cdpPort int) (string, error) {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 20; i++ {
 		wsURL, err := chromeBrowserWS(cdpPort)
 		if err == nil {
 			return wsURL, nil
 		}
 		time.Sleep(1 * time.Second)
 	}
-	return "", fmt.Errorf("chrome not ready on port %d", cdpPort)
+	return "", fmt.Errorf("chrome not ready on port %d after 20s — check that CHROME_PATH is set correctly and Chrome is installed", cdpPort)
 }
 
 func cdpMouseButton(v any) input.MouseButton {

@@ -5,6 +5,7 @@ let currentPage = 'dashboard';
 let refreshInterval = null;
 let activeNicheFilter = '';
 let accessToken = localStorage.getItem('thg_token') || '';
+let lastApiError = null; // last non-OK response body, read by error handlers
 
 // ===== Auth =====
 
@@ -163,7 +164,19 @@ function updateSidebarUser(user) {
 function toggleUserMenu(e) {
     if (e) e.stopPropagation();
     const d = document.getElementById('userMenuDropdown');
-    if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
+    if (!d) return;
+    if (d.style.display === 'block') {
+        d.style.display = 'none';
+        return;
+    }
+    // Use fixed positioning so the dropdown escapes overflow:hidden on .main-content
+    const wrap = document.getElementById('userMenuWrap');
+    const rect = wrap.getBoundingClientRect();
+    d.style.position = 'fixed';
+    d.style.top = (rect.bottom + 6) + 'px';
+    d.style.right = (window.innerWidth - rect.right) + 'px';
+    d.style.left = '';
+    d.style.display = 'block';
 }
 
 function closeUserMenu() {
@@ -281,7 +294,9 @@ async function browserStartSelected() {
     if (!res) {
         btn.textContent = '▶ START';
         btn.disabled = false;
-        showBrowserPlaceholder('Khởi động thất bại — xem Logs để biết lý do');
+        const errMsg = (lastApiError && lastApiError.error) || 'Chrome không khởi động được — kiểm tra CHROME_PATH trong .env';
+        showBrowserPlaceholder(errMsg);
+        showToast(errMsg, 'error');
         return;
     }
 
@@ -1554,7 +1569,10 @@ async function fetchAPI(url, method = 'GET', body = null, retryCount = 0) {
             });
         }
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+            try { lastApiError = await res.json(); } catch { lastApiError = null; }
+            throw new Error((lastApiError && lastApiError.error) || `HTTP ${res.status}`);
+        }
         return await res.json();
     } catch (e) {
         if (retryCount === 0) console.error(`API [${method} ${url}]:`, e);
