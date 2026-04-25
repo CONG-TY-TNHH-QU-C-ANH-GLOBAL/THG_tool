@@ -67,14 +67,14 @@ jobs:
         target: "/tmp/"
         overwrite: true
 
-    - name: Deploy docker build files and service definition
+    - name: Deploy docker build files, service and nginx config
       uses: appleboy/scp-action@v0.1.7
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         port: ${{ secrets.SERVER_PORT || 22 }}
-        source: "docker/,deploy/thg-scraper.service"
+        source: "docker/,deploy/thg-scraper.service,deploy/nginx.conf"
         target: "/tmp/thg-deploy/"
         overwrite: true
 
@@ -118,6 +118,13 @@ jobs:
 
           # Ensure thg-scraper user can run Docker
           usermod -aG docker thg-scraper 2>/dev/null || true
+
+          # Deploy nginx config and reload (WebSocket headers + CSP update)
+          if [ -f /tmp/thg-deploy/deploy/nginx.conf ]; then
+            sudo cp /tmp/thg-deploy/deploy/nginx.conf /etc/nginx/sites-available/thg-scraper
+            sudo ln -sf /etc/nginx/sites-available/thg-scraper /etc/nginx/sites-enabled/thg-scraper
+            sudo nginx -t && sudo systemctl reload nginx && echo "✅ nginx reloaded"
+          fi
 
           # Restart service
           sudo systemctl restart thg-scraper

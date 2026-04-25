@@ -79,7 +79,8 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 		ServerHeader: "THG-Scraper",
 		BodyLimit:    4 * 1024 * 1024, // 4 MB max body
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: 0, // no timeout — WebSocket (noVNC/agent) connections are long-lived
+		IdleTimeout:  0,
 	})
 
 	vncPort := cfg.VNCPort
