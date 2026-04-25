@@ -159,6 +159,27 @@ function updateSidebarUser(user) {
     const roleLabel = user.role === 'superadmin' ? '⚡ Super Admin' : (user.role === 'admin' ? '🔑 Admin' : '📊 Sales');
     const orgEl = document.getElementById('headerOrgName');
     if (orgEl) orgEl.textContent = roleLabel;
+
+    // Show MANAGE section; auto-expand for admin if no stored preference
+    const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+    const items = document.getElementById('manageSectionItems');
+    const chevron = document.getElementById('manageChevron');
+    if (items) {
+        const stored = localStorage.getItem('thg_manage_expanded');
+        const expanded = stored !== null ? stored === '1' : isAdmin;
+        items.style.display = expanded ? '' : 'none';
+        if (chevron) chevron.textContent = expanded ? '▾' : '▸';
+    }
+}
+
+function toggleManageSection() {
+    const items = document.getElementById('manageSectionItems');
+    const chevron = document.getElementById('manageChevron');
+    if (!items) return;
+    const expanded = items.style.display !== 'none';
+    items.style.display = expanded ? 'none' : '';
+    if (chevron) chevron.textContent = expanded ? '▸' : '▾';
+    localStorage.setItem('thg_manage_expanded', expanded ? '0' : '1');
 }
 
 function toggleUserMenu(e) {
@@ -518,7 +539,7 @@ async function saveOrgSettings() {
 }
 
 async function loadOrgsTable() {
-    const res = await fetchAPI('/api/admin/orgs');
+    const res = await fetchAPI('/api/superadmin/orgs');
     if (!res) return;
     const planColors = { free: '#6ee7b7', pro: '#60a5fa', enterprise: '#f59e0b' };
     renderTable('orgsTable', res.organizations || [], org => {
@@ -562,7 +583,7 @@ function showEditOrgModal(id, name, domain, plan, maxAccounts, active) {
 
 async function submitEditOrg(id) {
     const active = document.getElementById('eoActive').checked;
-    const res = await fetchAPI(`/api/admin/orgs/${id}`, 'PUT', {
+    const res = await fetchAPI(`/api/superadmin/orgs/${id}`, 'PUT', {
         name: document.getElementById('eoName').value.trim(),
         domain: document.getElementById('eoDomain').value.trim(),
         plan_tier: document.getElementById('eoPlan').value,
@@ -841,17 +862,32 @@ async function refreshData() {
 }
 
 async function loadDashboard() {
-    const [stats, leadsRes] = await Promise.all([
+    const [stats, leadsRes, orgRes] = await Promise.all([
         fetchAPI('/api/stats'),
         fetchAPI('/api/leads?limit=5&score=hot'),
+        fetchAPI('/api/org'),
     ]);
     if (stats) {
         document.getElementById('statGroups').textContent = stats.active_groups || 0;
-        document.getElementById('statPosts').textContent = stats.total_posts || 0;
         document.getElementById('statLeads').textContent = stats.total_leads || 0;
         document.getElementById('statHotLeads').textContent = stats.hot_leads || 0;
-        document.getElementById('statTodayPosts').textContent = stats.today_posts || 0;
         document.getElementById('statRunning').textContent = stats.running_jobs || 0;
+    }
+    if (orgRes && orgRes.org) {
+        const org = orgRes.org;
+        const planLabels = { free: 'Free', pro: 'Pro ✨', enterprise: 'Enterprise ⚡' };
+        const nameEl = document.getElementById('dashboardOrgName');
+        const subEl = document.getElementById('dashboardOrgSub');
+        if (nameEl) nameEl.textContent = org.name || '—';
+        if (subEl) {
+            const accCount = orgRes.account_count || 0;
+            const accLimit = org.max_accounts === 0 ? '∞' : (org.max_accounts || '?');
+            const planName = planLabels[org.plan_tier] || org.plan_tier || 'Free';
+            subEl.textContent = `${planName} · ${accCount}/${accLimit} tài khoản Facebook`;
+        }
+        // Show getting-started guide when no Facebook accounts
+        const gsEl = document.getElementById('dashboardGetStarted');
+        if (gsEl) gsEl.style.display = (orgRes.account_count || 0) === 0 ? '' : 'none';
     }
     if (leadsRes && leadsRes.leads) {
         renderTable('dashboardLeadsTable', leadsRes.leads, lead => `

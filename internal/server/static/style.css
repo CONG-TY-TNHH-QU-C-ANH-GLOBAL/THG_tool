@@ -163,6 +163,47 @@ body::before {
     animation: pulse 2s infinite;
 }
 
+.nav-manage-header {
+    opacity: 1;
+    transition: var(--transition);
+}
+.nav-manage-header:hover {
+    opacity: 0.8;
+    color: var(--text-secondary);
+}
+
+/* ===== Getting Started Steps (Dashboard) ===== */
+.getting-started-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.getting-started-step:hover {
+    background: rgba(139,92,246,0.1);
+    border-color: rgba(139,92,246,0.3);
+}
+.gs-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(139,92,246,0.2);
+    color: #a78bfa;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.gs-title { font-size: 13px; font-weight: 600; color: #f1f5f9; }
+.gs-desc  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
 /* ===== Browser Page / Workspace ===== */
 .browser-card {
     background: var(--bg-glass);

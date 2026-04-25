@@ -52,6 +52,7 @@
                 <span class="brand-text">THG Scraper</span>
             </div>
             <div class="sidebar-nav">
+                <!-- Core: visible to everyone -->
                 <a href="#" class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
                     <span class="nav-icon">📊</span>
                     <span>Overview</span>
@@ -60,50 +61,56 @@
                     <span class="nav-icon">💬</span>
                     <span>Chat</span>
                 </a>
-
-                <div class="nav-section-label">FACEBOOK</div>
                 <a href="#" class="nav-item" data-page="browser" onclick="switchPage('browser')">
                     <span class="nav-icon">🌐</span>
                     <span>Browser</span>
                     <span class="nav-badge" id="browserBadge" style="display:none">●</span>
                 </a>
-                <a href="#" class="nav-item" data-page="groups" onclick="switchPage('groups')">
-                    <span class="nav-icon">👥</span>
-                    <span>Groups</span>
-                </a>
                 <a href="#" class="nav-item" data-page="leads" onclick="switchPage('leads')">
                     <span class="nav-icon">🎯</span>
                     <span>Leads</span>
                 </a>
-                <a href="#" class="nav-item" data-page="outbox" onclick="switchPage('outbox')">
-                    <span class="nav-icon">📤</span>
-                    <span>Outbox</span>
-                </a>
-                <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
-                    <span class="nav-icon">📝</span>
-                    <span>Posts</span>
-                </a>
 
-                <div class="nav-section-label">ANALYTICS</div>
-                <a href="#" class="nav-item" data-page="sentiment" onclick="switchPage('sentiment')">
-                    <span class="nav-icon">📈</span>
-                    <span>Analytics</span>
-                </a>
-                <a href="#" class="nav-item" data-page="logs" onclick="switchPage('logs')">
-                    <span class="nav-icon">📋</span>
-                    <span>Logs</span>
-                </a>
+                <!-- Manage: collapsible section -->
+                <div class="nav-section-label nav-manage-header" id="manageSectionLabel"
+                    onclick="toggleManageSection()"
+                    style="display:flex;justify-content:space-between;align-items:center;padding-right:12px;margin-top:4px">
+                    <span>MANAGE</span>
+                    <span id="manageChevron" style="font-size:9px">▸</span>
+                </div>
+                <div id="manageSectionItems" style="display:none">
+                    <a href="#" class="nav-item" data-page="groups" onclick="switchPage('groups')">
+                        <span class="nav-icon">👥</span>
+                        <span>Groups</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="accounts" onclick="switchPage('accounts')">
+                        <span class="nav-icon">🔑</span>
+                        <span>Accounts</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
+                        <span class="nav-icon">📝</span>
+                        <span>Posts</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="outbox" onclick="switchPage('outbox')">
+                        <span class="nav-icon">📤</span>
+                        <span>Outbox</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="sentiment" onclick="switchPage('sentiment')">
+                        <span class="nav-icon">📈</span>
+                        <span>Analytics</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="logs" onclick="switchPage('logs')">
+                        <span class="nav-icon">📋</span>
+                        <span>Logs</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="jobs" onclick="switchPage('jobs')">
+                        <span class="nav-icon">⚡</span>
+                        <span>Coordinator</span>
+                    </a>
+                </div>
 
-                <div class="nav-section-label">CONFIG</div>
-                <a href="#" class="nav-item" data-page="jobs" onclick="switchPage('jobs')">
-                    <span class="nav-icon">⚡</span>
-                    <span>Coordinator</span>
-                </a>
-                <a href="#" class="nav-item" data-page="accounts" onclick="switchPage('accounts')">
-                    <span class="nav-icon">🔑</span>
-                    <span>Accounts</span>
-                </a>
-                <a href="#" class="nav-item" data-page="settings" onclick="switchPage('settings')">
+                <!-- Settings pinned at bottom -->
+                <a href="#" class="nav-item" data-page="settings" onclick="switchPage('settings')" style="margin-top:auto">
                     <span class="nav-icon">⚙️</span>
                     <span>Settings</span>
                 </a>
@@ -128,9 +135,6 @@
                     <span class="header-subtitle" id="pageSubtitle">Real-time overview</span>
                 </div>
                 <div class="header-right">
-                    <button class="btn btn-primary" id="scanAllBtn" onclick="triggerScanAll()">
-                        <span>🚀</span> Scan All
-                    </button>
                     <button class="btn btn-ghost" onclick="refreshData()">
                         <span>🔄</span> Refresh
                     </button>
@@ -164,19 +168,50 @@
 
             <!-- Dashboard Page -->
             <section class="page active" id="page-dashboard">
-                <div class="stats-grid">
-                    <div class="stat-card glass">
-                        <div class="stat-icon">📦</div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="statGroups">0</span>
-                            <span class="stat-label">Active Groups</span>
+                <!-- Org info + Quick Actions -->
+                <div class="section-card glass" style="margin-bottom:16px">
+                    <div style="padding:20px 24px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                            <div>
+                                <div style="font-size:16px;font-weight:600;color:#f1f5f9" id="dashboardOrgName">—</div>
+                                <div style="font-size:12px;color:var(--text-muted);margin-top:3px" id="dashboardOrgSub">Đang tải...</div>
+                            </div>
+                            <button class="btn btn-primary" id="scanAllBtn" onclick="triggerScanAll()">
+                                <span>🚀</span> Scan All
+                            </button>
+                        </div>
+                        <!-- Getting started steps (shown only when no FB accounts) -->
+                        <div id="dashboardGetStarted" style="display:none;margin-top:16px">
+                            <div style="font-size:11px;font-weight:700;letter-spacing:0.07em;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px">Bắt đầu nhanh</div>
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+                                <div class="getting-started-step" onclick="switchPage('browser')">
+                                    <div class="gs-num">1</div>
+                                    <div><div class="gs-title">Kết nối Facebook</div><div class="gs-desc">Mở Browser → đăng nhập FB</div></div>
+                                </div>
+                                <div class="getting-started-step" onclick="switchPage('groups')">
+                                    <div class="gs-num">2</div>
+                                    <div><div class="gs-title">Thêm Groups</div><div class="gs-desc">Thêm nhóm FB cần theo dõi</div></div>
+                                </div>
+                                <div class="getting-started-step" onclick="triggerScanAll()">
+                                    <div class="gs-num">3</div>
+                                    <div><div class="gs-title">Scan Groups</div><div class="gs-desc">Bấm Scan All để cào dữ liệu</div></div>
+                                </div>
+                                <div class="getting-started-step" onclick="switchPage('leads')">
+                                    <div class="gs-num">4</div>
+                                    <div><div class="gs-title">Xem Leads</div><div class="gs-desc">AI phân loại khách hàng tiềm năng</div></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="stat-card glass">
-                        <div class="stat-icon">📝</div>
+                </div>
+
+                <!-- Stats -->
+                <div class="stats-grid" style="margin-bottom:16px">
+                    <div class="stat-card glass hot">
+                        <div class="stat-icon">🔥</div>
                         <div class="stat-info">
-                            <span class="stat-value" id="statPosts">0</span>
-                            <span class="stat-label">Total Posts</span>
+                            <span class="stat-value" id="statHotLeads">0</span>
+                            <span class="stat-label">Hot Leads</span>
                         </div>
                     </div>
                     <div class="stat-card glass">
@@ -186,18 +221,11 @@
                             <span class="stat-label">Total Leads</span>
                         </div>
                     </div>
-                    <div class="stat-card glass hot">
-                        <div class="stat-icon">🔥</div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="statHotLeads">0</span>
-                            <span class="stat-label">Hot Leads</span>
-                        </div>
-                    </div>
                     <div class="stat-card glass">
-                        <div class="stat-icon">📝</div>
+                        <div class="stat-icon">📦</div>
                         <div class="stat-info">
-                            <span class="stat-value" id="statTodayPosts">0</span>
-                            <span class="stat-label">Today Posts</span>
+                            <span class="stat-value" id="statGroups">0</span>
+                            <span class="stat-label">Active Groups</span>
                         </div>
                     </div>
                     <div class="stat-card glass">
@@ -209,7 +237,7 @@
                     </div>
                 </div>
 
-                <!-- Recent Activity -->
+                <!-- Recent Hot Leads -->
                 <div class="section-card glass">
                     <div class="section-header">
                         <h2>🔥 Recent Hot Leads</h2>
@@ -1215,7 +1243,7 @@
             </div>
         </div>
 
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=22"></script>
 </body>
 
 </html>

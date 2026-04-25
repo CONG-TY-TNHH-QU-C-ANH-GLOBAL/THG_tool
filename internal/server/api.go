@@ -283,8 +283,8 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	r.Get("/org", s.getMyOrg)
 	r.Put("/org", authpkg.RequireRole("admin"), s.updateOrg)
 
-	// Superadmin: org management
-	superAdminGrp := r.Group("/admin", authpkg.RequireRole("superadmin"))
+	// Superadmin: org management — /superadmin prefix keeps it separate from /admin
+	superAdminGrp := r.Group("/superadmin", authpkg.RequireRole("superadmin"))
 	superAdminGrp.Get("/orgs", s.listOrgs)
 	superAdminGrp.Put("/orgs/:id", s.adminUpdateOrg)
 

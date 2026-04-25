@@ -126,25 +126,20 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 		"--start-maximized",
 	}
 
-	// Linux/CI-specific flags — skip on Windows where GPU is needed for rendering
+	// Linux/server flags: headless=new means Chrome runs entirely in memory —
+	// no X display, no Xvfb needed. CDP screencast still captures rendered frames
+	// and streams them to the dashboard canvas.
 	if runtime.GOOS != "windows" {
 		args = append(args,
+			"--headless=new",
 			"--no-sandbox",
 			"--disable-dev-shm-usage",
 			"--disable-gpu",
+			"--run-all-compositor-stages-before-draw",
 		)
 	}
 
 	cmd := exec.Command(chromePath, args...)
-	// On Linux: inject DISPLAY so Chrome connects to the virtual framebuffer (Xvfb).
-	// Without this, Chrome exits silently on a headless VPS.
-	if runtime.GOOS != "windows" {
-		display := os.Getenv("DISPLAY")
-		if display == "" {
-			display = ":99" // default Xvfb display
-		}
-		cmd.Env = append(os.Environ(), "DISPLAY="+display)
-	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
