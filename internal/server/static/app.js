@@ -81,6 +81,242 @@ function updateSidebarUser(user) {
     if (el && user) el.textContent = `${user.name || user.email} (${user.role})`;
 }
 
+// ===== Browser / Workspace Page =====
+
+let browserSelectedAccountID = null;
+let browserWS = null;
+let browserCanvas = null;
+let browserCtx = null;
+
+async function loadBrowserPage() {
+    browserCanvas = document.getElementById('browserCanvas');
+    browserCtx = browserCanvas ? browserCanvas.getContext('2d') : null;
+    attachBrowserCanvasEvents();
+    await loadBrowserWorkspaces();
+}
+
+async function loadBrowserWorkspaces() {
+    const res = await fetchAPI('/api/browser/workspaces');
+    if (!res) return;
+
+    const list = document.getElementById('workspaceAccountList');
+    if (!list) return;
+
+    const workspaces = res.workspaces || [];
+    if (workspaces.length === 0) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Chưa có tài khoản Facebook nào.<br>Thêm ở trang Accounts.</div>';
+        return;
+    }
+
+    list.innerHTML = workspaces.map(w => `
+        <div class="workspace-account-row ${browserSelectedAccountID === w.account_id ? 'selected' : ''}"
+             onclick="browserSelectAccount(${w.account_id}, '${esc(w.account_name)}', ${w.running}, ${w.cdp_port || 0})">
+            <div>
+                <div style="font-size:13px;font-weight:500">${esc(w.account_name)}</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${w.account_status}</div>
+            </div>
+            <span class="workspace-status-pill ${w.running ? 'running' : 'offline'}">
+                ${w.running ? '● RUNNING' : '○ offline'}
+            </span>
+        </div>
+    `).join('');
+
+    // Update status if selected account changed externally
+    if (browserSelectedAccountID !== null) {
+        const selected = workspaces.find(w => w.account_id === browserSelectedAccountID);
+        if (selected) updateBrowserControls(selected.running, selected.cdp_port);
+    }
+}
+
+function browserSelectAccount(accountID, accountName, running, cdpPort) {
+    // Disconnect any existing view
+    if (browserSelectedAccountID !== accountID && browserWS) {
+        browserWS.close();
+        browserWS = null;
+        showBrowserPlaceholder('Chọn tài khoản bên trái → nhấn START');
+    }
+
+    browserSelectedAccountID = accountID;
+
+    // Re-render list to show selection
+    document.querySelectorAll('.workspace-account-row').forEach((el, i) => {
+        el.classList.toggle('selected', parseInt(el.getAttribute('onclick').match(/\d+/)[0]) === accountID);
+    });
+
+    document.getElementById('browserUrlLabel').textContent = `cdp://account-${accountID} — ${accountName}`;
+    updateBrowserControls(running, cdpPort);
+
+    // Auto-connect if already running
+    if (running && cdpPort > 0) connectBrowserView(accountID);
+}
+
+function updateBrowserControls(running, cdpPort) {
+    const startBtn = document.getElementById('browserStartBtn');
+    const stopBtn  = document.getElementById('browserStopBtn');
+    const portEl   = document.getElementById('browserPortStatus');
+    const cdpPortEl = document.getElementById('browserCdpPort');
+
+    if (running) {
+        startBtn.textContent = '● RUNNING';
+        startBtn.className = 'btn btn-success btn-sm active';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        portEl.style.display = 'flex';
+        cdpPortEl.textContent = cdpPort || '–';
+    } else {
+        startBtn.textContent = '▶ START';
+        startBtn.className = 'btn btn-success btn-sm';
+        startBtn.disabled = !browserSelectedAccountID;
+        stopBtn.disabled = true;
+        portEl.style.display = 'none';
+    }
+}
+
+async function browserStartSelected() {
+    if (!browserSelectedAccountID) { showToast('Chọn tài khoản trước'); return; }
+    const btn = document.getElementById('browserStartBtn');
+    btn.textContent = '⏳ Starting...';
+    btn.disabled = true;
+    const res = await fetchAPI(`/api/browser/workspaces/${browserSelectedAccountID}/start`, 'POST');
+    if (!res) { btn.textContent = '▶ START'; btn.disabled = false; return; }
+    showToast('Browser đang khởi động...');
+    // Poll until running
+    let tries = 0;
+    const poll = setInterval(async () => {
+        tries++;
+        await loadBrowserWorkspaces();
+        const ws = (await fetchAPI('/api/browser/workspaces'))?.workspaces?.find(w => w.account_id === browserSelectedAccountID);
+        if (ws?.running) {
+            clearInterval(poll);
+            updateBrowserControls(true, ws.cdp_port);
+            connectBrowserView(browserSelectedAccountID);
+        }
+        if (tries > 10) clearInterval(poll);
+    }, 1500);
+}
+
+async function browserStopSelected() {
+    if (!browserSelectedAccountID) return;
+    if (!confirm('Dừng browser? Session Facebook vẫn được lưu trong profile.')) return;
+    if (browserWS) { browserWS.close(); browserWS = null; }
+    await fetchAPI(`/api/browser/workspaces/${browserSelectedAccountID}/stop`, 'POST');
+    updateBrowserControls(false, 0);
+    showBrowserPlaceholder('Browser đã dừng. Nhấn START để khởi động lại.');
+    await loadBrowserWorkspaces();
+}
+
+function connectBrowserView(accountID) {
+    if (browserWS) { browserWS.close(); browserWS = null; }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws/browser-view/${accountID}?token=${encodeURIComponent(accessToken)}`);
+    browserWS = ws;
+
+    ws.onopen = () => {
+        showBrowserPlaceholder(null); // hide placeholder
+        browserCanvas.focus();
+    };
+
+    ws.onmessage = (e) => {
+        try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'frame' && msg.data && browserCtx) {
+                const img = new Image();
+                img.onload = () => {
+                    if (browserCanvas.width !== img.naturalWidth)  browserCanvas.width  = img.naturalWidth;
+                    if (browserCanvas.height !== img.naturalHeight) browserCanvas.height = img.naturalHeight;
+                    browserCtx.drawImage(img, 0, 0);
+                };
+                img.src = 'data:image/jpeg;base64,' + msg.data;
+            }
+        } catch { /* ignore parse errors */ }
+    };
+
+    ws.onclose = () => {
+        if (browserWS === ws) browserWS = null;
+        showBrowserPlaceholder('Kết nối bị ngắt. Nhấn refresh để thử lại.');
+    };
+    ws.onerror = () => ws.close();
+}
+
+function showBrowserPlaceholder(text) {
+    const ph = document.getElementById('browserPlaceholder');
+    if (!ph) return;
+    if (text === null) {
+        ph.style.display = 'none';
+    } else {
+        ph.style.display = 'flex';
+        ph.querySelector('.browser-placeholder-text').textContent = text || 'Chọn tài khoản bên trái → nhấn START';
+    }
+}
+
+function attachBrowserCanvasEvents() {
+    const canvas = document.getElementById('browserCanvas');
+    if (!canvas || canvas._browserEventsAttached) return;
+    canvas._browserEventsAttached = true;
+
+    const send = (obj) => {
+        if (browserWS && browserWS.readyState === WebSocket.OPEN)
+            browserWS.send(JSON.stringify(obj));
+    };
+
+    const scale = (e) => {
+        const r = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - r.left) * (canvas.width  / (r.width  || 1)),
+            y: (e.clientY - r.top)  * (canvas.height / (r.height || 1)),
+        };
+    };
+
+    canvas.addEventListener('mousemove',  e => { const p = scale(e); send({ type:'mousemove',  ...p }); });
+    canvas.addEventListener('mousedown',  e => { const p = scale(e); send({ type:'mousedown',  ...p, button: e.button }); });
+    canvas.addEventListener('mouseup',    e => { const p = scale(e); send({ type:'mouseup',    ...p, button: e.button }); });
+    canvas.addEventListener('wheel',      e => { e.preventDefault(); const p = scale(e); send({ type:'wheel', ...p, deltaX: e.deltaX, deltaY: e.deltaY }); }, { passive: false });
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('keydown', e => { e.preventDefault(); send({ type:'keydown', key:e.key, code:e.code, altKey:e.altKey, ctrlKey:e.ctrlKey, metaKey:e.metaKey, shiftKey:e.shiftKey }); });
+    canvas.addEventListener('keyup',   e => {                     send({ type:'keyup',   key:e.key, code:e.code, altKey:e.altKey, ctrlKey:e.ctrlKey, metaKey:e.metaKey, shiftKey:e.shiftKey }); });
+}
+
+// ===== Agent Tokens (admin) =====
+
+async function loadAgentTokens() {
+    const user = JSON.parse(localStorage.getItem('thg_user') || '{}');
+    const section = document.getElementById('agentTokensSection');
+    if (!section) return;
+    if (user.role !== 'admin') { section.style.display = 'none'; return; }
+    section.style.display = '';
+
+    const res = await fetchAPI('/api/admin/agent-tokens');
+    if (!res) return;
+
+    renderTable('agentTokensTable', res.tokens || [], tok => `
+        <td style="font-family:monospace;font-size:12px">${tok.id}</td>
+        <td>${esc(tok.name)}</td>
+        <td style="font-size:12px">${esc(tok.hostname || '–')} <span style="color:var(--text-muted)">${esc(tok.os || '')}</span></td>
+        <td style="font-size:12px">${tok.last_seen ? new Date(tok.last_seen).toLocaleString('vi-VN') : '<span style="color:var(--text-muted)">Chưa kết nối</span>'}</td>
+        <td><span class="badge ${tok.active ? 'badge-done' : 'badge-failed'}">${tok.active ? '● Active' : '✕ Revoked'}</span></td>
+        <td><button class="btn btn-sm btn-danger" onclick="revokeAgentToken(${tok.id})" ${!tok.active ? 'disabled' : ''}>Thu hồi</button></td>
+    `);
+}
+
+async function createAgentToken() {
+    const name = prompt('Tên token (ví dụ: "Laptop Nguyễn Văn A"):');
+    if (!name || !name.trim()) return;
+    const res = await fetchAPI('/api/admin/agent-tokens', 'POST', { name: name.trim() });
+    if (!res) return;
+    await new Promise(r => setTimeout(r, 50));
+    alert(`🔑 Token cho "${res.name}":\n\n${res.token}\n\n⚠️ Copy ngay — chỉ hiển thị MỘT LẦN!`);
+    showToast('Token đã tạo!');
+    loadAgentTokens();
+}
+
+async function revokeAgentToken(id) {
+    if (!confirm('Thu hồi token này? Agent sẽ không thể kết nối nữa.')) return;
+    await fetchAPI(`/api/admin/agent-tokens/${id}`, 'DELETE');
+    showToast('Token đã thu hồi');
+    loadAgentTokens();
+}
+
 // ===== Settings Page =====
 
 async function loadSettingsPage() {
@@ -94,6 +330,7 @@ async function loadSettingsPage() {
     if (user.role === 'admin') {
         document.getElementById('userMgmtSection').style.display = '';
         loadUsersTable();
+        loadAgentTokens();
     }
 }
 
@@ -198,6 +435,115 @@ async function deleteUser(id, name) {
     if (res) { showToast(`Đã xóa tài khoản ${name}`, 'success'); loadUsersTable(); }
 }
 
+// ===== Logs Page =====
+
+let logsSSE = null;
+
+function loadLogsPage() {
+    stopLogsStream();
+    const container = document.getElementById('logsContainer');
+    if (!container) return;
+
+    const token = accessToken;
+    logsSSE = new EventSource(`/api/logs/stream?token=${encodeURIComponent(token)}`);
+
+    logsSSE.onmessage = e => {
+        const line = document.createElement('div');
+        const text = e.data || '';
+        let color = '#94a3b8'; // default gray
+        if (/error|❌|fatal/i.test(text)) color = '#f87171';
+        else if (/warn|⚠/i.test(text)) color = '#fbbf24';
+        else if (/✅/.test(text)) color = '#6ee7b7';
+        line.style.cssText = `color:${color};white-space:pre-wrap;word-break:break-all`;
+        line.textContent = text;
+        container.appendChild(line);
+
+        // Keep at most 500 lines to avoid memory bloat
+        while (container.children.length > 500) container.removeChild(container.firstChild);
+
+        const autoScroll = document.getElementById('logsAutoScroll');
+        if (!autoScroll || autoScroll.checked) container.scrollTop = container.scrollHeight;
+    };
+    logsSSE.onerror = () => { /* browser will auto-reconnect */ };
+}
+
+function stopLogsStream() {
+    if (logsSSE) { logsSSE.close(); logsSSE = null; }
+}
+
+function clearLogsDisplay() {
+    const container = document.getElementById('logsContainer');
+    if (container) container.innerHTML = '';
+}
+
+// ===== Sentiment / Analytics Page =====
+
+async function loadSentimentPage() {
+    const res = await fetchAPI('/api/analytics/sentiment');
+    if (!res) return;
+
+    const scores = res.score_breakdown || {};
+    const outbound = res.outbound || {};
+
+    // Stat cards
+    const hot = scores.hot || 0, warm = scores.warm || 0, cold = scores.cold || 0;
+    const total = hot + warm + cold || 1;
+    setText('sentHot', `${hot} (${Math.round(hot/total*100)}%)`);
+    setText('sentWarm', `${warm} (${Math.round(warm/total*100)}%)`);
+    setText('sentCold', `${cold} (${Math.round(cold/total*100)}%)`);
+    setText('sentCommentsSent', outbound.sent || 0);
+    setText('sentInboxSent', outbound.inbox_sent || 0);
+    setText('sentFailed', outbound.failed || 0);
+
+    // Score breakdown bar chart
+    renderBarChart('sentScoreChart', [
+        { label: '🔥 Hot', value: hot, color: '#ef4444' },
+        { label: '🌡 Warm', value: warm, color: '#f59e0b' },
+        { label: '❄️ Cold', value: cold, color: '#60a5fa' },
+    ], total);
+
+    // Niche chart
+    const niches = res.top_niches || [];
+    const nicheMax = niches[0]?.count || 1;
+    renderBarChart('sentNicheChart', niches.map(n => ({
+        label: n.niche,
+        value: n.count,
+        color: '#8b5cf6',
+    })), nicheMax);
+
+    // Outbound performance
+    const obTotal = Object.values(outbound).reduce((s, v) => s + (v || 0), 0) || 1;
+    const obRows = Object.entries(outbound).map(([k, v]) => ({ label: k, value: v || 0, color: '#10b981' }));
+    renderBarChart('sentOutboundChart', obRows, obTotal);
+}
+
+function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+}
+
+function renderBarChart(containerId, items, maxValue) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (!items || items.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px">Chưa có dữ liệu</div>';
+        return;
+    }
+    container.innerHTML = items.map(item => {
+        const pct = Math.max(2, Math.round((item.value / maxValue) * 100));
+        return `
+            <div style="margin-bottom:10px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+                    <span style="color:var(--text-secondary)">${esc(String(item.label))}</span>
+                    <span style="color:var(--text-muted)">${item.value}</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.08);border-radius:4px;height:8px;overflow:hidden">
+                    <div style="width:${pct}%;height:100%;background:${item.color};border-radius:4px;transition:width 0.4s ease"></div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
 // ===== Page Navigation =====
 
 function switchPage(page) {
@@ -209,6 +555,9 @@ function switchPage(page) {
 
     const titles = {
         dashboard: ['Dashboard', 'Real-time overview'],
+        browser:   ['Browser', 'Live Facebook browser — đăng nhập và điều khiển trực tiếp'],
+        logs:      ['Logs', 'Real-time system log stream'],
+        sentiment: ['Analytics', 'Lead sentiment & comment performance'],
         leads: ['Leads', 'AI-classified leads theo từng lĩnh vực'],
         posts: ['Posts', 'Scraped social media posts'],
         groups: ['Groups', 'Managed social media groups'],
@@ -218,10 +567,15 @@ function switchPage(page) {
         outbox: ['Outbox', 'Auto-comment & auto-inbox queue'],
         settings: ['Settings', 'Tài khoản và cài đặt hệ thống'],
     };
-    document.getElementById('pageTitle').textContent = titles[page][0];
-    document.getElementById('pageSubtitle').textContent = titles[page][1];
+    document.getElementById('pageTitle').textContent = titles[page]?.[0] || page;
+    document.getElementById('pageSubtitle').textContent = titles[page]?.[1] || '';
     if (page === 'leads') loadNicheTabs();
     if (page === 'settings') loadSettingsPage();
+    if (page === 'browser') loadBrowserPage();
+    if (page === 'logs') loadLogsPage();
+    if (page === 'sentiment') loadSentimentPage();
+    // Stop log stream when navigating away
+    if (page !== 'logs') stopLogsStream();
     refreshData();
 }
 
@@ -231,13 +585,15 @@ async function refreshData() {
     try {
         switch (currentPage) {
             case 'dashboard': await loadDashboard(); break;
-            case 'leads': await loadLeads(); break;
-            case 'posts': await loadPosts(); break;
-            case 'groups': await loadGroups(); break;
-            case 'jobs': await loadJobs(); break;
-            case 'accounts': await loadAccounts(); break;
-            case 'aichat': await loadPromptHistory(); break;
-            case 'outbox': await loadOutbox(); break;
+            case 'browser':   await loadBrowserWorkspaces(); break;
+            case 'leads':     await loadLeads(); break;
+            case 'posts':     await loadPosts(); break;
+            case 'groups':    await loadGroups(); break;
+            case 'jobs':      await loadJobs(); break;
+            case 'accounts':  await loadAccounts(); break;
+            case 'aichat':    await loadPromptHistory(); break;
+            case 'outbox':    await loadOutbox(); break;
+            case 'sentiment': await loadSentimentPage(); break;
         }
     } catch (e) { console.error('Refresh error:', e); }
 }

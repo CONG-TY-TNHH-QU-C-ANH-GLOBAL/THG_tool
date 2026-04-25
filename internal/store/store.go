@@ -343,6 +343,23 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE company_images ADD COLUMN source_url TEXT DEFAULT ''`)
 	// Auto-migrate: add assigned_user_id to accounts (which staff owns this FB account)
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN assigned_user_id INTEGER DEFAULT 0`)
+	// Auto-migrate: execution_mode on jobs — "server" (VPS) or "local" (agent)
+	s.db.Exec(`ALTER TABLE jobs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'server'`)
+
+	// Agent tokens: staff download the agent binary and authenticate with these tokens
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS agent_tokens (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		token_hash TEXT NOT NULL UNIQUE,
+		created_by INTEGER NOT NULL DEFAULT 0,
+		hostname TEXT DEFAULT '',
+		os TEXT DEFAULT '',
+		version TEXT DEFAULT '',
+		last_seen DATETIME,
+		active INTEGER NOT NULL DEFAULT 1,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`)
 
 	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches
 	// These are logistics groups that must not be touched by the recruitment pipeline
@@ -405,6 +422,9 @@ func (s *Store) migrate() error {
 	// Composite indexes for hot-path queries (HasSentComment, HasSentInbox)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_type_url_status ON outbound_messages(type, target_url, status)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_source_url ON leads(source_url) WHERE source_url != ''`)
+
+	// Self-healing selector cache (LLM Vision updates this when FB changes UI)
+	s.initSelectorCache()
 
 	return nil
 }
@@ -910,9 +930,12 @@ func (s *Store) DeleteLeads(niche string) (int64, error) {
 
 // CreateJob creates a new job entry.
 func (s *Store) CreateJob(j *models.Job) (int64, error) {
+	if j.ExecutionMode == "" {
+		j.ExecutionMode = models.ExecutionServer
+	}
 	res, err := s.db.Exec(
-		`INSERT INTO jobs (type, platform, target, status) VALUES (?, ?, ?, ?)`,
-		j.Type, j.Platform, j.Target, models.JobPending,
+		`INSERT INTO jobs (type, platform, target, status, execution_mode) VALUES (?, ?, ?, ?, ?)`,
+		j.Type, j.Platform, j.Target, models.JobPending, j.ExecutionMode,
 	)
 	if err != nil {
 		return 0, err
@@ -935,9 +958,20 @@ func (s *Store) UpdateJobStatus(jobID int64, status models.JobStatus, result, er
 	}
 }
 
+// GetNextLocalJob returns the oldest pending job with execution_mode='local'.
+func (s *Store) GetNextLocalJob() (*models.Job, error) {
+	row := s.db.QueryRow(`SELECT id, type, platform, target, status, COALESCE(execution_mode,'local'), COALESCE(result,''), COALESCE(error,''), created_at, COALESCE(started_at,created_at), COALESCE(done_at,created_at) FROM jobs WHERE status = 'pending' AND execution_mode = 'local' ORDER BY created_at ASC LIMIT 1`)
+	var j models.Job
+	err := row.Scan(&j.ID, &j.Type, &j.Platform, &j.Target, &j.Status, &j.ExecutionMode, &j.Result, &j.Error, &j.CreatedAt, &j.StartedAt, &j.DoneAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &j, err
+}
+
 // GetJobs returns jobs filtered by status.
 func (s *Store) GetJobs(status string, limit int) ([]models.Job, error) {
-	query := `SELECT id, type, platform, target, status, COALESCE(result,''), COALESCE(error,''), created_at, COALESCE(started_at, created_at), COALESCE(done_at, created_at) FROM jobs`
+	query := `SELECT id, type, platform, target, status, COALESCE(execution_mode,'server'), COALESCE(result,''), COALESCE(error,''), created_at, COALESCE(started_at, created_at), COALESCE(done_at, created_at) FROM jobs`
 	var args []any
 	if status != "" {
 		query += " WHERE status = ?"
@@ -955,7 +989,7 @@ func (s *Store) GetJobs(status string, limit int) ([]models.Job, error) {
 	var jobs []models.Job
 	for rows.Next() {
 		var j models.Job
-		if err := rows.Scan(&j.ID, &j.Type, &j.Platform, &j.Target, &j.Status, &j.Result, &j.Error, &j.CreatedAt, &j.StartedAt, &j.DoneAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.Type, &j.Platform, &j.Target, &j.Status, &j.ExecutionMode, &j.Result, &j.Error, &j.CreatedAt, &j.StartedAt, &j.DoneAt); err != nil {
 			return nil, err
 		}
 		jobs = append(jobs, j)

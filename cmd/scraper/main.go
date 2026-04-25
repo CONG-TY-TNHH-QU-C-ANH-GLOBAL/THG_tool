@@ -14,15 +14,18 @@ import (
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/browser"
 	"github.com/thg/scraper/internal/config"
+	"github.com/thg/scraper/internal/logstream"
 	"github.com/thg/scraper/internal/orchestrator"
 	"github.com/thg/scraper/internal/queue"
 	"github.com/thg/scraper/internal/server"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram"
+	"github.com/thg/scraper/internal/workspace"
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	logstream.Install() // capture all log.Printf output for the Logs dashboard page
 	log.Println("🕷️  THG Agentic Scraper v2 — Starting...")
 
 	// Load .env file (optional)
@@ -109,6 +112,11 @@ func main() {
 	accountMgr := accounts.NewManager(db, cfg.ChromePath, cfg.ProfileDir)
 	log.Printf("✅ Account manager initialized (profiles: %s)", cfg.ProfileDir)
 
+	// Initialize workspace manager (per-account live Chrome for dashboard browser view)
+	workspaceMgr := workspace.NewManager(cfg.ChromePath, cfg.ProfileDir)
+	defer workspaceMgr.StopAll()
+	log.Println("✅ Workspace manager initialized")
+
 	// Initialize price extractor (OpenAI Vision for reading price list images)
 	var pricer *ai.PriceExtractor
 	if cfg.OpenAIAPIKey != "" {
@@ -142,7 +150,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	orch := orchestrator.New(db, pool, q, bot, classifier, msgGen, accountMgr, pricer)
+	// Wrap *browser.Pool in the interface (nil pool must stay nil-interface, not nil-pointer-in-interface)
+	var poolBrowser browser.Browser
+	if pool != nil {
+		poolBrowser = pool
+	}
+	orch := orchestrator.New(db, poolBrowser, q, bot, classifier, msgGen, accountMgr, pricer)
 	scanInterval := time.Duration(cfg.ScanIntervalMin) * time.Minute
 	orch.Start(ctx, scanInterval)
 	defer orch.Stop()
@@ -160,7 +173,7 @@ func main() {
 	}
 
 	// Start web server (non-blocking)
-	srv := server.New(db, q, agent, server.Config{
+	srv := server.New(db, q, agent, workspaceMgr, server.Config{
 		Port:           cfg.WebPort,
 		JWTSecret:      cfg.JWTSecret,
 		AllowedOrigins: cfg.AllowedOrigins,
@@ -169,7 +182,13 @@ func main() {
 		Headless:       cfg.Headless,
 		ServerHost:     cfg.ServerHost,
 		SSHPort:        cfg.SSHPort,
+		VNCPort:        cfg.VNCPort,
+		CDPPort:        cfg.CDPPort,
+		DisplayNum:     cfg.DisplayNum,
 	})
+	// Wire agent post-processor so scraped posts from local agents run through AI pipeline
+	srv.SetPostProcessor(orch.ProcessAgentScrapedPosts)
+
 	go func() {
 		if err := srv.Start(); err != nil {
 			log.Printf("⚠️  Web server error: %v", err)

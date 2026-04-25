@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,11 +17,14 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	fiberws "github.com/gofiber/websocket/v2"
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
+	"github.com/thg/scraper/internal/browser"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/queue"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/workspace"
 )
 
 //go:embed all:static
@@ -36,20 +40,36 @@ type Config struct {
 	Headless       bool   // true = VPS without display; Chrome login uses SSH tunnel flow
 	ServerHost     string // public hostname/IP for SSH tunnel instructions
 	SSHPort        int    // SSH port for tunnel (default 22)
+
+	// noVNC browser workspace
+	VNCPort    int // VNC server TCP port (default 5900)
+	CDPPort    int // Chrome DevTools Protocol debug port (default 9222)
+	DisplayNum int // X11 display number for Xvfb (default 99)
 }
 
 // Server provides the REST API and serves the Web UI.
 type Server struct {
-	app   *fiber.App
-	db    *store.Store
-	queue *queue.Queue
-	agent *ai.Agent
-	port  int
-	cfg   Config
+	app           *fiber.App
+	db            *store.Store
+	queue         *queue.Queue
+	agent         *ai.Agent
+	postProcessor PostProcessor       // called after agent submits scraped posts
+	wsHub         *WSHub              // Chrome Extension WebSocket hub
+	vncDisplay    *browser.VNCDisplay // virtual X11 display + VNC server (Linux only)
+	workspace     *workspace.Manager  // per-account Chrome workspace manager
+	cdpHubs       map[int64]*cdpViewHub
+	cdpHubsMu     sync.RWMutex
+	port          int
+	cfg           Config
+}
+
+// SetPostProcessor wires the AI pipeline callback (called from main.go after orchestrator is ready).
+func (s *Server) SetPostProcessor(fn PostProcessor) {
+	s.postProcessor = fn
 }
 
 // New creates a new API server with JWT auth, RBAC, and rate limiting.
-func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
+func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager, cfg Config) *Server {
 	if cfg.JWTSecret == "" {
 		log.Println("[Server] WARNING: JWT_SECRET not set — authentication is DISABLED. Set JWT_SECRET in production!")
 	}
@@ -62,13 +82,26 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 		WriteTimeout: 60 * time.Second,
 	})
 
+	vncPort := cfg.VNCPort
+	if vncPort == 0 {
+		vncPort = 5900
+	}
+	displayNum := cfg.DisplayNum
+	if displayNum == 0 {
+		displayNum = 99
+	}
+
 	s := &Server{
-		app:   app,
-		db:    db,
-		queue: q,
-		agent: agent,
-		port:  cfg.Port,
-		cfg:   cfg,
+		app:        app,
+		db:         db,
+		queue:      q,
+		agent:      agent,
+		port:       cfg.Port,
+		cfg:        cfg,
+		wsHub:      NewWSHub(),
+		vncDisplay: browser.NewVNCDisplay(displayNum, vncPort),
+		workspace:  wm,
+		cdpHubs:    make(map[int64]*cdpViewHub),
 	}
 
 	// Health check — no auth, no rate limiting, for load balancers / monitors
@@ -220,6 +253,81 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, cfg Config) *Server {
 	r.Put("/outbox/:id/reject", s.rejectOutbound)
 	r.Put("/outbox/:id/content", s.editOutbound)
 	r.Delete("/outbox/:id", s.deleteOutbound)
+
+	// Agent API — authenticated with X-Agent-Token header (no JWT needed)
+	agentGrp := api.Group("/agent", s.agentAuth)
+	agentGrp.Post("/heartbeat", s.agentHeartbeat)
+	agentGrp.Get("/jobs/next", s.agentGetNextJob)
+	agentGrp.Post("/jobs/:id/claim", s.agentClaimJob)
+	agentGrp.Post("/jobs/:id/done", s.agentJobDone)
+	agentGrp.Post("/jobs/:id/fail", s.agentJobFail)
+	agentGrp.Get("/outbox", s.agentGetOutbox)
+	agentGrp.Post("/outbox/:id/sent", s.agentOutboxSent)
+	agentGrp.Post("/outbox/:id/failed", s.agentOutboxFailed)
+	agentGrp.Get("/images", s.agentServeImage)
+
+	// Admin: manage agent tokens (JWT auth + admin role)
+	adminGrp := r.Group("/admin", adminOnly)
+	adminGrp.Post("/agent-tokens", s.agentCreateToken)
+	adminGrp.Get("/agent-tokens", s.agentListTokens)
+	adminGrp.Delete("/agent-tokens/:id", s.agentRevokeToken)
+
+	// Browser workspace — per-account Chrome management
+	r.Get("/browser/workspaces", s.workspaceList)
+	r.Post("/browser/workspaces/:id/start", s.workspaceStart)
+	r.Post("/browser/workspaces/:id/stop", s.workspaceStop)
+	r.Post("/browser/workspaces/:id/navigate", s.workspaceNavigate)
+	// Legacy VNC single-instance (Linux only)
+	r.Get("/browser/status", s.vncStatus)
+	r.Post("/browser/start", s.vncStart)
+	r.Post("/browser/stop", s.vncStop)
+
+	// Analytics
+	r.Get("/analytics/sentiment", s.getSentimentStats)
+
+	// Logs SSE — uses ?token= query param (EventSource cannot set Authorization header)
+	app.Get("/api/logs/stream", func(c *fiber.Ctx) error {
+		token := c.Query("token")
+		if token == "" {
+			return c.Status(401).JSON(fiber.Map{"error": "token required"})
+		}
+		if _, err := authpkg.ValidateAccessToken(token, cfg.JWTSecret); err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
+		}
+		return s.streamLogs(c)
+	})
+
+	// WebSocket auth helper — validates JWT from ?token= query param
+	wsJWTAuth := func(c *fiber.Ctx) error {
+		if !fiberws.IsWebSocketUpgrade(c) {
+			return fiber.ErrUpgradeRequired
+		}
+		token := c.Query("token")
+		if token == "" {
+			return c.Status(401).JSON(fiber.Map{"error": "token required"})
+		}
+		if _, err := authpkg.ValidateAccessToken(token, cfg.JWTSecret); err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
+		}
+		return c.Next()
+	}
+
+	// WebSocket: per-account CDP screencast (JPEG frames + input relay)
+	app.Use("/ws/browser-view/:id", wsJWTAuth)
+	app.Get("/ws/browser-view/:id", fiberws.New(s.cdpViewHandler()))
+
+	// WebSocket: noVNC proxy (VNC mode — Linux only)
+	app.Use("/ws/vnc", wsJWTAuth)
+	app.Get("/ws/vnc", fiberws.New(s.vncProxyHandler()))
+
+	// WebSocket: Chrome Extension hub — token in first WS message
+	app.Use("/ws/agent", func(c *fiber.Ctx) error {
+		if fiberws.IsWebSocketUpgrade(c) {
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	app.Get("/ws/agent", fiberws.New(s.wsHub.wsHandler(db)))
 
 	// Serve embedded static files (Web UI)
 	staticSub, _ := fs.Sub(staticFS, "static")

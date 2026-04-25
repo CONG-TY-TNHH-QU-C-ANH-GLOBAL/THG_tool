@@ -39,6 +39,11 @@ type Config struct {
 	ServerHost string // public hostname/IP used in SSH tunnel instructions
 	SSHPort    int    // SSH port for tunnel instructions (default 22)
 
+	// noVNC browser workspace
+	VNCPort    int // VNC server TCP port (default 5900)
+	CDPPort    int // Chrome DevTools Protocol debug port (default 9222)
+	DisplayNum int // X11 display number for Xvfb (default 99)
+
 	// Web
 	WebPort int
 
@@ -72,6 +77,9 @@ func Load() *Config {
 		Headless:           detectHeadless(),
 		ServerHost:         getEnv("SERVER_HOST", ""),
 		SSHPort:            getEnvInt("SSH_PORT", 22),
+		VNCPort:            getEnvInt("VNC_PORT", 5900),
+		CDPPort:            getEnvInt("CDP_PORT", 9222),
+		DisplayNum:         getEnvInt("DISPLAY_NUM", 99),
 		WebPort:            getEnvInt("WEB_PORT", 8080),
 		DBPath:             getEnv("DB_PATH", "data/scraper.db"),
 		BackupEnabled:      getEnv("BACKUP_ENABLED", "true") == "true",

@@ -13,7 +13,11 @@
       "Bash(git branch *)",
       "Bash(git remote *)",
       "Bash(git push *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(go get *)",
+      "WebFetch(domain:autonow.vn)",
+      "Bash(go doc *)",
+      "Bash(curl *)"
     ]
   }
 }

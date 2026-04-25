@@ -18,12 +18,12 @@ import (
 
 // CareersScraper handles scraping job postings from the company careers page.
 type CareersScraper struct {
-	pool *browser.Pool
+	pool browser.Browser
 	db   *store.Store
 }
 
 // NewCareersScraper creates a new careers scraper.
-func NewCareersScraper(pool *browser.Pool, db *store.Store) *CareersScraper {
+func NewCareersScraper(pool browser.Browser, db *store.Store) *CareersScraper {
 	return &CareersScraper{pool: pool, db: db}
 }
 

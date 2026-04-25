@@ -23,12 +23,12 @@ import (
 type AutoCommenter struct {
 	db         *store.Store
 	accountMgr *accounts.Manager
-	mainPool   *browser.Pool
+	mainPool   browser.Browser
 	selectorAI *ai.SelectorAI
 }
 
 // NewAutoCommenter creates a new auto-commenter.
-func NewAutoCommenter(db *store.Store, accountMgr *accounts.Manager, mainPool *browser.Pool) *AutoCommenter {
+func NewAutoCommenter(db *store.Store, accountMgr *accounts.Manager, mainPool browser.Browser) *AutoCommenter {
 	return &AutoCommenter{db: db, accountMgr: accountMgr, mainPool: mainPool}
 }
 
@@ -575,8 +575,8 @@ func (ac *AutoCommenter) PostCommentReply(ctx context.Context, msg *models.Outbo
 	return nil
 }
 
-// acquirePool returns the pool to use and whether it is a temporary pool that should be shut down.
-func (ac *AutoCommenter) acquirePool(account *models.Account) (*browser.Pool, bool, error) {
+// acquirePool returns the browser to use and whether it is temporary (must be shut down after use).
+func (ac *AutoCommenter) acquirePool(account *models.Account) (browser.Browser, bool, error) {
 	if account.ID == 0 && ac.mainPool != nil {
 		return ac.mainPool, false, nil
 	}

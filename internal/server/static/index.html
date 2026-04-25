@@ -54,35 +54,54 @@
             <div class="sidebar-nav">
                 <a href="#" class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
                     <span class="nav-icon">📊</span>
-                    <span>Dashboard</span>
+                    <span>Overview</span>
                 </a>
-                <a href="#" class="nav-item" data-page="leads" onclick="switchPage('leads')">
-                    <span class="nav-icon">🎯</span>
-                    <span>Leads</span>
+                <a href="#" class="nav-item" data-page="aichat" onclick="switchPage('aichat')">
+                    <span class="nav-icon">💬</span>
+                    <span>Chat</span>
                 </a>
-                <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
-                    <span class="nav-icon">📝</span>
-                    <span>Posts</span>
+
+                <div class="nav-section-label">FACEBOOK</div>
+                <a href="#" class="nav-item" data-page="browser" onclick="switchPage('browser')">
+                    <span class="nav-icon">🌐</span>
+                    <span>Browser</span>
+                    <span class="nav-badge" id="browserBadge" style="display:none">●</span>
                 </a>
                 <a href="#" class="nav-item" data-page="groups" onclick="switchPage('groups')">
                     <span class="nav-icon">👥</span>
                     <span>Groups</span>
                 </a>
-                <a href="#" class="nav-item" data-page="jobs" onclick="switchPage('jobs')">
-                    <span class="nav-icon">⚡</span>
-                    <span>Jobs</span>
-                </a>
-                <a href="#" class="nav-item" data-page="accounts" onclick="switchPage('accounts')">
-                    <span class="nav-icon">🔑</span>
-                    <span>Accounts</span>
-                </a>
-                <a href="#" class="nav-item" data-page="aichat" onclick="switchPage('aichat')">
-                    <span class="nav-icon">💬</span>
-                    <span>AI Chat</span>
+                <a href="#" class="nav-item" data-page="leads" onclick="switchPage('leads')">
+                    <span class="nav-icon">🎯</span>
+                    <span>Leads</span>
                 </a>
                 <a href="#" class="nav-item" data-page="outbox" onclick="switchPage('outbox')">
                     <span class="nav-icon">📤</span>
                     <span>Outbox</span>
+                </a>
+                <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
+                    <span class="nav-icon">📝</span>
+                    <span>Posts</span>
+                </a>
+
+                <div class="nav-section-label">ANALYTICS</div>
+                <a href="#" class="nav-item" data-page="sentiment" onclick="switchPage('sentiment')">
+                    <span class="nav-icon">📈</span>
+                    <span>Analytics</span>
+                </a>
+                <a href="#" class="nav-item" data-page="logs" onclick="switchPage('logs')">
+                    <span class="nav-icon">📋</span>
+                    <span>Logs</span>
+                </a>
+
+                <div class="nav-section-label">CONFIG</div>
+                <a href="#" class="nav-item" data-page="jobs" onclick="switchPage('jobs')">
+                    <span class="nav-icon">⚡</span>
+                    <span>Coordinator</span>
+                </a>
+                <a href="#" class="nav-item" data-page="accounts" onclick="switchPage('accounts')">
+                    <span class="nav-icon">🔑</span>
+                    <span>Accounts</span>
                 </a>
                 <a href="#" class="nav-item" data-page="settings" onclick="switchPage('settings')">
                     <span class="nav-icon">⚙️</span>
@@ -489,6 +508,62 @@
                     </div>
                 </div>
             </section>
+            <!-- Browser Page -->
+            <section class="page" id="page-browser">
+                <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
+
+                    <!-- Left: account list -->
+                    <div class="section-card glass">
+                        <div class="section-header" style="padding:16px 20px 12px">
+                            <h2 style="font-size:14px">🔑 Tài khoản Facebook</h2>
+                        </div>
+                        <div id="workspaceAccountList" class="workspace-accounts" style="padding:0 12px 12px">
+                            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">
+                                Đang tải...
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: live browser view -->
+                    <div>
+                        <!-- Toolbar -->
+                        <div class="browser-card" style="margin-bottom:12px">
+                            <div style="padding:16px 20px">
+                                <div class="browser-toolbar-title">Facebook browser profile</div>
+                                <div class="browser-toolbar-desc">
+                                    Browser dành riêng cho từng tài khoản. Đăng nhập Facebook một lần — session persist tự động.
+                                </div>
+                            </div>
+                            <div class="browser-toolbar">
+                                <button id="browserStartBtn" class="btn btn-success btn-sm" onclick="browserStartSelected()">▶ START</button>
+                                <button id="browserStopBtn" class="btn btn-ghost btn-sm" onclick="browserStopSelected()" disabled>■ STOP</button>
+                                <button class="btn btn-ghost btn-sm" onclick="loadBrowserPage()">↻ refresh</button>
+                                <div class="browser-port-status" id="browserPortStatus" style="display:none">
+                                    <span>cdp: <span id="browserCdpPort" class="dot-online">–</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live view -->
+                        <div class="browser-card">
+                            <div class="browser-urlbar">
+                                <div class="browser-urlbar-dots">
+                                    <span></span><span></span><span></span>
+                                </div>
+                                <span id="browserUrlLabel">cdp://workspace — chọn tài khoản để bắt đầu</span>
+                            </div>
+                            <div class="browser-shell">
+                                <canvas id="browserCanvas" tabindex="0"></canvas>
+                                <div class="browser-placeholder" id="browserPlaceholder">
+                                    <div class="browser-placeholder-icon">🌐</div>
+                                    <div class="browser-placeholder-text">Chọn tài khoản bên trái → nhấn START</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Settings Page -->
             <section class="page" id="page-settings">
                 <div style="display:grid;gap:16px;max-width:820px">
@@ -535,6 +610,32 @@
                             <button class="btn btn-primary btn-sm" onclick="changePassword()">Đổi mật khẩu</button>
                         </div>
                     </div>
+                    <!-- Agent Tokens (admin only) -->
+                    <div class="section-card glass" id="agentTokensSection" style="display:none">
+                        <div class="section-header">
+                            <h2>🤖 Agent Tokens</h2>
+                            <button class="btn btn-primary btn-sm" onclick="createAgentToken()">+ Tạo token</button>
+                        </div>
+                        <div style="padding:8px 24px 4px;font-size:12px;color:var(--text-muted)">
+                            Token xác thực cho Chrome Extension agent. Chỉ hiển thị một lần khi tạo.
+                        </div>
+                        <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
+                            <table class="data-table" id="agentTokensTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Tên</th>
+                                        <th>Máy / OS</th>
+                                        <th>Lần cuối online</th>
+                                        <th>Trạng thái</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- User Management (admin only) -->
                     <div class="section-card glass" id="userMgmtSection" style="display:none">
                         <div class="section-header">
@@ -559,6 +660,100 @@
                                 <tbody></tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs Page -->
+            <section class="page" id="page-logs">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>📋 System Logs</h2>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;gap:6px;align-items:center;cursor:pointer">
+                                <input type="checkbox" id="logsAutoScroll" checked style="accent-color:var(--accent)">
+                                Auto-scroll
+                            </label>
+                            <button class="btn btn-sm btn-ghost" onclick="clearLogsDisplay()">🗑 Clear</button>
+                        </div>
+                    </div>
+                    <div id="logsContainer" style="
+                        font-family: 'Cascadia Code', 'Fira Code', monospace;
+                        font-size: 12px;
+                        line-height: 1.6;
+                        padding: 16px;
+                        height: calc(100vh - 240px);
+                        overflow-y: auto;
+                        background: rgba(0,0,0,0.3);
+                        border-radius: 8px;
+                        margin: 0 16px 16px;
+                        color: #94a3b8;
+                    "></div>
+                </div>
+            </section>
+
+            <!-- Sentiment / Analytics Page -->
+            <section class="page" id="page-sentiment">
+                <div class="stats-grid" id="sentimentStatsGrid">
+                    <div class="stat-card glass hot">
+                        <div class="stat-icon">🔥</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentHot">-</span>
+                            <span class="stat-label">Hot Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🌡️</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentWarm">-</span>
+                            <span class="stat-label">Warm Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">❄️</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentCold">-</span>
+                            <span class="stat-label">Cold Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📤</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentCommentsSent">-</span>
+                            <span class="stat-label">Comments Sent</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📬</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentInboxSent">-</span>
+                            <span class="stat-label">Inbox Sent</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">❌</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentFailed">-</span>
+                            <span class="stat-label">Failed Sends</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0">
+                    <!-- Lead Score Breakdown -->
+                    <div class="section-card glass">
+                        <div class="section-header"><h2>🎯 Lead Score Breakdown</h2></div>
+                        <div id="sentScoreChart" style="padding:20px"></div>
+                    </div>
+                    <!-- Top Niches -->
+                    <div class="section-card glass">
+                        <div class="section-header"><h2>🏭 Top Niches</h2></div>
+                        <div id="sentNicheChart" style="padding:20px"></div>
+                    </div>
+                    <!-- Outbound Status -->
+                    <div class="section-card glass" style="grid-column:1/-1">
+                        <div class="section-header"><h2>📊 Comment & Inbox Performance</h2></div>
+                        <div id="sentOutboundChart" style="padding:20px"></div>
                     </div>
                 </div>
             </section>
@@ -927,7 +1122,7 @@
             </div>
         </div>
 
-    <script src="app.js?v=19"></script>
+    <script src="app.js?v=20"></script>
 </body>
 
 </html>

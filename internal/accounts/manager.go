@@ -79,7 +79,7 @@ func (m *Manager) GetNextAccount(platform models.Platform) (*models.Account, err
 
 // GetPoolForAccount creates a browser pool using the account's persistent Chrome profile.
 // The Chrome profile stores the login session, so no cookies needed.
-func (m *Manager) GetPoolForAccount(account *models.Account) (*browser.Pool, error) {
+func (m *Manager) GetPoolForAccount(account *models.Account) (browser.Browser, error) {
 	profileDir := m.GetProfileDir(account.ID)
 	proxyURL := account.ProxyURL
 

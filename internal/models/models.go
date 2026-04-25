@@ -130,18 +130,27 @@ type Niche struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ExecutionMode determines where a job runs.
+type ExecutionMode string
+
+const (
+	ExecutionServer ExecutionMode = "server" // default: run on VPS
+	ExecutionLocal  ExecutionMode = "local"  // run by local agent on staff's machine
+)
+
 // Job represents a scraping job in the queue.
 type Job struct {
-	ID        int64     `json:"id" db:"id"`
-	Type      JobType   `json:"type" db:"type"`
-	Platform  Platform  `json:"platform" db:"platform"`
-	Target    string    `json:"target" db:"target"` // URL or keyword
-	Status    JobStatus `json:"status" db:"status"`
-	Result    string    `json:"result" db:"result"` // JSON result summary
-	Error     string    `json:"error" db:"error"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	StartedAt time.Time `json:"started_at" db:"started_at"`
-	DoneAt    time.Time `json:"done_at" db:"done_at"`
+	ID            int64         `json:"id" db:"id"`
+	Type          JobType       `json:"type" db:"type"`
+	Platform      Platform      `json:"platform" db:"platform"`
+	Target        string        `json:"target" db:"target"`
+	Status        JobStatus     `json:"status" db:"status"`
+	ExecutionMode ExecutionMode `json:"execution_mode" db:"execution_mode"`
+	Result        string        `json:"result" db:"result"`
+	Error         string        `json:"error" db:"error"`
+	CreatedAt     time.Time     `json:"created_at" db:"created_at"`
+	StartedAt     time.Time     `json:"started_at" db:"started_at"`
+	DoneAt        time.Time     `json:"done_at" db:"done_at"`
 }
 
 // ScanLog represents a log entry for a scraping cycle.

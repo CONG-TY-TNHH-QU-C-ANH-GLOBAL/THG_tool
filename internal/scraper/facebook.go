@@ -19,12 +19,12 @@ import (
 
 // FacebookScraper handles scraping Facebook groups using chromedp.
 type FacebookScraper struct {
-	pool *browser.Pool
+	pool browser.Browser
 	db   *store.Store
 }
 
 // NewFacebookScraper creates a new Facebook scraper.
-func NewFacebookScraper(pool *browser.Pool, db *store.Store) *FacebookScraper {
+func NewFacebookScraper(pool browser.Browser, db *store.Store) *FacebookScraper {
 	return &FacebookScraper{pool: pool, db: db}
 }
 

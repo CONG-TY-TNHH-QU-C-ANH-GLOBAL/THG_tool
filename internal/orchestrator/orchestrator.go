@@ -19,7 +19,7 @@ import (
 // Orchestrator coordinates all system components.
 type Orchestrator struct {
 	db             *store.Store
-	pool           *browser.Pool
+	pool           browser.Browser
 	queue          *queue.Queue
 	bot            *telegram.Bot
 	ai             *ai.Classifier
@@ -34,7 +34,7 @@ type Orchestrator struct {
 }
 
 // New creates a new orchestrator.
-func New(db *store.Store, pool *browser.Pool, q *queue.Queue, bot *telegram.Bot, classifier *ai.Classifier, msgGen *ai.MessageGenerator, accountMgr *accounts.Manager, pricer *ai.PriceExtractor) *Orchestrator {
+func New(db *store.Store, pool browser.Browser, q *queue.Queue, bot *telegram.Bot, classifier *ai.Classifier, msgGen *ai.MessageGenerator, accountMgr *accounts.Manager, pricer *ai.PriceExtractor) *Orchestrator {
 	o := &Orchestrator{
 		db:         db,
 		pool:       pool,
@@ -84,6 +84,91 @@ func (o *Orchestrator) Start(ctx context.Context, scanInterval time.Duration) {
 	}
 
 	log.Println("[Orchestrator] Started")
+}
+
+// ProcessAgentScrapedPosts runs the full AI pipeline on posts scraped by a local agent.
+// Called by the server's agent handler after receiving job results.
+func (o *Orchestrator) ProcessAgentScrapedPosts(ctx context.Context, groupURL string, posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+
+	// Resolve group for display name
+	groupName := groupURL
+	groups, _ := o.db.GetActiveGroups(models.PlatformFacebook)
+	for _, g := range groups {
+		if g.URL == groupURL {
+			groupName = g.Name
+			break
+		}
+	}
+
+	var leads []models.Lead
+	if o.ai != nil {
+		for i := 0; i < len(posts); i += 10 {
+			end := i + 10
+			if end > len(posts) {
+				end = len(posts)
+			}
+			batch, err := o.ai.ClassifyBatch(ctx, posts[i:end])
+			if err != nil {
+				log.Printf("[Orchestrator] Agent classify error: %v", err)
+			} else {
+				leads = append(leads, batch...)
+			}
+		}
+	}
+
+	if o.bot != nil {
+		hotCount := 0
+		for _, l := range leads {
+			if l.Score == models.LeadHot {
+				hotCount++
+			}
+		}
+		o.bot.Notify(fmt.Sprintf("🤖 *Agent scan: %s*\n📝 %d posts | 🎯 %d leads | 🔥 %d hot",
+			groupName, len(posts), len(leads), hotCount))
+	}
+
+	// Queue outbound comments for hot/warm leads (same logic as server scan)
+	var defaultAccountID int64 = -1
+	if o.accountMgr != nil {
+		if acc, err := o.accountMgr.GetNextAccount(models.PlatformFacebook); err == nil {
+			defaultAccountID = acc.ID
+		}
+	}
+	queuedCount := 0
+	for _, lead := range leads {
+		if lead.SourceURL == "" || o.autoCommenter == nil || defaultAccountID < 0 {
+			continue
+		}
+		if o.db.HasSentComment(lead.SourceURL) {
+			continue
+		}
+		commentContent := fmt.Sprintf("Chào %s, bạn có thể liên hệ để được tư vấn thêm nhé!", lead.Author)
+		if o.msgGen != nil {
+			if c, err := o.msgGen.GenerateCommentWithService(ctx, lead.Content, lead.Author, "", lead.ServiceMatch, ""); err == nil && c != "" {
+				commentContent = c
+			}
+		}
+		msg := &models.OutboundMessage{
+			Type:       "comment",
+			Platform:   lead.Platform,
+			AccountID:  defaultAccountID,
+			TargetURL:  lead.SourceURL,
+			TargetName: lead.Author,
+			Content:    commentContent,
+			Context:    lead.Content,
+			Status:     models.OutboundApproved,
+			AIModel:    "agent",
+		}
+		if _, err := o.db.InsertOutboundMessage(msg); err == nil {
+			queuedCount++
+		}
+	}
+	if queuedCount > 0 {
+		o.safeNotify(fmt.Sprintf("📬 Agent: queued %d comments", queuedCount))
+	}
 }
 
 // Stop gracefully shuts down the orchestrator.

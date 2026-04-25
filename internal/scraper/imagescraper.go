@@ -21,13 +21,13 @@ import (
 
 // ImageScraper crawls images from a website URL and saves them to the database.
 type ImageScraper struct {
-	pool   *browser.Pool
+	pool   browser.Browser
 	db     *store.Store
 	client *http.Client
 }
 
 // NewImageScraper creates a new image scraper.
-func NewImageScraper(pool *browser.Pool, db *store.Store) *ImageScraper {
+func NewImageScraper(pool browser.Browser, db *store.Store) *ImageScraper {
 	return &ImageScraper{
 		pool: pool,
 		db:   db,

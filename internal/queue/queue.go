@@ -66,12 +66,18 @@ func (q *Queue) Stop() {
 }
 
 // Submit adds a new job to the queue.
+// Jobs with ExecutionMode=local are saved to DB only — the local agent polls and executes them.
 func (q *Queue) Submit(job models.Job) (int64, error) {
 	jobID, err := q.db.CreateJob(&job)
 	if err != nil {
 		return 0, fmt.Errorf("create job: %w", err)
 	}
 	job.ID = jobID
+
+	if job.ExecutionMode == models.ExecutionLocal {
+		log.Printf("[Queue] Local job %d created: %s %s (waiting for agent)", jobID, job.Type, job.Target)
+		return jobID, nil
+	}
 
 	select {
 	case q.jobs <- job:
