@@ -7,51 +7,62 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
-// Instance represents one running Chrome process for a Facebook account.
+const containerPrefix = "thg-browser-"
+
+// Instance represents one running Docker container for a Facebook account.
 type Instance struct {
 	AccountID   int64
 	AccountName string
 	ProfileDir  string
-	CDPPort     int
-	Process     *exec.Cmd
+	ContainerID string // short Docker container ID
+	CDPPort     int    // unused in Docker/VNC mode — kept for API compatibility
+	VNCPort     int    // host-side port mapped from container's VNC :5900
 	StartedAt   time.Time
 }
 
-// IsRunning reports whether the Chrome process is still alive.
+// IsRunning reports whether the instance is tracked as active.
 func (i *Instance) IsRunning() bool {
-	return i != nil && i.Process != nil && i.Process.Process != nil
+	return i != nil && i.ContainerID != ""
 }
 
-// Manager owns all per-account Chrome instances.
+// Manager owns all per-account Docker containers.
 // Safe for concurrent use.
 type Manager struct {
 	mu          sync.RWMutex
 	instances   map[int64]*Instance
 	profileBase string
-	chromePath  string
+	dockerImage string
 }
 
-// NewManager creates a workspace manager.
-// chromePath: path to the chrome/chromium binary
-// profileBase: root dir for per-account Chrome profiles (e.g. "data/profiles")
+// NewManager creates a Docker-based workspace manager.
+// chromePath is ignored — Chrome runs inside the container.
+// Call ReconcileRunning() after this if you want to re-attach containers
+// that survived a server restart.
 func NewManager(chromePath, profileBase string) *Manager {
 	if profileBase == "" {
 		profileBase = filepath.Join(".", "data", "profiles")
 	}
 	_ = os.MkdirAll(profileBase, 0755)
+
+	// BROWSER_IMAGE env overrides the default image name
+	image := os.Getenv("BROWSER_IMAGE")
+	if image == "" {
+		image = "thg-browser:latest"
+	}
+
 	return &Manager{
 		instances:   make(map[int64]*Instance),
 		profileBase: profileBase,
-		chromePath:  chromePath,
+		dockerImage: image,
 	}
 }
 
-// ProfileDir returns the Chrome user-data-dir for an account.
+// ProfileDir returns the Chrome user-data-dir for an account (host-side path).
 func (m *Manager) ProfileDir(accountID int64) string {
 	if accountID == 0 {
 		return m.profileBase
@@ -59,187 +70,230 @@ func (m *Manager) ProfileDir(accountID int64) string {
 	return filepath.Join(m.profileBase, fmt.Sprintf("account_%d", accountID))
 }
 
-// Get returns the running instance for accountID, or nil if not running.
+func (m *Manager) profileDirLocked(accountID int64) string {
+	return m.ProfileDir(accountID)
+}
+
+// Get returns the tracked instance for accountID, or nil if not running.
 func (m *Manager) Get(accountID int64) *Instance {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	inst := m.instances[accountID]
-	if inst != nil && !inst.IsRunning() {
-		return nil
-	}
-	return inst
+	return m.instances[accountID]
 }
 
-// List returns all currently running instances.
+// List returns all currently tracked instances.
 func (m *Manager) List() []*Instance {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]*Instance, 0, len(m.instances))
 	for _, v := range m.instances {
-		if v.IsRunning() {
-			out = append(out, v)
-		}
+		out = append(out, v)
 	}
 	return out
 }
 
-// Start launches Chrome for accountID if not already running.
-// Returns the running instance (existing or newly started).
+// Start launches a Docker container for accountID.
+// If a container for this account already exists and is running, returns it immediately.
 func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if inst, ok := m.instances[accountID]; ok && inst.IsRunning() {
-		log.Printf("[Workspace] Chrome for account %d already running (cdp=%d)", accountID, inst.CDPPort)
+	// Return existing alive container immediately
+	if inst, ok := m.instances[accountID]; ok && m.containerAlive(inst.ContainerID) {
+		log.Printf("[Workspace] Container for account %d already running (%s)", accountID, inst.ContainerID)
 		return inst, nil
-	}
-
-	port, err := freePort()
-	if err != nil {
-		return nil, fmt.Errorf("find free port: %w", err)
 	}
 
 	profileDir := m.profileDirLocked(accountID)
 	_ = os.MkdirAll(profileDir, 0755)
 
-	// Remove Chrome singleton lock files left by crashed sessions — without this,
-	// Chrome refuses to start a second time against the same profile directory.
-	for _, lockFile := range []string{"SingletonLock", "SingletonCookie", "SingletonSocket"} {
-		_ = os.Remove(filepath.Join(profileDir, lockFile))
+	absProfile, err := filepath.Abs(profileDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve profile path: %w", err)
 	}
 
-	chromePath := m.chromePath
-	if chromePath == "" {
-		chromePath = defaultChromePath()
-	}
-	log.Printf("[Workspace] Chrome binary: %s", chromePath)
+	containerName := fmt.Sprintf("%s%d", containerPrefix, accountID)
 
+	// Remove any leftover container from a previous crash or stop
+	exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
+
+	// docker run -d:
+	//   -p 127.0.0.1::5900  → Docker assigns a random host port, bound to localhost only
+	//   --shm-size=1g        → Chrome needs shared memory (default 64MB is too small)
+	//   -v host:/profile     → persist Chrome session across container restarts
 	args := []string{
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--disable-notifications",
-		"--disable-infobars",
-		"--disable-blink-features=AutomationControlled",
-		fmt.Sprintf("--user-data-dir=%s", profileDir),
-		fmt.Sprintf("--remote-debugging-port=%d", port),
-		"--window-size=1280,800",
-		"--start-maximized",
+		"run", "-d",
+		"--name", containerName,
+		"-p", "127.0.0.1::5900",
+		"--shm-size=1g",
+		"-v", absProfile + ":/profile",
+		"-e", "DISPLAY_NUM=99",
+		"-e", "VNC_PORT=5900",
+		"-e", "PROFILE_DIR=/profile",
+		m.dockerImage,
 	}
 
-	// Linux/server flags: headless=new means Chrome runs entirely in memory —
-	// no X display, no Xvfb needed. CDP screencast still captures rendered frames
-	// and streams them to the dashboard canvas.
-	if runtime.GOOS != "windows" {
-		args = append(args,
-			"--headless=new",
-			"--no-sandbox",
-			"--disable-dev-shm-usage",
-			"--disable-gpu",
-			"--run-all-compositor-stages-before-draw",
+	out, err := exec.Command("docker", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"docker run failed: %w\n→ Is Docker installed? Is the image built? Run: docker build -t thg-browser ./docker/",
+			err,
 		)
 	}
 
-	cmd := exec.Command(chromePath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	fullID := strings.TrimSpace(string(out))
+	shortID := fullID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
 
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("chrome start: %w", err)
+	// Query the host-side port Docker assigned for the container's VNC port
+	vncPort, err := m.queryContainerPort(containerName, "5900")
+	if err != nil {
+		exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
+		return nil, fmt.Errorf("get container VNC port: %w", err)
 	}
 
 	inst := &Instance{
 		AccountID:   accountID,
 		AccountName: accountName,
 		ProfileDir:  profileDir,
-		CDPPort:     port,
-		Process:     cmd,
+		ContainerID: shortID,
+		VNCPort:     vncPort,
 		StartedAt:   time.Now(),
 	}
 	m.instances[accountID] = inst
 
-	go func() {
-		_ = cmd.Wait()
-		m.mu.Lock()
-		if cur, ok := m.instances[accountID]; ok && cur == inst {
-			delete(m.instances, accountID)
-		}
-		m.mu.Unlock()
-		log.Printf("[Workspace] Chrome exited for account %d (%s)", accountID, accountName)
-	}()
-
-	log.Printf("[Workspace] Chrome started for account %d (%s) — cdp=%d profile=%s",
-		accountID, accountName, port, profileDir)
+	log.Printf("[Workspace] Container started for account %d (%s) — id=%s vnc=127.0.0.1:%d",
+		accountID, accountName, shortID, vncPort)
 	return inst, nil
 }
 
-// Stop kills Chrome for accountID.
+// Stop kills and removes the Docker container for accountID.
 func (m *Manager) Stop(accountID int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	inst, ok := m.instances[accountID]
-	if !ok {
-		return
-	}
-	if inst.IsRunning() {
-		inst.Process.Process.Kill()
-	}
+	containerName := fmt.Sprintf("%s%d", containerPrefix, accountID)
+	exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
+	exec.Command("docker", "rm", containerName).Run()               //nolint:errcheck
 	delete(m.instances, accountID)
-	log.Printf("[Workspace] Chrome stopped for account %d", accountID)
+	log.Printf("[Workspace] Container stopped for account %d", accountID)
 }
 
-// StopAll kills all running Chrome instances (called on server shutdown).
+// StopAll stops all tracked containers (called on server shutdown).
 func (m *Manager) StopAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for id, inst := range m.instances {
-		if inst.IsRunning() {
-			inst.Process.Process.Kill()
-		}
+	for id := range m.instances {
+		containerName := fmt.Sprintf("%s%d", containerPrefix, id)
+		exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
+		exec.Command("docker", "rm", containerName).Run()               //nolint:errcheck
 		delete(m.instances, id)
 	}
-	log.Println("[Workspace] All Chrome instances stopped")
+	log.Println("[Workspace] All browser containers stopped")
 }
 
-func (m *Manager) profileDirLocked(accountID int64) string {
-	if accountID == 0 {
-		return m.profileBase
-	}
-	return filepath.Join(m.profileBase, fmt.Sprintf("account_%d", accountID))
-}
-
-// freePort finds an available TCP port on localhost.
-func freePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+// ReconcileRunning scans Docker for any thg-browser-* containers that survived
+// a server restart and re-adds them to the instances map.
+// Call this once after NewManager() in main.go.
+func (m *Manager) ReconcileRunning() {
+	out, err := exec.Command("docker", "ps",
+		"--filter", "name="+containerPrefix,
+		"--format", "{{.Names}}",
+	).Output()
 	if err != nil {
-		return 0, err
+		log.Printf("[Workspace] ReconcileRunning: docker ps failed: %v", err)
+		return
 	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-	return port, nil
+
+	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		name = strings.TrimSpace(name)
+		if !strings.HasPrefix(name, containerPrefix) || name == containerPrefix {
+			continue
+		}
+		idStr := strings.TrimPrefix(name, containerPrefix)
+		var accountID int64
+		fmt.Sscanf(idStr, "%d", &accountID)
+		if accountID == 0 {
+			continue
+		}
+
+		vncPort, err := m.queryContainerPort(name, "5900")
+		if err != nil {
+			log.Printf("[Workspace] Reconcile: cannot get VNC port for %s: %v", name, err)
+			continue
+		}
+
+		shortIDOut, _ := exec.Command("docker", "inspect", "--format={{slice .Id 0 12}}", name).Output()
+		shortID := strings.TrimSpace(string(shortIDOut))
+
+		m.mu.Lock()
+		m.instances[accountID] = &Instance{
+			AccountID:   accountID,
+			AccountName: name,
+			ProfileDir:  m.ProfileDir(accountID),
+			ContainerID: shortID,
+			VNCPort:     vncPort,
+			StartedAt:   time.Now(),
+		}
+		m.mu.Unlock()
+
+		log.Printf("[Workspace] Reconciled container for account %d (vnc=127.0.0.1:%d)", accountID, vncPort)
+	}
 }
 
-// defaultChromePath returns the default Chrome binary path for the current OS.
-func defaultChromePath() string {
-	switch runtime.GOOS {
-	case "windows":
-		paths := []string{
-			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
-			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+// WaitForVNC blocks until the VNC port is connectable or timeout elapses.
+// Returns true if VNC became ready.
+func WaitForVNC(vncPort int, timeout time.Duration) bool {
+	addr := fmt.Sprintf("127.0.0.1:%d", vncPort)
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return true
 		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return p
-			}
-		}
-		return "chrome"
-	case "darwin":
-		return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-	default: // linux
-		for _, p := range []string{"google-chrome", "google-chrome-stable", "chromium-browser", "chromium"} {
-			if path, err := exec.LookPath(p); err == nil {
-				return path
-			}
-		}
-		return "google-chrome"
+		time.Sleep(500 * time.Millisecond)
 	}
+	return false
+}
+
+// queryContainerPort asks Docker for the host-side port mapped from containerPort.
+// Retries a few times because docker port may not respond immediately after docker run.
+func (m *Manager) queryContainerPort(containerName, containerPort string) (int, error) {
+	var lastErr error
+	for i := 0; i < 10; i++ {
+		out, err := exec.Command("docker", "port", containerName, containerPort).Output()
+		if err == nil {
+			// Output: "0.0.0.0:32768" or "127.0.0.1:32768"
+			line := strings.TrimSpace(string(out))
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				var port int
+				fmt.Sscanf(parts[len(parts)-1], "%d", &port)
+				if port > 0 {
+					return port, nil
+				}
+			}
+			lastErr = fmt.Errorf("unexpected docker port output: %q", line)
+		} else {
+			lastErr = err
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return 0, fmt.Errorf("docker port %s %s: %w", containerName, containerPort, lastErr)
+}
+
+// containerAlive checks whether a container is currently running.
+func (m *Manager) containerAlive(containerID string) bool {
+	if containerID == "" {
+		return false
+	}
+	out, err := exec.Command(
+		"docker", "inspect", "--format={{.State.Running}}", containerID,
+	).Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
 }

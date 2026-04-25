@@ -590,22 +590,26 @@
                                 <button id="browserStopBtn" class="btn btn-ghost btn-sm" onclick="browserStopSelected()" disabled>■ STOP</button>
                                 <button class="btn btn-ghost btn-sm" onclick="loadBrowserPage()">↻ refresh</button>
                                 <div class="browser-port-status" id="browserPortStatus" style="display:none">
-                                    <span>cdp: <span id="browserCdpPort" class="dot-online">–</span></span>
+                                    <span>vnc: <span id="browserCdpPort" class="dot-online">–</span></span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Live view -->
+                        <!-- Live view (noVNC) -->
                         <div class="browser-card">
                             <div class="browser-urlbar">
                                 <div class="browser-urlbar-dots">
                                     <span></span><span></span><span></span>
                                 </div>
-                                <span id="browserUrlLabel">cdp://workspace — chọn tài khoản để bắt đầu</span>
+                                <span id="browserUrlLabel">vnc://workspace — chọn tài khoản để bắt đầu</span>
                             </div>
-                            <div class="browser-shell">
-                                <canvas id="browserCanvas" tabindex="0"></canvas>
-                                <div class="browser-placeholder" id="browserPlaceholder">
+                            <!-- browser-shell is position:relative so placeholder overlays the noVNC canvas -->
+                            <div class="browser-shell" style="position:relative;overflow:hidden">
+                                <!-- noVNC renders its canvas into this div -->
+                                <div id="browserVNCScreen" style="width:100%;height:520px;background:#0a0a0f"></div>
+                                <!-- Placeholder overlays noVNC canvas until connected -->
+                                <div class="browser-placeholder" id="browserPlaceholder"
+                                     style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:20">
                                     <div class="browser-placeholder-icon">🌐</div>
                                     <div class="browser-placeholder-text">Chọn tài khoản bên trái → nhấn START</div>
                                 </div>

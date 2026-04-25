@@ -3,16 +3,15 @@ package server
 import (
 	"fmt"
 	"log"
-	"runtime"
 	"strconv"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/workspace"
 )
 
-// workspaceList returns all Facebook accounts with their live Chrome workspace status.
+// workspaceList returns all Facebook accounts with their live Docker container status.
 // GET /api/browser/workspaces
 func (s *Server) workspaceList(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -26,7 +25,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		AccountName string     `json:"account_name"`
 		Status      string     `json:"account_status"`
 		Running     bool       `json:"running"`
-		CDPPort     int        `json:"cdp_port,omitempty"`
+		VNCPort     int        `json:"vnc_port,omitempty"`
 		StartedAt   *time.Time `json:"started_at,omitempty"`
 	}
 
@@ -40,7 +39,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		if s.workspace != nil {
 			if inst := s.workspace.Get(acc.ID); inst != nil {
 				e.Running = true
-				e.CDPPort = inst.CDPPort
+				e.VNCPort = inst.VNCPort
 				t := inst.StartedAt
 				e.StartedAt = &t
 			}
@@ -50,7 +49,8 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"workspaces": result, "count": len(result)})
 }
 
-// workspaceStart launches Chrome for a specific account and waits until CDP is ready.
+// workspaceStart launches a Docker container for a specific account and waits
+// until the VNC port inside the container is connectable (up to 45s).
 // POST /api/browser/workspaces/:id/start
 func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	if s.workspace == nil {
@@ -62,78 +62,46 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
 
-	// On Linux production servers: ensure Xvfb virtual display is running before Chrome
-	if runtime.GOOS == "linux" && s.vncDisplay != nil {
-		if err := s.vncDisplay.Start(); err != nil {
-			log.Printf("[Workspace] Xvfb start warning: %v", err)
-		}
-	}
-
 	inst, err := s.workspace.Start(id, acc.Name)
 	if err != nil {
-		log.Printf("[Workspace] Failed to start Chrome for account %d: %v", id, err)
-		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Chrome start failed: %v", err)})
+		log.Printf("[Workspace] Failed to start container for account %d: %v", id, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("container start failed: %v", err)})
 	}
 
-	cdpPort := inst.CDPPort
-
-	// Block until Chrome's CDP port responds (up to 15s) so the frontend knows it's truly ready
-	wsURL, waitErr := waitForChromeWS(cdpPort)
-	if waitErr != nil {
+	// Block until x11vnc inside the container is listening on the host-mapped port.
+	// Container startup (Xvfb + x11vnc + Chrome) typically takes 5-15s.
+	if !workspace.WaitForVNC(inst.VNCPort, 45*time.Second) {
 		s.workspace.Stop(id)
 		return c.Status(500).JSON(fiber.Map{
-			"error": "Chrome started but CDP did not become ready — check Chrome installation or profile path",
+			"error": "container started but VNC did not become ready — check the Docker image: docker build -t thg-browser ./docker/",
 		})
 	}
-	_ = wsURL
 
-	// Update account status to active now that Chrome is running
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 
-	// Start CDP screencast in background
-	go s.startAccountScreencast(id, cdpPort)
-
-	log.Printf("[Workspace] Account %d (%s) workspace ready, cdp=%d", id, acc.Name, cdpPort)
+	log.Printf("[Workspace] Account %d (%s) browser ready, vnc=127.0.0.1:%d", id, acc.Name, inst.VNCPort)
 	return c.JSON(fiber.Map{
 		"status":   "running",
-		"cdp_port": cdpPort,
+		"vnc_port": inst.VNCPort,
 	})
 }
 
-// workspaceStop kills Chrome for a specific account.
+// workspaceStop kills the Docker container for a specific account.
 // POST /api/browser/workspaces/:id/stop
 func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	s.stopAccountScreencast(id)
 	if s.workspace != nil {
 		s.workspace.Stop(id)
 	}
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
-// workspaceNavigate navigates the account's Chrome to a URL.
+// workspaceNavigate is a no-op in Docker/VNC mode.
+// Navigation happens directly in the browser via mouse/keyboard through noVNC.
 // POST /api/browser/workspaces/:id/navigate
 func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
-	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	var req struct {
-		URL string `json:"url"`
-	}
-	if err := c.BodyParser(&req); err != nil || req.URL == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "url required"})
-	}
-
-	hub := s.getAccountHub(id)
-	if hub == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "browser not connected — start it first"})
-	}
-	hub.mu.RLock()
-	ctx := hub.cdpCtx
-	hub.mu.RUnlock()
-	if ctx == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "browser not connected — start it first"})
-	}
-
-	go chromedp.Run(ctx, chromedp.Navigate(req.URL))
-	return c.JSON(fiber.Map{"status": "navigating", "url": req.URL})
+	return c.Status(501).JSON(fiber.Map{
+		"error": "navigate is not available in VNC mode — use the browser directly via the dashboard",
+	})
 }
 

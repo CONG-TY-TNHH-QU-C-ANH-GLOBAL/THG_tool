@@ -334,11 +334,15 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 		return c.Next()
 	}
 
-	// WebSocket: per-account CDP screencast (JPEG frames + input relay)
+	// WebSocket: per-account noVNC proxy (Docker/VNC mode — primary browser view)
+	app.Use("/ws/vnc/:id", wsJWTAuth)
+	app.Get("/ws/vnc/:id", fiberws.New(s.perAccountVNCProxyHandler()))
+
+	// WebSocket: per-account CDP screencast (legacy fallback)
 	app.Use("/ws/browser-view/:id", wsJWTAuth)
 	app.Get("/ws/browser-view/:id", fiberws.New(s.cdpViewHandler()))
 
-	// WebSocket: noVNC proxy (VNC mode — Linux only)
+	// WebSocket: legacy single-display VNC proxy
 	app.Use("/ws/vnc", wsJWTAuth)
 	app.Get("/ws/vnc", fiberws.New(s.vncProxyHandler()))
 

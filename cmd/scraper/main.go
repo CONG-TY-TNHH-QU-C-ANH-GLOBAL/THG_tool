@@ -114,6 +114,7 @@ func main() {
 
 	// Initialize workspace manager (per-account live Chrome for dashboard browser view)
 	workspaceMgr := workspace.NewManager(cfg.ChromePath, cfg.ProfileDir)
+	workspaceMgr.ReconcileRunning() // re-attach containers that survived a server restart
 	defer workspaceMgr.StopAll()
 	log.Println("✅ Workspace manager initialized")
 

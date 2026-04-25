@@ -210,20 +210,29 @@ document.addEventListener('click', function(e) {
     if (wrap && !wrap.contains(e.target)) closeUserMenu();
 });
 
-// ===== Browser / Workspace Page =====
+// ===== Browser / Workspace Page (noVNC + Docker) =====
 
 let browserSelectedAccountID = null;
-let browserWS = null;
-let browserCanvas = null;
-let browserCtx = null;
+let browserRFB = null;          // noVNC RFB instance
 let browserReconnectTimer = null;
-let browserFrameWatchdog = null;
+let rfbModule = null;           // cached noVNC RFB class (loaded once from CDN)
 
 async function loadBrowserPage() {
-    browserCanvas = document.getElementById('browserCanvas');
-    browserCtx = browserCanvas ? browserCanvas.getContext('2d') : null;
-    attachBrowserCanvasEvents();
     await loadBrowserWorkspaces();
+}
+
+// Dynamically import noVNC RFB from jsDelivr CDN.
+// The library runs entirely in the user's browser — no server-side files needed.
+async function loadRFB() {
+    if (rfbModule) return rfbModule;
+    try {
+        const mod = await import('https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/core/rfb.js');
+        rfbModule = mod.default;
+        return rfbModule;
+    } catch (e) {
+        console.error('[noVNC] Failed to load from CDN:', e);
+        return null;
+    }
 }
 
 async function loadBrowserWorkspaces() {
@@ -241,7 +250,7 @@ async function loadBrowserWorkspaces() {
 
     list.innerHTML = workspaces.map(w => `
         <div class="workspace-account-row ${browserSelectedAccountID === w.account_id ? 'selected' : ''}"
-             onclick="browserSelectAccount(${w.account_id}, '${esc(w.account_name)}', ${w.running}, ${w.cdp_port || 0})">
+             onclick="browserSelectAccount(${w.account_id}, '${esc(w.account_name)}', ${w.running}, ${w.vnc_port || 0})">
             <div>
                 <div style="font-size:13px;font-weight:500">${esc(w.account_name)}</div>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${w.account_status}</div>
@@ -252,40 +261,36 @@ async function loadBrowserWorkspaces() {
         </div>
     `).join('');
 
-    // Update status if selected account changed externally
     if (browserSelectedAccountID !== null) {
         const selected = workspaces.find(w => w.account_id === browserSelectedAccountID);
-        if (selected) updateBrowserControls(selected.running, selected.cdp_port);
+        if (selected) updateBrowserControls(selected.running, selected.vnc_port);
     }
 }
 
-function browserSelectAccount(accountID, accountName, running, cdpPort) {
-    // Disconnect any existing view
-    if (browserSelectedAccountID !== accountID && browserWS) {
-        browserWS.close();
-        browserWS = null;
+function browserSelectAccount(accountID, accountName, running, vncPort) {
+    if (browserSelectedAccountID !== accountID && browserRFB) {
+        try { browserRFB.disconnect(); } catch {}
+        browserRFB = null;
         showBrowserPlaceholder('Chọn tài khoản bên trái → nhấn START');
     }
-
     browserSelectedAccountID = accountID;
 
-    // Re-render list to show selection
-    document.querySelectorAll('.workspace-account-row').forEach((el, i) => {
-        el.classList.toggle('selected', parseInt(el.getAttribute('onclick').match(/\d+/)[0]) === accountID);
+    document.querySelectorAll('.workspace-account-row').forEach(el => {
+        const m = el.getAttribute('onclick').match(/browserSelectAccount\((\d+)/);
+        el.classList.toggle('selected', m && parseInt(m[1]) === accountID);
     });
 
-    document.getElementById('browserUrlLabel').textContent = `cdp://account-${accountID} — ${accountName}`;
-    updateBrowserControls(running, cdpPort);
+    document.getElementById('browserUrlLabel').textContent = `vnc://account-${accountID} — ${accountName}`;
+    updateBrowserControls(running, vncPort);
 
-    // Auto-connect if already running
-    if (running && cdpPort > 0) connectBrowserView(accountID);
+    if (running && vncPort > 0) connectBrowserViewVNC(accountID);
 }
 
-function updateBrowserControls(running, cdpPort) {
-    const startBtn = document.getElementById('browserStartBtn');
-    const stopBtn  = document.getElementById('browserStopBtn');
-    const portEl   = document.getElementById('browserPortStatus');
-    const cdpPortEl = document.getElementById('browserCdpPort');
+function updateBrowserControls(running, vncPort) {
+    const startBtn  = document.getElementById('browserStartBtn');
+    const stopBtn   = document.getElementById('browserStopBtn');
+    const portEl    = document.getElementById('browserPortStatus');
+    const portLabel = document.getElementById('browserCdpPort');
 
     if (running) {
         startBtn.textContent = '● RUNNING';
@@ -293,7 +298,7 @@ function updateBrowserControls(running, cdpPort) {
         startBtn.disabled = true;
         stopBtn.disabled = false;
         portEl.style.display = 'flex';
-        cdpPortEl.textContent = cdpPort || '–';
+        if (portLabel) portLabel.textContent = vncPort || '–';
     } else {
         startBtn.textContent = '▶ START';
         startBtn.className = 'btn btn-success btn-sm';
@@ -308,99 +313,103 @@ async function browserStartSelected() {
     const btn = document.getElementById('browserStartBtn');
     btn.textContent = '⏳ Đang khởi động...';
     btn.disabled = true;
-    showBrowserPlaceholder('Đang khởi động Chrome — vui lòng chờ...');
+    showBrowserPlaceholder('Đang khởi động Docker container — Xvfb + Chrome + x11vnc...');
 
-    // POST waits until Chrome CDP is ready (up to ~15s server-side)
+    // Server blocks until VNC is ready inside the container (up to 45s)
     const res = await fetchAPI(`/api/browser/workspaces/${browserSelectedAccountID}/start`, 'POST');
     if (!res) {
         btn.textContent = '▶ START';
         btn.disabled = false;
-        const errMsg = (lastApiError && lastApiError.error) || 'Chrome không khởi động được — kiểm tra CHROME_PATH trong .env';
+        const errMsg = (lastApiError && lastApiError.error) ||
+            'Không khởi động được — đảm bảo Docker đã cài và image đã build: docker build -t thg-browser ./docker/';
         showBrowserPlaceholder(errMsg);
         showToast(errMsg, 'error');
         return;
     }
 
     if (res.status === 'running') {
-        showToast('Chrome đã sẵn sàng!', 'success');
-        updateBrowserControls(true, res.cdp_port);
+        showToast('Browser container sẵn sàng!', 'success');
+        updateBrowserControls(true, res.vnc_port);
         await loadBrowserWorkspaces();
-        showBrowserPlaceholder('Đang kết nối màn hình...');
-        // Give screencast goroutine time to start before opening WebSocket
-        setTimeout(() => connectBrowserView(browserSelectedAccountID), 1500);
+        showBrowserPlaceholder('Đang kết nối noVNC...');
+        setTimeout(() => connectBrowserViewVNC(browserSelectedAccountID), 500);
     } else {
         btn.textContent = '▶ START';
         btn.disabled = false;
-        showToast(res.error || 'Lỗi khởi động Chrome', 'error');
+        showToast(res.error || 'Lỗi khởi động container', 'error');
         showBrowserPlaceholder(res.error || 'Khởi động thất bại — xem Logs');
     }
 }
 
 async function browserStopSelected() {
     if (!browserSelectedAccountID) return;
-    if (!confirm('Dừng browser? Session Facebook vẫn được lưu trong profile.')) return;
-    if (browserWS) { browserWS.close(); browserWS = null; }
+    if (!confirm('Dừng browser? Session Facebook vẫn được lưu trong Docker volume.')) return;
+    if (browserRFB) {
+        try { browserRFB.disconnect(); } catch {}
+        browserRFB = null;
+    }
     await fetchAPI(`/api/browser/workspaces/${browserSelectedAccountID}/stop`, 'POST');
     updateBrowserControls(false, 0);
-    showBrowserPlaceholder('Browser đã dừng. Nhấn START để khởi động lại.');
+    showBrowserPlaceholder('Container đã dừng. Nhấn START để khởi động lại.');
     await loadBrowserWorkspaces();
 }
 
-function connectBrowserView(accountID) {
+// connectBrowserViewVNC connects the noVNC client to /ws/vnc/:accountID
+async function connectBrowserViewVNC(accountID) {
     if (browserReconnectTimer) { clearTimeout(browserReconnectTimer); browserReconnectTimer = null; }
-    if (browserFrameWatchdog) { clearTimeout(browserFrameWatchdog); browserFrameWatchdog = null; }
-    if (browserWS) { browserWS.close(); browserWS = null; }
-    if (accountID !== browserSelectedAccountID) return; // account switched
+    // Disconnect previous RFB session
+    if (browserRFB) {
+        try { browserRFB.disconnect(); } catch {}
+        browserRFB = null;
+    }
+    if (accountID !== browserSelectedAccountID) return;
+
+    const RFB = await loadRFB();
+    if (!RFB) {
+        showBrowserPlaceholder('Không tải được noVNC — kiểm tra kết nối internet của bạn');
+        return;
+    }
+
+    const screen = document.getElementById('browserVNCScreen');
+    if (!screen) return;
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws/browser-view/${accountID}?token=${encodeURIComponent(accessToken)}`);
-    browserWS = ws;
+    const url = `${proto}://${location.host}/ws/vnc/${accountID}?token=${encodeURIComponent(accessToken)}`;
 
-    ws.onopen = () => {
-        showBrowserPlaceholder(null);
-        browserCanvas.style.display = '';
-        browserCanvas.focus();
-        // Watchdog: if no frames arrive within 5s, show a hint
-        browserFrameWatchdog = setTimeout(() => {
-            if (browserWS === ws && ws.readyState === WebSocket.OPEN) {
-                showBrowserPlaceholder('Kết nối OK — đang chờ Chrome render. Thử click vào Chrome trên taskbar.');
-                setTimeout(() => { if (browserWS === ws) showBrowserPlaceholder(null); }, 4000);
+    try {
+        const rfb = new RFB(screen, url);
+        browserRFB = rfb;
+
+        rfb.scaleViewport = true;   // scale remote desktop to fit the div
+        rfb.resizeSession = false;  // don't resize the remote session
+        rfb.viewOnly = false;       // allow mouse + keyboard input
+
+        rfb.addEventListener('connect', () => {
+            showBrowserPlaceholder(null); // hide overlay — live view shows through
+        });
+
+        rfb.addEventListener('disconnect', () => {
+            if (browserRFB !== rfb) return;
+            browserRFB = null;
+            if (accountID === browserSelectedAccountID) {
+                const stillRunning = document.querySelector('.workspace-status-pill.running');
+                if (stillRunning) {
+                    showBrowserPlaceholder('Đang kết nối lại...');
+                    browserReconnectTimer = setTimeout(() => connectBrowserViewVNC(accountID), 3000);
+                } else {
+                    showBrowserPlaceholder('Kết nối bị ngắt.');
+                }
             }
-        }, 5000);
-    };
+        });
 
-    ws.onmessage = (e) => {
-        // Clear watchdog on first frame
-        if (browserFrameWatchdog) { clearTimeout(browserFrameWatchdog); browserFrameWatchdog = null; }
-        try {
-            const msg = JSON.parse(e.data);
-            if (msg.type === 'frame' && msg.data && browserCtx) {
-                showBrowserPlaceholder(null);
-                const img = new Image();
-                img.onload = () => {
-                    if (browserCanvas.width !== img.naturalWidth)  browserCanvas.width  = img.naturalWidth;
-                    if (browserCanvas.height !== img.naturalHeight) browserCanvas.height = img.naturalHeight;
-                    browserCtx.drawImage(img, 0, 0);
-                };
-                img.src = 'data:image/jpeg;base64,' + msg.data;
-            }
-        } catch { /* ignore parse errors */ }
-    };
+        rfb.addEventListener('credentialsrequired', () => {
+            // x11vnc is started with -nopw, but send empty if asked
+            rfb.sendCredentials({ password: '' });
+        });
 
-    ws.onclose = () => {
-        if (browserWS !== ws) return;
-        browserWS = null;
-        if (browserFrameWatchdog) { clearTimeout(browserFrameWatchdog); browserFrameWatchdog = null; }
-        // Auto-reconnect if account is still running
-        const accStillRunning = document.querySelector('.workspace-status-pill.running');
-        if (accountID === browserSelectedAccountID && accStillRunning) {
-            showBrowserPlaceholder('Đang kết nối lại...');
-            browserReconnectTimer = setTimeout(() => connectBrowserView(accountID), 2500);
-        } else {
-            showBrowserPlaceholder('Kết nối bị ngắt.');
-        }
-    };
-    ws.onerror = () => ws.close();
+    } catch (e) {
+        showBrowserPlaceholder('Lỗi khởi tạo noVNC: ' + e.message);
+    }
 }
 
 function showBrowserPlaceholder(text) {
@@ -410,35 +419,9 @@ function showBrowserPlaceholder(text) {
         ph.style.display = 'none';
     } else {
         ph.style.display = 'flex';
-        ph.querySelector('.browser-placeholder-text').textContent = text || 'Chọn tài khoản bên trái → nhấn START';
+        ph.querySelector('.browser-placeholder-text').textContent =
+            text || 'Chọn tài khoản bên trái → nhấn START';
     }
-}
-
-function attachBrowserCanvasEvents() {
-    const canvas = document.getElementById('browserCanvas');
-    if (!canvas || canvas._browserEventsAttached) return;
-    canvas._browserEventsAttached = true;
-
-    const send = (obj) => {
-        if (browserWS && browserWS.readyState === WebSocket.OPEN)
-            browserWS.send(JSON.stringify(obj));
-    };
-
-    const scale = (e) => {
-        const r = canvas.getBoundingClientRect();
-        return {
-            x: (e.clientX - r.left) * (canvas.width  / (r.width  || 1)),
-            y: (e.clientY - r.top)  * (canvas.height / (r.height || 1)),
-        };
-    };
-
-    canvas.addEventListener('mousemove',  e => { const p = scale(e); send({ type:'mousemove',  ...p }); });
-    canvas.addEventListener('mousedown',  e => { const p = scale(e); send({ type:'mousedown',  ...p, button: e.button }); });
-    canvas.addEventListener('mouseup',    e => { const p = scale(e); send({ type:'mouseup',    ...p, button: e.button }); });
-    canvas.addEventListener('wheel',      e => { e.preventDefault(); const p = scale(e); send({ type:'wheel', ...p, deltaX: e.deltaX, deltaY: e.deltaY }); }, { passive: false });
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-    canvas.addEventListener('keydown', e => { e.preventDefault(); send({ type:'keydown', key:e.key, code:e.code, altKey:e.altKey, ctrlKey:e.ctrlKey, metaKey:e.metaKey, shiftKey:e.shiftKey }); });
-    canvas.addEventListener('keyup',   e => {                     send({ type:'keyup',   key:e.key, code:e.code, altKey:e.altKey, ctrlKey:e.ctrlKey, metaKey:e.metaKey, shiftKey:e.shiftKey }); });
 }
 
 // ===== Agent Tokens (admin) =====

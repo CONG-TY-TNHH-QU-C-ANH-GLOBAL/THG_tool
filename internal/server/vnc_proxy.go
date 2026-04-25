@@ -5,8 +5,8 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,12 +14,95 @@ import (
 	fiberws "github.com/gofiber/websocket/v2"
 )
 
-// Package-level singleton for the browser workspace Chrome process.
-// Only one Chrome instance runs at a time per server process.
+// Package-level singleton for the legacy single-Chrome workspace (non-Docker mode).
 var (
 	workspaceMu   sync.Mutex
 	workspaceProc *exec.Cmd
 )
+
+// ── Per-account VNC proxy (Docker mode) ──────────────────────────────────────
+
+// perAccountVNCProxyHandler handles GET /ws/vnc/:id
+// It looks up the VNC host port for the running container and proxies the
+// WebSocket connection directly to the x11vnc TCP socket inside Docker.
+func (s *Server) perAccountVNCProxyHandler() func(*fiberws.Conn) {
+	return func(ws *fiberws.Conn) {
+		accountID, err := strconv.ParseInt(ws.Params("id"), 10, 64)
+		if err != nil {
+			_ = ws.WriteMessage(fiberws.TextMessage, []byte("invalid account id"))
+			return
+		}
+
+		if s.workspace == nil {
+			_ = ws.WriteMessage(fiberws.TextMessage, []byte("workspace manager not initialized"))
+			return
+		}
+
+		inst := s.workspace.Get(accountID)
+		if inst == nil || inst.VNCPort == 0 {
+			_ = ws.WriteMessage(fiberws.TextMessage, []byte("browser not running — start it first"))
+			return
+		}
+
+		vncAddr := fmt.Sprintf("127.0.0.1:%d", inst.VNCPort)
+		log.Printf("[VNCProxy] Account %d → %s", accountID, vncAddr)
+		proxyVNC(ws, vncAddr)
+	}
+}
+
+// proxyVNC bridges a WebSocket connection to a raw TCP VNC server.
+// It is the shared implementation used by both per-account and legacy handlers.
+func proxyVNC(ws *fiberws.Conn, vncAddr string) {
+	tcp, err := net.DialTimeout("tcp", vncAddr, 8*time.Second)
+	if err != nil {
+		log.Printf("[VNCProxy] Cannot reach VNC at %s: %v", vncAddr, err)
+		_ = ws.WriteMessage(fiberws.TextMessage,
+			[]byte("VNC server not reachable — container may still be starting, retry in a moment"))
+		return
+	}
+	defer tcp.Close()
+
+	log.Printf("[VNCProxy] Tunnel open: WebSocket ↔ %s", vncAddr)
+	errc := make(chan error, 2)
+
+	// VNC TCP → WebSocket (binary frames)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := tcp.Read(buf)
+			if n > 0 {
+				if werr := ws.WriteMessage(fiberws.BinaryMessage, buf[:n]); werr != nil {
+					errc <- werr
+					return
+				}
+			}
+			if err != nil {
+				errc <- err
+				return
+			}
+		}
+	}()
+
+	// WebSocket → VNC TCP
+	go func() {
+		for {
+			_, data, err := ws.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if _, werr := tcp.Write(data); werr != nil {
+				errc <- werr
+				return
+			}
+		}
+	}()
+
+	<-errc
+	log.Printf("[VNCProxy] Tunnel closed: %s", vncAddr)
+}
+
+// ── Legacy single-display VNC proxy (kept for backward compatibility) ─────────
 
 // vncStatus returns VNC + browser state for the dashboard.
 // GET /api/browser/status
@@ -38,7 +121,7 @@ func (s *Server) vncStatus(c *fiber.Ctx) error {
 	})
 }
 
-// vncStart launches Xvfb + x11vnc + Chrome if not already running.
+// vncStart launches Xvfb + x11vnc + Chrome (legacy single-display mode).
 // POST /api/browser/start
 func (s *Server) vncStart(c *fiber.Ctx) error {
 	if s.vncDisplay == nil {
@@ -50,14 +133,13 @@ func (s *Server) vncStart(c *fiber.Ctx) error {
 	go func() {
 		time.Sleep(time.Second)
 		s.startWorkspaceChrome()
-		// Start CDP screencast after Chrome is ready
 		time.Sleep(2 * time.Second)
 		go s.startAccountScreencast(0, s.cfg.CDPPort)
 	}()
 	return c.JSON(fiber.Map{"status": "starting", "vnc_port": s.cfg.VNCPort})
 }
 
-// vncStop kills Chrome + VNC display.
+// vncStop kills Chrome + VNC display (legacy mode).
 // POST /api/browser/stop
 func (s *Server) vncStop(c *fiber.Ctx) error {
 	s.stopWorkspaceChrome()
@@ -67,104 +149,48 @@ func (s *Server) vncStop(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
-// vncProxyHandler proxies WebSocket ↔ raw TCP to the VNC server so noVNC can connect.
-// GET /ws/vnc   (auth handled by the Use() middleware registered in api.go)
+// vncProxyHandler proxies WebSocket ↔ TCP for the legacy single VNC display.
+// GET /ws/vnc  (kept for backward compatibility)
 func (s *Server) vncProxyHandler() func(*fiberws.Conn) {
 	vncAddr := fmt.Sprintf("127.0.0.1:%d", s.cfg.VNCPort)
-
 	return func(ws *fiberws.Conn) {
-		tcp, err := net.DialTimeout("tcp", vncAddr, 5*time.Second)
-		if err != nil {
-			log.Printf("[VNCProxy] Cannot reach VNC at %s: %v", vncAddr, err)
-			_ = ws.WriteMessage(fiberws.TextMessage, []byte("VNC server not running — start browser first"))
-			return
-		}
-		defer tcp.Close()
-
-		log.Printf("[VNCProxy] Client connected → %s", vncAddr)
-		errc := make(chan error, 2)
-
-		// VNC TCP → WebSocket binary frames
-		go func() {
-			buf := make([]byte, 65536)
-			for {
-				n, err := tcp.Read(buf)
-				if n > 0 {
-					if werr := ws.WriteMessage(fiberws.BinaryMessage, buf[:n]); werr != nil {
-						errc <- werr
-						return
-					}
-				}
-				if err != nil {
-					errc <- err
-					return
-				}
-			}
-		}()
-
-		// WebSocket → VNC TCP
-		go func() {
-			for {
-				_, data, err := ws.ReadMessage()
-				if err != nil {
-					errc <- err
-					return
-				}
-				if _, werr := tcp.Write(data); werr != nil {
-					errc <- werr
-					return
-				}
-			}
-		}()
-
-		<-errc
-		log.Println("[VNCProxy] Client disconnected")
+		proxyVNC(ws, vncAddr)
 	}
 }
 
-// startWorkspaceChrome launches Chrome in the VNC virtual display.
+// startWorkspaceChrome launches Chrome in the legacy VNC virtual display.
 func (s *Server) startWorkspaceChrome() {
 	workspaceMu.Lock()
 	defer workspaceMu.Unlock()
 
 	if workspaceProc != nil && workspaceProc.Process != nil {
-		log.Println("[Browser] Chrome already running")
 		return
 	}
-
 	chromePath := s.resolveChromePath()
 	cdpPort := s.cfg.CDPPort
 	if cdpPort == 0 {
 		cdpPort = 9222
 	}
-
 	args := []string{
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--disable-notifications",
-		"--disable-infobars",
+		"--no-first-run", "--no-default-browser-check",
+		"--disable-notifications", "--disable-infobars",
 		"--disable-blink-features=AutomationControlled",
-		"--no-sandbox",
-		"--disable-dev-shm-usage",
+		"--no-sandbox", "--disable-dev-shm-usage",
 		fmt.Sprintf("--user-data-dir=%s/workspace", s.cfg.ProfileDir),
 		fmt.Sprintf("--remote-debugging-port=%d", cdpPort),
 		"--remote-debugging-address=127.0.0.1",
 		"--window-size=1280,800",
 		"about:blank",
 	}
-
 	cmd := exec.Command(chromePath, args...)
-	cmd.Env = append(os.Environ(), "DISPLAY="+s.vncDisplay.Display())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
+	if s.vncDisplay != nil {
+		cmd.Env = append(cmd.Environ(), "DISPLAY="+s.vncDisplay.Display())
+	}
 	if err := cmd.Start(); err != nil {
 		log.Printf("[Browser] Chrome start failed: %v", err)
 		return
 	}
 	workspaceProc = cmd
-	log.Printf("[Browser] Chrome started in display %s (pid=%d, cdp=%d)", s.vncDisplay.Display(), cmd.Process.Pid, cdpPort)
-
 	go func() {
 		_ = cmd.Wait()
 		workspaceMu.Lock()
@@ -172,11 +198,9 @@ func (s *Server) startWorkspaceChrome() {
 			workspaceProc = nil
 		}
 		workspaceMu.Unlock()
-		log.Println("[Browser] Chrome exited")
 	}()
 }
 
-// stopWorkspaceChrome kills the workspace Chrome if running.
 func (s *Server) stopWorkspaceChrome() {
 	s.stopAccountScreencast(0)
 	workspaceMu.Lock()
@@ -184,9 +208,8 @@ func (s *Server) stopWorkspaceChrome() {
 	if workspaceProc != nil && workspaceProc.Process != nil {
 		workspaceProc.Process.Kill()
 		workspaceProc = nil
-		log.Println("[Browser] Chrome stopped by user")
 	}
 }
 
-// Discard: prevent unused import lint error
+// Discard prevents unused import error.
 var _ = io.Discard
