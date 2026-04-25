@@ -83,10 +83,6 @@
                         <span class="nav-icon">👥</span>
                         <span>Groups</span>
                     </a>
-                    <a href="#" class="nav-item" data-page="accounts" onclick="switchPage('accounts')">
-                        <span class="nav-icon">🔑</span>
-                        <span>Accounts</span>
-                    </a>
                     <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
                         <span class="nav-icon">📝</span>
                         <span>Posts</span>
@@ -567,6 +563,17 @@
                     <div class="section-card glass">
                         <div class="section-header" style="padding:16px 20px 12px">
                             <h2 style="font-size:14px">🔑 Tài khoản Facebook</h2>
+                            <button class="btn btn-primary btn-sm" onclick="browserShowAddForm()">+ Thêm</button>
+                        </div>
+                        <!-- Inline add form -->
+                        <div id="browserAddForm" style="display:none;padding:0 12px 10px">
+                            <div style="display:flex;gap:6px;align-items:center">
+                                <input id="browserNewAccountName" type="text" placeholder="Tên tài khoản..."
+                                    style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:7px 10px;font-size:12px;color:#f1f5f9;outline:none"
+                                    onkeydown="if(event.key==='Enter')browserAddAccount()">
+                                <button class="btn btn-primary btn-sm" onclick="browserAddAccount()">✓</button>
+                                <button class="btn btn-ghost btn-sm" onclick="browserHideAddForm()">✕</button>
+                            </div>
                         </div>
                         <div id="workspaceAccountList" class="workspace-accounts" style="padding:0 12px 12px">
                             <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">

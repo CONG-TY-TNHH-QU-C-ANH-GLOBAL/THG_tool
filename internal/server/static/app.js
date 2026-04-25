@@ -244,7 +244,8 @@ async function loadBrowserWorkspaces() {
 
     const workspaces = res.workspaces || [];
     if (workspaces.length === 0) {
-        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Chưa có tài khoản Facebook nào.<br>Thêm ở trang Accounts.</div>';
+        list.innerHTML = '<div style="padding:12px 4px;text-align:center;color:var(--text-muted);font-size:12px">Nhấn <strong style="color:#8b5cf6">+ Thêm</strong> để thêm tài khoản Facebook.</div>';
+        browserShowAddForm();
         return;
     }
 
@@ -323,8 +324,58 @@ function updateBrowserControls(running, vncPort, loggedIn) {
     }
 }
 
+function browserShowAddForm() {
+    const f = document.getElementById('browserAddForm');
+    if (f) f.style.display = '';
+    const inp = document.getElementById('browserNewAccountName');
+    if (inp) { inp.value = ''; inp.focus(); }
+}
+function browserHideAddForm() {
+    const f = document.getElementById('browserAddForm');
+    if (f) f.style.display = 'none';
+}
+
+async function browserAddAccount() {
+    const inp = document.getElementById('browserNewAccountName');
+    const name = inp ? inp.value.trim() : '';
+    if (!name) { showToast('Nhập tên tài khoản', 'error'); inp && inp.focus(); return; }
+
+    inp.disabled = true;
+    const res = await fetchAPI('/api/accounts', 'POST', { name, platform: 'facebook' });
+    if (inp) inp.disabled = false;
+    if (!res || !res.account_id) { showToast('Tạo tài khoản thất bại', 'error'); return; }
+
+    browserHideAddForm();
+    browserSelectedAccountID = res.account_id;
+    showToast(`Tạo "${name}" thành công — đang khởi động Chrome...`, 'success');
+    await loadBrowserWorkspaces();
+
+    // Auto-start the browser for this new account
+    showBrowserPlaceholder('Đang khởi động Docker container — Xvfb + Chrome + x11vnc...');
+    document.getElementById('browserStartBtn').textContent = '⏳ Đang khởi động...';
+    document.getElementById('browserStartBtn').disabled = true;
+    const startRes = await fetchAPI(`/api/browser/workspaces/${res.account_id}/start`, 'POST');
+    if (!startRes) {
+        document.getElementById('browserStartBtn').textContent = '▶ START';
+        document.getElementById('browserStartBtn').disabled = false;
+        showBrowserPlaceholder('Khởi động thất bại — kiểm tra Docker: docker build -t thg-browser ./docker/');
+        return;
+    }
+    if (startRes.status === 'running') {
+        showToast('Chrome đã sẵn sàng! Đang kết nối...', 'success');
+        updateBrowserControls(true, startRes.vnc_port, false);
+        await loadBrowserWorkspaces();
+        showBrowserPlaceholder('Đang kết nối noVNC...');
+        setTimeout(() => connectBrowserViewVNC(res.account_id), 500);
+    }
+}
+
 async function browserStartSelected() {
-    if (!browserSelectedAccountID) { showToast('Chọn tài khoản trước'); return; }
+    if (!browserSelectedAccountID) {
+        // No account selected — show add form instead of error toast
+        browserShowAddForm();
+        return;
+    }
     const btn = document.getElementById('browserStartBtn');
     btn.textContent = '⏳ Đang khởi động...';
     btn.disabled = true;
