@@ -113,14 +113,19 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 		"--disable-notifications",
 		"--disable-infobars",
 		"--disable-blink-features=AutomationControlled",
-		"--no-sandbox",
-		"--disable-dev-shm-usage",
-		"--disable-gpu",
 		fmt.Sprintf("--user-data-dir=%s", profileDir),
 		fmt.Sprintf("--remote-debugging-port=%d", port),
-		"--remote-debugging-address=127.0.0.1",
 		"--window-size=1280,800",
-		"about:blank",
+		"--start-maximized",
+	}
+
+	// Linux/CI-specific flags — skip on Windows where GPU is needed for rendering
+	if runtime.GOOS != "windows" {
+		args = append(args,
+			"--no-sandbox",
+			"--disable-dev-shm-usage",
+			"--disable-gpu",
+		)
 	}
 
 	cmd := exec.Command(chromePath, args...)

@@ -17,6 +17,76 @@ function hideLogin() {
     document.getElementById('loginPage').style.display = 'none';
 }
 
+function showRegisterForm(e) {
+    if (e) e.preventDefault();
+    document.getElementById('loginFormWrap').style.display = 'none';
+    document.getElementById('registerFormWrap').style.display = '';
+    document.getElementById('regOrgName').focus();
+}
+
+function showLoginForm(e) {
+    if (e) e.preventDefault();
+    document.getElementById('registerFormWrap').style.display = 'none';
+    document.getElementById('loginFormWrap').style.display = '';
+    document.getElementById('loginEmail').focus();
+}
+
+async function doRegister(e) {
+    e.preventDefault();
+    const btn = document.getElementById('registerBtn');
+    const errEl = document.getElementById('registerError');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Đang tạo...';
+    try {
+        const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                org_name: document.getElementById('regOrgName').value.trim(),
+                admin_name: document.getElementById('regAdminName').value.trim(),
+                admin_email: document.getElementById('regEmail').value.trim(),
+                admin_password: document.getElementById('regPassword').value,
+            })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            errEl.textContent = data.error || 'Đăng ký thất bại';
+            errEl.style.display = 'block';
+            return;
+        }
+        accessToken = data.access_token;
+        localStorage.setItem('thg_token', accessToken);
+        if (data.refresh_token) localStorage.setItem('thg_refresh', data.refresh_token);
+        if (data.user) {
+            localStorage.setItem('thg_user', JSON.stringify(data.user));
+            updateSidebarUser(data.user);
+        }
+        hideLogin();
+        showRegisterForm_reset();
+        loadDashboard();
+        loadNicheTabs();
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(() => { if (!document.hidden) refreshData(); }, 15000);
+        showToast(`Chào mừng! Tổ chức "${data.org_name}" đã được tạo thành công 🎉`, 'success');
+    } catch {
+        errEl.textContent = 'Lỗi kết nối server';
+        errEl.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Tạo tổ chức';
+    }
+}
+
+function showRegisterForm_reset() {
+    document.getElementById('regOrgName').value = '';
+    document.getElementById('regAdminName').value = '';
+    document.getElementById('regEmail').value = '';
+    document.getElementById('regPassword').value = '';
+    document.getElementById('registerError').style.display = 'none';
+    showLoginForm();
+}
+
 async function doLogin(e) {
     e.preventDefault();
     const email = document.getElementById('loginEmail').value;
@@ -78,7 +148,9 @@ function doLogout() {
 
 function updateSidebarUser(user) {
     const el = document.getElementById('sidebarUser');
-    if (el && user) el.textContent = `${user.name || user.email} (${user.role})`;
+    if (!el || !user) return;
+    const roleLabel = user.role === 'superadmin' ? 'Super Admin' : (user.role === 'admin' ? 'Admin' : 'Sales');
+    el.innerHTML = `<span style="font-weight:600;color:var(--text-primary)">${esc(user.name || user.email)}</span><br><span style="font-size:11px">${roleLabel}</span>`;
 }
 
 // ===== Browser / Workspace Page =====
@@ -175,24 +247,31 @@ function updateBrowserControls(running, cdpPort) {
 async function browserStartSelected() {
     if (!browserSelectedAccountID) { showToast('Chọn tài khoản trước'); return; }
     const btn = document.getElementById('browserStartBtn');
-    btn.textContent = '⏳ Starting...';
+    btn.textContent = '⏳ Đang khởi động...';
     btn.disabled = true;
+    showBrowserPlaceholder('Đang khởi động Chrome — vui lòng chờ...');
+
+    // POST waits until Chrome CDP is ready (up to ~15s server-side)
     const res = await fetchAPI(`/api/browser/workspaces/${browserSelectedAccountID}/start`, 'POST');
-    if (!res) { btn.textContent = '▶ START'; btn.disabled = false; return; }
-    showToast('Browser đang khởi động...');
-    // Poll until running
-    let tries = 0;
-    const poll = setInterval(async () => {
-        tries++;
+    if (!res) {
+        btn.textContent = '▶ START';
+        btn.disabled = false;
+        showBrowserPlaceholder('Khởi động thất bại — xem Logs để biết lý do');
+        return;
+    }
+
+    if (res.status === 'running') {
+        showToast('Chrome đã sẵn sàng!', 'success');
+        updateBrowserControls(true, res.cdp_port);
         await loadBrowserWorkspaces();
-        const ws = (await fetchAPI('/api/browser/workspaces'))?.workspaces?.find(w => w.account_id === browserSelectedAccountID);
-        if (ws?.running) {
-            clearInterval(poll);
-            updateBrowserControls(true, ws.cdp_port);
-            connectBrowserView(browserSelectedAccountID);
-        }
-        if (tries > 10) clearInterval(poll);
-    }, 1500);
+        // Small delay so screencast goroutine has time to connect
+        setTimeout(() => connectBrowserView(browserSelectedAccountID), 800);
+    } else {
+        btn.textContent = '▶ START';
+        btn.disabled = false;
+        showToast(res.error || 'Lỗi khởi động Chrome', 'error');
+        showBrowserPlaceholder(res.error || 'Khởi động thất bại');
+    }
 }
 
 async function browserStopSelected() {
@@ -326,12 +405,43 @@ async function loadSettingsPage() {
     updateSidebarUser(user);
     document.getElementById('profileName').value = user.name || '';
     document.getElementById('profileEmail').value = user.email || '';
-    document.getElementById('profileRole').value = user.role === 'admin' ? 'Admin' : 'Sales';
-    if (user.role === 'admin') {
+    document.getElementById('profileRole').value = user.role === 'admin' ? 'Admin' : (user.role === 'superadmin' ? 'Super Admin' : 'Sales');
+    if (user.role === 'admin' || user.role === 'superadmin') {
         document.getElementById('userMgmtSection').style.display = '';
+        document.getElementById('agentTokensSection').style.display = '';
         loadUsersTable();
         loadAgentTokens();
     }
+    loadOrgInfo(user.role);
+}
+
+async function loadOrgInfo(role) {
+    const res = await fetchAPI('/api/org');
+    if (!res || !res.org) return;
+    const org = res.org;
+    const planLabels = { free: 'Free', pro: 'Pro', enterprise: 'Enterprise' };
+    document.getElementById('orgName').value = org.name || '';
+    document.getElementById('orgDomain').value = org.domain || '';
+    document.getElementById('orgAccountCount').textContent = res.account_count ?? '—';
+    document.getElementById('orgAccountLimit').textContent = org.max_accounts === 0 ? '∞' : (org.max_accounts ?? '—');
+    document.getElementById('orgPlanName').textContent = planLabels[org.plan_tier] || org.plan_tier;
+    document.getElementById('orgPlanBadge').textContent = (planLabels[org.plan_tier] || org.plan_tier).toUpperCase();
+    if (role === 'admin' || role === 'superadmin') {
+        document.getElementById('orgName').disabled = false;
+        document.getElementById('orgDomain').disabled = false;
+        document.getElementById('orgSaveBtn').style.display = '';
+    } else {
+        document.getElementById('orgName').disabled = true;
+        document.getElementById('orgDomain').disabled = true;
+    }
+}
+
+async function saveOrgSettings() {
+    const name = document.getElementById('orgName').value.trim();
+    const domain = document.getElementById('orgDomain').value.trim();
+    if (!name) return showToast('Tên tổ chức không được để trống', 'error');
+    const res = await fetchAPI('/api/org', 'PUT', { name, domain });
+    if (res) showToast('Đã lưu cài đặt tổ chức', 'success');
 }
 
 async function saveProfile() {

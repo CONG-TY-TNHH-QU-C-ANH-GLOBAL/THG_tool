@@ -177,6 +177,19 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 			return c.Status(429).JSON(fiber.Map{"error": "too many login attempts — try again later"})
 		},
 	})
+	// Public org registration — stricter rate limit
+	regLimiter := limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: 15 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return "reg:" + c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(429).JSON(fiber.Map{"error": "too many registration attempts"})
+		},
+	})
+	api.Post("/register", regLimiter, s.registerOrg)
+
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
 	authGroup.Post("/refresh", s.refresh)
@@ -190,7 +203,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 
 	// Admin-only auth routes
 	adminOnly := authpkg.RequireRole("admin")
-	protected.Post("/users", adminOnly, s.createUser)
+	protected.Post("/users", adminOnly, s.createOrgUser)
 	protected.Get("/users", adminOnly, s.listUsers)
 	protected.Put("/users/:id", adminOnly, s.adminUpdateUser)
 	protected.Delete("/users/:id", adminOnly, s.adminDeleteUser)
@@ -265,6 +278,15 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	agentGrp.Post("/outbox/:id/sent", s.agentOutboxSent)
 	agentGrp.Post("/outbox/:id/failed", s.agentOutboxFailed)
 	agentGrp.Get("/images", s.agentServeImage)
+
+	// Org self-service (any authenticated user sees their org)
+	r.Get("/org", s.getMyOrg)
+	r.Put("/org", authpkg.RequireRole("admin"), s.updateOrg)
+
+	// Superadmin: org management
+	superAdminGrp := r.Group("/admin", authpkg.RequireRole("superadmin"))
+	superAdminGrp.Get("/orgs", s.listOrgs)
+	superAdminGrp.Put("/orgs/:id", s.adminUpdateOrg)
 
 	// Admin: manage agent tokens (JWT auth + admin role)
 	adminGrp := r.Group("/admin", adminOnly)

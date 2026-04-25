@@ -28,6 +28,7 @@ var (
 // Claims is the JWT payload embedded in each access token.
 type Claims struct {
 	UserID int64  `json:"uid"`
+	OrgID  int64  `json:"org_id"`
 	Email  string `json:"email"`
 	Role   string `json:"role"`
 	jwt.RegisteredClaims
@@ -73,9 +74,10 @@ func ValidatePasswordStrength(password string) error {
 }
 
 // GenerateAccessToken creates a short-lived (15 min) signed JWT.
-func GenerateAccessToken(userID int64, email, role, secret string) (string, error) {
+func GenerateAccessToken(userID, orgID int64, email, role, secret string) (string, error) {
 	claims := Claims{
 		UserID: userID,
+		OrgID:  orgID,
 		Email:  email,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{

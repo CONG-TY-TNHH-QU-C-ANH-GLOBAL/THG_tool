@@ -66,7 +66,7 @@ func (s *Server) login(c *fiber.Ctx) error {
 	// Successful login
 	s.db.ResetFailedLogins(user.ID)
 
-	accessToken, err := auth.GenerateAccessToken(user.ID, user.Email, string(user.Role), s.cfg.JWTSecret)
+	accessToken, err := auth.GenerateAccessToken(user.ID, user.OrgID, user.Email, string(user.Role), s.cfg.JWTSecret)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "token generation failed"})
 	}
@@ -100,10 +100,11 @@ func (s *Server) login(c *fiber.Ctx) error {
 		"refresh_token": refreshToken, // also in body so clients behind cookie-stripping proxies can store it
 		"expires_in":    int(auth.AccessTokenTTL.Seconds()),
 		"user": fiber.Map{
-			"id":    user.ID,
-			"email": user.Email,
-			"name":  user.Name,
-			"role":  user.Role,
+			"id":     user.ID,
+			"org_id": user.OrgID,
+			"email":  user.Email,
+			"name":   user.Name,
+			"role":   user.Role,
 		},
 	})
 }
@@ -142,7 +143,7 @@ func (s *Server) refresh(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "session error"})
 	}
 
-	accessToken, err := auth.GenerateAccessToken(user.ID, user.Email, string(user.Role), s.cfg.JWTSecret)
+	accessToken, err := auth.GenerateAccessToken(user.ID, user.OrgID, user.Email, string(user.Role), s.cfg.JWTSecret)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "token generation failed"})
 	}
@@ -327,52 +328,10 @@ func (s *Server) adminDeleteUser(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
-// createUser handles POST /api/auth/users — admin creates a new user account.
-func (s *Server) createUser(c *fiber.Ctx) error {
-	var req struct {
-		Email    string `json:"email"`
-		Name     string `json:"name"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
-	}
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
-	}
-	if req.Email == "" || req.Name == "" || req.Password == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "email, name, and password required"})
-	}
-	if req.Role != "admin" && req.Role != "sales" {
-		req.Role = "sales"
-	}
-	if err := auth.ValidatePasswordStrength(req.Password); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "password hashing failed"})
-	}
-	user := &models.User{
-		Email:        req.Email,
-		Name:         req.Name,
-		PasswordHash: hash,
-		Role:         models.UserRole(req.Role),
-	}
-	id, err := s.db.CreateUser(user)
-	if err != nil {
-		return c.Status(409).JSON(fiber.Map{"error": "email already exists or DB error"})
-	}
-
-	adminID, _ := c.Locals("user_id").(int64)
-	s.db.InsertAuditLog(adminID, "user_created", c.IP(),
-		fmt.Sprintf(`{"new_user_email":%q,"role":%q}`, req.Email, req.Role))
-	log.Printf("[Auth] User created: %s (role=%s) by admin %d", req.Email, req.Role, adminID)
-
-	return c.Status(201).JSON(fiber.Map{"user_id": id, "email": req.Email, "role": req.Role})
-}
-
-// listUsers handles GET /api/auth/users — admin lists all user accounts.
+// listUsers handles GET /api/auth/users — scoped to caller's org (superadmin sees all).
 func (s *Server) listUsers(c *fiber.Ctx) error {
-	users, err := s.db.ListUsers()
+	orgID, _ := c.Locals("org_id").(int64)
+	users, err := s.db.ListUsers(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

@@ -329,6 +329,25 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Multi-tenant: organizations table (each client = one org)
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS organizations (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		domain TEXT DEFAULT '',
+		plan_tier TEXT NOT NULL DEFAULT 'free',
+		max_accounts INTEGER NOT NULL DEFAULT 1,
+		active INTEGER NOT NULL DEFAULT 1,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	// Seed the default "platform" org for existing/bootstrap users
+	s.db.Exec(`INSERT OR IGNORE INTO organizations (id, name, domain, plan_tier, max_accounts) VALUES (1, 'THG Platform', 'thgfulfill.com', 'enterprise', 0)`)
+	// Add org_id to users (existing users → org 0 = superadmin)
+	s.db.Exec(`ALTER TABLE users ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	// Add org_id to accounts (existing accounts → org 1 = default org)
+	s.db.Exec(`ALTER TABLE accounts ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+	// Add org_id to groups
+	s.db.Exec(`ALTER TABLE groups ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+
 	// Auto-migrate: career_jobs extended fields
 	s.db.Exec(`ALTER TABLE career_jobs ADD COLUMN salary TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE career_jobs ADD COLUMN priority TEXT DEFAULT 'medium'`)

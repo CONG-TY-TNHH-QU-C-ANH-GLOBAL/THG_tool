@@ -7,6 +7,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/models"
 )
 
 // workspaceList returns all Facebook accounts with their live Chrome workspace status.
@@ -46,7 +47,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"workspaces": result, "count": len(result)})
 }
 
-// workspaceStart launches Chrome for a specific account.
+// workspaceStart launches Chrome for a specific account and waits until CDP is ready.
 // POST /api/browser/workspaces/:id/start
 func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	if s.workspace == nil {
@@ -63,16 +64,27 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Connect CDP screencast after Chrome is ready
 	cdpPort := inst.CDPPort
-	go func() {
-		time.Sleep(2 * time.Second)
-		s.startAccountScreencast(id, cdpPort)
-	}()
 
-	log.Printf("[Workspace] Account %d (%s) workspace started, cdp=%d", id, acc.Name, cdpPort)
+	// Block until Chrome's CDP port responds (up to 15s) so the frontend knows it's truly ready
+	wsURL, waitErr := waitForChromeWS(cdpPort)
+	if waitErr != nil {
+		s.workspace.Stop(id)
+		return c.Status(500).JSON(fiber.Map{
+			"error": "Chrome started but CDP did not become ready — check Chrome installation or profile path",
+		})
+	}
+	_ = wsURL
+
+	// Update account status to active now that Chrome is running
+	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+
+	// Start CDP screencast in background
+	go s.startAccountScreencast(id, cdpPort)
+
+	log.Printf("[Workspace] Account %d (%s) workspace ready, cdp=%d", id, acc.Name, cdpPort)
 	return c.JSON(fiber.Map{
-		"status":   "starting",
+		"status":   "running",
 		"cdp_port": cdpPort,
 	})
 }

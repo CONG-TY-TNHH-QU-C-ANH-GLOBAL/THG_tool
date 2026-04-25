@@ -610,6 +610,32 @@
                             <button class="btn btn-primary btn-sm" onclick="changePassword()">Đổi mật khẩu</button>
                         </div>
                     </div>
+                    <!-- Organization Info -->
+                    <div class="section-card glass" id="orgInfoSection">
+                        <div class="section-header">
+                            <h2>🏢 Tổ chức của bạn</h2>
+                            <span id="orgPlanBadge"
+                                style="padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;background:rgba(139,92,246,0.15);color:#a78bfa"></span>
+                        </div>
+                        <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:480px">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                <div class="form-group">
+                                    <label>Tên tổ chức</label>
+                                    <input type="text" id="orgName" placeholder="Tên tổ chức">
+                                </div>
+                                <div class="form-group">
+                                    <label>Domain</label>
+                                    <input type="text" id="orgDomain" placeholder="company.com">
+                                </div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;color:var(--text-muted)">
+                                <div>Tài khoản FB: <strong id="orgAccountCount" style="color:var(--text-primary)">—</strong> / <strong id="orgAccountLimit" style="color:var(--text-primary)">—</strong></div>
+                                <div>Gói dịch vụ: <strong id="orgPlanName" style="color:#a78bfa">—</strong></div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="orgSaveBtn" onclick="saveOrgSettings()" style="display:none">Lưu cài đặt tổ chức</button>
+                        </div>
+                    </div>
+
                     <!-- Agent Tokens (admin only) -->
                     <div class="section-card glass" id="agentTokensSection" style="display:none">
                         <div class="section-header">
@@ -1091,8 +1117,9 @@
     <!-- Login Page (full screen) -->
     <div id="loginPage"
         style="display:flex;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
-            <div style="width:100%;max-width:420px;padding:20px">
-                <div class="glass" style="padding:40px;border-radius:20px">
+            <div style="width:100%;max-width:440px;padding:20px">
+                <!-- Login Form -->
+                <div id="loginFormWrap" class="glass" style="padding:40px;border-radius:20px">
                     <div style="text-align:center;margin-bottom:32px">
                         <div style="font-size:52px;margin-bottom:12px">🕷️</div>
                         <h1 style="font-size:22px;font-weight:700;margin:0 0 6px">THG Scraper</h1>
@@ -1116,6 +1143,48 @@
                             style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
                         <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
                             Quên mật khẩu? Liên hệ <strong>Admin</strong> để được reset
+                        </p>
+                        <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:12px 0 0">
+                            Chưa có tổ chức?
+                            <a href="#" onclick="showRegisterForm(event)"
+                                style="color:#8b5cf6;text-decoration:none;font-weight:600">Đăng ký miễn phí</a>
+                        </p>
+                    </form>
+                </div>
+                <!-- Register Form -->
+                <div id="registerFormWrap" class="glass" style="display:none;padding:40px;border-radius:20px">
+                    <div style="text-align:center;margin-bottom:28px">
+                        <div style="font-size:44px;margin-bottom:10px">🏢</div>
+                        <h1 style="font-size:20px;font-weight:700;margin:0 0 6px">Tạo tổ chức mới</h1>
+                        <p style="color:var(--text-muted,#94a3b8);margin:0;font-size:13px">Dùng thử miễn phí — không cần thẻ tín dụng</p>
+                    </div>
+                    <form onsubmit="doRegister(event)">
+                        <div class="form-group">
+                            <label>Tên tổ chức <span style="color:#ef4444">*</span></label>
+                            <input type="text" id="regOrgName" placeholder="VD: THG Fulfillment" required style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Tên quản trị viên <span style="color:#ef4444">*</span></label>
+                            <input type="text" id="regAdminName" placeholder="Họ và tên" required style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Email <span style="color:#ef4444">*</span></label>
+                            <input type="email" id="regEmail" placeholder="admin@company.com" required style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Mật khẩu <span style="color:#ef4444">*</span></label>
+                            <input type="password" id="regPassword"
+                                placeholder="Tối thiểu 10 ký tự, hoa + số + ký tự đặc biệt" required style="width:100%">
+                        </div>
+                        <div id="registerError"
+                            style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="registerBtn"
+                            style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Tạo tổ chức</button>
+                        <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
+                            Đã có tài khoản?
+                            <a href="#" onclick="showLoginForm(event)"
+                                style="color:#8b5cf6;text-decoration:none;font-weight:600">Đăng nhập</a>
                         </p>
                     </form>
                 </div>

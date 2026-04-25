@@ -356,13 +356,15 @@ type GroupQuality struct {
 type UserRole string
 
 const (
-	RoleAdmin UserRole = "admin"
-	RoleSales UserRole = "sales"
+	RoleSuperAdmin UserRole = "superadmin" // platform owner — sees all orgs
+	RoleAdmin      UserRole = "admin"      // org admin — manages their org
+	RoleSales      UserRole = "sales"      // org member — read + action
 )
 
 // User represents a dashboard user account with RBAC.
 type User struct {
 	ID           int64     `json:"id"`
+	OrgID        int64     `json:"org_id"` // 0 = superadmin (cross-org)
 	Email        string    `json:"email"`
 	Name         string    `json:"name"`
 	PasswordHash string    `json:"-"` // never serialized in JSON responses

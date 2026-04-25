@@ -29,6 +29,7 @@ func RequireAuth(jwtSecret string) fiber.Handler {
 			})
 		}
 		c.Locals("user_id", claims.UserID)
+		c.Locals("org_id", claims.OrgID)
 		c.Locals("user_email", claims.Email)
 		c.Locals("user_role", claims.Role)
 		return c.Next()
@@ -44,12 +45,13 @@ func RequireRole(roles ...string) fiber.Handler {
 	}
 	return func(c *fiber.Ctx) error {
 		role, _ := c.Locals("user_role").(string)
-		if !allowed[role] {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "insufficient permissions",
-			})
+		// superadmin passes ALL role checks
+		if role == "superadmin" || allowed[role] {
+			return c.Next()
 		}
-		return c.Next()
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "insufficient permissions",
+		})
 	}
 }
 

@@ -19,7 +19,7 @@ func hashToken(token string) string {
 // GetUserByEmail returns the user with the given email, or nil if not found.
 func (s *Store) GetUserByEmail(email string) (*models.User, error) {
 	row := s.db.QueryRow(`
-		SELECT id, email, name, password_hash, role, active,
+		SELECT id, COALESCE(org_id,0), email, name, password_hash, role, active,
 		       failed_logins, locked_until, created_at, updated_at
 		FROM users WHERE email = ? AND active = 1`, email)
 	return scanUser(row)
@@ -28,7 +28,7 @@ func (s *Store) GetUserByEmail(email string) (*models.User, error) {
 // GetUserByID returns the user with the given ID.
 func (s *Store) GetUserByID(id int64) (*models.User, error) {
 	row := s.db.QueryRow(`
-		SELECT id, email, name, password_hash, role, active,
+		SELECT id, COALESCE(org_id,0), email, name, password_hash, role, active,
 		       failed_logins, locked_until, created_at, updated_at
 		FROM users WHERE id = ?`, id)
 	return scanUser(row)
@@ -37,21 +37,30 @@ func (s *Store) GetUserByID(id int64) (*models.User, error) {
 // CreateUser inserts a new user and returns their assigned ID.
 func (s *Store) CreateUser(u *models.User) (int64, error) {
 	res, err := s.db.Exec(`
-		INSERT INTO users (email, name, password_hash, role, active)
-		VALUES (?, ?, ?, ?, 1)`,
-		u.Email, u.Name, u.PasswordHash, u.Role)
+		INSERT INTO users (org_id, email, name, password_hash, role, active)
+		VALUES (?, ?, ?, ?, ?, 1)`,
+		u.OrgID, u.Email, u.Name, u.PasswordHash, u.Role)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// ListUsers returns all users without password hashes.
-func (s *Store) ListUsers() ([]models.User, error) {
-	rows, err := s.db.Query(`
-		SELECT id, email, name, password_hash, role, active,
-		       failed_logins, locked_until, created_at, updated_at
-		FROM users ORDER BY created_at DESC`)
+// ListUsers returns all users for an org (orgID=0 means all users — superadmin only).
+func (s *Store) ListUsers(orgID int64) ([]models.User, error) {
+	var rows *sql.Rows
+	var err error
+	if orgID == 0 {
+		rows, err = s.db.Query(`
+			SELECT id, COALESCE(org_id,0), email, name, password_hash, role, active,
+			       failed_logins, locked_until, created_at, updated_at
+			FROM users ORDER BY created_at DESC`)
+	} else {
+		rows, err = s.db.Query(`
+			SELECT id, COALESCE(org_id,0), email, name, password_hash, role, active,
+			       failed_logins, locked_until, created_at, updated_at
+			FROM users WHERE org_id = ? ORDER BY created_at DESC`, orgID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +77,7 @@ func (s *Store) ListUsers() ([]models.User, error) {
 	return users, rows.Err()
 }
 
-// EnsureAdminUser creates an admin if the users table is empty (bootstrap only).
+// EnsureAdminUser creates a superadmin if the users table is empty (bootstrap only).
 func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
 	var count int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
@@ -78,8 +87,8 @@ func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
 		return nil // users already exist — skip
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO users (email, name, password_hash, role, active)
-		VALUES (?, ?, ?, 'admin', 1)`, email, name, passwordHash)
+		INSERT INTO users (org_id, email, name, password_hash, role, active)
+		VALUES (0, ?, ?, ?, 'superadmin', 1)`, email, name, passwordHash)
 	return err
 }
 
@@ -206,7 +215,7 @@ func scanUser(row scanner) (*models.User, error) {
 	var u models.User
 	var lockedUntil sql.NullTime
 	err := row.Scan(
-		&u.ID, &u.Email, &u.Name, &u.PasswordHash,
+		&u.ID, &u.OrgID, &u.Email, &u.Name, &u.PasswordHash,
 		&u.Role, &u.Active, &u.FailedLogins,
 		&lockedUntil, &u.CreatedAt, &u.UpdatedAt,
 	)
