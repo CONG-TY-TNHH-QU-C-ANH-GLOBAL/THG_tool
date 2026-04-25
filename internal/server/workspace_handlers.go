@@ -24,6 +24,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		AccountID   int64      `json:"account_id"`
 		AccountName string     `json:"account_name"`
 		Status      string     `json:"account_status"`
+		LoggedIn    bool       `json:"logged_in"`
 		Running     bool       `json:"running"`
 		VNCPort     int        `json:"vnc_port,omitempty"`
 		StartedAt   *time.Time `json:"started_at,omitempty"`
@@ -35,6 +36,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 			AccountID:   acc.ID,
 			AccountName: acc.Name,
 			Status:      string(acc.Status),
+			LoggedIn:    acc.BrowserLoggedIn,
 		}
 		if s.workspace != nil {
 			if inst := s.workspace.Get(acc.ID); inst != nil {
@@ -103,5 +105,22 @@ func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
 	return c.Status(501).JSON(fiber.Map{
 		"error": "navigate is not available in VNC mode — use the browser directly via the dashboard",
 	})
+}
+
+// workspaceSetLoggedIn marks whether an account has successfully logged into Facebook
+// via the live browser view. Called by the frontend when user clicks "Mark as Logged In".
+// POST /api/browser/workspaces/:id/set-logged-in
+func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	var body struct {
+		LoggedIn bool `json:"logged_in"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+	if err := s.db.SetBrowserLoggedIn(id, body.LoggedIn); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn})
 }
 

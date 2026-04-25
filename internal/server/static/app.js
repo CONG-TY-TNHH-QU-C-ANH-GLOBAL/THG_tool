@@ -248,26 +248,32 @@ async function loadBrowserWorkspaces() {
         return;
     }
 
-    list.innerHTML = workspaces.map(w => `
+    list.innerHTML = workspaces.map(w => {
+        const loginBadge = w.logged_in
+            ? '<span style="font-size:10px;color:#4ade80">✓ Logged In</span>'
+            : '<span style="font-size:10px;color:var(--text-muted)">○ Chưa đăng nhập</span>';
+        return `
         <div class="workspace-account-row ${browserSelectedAccountID === w.account_id ? 'selected' : ''}"
-             onclick="browserSelectAccount(${w.account_id}, '${esc(w.account_name)}', ${w.running}, ${w.vnc_port || 0})">
+             onclick="browserSelectAccount(${w.account_id}, '${esc(w.account_name)}', ${w.running}, ${w.vnc_port || 0}, ${w.logged_in || false})">
             <div>
                 <div style="font-size:13px;font-weight:500">${esc(w.account_name)}</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${w.account_status}</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:3px">
+                    ${loginBadge}
+                </div>
             </div>
             <span class="workspace-status-pill ${w.running ? 'running' : 'offline'}">
                 ${w.running ? '● RUNNING' : '○ offline'}
             </span>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 
     if (browserSelectedAccountID !== null) {
         const selected = workspaces.find(w => w.account_id === browserSelectedAccountID);
-        if (selected) updateBrowserControls(selected.running, selected.vnc_port);
+        if (selected) updateBrowserControls(selected.running, selected.vnc_port, selected.logged_in);
     }
 }
 
-function browserSelectAccount(accountID, accountName, running, vncPort) {
+function browserSelectAccount(accountID, accountName, running, vncPort, loggedIn) {
     if (browserSelectedAccountID !== accountID && browserRFB) {
         try { browserRFB.disconnect(); } catch {}
         browserRFB = null;
@@ -280,17 +286,20 @@ function browserSelectAccount(accountID, accountName, running, vncPort) {
         el.classList.toggle('selected', m && parseInt(m[1]) === accountID);
     });
 
-    document.getElementById('browserUrlLabel').textContent = `vnc://account-${accountID} — ${accountName}`;
-    updateBrowserControls(running, vncPort);
+    const loginStatus = loggedIn ? '✓ Đã đăng nhập' : '○ Chưa đăng nhập';
+    document.getElementById('browserUrlLabel').textContent = `${accountName} — ${loginStatus}`;
+    updateBrowserControls(running, vncPort, loggedIn);
 
     if (running && vncPort > 0) connectBrowserViewVNC(accountID);
+    else if (!running) showBrowserPlaceholder('Nhấn START để mở Chrome — Facebook sẽ tự động đăng nhập nếu đã có session.');
 }
 
-function updateBrowserControls(running, vncPort) {
-    const startBtn  = document.getElementById('browserStartBtn');
-    const stopBtn   = document.getElementById('browserStopBtn');
-    const portEl    = document.getElementById('browserPortStatus');
-    const portLabel = document.getElementById('browserCdpPort');
+function updateBrowserControls(running, vncPort, loggedIn) {
+    const startBtn     = document.getElementById('browserStartBtn');
+    const stopBtn      = document.getElementById('browserStopBtn');
+    const markLoginBtn = document.getElementById('browserMarkLoginBtn');
+    const portEl       = document.getElementById('browserPortStatus');
+    const portLabel    = document.getElementById('browserCdpPort');
 
     if (running) {
         startBtn.textContent = '● RUNNING';
@@ -299,12 +308,18 @@ function updateBrowserControls(running, vncPort) {
         stopBtn.disabled = false;
         portEl.style.display = 'flex';
         if (portLabel) portLabel.textContent = vncPort || '–';
+        // Show "Mark as Logged In" only when running and not yet marked
+        if (markLoginBtn) {
+            markLoginBtn.style.display = loggedIn ? 'none' : '';
+            markLoginBtn.disabled = false;
+        }
     } else {
         startBtn.textContent = '▶ START';
         startBtn.className = 'btn btn-success btn-sm';
         startBtn.disabled = !browserSelectedAccountID;
         stopBtn.disabled = true;
         portEl.style.display = 'none';
+        if (markLoginBtn) { markLoginBtn.style.display = 'none'; markLoginBtn.disabled = true; }
     }
 }
 
@@ -352,6 +367,21 @@ async function browserStopSelected() {
     updateBrowserControls(false, 0);
     showBrowserPlaceholder('Container đã dừng. Nhấn START để khởi động lại.');
     await loadBrowserWorkspaces();
+}
+
+// browserMarkLoggedIn marks the selected account as logged into Facebook.
+// User clicks this after they see the Facebook feed in the live browser view.
+async function browserMarkLoggedIn() {
+    if (!browserSelectedAccountID) return;
+    const res = await fetchAPI(`/api/browser/workspaces/${browserSelectedAccountID}/set-logged-in`, 'POST', { logged_in: true });
+    if (res && res.ok) {
+        showToast('✓ Đã đánh dấu đăng nhập Facebook thành công!', 'success');
+        const btn = document.getElementById('browserMarkLoginBtn');
+        if (btn) btn.style.display = 'none';
+        document.getElementById('browserUrlLabel').textContent =
+            document.getElementById('browserUrlLabel').textContent.replace('○ Chưa đăng nhập', '✓ Đã đăng nhập');
+        await loadBrowserWorkspaces();
+    }
 }
 
 // connectBrowserViewVNC connects the noVNC client to /ws/vnc/:accountID

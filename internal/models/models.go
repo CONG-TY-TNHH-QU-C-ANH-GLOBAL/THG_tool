@@ -192,6 +192,7 @@ type Account struct {
 	CreatedAt        time.Time     `json:"created_at" db:"created_at"`
 	AssignedUserID   int64         `json:"assigned_user_id"`
 	AssignedUserName string        `json:"assigned_user_name"` // resolved from users JOIN
+	BrowserLoggedIn  bool          `json:"browser_logged_in" db:"browser_logged_in"`
 }
 
 // PromptLog records every AI prompt interaction for learning.

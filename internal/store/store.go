@@ -364,6 +364,8 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN assigned_user_id INTEGER DEFAULT 0`)
 	// Auto-migrate: execution_mode on jobs — "server" (VPS) or "local" (agent)
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'server'`)
+	// Auto-migrate: browser_logged_in tracks whether account has logged into Facebook via dashboard browser
+	s.db.Exec(`ALTER TABLE accounts ADD COLUMN browser_logged_in INTEGER NOT NULL DEFAULT 0`)
 
 	// Agent tokens: staff download the agent binary and authenticate with these tokens
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS agent_tokens (
@@ -1104,11 +1106,11 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	err := s.db.QueryRow(
 		`SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
 		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
-		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0)
 		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
 		 WHERE a.id = ?`, id,
 	).Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent,
-		&a.Status, &a.Notes, &lastUsed, &a.CreatedAt, &a.AssignedUserID, &a.AssignedUserName)
+		&a.Status, &a.Notes, &lastUsed, &a.CreatedAt, &a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn)
 	if err != nil {
 		return nil, err
 	}
@@ -1119,11 +1121,21 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	return &a, nil
 }
 
+// SetBrowserLoggedIn marks whether an account has successfully logged into Facebook via the dashboard browser.
+func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool) error {
+	v := 0
+	if loggedIn {
+		v = 1
+	}
+	_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
+	return err
+}
+
 // GetAllAccounts returns accounts scoped to an org. orgID=0 returns all (superadmin).
 func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
 	q := `SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
 		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
-		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0)
 		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id`
 	var args []any
 	if orgID > 0 {
@@ -1143,7 +1155,7 @@ func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
 		var lastUsed string
 		if err := rows.Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
 			&a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt,
-			&a.AssignedUserID, &a.AssignedUserName); err != nil {
+			&a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn); err != nil {
 			return nil, err
 		}
 		if lastUsed != "" {

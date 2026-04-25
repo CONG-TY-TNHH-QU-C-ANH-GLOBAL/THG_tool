@@ -299,6 +299,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	r.Post("/browser/workspaces/:id/start", s.workspaceStart)
 	r.Post("/browser/workspaces/:id/stop", s.workspaceStop)
 	r.Post("/browser/workspaces/:id/navigate", s.workspaceNavigate)
+	r.Post("/browser/workspaces/:id/set-logged-in", s.workspaceSetLoggedIn)
 	// Legacy VNC single-instance (Linux only)
 	r.Get("/browser/status", s.vncStatus)
 	r.Post("/browser/start", s.vncStart)
@@ -337,10 +338,6 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	// WebSocket: per-account noVNC proxy (Docker/VNC mode — primary browser view)
 	app.Use("/ws/vnc/:id", wsJWTAuth)
 	app.Get("/ws/vnc/:id", fiberws.New(s.perAccountVNCProxyHandler()))
-
-	// WebSocket: per-account CDP screencast (legacy fallback)
-	app.Use("/ws/browser-view/:id", wsJWTAuth)
-	app.Get("/ws/browser-view/:id", fiberws.New(s.cdpViewHandler()))
 
 	// WebSocket: legacy single-display VNC proxy
 	app.Use("/ws/vnc", wsJWTAuth)
