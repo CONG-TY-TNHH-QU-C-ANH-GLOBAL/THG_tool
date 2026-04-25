@@ -148,19 +148,20 @@ function doLogout() {
 
 function updateSidebarUser(user) {
     if (!user) return;
-    // Header avatar + name
+    const displayName = user.name || user.email || '';
     const avatarEl = document.getElementById('headerAvatar');
     const nameEl = document.getElementById('headerUserName');
-    if (avatarEl) avatarEl.textContent = (user.name || user.email || '?')[0].toUpperCase();
-    if (nameEl) nameEl.textContent = user.name || user.email;
-    // Sidebar org badge — populated when org info loads
-    // Header role badge color
+    const menuNameEl = document.getElementById('menuUserName');
+    if (avatarEl) avatarEl.textContent = displayName ? displayName[0].toUpperCase() : '?';
+    if (nameEl) nameEl.textContent = displayName;
+    if (menuNameEl) menuNameEl.textContent = displayName;
     const roleLabel = user.role === 'superadmin' ? '⚡ Super Admin' : (user.role === 'admin' ? '🔑 Admin' : '📊 Sales');
     const orgEl = document.getElementById('headerOrgName');
     if (orgEl) orgEl.textContent = roleLabel;
 }
 
-function toggleUserMenu() {
+function toggleUserMenu(e) {
+    if (e) e.stopPropagation();
     const d = document.getElementById('userMenuDropdown');
     if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
 }
@@ -170,7 +171,6 @@ function closeUserMenu() {
     if (d) d.style.display = 'none';
 }
 
-// Close menu when clicking outside
 document.addEventListener('click', function(e) {
     const wrap = document.getElementById('userMenuWrap');
     if (wrap && !wrap.contains(e.target)) closeUserMenu();
@@ -182,6 +182,8 @@ let browserSelectedAccountID = null;
 let browserWS = null;
 let browserCanvas = null;
 let browserCtx = null;
+let browserReconnectTimer = null;
+let browserFrameWatchdog = null;
 
 async function loadBrowserPage() {
     browserCanvas = document.getElementById('browserCanvas');
@@ -287,13 +289,14 @@ async function browserStartSelected() {
         showToast('Chrome đã sẵn sàng!', 'success');
         updateBrowserControls(true, res.cdp_port);
         await loadBrowserWorkspaces();
-        // Small delay so screencast goroutine has time to connect
-        setTimeout(() => connectBrowserView(browserSelectedAccountID), 800);
+        showBrowserPlaceholder('Đang kết nối màn hình...');
+        // Give screencast goroutine time to start before opening WebSocket
+        setTimeout(() => connectBrowserView(browserSelectedAccountID), 1500);
     } else {
         btn.textContent = '▶ START';
         btn.disabled = false;
         showToast(res.error || 'Lỗi khởi động Chrome', 'error');
-        showBrowserPlaceholder(res.error || 'Khởi động thất bại');
+        showBrowserPlaceholder(res.error || 'Khởi động thất bại — xem Logs');
     }
 }
 
@@ -308,21 +311,35 @@ async function browserStopSelected() {
 }
 
 function connectBrowserView(accountID) {
+    if (browserReconnectTimer) { clearTimeout(browserReconnectTimer); browserReconnectTimer = null; }
+    if (browserFrameWatchdog) { clearTimeout(browserFrameWatchdog); browserFrameWatchdog = null; }
     if (browserWS) { browserWS.close(); browserWS = null; }
+    if (accountID !== browserSelectedAccountID) return; // account switched
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws/browser-view/${accountID}?token=${encodeURIComponent(accessToken)}`);
     browserWS = ws;
 
     ws.onopen = () => {
-        showBrowserPlaceholder(null); // hide placeholder
+        showBrowserPlaceholder(null);
+        browserCanvas.style.display = '';
         browserCanvas.focus();
+        // Watchdog: if no frames arrive within 5s, show a hint
+        browserFrameWatchdog = setTimeout(() => {
+            if (browserWS === ws && ws.readyState === WebSocket.OPEN) {
+                showBrowserPlaceholder('Kết nối OK — đang chờ Chrome render. Thử click vào Chrome trên taskbar.');
+                setTimeout(() => { if (browserWS === ws) showBrowserPlaceholder(null); }, 4000);
+            }
+        }, 5000);
     };
 
     ws.onmessage = (e) => {
+        // Clear watchdog on first frame
+        if (browserFrameWatchdog) { clearTimeout(browserFrameWatchdog); browserFrameWatchdog = null; }
         try {
             const msg = JSON.parse(e.data);
             if (msg.type === 'frame' && msg.data && browserCtx) {
+                showBrowserPlaceholder(null);
                 const img = new Image();
                 img.onload = () => {
                     if (browserCanvas.width !== img.naturalWidth)  browserCanvas.width  = img.naturalWidth;
@@ -335,8 +352,17 @@ function connectBrowserView(accountID) {
     };
 
     ws.onclose = () => {
-        if (browserWS === ws) browserWS = null;
-        showBrowserPlaceholder('Kết nối bị ngắt. Nhấn refresh để thử lại.');
+        if (browserWS !== ws) return;
+        browserWS = null;
+        if (browserFrameWatchdog) { clearTimeout(browserFrameWatchdog); browserFrameWatchdog = null; }
+        // Auto-reconnect if account is still running
+        const accStillRunning = document.querySelector('.workspace-status-pill.running');
+        if (accountID === browserSelectedAccountID && accStillRunning) {
+            showBrowserPlaceholder('Đang kết nối lại...');
+            browserReconnectTimer = setTimeout(() => connectBrowserView(accountID), 2500);
+        } else {
+            showBrowserPlaceholder('Kết nối bị ngắt.');
+        }
     };
     ws.onerror = () => ws.close();
 }
@@ -385,7 +411,7 @@ async function loadAgentTokens() {
     const user = JSON.parse(localStorage.getItem('thg_user') || '{}');
     const section = document.getElementById('agentTokensSection');
     if (!section) return;
-    if (user.role !== 'admin') { section.style.display = 'none'; return; }
+    if (user.role !== 'admin' && user.role !== 'superadmin') { section.style.display = 'none'; return; }
     section.style.display = '';
 
     const res = await fetchAPI('/api/admin/agent-tokens');
@@ -430,23 +456,14 @@ async function loadSettingsPage() {
     document.getElementById('profileEmail').value = user.email || '';
     document.getElementById('profileRole').value = user.role === 'superadmin' ? 'Super Admin' : (user.role === 'admin' ? 'Admin' : 'Sales');
 
-    // Role-gated sections
-    const isSuperAdmin = user.role === 'superadmin';
-    const isAdmin = user.role === 'admin' || isSuperAdmin;
+    const isAdmin = user.role === 'admin' || user.role === 'superadmin';
     document.getElementById('agentTokensSection').style.display = isAdmin ? '' : 'none';
     document.getElementById('userMgmtSection').style.display = isAdmin ? '' : 'none';
-    document.getElementById('platformMgmtSection').style.display = isSuperAdmin ? '' : 'none';
-    // Org info: hidden for superadmin (they have no single org)
-    document.getElementById('orgInfoSection').style.display = isSuperAdmin ? 'none' : '';
+    document.getElementById('orgInfoSection').style.display = '';
 
     if (isAdmin) {
         loadUsersTable();
         loadAgentTokens();
-    }
-    if (isSuperAdmin) {
-        loadOrgsTable();
-    }
-    if (!isSuperAdmin) {
         loadOrgInfo(user.role);
     }
 }

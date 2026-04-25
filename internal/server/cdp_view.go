@@ -98,6 +98,7 @@ func (s *Server) startAccountScreencast(accountID int64, cdpPort int) {
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
+	// WithTargetID not used — connect to the first existing tab (Chrome's default tab)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 	cancelAll := func() { ctxCancel(); allocCancel() }
 
@@ -106,10 +107,15 @@ func (s *Server) startAccountScreencast(accountID int64, cdpPort int) {
 	hub.cancel = cancelAll
 	hub.mu.Unlock()
 
-	// Navigate to Facebook on first connect
-	_ = chromedp.Run(ctx, chromedp.Navigate("https://www.facebook.com"))
+	// Enable the Page domain so CDP sends screencast events.
+	// We do NOT auto-navigate — the user drives Chrome themselves via the canvas.
+	if err := chromedp.Run(ctx, page.Enable()); err != nil {
+		log.Printf("[CDPView] Account %d: page.Enable error: %v", accountID, err)
+		cancelAll()
+		return
+	}
 
-	// Forward screencast frames to all subscribers
+	// Forward screencast frames to all subscribed WebSocket clients
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		if e, ok := ev.(*page.EventScreencastFrame); ok {
 			msg, _ := json.Marshal(map[string]any{
