@@ -147,11 +147,34 @@ function doLogout() {
 }
 
 function updateSidebarUser(user) {
-    const el = document.getElementById('sidebarUser');
-    if (!el || !user) return;
-    const roleLabel = user.role === 'superadmin' ? 'Super Admin' : (user.role === 'admin' ? 'Admin' : 'Sales');
-    el.innerHTML = `<span style="font-weight:600;color:var(--text-primary)">${esc(user.name || user.email)}</span><br><span style="font-size:11px">${roleLabel}</span>`;
+    if (!user) return;
+    // Header avatar + name
+    const avatarEl = document.getElementById('headerAvatar');
+    const nameEl = document.getElementById('headerUserName');
+    if (avatarEl) avatarEl.textContent = (user.name || user.email || '?')[0].toUpperCase();
+    if (nameEl) nameEl.textContent = user.name || user.email;
+    // Sidebar org badge — populated when org info loads
+    // Header role badge color
+    const roleLabel = user.role === 'superadmin' ? '⚡ Super Admin' : (user.role === 'admin' ? '🔑 Admin' : '📊 Sales');
+    const orgEl = document.getElementById('headerOrgName');
+    if (orgEl) orgEl.textContent = roleLabel;
 }
+
+function toggleUserMenu() {
+    const d = document.getElementById('userMenuDropdown');
+    if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
+}
+
+function closeUserMenu() {
+    const d = document.getElementById('userMenuDropdown');
+    if (d) d.style.display = 'none';
+}
+
+// Close menu when clicking outside
+document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('userMenuWrap');
+    if (wrap && !wrap.contains(e.target)) closeUserMenu();
+});
 
 // ===== Browser / Workspace Page =====
 
@@ -405,14 +428,27 @@ async function loadSettingsPage() {
     updateSidebarUser(user);
     document.getElementById('profileName').value = user.name || '';
     document.getElementById('profileEmail').value = user.email || '';
-    document.getElementById('profileRole').value = user.role === 'admin' ? 'Admin' : (user.role === 'superadmin' ? 'Super Admin' : 'Sales');
-    if (user.role === 'admin' || user.role === 'superadmin') {
-        document.getElementById('userMgmtSection').style.display = '';
-        document.getElementById('agentTokensSection').style.display = '';
+    document.getElementById('profileRole').value = user.role === 'superadmin' ? 'Super Admin' : (user.role === 'admin' ? 'Admin' : 'Sales');
+
+    // Role-gated sections
+    const isSuperAdmin = user.role === 'superadmin';
+    const isAdmin = user.role === 'admin' || isSuperAdmin;
+    document.getElementById('agentTokensSection').style.display = isAdmin ? '' : 'none';
+    document.getElementById('userMgmtSection').style.display = isAdmin ? '' : 'none';
+    document.getElementById('platformMgmtSection').style.display = isSuperAdmin ? '' : 'none';
+    // Org info: hidden for superadmin (they have no single org)
+    document.getElementById('orgInfoSection').style.display = isSuperAdmin ? 'none' : '';
+
+    if (isAdmin) {
         loadUsersTable();
         loadAgentTokens();
     }
-    loadOrgInfo(user.role);
+    if (isSuperAdmin) {
+        loadOrgsTable();
+    }
+    if (!isSuperAdmin) {
+        loadOrgInfo(user.role);
+    }
 }
 
 async function loadOrgInfo(role) {
@@ -426,7 +462,12 @@ async function loadOrgInfo(role) {
     document.getElementById('orgAccountLimit').textContent = org.max_accounts === 0 ? '∞' : (org.max_accounts ?? '—');
     document.getElementById('orgPlanName').textContent = planLabels[org.plan_tier] || org.plan_tier;
     document.getElementById('orgPlanBadge').textContent = (planLabels[org.plan_tier] || org.plan_tier).toUpperCase();
-    if (role === 'admin' || role === 'superadmin') {
+    // Sidebar org badge + header org context
+    const badge = document.getElementById('sidebarOrgBadge');
+    if (badge) { badge.textContent = org.name; badge.style.display = ''; }
+    const headerOrg = document.getElementById('headerOrgName');
+    if (headerOrg) headerOrg.textContent = org.name;
+    if (role === 'admin') {
         document.getElementById('orgName').disabled = false;
         document.getElementById('orgDomain').disabled = false;
         document.getElementById('orgSaveBtn').style.display = '';
@@ -442,6 +483,65 @@ async function saveOrgSettings() {
     if (!name) return showToast('Tên tổ chức không được để trống', 'error');
     const res = await fetchAPI('/api/org', 'PUT', { name, domain });
     if (res) showToast('Đã lưu cài đặt tổ chức', 'success');
+}
+
+async function loadOrgsTable() {
+    const res = await fetchAPI('/api/admin/orgs');
+    if (!res) return;
+    const planColors = { free: '#6ee7b7', pro: '#60a5fa', enterprise: '#f59e0b' };
+    renderTable('orgsTable', res.organizations || [], org => {
+        const planColor = planColors[org.plan_tier] || '#94a3b8';
+        return `
+            <td><strong>${esc(org.name)}</strong></td>
+            <td style="color:var(--text-muted)">${esc(org.domain || '—')}</td>
+            <td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:rgba(0,0,0,0.2);color:${planColor};font-weight:600">${org.plan_tier?.toUpperCase()}</span></td>
+            <td style="text-align:center">${org.max_accounts === 0 ? '∞' : org.max_accounts}</td>
+            <td><span style="color:${org.active ? '#6ee7b7' : '#f87171'}">${org.active ? 'Hoạt động' : 'Tạm khóa'}</span></td>
+            <td>${timeAgo(org.created_at)}</td>
+            <td><button class="btn btn-sm btn-ghost" onclick="showEditOrgModal(${org.id},'${esc(org.name)}','${esc(org.domain)}','${org.plan_tier}',${org.max_accounts},${org.active})">✏️</button></td>
+        `;
+    });
+}
+
+function showEditOrgModal(id, name, domain, plan, maxAccounts, active) {
+    const plans = ['free', 'pro', 'enterprise'];
+    const planOpts = plans.map(p => `<option value="${p}"${p===plan?' selected':''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`).join('');
+    const html = `
+        <div class="modal-overlay" id="editOrgModal" style="display:flex">
+            <div class="modal glass" style="max-width:400px;width:100%">
+                <div class="modal-header"><h3>✏️ Chỉnh sửa tổ chức</h3></div>
+                <div style="padding:20px;display:grid;gap:12px">
+                    <div class="form-group"><label>Tên</label><input id="eoName" value="${esc(name)}" style="width:100%"></div>
+                    <div class="form-group"><label>Domain</label><input id="eoDomain" value="${esc(domain)}" style="width:100%"></div>
+                    <div class="form-group"><label>Gói dịch vụ</label><select id="eoPlan" style="width:100%">${planOpts}</select></div>
+                    <div class="form-group"><label>Max FB accounts (0 = không giới hạn)</label><input id="eoMax" type="number" value="${maxAccounts}" min="0" style="width:100%"></div>
+                    <div class="form-group" style="display:flex;align-items:center;gap:8px">
+                        <input type="checkbox" id="eoActive"${active?' checked':''}> <label for="eoActive">Hoạt động</label>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end">
+                        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('editOrgModal').remove()">Hủy</button>
+                        <button class="btn btn-primary btn-sm" onclick="submitEditOrg(${id})">Lưu</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function submitEditOrg(id) {
+    const active = document.getElementById('eoActive').checked;
+    const res = await fetchAPI(`/api/admin/orgs/${id}`, 'PUT', {
+        name: document.getElementById('eoName').value.trim(),
+        domain: document.getElementById('eoDomain').value.trim(),
+        plan_tier: document.getElementById('eoPlan').value,
+        max_accounts: parseInt(document.getElementById('eoMax').value) || 0,
+        active,
+    });
+    if (res) {
+        document.getElementById('editOrgModal')?.remove();
+        loadOrgsTable();
+        showToast('Đã cập nhật tổ chức', 'success');
+    }
 }
 
 async function saveProfile() {

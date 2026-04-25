@@ -390,8 +390,9 @@ func (s *Server) getLeads(c *fiber.Ctx) error {
 	niche := c.Query("niche", "")
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
+	orgID, _ := c.Locals("org_id").(int64)
 
-	leads, err := s.db.GetLeadsFiltered(score, niche, limit, offset)
+	leads, err := s.db.GetLeadsFiltered(score, niche, limit, offset, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -451,8 +452,9 @@ func (s *Server) deleteLead(c *fiber.Ctx) error {
 func (s *Server) getPosts(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
+	orgID, _ := c.Locals("org_id").(int64)
 
-	posts, err := s.db.GetRecentPosts(limit, offset)
+	posts, err := s.db.GetRecentPosts(limit, offset, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -544,7 +546,8 @@ func (s *Server) cancelJob(c *fiber.Ctx) error {
 }
 
 func (s *Server) getGroups(c *fiber.Ctx) error {
-	groups, err := s.db.GetAllGroups()
+	orgID, _ := c.Locals("org_id").(int64)
+	groups, err := s.db.GetAllGroups(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -561,7 +564,9 @@ func (s *Server) addGroup(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
+	groupOrgID, _ := c.Locals("org_id").(int64)
 	group := &models.Group{
+		OrgID:     groupOrgID,
 		Platform:  models.Platform(req.Platform),
 		Name:      req.Name,
 		URL:       req.URL,
@@ -613,11 +618,11 @@ func (s *Server) deleteGroup(c *fiber.Ctx) error {
 // --- v2: Account Handlers ---
 
 func (s *Server) getAccounts(c *fiber.Ctx) error {
-	accounts, err := s.db.GetAllAccounts()
+	orgID, _ := c.Locals("org_id").(int64)
+	accounts, err := s.db.GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	// Redact sensitive session cookies from API responses
 	for i := range accounts {
 		accounts[i].CookiesJSON = "[REDACTED]"
 	}
@@ -643,16 +648,17 @@ func (s *Server) addAccount(c *fiber.Ctx) error {
 		req.Platform = "facebook"
 	}
 
-	// Auto-assign to the user creating this account
 	userID, _ := c.Locals("user_id").(int64)
+	orgID, _ := c.Locals("org_id").(int64)
 
 	acc := &models.Account{
+		OrgID:          orgID,
 		Platform:       models.Platform(req.Platform),
 		Name:           req.Name,
 		Email:          req.Email,
 		CookiesJSON:    req.CookiesJSON,
 		ProxyURL:       req.ProxyURL,
-		Status:         models.AccountInactive, // inactive until Chrome login completes
+		Status:         models.AccountInactive,
 		Notes:          req.Notes,
 		AssignedUserID: userID,
 	}

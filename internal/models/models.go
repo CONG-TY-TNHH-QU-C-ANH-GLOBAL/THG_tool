@@ -46,6 +46,7 @@ const (
 // Group represents a social media group/page to monitor.
 type Group struct {
 	ID        int64     `json:"id" db:"id"`
+	OrgID     int64     `json:"org_id" db:"org_id"`
 	Platform  Platform  `json:"platform" db:"platform"`
 	Name      string    `json:"name" db:"name"`
 	URL       string    `json:"url" db:"url"`
@@ -178,6 +179,7 @@ const (
 // Account represents a social media account used for scraping.
 type Account struct {
 	ID               int64         `json:"id" db:"id"`
+	OrgID            int64         `json:"org_id" db:"org_id"`
 	Platform         Platform      `json:"platform" db:"platform"`
 	Name             string        `json:"name" db:"name"`
 	Email            string        `json:"email" db:"email"`
@@ -188,7 +190,7 @@ type Account struct {
 	Notes            string        `json:"notes" db:"notes"`
 	LastUsed         time.Time     `json:"last_used" db:"last_used"`
 	CreatedAt        time.Time     `json:"created_at" db:"created_at"`
-	AssignedUserID   int64         `json:"assigned_user_id"`   // staff who owns this FB account
+	AssignedUserID   int64         `json:"assigned_user_id"`
 	AssignedUserName string        `json:"assigned_user_name"` // resolved from users JOIN
 }
 

@@ -302,7 +302,7 @@ func (b *Bot) handleAddGroup(c tele.Context) error {
 }
 
 func (b *Bot) handleListGroups(c tele.Context) error {
-	groups, err := b.db.GetAllGroups()
+	groups, err := b.db.GetAllGroups(0)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}

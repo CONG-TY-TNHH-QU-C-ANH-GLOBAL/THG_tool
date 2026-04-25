@@ -55,7 +55,7 @@ func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (strin
 	userContext := a.loadUserContext()
 
 	// Load accounts for AI account mapping
-	accounts, _ := a.db.GetAllAccounts()
+	accounts, _ := a.db.GetAllAccounts(0)
 
 	// Get semantically relevant few-shot examples
 	fewShots := a.getFewShotExamples(prompt)

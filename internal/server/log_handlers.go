@@ -57,7 +57,7 @@ func (s *Server) getSentimentStats(c *fiber.Ctx) error {
 	stats, _ := s.db.GetStats()
 
 	// Sample up to 500 leads to compute niche distribution and score breakdown
-	leads, _ := s.db.GetLeadsFiltered("", "", 500, 0)
+	leads, _ := s.db.GetLeadsFiltered("", "", 500, 0, 0)
 
 	nicheCounts := make(map[string]int)
 	scoreCounts := map[string]int{"hot": 0, "warm": 0, "cold": 0, "rejected": 0}

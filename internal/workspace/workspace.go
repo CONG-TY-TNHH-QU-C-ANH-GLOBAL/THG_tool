@@ -129,6 +129,15 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 	}
 
 	cmd := exec.Command(chromePath, args...)
+	// On Linux: inject DISPLAY so Chrome connects to the virtual framebuffer (Xvfb).
+	// Without this, Chrome exits silently on a headless VPS.
+	if runtime.GOOS != "windows" {
+		display := os.Getenv("DISPLAY")
+		if display == "" {
+			display = ":99" // default Xvfb display
+		}
+		cmd.Env = append(os.Environ(), "DISPLAY="+display)
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

@@ -700,8 +700,8 @@ func scanGroupRows(rows *sql.Rows) ([]models.Group, error) {
 // AddGroup inserts a new group to monitor.
 func (s *Store) AddGroup(g *models.Group) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO groups (platform, name, url, active, join_state) VALUES (?, ?, ?, ?, ?)`,
-		g.Platform, g.Name, g.URL, g.Active, g.JoinState,
+		`INSERT OR IGNORE INTO groups (org_id, platform, name, url, active, join_state) VALUES (?, ?, ?, ?, ?, ?)`,
+		g.OrgID, g.Platform, g.Name, g.URL, g.Active, g.JoinState,
 	)
 	if err != nil {
 		return 0, err
@@ -742,11 +742,16 @@ func (s *Store) GetActiveGroups(platform models.Platform) ([]models.Group, error
 	return groups, nil
 }
 
-// GetAllGroups returns all groups.
-func (s *Store) GetAllGroups() ([]models.Group, error) {
-	rows, err := s.db.Query(
-		`SELECT id, platform, name, url, active, join_state, COALESCE(last_scan, ''), created_at FROM groups ORDER BY created_at DESC`,
-	)
+// GetAllGroups returns groups scoped to an org. orgID=0 returns all (superadmin).
+func (s *Store) GetAllGroups(orgID int64) ([]models.Group, error) {
+	q := `SELECT id, COALESCE(org_id,1), platform, name, url, active, join_state, COALESCE(last_scan, ''), created_at FROM groups`
+	var args []any
+	if orgID > 0 {
+		q += ` WHERE org_id = ?`
+		args = append(args, orgID)
+	}
+	q += ` ORDER BY created_at DESC`
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -756,7 +761,7 @@ func (s *Store) GetAllGroups() ([]models.Group, error) {
 	for rows.Next() {
 		var g models.Group
 		var lastScan string
-		if err := rows.Scan(&g.ID, &g.Platform, &g.Name, &g.URL, &g.Active, &g.JoinState, &lastScan, &g.CreatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.OrgID, &g.Platform, &g.Name, &g.URL, &g.Active, &g.JoinState, &lastScan, &g.CreatedAt); err != nil {
 			return nil, err
 		}
 		if lastScan != "" {
@@ -801,12 +806,18 @@ func (s *Store) InsertPost(p *models.Post) (int64, error) {
 	return res.LastInsertId()
 }
 
-// GetRecentPosts returns recent posts with pagination.
-func (s *Store) GetRecentPosts(limit, offset int) ([]models.Post, error) {
-	rows, err := s.db.Query(
-		`SELECT id, platform, group_id, group_name, url, author, author_url, author_avatar, content, images, reactions, comments, posted_at, scraped_at, dedup_hash
-		 FROM posts ORDER BY scraped_at DESC LIMIT ? OFFSET ?`, limit, offset,
-	)
+// GetRecentPosts returns recent posts with pagination. orgID=0 returns all.
+func (s *Store) GetRecentPosts(limit, offset int, orgID int64) ([]models.Post, error) {
+	q := `SELECT p.id, p.platform, p.group_id, p.group_name, p.url, p.author, p.author_url, p.author_avatar, p.content, p.images, p.reactions, p.comments, p.posted_at, p.scraped_at, p.dedup_hash
+		 FROM posts p`
+	var args []any
+	if orgID > 0 {
+		q += ` JOIN groups g ON p.group_id = g.id WHERE g.org_id = ?`
+		args = append(args, orgID)
+	}
+	q += ` ORDER BY p.scraped_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -872,13 +883,13 @@ func (s *Store) InsertLead(l *models.Lead) (int64, error) {
 	return res.LastInsertId()
 }
 
-// GetLeads returns leads with optional filtering by score and niche.
+// GetLeads returns leads with optional filtering by score and niche (cross-org, for internal use).
 func (s *Store) GetLeads(score string, limit, offset int) ([]models.Lead, error) {
-	return s.GetLeadsFiltered(score, "", limit, offset)
+	return s.GetLeadsFiltered(score, "", limit, offset, 0)
 }
 
-// GetLeadsFiltered returns leads filtered by score and/or niche.
-func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int) ([]models.Lead, error) {
+// GetLeadsFiltered returns leads filtered by score, niche, and org. orgID=0 returns all.
+func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID int64) ([]models.Lead, error) {
 	query := `SELECT l.id, l.source_type, l.source_id,
 	           COALESCE(NULLIF(l.source_url, ''), p.url, '') as source_url,
 	           l.platform, l.author, l.author_url, l.content, l.score, l.service_match,
@@ -886,8 +897,15 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int) ([]mode
 	           l.classified_at, l.created_at,
 	           EXISTS(SELECT 1 FROM outbound_messages om WHERE om.target_url = COALESCE(NULLIF(l.source_url,''),p.url,'') AND om.type='comment' AND om.status = 'sent') as commented
 	          FROM leads l LEFT JOIN posts p ON l.source_id = p.id`
+	if orgID > 0 {
+		query += ` LEFT JOIN groups g ON p.group_id = g.id`
+	}
 	var args []any
 	var where []string
+	if orgID > 0 {
+		where = append(where, "(g.org_id = ? OR p.group_id IS NULL)")
+		args = append(args, orgID)
+	}
 	if score != "" {
 		where = append(where, "l.score = ?")
 		args = append(args, score)
@@ -1070,8 +1088,8 @@ func (s *Store) AddAccount(a *models.Account) (int64, error) {
 		return 0, fmt.Errorf("encrypt cookies: %w", err)
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO accounts (platform, name, email, cookies_json, proxy_url, user_agent, status, notes, assigned_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.Platform, a.Name, a.Email, encCookies, a.ProxyURL, a.UserAgent, a.Status, a.Notes, a.AssignedUserID,
+		`INSERT INTO accounts (org_id, platform, name, email, cookies_json, proxy_url, user_agent, status, notes, assigned_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.OrgID, a.Platform, a.Name, a.Email, encCookies, a.ProxyURL, a.UserAgent, a.Status, a.Notes, a.AssignedUserID,
 	)
 	if err != nil {
 		return 0, err
@@ -1084,12 +1102,12 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	var a models.Account
 	var lastUsed string
 	err := s.db.QueryRow(
-		`SELECT a.id, a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
+		`SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
 		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
 		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
 		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
 		 WHERE a.id = ?`, id,
-	).Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent,
+	).Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent,
 		&a.Status, &a.Notes, &lastUsed, &a.CreatedAt, &a.AssignedUserID, &a.AssignedUserName)
 	if err != nil {
 		return nil, err
@@ -1101,15 +1119,19 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	return &a, nil
 }
 
-// GetAllAccounts returns all accounts with decrypted cookies and assigned staff names.
-func (s *Store) GetAllAccounts() ([]models.Account, error) {
-	rows, err := s.db.Query(
-		`SELECT a.id, a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
+// GetAllAccounts returns accounts scoped to an org. orgID=0 returns all (superadmin).
+func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
+	q := `SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
 		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
 		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,'')
-		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
-		 ORDER BY a.created_at DESC`,
-	)
+		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id`
+	var args []any
+	if orgID > 0 {
+		q += ` WHERE a.org_id = ?`
+		args = append(args, orgID)
+	}
+	q += ` ORDER BY a.created_at DESC`
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1119,7 +1141,7 @@ func (s *Store) GetAllAccounts() ([]models.Account, error) {
 	for rows.Next() {
 		var a models.Account
 		var lastUsed string
-		if err := rows.Scan(&a.ID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
+		if err := rows.Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
 			&a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt,
 			&a.AssignedUserID, &a.AssignedUserName); err != nil {
 			return nil, err

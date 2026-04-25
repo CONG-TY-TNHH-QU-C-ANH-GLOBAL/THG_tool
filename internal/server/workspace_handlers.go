@@ -2,6 +2,7 @@ package server
 
 import (
 	"log"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -13,7 +14,8 @@ import (
 // workspaceList returns all Facebook accounts with their live Chrome workspace status.
 // GET /api/browser/workspaces
 func (s *Server) workspaceList(c *fiber.Ctx) error {
-	accounts, err := s.db.GetAllAccounts()
+	orgID, _ := c.Locals("org_id").(int64)
+	accounts, err := s.db.GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -57,6 +59,13 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	acc, err := s.db.GetAccount(id)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+	}
+
+	// On Linux production servers: ensure Xvfb virtual display is running before Chrome
+	if runtime.GOOS == "linux" && s.vncDisplay != nil {
+		if err := s.vncDisplay.Start(); err != nil {
+			log.Printf("[Workspace] Xvfb start warning: %v", err)
+		}
 	}
 
 	inst, err := s.workspace.Start(id, acc.Name)
