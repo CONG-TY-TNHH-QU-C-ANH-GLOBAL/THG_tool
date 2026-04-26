@@ -18,7 +18,15 @@
       "WebFetch(domain:autonow.vn)",
       "Bash(go doc *)",
       "Bash(curl *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(openspec new *)",
+      "Bash(openspec status *)",
+      "Bash(openspec instructions *)",
+      "Bash(go mod *)",
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
     ]
   }
 }

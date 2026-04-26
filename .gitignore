@@ -35,3 +35,8 @@ Thumbs.db
 
 # Build
 dist/
+
+# Frontend dependencies (never commit node_modules)
+frontend/node_modules/
+frontend/.next/
+frontend/out/

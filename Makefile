@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-agent run clean test
+.PHONY: build build-linux build-agent run clean test build-api build-worker ci validate run-api run-worker
 
 # Build server for current OS
 build:
@@ -24,7 +24,32 @@ run:
 test:
 	go test ./internal/... -v
 
+# Build new API + Worker binaries
+build-api:
+	go build -o bin/api.exe ./cmd/api/
+
+build-worker:
+	go build -o bin/worker.exe ./cmd/worker/
+
+# Validate architecture (no forbidden imports, compile clean)
+validate:
+	go vet ./...
+	go build ./cmd/api/ ./cmd/worker/
+
+# Full CI pipeline: validate → test → build
+ci: validate test build-api build-worker
+	@echo "CI: ALL CHECKS PASSED"
+
+# Run new API server
+run-api:
+	DB_PATH=data/scraper.db API_PORT=8080 go run ./cmd/api/
+
+# Run new worker
+run-worker:
+	DB_PATH=data/scraper.db go run ./cmd/worker/
+
 # Clean build artifacts
 clean:
 	del /Q scraper.exe 2>nul
 	rmdir /S /Q dist 2>nul
+	rmdir /S /Q bin 2>nul

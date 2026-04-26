@@ -14,7 +14,11 @@ require (
 	modernc.org/sqlite v1.48.2
 )
 
-require golang.org/x/term v0.42.0
+require (
+	github.com/gofiber/websocket/v2 v2.2.1
+	github.com/google/uuid v1.6.0
+	golang.org/x/term v0.42.0
+)
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
@@ -25,8 +29,6 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/gofiber/websocket/v2 v2.2.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
