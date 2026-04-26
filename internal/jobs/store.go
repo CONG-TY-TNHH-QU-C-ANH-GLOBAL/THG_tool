@@ -32,7 +32,7 @@ func NewStore(dsn string) (*Store, error) {
 
 func (s *Store) migrate() error {
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS jobs (
+		`CREATE TABLE IF NOT EXISTS scheduler_jobs (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			task_id      TEXT    NOT NULL,
 			intent       TEXT    NOT NULL,
@@ -49,7 +49,7 @@ func (s *Store) migrate() error {
 			updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(task_id)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at ASC)`,
+		`CREATE INDEX IF NOT EXISTS idx_scheduler_jobs_status_created ON scheduler_jobs(status, created_at ASC)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -57,9 +57,9 @@ func (s *Store) migrate() error {
 		}
 	}
 	// Idempotent column addition for existing databases that predate progress column.
-	_, err := s.db.Exec(`ALTER TABLE jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0`)
+	_, err := s.db.Exec(`ALTER TABLE scheduler_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0`)
 	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		return fmt.Errorf("alter jobs add progress: %w", err)
+		return fmt.Errorf("alter scheduler_jobs add progress: %w", err)
 	}
 	return nil
 }
@@ -67,7 +67,7 @@ func (s *Store) migrate() error {
 // Submit inserts a job with idempotency: duplicate task_id returns the existing row.
 func (s *Store) Submit(ctx context.Context, task *Task, payload string) (*Job, error) {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO jobs (task_id, intent, payload, status, created_at, updated_at)
+		`INSERT OR IGNORE INTO scheduler_jobs (task_id, intent, payload, status, created_at, updated_at)
 		 VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		task.TaskID, task.Intent, payload,
 	)
@@ -82,10 +82,10 @@ func (s *Store) Submit(ctx context.Context, task *Task, payload string) (*Job, e
 func (s *Store) Claim(ctx context.Context, workerID string) (*Job, error) {
 	now := time.Now().UTC()
 	row := s.db.QueryRowContext(ctx,
-		`UPDATE jobs
+		`UPDATE scheduler_jobs
 		 SET status='running', claimed_by=?, claimed_at=?, updated_at=CURRENT_TIMESTAMP
 		 WHERE id = (
-		   SELECT id FROM jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1
+		   SELECT id FROM scheduler_jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1
 		 )
 		 RETURNING id, task_id, intent, payload, status, attempt, max_attempts,
 		           error, claimed_by, claimed_at, progress, result, created_at, updated_at`,
@@ -101,7 +101,7 @@ func (s *Store) Claim(ctx context.Context, workerID string) (*Job, error) {
 // UpdateProgress sets the progress percentage (0–100) for a running job.
 func (s *Store) UpdateProgress(ctx context.Context, id int64, progress int) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE jobs SET progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		`UPDATE scheduler_jobs SET progress=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
 		progress, id,
 	)
 	return err
@@ -110,7 +110,7 @@ func (s *Store) UpdateProgress(ctx context.Context, id int64, progress int) erro
 // Complete writes the JSON result and transitions the job to completed.
 func (s *Store) Complete(ctx context.Context, id int64, result string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE jobs SET status='completed', progress=100, result=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		`UPDATE scheduler_jobs SET status='completed', progress=100, result=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
 		result, id,
 	)
 	return err
@@ -120,7 +120,7 @@ func (s *Store) Complete(ctx context.Context, id int64, result string) error {
 // otherwise it is marked failed.
 func (s *Store) Fail(ctx context.Context, id int64, errMsg string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE jobs
+		`UPDATE scheduler_jobs
 		 SET status     = CASE WHEN attempt + 1 < max_attempts THEN 'pending' ELSE 'failed' END,
 		     attempt    = attempt + 1,
 		     error      = ?,
@@ -132,11 +132,28 @@ func (s *Store) Fail(ctx context.Context, id int64, errMsg string) error {
 	return err
 }
 
+// Cancel marks a pending or running job as failed with "cancelled by user".
+func (s *Store) Cancel(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE scheduler_jobs SET status='failed', error='cancelled by user', updated_at=CURRENT_TIMESTAMP
+		 WHERE id=? AND status IN ('pending', 'running')`,
+		id,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("job %d not found or already completed", id)
+	}
+	return nil
+}
+
 // RecoverStale resets jobs stuck in running state for longer than timeout back to pending.
 func (s *Store) RecoverStale(ctx context.Context, timeout time.Duration) error {
 	cutoff := time.Now().UTC().Add(-timeout)
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE jobs
+		`UPDATE scheduler_jobs
 		 SET status='pending', claimed_by='', claimed_at=NULL, updated_at=CURRENT_TIMESTAMP
 		 WHERE status='running' AND claimed_at < ?`,
 		cutoff,
@@ -149,7 +166,7 @@ func (s *Store) GetByTaskID(ctx context.Context, taskID string) (*Job, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, task_id, intent, payload, status, attempt, max_attempts,
 		        error, claimed_by, claimed_at, progress, result, created_at, updated_at
-		 FROM jobs WHERE task_id = ?`, taskID,
+		 FROM scheduler_jobs WHERE task_id = ?`, taskID,
 	)
 	j, err := scanJobRow(row)
 	if err == sql.ErrNoRows {
@@ -162,7 +179,7 @@ func (s *Store) GetByTaskID(ctx context.Context, taskID string) (*Job, error) {
 func (s *Store) List(ctx context.Context, status string, limit int) ([]Job, error) {
 	q := `SELECT id, task_id, intent, payload, status, attempt, max_attempts,
 		         error, claimed_by, claimed_at, progress, result, created_at, updated_at
-		  FROM jobs`
+		  FROM scheduler_jobs`
 	args := []any{}
 	if status != "" {
 		q += " WHERE status = ?"
@@ -225,7 +242,7 @@ type StatusCounts struct {
 // GetStatusCounts returns the count of jobs in each status bucket.
 func (s *Store) GetStatusCounts(ctx context.Context) (StatusCounts, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM jobs GROUP BY status`)
+		`SELECT status, COUNT(*) FROM scheduler_jobs GROUP BY status`)
 	if err != nil {
 		return StatusCounts{}, err
 	}

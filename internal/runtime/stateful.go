@@ -1,0 +1,187 @@
+package runtime
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/chromedp"
+)
+
+// StatefulSession holds an open Chrome tab across multiple FetchNext calls.
+// Used by the handler for long-running scrape jobs to avoid reopening a tab
+// per batch. Caller must call Close() when done (defer is safe).
+type StatefulSession struct {
+	accountID   int64
+	cdpPort     int
+	allocCtx    context.Context
+	allocCancel context.CancelFunc
+	tabCtx      context.Context
+	tabCancel   context.CancelFunc
+	tabTTL      *time.Timer
+	scroller    *HumanScroller
+	cache       PaginationCache
+	seen        map[string]bool
+	emptyRuns   int
+	fp          Fingerprint
+}
+
+const tabTTL = 5 * time.Minute
+const maxEmptyRuns = 3
+
+// NewStatefulSession opens a new tab in the Chrome instance at cdpPort.
+// The tab is closed when Close() is called or the 5-minute TTL fires.
+func NewStatefulSession(ctx context.Context, cdpPort int, accountID int64, cache PaginationCache) (*StatefulSession, error) {
+	wsURL, err := chromeWSURL(cdpPort)
+	if err != nil {
+		return nil, Wrap(ErrChromeUnreachable, fmt.Sprintf("get ws url for port %d", cdpPort), err)
+	}
+
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, wsURL)
+	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
+
+	s := &StatefulSession{
+		accountID:   accountID,
+		cdpPort:     cdpPort,
+		allocCtx:    allocCtx,
+		allocCancel: allocCancel,
+		tabCtx:      tabCtx,
+		tabCancel:   tabCancel,
+		scroller:    NewHumanScroller(accountID),
+		cache:       cache,
+		seen:        make(map[string]bool),
+		fp:          DefaultFingerprint(accountID),
+	}
+
+	// Hard TTL: cancel the tab context after tabTTL regardless of what's happening.
+	s.tabTTL = time.AfterFunc(tabTTL, func() {
+		tabCancel()
+	})
+
+	return s, nil
+}
+
+// Navigate goes to the URL and injects the fingerprint. Must be called before FetchNext.
+func (s *StatefulSession) Navigate(url string) error {
+	// Inject fingerprint before navigation (runs on every new document)
+	script := BuildInjectionScript(s.fp)
+	if err := chromedp.Run(s.tabCtx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx)
+			return err
+		}),
+	); err != nil {
+		// Non-fatal: fingerprint injection failure doesn't block scraping
+		_ = err
+	}
+
+	if err := chromedp.Run(s.tabCtx, chromedp.Navigate(url)); err != nil {
+		return Wrap(ErrNavigationTimeout, "navigate to "+url, err)
+	}
+
+	// Check for ban signals after navigation
+	if err := checkBanSignals(s.tabCtx); err != nil {
+		return err
+	}
+
+	// Wait for the feed
+	if err := chromedp.Run(s.tabCtx,
+		chromedp.WaitVisible(`[role="feed"]`, chromedp.ByQuery),
+	); err != nil {
+		return Wrap(ErrNavigationTimeout, "wait for feed", err)
+	}
+
+	return nil
+}
+
+// FetchNext extracts up to batchSize new posts from the current scroll position.
+// Returns nil, nil when the page is exhausted (maxEmptyRuns consecutive empty scrolls).
+func (s *StatefulSession) FetchNext(batchSize int) ([]RawItem, error) {
+	select {
+	case <-s.tabCtx.Done():
+		return nil, CDPError{Code: ErrTabTTLExceeded, Message: "tab context cancelled (TTL or manual close)"}
+	default:
+	}
+
+	var rawJSON string
+	if err := chromedp.Run(s.tabCtx,
+		chromedp.Evaluate(extractPostsJS(batchSize*2), &rawJSON), // fetch 2× and filter seen
+	); err != nil {
+		return nil, Wrap(ErrContentExtraction, "evaluate js extractor", err)
+	}
+
+	var raw []struct {
+		ID        string `json:"id"`
+		Content   string `json:"content"`
+		Author    string `json:"author"`
+		AuthorURL string `json:"author_url"`
+		PostURL   string `json:"post_url"`
+		Reactions int    `json:"reactions"`
+		Comments  int    `json:"comments"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+		return nil, Wrap(ErrContentExtraction, "parse js output", err)
+	}
+
+	var items []RawItem
+	for _, r := range raw {
+		key := r.ID
+		if key == "" {
+			key = r.PostURL
+		}
+		if key == "" || s.seen[key] {
+			continue
+		}
+		if s.cache != nil && s.cache.Seen(r.PostURL, key) {
+			continue
+		}
+		s.seen[key] = true
+		if s.cache != nil {
+			s.cache.Mark(r.PostURL, key)
+		}
+		items = append(items, RawItem{
+			ID:               key,
+			Content:          r.Content,
+			AuthorName:       r.Author,
+			AuthorProfileURL: r.AuthorURL,
+			SourceURL:        coalesce(r.PostURL, ""),
+			Timestamp:        time.Now().UTC(),
+			Reactions:        r.Reactions,
+			Comments:         r.Comments,
+		})
+		if len(items) >= batchSize {
+			break
+		}
+	}
+
+	if len(items) == 0 {
+		s.emptyRuns++
+		if s.emptyRuns >= maxEmptyRuns {
+			return nil, nil // exhausted
+		}
+	} else {
+		s.emptyRuns = 0
+	}
+
+	// Scroll down for next call
+	if err := s.scroller.ScrollOnce(s.tabCtx, 640, 400); err != nil {
+		return items, nil // scroll error is non-fatal; return what we have
+	}
+
+	return items, nil
+}
+
+// Close releases the tab and its allocator context. Safe to call multiple times.
+func (s *StatefulSession) Close() {
+	if s.tabTTL != nil {
+		s.tabTTL.Stop()
+	}
+	if s.tabCancel != nil {
+		s.tabCancel()
+	}
+	if s.allocCancel != nil {
+		s.allocCancel()
+	}
+}

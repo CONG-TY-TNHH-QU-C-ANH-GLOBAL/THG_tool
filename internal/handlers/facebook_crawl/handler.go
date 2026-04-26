@@ -5,24 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/thg/scraper/internal/filter"
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/livesession"
 	"github.com/thg/scraper/internal/output"
 	"github.com/thg/scraper/internal/runtime"
 	"github.com/thg/scraper/internal/scoring"
+	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 )
 
 // Handler implements jobs.Handler for all crawl-based intents.
 // Filters AND scoring run inline per item — nothing is accumulated before evaluation.
 type Handler struct {
-	rt       runtime.Runtime
-	fe       *filter.Engine
-	scorer   *scoring.Scorer
-	jobStore *jobs.Store
-	appStore *store.AppStore
+	rt        runtime.Runtime // fallback when no browser session is idle
+	fe        *filter.Engine
+	scorer    *scoring.Scorer
+	jobStore  *jobs.Store
+	appStore  *store.AppStore
+	allocator *session.Allocator
+	lsFactory *livesession.LiveSessionFactory
 }
 
 func New(rt runtime.Runtime, scorer *scoring.Scorer, jobStore *jobs.Store, appStore *store.AppStore) *Handler {
@@ -35,14 +41,59 @@ func New(rt runtime.Runtime, scorer *scoring.Scorer, jobStore *jobs.Store, appSt
 	}
 }
 
+// SetAllocator wires in the session allocator + live session factory.
+// When set, Handle() acquires a real browser session per job.
+func (h *Handler) SetAllocator(a *session.Allocator, f *livesession.LiveSessionFactory) {
+	h.allocator = a
+	h.lsFactory = f
+}
+
 func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 	var task jobs.Task
 	if err := json.Unmarshal([]byte(job.Payload), &task); err != nil {
 		return "", fmt.Errorf("unmarshal task payload: %w", err)
 	}
 
-	// Register task in application store (idempotent).
+	// Attempt to acquire a live browser session for real CDP scraping.
+	// Falls back to h.rt (MockRuntime) when no session is idle.
+	rt := h.rt
+	if h.allocator != nil && h.lsFactory != nil {
+		workerID := uuid.New().String()
+		if sess, err := h.allocator.Acquire(ctx, 0, session.PolicyAny, workerID); err == nil {
+			ls, lsErr := h.lsFactory.Wrap(*sess, workerID)
+			if lsErr != nil {
+				slog.WarnContext(ctx, "wrap live session failed, using fallback runtime",
+					"error", lsErr, "job_id", job.ID)
+				_ = h.allocator.Release(ctx, sess.AccountID, workerID)
+			} else {
+				rt = ls.Runtime()
+				defer ls.Close(ctx)
+				// Heartbeat every 30s so the health checker knows the session is in use.
+				go func() {
+					ticker := time.NewTicker(30 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-ticker.C:
+							if err := ls.Heartbeat(ctx); err != nil {
+								slog.WarnContext(ctx, "session heartbeat failed",
+									"account_id", ls.AccountID(), "error", err)
+							}
+						}
+					}
+				}()
+			}
+		}
+		// ErrNoIdleSession is non-fatal — continue with fallback runtime
+	}
+
+	// Ensure task row exists, then mark running (both calls are idempotent).
 	if h.appStore != nil {
+		if err := h.appStore.CreateTask(ctx, job.TaskID, task.OrgID, job.Intent); err != nil {
+			log.Printf("handler: create app task %s: %v", job.TaskID, err)
+		}
 		if err := h.appStore.StartTask(ctx, job.TaskID); err != nil {
 			log.Printf("handler: start app task %s: %v", job.TaskID, err)
 		}
@@ -90,7 +141,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				break
 			}
 
-			rawItems, err := h.rt.FetchBatch(ctx, src.URL, offset, batchSize)
+			rawItems, err := rt.FetchBatch(ctx, src.URL, offset, batchSize)
 			if err != nil {
 				return "", fmt.Errorf("fetch batch (src=%s offset=%d): %w", src.URL, offset, err)
 			}

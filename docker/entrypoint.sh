@@ -40,7 +40,9 @@ rm -f \
 
 export DISPLAY=":${DISPLAY_NUM}"
 
-echo "[Browser] Launching Chrome (profile=${PROFILE_DIR})"
+CDP_PORT=${CDP_PORT:-9222}
+
+echo "[Browser] Launching Chrome (profile=${PROFILE_DIR}, cdp=:${CDP_PORT})"
 exec google-chrome \
     --no-first-run \
     --no-default-browser-check \
@@ -53,4 +55,6 @@ exec google-chrome \
     --user-data-dir="${PROFILE_DIR}" \
     --window-size=1280,800 \
     --start-maximized \
+    --remote-debugging-port="${CDP_PORT}" \
+    --remote-debugging-address=0.0.0.0 \
     "https://www.facebook.com"

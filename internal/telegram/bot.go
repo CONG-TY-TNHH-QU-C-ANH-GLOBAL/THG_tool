@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -11,24 +12,24 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/queue"
 	"github.com/thg/scraper/internal/store"
 	tele "gopkg.in/telebot.v3"
 )
 
 // Bot wraps a Telegram bot with scraper command handling.
 type Bot struct {
-	bot     *tele.Bot
-	db      *store.Store
-	queue   *queue.Queue
-	agent   *ai.Agent
-	pricer  *ai.PriceExtractor
-	adminID int64
+	bot      *tele.Bot
+	db       *store.Store
+	jobStore *jobs.Store
+	agent    *ai.Agent
+	pricer   *ai.PriceExtractor
+	adminID  int64
 }
 
 // New creates a new Telegram bot.
-func New(token string, adminID int64, db *store.Store, q *queue.Queue, agent *ai.Agent, pricer *ai.PriceExtractor) (*Bot, error) {
+func New(token string, adminID int64, db *store.Store, jobStore *jobs.Store, agent *ai.Agent, pricer *ai.PriceExtractor) (*Bot, error) {
 	pref := tele.Settings{
 		Token:  token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
@@ -40,12 +41,12 @@ func New(token string, adminID int64, db *store.Store, q *queue.Queue, agent *ai
 	}
 
 	bot := &Bot{
-		bot:     b,
-		db:      db,
-		queue:   q,
-		agent:   agent,
-		pricer:  pricer,
-		adminID: adminID,
+		bot:      b,
+		db:       db,
+		jobStore: jobStore,
+		agent:    agent,
+		pricer:   pricer,
+		adminID:  adminID,
 	}
 
 	bot.registerHandlers()
@@ -188,18 +189,22 @@ func (b *Bot) handleScan(c tele.Context) error {
 	platform := normalizePlatform(args[0])
 	target := args[1]
 
-	job := models.Job{
-		Type:     models.JobScrapePost,
-		Platform: platform,
-		Target:   target,
+	task := &jobs.Task{
+		SchemaVersion: "1",
+		TaskID:        fmt.Sprintf("tg-scan-%s-%d", platform, time.Now().UnixMilli()),
+		Intent:        "scrape_group",
+		CrawlPlan: jobs.CrawlPlan{
+			Sources:  []jobs.Source{{Type: string(platform) + "_group", URL: target}},
+			MaxItems: 50,
+		},
 	}
-
-	jobID, err := b.queue.Submit(job)
+	payload, _ := json.Marshal(task)
+	j, err := b.jobStore.Submit(context.Background(), task, string(payload))
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi tạo job: %v", err))
 	}
 
-	return c.Send(fmt.Sprintf("✅ Job #%d đã được tạo!\n🎯 Platform: %s\n🔗 Target: %s\n⏳ Đang xử lý...", jobID, platform, target))
+	return c.Send(fmt.Sprintf("✅ Job #%d đã được tạo!\n🎯 Platform: %s\n🔗 Target: %s\n⏳ Đang xử lý...", j.ID, platform, target))
 }
 
 func (b *Bot) handleScanAll(c tele.Context) error {
@@ -213,13 +218,19 @@ func (b *Bot) handleScanAll(c tele.Context) error {
 	}
 
 	jobCount := 0
+	ctx := context.Background()
 	for _, g := range groups {
-		job := models.Job{
-			Type:     models.JobScrapePost,
-			Platform: g.Platform,
-			Target:   g.URL,
+		task := &jobs.Task{
+			SchemaVersion: "1",
+			TaskID:        fmt.Sprintf("tg-scanall-%s-%d", g.Platform, g.ID),
+			Intent:        "scrape_group",
+			CrawlPlan: jobs.CrawlPlan{
+				Sources:  []jobs.Source{{Type: string(g.Platform) + "_group", URL: g.URL}},
+				MaxItems: 50,
+			},
 		}
-		if _, err := b.queue.Submit(job); err == nil {
+		taskPayload, _ := json.Marshal(task)
+		if _, err := b.jobStore.Submit(ctx, task, string(taskPayload)); err == nil {
 			jobCount++
 		}
 	}
@@ -228,19 +239,23 @@ func (b *Bot) handleScanAll(c tele.Context) error {
 }
 
 func (b *Bot) handleStatus(c tele.Context) error {
-	jobs, err := b.db.GetJobs("running", 10)
+	runningJobs, err := b.jobStore.List(context.Background(), "running", 10)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}
 
-	if len(jobs) == 0 {
+	if len(runningJobs) == 0 {
 		return c.Send("✅ Không có job nào đang chạy.")
 	}
 
 	var sb strings.Builder
 	sb.WriteString("🔄 *Jobs đang chạy:*\n\n")
-	for _, j := range jobs {
-		sb.WriteString(fmt.Sprintf("• #%d: %s → %s\n  ⏱️ Bắt đầu: %s\n\n", j.ID, j.Type, j.Target, j.StartedAt.Format("15:04:05")))
+	for _, j := range runningJobs {
+		startedAt := j.CreatedAt
+		if j.ClaimedAt != nil {
+			startedAt = *j.ClaimedAt
+		}
+		sb.WriteString(fmt.Sprintf("• #%d: %s\n  ⏱️ Bắt đầu: %s\n\n", j.ID, j.Intent, startedAt.Format("15:04:05")))
 	}
 
 	return c.Send(sb.String(), tele.ModeMarkdown)
@@ -333,7 +348,7 @@ func (b *Bot) handleStop(c tele.Context) error {
 	var jobID int64
 	fmt.Sscanf(args[0], "%d", &jobID)
 
-	if err := b.queue.Cancel(jobID); err != nil {
+	if err := b.jobStore.Cancel(context.Background(), jobID); err != nil {
 		return c.Send(fmt.Sprintf("❌ %v", err))
 	}
 
@@ -583,8 +598,17 @@ func (b *Bot) handleFreeText(c tele.Context) error {
 			}
 			count := 0
 			for _, g := range groups {
-				job := models.Job{Type: models.JobScrapePost, Platform: g.Platform, Target: g.URL}
-				if _, err := b.queue.Submit(job); err == nil {
+				task := &jobs.Task{
+					SchemaVersion: "1",
+					TaskID:        fmt.Sprintf("tg-freetext-%s-%d", g.Platform, g.ID),
+					Intent:        "scrape_group",
+					CrawlPlan: jobs.CrawlPlan{
+						Sources:  []jobs.Source{{Type: string(g.Platform) + "_group", URL: g.URL}},
+						MaxItems: 50,
+					},
+				}
+				ftPayload, _ := json.Marshal(task)
+				if _, err := b.jobStore.Submit(context.Background(), task, string(ftPayload)); err == nil {
 					count++
 				}
 			}

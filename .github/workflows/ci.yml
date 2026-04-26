@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build cmd/scraper
+        run: go build ./cmd/scraper/
+
+      - name: Run tests (with race detector)
+        run: go test -race -timeout 120s ./...
+
+      - name: Generate fix request on failure
+        if: failure()
+        run: |
+          echo '{"failure_type":"ci","message":"Build or test failed","instructions":"Fix all errors. Max 3 retry attempts."}' > fix_request.json
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fix-request
+          path: fix_request.json
+          retention-days: 3

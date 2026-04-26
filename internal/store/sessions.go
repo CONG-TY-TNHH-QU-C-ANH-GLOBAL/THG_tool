@@ -44,6 +44,29 @@ func (a *AppStore) GetSession(ctx context.Context, accountID int64) (*BrowserSes
 	return scanSession(row)
 }
 
+// ListAllActiveSessions returns all sessions that are not terminated.
+// Used by the in-memory Registry to seed its state on startup.
+func (a *AppStore) ListAllActiveSessions(ctx context.Context) ([]BrowserSession, error) {
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT id, account_id, org_id, status, cdp_port, vnc_port,
+		       started_at, last_active_at, error_msg
+		FROM browser_sessions WHERE status != 'terminated'
+		ORDER BY last_active_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BrowserSession
+	for rows.Next() {
+		s, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *s)
+	}
+	return out, rows.Err()
+}
+
 func (a *AppStore) ListSessions(ctx context.Context, orgID int64) ([]BrowserSession, error) {
 	rows, err := a.db.QueryContext(ctx, `
 		SELECT id, account_id, org_id, status, cdp_port, vnc_port,
@@ -63,6 +86,20 @@ func (a *AppStore) ListSessions(ctx context.Context, orgID int64) ([]BrowserSess
 		out = append(out, *s)
 	}
 	return out, rows.Err()
+}
+
+// GetFirstActiveCDPSession returns the first browser session that has an active
+// Chrome container with a reachable CDP port. Used by the worker to pick a session
+// without knowing the specific account ID.
+func (a *AppStore) GetFirstActiveCDPSession(ctx context.Context) (*BrowserSession, error) {
+	row := a.db.QueryRowContext(ctx, `
+		SELECT id, account_id, org_id, status, cdp_port, vnc_port,
+		       started_at, last_active_at, error_msg
+		FROM browser_sessions
+		WHERE status = 'active' AND cdp_port > 0
+		ORDER BY last_active_at DESC
+		LIMIT 1`)
+	return scanSession(row)
 }
 
 func (a *AppStore) TerminateSession(ctx context.Context, accountID int64) error {

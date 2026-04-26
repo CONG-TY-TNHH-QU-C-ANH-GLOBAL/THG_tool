@@ -20,7 +20,7 @@ type Instance struct {
 	AccountName string
 	ProfileDir  string
 	ContainerID string // short Docker container ID
-	CDPPort     int    // unused in Docker/VNC mode — kept for API compatibility
+	CDPPort     int    // host-side port mapped from container's CDP :9222
 	VNCPort     int    // host-side port mapped from container's VNC :5900
 	StartedAt   time.Time
 }
@@ -33,10 +33,11 @@ func (i *Instance) IsRunning() bool {
 // Manager owns all per-account Docker containers.
 // Safe for concurrent use.
 type Manager struct {
-	mu          sync.RWMutex
-	instances   map[int64]*Instance
-	profileBase string
-	dockerImage string
+	mu           sync.RWMutex
+	instances    map[int64]*Instance
+	profileBase  string
+	dockerImage  string
+	portRegistry *PortRegistry // nil = use random Docker ports (legacy mode)
 }
 
 // NewManager creates a Docker-based workspace manager.
@@ -60,6 +61,14 @@ func NewManager(chromePath, profileBase string) *Manager {
 		profileBase: profileBase,
 		dockerImage: image,
 	}
+}
+
+// SetPortRegistry attaches a PortRegistry so containers get deterministic ports.
+// Must be called before the first Start() call.
+func (m *Manager) SetPortRegistry(pr *PortRegistry) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.portRegistry = pr
 }
 
 // ProfileDir returns the Chrome user-data-dir for an account (host-side path).
@@ -117,24 +126,54 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 	// Remove any leftover container from a previous crash or stop
 	exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
 
-	// docker run -d:
-	//   -p 127.0.0.1::5900  → Docker assigns a random host port, bound to localhost only
-	//   --shm-size=1g        → Chrome needs shared memory (default 64MB is too small)
-	//   -v host:/profile     → persist Chrome session across container restarts
-	args := []string{
-		"run", "-d",
-		"--name", containerName,
-		"-p", "127.0.0.1::5900",
+	// Determine ports: use PortRegistry if wired, otherwise let Docker assign randomly.
+	var cdpPort, vncPort int
+	if m.portRegistry != nil {
+		var err error
+		cdpPort, vncPort, err = m.portRegistry.ClaimPair(accountID)
+		if err != nil {
+			return nil, fmt.Errorf("claim ports: %w", err)
+		}
+	}
+
+	// Build docker run args
+	var portArgs []string
+	if cdpPort > 0 && vncPort > 0 {
+		portArgs = []string{
+			"-p", fmt.Sprintf("127.0.0.1:%d:5900", vncPort),
+			"-p", fmt.Sprintf("127.0.0.1:%d:9222", cdpPort),
+		}
+	} else {
+		portArgs = []string{
+			"-p", "127.0.0.1::5900",
+			"-p", "127.0.0.1::9222",
+		}
+	}
+
+	args := append([]string{"run", "-d", "--name", containerName}, portArgs...)
+	args = append(args,
 		"--shm-size=1g",
-		"-v", absProfile + ":/profile",
+		"--cpus=1.0",
+		"--memory=2g",
+		"--memory-swap=2g",
+		"--pids-limit=200",
+		"-v", absProfile+":/profile",
 		"-e", "DISPLAY_NUM=99",
 		"-e", "VNC_PORT=5900",
+		"-e", "CDP_PORT=9222",
 		"-e", "PROFILE_DIR=/profile",
+		// Labels for PortRegistry recovery after server restart
+		fmt.Sprintf("--label=thg.account_id=%d", accountID),
+		fmt.Sprintf("--label=thg.cdp_port=%d", cdpPort),
+		fmt.Sprintf("--label=thg.vnc_port=%d", vncPort),
 		m.dockerImage,
-	}
+	)
 
 	out, err := exec.Command("docker", args...).Output()
 	if err != nil {
+		if m.portRegistry != nil {
+			m.portRegistry.Release(accountID)
+		}
 		return nil, fmt.Errorf(
 			"docker run failed: %w\n→ Is Docker installed? Is the image built? Run: docker build -t thg-browser ./docker/",
 			err,
@@ -147,11 +186,14 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 		shortID = shortID[:12]
 	}
 
-	// Query the host-side port Docker assigned for the container's VNC port
-	vncPort, err := m.queryContainerPort(containerName, "5900")
-	if err != nil {
-		exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
-		return nil, fmt.Errorf("get container VNC port: %w", err)
+	// If we used random ports (no registry), query them from Docker.
+	if cdpPort == 0 || vncPort == 0 {
+		vncPort, err = m.queryContainerPort(containerName, "5900")
+		if err != nil {
+			exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
+			return nil, fmt.Errorf("get container VNC port: %w", err)
+		}
+		cdpPort, _ = m.queryContainerPort(containerName, "9222")
 	}
 
 	inst := &Instance{
@@ -159,6 +201,7 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 		AccountName: accountName,
 		ProfileDir:  profileDir,
 		ContainerID: shortID,
+		CDPPort:     cdpPort,
 		VNCPort:     vncPort,
 		StartedAt:   time.Now(),
 	}
@@ -177,6 +220,9 @@ func (m *Manager) Stop(accountID int64) {
 	exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
 	exec.Command("docker", "rm", containerName).Run()               //nolint:errcheck
 	delete(m.instances, accountID)
+	if m.portRegistry != nil {
+		m.portRegistry.Release(accountID)
+	}
 	log.Printf("[Workspace] Container stopped for account %d", accountID)
 }
 
@@ -227,12 +273,15 @@ func (m *Manager) ReconcileRunning() {
 		shortIDOut, _ := exec.Command("docker", "inspect", "--format={{slice .Id 0 12}}", name).Output()
 		shortID := strings.TrimSpace(string(shortIDOut))
 
+		cdpPort, _ := m.queryContainerPort(name, "9222")
+
 		m.mu.Lock()
 		m.instances[accountID] = &Instance{
 			AccountID:   accountID,
 			AccountName: name,
 			ProfileDir:  m.ProfileDir(accountID),
 			ContainerID: shortID,
+			CDPPort:     cdpPort,
 			VNCPort:     vncPort,
 			StartedAt:   time.Now(),
 		}

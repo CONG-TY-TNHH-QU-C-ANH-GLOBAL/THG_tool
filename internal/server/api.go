@@ -2,6 +2,7 @@ package server
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -12,17 +13,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	fiberws "github.com/gofiber/websocket/v2"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/browser"
+	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/queue"
+	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/workspace"
 )
@@ -51,16 +55,22 @@ type Config struct {
 type Server struct {
 	app           *fiber.App
 	db            *store.Store
-	queue         *queue.Queue
+	jobStore      *jobs.Store
 	agent         *ai.Agent
 	postProcessor PostProcessor       // called after agent submits scraped posts
 	wsHub         *WSHub              // Chrome Extension WebSocket hub
 	vncDisplay    *browser.VNCDisplay // virtual X11 display + VNC server (Linux only)
 	workspace     *workspace.Manager  // per-account Chrome workspace manager
+	sessionReg    *session.Registry   // optional — nil disables /api/sessions/stats
 	cdpHubs       map[int64]*cdpViewHub
 	cdpHubsMu     sync.RWMutex
 	port          int
 	cfg           Config
+}
+
+// SetSessionRegistry wires in the in-memory session registry for the stats endpoint.
+func (s *Server) SetSessionRegistry(r *session.Registry) {
+	s.sessionReg = r
 }
 
 // SetPostProcessor wires the AI pipeline callback (called from main.go after orchestrator is ready).
@@ -69,7 +79,7 @@ func (s *Server) SetPostProcessor(fn PostProcessor) {
 }
 
 // New creates a new API server with JWT auth, RBAC, and rate limiting.
-func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager, cfg Config) *Server {
+func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.Manager, cfg Config) *Server {
 	if cfg.JWTSecret == "" {
 		log.Println("[Server] WARNING: JWT_SECRET not set — authentication is DISABLED. Set JWT_SECRET in production!")
 	}
@@ -95,7 +105,7 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	s := &Server{
 		app:        app,
 		db:         db,
-		queue:      q,
+		jobStore:   jobStore,
 		agent:      agent,
 		port:       cfg.Port,
 		cfg:        cfg,
@@ -109,6 +119,9 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "ts": time.Now().Unix()})
 	})
+
+	// Prometheus metrics — no auth, scrape from internal monitoring only
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	// System info — tells frontend which login mode and which agent downloads are available
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
@@ -306,6 +319,9 @@ func New(db *store.Store, q *queue.Queue, agent *ai.Agent, wm *workspace.Manager
 	r.Post("/browser/start", s.vncStart)
 	r.Post("/browser/stop", s.vncStop)
 
+	// Session stats (requires registry to be wired via SetSessionRegistry)
+	r.Get("/sessions/stats", s.getSessionStats)
+
 	// Analytics
 	r.Get("/analytics/sentiment", s.getSentimentStats)
 
@@ -378,6 +394,13 @@ func (s *Server) Shutdown() error {
 }
 
 // --- Handlers ---
+
+func (s *Server) getSessionStats(c *fiber.Ctx) error {
+	if s.sessionReg == nil {
+		return c.JSON(fiber.Map{"error": "session registry not initialized"})
+	}
+	return c.JSON(s.sessionReg.Stats())
+}
 
 func (s *Server) getStats(c *fiber.Ctx) error {
 	stats, err := s.db.GetStats()
@@ -503,35 +526,42 @@ func (s *Server) getJobs(c *fiber.Ctx) error {
 	status := c.Query("status", "")
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 
-	jobs, err := s.db.GetJobs(status, limit)
+	list, err := s.jobStore.List(c.Context(), status, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"jobs": jobs, "count": len(jobs)})
+	return c.JSON(fiber.Map{"jobs": list, "count": len(list)})
 }
 
 func (s *Server) createJob(c *fiber.Ctx) error {
 	var req struct {
-		Type     string `json:"type"`
+		Intent   string `json:"intent"`
 		Platform string `json:"platform"`
 		Target   string `json:"target"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-
-	job := models.Job{
-		Type:     models.JobType(req.Type),
-		Platform: models.Platform(req.Platform),
-		Target:   req.Target,
+	if req.Intent == "" {
+		req.Intent = "scrape_group"
 	}
 
-	jobID, err := s.queue.Submit(job)
+	task := &jobs.Task{
+		SchemaVersion: "1",
+		TaskID:        fmt.Sprintf("api-%s-%d", req.Intent, time.Now().UnixMilli()),
+		Intent:        req.Intent,
+		CrawlPlan: jobs.CrawlPlan{
+			Sources:  []jobs.Source{{Type: req.Platform + "_group", URL: req.Target}},
+			MaxItems: 50,
+		},
+	}
+	payload, _ := json.Marshal(task)
+	j, err := s.jobStore.Submit(c.Context(), task, string(payload))
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.Status(201).JSON(fiber.Map{"job_id": jobID, "status": "submitted"})
+	return c.Status(201).JSON(fiber.Map{"job_id": j.ID, "task_id": j.TaskID, "status": "submitted"})
 }
 
 func (s *Server) cancelJob(c *fiber.Ctx) error {
@@ -540,7 +570,7 @@ func (s *Server) cancelJob(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid job id"})
 	}
 
-	if err := s.queue.Cancel(id); err != nil {
+	if err := s.jobStore.Cancel(c.Context(), id); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
 

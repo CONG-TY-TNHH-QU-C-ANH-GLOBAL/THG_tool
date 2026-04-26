@@ -44,6 +44,9 @@ type TaskLead struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
+// DB returns the underlying *sql.DB for packages that need direct access.
+func (a *AppStore) DB() *sql.DB { return a.db }
+
 // NewAppStore wraps the existing Store's database connection,
 // ensuring the app_tasks and task_leads tables exist.
 func NewAppStore(s *Store) (*AppStore, error) {
@@ -140,12 +143,65 @@ func (a *AppStore) migrate() error {
 			created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_learning_history_org ON learning_history(org_id, created_at DESC)`,
+		// ── Production infra tables (phase 2 upgrade) ────────────────────────────
+		`CREATE TABLE IF NOT EXISTS port_registry (
+			port       INTEGER PRIMARY KEY,
+			port_type  TEXT    NOT NULL DEFAULT 'cdp',
+			account_id INTEGER NOT NULL DEFAULT 0,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS account_rate_limits (
+			account_id      INTEGER PRIMARY KEY,
+			loads_this_hour INTEGER NOT NULL DEFAULT 0,
+			hour_start      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_request_at DATETIME,
+			cooldown_until  DATETIME,
+			ban_detected_at DATETIME,
+			ban_type        TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS circuit_breaker_state (
+			scope      TEXT PRIMARY KEY,
+			state      TEXT    NOT NULL DEFAULT 'closed',
+			failures   INTEGER NOT NULL DEFAULT 0,
+			first_fail DATETIME,
+			opens_until DATETIME,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS session_audit_log (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id   INTEGER NOT NULL,
+			from_status  TEXT    NOT NULL DEFAULT '',
+			to_status    TEXT    NOT NULL,
+			triggered_by TEXT    NOT NULL DEFAULT 'system',
+			reason       TEXT    NOT NULL DEFAULT '',
+			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_audit_account ON session_audit_log(account_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS post_seen_cache (
+			source_url TEXT NOT NULL,
+			post_id    TEXT NOT NULL,
+			seen_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (source_url, post_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_post_seen_at ON post_seen_cache(seen_at)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := a.db.Exec(stmt); err != nil {
 			return fmt.Errorf("exec: %w\nstmt: %s", err, stmt)
 		}
 	}
+
+	// Additive column migrations (idempotent — errors ignored)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN version      INTEGER NOT NULL DEFAULT 0`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN worker_id    TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN retry_count  INTEGER NOT NULL DEFAULT 0`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN heartbeat_at DATETIME`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN status_prev  TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN version    INTEGER NOT NULL DEFAULT 1`)
+	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0`)
+	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN deprecated INTEGER NOT NULL DEFAULT 0`)
+	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN dom_hash   TEXT    NOT NULL DEFAULT ''`)
+
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/workspace"
 )
 
@@ -81,10 +83,27 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 
-	log.Printf("[Workspace] Account %d (%s) browser ready, vnc=127.0.0.1:%d", id, acc.Name, inst.VNCPort)
+	// Persist session metadata so the worker can discover the CDP port.
+	appStore, err := store.NewAppStore(s.db)
+	if err == nil {
+		orgID, _ := c.Locals("org_id").(int64)
+		now := time.Now().UTC()
+		_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
+			AccountID:    id,
+			OrgID:        orgID,
+			Status:       "active",
+			CDPPort:      inst.CDPPort,
+			VNCPort:      inst.VNCPort,
+			StartedAt:    now,
+			LastActiveAt: now,
+		})
+	}
+
+	log.Printf("[Workspace] Account %d (%s) browser ready, vnc=%d cdp=%d", id, acc.Name, inst.VNCPort, inst.CDPPort)
 	return c.JSON(fiber.Map{
 		"status":   "running",
 		"vnc_port": inst.VNCPort,
+		"cdp_port": inst.CDPPort,
 	})
 }
 
@@ -94,6 +113,9 @@ func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	if s.workspace != nil {
 		s.workspace.Stop(id)
+	}
+	if appStore, err := store.NewAppStore(s.db); err == nil {
+		_ = appStore.TerminateSession(context.Background(), id)
 	}
 	return c.JSON(fiber.Map{"status": "stopped"})
 }

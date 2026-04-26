@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/thg/scraper/internal/accounts"
@@ -14,10 +13,10 @@ import (
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/browser"
 	"github.com/thg/scraper/internal/config"
+	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/logstream"
-	"github.com/thg/scraper/internal/orchestrator"
-	"github.com/thg/scraper/internal/queue"
 	"github.com/thg/scraper/internal/server"
+	session_pkg "github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram"
 	"github.com/thg/scraper/internal/workspace"
@@ -27,6 +26,9 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logstream.Install() // capture all log.Printf output for the Logs dashboard page
 	log.Println("🕷️  THG Agentic Scraper v2 — Starting...")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Load .env file (optional)
 	if err := godotenv.Load(); err != nil {
@@ -95,28 +97,60 @@ func main() {
 		log.Printf("✅ Browser pool initialized (%d contexts, profile: %s)", cfg.MaxWorkers, cfg.ProfileDir)
 	}
 
-	// Initialize job queue
-	q := queue.New(db, cfg.MaxWorkers)
+	// Initialize job store (scheduler_jobs table — idempotent, replaces chan-based queue)
+	jobStore, err := jobs.NewStore(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("❌ Job store init failed: %v", err)
+	}
+	log.Println("✅ Job store initialized")
 
 	// Initialize AI classifier (OpenAI)
 	classifier := ai.NewClassifier(cfg.OpenAIAPIKey, cfg.OpenAIModel, db)
-
-	// Initialize AI message generator — uses gpt-4o for high-quality comments + inbox
-	var msgGen *ai.MessageGenerator
-	if cfg.OpenAIAPIKey != "" {
-		msgGen = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
-		log.Printf("✅ AI MessageGenerator initialized (model: %s)", cfg.OpenAICommentModel)
-	}
+	_ = classifier // used by future skill handlers
 
 	// Initialize account manager (for multi-account Facebook access)
 	accountMgr := accounts.NewManager(db, cfg.ChromePath, cfg.ProfileDir)
 	log.Printf("✅ Account manager initialized (profiles: %s)", cfg.ProfileDir)
+	_ = accountMgr // used by future skills
+
+	// Initialize AppStore (app_tasks, task_leads, browser infra tables)
+	appStore, err := store.NewAppStore(db)
+	if err != nil {
+		log.Fatalf("❌ AppStore init failed: %v", err)
+	}
+	log.Println("✅ AppStore initialized")
 
 	// Initialize workspace manager (per-account live Chrome for dashboard browser view)
 	workspaceMgr := workspace.NewManager(cfg.ChromePath, cfg.ProfileDir)
+
+	// Wire persistent PortRegistry so containers get deterministic host ports
+	portRegistry := workspace.NewPortRegistry(appStore.DB())
+	if err := portRegistry.LoadFromDB(ctx); err != nil {
+		log.Printf("⚠️  PortRegistry DB load failed: %v", err)
+	}
+	portRegistry.ReconcileFromDocker()
+	workspaceMgr.SetPortRegistry(portRegistry)
+
 	workspaceMgr.ReconcileRunning() // re-attach containers that survived a server restart
 	defer workspaceMgr.StopAll()
 	log.Println("✅ Workspace manager initialized")
+
+	// Circuit breaker + health checker — prevent restart storms
+	cb := workspace.NewCircuitBreaker(appStore.DB(), func(msg string) {
+		log.Printf("[CircuitBreaker] ALERT: %s", msg)
+	})
+	restartCtrl := workspace.NewRestartController(workspaceMgr, cb)
+	healthChecker := workspace.NewHealthChecker()
+	go healthChecker.Run(ctx, workspaceMgr, func(accountID int64) {
+		restartCtrl.OnUnhealthy(ctx, accountID)
+	})
+	log.Println("✅ Health checker started (15s interval)")
+
+	// Session registry — in-memory mirror for fast API reads
+	sessionReg := session_pkg.NewRegistry(appStore)
+	if err := sessionReg.LoadAll(ctx); err != nil {
+		log.Printf("⚠️  Session registry load failed: %v", err)
+	}
 
 	// Initialize price extractor (OpenAI Vision for reading price list images)
 	var pricer *ai.PriceExtractor
@@ -137,7 +171,7 @@ func main() {
 	// Initialize Telegram bot (optional)
 	var bot *telegram.Bot
 	if cfg.TelegramBotToken != "" {
-		bot, err = telegram.New(cfg.TelegramBotToken, cfg.TelegramAdminChat, db, q, agent, pricer)
+		bot, err = telegram.New(cfg.TelegramBotToken, cfg.TelegramAdminChat, db, jobStore, agent, pricer)
 		if err != nil {
 			log.Printf("⚠️  Telegram bot init failed: %v", err)
 		} else {
@@ -147,26 +181,6 @@ func main() {
 		log.Println("⚠️  Telegram bot token not set, bot disabled")
 	}
 
-	// Initialize orchestrator
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Wrap *browser.Pool in the interface (nil pool must stay nil-interface, not nil-pointer-in-interface)
-	var poolBrowser browser.Browser
-	if pool != nil {
-		poolBrowser = pool
-	}
-	orch := orchestrator.New(db, poolBrowser, q, bot, classifier, msgGen, accountMgr, pricer)
-	scanInterval := time.Duration(cfg.ScanIntervalMin) * time.Minute
-	orch.Start(ctx, scanInterval)
-	defer orch.Stop()
-	log.Printf("✅ Orchestrator started (scan every %d min)", cfg.ScanIntervalMin)
-
-	// Wire AI Agent action handler to orchestrator
-	if agent != nil {
-		agent.ActionHandler = orch.HandleAgentAction
-	}
-
 	// Start Telegram bot (non-blocking)
 	if bot != nil {
 		go bot.Start()
@@ -174,7 +188,7 @@ func main() {
 	}
 
 	// Start web server (non-blocking)
-	srv := server.New(db, q, agent, workspaceMgr, server.Config{
+	srv := server.New(db, jobStore, agent, workspaceMgr, server.Config{
 		Port:           cfg.WebPort,
 		JWTSecret:      cfg.JWTSecret,
 		AllowedOrigins: cfg.AllowedOrigins,
@@ -187,8 +201,8 @@ func main() {
 		CDPPort:        cfg.CDPPort,
 		DisplayNum:     cfg.DisplayNum,
 	})
-	// Wire agent post-processor so scraped posts from local agents run through AI pipeline
-	srv.SetPostProcessor(orch.ProcessAgentScrapedPosts)
+
+	srv.SetSessionRegistry(sessionReg)
 
 	go func() {
 		if err := srv.Start(); err != nil {
@@ -207,4 +221,5 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("🛑 Shutting down gracefully...")
+	cancel() // stop health checker and other ctx-bound goroutines
 }

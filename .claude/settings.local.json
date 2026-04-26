@@ -29,7 +29,8 @@
       "Bash(npm run *)",
       "Bash(xargs -I {} grep -l \"^package server\" {})",
       "Bash(cat)",
-      "Bash(bash /tmp/audit.sh)"
+      "Bash(bash /tmp/audit.sh)",
+      "Bash(go run *)"
     ]
   }
 }
