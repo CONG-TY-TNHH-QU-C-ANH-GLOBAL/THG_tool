@@ -6,6 +6,9 @@ const NAV = [
   { href: '/dashboard', icon: '📊', label: 'Dashboard' },
   { href: '/jobs',      icon: '⚙️',  label: 'Jobs'      },
   { href: '/leads',     icon: '🎯',  label: 'Leads'     },
+  { href: '/sessions',  icon: '🌐',  label: 'Sessions'  },
+  { href: '/accounts',  icon: '🤖',  label: 'Accounts'  },
+  { href: '/learning',  icon: '🧠',  label: 'Learning'  },
 ]
 
 export function Nav() {

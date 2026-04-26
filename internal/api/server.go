@@ -14,6 +14,7 @@ import (
 
 	"github.com/thg/scraper/internal/events"
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/learning"
 	"github.com/thg/scraper/internal/parser"
 	"github.com/thg/scraper/internal/store"
 )
@@ -25,6 +26,7 @@ type Server struct {
 	appStore *store.AppStore
 	parser   parser.Parser
 	bus      *events.Bus
+	learner  *learning.Engine
 	mux      *http.ServeMux
 
 	// SSE poller state
@@ -54,12 +56,13 @@ type DashboardStats struct {
 	SuccessRate   float64 `json:"success_rate"` // completed / (completed+failed) * 100
 }
 
-func New(jobStore *jobs.Store, appStore *store.AppStore, p parser.Parser, bus *events.Bus) *Server {
+func New(jobStore *jobs.Store, appStore *store.AppStore, p parser.Parser, bus *events.Bus, learner *learning.Engine) *Server {
 	s := &Server{
 		jobStore: jobStore,
 		appStore: appStore,
 		parser:   p,
 		bus:      bus,
+		learner:  learner,
 		mux:      http.NewServeMux(),
 		seenJobs: make(map[int64]jobSnapshot),
 	}
@@ -103,6 +106,14 @@ func (s *Server) routes() {
 
 	// Dashboard stats
 	s.mux.HandleFunc("GET /api/v1/dashboard/stats", s.handleDashboardStats)
+
+	// Browser intelligence
+	s.mux.HandleFunc("GET /api/v1/sessions", s.handleListSessions)
+	s.mux.HandleFunc("GET /api/v1/identities", s.handleListIdentities)
+
+	// Self-learning
+	s.mux.HandleFunc("GET /api/v1/learning", s.handleGetLearning)
+	s.mux.HandleFunc("POST /api/v1/leads/{id}/outcome", s.handleRecordOutcome)
 
 	// Real-time SSE stream
 	s.mux.HandleFunc("GET /api/v1/events/stream", s.handleSSE)
@@ -283,6 +294,136 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		ColdLeads:     lc.Cold,
 		SuccessRate:   successRate,
 	})
+}
+
+// ── Browser intelligence handlers ────────────────────────────────────────────
+
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("app store not configured"))
+		return
+	}
+	orgID := parseInt64(r.URL.Query().Get("org_id"), 0)
+	sessions, err := s.appStore.ListSessions(r.Context(), orgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+	if sessions == nil {
+		sessions = []store.BrowserSession{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
+}
+
+func (s *Server) handleListIdentities(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("app store not configured"))
+		return
+	}
+	orgID := parseInt64(r.URL.Query().Get("org_id"), 0)
+	identities, err := s.appStore.ListIdentities(r.Context(), orgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+	if identities == nil {
+		identities = []store.BrowserIdentity{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"identities": identities, "count": len(identities)})
+}
+
+// ── Self-learning handlers ────────────────────────────────────────────────────
+
+func (s *Server) handleGetLearning(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil || s.learner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("learning not configured"))
+		return
+	}
+	orgID := parseInt64(r.URL.Query().Get("org_id"), 0)
+
+	profile, err := s.appStore.GetLearningProfile(r.Context(), orgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+
+	history, err := s.appStore.ListLearningHistory(r.Context(), orgID, 50)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+	if history == nil {
+		history = []store.LearningHistoryEntry{}
+	}
+
+	converted, rejected, ignored, lastUpdated := s.learner.Stats(orgID)
+	liveWeights := s.learner.GetCurrentWeights(r.Context(), orgID)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"profile":      profile,
+		"history":      history,
+		"live_weights": liveWeights,
+		"outcome_counts": map[string]any{
+			"converted": converted,
+			"rejected":  rejected,
+			"ignored":   ignored,
+		},
+		"last_updated": lastUpdated,
+	})
+}
+
+type outcomeRequest struct {
+	OrgID   int64   `json:"org_id"`
+	Outcome string  `json:"outcome"` // converted|rejected|ignored
+	Score   float64 `json:"score"`
+}
+
+func (s *Server) handleRecordOutcome(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil || s.learner == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("learning not configured"))
+		return
+	}
+	leadID := parseInt64(r.PathValue("id"), 0)
+	if leadID == 0 {
+		writeJSON(w, http.StatusBadRequest, errResp("invalid lead id"))
+		return
+	}
+
+	var req outcomeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errResp("invalid JSON: "+err.Error()))
+		return
+	}
+	if req.Outcome == "" {
+		writeJSON(w, http.StatusBadRequest, errResp("outcome is required"))
+		return
+	}
+
+	// Record in DB
+	ev := store.OutcomeEvent{
+		OrgID:     req.OrgID,
+		LeadID:    leadID,
+		Outcome:   req.Outcome,
+		Score:     req.Score,
+		CreatedAt: time.Now(),
+	}
+	if err := s.appStore.InsertOutcomeEvent(r.Context(), ev); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+
+	// Feed learning engine
+	sig := learning.OutcomeSignal{
+		OrgID:   req.OrgID,
+		LeadID:  leadID,
+		Outcome: req.Outcome,
+		Score:   req.Score,
+	}
+	if err := s.learner.ProcessOutcome(r.Context(), sig); err != nil {
+		log.Printf("api: learning ProcessOutcome: %v", err)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }
 
 // ── SSE handler ───────────────────────────────────────────────────────────────

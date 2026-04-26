@@ -13,6 +13,7 @@ import (
 	"github.com/thg/scraper/internal/api"
 	"github.com/thg/scraper/internal/events"
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/learning"
 	"github.com/thg/scraper/internal/parser"
 	"github.com/thg/scraper/internal/store"
 )
@@ -38,7 +39,8 @@ func main() {
 
 	bus := events.NewBus()
 	p := parser.NewRuleBasedParser()
-	srv := api.New(jobStore, appStore, p, bus)
+	learner := learning.New(nil) // no DB persister — weights live in-memory; swap in a store.Persister to persist
+	srv := api.New(jobStore, appStore, p, bus, learner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

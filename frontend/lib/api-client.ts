@@ -2,8 +2,12 @@ import type {
   DashboardStats,
   Job,
   Lead,
+  LearningResponse,
+  ListIdentitiesResponse,
   ListJobsResponse,
   ListLeadsResponse,
+  ListSessionsResponse,
+  OutcomeType,
   SubmitTaskResponse,
 } from './types'
 
@@ -67,5 +71,28 @@ export const api = {
   /** GET /api/v1/dashboard/stats — aggregated KPI counts */
   getDashboardStats(orgId = 0): Promise<DashboardStats> {
     return req(`/api/v1/dashboard/stats${qs({ org_id: orgId })}`)
+  },
+
+  /** GET /api/v1/sessions — list browser sessions */
+  listSessions(orgId = 0): Promise<ListSessionsResponse> {
+    return req(`/api/v1/sessions${qs({ org_id: orgId })}`)
+  },
+
+  /** GET /api/v1/identities — list browser identities */
+  listIdentities(orgId = 0): Promise<ListIdentitiesResponse> {
+    return req(`/api/v1/identities${qs({ org_id: orgId })}`)
+  },
+
+  /** GET /api/v1/learning — get learning profile + weight history */
+  getLearning(orgId = 0): Promise<LearningResponse> {
+    return req(`/api/v1/learning${qs({ org_id: orgId })}`)
+  },
+
+  /** POST /api/v1/leads/:id/outcome — record conversion outcome signal */
+  recordOutcome(leadId: number, outcome: OutcomeType, score: number, orgId = 0): Promise<void> {
+    return req(`/api/v1/leads/${leadId}/outcome`, {
+      method: 'POST',
+      body: JSON.stringify({ org_id: orgId, outcome, score }),
+    })
   },
 } as const

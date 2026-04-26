@@ -84,6 +84,62 @@ func (a *AppStore) migrate() error {
 			UNIQUE(task_id, source_url)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_leads_org ON task_leads(org_id, category, lead_score DESC)`,
+		// ── Browser intelligence tables ──────────────────────────────────────────
+		`CREATE TABLE IF NOT EXISTS browser_sessions (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id     INTEGER NOT NULL UNIQUE,
+			org_id         INTEGER NOT NULL DEFAULT 0,
+			status         TEXT    NOT NULL DEFAULT 'idle',
+			cdp_port       INTEGER NOT NULL DEFAULT 0,
+			vnc_port       INTEGER NOT NULL DEFAULT 0,
+			started_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			error_msg      TEXT    NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS browser_identities (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			account_id     INTEGER NOT NULL UNIQUE,
+			org_id         INTEGER NOT NULL DEFAULT 0,
+			user_agent     TEXT    NOT NULL DEFAULT '',
+			screen_w       INTEGER NOT NULL DEFAULT 1920,
+			screen_h       INTEGER NOT NULL DEFAULT 1080,
+			timezone       TEXT    NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+			languages      TEXT    NOT NULL DEFAULT 'vi-VN,vi',
+			webgl_vendor   TEXT    NOT NULL DEFAULT '',
+			webgl_renderer TEXT    NOT NULL DEFAULT '',
+			session_state  TEXT    NOT NULL DEFAULT 'clean',
+			updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// ── Self-learning tables ──────────────────────────────────────────────────
+		`CREATE TABLE IF NOT EXISTS learning_profiles (
+			id                INTEGER PRIMARY KEY AUTOINCREMENT,
+			org_id            INTEGER NOT NULL UNIQUE,
+			keyword_relevance REAL    NOT NULL DEFAULT 0.40,
+			engagement        REAL    NOT NULL DEFAULT 0.30,
+			content_quality   REAL    NOT NULL DEFAULT 0.30,
+			converted_count   INTEGER NOT NULL DEFAULT 0,
+			rejected_count    INTEGER NOT NULL DEFAULT 0,
+			ignored_count     INTEGER NOT NULL DEFAULT 0,
+			updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS outcome_events (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			org_id     INTEGER NOT NULL,
+			lead_id    INTEGER NOT NULL,
+			category   TEXT    NOT NULL,
+			outcome    TEXT    NOT NULL,
+			score      REAL    NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_outcome_events_org ON outcome_events(org_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS learning_history (
+			id              INTEGER PRIMARY KEY AUTOINCREMENT,
+			org_id          INTEGER NOT NULL,
+			weights_json    TEXT    NOT NULL DEFAULT '{}',
+			trigger_outcome TEXT    NOT NULL DEFAULT '',
+			created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_learning_history_org ON learning_history(org_id, created_at DESC)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := a.db.Exec(stmt); err != nil {

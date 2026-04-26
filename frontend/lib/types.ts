@@ -70,6 +70,80 @@ export interface SSEEvent {
   payload?: Lead | Record<string, unknown>
 }
 
+// ── Browser intelligence types ────────────────────────────────────────────────
+
+export type SessionStatus = 'active' | 'idle' | 'error' | 'terminated'
+export type SessionState = 'clean' | 'warned' | 'restricted' | 'banned'
+
+/** Mirrors internal/store.BrowserSession */
+export interface BrowserSession {
+  id: number
+  account_id: number
+  org_id: number
+  status: SessionStatus
+  cdp_port: number
+  vnc_port: number
+  started_at: string
+  last_active_at: string
+  error_msg: string
+}
+
+/** Mirrors internal/store.BrowserIdentity */
+export interface BrowserIdentity {
+  id: number
+  account_id: number
+  org_id: number
+  user_agent: string
+  screen_w: number
+  screen_h: number
+  timezone: string
+  languages: string
+  webgl_vendor: string
+  webgl_renderer: string
+  session_state: SessionState
+  updated_at: string
+}
+
+// ── Self-learning types ───────────────────────────────────────────────────────
+
+export interface LearningWeights {
+  keyword_relevance: number
+  engagement: number
+  content_quality: number
+}
+
+/** Mirrors internal/store.LearningProfile */
+export interface LearningProfile {
+  id: number
+  org_id: number
+  keyword_relevance: number
+  engagement: number
+  content_quality: number
+  converted_count: number
+  rejected_count: number
+  ignored_count: number
+  updated_at: string
+}
+
+/** Mirrors internal/store.LearningHistoryEntry */
+export interface LearningHistoryEntry {
+  id: number
+  org_id: number
+  weights: LearningWeights
+  trigger_outcome: string
+  created_at: string
+}
+
+export interface LearningResponse {
+  profile: LearningProfile | null
+  history: LearningHistoryEntry[]
+  live_weights: LearningWeights
+  outcome_counts: { converted: number; rejected: number; ignored: number }
+  last_updated: string
+}
+
+export type OutcomeType = 'converted' | 'rejected' | 'ignored'
+
 // ── API response envelopes ────────────────────────────────────────────────────
 
 export interface ListJobsResponse {
@@ -79,6 +153,16 @@ export interface ListJobsResponse {
 
 export interface ListLeadsResponse {
   leads: Lead[]
+  count: number
+}
+
+export interface ListSessionsResponse {
+  sessions: BrowserSession[]
+  count: number
+}
+
+export interface ListIdentitiesResponse {
+  identities: BrowserIdentity[]
   count: number
 }
 
