@@ -1,0 +1,66 @@
+# /etc/systemd/system/thg-scraper.service
+# Install: sudo systemctl daemon-reload && sudo systemctl enable thg-scraper
+
+[Unit]
+Description=THG Agentic Scraper
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# ── Dedicated service user (no shell, no login) ───────────────────────────
+User=thg-scraper
+Group=thg-scraper
+
+# ── Working directory and binary ──────────────────────────────────────────
+WorkingDirectory=/opt/thg-scraper
+ExecStart=/opt/thg-scraper/scraper
+
+# ── Secrets loaded from root-owned env file (mode 0600) ──────────────────
+# File must be: sudo chown root:thg-scraper /etc/thg-scraper/env && sudo chmod 640 /etc/thg-scraper/env
+EnvironmentFile=/etc/thg-scraper/env
+
+# ── Crash recovery ────────────────────────────────────────────────────────
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=5
+
+# ── Resource limits ───────────────────────────────────────────────────────
+MemoryMax=2G
+TasksMax=512
+
+# ── Hardening (principle of least privilege) ──────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Allow writing to data dir + Docker socket for browser containers
+ReadWritePaths=/opt/thg-scraper/data /var/run/docker.sock /tmp
+SupplementaryGroups=docker
+
+# Prevent the process from gaining new capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Restrict syscalls to a safe subset
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Network: allow only outbound (no raw sockets)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# No kernel module loading
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+# ── Logging ───────────────────────────────────────────────────────────────
+# Logs go to journald: sudo journalctl -u thg-scraper -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=thg-scraper
+
+[Install]
+WantedBy=multi-user.target

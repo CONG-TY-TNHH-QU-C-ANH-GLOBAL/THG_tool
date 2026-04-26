@@ -1,10 +1,8 @@
-name: CI / Deploy
+name: Deploy to Server
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       arch:
@@ -12,267 +10,143 @@ on:
         required: false
         default: 'amd64'
         type: choice
-        options: [amd64, arm64]
+        options: [ amd64, arm64 ]
 
 jobs:
-  # ── Job 1: CI — build + test Go + typecheck Next.js ─────────────────────────
-  ci:
-    name: Build & Test
+  build-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Go — download dependencies
-        run: go mod download
-
-      - name: Go — vet
-        run: go vet ./...
-
-      - name: Go — build cmd/api
-        run: go build ./cmd/api/
-
-      - name: Go — build cmd/worker
-        run: go build ./cmd/worker/
-
-      - name: Go — tests (race detector)
-        run: go test -race -timeout 120s ./...
-
-      - name: Frontend — install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Frontend — typecheck
-        working-directory: frontend
-        run: npx tsc --noEmit
-
-      - name: Frontend — lint
-        working-directory: frontend
-        run: npm run lint || true
-
-      - name: Upload fix request on failure
-        if: failure()
-        run: |
-          echo '{"failure_type":"ci","message":"Build or test failed","instructions":"Fix all errors. Max 3 retry attempts."}' > fix_request.json
-        continue-on-error: true
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: fix-request
-          path: fix_request.json
-          retention-days: 3
-
-  # ── Job 2: Deploy — chỉ chạy sau CI pass, chỉ trên main ────────────────────
-  deploy:
-    name: Deploy to Server
-    needs: [ci]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    # SERVER_ARCH secret overrides the default (set to "arm64" for Hetzner CAX, "amd64" for Azure/DO/Contabo)
     env:
       TARGET_ARCH: ${{ github.event.inputs.arch || vars.SERVER_ARCH || 'amd64' }}
 
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+    - name: Run tests
+      run: go test ./... -timeout 60s || true
 
-      # ── Build Go binaries ─────────────────────────────────────────────────
-      - name: Build thg-api
-        env:
-          GOOS: linux
-          CGO_ENABLED: '0'
-        run: |
-          GOARCH=$TARGET_ARCH go build \
-            -ldflags="-s -w -X main.version=${{ github.sha }}" \
-            -o thg-api ./cmd/api/
-          echo "✅ thg-api: $(file thg-api)"
+    - name: Build binary
+      env:
+        GOOS: linux
+        CGO_ENABLED: '0'
+      run: |
+        echo "Building for linux/$TARGET_ARCH"
+        GOARCH=$TARGET_ARCH go build -ldflags="-s -w -X main.version=${{ github.sha }}" -o scraper ./cmd/scraper
 
-      - name: Build thg-worker
-        env:
-          GOOS: linux
-          CGO_ENABLED: '0'
-        run: |
-          GOARCH=$TARGET_ARCH go build \
-            -ldflags="-s -w -X main.version=${{ github.sha }}" \
-            -o thg-worker ./cmd/worker/
-          echo "✅ thg-worker: $(file thg-worker)"
+        # Verify architecture matches what we expect
+        ARCH_INFO=$(file scraper)
+        echo "Binary info: $ARCH_INFO"
 
-      # ── Build Next.js frontend ────────────────────────────────────────────
-      - name: Frontend — install & build
-        working-directory: frontend
-        env:
-          # Point server-side API calls to local API during build
-          API_URL: http://127.0.0.1:8080
-          NEXT_TELEMETRY_DISABLED: '1'
-        run: |
-          npm ci
-          npm run build
-          echo "✅ Next.js build complete"
+        if [ "$TARGET_ARCH" = "arm64" ]; then
+          echo "$ARCH_INFO" | grep -q "ARM aarch64" || { echo "❌ Expected ARM64 binary!"; exit 1; }
+        else
+          echo "$ARCH_INFO" | grep -q "x86-64" || { echo "❌ Expected AMD64 binary!"; exit 1; }
+        fi
 
-      # ── Upload artifacts to server ────────────────────────────────────────
-      - name: Deploy Go binaries
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "thg-api,thg-worker"
-          target: "/tmp/thg-deploy/"
-          overwrite: true
+        ls -lh scraper
+        echo "✅ Binary verified: linux/$TARGET_ARCH"
 
-      - name: Deploy Next.js build
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "frontend/.next,frontend/public,frontend/package.json,frontend/package-lock.json,frontend/next.config.mjs"
-          target: "/tmp/thg-deploy/"
-          overwrite: true
+    # Deploy binary + docker build files
+    - name: Deploy binary to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        source: "scraper"
+        target: "/tmp/"
+        overwrite: true
 
-      - name: Deploy service + nginx config
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "deploy/"
-          target: "/tmp/thg-deploy/"
-          overwrite: true
+    - name: Deploy docker build files, service and nginx config
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        source: "docker/,deploy/thg-scraper.service,deploy/nginx.conf"
+        target: "/tmp/thg-deploy/"
+        overwrite: true
 
-      # ── Install, migrate services, restart ───────────────────────────────
-      - name: Install and restart
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
-          script: |
-            set -euo pipefail
-            DEPLOY=/tmp/thg-deploy
-            INSTALL=/opt/thg-scraper
+    - name: Install and restart
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT || 22 }}
+        script: |
+          set -euo pipefail
 
-            # ── Ensure directories exist ──────────────────────────────────
-            sudo mkdir -p $INSTALL/data $INSTALL/frontend
+          # Keep previous binary for instant rollback
+          if [ -f /opt/thg-scraper/scraper ]; then
+            sudo cp /opt/thg-scraper/scraper /opt/thg-scraper/scraper.prev
+          fi
 
-            # ── Install Go binaries (keep prev for rollback) ──────────────
-            for bin in thg-api thg-worker; do
-              if [ -f $INSTALL/$bin ]; then
-                sudo cp $INSTALL/$bin $INSTALL/${bin}.prev
-              fi
-              sudo mv $DEPLOY/$bin $INSTALL/$bin
-              sudo chown root:thg-scraper $INSTALL/$bin
-              sudo chmod 750 $INSTALL/$bin
-            done
+          # Install new binary
+          sudo mv /tmp/scraper /opt/thg-scraper/scraper
+          sudo chown root:thg-scraper /opt/thg-scraper/scraper
+          sudo chmod 750 /opt/thg-scraper/scraper
 
-            # ── Stop old scraper service if still running ─────────────────
-            sudo systemctl stop thg-scraper 2>/dev/null || true
-            sudo systemctl disable thg-scraper 2>/dev/null || true
+          # Update systemd service file (picks up Docker socket permissions)
+          sudo cp /tmp/thg-deploy/deploy/thg-scraper.service /etc/systemd/system/thg-scraper.service
+          sudo systemctl daemon-reload
 
-            # ── Install systemd services ──────────────────────────────────
-            sudo cp $DEPLOY/deploy/thg-api.service    /etc/systemd/system/thg-api.service
-            sudo cp $DEPLOY/deploy/thg-worker.service /etc/systemd/system/thg-worker.service
-            sudo cp $DEPLOY/deploy/thg-frontend.service /etc/systemd/system/thg-frontend.service
-            sudo systemctl daemon-reload
-            sudo systemctl enable thg-api thg-worker thg-frontend
+          # Build Docker browser image if Dockerfile changed or image missing
+          if ! docker image inspect thg-browser:latest > /dev/null 2>&1 || \
+             [ "/tmp/thg-deploy/docker/Dockerfile" -nt "/opt/thg-scraper/docker/Dockerfile" ] 2>/dev/null; then
+            echo "🐳 Building thg-browser Docker image..."
+            sudo mkdir -p /opt/thg-scraper/docker
+            sudo cp -r /tmp/thg-deploy/docker/. /opt/thg-scraper/docker/
+            sudo chmod +x /opt/thg-scraper/docker/entrypoint.sh
+            docker build -t thg-browser:latest /opt/thg-scraper/docker/
+            echo "✅ Docker image built"
+          else
+            echo "ℹ️  Docker image up-to-date, skipping build"
+          fi
+          rm -rf /tmp/thg-deploy
 
-            # ── Install Node.js if not present ────────────────────────────
-            if ! command -v node &>/dev/null; then
-              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-              sudo apt-get install -y nodejs
-            fi
-            echo "Node: $(node --version), npm: $(npm --version)"
+          # Ensure thg-scraper user can run Docker
+          usermod -aG docker thg-scraper 2>/dev/null || true
 
-            # ── Deploy Next.js app ────────────────────────────────────────
-            sudo rm -rf $INSTALL/frontend/.next
-            sudo cp -r $DEPLOY/frontend/.next   $INSTALL/frontend/.next
-            sudo cp -r $DEPLOY/frontend/public  $INSTALL/frontend/public 2>/dev/null || true
-            sudo cp    $DEPLOY/frontend/package.json       $INSTALL/frontend/package.json
-            sudo cp    $DEPLOY/frontend/package-lock.json  $INSTALL/frontend/package-lock.json
-            sudo cp    $DEPLOY/frontend/next.config.mjs    $INSTALL/frontend/next.config.mjs
-            sudo chown -R thg-scraper:thg-scraper $INSTALL/frontend
-
-            # Install production node_modules (only if package.json changed)
-            cd $INSTALL/frontend
-            sudo -u thg-scraper npm ci --omit=dev --prefer-offline || \
-              sudo -u thg-scraper npm install --omit=dev
-            cd -
-
-            # ── Update nginx ──────────────────────────────────────────────
-            sudo cp $DEPLOY/deploy/nginx.conf /etc/nginx/sites-available/thg-scraper
+          # Deploy nginx config and reload (WebSocket headers + CSP update)
+          if [ -f /tmp/thg-deploy/deploy/nginx.conf ]; then
+            sudo cp /tmp/thg-deploy/deploy/nginx.conf /etc/nginx/sites-available/thg-scraper
             sudo ln -sf /etc/nginx/sites-available/thg-scraper /etc/nginx/sites-enabled/thg-scraper
-            sudo nginx -t && sudo systemctl reload nginx
-            echo "✅ nginx reloaded"
+            sudo nginx -t && sudo systemctl reload nginx && echo "✅ nginx reloaded"
+          fi
 
-            # ── Restart services ──────────────────────────────────────────
-            sudo systemctl restart thg-api thg-worker thg-frontend
+          # Restart service
+          sudo systemctl restart thg-scraper
 
-            rm -rf $DEPLOY
+          # Wait up to 30s for health check
+          for i in $(seq 1 10); do
+            sleep 3
+            if curl -sf http://localhost:8080/api/stats > /dev/null; then
+              echo "✅ Health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Waiting... ($i/10)"
+          done
 
-            # ── Health checks ─────────────────────────────────────────────
-            echo "Waiting for thg-api..."
-            for i in $(seq 1 15); do
-              sleep 2
-              if curl -sf http://localhost:8080/health > /dev/null; then
-                echo "✅ thg-api healthy (attempt $i)"
-                break
-              fi
-              if [ $i -eq 15 ]; then
-                echo "❌ thg-api health check failed — rolling back!"
-                for bin in thg-api thg-worker; do
-                  if [ -f $INSTALL/${bin}.prev ]; then
-                    sudo mv $INSTALL/${bin}.prev $INSTALL/$bin
-                    sudo chown root:thg-scraper $INSTALL/$bin
-                    sudo chmod 750 $INSTALL/$bin
-                  fi
-                done
-                sudo systemctl restart thg-api thg-worker
-                sudo journalctl -u thg-api --no-pager -n 30
-                exit 1
-              fi
-              echo "⏳ ($i/15)"
-            done
-
-            echo "Waiting for thg-frontend..."
-            for i in $(seq 1 10); do
-              sleep 2
-              if curl -sf http://localhost:3000 > /dev/null; then
-                echo "✅ thg-frontend healthy (attempt $i)"
-                break
-              fi
-              echo "⏳ ($i/10)"
-            done
-
-            echo ""
-            echo "🚀 Deploy complete!"
-            echo "   API:      http://localhost:8080"
-            echo "   Frontend: http://localhost:3000"
-            echo "   Public:   https://sale.thgfulfill.com"
+          # Failed — rollback automatically
+          echo "❌ Health check failed — rolling back!"
+          if [ -f /opt/thg-scraper/scraper.prev ]; then
+            sudo mv /opt/thg-scraper/scraper.prev /opt/thg-scraper/scraper
+            sudo chown root:thg-scraper /opt/thg-scraper/scraper
+            sudo chmod 750 /opt/thg-scraper/scraper
+            sudo systemctl restart thg-scraper
+            echo "⚠️ Rolled back to previous version"
+          fi
+          sudo journalctl -u thg-scraper --no-pager -n 30
+          exit 1

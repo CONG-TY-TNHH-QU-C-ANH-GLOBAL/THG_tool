@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THG Agentic Scraper — Dashboard</title>
+    <meta name="description" content="THG Agentic Scraper control panel and dashboard">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=3">
+    <style>
+        .table-wrapper {
+            overflow-x: scroll !important;
+            overflow-y: auto !important;
+            max-height: calc(100vh - 240px) !important;
+            width: 100% !important;
+            display: block !important;
+            scrollbar-width: auto !important;
+            scrollbar-color: #8b5cf6 #1f2937 !important;
+        }
+
+        .table-wrapper::-webkit-scrollbar {
+            height: 12px !important;
+            width: 8px !important;
+            display: block !important;
+        }
+
+        .table-wrapper::-webkit-scrollbar-track {
+            background: #1f2937 !important;
+            border-radius: 0 !important;
+        }
+
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background: #8b5cf6 !important;
+            border-radius: 4px !important;
+            border: 2px solid #1f2937 !important;
+        }
+
+        .data-table {
+            min-width: 1400px !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">🕷️</div>
+                <span class="brand-text">THG Scraper</span>
+            </div>
+            <div class="sidebar-nav">
+                <!-- Core: visible to everyone -->
+                <a href="#" class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard')">
+                    <span class="nav-icon">📊</span>
+                    <span>Overview</span>
+                </a>
+                <a href="#" class="nav-item" data-page="aichat" onclick="switchPage('aichat')">
+                    <span class="nav-icon">💬</span>
+                    <span>Chat</span>
+                </a>
+                <a href="#" class="nav-item" data-page="browser" onclick="switchPage('browser')">
+                    <span class="nav-icon">🌐</span>
+                    <span>Browser</span>
+                    <span class="nav-badge" id="browserBadge" style="display:none">●</span>
+                </a>
+                <a href="#" class="nav-item" data-page="leads" onclick="switchPage('leads')">
+                    <span class="nav-icon">🎯</span>
+                    <span>Leads</span>
+                </a>
+
+                <!-- Manage: collapsible section -->
+                <div class="nav-section-label nav-manage-header" id="manageSectionLabel"
+                    onclick="toggleManageSection()"
+                    style="display:flex;justify-content:space-between;align-items:center;padding-right:12px;margin-top:4px">
+                    <span>MANAGE</span>
+                    <span id="manageChevron" style="font-size:9px">▸</span>
+                </div>
+                <div id="manageSectionItems" style="display:none">
+                    <a href="#" class="nav-item" data-page="groups" onclick="switchPage('groups')">
+                        <span class="nav-icon">👥</span>
+                        <span>Groups</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="posts" onclick="switchPage('posts')">
+                        <span class="nav-icon">📝</span>
+                        <span>Posts</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="outbox" onclick="switchPage('outbox')">
+                        <span class="nav-icon">📤</span>
+                        <span>Outbox</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="sentiment" onclick="switchPage('sentiment')">
+                        <span class="nav-icon">📈</span>
+                        <span>Analytics</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="logs" onclick="switchPage('logs')">
+                        <span class="nav-icon">📋</span>
+                        <span>Logs</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="jobs" onclick="switchPage('jobs')">
+                        <span class="nav-icon">⚡</span>
+                        <span>Coordinator</span>
+                    </a>
+                </div>
+
+                <!-- Settings pinned at bottom -->
+                <a href="#" class="nav-item" data-page="settings" onclick="switchPage('settings')" style="margin-top:auto">
+                    <span class="nav-icon">⚙️</span>
+                    <span>Settings</span>
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <div id="sidebarOrgBadge"
+                    style="font-size:11px;font-weight:600;color:#8b5cf6;padding:3px 8px;background:rgba(139,92,246,0.12);border-radius:6px;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none">
+                </div>
+                <div class="system-status" id="systemStatus">
+                    <span class="status-dot online"></span>
+                    <span>System Online</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1 id="pageTitle">Dashboard</h1>
+                    <span class="header-subtitle" id="pageSubtitle">Real-time overview</span>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-ghost" onclick="refreshData()">
+                        <span>🔄</span> Refresh
+                    </button>
+                    <!-- User menu -->
+                    <div style="position:relative" id="userMenuWrap">
+                        <button class="btn btn-ghost" onclick="toggleUserMenu(event)"
+                            style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid rgba(255,255,255,0.1);border-radius:10px">
+                            <span style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#6366f1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0" id="headerAvatar">?</span>
+                            <span id="headerUserName" style="font-size:12px;font-weight:500;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style="flex-shrink:0;opacity:0.5"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                        </button>
+                        <div id="userMenuDropdown"
+                            style="display:none;min-width:220px;background:#1e293b;border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,0.5);z-index:9999">
+                            <div style="padding:10px 12px 8px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:4px">
+                                <div id="menuUserName" style="font-size:13px;font-weight:600;color:#f1f5f9"></div>
+                                <div id="headerOrgName" style="font-size:11px;color:#8b5cf6;margin-top:2px"></div>
+                            </div>
+                            <button onclick="switchPage('settings');closeUserMenu()" class="btn btn-ghost"
+                                style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:8px;display:flex;align-items:center;gap:8px">
+                                <span>⚙️</span> Cài đặt
+                            </button>
+                            <div style="border-top:1px solid rgba(255,255,255,0.08);margin:4px 0"></div>
+                            <button onclick="doLogout()" class="btn btn-ghost"
+                                style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:8px;color:#f87171;display:flex;align-items:center;gap:8px">
+                                <span>🚪</span> Đăng xuất
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Page -->
+            <section class="page active" id="page-dashboard">
+                <!-- Org info + Quick Actions -->
+                <div class="section-card glass" style="margin-bottom:16px">
+                    <div style="padding:20px 24px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                            <div>
+                                <div style="font-size:16px;font-weight:600;color:#f1f5f9" id="dashboardOrgName">—</div>
+                                <div style="font-size:12px;color:var(--text-muted);margin-top:3px" id="dashboardOrgSub">Đang tải...</div>
+                            </div>
+                            <button class="btn btn-primary" id="scanAllBtn" onclick="triggerScanAll()">
+                                <span>🚀</span> Scan All
+                            </button>
+                        </div>
+                        <!-- Getting started steps (shown only when no FB accounts) -->
+                        <div id="dashboardGetStarted" style="display:none;margin-top:16px">
+                            <div style="font-size:11px;font-weight:700;letter-spacing:0.07em;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px">Bắt đầu nhanh</div>
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+                                <div class="getting-started-step" onclick="switchPage('browser')">
+                                    <div class="gs-num">1</div>
+                                    <div><div class="gs-title">Kết nối Facebook</div><div class="gs-desc">Mở Browser → đăng nhập FB</div></div>
+                                </div>
+                                <div class="getting-started-step" onclick="switchPage('groups')">
+                                    <div class="gs-num">2</div>
+                                    <div><div class="gs-title">Thêm Groups</div><div class="gs-desc">Thêm nhóm FB cần theo dõi</div></div>
+                                </div>
+                                <div class="getting-started-step" onclick="triggerScanAll()">
+                                    <div class="gs-num">3</div>
+                                    <div><div class="gs-title">Scan Groups</div><div class="gs-desc">Bấm Scan All để cào dữ liệu</div></div>
+                                </div>
+                                <div class="getting-started-step" onclick="switchPage('leads')">
+                                    <div class="gs-num">4</div>
+                                    <div><div class="gs-title">Xem Leads</div><div class="gs-desc">AI phân loại khách hàng tiềm năng</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="stats-grid" style="margin-bottom:16px">
+                    <div class="stat-card glass hot">
+                        <div class="stat-icon">🔥</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statHotLeads">0</span>
+                            <span class="stat-label">Hot Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🎯</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statLeads">0</span>
+                            <span class="stat-label">Total Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statGroups">0</span>
+                            <span class="stat-label">Active Groups</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="statRunning">0</span>
+                            <span class="stat-label">Running Jobs</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Hot Leads -->
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>🔥 Recent Hot Leads</h2>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="dashboardLeadsTable">
+                            <thead>
+                                <tr>
+                                    <th>Score</th>
+                                    <th>Author</th>
+                                    <th>Content</th>
+                                    <th>Service</th>
+                                    <th>Time</th>
+                                    <th>FB Post</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Leads Page -->
+            <section class="page" id="page-leads">
+                <!-- Niche Tabs -->
+                <div class="niche-tabs-bar glass"
+                    style="display:flex;gap:8px;align-items:center;padding:12px 16px;border-radius:12px;margin-bottom:16px;flex-wrap:wrap">
+                    <button class="niche-tab active" data-niche="" onclick="setActiveNiche(this,'')">📋 Tất cả</button>
+                    <div id="nicheTabsContainer" style="display:contents"></div>
+                    <button id="btnRecruitCandidates" class="btn btn-sm btn-primary" onclick="recruitAllCandidates()"
+                        style="display:none;margin-left:4px">💼 Comment ứng viên</button>
+                    <button id="btnCreateJobPost" class="btn btn-sm btn-primary" onclick="showJobPostModal()"
+                        style="display:none;margin-left:4px">📋 Tạo JD</button>
+                    <button class="btn btn-sm btn-primary" onclick="showAddNicheModal()" style="margin-left:auto">+ Thêm
+                        lĩnh vực</button>
+                </div>
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2 id="leadsTitle">🎯 Classified Leads</h2>
+                        <div class="filter-bar" style="display:flex;gap:8px;align-items:center">
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllLeads()"
+                                title="Xóa tất cả leads">🗑️ Xóa tất cả</button>
+                            <select id="leadScoreFilter" onchange="loadLeads()">
+                                <option value="">All Scores</option>
+                                <option value="hot">🔥 Hot</option>
+                                <option value="warm">🟡 Warm</option>
+                                <option value="cold">🔵 Cold</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="leadsTable">
+                            <thead>
+                                <tr>
+                                    <th>Score</th>
+                                    <th>Lĩnh vực</th>
+                                    <th>Author</th>
+                                    <th>Content</th>
+                                    <th>Service</th>
+                                    <th>Role</th>
+                                    <th>Pain Point</th>
+                                    <th>Commented</th>
+                                    <th>Time</th>
+                                    <th>FB Post</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Posts Page -->
+            <section class="page" id="page-posts">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>📝 Scraped Posts</h2>
+                        <div class="filter-bar">
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllPosts()"
+                                title="Xóa tất cả posts">🗑️ Xóa tất cả</button>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="postsTable">
+                            <thead>
+                                <tr>
+                                    <th>Group</th>
+                                    <th>Author</th>
+                                    <th>Content</th>
+                                    <th>Reactions</th>
+                                    <th>Scraped</th>
+                                    <th>Link</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Groups Page -->
+            <section class="page" id="page-groups">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>👥 Managed Groups</h2>
+                        <button class="btn btn-primary btn-sm" onclick="showAddGroupModal()">
+                            + Add Group
+                        </button>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="groupsTable">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Name</th>
+                                    <th>Platform</th>
+                                    <th>URL</th>
+                                    <th>Last Scan</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Jobs Page -->
+            <section class="page" id="page-jobs">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>⚡ Job Queue</h2>
+                        <div class="filter-bar">
+                            <select id="jobStatusFilter" onchange="loadJobs()">
+                                <option value="">All Status</option>
+                                <option value="running">Running</option>
+                                <option value="done">Done</option>
+                                <option value="failed">Failed</option>
+                                <option value="pending">Pending</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="jobsTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Type</th>
+                                    <th>Platform</th>
+                                    <th>Target</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Accounts Page (CDP) -->
+            <section class="page" id="page-accounts">
+                <!-- Summary Stats -->
+                <div class="stats-grid" style="margin-bottom:16px" id="accountStatsGrid">
+                    <div class="stat-card glass">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatActive">0</span><span
+                                class="stat-label">Active</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatCooldown">0</span><span
+                                class="stat-label">Cooldown</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🚫</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatBanned">0</span><span
+                                class="stat-label">Banned</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">💤</div>
+                        <div class="stat-info"><span class="stat-value" id="accStatInactive">0</span><span
+                                class="stat-label">Inactive</span></div>
+                    </div>
+                </div>
+                <!-- Account Table -->
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>🔑 Facebook Accounts</h2>
+                        <button class="btn btn-primary btn-sm" onclick="showAddAccountModal()">+ Kết nối tài khoản Facebook</button>
+                    </div>
+                    <!-- Security notice -->
+                    <div
+                        style="padding:10px 24px;background:rgba(139,92,246,0.08);border-bottom:1px solid var(--border-glass);font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:8px">
+                        <span>🔒</span>
+                        <span>Cookies được mã hóa AES-256-GCM. Chỉ admin mới thấy trạng thái — nội dung cookie không bao
+                            giờ hiển thị trên UI.</span>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
+                        <table class="data-table" id="accountsTable">
+                            <thead>
+                                <tr>
+                                    <th>Trạng thái</th>
+                                    <th>Tên FB</th>
+                                    <th>Nhân viên</th>
+                                    <th>Email FB</th>
+                                    <th>Platform</th>
+                                    <th>Cookie</th>
+                                    <th>Lần dùng cuối</th>
+                                    <th>Ghi chú</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Chat Page -->
+            <section class="page" id="page-aichat">
+                <div class="chat-container glass">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-msg system">
+                            <div class="chat-bubble">
+                                🤖 <strong>AI Agent sẵn sàng!</strong><br>
+                                Gửi prompt để tôi thực thi. Ví dụ:<br>
+                                • "Cào tất cả group facebook"<br>
+                                • "Thêm group ship hàng mỹ"<br>
+                                • "Xem thống kê hôm nay"<br>
+                                • "Check inbox acc 1"
+                            </div>
+                        </div>
+                    </div>
+                    <form class="chat-input-bar" onsubmit="sendAIPrompt(event)">
+                        <input type="text" id="chatInput"
+                            placeholder="Nhập prompt... (ví dụ: cào facebook group ship VN-US)" autocomplete="off">
+                        <button type="submit" class="btn btn-primary" id="chatSendBtn">🚀 Gửi</button>
+                    </form>
+                </div>
+                <div class="section-card glass" style="margin-top:16px">
+                    <div class="section-header">
+                        <h2>📋 Prompt History</h2>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="promptHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Prompt</th>
+                                    <th>Action</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Outbox Page -->
+            <section class="page" id="page-outbox">
+                <div class="stats-grid" style="margin-bottom:16px">
+                    <div class="stat-card glass">
+                        <div class="stat-icon">✏️</div>
+                        <div class="stat-info"><span class="stat-value" id="statDraft">0</span><span
+                                class="stat-label">Drafts</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info"><span class="stat-value" id="statApproved">0</span><span
+                                class="stat-label">Approved</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🚀</div>
+                        <div class="stat-info"><span class="stat-value" id="statSentOut">0</span><span
+                                class="stat-label">Sent</span></div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">❌</div>
+                        <div class="stat-info"><span class="stat-value" id="statRejected">0</span><span
+                                class="stat-label">Rejected</span></div>
+                    </div>
+                </div>
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>📤 Outbound Messages</h2>
+                        <div class="filter-bar" style="display:flex;gap:8px;align-items:center">
+                            <button class="btn btn-sm btn-danger" onclick="resetAllComments()"
+                                title="Xóa toàn bộ outbound comments để comment lại từ đầu">🗑️ Reset comments</button>
+                            <select id="outboxStatusFilter" onchange="loadOutbox()">
+                                <option value="">All</option>
+                                <option value="draft" selected>✏️ Draft</option>
+                                <option value="approved">✅ Approved</option>
+                                <option value="sent">🚀 Sent</option>
+                                <option value="rejected">❌ Rejected</option>
+                                <option value="failed">⚠️ Failed</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="overflow-x:scroll;width:100%;display:block;">
+                        <table class="data-table" id="outboxTable">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Target</th>
+                                    <th>Content</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            <!-- Browser Page -->
+            <section class="page" id="page-browser">
+                <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
+
+                    <!-- Left: account list -->
+                    <div class="section-card glass">
+                        <div class="section-header" style="padding:16px 20px 12px">
+                            <h2 style="font-size:14px">🔑 Tài khoản Facebook</h2>
+                            <button class="btn btn-primary btn-sm" onclick="browserShowAddForm()">+ Thêm</button>
+                        </div>
+                        <!-- Inline add form -->
+                        <div id="browserAddForm" style="display:none;padding:0 12px 10px">
+                            <div style="display:flex;gap:6px;align-items:center">
+                                <input id="browserNewAccountName" type="text" placeholder="Tên tài khoản..."
+                                    style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:7px 10px;font-size:12px;color:#f1f5f9;outline:none"
+                                    onkeydown="if(event.key==='Enter')browserAddAccount()">
+                                <button class="btn btn-primary btn-sm" onclick="browserAddAccount()">✓</button>
+                                <button class="btn btn-ghost btn-sm" onclick="browserHideAddForm()">✕</button>
+                            </div>
+                        </div>
+                        <div id="workspaceAccountList" class="workspace-accounts" style="padding:0 12px 12px">
+                            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">
+                                Đang tải...
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: live browser view -->
+                    <div>
+                        <!-- Toolbar -->
+                        <div class="browser-card" style="margin-bottom:12px">
+                            <div style="padding:16px 20px">
+                                <div class="browser-toolbar-title">Facebook browser profile</div>
+                                <div class="browser-toolbar-desc">
+                                    Browser dành riêng cho từng tài khoản. Đăng nhập Facebook một lần — session persist tự động.
+                                </div>
+                            </div>
+                            <div class="browser-toolbar">
+                                <button id="browserStartBtn" class="btn btn-success btn-sm" onclick="browserStartSelected()">▶ START</button>
+                                <button id="browserStopBtn" class="btn btn-ghost btn-sm" onclick="browserStopSelected()" disabled>■ STOP</button>
+                                <button id="browserMarkLoginBtn" class="btn btn-ghost btn-sm" onclick="browserMarkLoggedIn()" disabled style="display:none">✓ Đã đăng nhập FB</button>
+                                <button class="btn btn-ghost btn-sm" onclick="loadBrowserPage()">↻ refresh</button>
+                                <div class="browser-port-status" id="browserPortStatus" style="display:none">
+                                    <span>vnc: <span id="browserCdpPort" class="dot-online">–</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live view (noVNC) -->
+                        <div class="browser-card">
+                            <div class="browser-urlbar">
+                                <div class="browser-urlbar-dots">
+                                    <span></span><span></span><span></span>
+                                </div>
+                                <span id="browserUrlLabel">vnc://workspace — chọn tài khoản để bắt đầu</span>
+                            </div>
+                            <!-- browser-shell is position:relative so placeholder overlays the noVNC canvas -->
+                            <div class="browser-shell" style="position:relative;overflow:hidden">
+                                <!-- noVNC renders its canvas into this div -->
+                                <div id="browserVNCScreen" style="width:100%;height:520px;background:#0a0a0f"></div>
+                                <!-- Placeholder overlays noVNC canvas until connected -->
+                                <div class="browser-placeholder" id="browserPlaceholder"
+                                     style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:20">
+                                    <div class="browser-placeholder-icon">🌐</div>
+                                    <div class="browser-placeholder-text">Chọn tài khoản bên trái → nhấn START</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Page -->
+            <section class="page" id="page-settings">
+                <div style="display:grid;gap:16px;max-width:820px">
+                    <!-- Profile -->
+                    <div class="section-card glass">
+                        <div class="section-header">
+                            <h2>👤 Hồ sơ cá nhân</h2>
+                        </div>
+                        <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:420px">
+                            <div class="form-group">
+                                <label>Tên hiển thị</label>
+                                <input type="text" id="profileName" placeholder="Tên của bạn">
+                            </div>
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input type="email" id="profileEmail" disabled style="opacity:0.6;cursor:not-allowed">
+                            </div>
+                            <div class="form-group">
+                                <label>Vai trò</label>
+                                <input type="text" id="profileRole" disabled style="opacity:0.6;cursor:not-allowed">
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="saveProfile()">Lưu thay đổi</button>
+                        </div>
+                    </div>
+                    <!-- Change Password -->
+                    <div class="section-card glass">
+                        <div class="section-header">
+                            <h2>🔑 Đổi mật khẩu</h2>
+                        </div>
+                        <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:420px">
+                            <div class="form-group">
+                                <label>Mật khẩu hiện tại</label>
+                                <input type="password" id="currentPassword" placeholder="••••••••">
+                            </div>
+                            <div class="form-group">
+                                <label>Mật khẩu mới</label>
+                                <input type="password" id="newPassword"
+                                    placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt">
+                            </div>
+                            <div class="form-group">
+                                <label>Xác nhận mật khẩu mới</label>
+                                <input type="password" id="confirmPassword" placeholder="••••••••">
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="changePassword()">Đổi mật khẩu</button>
+                        </div>
+                    </div>
+                    <!-- Organization Info -->
+                    <div class="section-card glass" id="orgInfoSection">
+                        <div class="section-header">
+                            <h2>🏢 Tổ chức của bạn</h2>
+                            <span id="orgPlanBadge"
+                                style="padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;background:rgba(139,92,246,0.15);color:#a78bfa"></span>
+                        </div>
+                        <div style="padding:0 24px 24px;display:grid;gap:12px;max-width:480px">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                <div class="form-group">
+                                    <label>Tên tổ chức</label>
+                                    <input type="text" id="orgName" placeholder="Tên tổ chức">
+                                </div>
+                                <div class="form-group">
+                                    <label>Domain</label>
+                                    <input type="text" id="orgDomain" placeholder="company.com">
+                                </div>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;color:var(--text-muted)">
+                                <div>Tài khoản FB: <strong id="orgAccountCount" style="color:var(--text-primary)">—</strong> / <strong id="orgAccountLimit" style="color:var(--text-primary)">—</strong></div>
+                                <div>Gói dịch vụ: <strong id="orgPlanName" style="color:#a78bfa">—</strong></div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="orgSaveBtn" onclick="saveOrgSettings()" style="display:none">Lưu cài đặt tổ chức</button>
+                        </div>
+                    </div>
+
+                    <!-- Agent Tokens (admin only) -->
+                    <div class="section-card glass" id="agentTokensSection" style="display:none">
+                        <div class="section-header">
+                            <h2>🤖 Agent Tokens</h2>
+                            <button class="btn btn-primary btn-sm" onclick="createAgentToken()">+ Tạo token</button>
+                        </div>
+                        <div style="padding:8px 24px 4px;font-size:12px;color:var(--text-muted)">
+                            Token xác thực cho Chrome Extension agent. Chỉ hiển thị một lần khi tạo.
+                        </div>
+                        <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
+                            <table class="data-table" id="agentTokensTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Tên</th>
+                                        <th>Máy / OS</th>
+                                        <th>Lần cuối online</th>
+                                        <th>Trạng thái</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Team Management (org admin only) -->
+                    <div class="section-card glass" id="userMgmtSection" style="display:none">
+                        <div class="section-header">
+                            <h2>👥 Quản lý nhân viên</h2>
+                            <button class="btn btn-primary btn-sm" onclick="showCreateUserModal()">+ Thêm nhân viên</button>
+                        </div>
+                        <div style="padding:8px 24px 4px;font-size:12px;color:var(--text-muted)">
+                            Quản lý tài khoản nhân viên trong tổ chức của bạn.
+                        </div>
+                        <div class="table-wrapper" style="overflow-x:auto;width:100%;display:block">
+                            <table class="data-table" id="usersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Tên</th>
+                                        <th>Email</th>
+                                        <th>Vai trò</th>
+                                        <th>Trạng thái</th>
+                                        <th>Ngày tạo</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Logs Page -->
+            <section class="page" id="page-logs">
+                <div class="section-card glass">
+                    <div class="section-header">
+                        <h2>📋 System Logs</h2>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <label style="font-size:12px;color:var(--text-muted);display:flex;gap:6px;align-items:center;cursor:pointer">
+                                <input type="checkbox" id="logsAutoScroll" checked style="accent-color:var(--accent)">
+                                Auto-scroll
+                            </label>
+                            <button class="btn btn-sm btn-ghost" onclick="clearLogsDisplay()">🗑 Clear</button>
+                        </div>
+                    </div>
+                    <div id="logsContainer" style="
+                        font-family: 'Cascadia Code', 'Fira Code', monospace;
+                        font-size: 12px;
+                        line-height: 1.6;
+                        padding: 16px;
+                        height: calc(100vh - 240px);
+                        overflow-y: auto;
+                        background: rgba(0,0,0,0.3);
+                        border-radius: 8px;
+                        margin: 0 16px 16px;
+                        color: #94a3b8;
+                    "></div>
+                </div>
+            </section>
+
+            <!-- Sentiment / Analytics Page -->
+            <section class="page" id="page-sentiment">
+                <div class="stats-grid" id="sentimentStatsGrid">
+                    <div class="stat-card glass hot">
+                        <div class="stat-icon">🔥</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentHot">-</span>
+                            <span class="stat-label">Hot Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">🌡️</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentWarm">-</span>
+                            <span class="stat-label">Warm Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">❄️</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentCold">-</span>
+                            <span class="stat-label">Cold Leads</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📤</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentCommentsSent">-</span>
+                            <span class="stat-label">Comments Sent</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">📬</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentInboxSent">-</span>
+                            <span class="stat-label">Inbox Sent</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <div class="stat-icon">❌</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="sentFailed">-</span>
+                            <span class="stat-label">Failed Sends</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0">
+                    <!-- Lead Score Breakdown -->
+                    <div class="section-card glass">
+                        <div class="section-header"><h2>🎯 Lead Score Breakdown</h2></div>
+                        <div id="sentScoreChart" style="padding:20px"></div>
+                    </div>
+                    <!-- Top Niches -->
+                    <div class="section-card glass">
+                        <div class="section-header"><h2>🏭 Top Niches</h2></div>
+                        <div id="sentNicheChart" style="padding:20px"></div>
+                    </div>
+                    <!-- Outbound Status -->
+                    <div class="section-card glass" style="grid-column:1/-1">
+                        <div class="section-header"><h2>📊 Comment & Inbox Performance</h2></div>
+                        <div id="sentOutboundChart" style="padding:20px"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Create User Modal -->
+    <div class="modal-overlay" id="createUserModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Tạo tài khoản nhân viên</h3>
+                <button class="btn-close" onclick="closeCreateUserModal()">&times;</button>
+            </div>
+            <form onsubmit="submitCreateUser(event)" style="padding:0 24px 24px">
+                <div class="form-group">
+                    <label>Họ tên</label>
+                    <input type="text" id="newUserName" placeholder="Nguyễn Văn A" required>
+                </div>
+                <div class="form-group">
+                    <label>Email đăng nhập</label>
+                    <input type="email" id="newUserEmail" placeholder="nhanvien@thgfulfill.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Mật khẩu</label>
+                    <input type="password" id="newUserPassword"
+                        placeholder="Tối thiểu 10 ký tự, có hoa, số, ký tự đặc biệt" required>
+                </div>
+                <div class="form-group">
+                    <label>Vai trò</label>
+                    <select id="newUserRole">
+                        <option value="sales">Sales (xem + duyệt comment)</option>
+                        <option value="admin">Admin (toàn quyền)</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeCreateUserModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Tạo tài khoản</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal-overlay" id="editUserModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Chỉnh sửa tài khoản</h3>
+                <button class="btn-close" onclick="closeEditUserModal()">&times;</button>
+            </div>
+            <form onsubmit="submitEditUser(event)" style="padding:0 24px 24px">
+                <input type="hidden" id="editUserId">
+                <div class="form-group">
+                    <label>Họ tên</label>
+                    <input type="text" id="editUserName" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="editUserEmail" disabled style="opacity:0.6">
+                </div>
+                <div class="form-group">
+                    <label>Vai trò</label>
+                    <select id="editUserRole">
+                        <option value="sales">Sales</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Trạng thái</label>
+                    <select id="editUserActive">
+                        <option value="true">Hoạt động</option>
+                        <option value="false">Vô hiệu hóa</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Đặt lại mật khẩu <small style="color:var(--text-muted)">(để trống nếu không
+                            đổi)</small></label>
+                    <input type="password" id="editUserPassword" placeholder="Mật khẩu mới (tùy chọn)">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeEditUserModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Group Modal -->
+    <div class="modal-overlay" id="addGroupModal">
+        <div class="modal glass">
+            <div class="modal-header">
+                <h3>Add New Group</h3>
+                <button class="btn-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form onsubmit="submitAddGroup(event)">
+                <div class="form-group">
+                    <label>Platform</label>
+                    <select id="groupPlatform" required>
+                        <option value="facebook">Facebook</option>
+                        <option value="tiktok">TikTok</option>
+                        <option value="zalo">Zalo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Group Name</label>
+                    <input type="text" id="groupName" placeholder="Group name" required>
+                </div>
+                <div class="form-group">
+                    <label>URL</label>
+                    <input type="url" id="groupURL" placeholder="https://facebook.com/groups/..." required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Group</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Account Modal (CDP) -->
+    <div class="modal-overlay" id="addAccountModal">
+        <div class="modal glass" style="max-width:560px">
+            <div class="modal-header">
+                <h3>🔑 Đăng ký tài khoản Facebook</h3>
+                <button class="btn-close" onclick="closeAccountModal()">&times;</button>
+            </div>
+            <form onsubmit="submitAddAccount(event)" style="padding:0 24px 24px">
+                <!-- Quick mode banner -->
+                <div
+                    style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#a78bfa">
+                    🖥️ <strong>Cách nhanh nhất:</strong> Điền tên → nhấn <strong>"Tạo & Đăng nhập Chrome"</strong> →
+                    đăng nhập Facebook → xong!
+                </div>
+                <div class="form-group">
+                    <label>Tên tài khoản FB <span style="color:#ef4444">*</span></label>
+                    <input type="text" id="accName" placeholder="vd: Nguyễn Văn A — Sale, THG Main Account" required>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div class="form-group">
+                        <label>Email Facebook <span style="color:var(--text-muted);font-size:11px">(tùy
+                                chọn)</span></label>
+                        <input type="text" id="accEmail" placeholder="email@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Platform</label>
+                        <select id="accPlatform">
+                            <option value="facebook">Facebook</option>
+                            <option value="tiktok">TikTok</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Ghi chú <span style="color:var(--text-muted);font-size:11px">(tùy chọn)</span></label>
+                    <input type="text" id="accNotes" placeholder="vd: Acc chính logistics, Sale Acc Nguyễn Văn A">
+                </div>
+                <!-- Advanced: manual cookie import (collapsed by default) -->
+                <details style="margin-bottom:12px">
+                    <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;padding:4px 0">
+                        ⚙️ Nâng cao — nhập cookie thủ công (không cần Chrome login)
+                    </summary>
+                    <div style="margin-top:10px">
+                        <div class="form-group">
+                            <label>Cookies JSON <span style="color:var(--text-muted);font-size:11px">(mã hóa AES-256 khi
+                                    lưu)</span></label>
+                            <textarea id="accCookies" rows="4"
+                                placeholder='[{"name":"c_user","value":"123456","domain":".facebook.com"},{"name":"xs","value":"..."}]'
+                                style="font-family:monospace;font-size:12px"></textarea>
+                            <div id="cookieValidation" style="font-size:12px;margin-top:4px;display:none"></div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-ghost" onclick="validateCookieJSON()">🔍 Kiểm tra
+                            JSON</button>
+                    </div>
+                </details>
+                <div id="accError"
+                    style="display:none;color:#ef4444;font-size:13px;padding:8px 12px;background:rgba(239,68,68,0.1);border-radius:8px;margin-bottom:12px">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeAccountModal()">Hủy</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAddAccountAndLogin()">🔑 Tạo & Mở Chrome Login</button>
+                    <button type="submit" class="btn btn-ghost" style="font-size:13px">Tạo (không login ngay)</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Update Cookie Modal -->
+    <div class="modal-overlay" id="updateCookieModal">
+        <div class="modal glass" style="max-width:520px">
+            <div class="modal-header">
+                <h3>🔄 Cập nhật Cookie</h3>
+                <button class="btn-close" onclick="closeUpdateCookieModal()">&times;</button>
+            </div>
+            <form onsubmit="submitUpdateCookie(event)" style="padding:0 24px 24px">
+                <input type="hidden" id="updateCookieAccId">
+                <div
+                    style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fcd34d">
+                    ⚠️ Cookie cũ sẽ bị thay thế hoàn toàn. Đảm bảo bạn đang đăng nhập trên Facebook trước khi export
+                    cookies.
+                </div>
+                <div class="form-group">
+                    <label>Cookies JSON mới <span style="color:var(--text-muted);font-size:11px">(mã hóa
+                            AES-256)</span></label>
+                    <textarea id="updateCookieJSON" rows="6" placeholder='[{"name":"c_user","value":"..."}]' required
+                        style="font-family:monospace;font-size:12px"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeUpdateCookieModal()">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Cập nhật Cookie</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Direct Chrome Login Modal -->
+    <div class="modal-overlay" id="chromeLoginModal">
+        <div class="modal glass" style="max-width:480px">
+            <div class="modal-header">
+                <h3>🔑 Kết nối tài khoản Facebook</h3>
+                <button class="btn-close" onclick="closeDirectLogin()">&times;</button>
+            </div>
+            <div class="modal-content">
+
+                <!-- Status banner -->
+                <div id="dlStatusBanner" style="padding:14px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);color:#93c5fd">
+                    <span id="dlStatusIcon" style="font-size:22px">🔄</span>
+                    <div>
+                        <div id="dlStatusText" style="font-weight:500">Đang khởi động Chrome...</div>
+                        <div id="dlStatusSub" style="font-size:12px;margin-top:3px;opacity:0.75">Vui lòng chờ trong giây lát</div>
+                    </div>
+                </div>
+
+                <!-- Steps -->
+                <div style="margin-bottom:20px;padding:16px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color)">
+                    <ol style="margin:0;padding-left:20px;font-size:14px;line-height:2.1;color:var(--text-muted)">
+                        <li id="dlStep1">Chrome đang mở trang đăng nhập Facebook</li>
+                        <li id="dlStep2">Đăng nhập Facebook trong cửa sổ Chrome</li>
+                        <li id="dlStep3">Hệ thống tự động lưu và kích hoạt tài khoản 🎉</li>
+                    </ol>
+                </div>
+
+                <!-- Success -->
+                <div id="dlSuccess" style="display:none;padding:14px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7">
+                    ✅ Tài khoản Facebook đã được kết nối thành công!
+                </div>
+
+                <div style="display:flex;justify-content:space-between">
+                    <button type="button" class="btn btn-ghost" id="dlCancelBtn" onclick="closeDirectLogin()">Hủy</button>
+                    <button type="button" class="btn btn-primary" id="dlDoneBtn" style="display:none" onclick="closeDirectLogin()">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Job Post Modal -->
+        <div class="modal-overlay" id="jobPostModal">
+            <div class="modal glass">
+                <div class="modal-header">
+                    <h3>📋 Tạo bài đăng tuyển dụng</h3>
+                    <button class="btn-close" onclick="closeJobPostModal()">&times;</button>
+                </div>
+                <form onsubmit="submitJobPost(event)">
+                    <div class="form-group">
+                        <label>Vị trí tuyển dụng *</label>
+                        <input type="text" id="jpTitle" placeholder="vd: Nhân viên Kho, Sales Executive" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Mô tả công việc</label>
+                        <textarea id="jpDesc" rows="2" placeholder="Mô tả ngắn về công việc..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Yêu cầu ứng viên</label>
+                        <textarea id="jpReqs" rows="2" placeholder="Kinh nghiệm, kỹ năng, bằng cấp..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Quyền lợi</label>
+                        <input type="text" id="jpBenefits" placeholder="Lương thưởng, bảo hiểm, môi trường...">
+                    </div>
+                    <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div>
+                            <label>Mức lương</label>
+                            <input type="text" id="jpSalary" placeholder="vd: 12-15 triệu, thỏa thuận">
+                        </div>
+                        <div>
+                            <label>Email nhận CV</label>
+                            <input type="email" id="jpEmail" placeholder="career@thgfulfill.com">
+                        </div>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+                        💡 AI sẽ soạn bài đăng chuyên nghiệp. Kết quả lưu vào Outbox để copy và đăng.
+                    </p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" onclick="closeJobPostModal()">Hủy</button>
+                        <button type="submit" class="btn btn-primary">✨ Tạo bài đăng</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Add Niche Modal -->
+        <div class="modal-overlay" id="addNicheModal">
+            <div class="modal glass">
+                <div class="modal-header">
+                    <h3>Thêm lĩnh vực mới</h3>
+                    <button class="btn-close" onclick="closeNicheModal()">&times;</button>
+                </div>
+                <form onsubmit="submitAddNiche(event)">
+                    <div class="form-group">
+                        <label>Slug (ID nội bộ, không dấu, viết liền)</label>
+                        <input type="text" id="nicheSlug" placeholder="vd: bds, thuc_pham, may_mac" required
+                            pattern="[a-z0-9_]+">
+                    </div>
+                    <div class="form-group">
+                        <label>Tên hiển thị</label>
+                        <input type="text" id="nicheName" placeholder="vd: Bất động sản" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Emoji</label>
+                        <input type="text" id="nicheEmoji" placeholder="🏠" maxlength="4">
+                    </div>
+                    <p style="font-size:12px;color:var(--text-muted);margin-top:8px">
+                        💡 Sau khi tạo, nói với bot: <strong>"cào group [lĩnh vực] [tên_slug]"</strong> để AI gắn đúng
+                        lĩnh
+                        vực cho leads
+                    </p>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" onclick="closeNicheModal()">Hủy</button>
+                        <button type="submit" class="btn btn-primary">Thêm lĩnh vực</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Login Page (full screen) -->
+    <div id="loginPage"
+        style="display:flex;position:fixed;inset:0;z-index:9999;background:var(--bg-primary,#0f172a);align-items:center;justify-content:center">
+            <div style="width:100%;max-width:440px;padding:20px">
+                <!-- Login Form -->
+                <div id="loginFormWrap" class="glass" style="padding:40px;border-radius:20px">
+                    <div style="text-align:center;margin-bottom:32px">
+                        <div style="font-size:52px;margin-bottom:12px">🕷️</div>
+                        <h1 style="font-size:22px;font-weight:700;margin:0 0 6px">THG Scraper</h1>
+                        <p style="color:var(--text-muted,#94a3b8);margin:0;font-size:14px">Đăng nhập để tiếp tục</p>
+                    </div>
+                    <form onsubmit="doLogin(event)">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="loginEmail" placeholder="admin@thgfulfill.com" required
+                                autocomplete="email" style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Mật khẩu</label>
+                            <input type="password" id="loginPassword" placeholder="••••••••" required
+                                autocomplete="current-password" style="width:100%">
+                        </div>
+                        <div id="loginError"
+                            style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="loginBtn"
+                            style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Đăng nhập</button>
+                        <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
+                            Quên mật khẩu? Liên hệ <strong>Admin</strong> để được reset
+                        </p>
+                        <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:12px 0 0">
+                            Chưa có tổ chức?
+                            <a href="#" onclick="showRegisterForm(event)"
+                                style="color:#8b5cf6;text-decoration:none;font-weight:600">Đăng ký miễn phí</a>
+                        </p>
+                    </form>
+                </div>
+                <!-- Register Form -->
+                <div id="registerFormWrap" class="glass" style="display:none;padding:40px;border-radius:20px">
+                    <div style="text-align:center;margin-bottom:28px">
+                        <div style="font-size:44px;margin-bottom:10px">🏢</div>
+                        <h1 style="font-size:20px;font-weight:700;margin:0 0 6px">Tạo tổ chức mới</h1>
+                        <p style="color:var(--text-muted,#94a3b8);margin:0;font-size:13px">Dùng thử miễn phí — không cần thẻ tín dụng</p>
+                    </div>
+                    <form onsubmit="doRegister(event)">
+                        <div class="form-group">
+                            <label>Tên tổ chức <span style="color:#ef4444">*</span></label>
+                            <input type="text" id="regOrgName" placeholder="VD: THG Fulfillment" required style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Tên quản trị viên <span style="color:#ef4444">*</span></label>
+                            <input type="text" id="regAdminName" placeholder="Họ và tên" required style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Email <span style="color:#ef4444">*</span></label>
+                            <input type="email" id="regEmail" placeholder="admin@company.com" required style="width:100%">
+                        </div>
+                        <div class="form-group">
+                            <label>Mật khẩu <span style="color:#ef4444">*</span></label>
+                            <input type="password" id="regPassword"
+                                placeholder="Tối thiểu 10 ký tự, hoa + số + ký tự đặc biệt" required style="width:100%">
+                        </div>
+                        <div id="registerError"
+                            style="display:none;color:#ef4444;font-size:13px;margin-bottom:14px;padding:10px 14px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.2)">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="registerBtn"
+                            style="width:100%;padding:13px;font-size:15px;margin-bottom:16px">Tạo tổ chức</button>
+                        <p style="text-align:center;font-size:12px;color:var(--text-muted,#94a3b8);margin:0">
+                            Đã có tài khoản?
+                            <a href="#" onclick="showLoginForm(event)"
+                                style="color:#8b5cf6;text-decoration:none;font-weight:600">Đăng nhập</a>
+                        </p>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+    <script src="app.js?v=22"></script>
+</body>
+
+</html>
