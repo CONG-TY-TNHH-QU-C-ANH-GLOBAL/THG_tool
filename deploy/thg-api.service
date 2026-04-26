@@ -1,0 +1,48 @@
+# /etc/systemd/system/thg-api.service
+# Install: sudo systemctl daemon-reload && sudo systemctl enable thg-api
+
+[Unit]
+Description=THG Lead Intelligence — API Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=thg-scraper
+Group=thg-scraper
+
+WorkingDirectory=/opt/thg-scraper
+ExecStart=/opt/thg-scraper/thg-api
+
+# Secrets shared with worker
+EnvironmentFile=/etc/thg-scraper/env
+
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=5
+
+MemoryMax=512M
+TasksMax=256
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/thg-scraper/data
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=thg-api
+
+[Install]
+WantedBy=multi-user.target

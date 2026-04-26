@@ -1,0 +1,43 @@
+# /etc/systemd/system/thg-frontend.service
+# Install: sudo systemctl daemon-reload && sudo systemctl enable thg-frontend
+# Requires Node.js on server: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+
+[Unit]
+Description=THG Lead Intelligence — Next.js Frontend
+After=network.target thg-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=thg-scraper
+Group=thg-scraper
+
+WorkingDirectory=/opt/thg-scraper/frontend
+ExecStart=/usr/bin/node node_modules/.bin/next start --port 3000
+
+# API backend URL for server-side proxy rewrites
+Environment=API_URL=http://127.0.0.1:8080
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=5
+
+MemoryMax=512M
+TasksMax=256
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/thg-scraper/frontend/.next/cache
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=thg-frontend
+
+[Install]
+WantedBy=multi-user.target
