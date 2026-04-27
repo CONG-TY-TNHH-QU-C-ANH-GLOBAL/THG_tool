@@ -15,8 +15,10 @@ Group=thg-scraper
 WorkingDirectory=/opt/thg-scraper
 ExecStart=/opt/thg-scraper/thg-api
 
-# Secrets shared with worker
+# Shared secrets (DB_PATH, OPENAI_API_KEY, etc.)
 EnvironmentFile=/etc/thg-scraper/env
+# API server runs on 8081 so it doesn't conflict with cmd/scraper on 8080
+Environment=API_PORT=8081
 
 Restart=on-failure
 RestartSec=10

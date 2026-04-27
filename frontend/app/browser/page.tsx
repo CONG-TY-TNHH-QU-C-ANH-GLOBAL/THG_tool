@@ -3,8 +3,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api-client'
 import type { Workspace } from '@/lib/types'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'
-
 function statusBadge(ws: Workspace) {
   if (ws.running) return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-300">Running</span>
   if (ws.status === 'suspended') return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-900 text-red-300">Suspended</span>
@@ -174,7 +172,7 @@ export default function BrowserPage() {
         {selectedWs?.running ? (
           <iframe
             key={`${selectedWs.id}-${frameKey}`}
-            src={`${API_URL}/vnc-viewer/${selectedWs.id}`}
+            src={`/vnc-viewer/${selectedWs.id}`}
             className="flex-1 w-full border-0"
             title={`Browser — ${selectedWs.name}`}
             allow="clipboard-read; clipboard-write"
