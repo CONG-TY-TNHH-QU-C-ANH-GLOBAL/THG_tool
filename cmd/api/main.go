@@ -16,6 +16,7 @@ import (
 	"github.com/thg/scraper/internal/learning"
 	"github.com/thg/scraper/internal/parser"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/workspace"
 )
 
 func main() {
@@ -41,6 +42,13 @@ func main() {
 	p := parser.NewRuleBasedParser()
 	learner := learning.New(nil) // no DB persister — weights live in-memory; swap in a store.Persister to persist
 	srv := api.New(jobStore, appStore, p, bus, learner)
+
+	chromePath := env("CHROME_PATH", "/usr/bin/google-chrome")
+	profileDir := env("PROFILE_DIR", "data/profiles")
+	wm := workspace.NewManager(chromePath, profileDir)
+	wm.ReconcileRunning()
+	srv.SetWorkspaceManager(wm)
+	defer wm.StopAll()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

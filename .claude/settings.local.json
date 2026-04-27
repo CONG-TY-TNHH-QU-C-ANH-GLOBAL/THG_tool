@@ -30,7 +30,8 @@
       "Bash(xargs -I {} grep -l \"^package server\" {})",
       "Bash(cat)",
       "Bash(bash /tmp/audit.sh)",
-      "Bash(go run *)"
+      "Bash(go run *)",
+      "Bash(xargs ls *)"
     ]
   }
 }

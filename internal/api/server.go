@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,11 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/thg/scraper/internal/events"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/learning"
 	"github.com/thg/scraper/internal/parser"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/workspace"
 )
 
 // Server exposes the full SaaS API: task submission, job monitoring,
@@ -27,6 +30,7 @@ type Server struct {
 	parser   parser.Parser
 	bus      *events.Bus
 	learner  *learning.Engine
+	wm       *workspace.Manager
 	mux      *http.ServeMux
 
 	// SSE poller state
@@ -35,6 +39,12 @@ type Server struct {
 
 	// Lead SSE poller — tracks last seen task_lead ID
 	lastLeadID atomic.Int64
+}
+
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  65536,
+	WriteBufferSize: 65536,
+	CheckOrigin:     func(*http.Request) bool { return true },
 }
 
 type jobSnapshot struct {
@@ -68,6 +78,11 @@ func New(jobStore *jobs.Store, appStore *store.AppStore, p parser.Parser, bus *e
 	}
 	s.routes()
 	return s
+}
+
+// SetWorkspaceManager wires in the Docker workspace manager for browser routes.
+func (s *Server) SetWorkspaceManager(wm *workspace.Manager) {
+	s.wm = wm
 }
 
 // ServeHTTP wraps the mux with CORS middleware.
@@ -117,6 +132,14 @@ func (s *Server) routes() {
 
 	// Real-time SSE stream
 	s.mux.HandleFunc("GET /api/v1/events/stream", s.handleSSE)
+
+	// Browser workspace routes
+	s.mux.HandleFunc("GET /api/v1/browser/workspaces", s.handleListWorkspaces)
+	s.mux.HandleFunc("POST /api/v1/browser/workspaces/{id}/start", s.handleStartWorkspace)
+	s.mux.HandleFunc("POST /api/v1/browser/workspaces/{id}/stop", s.handleStopWorkspace)
+	s.mux.HandleFunc("POST /api/v1/browser/workspaces/{id}/mark-logged-in", s.handleMarkLoggedIn)
+	s.mux.HandleFunc("GET /ws/vnc/{id}", s.handleVNCProxy)
+	s.mux.HandleFunc("GET /vnc-viewer/{id}", s.handleVNCViewer)
 }
 
 // ── handlers ──────────────────────────────────────────────────────────────────
@@ -581,4 +604,223 @@ func parseFloat(s string, def float64) float64 {
 		return f
 	}
 	return def
+}
+
+// ── Browser workspace handlers ────────────────────────────────────────────────
+
+type workspaceItem struct {
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	Running         bool   `json:"running"`
+	CDPPort         int    `json:"cdp_port,omitempty"`
+	VNCPort         int    `json:"vnc_port,omitempty"`
+	ContainerID     string `json:"container_id,omitempty"`
+	BrowserLoggedIn bool   `json:"browser_logged_in"`
+}
+
+func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("app store not configured"))
+		return
+	}
+	accounts, err := s.appStore.GetFacebookAccounts(r.Context(), 0)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+	items := make([]workspaceItem, 0, len(accounts))
+	for _, acc := range accounts {
+		item := workspaceItem{
+			ID:              acc.ID,
+			Name:            acc.Name,
+			Status:          acc.Status,
+			BrowserLoggedIn: acc.BrowserLoggedIn,
+		}
+		if s.wm != nil {
+			if inst := s.wm.Get(acc.ID); inst != nil {
+				item.Running = true
+				item.CDPPort = inst.CDPPort
+				item.VNCPort = inst.VNCPort
+				item.ContainerID = inst.ContainerID
+			}
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspaces": items, "count": len(items)})
+}
+
+func (s *Server) handleStartWorkspace(w http.ResponseWriter, r *http.Request) {
+	if s.wm == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("workspace manager not configured"))
+		return
+	}
+	accountID := parseInt64(r.PathValue("id"), 0)
+	if accountID == 0 {
+		writeJSON(w, http.StatusBadRequest, errResp("invalid account id"))
+		return
+	}
+	name := fmt.Sprintf("account_%d", accountID)
+	if s.appStore != nil {
+		if accounts, err := s.appStore.GetFacebookAccounts(r.Context(), 0); err == nil {
+			for _, acc := range accounts {
+				if acc.ID == accountID {
+					name = acc.Name
+					break
+				}
+			}
+		}
+	}
+	inst, err := s.wm.Start(accountID, name)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":       "started",
+		"account_id":   accountID,
+		"vnc_port":     inst.VNCPort,
+		"cdp_port":     inst.CDPPort,
+		"container_id": inst.ContainerID,
+	})
+}
+
+func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
+	if s.wm == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("workspace manager not configured"))
+		return
+	}
+	accountID := parseInt64(r.PathValue("id"), 0)
+	if accountID == 0 {
+		writeJSON(w, http.StatusBadRequest, errResp("invalid account id"))
+		return
+	}
+	s.wm.Stop(accountID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+func (s *Server) handleMarkLoggedIn(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errResp("app store not configured"))
+		return
+	}
+	accountID := parseInt64(r.PathValue("id"), 0)
+	if accountID == 0 {
+		writeJSON(w, http.StatusBadRequest, errResp("invalid account id"))
+		return
+	}
+	if err := s.appStore.SetFacebookAccountLoggedIn(r.Context(), accountID, true); err != nil {
+		writeJSON(w, http.StatusInternalServerError, errResp(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleVNCProxy bridges WebSocket (browser) ↔ TCP (x11vnc inside Docker container).
+func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
+	if s.wm == nil {
+		http.Error(w, "workspace manager not configured", http.StatusServiceUnavailable)
+		return
+	}
+	accountID := parseInt64(r.PathValue("id"), 0)
+	if accountID == 0 {
+		http.Error(w, "invalid account id", http.StatusBadRequest)
+		return
+	}
+	inst := s.wm.Get(accountID)
+	if inst == nil || inst.VNCPort == 0 {
+		http.Error(w, "browser not running — start it first", http.StatusNotFound)
+		return
+	}
+
+	vncAddr := fmt.Sprintf("127.0.0.1:%d", inst.VNCPort)
+	tcp, err := net.DialTimeout("tcp", vncAddr, 8*time.Second)
+	if err != nil {
+		http.Error(w, "VNC not reachable: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer tcp.Close()
+
+	ws, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[VNCProxy] upgrade failed: %v", err)
+		return
+	}
+	defer ws.Close()
+
+	errc := make(chan error, 2)
+
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := tcp.Read(buf)
+			if n > 0 {
+				if werr := ws.WriteMessage(websocket.BinaryMessage, buf[:n]); werr != nil {
+					errc <- werr
+					return
+				}
+			}
+			if err != nil {
+				errc <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			_, data, err := ws.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if _, werr := tcp.Write(data); werr != nil {
+				errc <- werr
+				return
+			}
+		}
+	}()
+
+	<-errc
+	log.Printf("[VNCProxy] Tunnel closed for account %d", accountID)
+}
+
+// handleVNCViewer serves a self-contained noVNC HTML page for iframe embedding.
+// The page connects directly to /ws/vnc/{id} on the same host (port 8080).
+func (s *Server) handleVNCViewer(w http.ResponseWriter, r *http.Request) {
+	accountID := r.PathValue("id")
+	html := `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Browser</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0f172a; overflow:hidden; }
+#screen { width:100vw; height:100vh; }
+#status { position:fixed; bottom:6px; left:8px; color:#475569; font:11px monospace; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<div id="status">Đang kết nối...</div>
+<script type="module">
+import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.5.0/core/rfb.js';
+const id = '` + accountID + `';
+const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = proto + '//' + location.host + '/ws/vnc/' + id;
+const st = document.getElementById('status');
+try {
+  const rfb = new RFB(document.getElementById('screen'), wsUrl, { wsProtocols: ['binary'] });
+  rfb.scaleViewport = true;
+  rfb.resizeSession = false;
+  rfb.addEventListener('connect', () => { st.textContent = 'Đã kết nối · account ' + id; });
+  rfb.addEventListener('disconnect', e => { st.textContent = 'Mất kết nối: ' + (e.detail?.reason ?? ''); });
+  rfb.addEventListener('securityfailure', e => { st.textContent = 'Lỗi bảo mật: ' + e.detail?.reason; });
+} catch(e) { st.textContent = 'Lỗi: ' + e.message; }
+</script>
+</body>
+</html>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, html)
 }

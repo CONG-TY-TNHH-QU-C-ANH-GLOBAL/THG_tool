@@ -7,6 +7,7 @@ import type {
   ListJobsResponse,
   ListLeadsResponse,
   ListSessionsResponse,
+  ListWorkspacesResponse,
   OutcomeType,
   SubmitTaskResponse,
 } from './types'
@@ -94,5 +95,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ org_id: orgId, outcome, score }),
     })
+  },
+
+  /** GET /api/v1/browser/workspaces — list Facebook accounts + container status */
+  listWorkspaces(): Promise<ListWorkspacesResponse> {
+    return req('/api/v1/browser/workspaces')
+  },
+
+  /** POST /api/v1/browser/workspaces/:id/start — launch Docker container */
+  startWorkspace(id: number): Promise<void> {
+    return req(`/api/v1/browser/workspaces/${id}/start`, { method: 'POST' })
+  },
+
+  /** POST /api/v1/browser/workspaces/:id/stop — kill Docker container */
+  stopWorkspace(id: number): Promise<void> {
+    return req(`/api/v1/browser/workspaces/${id}/stop`, { method: 'POST' })
+  },
+
+  /** POST /api/v1/browser/workspaces/:id/mark-logged-in — record Facebook login */
+  markLoggedIn(id: number): Promise<void> {
+    return req(`/api/v1/browser/workspaces/${id}/mark-logged-in`, { method: 'POST' })
   },
 } as const

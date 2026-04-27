@@ -205,6 +205,56 @@ func (a *AppStore) migrate() error {
 	return nil
 }
 
+// ── Facebook account helpers (for browser workspace page) ─────────────────────
+
+// FacebookAccount is a minimal account view for the browser workspace page.
+type FacebookAccount struct {
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	BrowserLoggedIn bool   `json:"browser_logged_in"`
+}
+
+// GetFacebookAccounts returns all facebook accounts (orgID=0 → all orgs).
+func (a *AppStore) GetFacebookAccounts(ctx context.Context, orgID int64) ([]FacebookAccount, error) {
+	q := `SELECT id, name, status, COALESCE(browser_logged_in, 0)
+	      FROM accounts WHERE platform = 'facebook'`
+	args := []any{}
+	if orgID > 0 {
+		q += " AND org_id = ?"
+		args = append(args, orgID)
+	}
+	q += " ORDER BY name ASC"
+
+	rows, err := a.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []FacebookAccount
+	for rows.Next() {
+		var acc FacebookAccount
+		var loggedIn int
+		if err := rows.Scan(&acc.ID, &acc.Name, &acc.Status, &loggedIn); err != nil {
+			return nil, err
+		}
+		acc.BrowserLoggedIn = loggedIn != 0
+		out = append(out, acc)
+	}
+	return out, rows.Err()
+}
+
+// SetFacebookAccountLoggedIn updates the browser_logged_in flag for an account.
+func (a *AppStore) SetFacebookAccountLoggedIn(ctx context.Context, accountID int64, loggedIn bool) error {
+	v := 0
+	if loggedIn {
+		v = 1
+	}
+	_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
+	return err
+}
+
 // ── AppTask CRUD ───────────────────────────────────────────────────────────────
 
 func (a *AppStore) CreateTask(ctx context.Context, taskID string, orgID int64, intent string) error {

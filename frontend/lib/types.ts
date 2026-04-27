@@ -144,6 +144,25 @@ export interface LearningResponse {
 
 export type OutcomeType = 'converted' | 'rejected' | 'ignored'
 
+// ── Browser workspace types ───────────────────────────────────────────────────
+
+/** Mirrors api.workspaceItem — one Facebook account + its container state */
+export interface Workspace {
+  id: number
+  name: string
+  status: string
+  running: boolean
+  cdp_port?: number
+  vnc_port?: number
+  container_id?: string
+  browser_logged_in: boolean
+}
+
+export interface ListWorkspacesResponse {
+  workspaces: Workspace[]
+  count: number
+}
+
 // ── API response envelopes ────────────────────────────────────────────────────
 
 export interface ListJobsResponse {
