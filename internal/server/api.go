@@ -325,6 +325,27 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Analytics
 	r.Get("/analytics/sentiment", s.getSentimentStats)
 
+	// AutoFlow: Staff KPI
+	r.Get("/staff", s.autoflowGetStaff)
+	r.Put("/staff/:id/kpi", adminOnly, s.autoflowUpdateKPI)
+
+	// AutoFlow: KPI Config (admin sets weights)
+	r.Get("/kpi/config", s.autoflowGetKPIConfig)
+	r.Put("/kpi/config", adminOnly, s.autoflowUpdateKPIConfig)
+
+	// AutoFlow: Private Files
+	r.Get("/files", s.autoflowListFiles)
+	r.Post("/files", s.autoflowUploadFile)
+	r.Delete("/files/:id", s.autoflowDeleteFile)
+
+	// AutoFlow: Conversation Threads
+	r.Get("/threads", s.autoflowListThreads)
+	r.Get("/threads/:id/messages", s.autoflowGetMessages)
+	r.Post("/threads/:id/messages", s.autoflowSendMessage)
+
+	// AutoFlow: Facebook Session summary
+	r.Get("/facebook/status", s.autoflowFacebookStatus)
+
 	// Logs SSE — uses ?token= query param (EventSource cannot set Authorization header)
 	app.Get("/api/logs/stream", func(c *fiber.Ctx) error {
 		token := c.Query("token")

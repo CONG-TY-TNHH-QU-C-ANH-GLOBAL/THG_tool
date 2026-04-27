@@ -31,7 +31,11 @@
       "Bash(cat)",
       "Bash(bash /tmp/audit.sh)",
       "Bash(go run *)",
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(sed 's/func \\(s \\\\*Store\\) //')",
+      "Bash(sed 's/\\(.*$//')",
+      "Bash(grep -E \"^--|\\\\^//\")",
+      "Bash(sed 's/^--$/---/')"
     ]
   }
 }

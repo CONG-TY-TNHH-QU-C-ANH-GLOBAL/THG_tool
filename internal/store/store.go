@@ -447,6 +447,51 @@ func (s *Store) migrate() error {
 	// Self-healing selector cache (LLM Vision updates this when FB changes UI)
 	s.initSelectorCache()
 
+	// AutoFlow: per-user KPI metrics
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS staff_kpi (
+		user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		org_id     INTEGER NOT NULL DEFAULT 1,
+		convs      INTEGER NOT NULL DEFAULT 0,
+		converted  INTEGER NOT NULL DEFAULT 0,
+		cmts       INTEGER NOT NULL DEFAULT 0,
+		pts        INTEGER NOT NULL DEFAULT 0,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_staff_kpi_org ON staff_kpi(org_id)`)
+
+	// AutoFlow: per-org KPI point weights
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS kpi_config (
+		org_id     INTEGER PRIMARY KEY,
+		conv_pts   INTEGER NOT NULL DEFAULT 10,
+		conv2_pts  INTEGER NOT NULL DEFAULT 50,
+		cmt_pts    INTEGER NOT NULL DEFAULT 2,
+		bonus_pts  INTEGER NOT NULL DEFAULT 1000,
+		bonus_amt  INTEGER NOT NULL DEFAULT 500000,
+		pen_pts    INTEGER NOT NULL DEFAULT 300,
+		pen_amt    INTEGER NOT NULL DEFAULT 100000,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+
+	// AutoFlow: org-uploaded private files for AI context
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS private_files (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id     INTEGER NOT NULL,
+		name       TEXT NOT NULL,
+		path       TEXT NOT NULL,
+		size_bytes INTEGER NOT NULL DEFAULT 0,
+		mime_type  TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_private_files_org ON private_files(org_id)`)
+
+	// AutoFlow: extend conversation_threads with org scoping and unread tracking
+	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+
+	// AutoFlow: extend organizations with branding fields
+	s.db.Exec(`ALTER TABLE organizations ADD COLUMN abbr TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE organizations ADD COLUMN color TEXT NOT NULL DEFAULT '#4f46e5'`)
+
 	return nil
 }
 
@@ -1945,4 +1990,212 @@ func (s *Store) GetPriceListText() string {
 		sb.WriteString(line + "\n")
 	}
 	return sb.String()
+}
+
+// ── AutoFlow: Staff KPI ────────────────────────────────────────────────────
+
+type StaffKPI struct {
+	UserID    int64
+	OrgID     int64
+	Name      string
+	Email     string
+	Role      string
+	Active    bool
+	Joined    string
+	Convs     int
+	Converted int
+	Cmts      int
+	Pts       int
+}
+
+type KPIDelta struct {
+	Convs     *int
+	Converted *int
+	Cmts      *int
+}
+
+func (s *Store) GetStaffWithKPI(orgID int64) ([]StaffKPI, error) {
+	rows, err := s.db.Query(`
+		SELECT u.id, u.org_id, u.name, u.email, u.role, u.active, u.created_at,
+		       COALESCE(k.convs,0), COALESCE(k.converted,0), COALESCE(k.cmts,0), COALESCE(k.pts,0)
+		FROM users u
+		LEFT JOIN staff_kpi k ON k.user_id = u.id
+		WHERE u.org_id = ? AND u.active = 1
+		ORDER BY COALESCE(k.pts,0) DESC`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StaffKPI
+	for rows.Next() {
+		var r StaffKPI
+		var createdAt time.Time
+		if err := rows.Scan(&r.UserID, &r.OrgID, &r.Name, &r.Email, &r.Role, &r.Active, &createdAt, &r.Convs, &r.Converted, &r.Cmts, &r.Pts); err != nil {
+			return nil, err
+		}
+		r.Joined = createdAt.Format("02/01/2006")
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (s *Store) UpsertStaffKPI(userID, orgID int64, delta KPIDelta) error {
+	s.db.Exec(`INSERT OR IGNORE INTO staff_kpi(user_id, org_id) VALUES (?,?)`, userID, orgID)
+	if delta.Convs != nil {
+		s.db.Exec(`UPDATE staff_kpi SET convs = convs + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, *delta.Convs, userID)
+	}
+	if delta.Converted != nil {
+		s.db.Exec(`UPDATE staff_kpi SET converted = converted + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, *delta.Converted, userID)
+	}
+	if delta.Cmts != nil {
+		s.db.Exec(`UPDATE staff_kpi SET cmts = cmts + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, *delta.Cmts, userID)
+	}
+	return nil
+}
+
+// ── AutoFlow: KPI Config ───────────────────────────────────────────────────
+
+type KPIConfig struct {
+	OrgID    int64
+	ConvPts  int
+	Conv2Pts int
+	CmtPts   int
+	BonusPts int
+	BonusAmt int
+	PenPts   int
+	PenAmt   int
+}
+
+func (s *Store) GetKPIConfig(orgID int64) (*KPIConfig, error) {
+	var c KPIConfig
+	err := s.db.QueryRow(`SELECT org_id, conv_pts, conv2_pts, cmt_pts, bonus_pts, bonus_amt, pen_pts, pen_amt FROM kpi_config WHERE org_id = ?`, orgID).
+		Scan(&c.OrgID, &c.ConvPts, &c.Conv2Pts, &c.CmtPts, &c.BonusPts, &c.BonusAmt, &c.PenPts, &c.PenAmt)
+	if err == sql.ErrNoRows {
+		return &KPIConfig{OrgID: orgID, ConvPts: 10, Conv2Pts: 50, CmtPts: 2, BonusPts: 1000, BonusAmt: 500000, PenPts: 300, PenAmt: 100000}, nil
+	}
+	return &c, err
+}
+
+func (s *Store) UpsertKPIConfig(orgID int64, c KPIConfig) error {
+	_, err := s.db.Exec(`
+		INSERT INTO kpi_config(org_id, conv_pts, conv2_pts, cmt_pts, bonus_pts, bonus_amt, pen_pts, pen_amt, updated_at)
+		VALUES (?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)
+		ON CONFLICT(org_id) DO UPDATE SET
+		  conv_pts=excluded.conv_pts, conv2_pts=excluded.conv2_pts, cmt_pts=excluded.cmt_pts,
+		  bonus_pts=excluded.bonus_pts, bonus_amt=excluded.bonus_amt, pen_pts=excluded.pen_pts,
+		  pen_amt=excluded.pen_amt, updated_at=excluded.updated_at`,
+		orgID, c.ConvPts, c.Conv2Pts, c.CmtPts, c.BonusPts, c.BonusAmt, c.PenPts, c.PenAmt)
+	return err
+}
+
+// ── AutoFlow: Private Files ────────────────────────────────────────────────
+
+type PrivateFile struct {
+	ID        int64
+	OrgID     int64
+	Name      string
+	Path      string
+	SizeBytes int64
+	MimeType  string
+	CreatedAt time.Time
+}
+
+func (s *Store) InsertPrivateFile(f *PrivateFile) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO private_files(org_id, name, path, size_bytes, mime_type) VALUES (?,?,?,?,?)`,
+		f.OrgID, f.Name, f.Path, f.SizeBytes, f.MimeType)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) GetPrivateFiles(orgID int64) ([]PrivateFile, error) {
+	rows, err := s.db.Query(`SELECT id, org_id, name, path, size_bytes, mime_type, created_at FROM private_files WHERE org_id = ? ORDER BY created_at DESC`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PrivateFile
+	for rows.Next() {
+		var f PrivateFile
+		if err := rows.Scan(&f.ID, &f.OrgID, &f.Name, &f.Path, &f.SizeBytes, &f.MimeType, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+func (s *Store) DeletePrivateFile(id, orgID int64) error {
+	_, err := s.db.Exec(`DELETE FROM private_files WHERE id = ? AND org_id = ?`, id, orgID)
+	return err
+}
+
+// ── AutoFlow: Conversation Threads (org-scoped) ────────────────────────────
+
+type ThreadSummary struct {
+	ID          int64
+	ProfileName string
+	ProfileURL  string
+	Status      string
+	UnreadCount int
+	LastMessage string
+	LastAt      time.Time
+}
+
+func (s *Store) GetThreadsByOrg(orgID int64, limit int) ([]ThreadSummary, error) {
+	rows, err := s.db.Query(`
+		SELECT t.id, t.profile_name, t.profile_url, t.status, t.unread_count,
+		       COALESCE((SELECT content FROM conversation_messages WHERE thread_id=t.id ORDER BY created_at DESC LIMIT 1),''),
+		       COALESCE(t.last_outbound_at, t.created_at)
+		FROM conversation_threads t
+		WHERE t.org_id = ?
+		ORDER BY COALESCE(t.last_outbound_at, t.created_at) DESC
+		LIMIT ?`, orgID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ThreadSummary
+	for rows.Next() {
+		var r ThreadSummary
+		if err := rows.Scan(&r.ID, &r.ProfileName, &r.ProfileURL, &r.Status, &r.UnreadCount, &r.LastMessage, &r.LastAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (s *Store) ClearThreadUnread(threadID int64) error {
+	_, err := s.db.Exec(`UPDATE conversation_threads SET unread_count = 0 WHERE id = ?`, threadID)
+	return err
+}
+
+func (s *Store) IncrementThreadUnread(threadID int64) error {
+	_, err := s.db.Exec(`UPDATE conversation_threads SET unread_count = unread_count + 1 WHERE id = ?`, threadID)
+	return err
+}
+
+// ── AutoFlow: Facebook Status (workspace summary) ─────────────────────────
+
+type FacebookStatusSummary struct {
+	Connected   bool
+	Account     string
+	Groups      int
+	LeadsToday  int
+}
+
+func (s *Store) GetFacebookStatusForOrg(orgID int64) FacebookStatusSummary {
+	var result FacebookStatusSummary
+	// Count active accounts with browser_logged_in=1
+	var account string
+	_ = s.db.QueryRow(`SELECT name FROM accounts WHERE org_id = ? AND browser_logged_in = 1 AND status = 'active' LIMIT 1`, orgID).Scan(&account)
+	result.Connected = account != ""
+	result.Account = account
+	// Count active groups for org
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM groups WHERE org_id = ? AND active = 1`, orgID).Scan(&result.Groups)
+	// Count leads created today
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM leads WHERE DATE(created_at) = DATE('now')`, orgID).Scan(&result.LeadsToday)
+	return result
 }
