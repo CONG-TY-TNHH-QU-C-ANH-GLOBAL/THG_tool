@@ -200,6 +200,8 @@ jobs:
           sudo systemctl daemon-reload
 
           # ── Deploy nginx config ───────────────────────────────────────
+          # Deploy http-block config first (defines rate limit zones used by sites-available)
+          sudo cp /tmp/thg-deploy/deploy/nginx-http-block.conf /etc/nginx/conf.d/cloudflare.conf
           sudo cp /tmp/thg-deploy/deploy/nginx.conf /etc/nginx/sites-available/thg-scraper
           sudo ln -sf /etc/nginx/sites-available/thg-scraper /etc/nginx/sites-enabled/thg-scraper
           if sudo nginx -t 2>&1; then
