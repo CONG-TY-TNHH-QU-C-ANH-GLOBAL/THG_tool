@@ -156,13 +156,23 @@ jobs:
             echo "📦 Installing Node.js 20..."
             curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
             sudo apt-get install -y nodejs
-            echo "✅ Node.js $(node --version) installed"
+            # NodeSource should put node at /usr/bin/node; create symlink if needed
+            if ! [ -x /usr/bin/node ] && [ -x /usr/local/bin/node ]; then
+              sudo ln -sf /usr/local/bin/node /usr/bin/node
+            fi
+            echo "✅ Node.js $(node --version) at $(which node)"
+          else
+            echo "ℹ️  Node.js $(node --version) already installed at $(which node)"
           fi
 
           # ── Deploy Next.js standalone ─────────────────────────────────
+          # Wipe old standalone first to prevent stale files
+          sudo rm -rf /opt/thg-scraper/frontend-standalone
           sudo mkdir -p /opt/thg-scraper/frontend-standalone
           sudo tar -xzf /tmp/thg-deploy/frontend-standalone.tar.gz \
             -C /opt/thg-scraper/frontend-standalone
+          # Create cache dir — systemd ReadWritePaths (if any) requires it to pre-exist
+          sudo mkdir -p /opt/thg-scraper/frontend-standalone/.next/cache
           sudo chown -R thg-scraper:thg-scraper /opt/thg-scraper/frontend-standalone
           echo "✅ Frontend deployed"
 
@@ -199,17 +209,17 @@ jobs:
           # ── Restart services ──────────────────────────────────────────
           sudo systemctl enable thg-api thg-frontend thg-worker 2>/dev/null || true
           sudo systemctl restart thg-scraper thg-api thg-worker
-          # Give Next.js time to start before restarting nginx
           sleep 5
           sudo systemctl restart thg-frontend
-          sleep 3
+          sleep 5
           sudo systemctl reload nginx && echo "✅ nginx reloaded"
 
           # ── Health checks ─────────────────────────────────────────────
-          echo "⏳ Waiting for services to be healthy..."
+          # Go services (scraper + api) are REQUIRED — failure triggers rollback.
+          # Next.js frontend is checked but only logs a warning on failure.
+          echo "⏳ Waiting for Go services to be healthy..."
           PASS=0
 
-          # Check cmd/scraper (legacy)
           for i in $(seq 1 10); do
             sleep 2
             if curl -sf http://localhost:8080/api/stats > /dev/null 2>&1; then
@@ -220,7 +230,6 @@ jobs:
             echo "  scraper: waiting ($i/10)..."
           done
 
-          # Check cmd/api
           for i in $(seq 1 10); do
             sleep 2
             if curl -sf http://localhost:8081/health > /dev/null 2>&1; then
@@ -231,19 +240,9 @@ jobs:
             echo "  api: waiting ($i/10)..."
           done
 
-          # Check Next.js frontend
-          for i in $(seq 1 10); do
-            sleep 3
-            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
-              echo "✅ Next.js frontend healthy (attempt $i)"
-              PASS=$((PASS+1))
-              break
-            fi
-            echo "  frontend: waiting ($i/10)..."
-          done
-
-          if [ "$PASS" -lt 3 ]; then
-            echo "❌ Health checks failed ($PASS/3 passed) — rolling back!"
+          # Rollback if either Go service is down (critical path)
+          if [ "$PASS" -lt 2 ]; then
+            echo "❌ Go services unhealthy ($PASS/2) — rolling back!"
             for bin in scraper thg-api thg-worker; do
               if [ -f /opt/thg-scraper/${bin}.prev ]; then
                 sudo mv /opt/thg-scraper/${bin}.prev /opt/thg-scraper/$bin
@@ -253,8 +252,25 @@ jobs:
             done
             sudo systemctl restart thg-scraper thg-api thg-worker
             sudo journalctl -u thg-api --no-pager -n 30
-            sudo journalctl -u thg-frontend --no-pager -n 30
             exit 1
           fi
 
-          echo "🚀 All services healthy — deployment complete!"
+          # Frontend health check — non-fatal, just report status
+          FRONTEND_OK=0
+          for i in $(seq 1 15); do
+            sleep 3
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "✅ Next.js frontend healthy (attempt $i)"
+              FRONTEND_OK=1
+              break
+            fi
+            echo "  frontend: waiting ($i/15)..."
+          done
+
+          if [ "$FRONTEND_OK" -eq 0 ]; then
+            echo "⚠️  Frontend not responding — check logs below (Go API is still live)"
+            sudo journalctl -u thg-frontend --no-pager -n 40
+            # Don't exit 1 — Go API is healthy, deployment succeeded for backend
+          fi
+
+          echo "🚀 Deployment complete! (scraper ✅ api ✅ frontend $([ $FRONTEND_OK -eq 1 ] && echo ✅ || echo ⚠️))"

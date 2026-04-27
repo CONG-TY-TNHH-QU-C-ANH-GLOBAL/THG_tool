@@ -15,9 +15,9 @@ Group=thg-scraper
 
 # Standalone server — built by CI with `output: 'standalone'`
 WorkingDirectory=/opt/thg-scraper/frontend-standalone
-ExecStart=/usr/bin/node server.js
+# /usr/bin/env resolves 'node' from PATH — works regardless of NodeSource install path
+ExecStart=/usr/bin/env node server.js
 
-# API backend URL for dev rewrites (nginx handles this in production)
 Environment=API_URL=http://127.0.0.1:8081
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
@@ -32,10 +32,6 @@ MemoryMax=512M
 TasksMax=256
 
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/thg-scraper/frontend-standalone/.next/cache
 
 StandardOutput=journal
 StandardError=journal
