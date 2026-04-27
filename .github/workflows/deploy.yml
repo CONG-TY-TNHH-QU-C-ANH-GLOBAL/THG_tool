@@ -202,7 +202,13 @@ jobs:
           # ── Deploy nginx config ───────────────────────────────────────
           sudo cp /tmp/thg-deploy/deploy/nginx.conf /etc/nginx/sites-available/thg-scraper
           sudo ln -sf /etc/nginx/sites-available/thg-scraper /etc/nginx/sites-enabled/thg-scraper
-          sudo nginx -t && echo "✅ nginx config valid"
+          if sudo nginx -t 2>&1; then
+            echo "✅ nginx config valid"
+          else
+            echo "❌ nginx config INVALID — aborting before reload"
+            sudo nginx -t 2>&1 || true
+            exit 1
+          fi
 
           rm -rf /tmp/thg-deploy /tmp/frontend-standalone.tar.gz
 
@@ -212,7 +218,25 @@ jobs:
           sleep 5
           sudo systemctl restart thg-frontend
           sleep 5
-          sudo systemctl reload nginx && echo "✅ nginx reloaded"
+          if sudo systemctl reload nginx; then
+            echo "✅ nginx reloaded"
+          else
+            echo "❌ nginx reload FAILED — check config"
+            sudo systemctl status nginx --no-pager -n 20 || true
+            exit 1
+          fi
+
+          # ── Verify site reachable from localhost (catch deny-all / upstream issues) ──
+          echo "⏳ Testing site reachability via localhost..."
+          for i in $(seq 1 5); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "000")
+            echo "  Next.js direct (port 3000): HTTP $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "308" ] || [ "$HTTP_CODE" = "307" ]; then
+              echo "✅ Next.js reachable on port 3000"
+              break
+            fi
+            sleep 3
+          done
 
           # ── Health checks ─────────────────────────────────────────────
           # Go services (scraper + api) are REQUIRED — failure triggers rollback.
@@ -270,6 +294,12 @@ jobs:
           if [ "$FRONTEND_OK" -eq 0 ]; then
             echo "⚠️  Frontend not responding — check logs below (Go API is still live)"
             sudo journalctl -u thg-frontend --no-pager -n 40
+            echo "--- nginx error log (last 20 lines) ---"
+            sudo tail -n 20 /var/log/nginx/thg-scraper.error.log 2>/dev/null || true
+            echo "--- nginx access log (last 5 lines) ---"
+            sudo tail -n 5 /var/log/nginx/thg-scraper.access.log 2>/dev/null || true
+            echo "--- upstream port status ---"
+            sudo ss -tlnp | grep -E ':3000|:8080|:8081' || true
             # Don't exit 1 — Go API is healthy, deployment succeeded for backend
           fi
 
