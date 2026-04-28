@@ -305,6 +305,10 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	superAdminGrp := r.Group("/superadmin", authpkg.RequireRole("superadmin"))
 	superAdminGrp.Get("/orgs", s.listOrgs)
 	superAdminGrp.Put("/orgs/:id", s.adminUpdateOrg)
+	superAdminGrp.Get("/accounts", s.superAdminAccounts)
+	superAdminGrp.Get("/users", s.superAdminUsers)
+	superAdminGrp.Get("/sessions", s.superAdminSessions)
+	superAdminGrp.Post("/query", s.superAdminQuery)
 
 	// Admin: manage agent tokens (JWT auth + admin role)
 	adminGrp := r.Group("/admin", adminOnly)
@@ -314,6 +318,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// Browser workspace — per-account Chrome management
 	r.Get("/browser/workspaces", s.workspaceList)
+	r.Post("/browser/workspaces/new", s.workspaceNew) // must be before /:id routes
 	r.Post("/browser/workspaces/:id/start", s.workspaceStart)
 	r.Post("/browser/workspaces/:id/stop", s.workspaceStop)
 	r.Post("/browser/workspaces/:id/navigate", s.workspaceNavigate)

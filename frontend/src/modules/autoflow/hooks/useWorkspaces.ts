@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getWorkspaces, startWorkspace, stopWorkspace, setWorkspaceLoggedIn } from '../services/workspacesService';
+import { getWorkspaces, startNewWorkspace, startWorkspace, stopWorkspace, setWorkspaceLoggedIn } from '../services/workspacesService';
 import { Workspace } from '../types';
 
 export function useWorkspaces() {
@@ -33,11 +33,17 @@ export function useWorkspaces() {
     refresh();
   };
 
+  const startNew = async (): Promise<number> => {
+    const result = await startNewWorkspace();
+    refresh();
+    return result.accountId;
+  };
+
   const markLoggedIn = async (id: number) => {
     setActionLoading(prev => new Set(prev).add(id));
     await setWorkspaceLoggedIn(id);
     refresh();
   };
 
-  return { workspaces, loading, actionLoading, refresh, start, stop, markLoggedIn };
+  return { workspaces, loading, actionLoading, refresh, start, startNew, stop, markLoggedIn };
 }

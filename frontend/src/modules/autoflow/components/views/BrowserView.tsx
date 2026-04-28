@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useAuthStore } from '../../stores/authStore';
-import { Monitor, StopCircle, LogIn, RefreshCw, CheckCircle } from 'lucide-react';
+import { Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus } from 'lucide-react';
 import '../../autoflow.css';
 
 interface BrowserViewProps { orgId: string; }
@@ -11,10 +11,11 @@ type WsStatus = 'disconnected' | 'connecting' | 'connected';
 
 export default function BrowserView({ orgId }: BrowserViewProps) {
   void orgId;
-  const { workspaces, actionLoading, refresh, start, stop, markLoggedIn } = useWorkspaces();
+  const { workspaces, actionLoading, refresh, start, startNew, stop, markLoggedIn } = useWorkspaces();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>('disconnected');
   const [wsError, setWsError] = useState<string | null>(null);
+  const [newLoading, setNewLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -101,22 +102,46 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const running = workspaces.filter(w => w.running).length;
 
+  const handleNewSession = async () => {
+    setNewLoading(true);
+    try {
+      const id = await startNew();
+      setSelectedId(id);
+    } catch { /* error shown via canvas wsError */ } finally { setNewLoading(false); }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* Status bar */}
-      <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+      <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
         <button onClick={refresh} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
           <RefreshCw size={12} /> Làm mới
         </button>
+        <button
+          onClick={() => void handleNewSession()}
+          disabled={newLoading}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: newLoading ? 'wait' : 'pointer', opacity: newLoading ? 0.6 : 1 }}
+        >
+          {newLoading ? <RefreshCw size={12} className="spin" /> : <Plus size={12} />}
+          {newLoading ? 'Đang khởi động...' : 'Phiên mới'}
+        </button>
       </div>
 
       {/* Account list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {workspaces.length === 0 && (
-          <p style={{ color: theme.textMuted, fontSize: 13, textAlign: 'center', padding: 20 }}>Chưa có tài khoản Facebook nào</p>
+        {workspaces.length === 0 && !newLoading && (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <p style={{ color: theme.textMuted, fontSize: 13, marginBottom: 16 }}>Chưa có phiên Facebook nào</p>
+            <button
+              onClick={() => void handleNewSession()}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px', background: '#16a34a', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Plus size={16} /> Bắt đầu phiên Facebook mới
+            </button>
+          </div>
         )}
         {workspaces.map(w => (
           <div

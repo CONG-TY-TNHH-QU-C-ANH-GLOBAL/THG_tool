@@ -131,6 +131,64 @@ func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
+// workspaceNew creates a fresh Facebook account + starts its Chrome container in one shot.
+// No form required — the account name is auto-generated from the timestamp.
+// After the user logs in via the canvas they click "Đánh dấu đã đăng nhập" to save the session.
+// POST /api/browser/workspaces/new
+func (s *Server) workspaceNew(c *fiber.Ctx) error {
+	if s.workspace == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
+
+	name := fmt.Sprintf("Facebook %s", time.Now().Format("02/01 15:04"))
+	acc := &models.Account{
+		OrgID:          orgID,
+		Platform:       models.PlatformFacebook,
+		Name:           name,
+		Status:         models.AccountInactive,
+		AssignedUserID: userID,
+	}
+	id, err := s.db.AddAccount(acc)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "create account: " + err.Error()})
+	}
+
+	inst, err := s.workspace.Start(id, name)
+	if err != nil {
+		_ = s.db.DeleteAccount(id)
+		log.Printf("[Workspace] Failed to start new session for account %d: %v", id, err)
+		return c.Status(500).JSON(fiber.Map{"error": "container start failed: " + err.Error()})
+	}
+
+	if !workspace.WaitForVNC(inst.VNCPort, 45*time.Second) {
+		s.workspace.Stop(id)
+		_ = s.db.DeleteAccount(id)
+		return c.Status(500).JSON(fiber.Map{
+			"error": "VNC không sẵn sàng — kiểm tra Docker image: docker build -t thg-browser ./docker/",
+		})
+	}
+
+	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+
+	if appStore, err2 := store.NewAppStore(s.db); err2 == nil {
+		now := time.Now().UTC()
+		_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
+			AccountID:    id,
+			OrgID:        orgID,
+			Status:       "active",
+			CDPPort:      inst.CDPPort,
+			VNCPort:      inst.VNCPort,
+			StartedAt:    now,
+			LastActiveAt: now,
+		})
+	}
+
+	log.Printf("[Workspace] New session: account %d (%s) vnc=%d cdp=%d", id, name, inst.VNCPort, inst.CDPPort)
+	return c.JSON(fiber.Map{"account_id": id, "vnc_port": inst.VNCPort, "cdp_port": inst.CDPPort})
+}
+
 // workspaceNavigate is a no-op in Docker/VNC mode.
 // Navigation happens directly in the browser via mouse/keyboard through noVNC.
 // POST /api/browser/workspaces/:id/navigate
