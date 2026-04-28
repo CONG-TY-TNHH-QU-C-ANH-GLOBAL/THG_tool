@@ -131,10 +131,8 @@ func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 		}
 	}
 
-	// Fetch tab list once for Signals 3, 4, 5.
+	// Signal 3 (0.15): CDP has ≥1 page tab — quick HTTP check before WebSocket eval.
 	tabs := v.fetchCDPTabs(ctx)
-
-	// Signal 3 (0.15): at least one page tab open
 	hasPageTab := false
 	for _, t := range tabs {
 		if t.Type == "page" {
@@ -148,18 +146,40 @@ func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 		reasons = append(reasons, "CDP has no page tab open")
 	}
 
-	// Signals 4 + 5: Facebook session analysis
-	fbScore, fbReasons := v.checkFacebookSession(tabs)
-	signals.Stream += fbScore // reuse Stream for combined FB score (see types.go note)
-
-	// Split: 0.35 for session alive, 0.20 for correct page
-	// We get back a single score from checkFacebookSession (0 | 0.35 | 0.55).
-	// Map to individual signal fields for observability.
-	if fbScore >= 0.35 {
-		// Session alive — good baseline
+	// Signals 4 + 5: real Facebook session via CDP WebSocket JS evaluation.
+	// CDPSessionChecker connects to the live tab and evaluates JS to read DOM state —
+	// stronger than URL parsing because it catches expired cookies and overlays.
+	var fbScore float64
+	if v.cfg.CDPPort > 0 {
+		cdpChecker := NewCDPSessionChecker(v.cfg.CDPPort)
+		state, cdpErr := cdpChecker.Check(ctx)
+		if cdpErr != nil {
+			reasons = append(reasons, "CDP session eval failed: "+cdpErr.Error())
+		} else {
+			ok, reason := state.IsSessionHealthy()
+			if ok {
+				// Session alive + determine if on a target page (Signal 5 = +0.20)
+				if strings.Contains(state.URL, "/groups/") ||
+					strings.Contains(state.URL, "/marketplace/") ||
+					strings.Contains(state.URL, "/home.php") ||
+					strings.Contains(state.URL, "/feed/") ||
+					strings.Contains(state.URL, "/profile.php") ||
+					strings.Contains(state.URL, "/messages/") {
+					fbScore = 0.55 // Signal 4 (0.35) + Signal 5 (0.20)
+				} else {
+					fbScore = 0.35 // Signal 4 only — session alive but not on target page
+				}
+			} else {
+				reasons = append(reasons, reason)
+			}
+		}
 	} else {
+		// CDP port not configured — fall back to HTTP tab URL heuristic.
+		var fbReasons []string
+		fbScore, fbReasons = v.checkFacebookSession(tabs)
 		reasons = append(reasons, fbReasons...)
 	}
+	signals.Stream += fbScore
 
 	score := signals.Stream + signals.API + signals.DOM
 	return VerifyResult{

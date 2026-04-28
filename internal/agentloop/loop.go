@@ -52,7 +52,7 @@ func New(apiKey, plannerModel, architectModel, baseDir string, verifyCfg VerifyC
 		architect: NewArchitect(apiKey, architectModel),
 		executor:  NewExecutor(baseDir),
 		verifier:  NewVerifier(verifyCfg),
-		ledger:    newActionLedger(),
+		ledger:    newPersistentLedger(baseDir),
 		baseDir:   baseDir,
 	}
 }
@@ -171,42 +171,76 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 			return result
 		}
 
-		// Apply via sandbox (snapshot → apply → go build).
-		// On failure → auto-rollback happens inside ValidateAndApply.
-		sandbox := NewSandboxValidator(a.baseDir)
+		// Blast radius gate — hard stop before any file is touched.
+		if len(toApply) > 0 {
+			brc := NewBlastRadiusChecker(DefaultBlastRadius)
+			if brErr := brc.Check(toApply); brErr != nil {
+				trace.Record(iter, "executor", "blast radius exceeded", brErr.Error(), "failed", 0, 0)
+				result.Reason = brErr.Error()
+				state = StateFailed
+				return result
+			}
+		}
+
+		// Apply via isolated sandbox:
+		//   1. Copy Go source to /tmp/agentloop-{traceID}/
+		//   2. Apply patches there
+		//   3. go build ./... in sandbox
+		//   4. Promote (snapshot + apply) to production
+		//   5. Verifier decides commit or rollback
+		sandbox, sandboxErr := NewIsolatedSandbox(traceID, a.baseDir)
+		if sandboxErr != nil {
+			trace.Record(iter, "executor", "sandbox init failed", sandboxErr.Error(), "failed", 0, 0)
+			prevFailure = "sandbox init: " + sandboxErr.Error()
+			continue
+		}
+		defer sandbox.Discard()
+
 		t2 := time.Now()
 
 		if len(toApply) > 0 {
-			applyErr := sandbox.ValidateAndApply(ctx, toApply, a.executor)
-			execMs := time.Since(t2).Milliseconds()
-			metricStep("executor", time.Since(t2).Seconds())
-
-			if applyErr != nil {
-				// Distinguish build failures from apply failures for metrics.
-				isBuildFail := contains(applyErr.Error(), "build failed")
-				if isBuildFail {
-					metricBuildFailure()
+			// Step 1: apply patches in sandbox (production untouched).
+			if applyErr := sandbox.Apply(toApply); applyErr != nil {
+				execMs := time.Since(t2).Milliseconds()
+				trace.Record(iter, "executor", "sandbox apply failed", applyErr.Error(), "failed", 0, execMs)
+				for _, patch := range toApply {
+					a.ledger.RecordFailed(PatchHash(patch), patch.File)
+					metricPatch("failed")
 				}
+				prevFailure = applyErr.Error()
+				continue
+			}
 
-				// Record each patch as failed in ledger (may trigger poison).
+			// Step 2: build in sandbox — must pass before production is touched.
+			if buildErr := sandbox.Build(ctx); buildErr != nil {
+				execMs := time.Since(t2).Milliseconds()
+				metricBuildFailure()
+				trace.Record(iter, "executor", "sandbox build failed", buildErr.Error(), "failed", 0, execMs)
 				for _, patch := range toApply {
 					hash := PatchHash(patch)
 					nowPoison := a.ledger.RecordFailed(hash, patch.File)
 					metricPatch("failed")
 					if nowPoison {
-						trace.Record(iter, "executor", "patch is now poisoned "+patch.File, applyErr.Error(), "poison", 0, execMs)
+						trace.Record(iter, "executor", "patch is now poisoned "+patch.File, buildErr.Error(), "poison", 0, execMs)
 						state = StatePoison
-						result.Reason = fmt.Sprintf("patch %s marked as poison: %v", patch.File, applyErr)
+						result.Reason = fmt.Sprintf("patch %s marked as poison after build failure: %v", patch.File, buildErr)
 						return result
 					}
 				}
-
-				trace.Record(iter, "executor", "apply failed", applyErr.Error(), "failed", 0, execMs)
-				prevFailure = applyErr.Error()
+				prevFailure = buildErr.Error()
 				continue
 			}
 
-			// Patches applied + build passed.
+			// Step 3: promote to production (snapshot backup + apply).
+			execMs := time.Since(t2).Milliseconds()
+			metricStep("executor", time.Since(t2).Seconds())
+
+			if promoteErr := sandbox.Promote(toApply, a.executor); promoteErr != nil {
+				trace.Record(iter, "executor", "promote failed", promoteErr.Error(), "failed", 0, execMs)
+				prevFailure = promoteErr.Error()
+				continue
+			}
+
 			for _, patch := range toApply {
 				a.ledger.RecordApplied(PatchHash(patch), patch.File)
 				metricPatch("applied")
@@ -232,9 +266,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 
 		if vr.Pass {
 			// ✅ Goal achieved — commit snapshot backups.
-			if sandbox.HasSnapshot() {
-				sandbox.Commit()
-			}
+			sandbox.Commit()
 			state = StateSuccess
 			result.Reason = fmt.Sprintf("goal achieved — verify score %.2f after %d iteration(s)", vr.Score, iter+1)
 			slog.InfoContext(ctx, "agent loop success",
@@ -243,17 +275,15 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 		}
 
 		// ❌ Verification failed — rollback production files, re-think.
-		if sandbox.HasSnapshot() {
-			if rollbackErr := sandbox.Rollback(); rollbackErr != nil {
-				slog.ErrorContext(ctx, "rollback failed — production state may be inconsistent",
-					"trace_id", traceID, "error", rollbackErr)
-			} else {
-				slog.WarnContext(ctx, "production rolled back after verification failure",
-					"trace_id", traceID, "score", vr.Score)
-			}
-			metricRollback()
-			trace.Record(iter, "executor", "production rolled back", vr.Reason, "failed", 0, 0)
+		if rollbackErr := sandbox.Rollback(); rollbackErr != nil {
+			slog.ErrorContext(ctx, "rollback failed — production state may be inconsistent",
+				"trace_id", traceID, "error", rollbackErr)
+		} else {
+			slog.WarnContext(ctx, "production rolled back after verification failure",
+				"trace_id", traceID, "score", vr.Score)
 		}
+		metricRollback()
+		trace.Record(iter, "executor", "production rolled back", vr.Reason, "failed", 0, 0)
 
 		prevFailure = fmt.Sprintf("verification failed (score=%.2f): %s", vr.Score, vr.Reason)
 	}
@@ -270,16 +300,4 @@ func boolResult(b bool) string {
 		return "ok"
 	}
 	return "failed"
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
-		func() bool {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-			return false
-		}())
 }

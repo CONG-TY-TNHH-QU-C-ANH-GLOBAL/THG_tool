@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -15,14 +18,55 @@ const PoisonThreshold = 3
 
 // ActionLedger tracks every patch applied in one agent run.
 // Prevents duplicate patches (idempotency) and detects poison patches.
+// Persisted to disk so poison history survives process restarts.
 // Thread-safe.
 type ActionLedger struct {
-	mu      sync.Mutex
-	entries map[string]*LedgerEntry // patchHash → entry
+	mu       sync.Mutex
+	entries  map[string]*LedgerEntry // patchHash → entry
+	filePath string                  // empty = in-memory only
 }
 
-func newActionLedger() *ActionLedger {
-	return &ActionLedger{entries: make(map[string]*LedgerEntry)}
+// newPersistentLedger loads or creates a ledger persisted at baseDir/.agentloop/ledger.json.
+func newPersistentLedger(baseDir string) *ActionLedger {
+	dir := filepath.Join(baseDir, ".agentloop")
+	_ = os.MkdirAll(dir, 0755)
+	path := filepath.Join(dir, "ledger.json")
+
+	l := &ActionLedger{
+		entries:  make(map[string]*LedgerEntry),
+		filePath: path,
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		var loaded []LedgerEntry
+		if json.Unmarshal(data, &loaded) == nil {
+			for i := range loaded {
+				e := loaded[i]
+				l.entries[e.PatchHash] = &e
+			}
+			slog.Info("agentloop ledger loaded", "entries", len(l.entries), "path", path)
+		}
+	}
+	return l
+}
+
+// save flushes the ledger to disk. Must be called under l.mu.
+func (l *ActionLedger) save() {
+	if l.filePath == "" {
+		return
+	}
+	entries := make([]LedgerEntry, 0, len(l.entries))
+	for _, e := range l.entries {
+		entries = append(entries, *e)
+	}
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := l.filePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, l.filePath)
 }
 
 // PatchHash returns a stable SHA-256 hash for a patch (file + action + target + content).
@@ -61,6 +105,7 @@ func (l *ActionLedger) RecordApplied(hash, file string) {
 	e := l.getOrCreate(hash, file)
 	e.Status = "applied"
 	e.At = time.Now().UTC()
+	l.save()
 }
 
 // RecordFailed increments the fail counter and returns true if the patch
@@ -72,6 +117,7 @@ func (l *ActionLedger) RecordFailed(hash, file string) bool {
 	e.Status = "failed"
 	e.FailCount++
 	e.At = time.Now().UTC()
+	l.save()
 	return e.FailCount >= PoisonThreshold
 }
 
