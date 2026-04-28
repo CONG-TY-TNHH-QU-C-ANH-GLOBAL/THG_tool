@@ -133,8 +133,6 @@ func (s *Server) vncStart(c *fiber.Ctx) error {
 	go func() {
 		time.Sleep(time.Second)
 		s.startWorkspaceChrome()
-		time.Sleep(2 * time.Second)
-		go s.startAccountScreencast(0, s.cfg.CDPPort)
 	}()
 	return c.JSON(fiber.Map{"status": "starting", "vnc_port": s.cfg.VNCPort})
 }
@@ -202,7 +200,6 @@ func (s *Server) startWorkspaceChrome() {
 }
 
 func (s *Server) stopWorkspaceChrome() {
-	s.stopAccountScreencast(0)
 	workspaceMu.Lock()
 	defer workspaceMu.Unlock()
 	if workspaceProc != nil && workspaceProc.Process != nil {
