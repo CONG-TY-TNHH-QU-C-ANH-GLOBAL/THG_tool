@@ -4,7 +4,7 @@ import { useRoleStore } from '../stores/roleStore';
 import { initToken, getMe } from '../services/authService';
 
 export function useAuth() {
-  const { user, token, isLoading, login, logout, setUser } = useAuthStore();
+  const { user, token, isLoading, login, logout, setUser, refresh } = useAuthStore();
   const { setRole } = useRoleStore();
 
   useEffect(() => {
@@ -15,8 +15,18 @@ export function useAuth() {
           setUser(u);
           setRole(u.role);
         })
-        .catch(() => {
-          setUser(null);
+        .catch(async () => {
+          // Access token expired (15-min TTL).
+          // refresh() rotates the httpOnly refresh_token cookie (same-origin — sent
+          // automatically), stores the new access token, and updates authStore.token.
+          // Updating the store re-triggers this effect with the new token, which then
+          // calls getMe() cleanly. No need to call getMe() here again.
+          try {
+            await refresh();
+          } catch {
+            // Refresh failed (cookie gone / token revoked). Force re-login.
+            setUser(null);
+          }
         });
     }
   }, [token]);
