@@ -1,12 +1,12 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { theme, rootStyle } from '../constants/styles';
-import { MOCK_ORGS } from '../services/mockData';
+import { get } from '../services/api';
 import SettingsPage from './SettingsPage';
 import {
   Users, Globe, MessageSquare, FileText, MessageCircle,
-  Trophy, Database, Settings, ChevronDown, Zap, Bell,
+  Trophy, Database, Settings, Zap, Bell,
 } from 'lucide-react';
 
 const LeadsView      = lazy(() => import('./views/LeadsView'));
@@ -54,10 +54,32 @@ const Spinner = () => (
   </div>
 );
 
+function makeAbbr(name: string): string {
+  const words = name.trim().split(/\s+/);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+const ORG_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
 export default function MainApp({ role, goLanding }: MainAppProps) {
   const [tab, setTab] = useState<Tab>('leads');
-  const [org, setOrg] = useState<Organization>(MOCK_ORGS[0]);
-  const [orgMenu, setOrgMenu] = useState(false);
+  const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: '#4f46e5' });
+
+  useEffect(() => {
+    get<{ org: { id: number; name: string; plan_tier: string } }>('/org').then(res => {
+      if (!res.org) return;
+      const { id, name, plan_tier } = res.org;
+      const planMap: Record<string, Organization['plan']> = { free: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
+      setOrg({
+        id,
+        name,
+        abbr: makeAbbr(name),
+        plan: planMap[plan_tier] ?? 'Starter',
+        color: ORG_COLORS[id % ORG_COLORS.length],
+      });
+    }).catch(() => {});
+  }, []);
 
   const isAdmin = role === 'admin';
   const orgId = String(org.id);
@@ -94,25 +116,11 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
         {/* Org switcher */}
         <div style={{ padding: '10px 10px 4px' }}>
           <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4 }}>TỔ CHỨC</p>
-          <button
-            onClick={() => setOrgMenu(!orgMenu)}
-            style={{ width: '100%', background: orgMenu ? theme.border : 'transparent', border: `1px solid ${orgMenu ? theme.primary + '44' : 'transparent'}`, borderRadius: 8, padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px' }}>
             <div style={{ width: 24, height: 24, background: org.color, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{org.abbr}</div>
-            <span style={{ color: theme.text, fontSize: 12, fontWeight: 500, flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{org.name}</span>
-            <ChevronDown size={12} color={theme.textFaint} style={{ transform: orgMenu ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
-          </button>
-          {orgMenu && (
-            <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 9, marginTop: 4, overflow: 'hidden' }}>
-              {MOCK_ORGS.map(o => (
-                <button key={o.id} onClick={() => { setOrg(o); setOrgMenu(false); }} style={{ width: '100%', background: o.id === org.id ? theme.border : 'none', border: 'none', padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <div style={{ width: 20, height: 20, background: o.color, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9, fontWeight: 800 }}>{o.abbr}</div>
-                  <span style={{ color: theme.text, fontSize: 12, flex: 1, textAlign: 'left' }}>{o.name}</span>
-                  <Badge label={o.plan} />
-                </button>
-              ))}
-            </div>
-          )}
+            <span style={{ color: theme.text, fontSize: 12, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{org.name}</span>
+            <Badge label={org.plan} />
+          </div>
         </div>
 
         {/* Nav */}

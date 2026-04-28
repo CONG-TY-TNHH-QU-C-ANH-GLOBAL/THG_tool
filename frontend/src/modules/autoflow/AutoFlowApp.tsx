@@ -23,10 +23,10 @@ export default function AutoFlowApp() {
   }, []);
 
   useEffect(() => {
-    if (user && screen === 'auth') {
+    if (user && screen !== 'app' && screen !== 'superadmin') {
       setScreen(isSuperAdmin ? 'superadmin' : 'app');
     }
-  }, [user, isSuperAdmin]);
+  }, [user, isSuperAdmin, screen]);
 
   const mainRole: 'admin' | 'staff' = role === 'admin' || role === 'superadmin' ? 'admin' : 'staff';
 

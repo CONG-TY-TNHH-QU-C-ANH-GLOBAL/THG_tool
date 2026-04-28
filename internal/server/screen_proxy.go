@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync/atomic"
 
@@ -96,6 +97,14 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		if cdpWSURL == "" {
 			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "no Chrome page target found"})
 			return
+		}
+
+		// Chrome's /json endpoint returns ws://localhost:<internal-port>/...
+		// That hostname resolves to the container's internal port, not the host-mapped one.
+		// Rewrite the host to use the actual host-mapped CDP port so the dial succeeds.
+		if u, parseErr := url.Parse(cdpWSURL); parseErr == nil {
+			u.Host = fmt.Sprintf("127.0.0.1:%d", inst.CDPPort)
+			cdpWSURL = u.String()
 		}
 
 		// Dial Chrome CDP WebSocket (gorilla as client dialer).

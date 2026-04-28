@@ -14,6 +14,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const { workspaces, actionLoading, refresh, start, stop, markLoggedIn } = useWorkspaces();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>('disconnected');
+  const [wsError, setWsError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -24,6 +25,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     wsRef.current?.close();
     wsRef.current = null;
     setWsStatus('disconnected');
+    setWsError(null);
 
     if (selectedId === null || !selectedWs?.running) return;
 
@@ -39,7 +41,10 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data as string);
-        if (msg.type === 'frame' && canvasRef.current) {
+        if (msg.type === 'error') {
+          setWsError(msg.msg as string);
+        } else if (msg.type === 'frame' && canvasRef.current) {
+          setWsError(null);
           const ctx = canvasRef.current.getContext('2d');
           if (!ctx) return;
           const img = new Image();
@@ -167,17 +172,23 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             </span>
           </div>
 
-          {/* Canvas */}
-          <canvas
-            ref={canvasRef}
-            style={{ display: 'block', width: '100%', cursor: 'crosshair' }}
-            tabIndex={0}
-            onMouseMove={sendMouse('mouseMoved')}
-            onMouseDown={sendMouse('mousePressed')}
-            onMouseUp={sendMouse('mouseReleased')}
-            onWheel={sendWheel}
-            onContextMenu={e => e.preventDefault()}
-          />
+          {/* Canvas / Error */}
+          {wsError ? (
+            <div style={{ padding: 24, textAlign: 'center', color: '#fca5a5', fontSize: 13 }}>
+              ⚠ {wsError}
+            </div>
+          ) : (
+            <canvas
+              ref={canvasRef}
+              style={{ display: 'block', width: '100%', cursor: 'crosshair' }}
+              tabIndex={0}
+              onMouseMove={sendMouse('mouseMoved')}
+              onMouseDown={sendMouse('mousePressed')}
+              onMouseUp={sendMouse('mouseReleased')}
+              onWheel={sendWheel}
+              onContextMenu={e => e.preventDefault()}
+            />
+          )}
 
           {/* Toolbar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
