@@ -192,15 +192,20 @@ func (a *AppStore) migrate() error {
 	}
 
 	// Additive column migrations (idempotent — errors ignored)
-	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN version      INTEGER NOT NULL DEFAULT 0`)
-	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN worker_id    TEXT    NOT NULL DEFAULT ''`)
-	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN retry_count  INTEGER NOT NULL DEFAULT 0`)
-	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN heartbeat_at DATETIME`)
-	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN status_prev  TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN version        INTEGER NOT NULL DEFAULT 0`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN worker_id      TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN retry_count    INTEGER NOT NULL DEFAULT 0`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN heartbeat_at   DATETIME`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN status_prev    TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN checkpoint_url TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN checkpoint_at  DATETIME`)
 	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN version    INTEGER NOT NULL DEFAULT 1`)
 	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0`)
 	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN deprecated INTEGER NOT NULL DEFAULT 0`)
 	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN dom_hash   TEXT    NOT NULL DEFAULT ''`)
+	// Checkpoint fields on accounts
+	a.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_user_id        TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE accounts ADD COLUMN checkpoint_count  INTEGER NOT NULL DEFAULT 0`)
 
 	return nil
 }

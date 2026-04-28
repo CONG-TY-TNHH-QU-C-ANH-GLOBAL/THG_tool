@@ -46,6 +46,10 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying *sql.DB for packages that need direct SQL access
+// (e.g. session.StateMachine, session.CheckpointManager).
+func (s *Store) DB() *sql.DB { return s.db }
+
 // SetEncryptionKey sets the AES-256-GCM key used to encrypt sensitive DB fields
 // (cookies_json, proxy_url). Must be called before any account operations.
 func (s *Store) SetEncryptionKey(key string) {

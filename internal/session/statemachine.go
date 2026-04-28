@@ -18,20 +18,29 @@ const (
 	StatusIdle         Status = "idle"
 	StatusRecovering   Status = "recovering"
 	StatusTerminated   Status = "terminated"
+	// StatusCheckpoint means Facebook triggered a human-verification gate.
+	// The session is paused — no automated retries. An operator must
+	// resolve the checkpoint via VNC, then call ResolveCheckpoint().
+	StatusCheckpoint Status = "checkpoint"
 )
 
 var allowedTransitions = map[[2]Status]bool{
-	{StatusInitializing, StatusReady}:      true,
-	{StatusReady, StatusActive}:            true,
-	{StatusActive, StatusIdle}:             true,
-	{StatusIdle, StatusActive}:             true,
-	{StatusIdle, StatusRecovering}:         true,
-	{StatusActive, StatusRecovering}:       true,
-	{StatusRecovering, StatusReady}:        true,
-	{StatusRecovering, StatusTerminated}:   true,
-	{StatusReady, StatusTerminated}:        true,
-	{StatusIdle, StatusTerminated}:         true,
-	{StatusActive, StatusTerminated}:       true,
+	{StatusInitializing, StatusReady}:       true,
+	{StatusReady, StatusActive}:             true,
+	{StatusActive, StatusIdle}:              true,
+	{StatusIdle, StatusActive}:              true,
+	{StatusIdle, StatusRecovering}:          true,
+	{StatusActive, StatusRecovering}:        true,
+	{StatusRecovering, StatusReady}:         true,
+	{StatusRecovering, StatusTerminated}:    true,
+	{StatusReady, StatusTerminated}:         true,
+	{StatusIdle, StatusTerminated}:          true,
+	{StatusActive, StatusTerminated}:        true,
+	// Checkpoint transitions — operator-driven, not automated
+	{StatusActive, StatusCheckpoint}:        true,
+	{StatusIdle, StatusCheckpoint}:          true,
+	{StatusCheckpoint, StatusReady}:         true, // human resolved it
+	{StatusCheckpoint, StatusTerminated}:    true, // gave up / account too risky
 }
 
 // ErrInvalidTransition is returned when a state change is not in allowedTransitions.

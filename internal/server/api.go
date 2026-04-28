@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/gofiber/adaptor/v2"
@@ -62,8 +61,6 @@ type Server struct {
 	vncDisplay    *browser.VNCDisplay // virtual X11 display + VNC server (Linux only)
 	workspace     *workspace.Manager  // per-account Chrome workspace manager
 	sessionReg    *session.Registry   // optional — nil disables /api/sessions/stats
-	cdpHubs       map[int64]*cdpViewHub
-	cdpHubsMu     sync.RWMutex
 	port          int
 	cfg           Config
 }
@@ -112,7 +109,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 		wsHub:      NewWSHub(),
 		vncDisplay: browser.NewVNCDisplay(displayNum, vncPort),
 		workspace:  wm,
-		cdpHubs:    make(map[int64]*cdpViewHub),
 	}
 
 	// Health check — no auth, no rate limiting, for load balancers / monitors
@@ -140,7 +136,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// Serve THG Login Agent binaries for staff download (built via `make build-agent`)
 	app.Static("/downloads", filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads"), fiber.Static{
-		Browse: false,
+		Browse:   false,
 		Download: true,
 	})
 
@@ -314,6 +310,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Post("/browser/workspaces/:id/stop", s.workspaceStop)
 	r.Post("/browser/workspaces/:id/navigate", s.workspaceNavigate)
 	r.Post("/browser/workspaces/:id/set-logged-in", s.workspaceSetLoggedIn)
+	r.Post("/browser/workspaces/:id/resolve-checkpoint", s.resolveCheckpoint)
+	r.Get("/browser/checkpoints", s.listCheckpoints)
 	// Legacy VNC single-instance (Linux only)
 	r.Get("/browser/status", s.vncStatus)
 	r.Post("/browser/start", s.vncStart)

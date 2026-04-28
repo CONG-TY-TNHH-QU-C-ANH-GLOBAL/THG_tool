@@ -21,6 +21,8 @@ const (
 	ErrNoSession
 	ErrCooldownActive
 	ErrRateLimitExceeded
+	ErrBudgetExceeded       // hard stop: runtime or batch-call limit breached
+	ErrSessionContaminated  // logged-in user doesn't match expected account
 )
 
 func (c CDPErrorCode) String() string {
@@ -49,6 +51,10 @@ func (c CDPErrorCode) String() string {
 		return "cooldown_active"
 	case ErrRateLimitExceeded:
 		return "rate_limit_exceeded"
+	case ErrBudgetExceeded:
+		return "budget_exceeded"
+	case ErrSessionContaminated:
+		return "session_contaminated"
 	default:
 		return fmt.Sprintf("cdp_error_%d", int(c))
 	}

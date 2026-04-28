@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/workspace"
 )
@@ -144,5 +145,30 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn})
+}
+
+// resolveCheckpoint marks a session as ready after an operator manually passed the
+// Facebook verification gate via the VNC viewer.
+// POST /api/browser/workspaces/:id/resolve-checkpoint
+func (s *Server) resolveCheckpoint(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	sm := session.NewStateMachine(s.db.DB())
+	cm := session.NewCheckpointManager(s.db.DB(), sm, nil)
+	if err := cm.ResolveCheckpoint(c.Context(), id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "account_id": id, "status": "ready"})
+}
+
+// listCheckpoints returns all sessions currently awaiting human intervention.
+// GET /api/browser/checkpoints
+func (s *Server) listCheckpoints(c *fiber.Ctx) error {
+	sm := session.NewStateMachine(s.db.DB())
+	cm := session.NewCheckpointManager(s.db.DB(), sm, nil)
+	pending, err := cm.PendingCheckpoints(c.Context())
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"checkpoints": pending, "count": len(pending)})
 }
 

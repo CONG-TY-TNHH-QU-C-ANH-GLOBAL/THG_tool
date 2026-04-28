@@ -3,6 +3,7 @@ package facebookcrawl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -99,6 +100,9 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 		}
 	}
 
+	// Hard cost/time boundary — aborts before any limit is breached.
+	budget := runtime.NewBudget(runtime.DefaultBudget)
+
 	scorerCfg := scoringConfig(task.ScoringConfig)
 	sc := scoring.New(scorerCfg)
 
@@ -141,8 +145,27 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				break
 			}
 
+			// Invariant BUDGET: hard-stop before issuing network/LLM call.
+			budget.RecordBatch()
+			if err := budget.CheckOrAbort(); err != nil {
+				slog.WarnContext(ctx, "budget exceeded — aborting job",
+					"job_id", job.ID, "elapsed", budget.Elapsed())
+				return buildResult(records, stats)
+			}
+
 			rawItems, err := rt.FetchBatch(ctx, src.URL, offset, batchSize)
 			if err != nil {
+				// Invariant CHECKPOINT: human-verification gate detected — never retry.
+				var cdpErr runtime.CDPError
+				if errors.As(err, &cdpErr) && runtime.IsBanSignal(err) {
+					slog.WarnContext(ctx, "ban signal from Facebook",
+						"job_id", job.ID, "code", cdpErr.Code.String(), "src", src.URL)
+					if cdpErr.Code == runtime.ErrFacebookCheckpoint {
+						return `{"status":"human_required","reason":"facebook_checkpoint"}`, nil
+					}
+					// Logout / banned — abort, no human intervention queued.
+					return `{"status":"aborted","reason":"` + cdpErr.Code.String() + `"}`, nil
+				}
 				return "", fmt.Errorf("fetch batch (src=%s offset=%d): %w", src.URL, offset, err)
 			}
 			if len(rawItems) == 0 {
@@ -216,21 +239,6 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 		}
 	}
 
-	if records == nil {
-		records = []output.Record{}
-	}
-
-	ds := output.Dataset{
-		Records:  records,
-		Stats:    stats,
-		Insights: []any{},
-	}
-
-	b, err := json.Marshal(ds)
-	if err != nil {
-		return "", fmt.Errorf("marshal dataset: %w", err)
-	}
-
 	// Mark application task complete.
 	if h.appStore != nil {
 		if err := h.appStore.CompleteTask(ctx, job.TaskID, stats.TotalFetched, stats.TotalReturned); err != nil {
@@ -238,10 +246,24 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 		}
 	}
 
-	return string(b), nil
+	return buildResult(records, stats)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+// buildResult marshals the accumulated records and stats into the job result JSON.
+// Used for early exits (budget exceeded, context cancelled).
+func buildResult(records []output.Record, stats output.Stats) (string, error) {
+	if records == nil {
+		records = []output.Record{}
+	}
+	ds := output.Dataset{Records: records, Stats: stats, Insights: []any{}}
+	b, err := json.Marshal(ds)
+	if err != nil {
+		return "", fmt.Errorf("marshal dataset: %w", err)
+	}
+	return string(b), nil
+}
 
 func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) output.Record {
 	allSignals := make([]string, 0, len(filterSignals)+len(sr.Signals))

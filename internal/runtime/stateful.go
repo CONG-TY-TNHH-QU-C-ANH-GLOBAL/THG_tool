@@ -96,6 +96,42 @@ func (s *StatefulSession) Navigate(url string) error {
 	return nil
 }
 
+// identityJS extracts the numeric FB user ID from the logged-in page.
+// Tries three extraction points in order of reliability.
+const identityJS = "(function(){" +
+	"var el=document.querySelector('[data-userid]');" +
+	"if(el)return el.getAttribute('data-userid');" +
+	"var s=document.querySelectorAll('script'),m,i;" +
+	"for(i=0;i<s.length;i++){m=s[i].innerText.match(/\"USER_ID\":\"(\\d+)\"/);if(m)return m[1];}" +
+	"m=document.documentElement.innerHTML.match(/\"actorID\":\"(\\d+)\"/);if(m)return m[1];" +
+	"return '';})()"
+
+// VerifyIdentity asserts the currently-logged-in Facebook user matches
+// expectedFBUserID. Call once after Navigate().
+//
+// Invariant SESSION_ISOLATION: if the session belongs to a different user,
+// return ErrSessionContaminated — do NOT execute the job.
+// If expectedFBUserID is empty the check is skipped (account not enrolled yet).
+func (s *StatefulSession) VerifyIdentity(expectedFBUserID string) error {
+	if expectedFBUserID == "" {
+		return nil
+	}
+	var currentUID string
+	if err := chromedp.Run(s.tabCtx, chromedp.Evaluate(identityJS, &currentUID)); err != nil {
+		return nil // cannot read — skip rather than false-positive
+	}
+	if currentUID == "" {
+		return CDPError{Code: ErrFacebookLogout, Message: "could not read logged-in user from DOM"}
+	}
+	if currentUID != expectedFBUserID {
+		return CDPError{
+			Code:    ErrSessionContaminated,
+			Message: fmt.Sprintf("session contamination: want %s got %s", expectedFBUserID, currentUID),
+		}
+	}
+	return nil
+}
+
 // FetchNext extracts up to batchSize new posts from the current scroll position.
 // Returns nil, nil when the page is exhausted (maxEmptyRuns consecutive empty scrolls).
 func (s *StatefulSession) FetchNext(batchSize int) ([]RawItem, error) {
