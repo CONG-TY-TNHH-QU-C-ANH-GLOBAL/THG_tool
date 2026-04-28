@@ -1,95 +1,202 @@
-import { theme, cardStyle } from '../../constants/styles';
-import { Row } from '../ui';
-import { useFacebookSession } from '../../hooks/useFacebookSession';
-import { LogIn, RefreshCw, Check } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { theme } from '../../constants/styles';
+import { useWorkspaces } from '../../hooks/useWorkspaces';
+import { useAuthStore } from '../../stores/authStore';
+import { Monitor, StopCircle, LogIn, RefreshCw, CheckCircle } from 'lucide-react';
 import '../../autoflow.css';
 
 interface BrowserViewProps { orgId: string; }
 
+type WsStatus = 'disconnected' | 'connecting' | 'connected';
+
 export default function BrowserView({ orgId }: BrowserViewProps) {
-  const { status, isConnecting, connect, disconnect } = useFacebookSession(orgId);
-  const conn = status.connected;
+  void orgId;
+  const { workspaces, actionLoading, refresh, start, stop, markLoggedIn } = useWorkspaces();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [wsStatus, setWsStatus] = useState<WsStatus>('disconnected');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const selectedWs = workspaces.find(w => w.accountId === selectedId);
+
+  // Open/close screen WebSocket when selection changes
+  useEffect(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
+    setWsStatus('disconnected');
+
+    if (selectedId === null || !selectedWs?.running) return;
+
+    const token = useAuthStore.getState().token ?? '';
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${proto}//${window.location.host}/ws/screen/${selectedId}?token=${token}`);
+
+    setWsStatus('connecting');
+    ws.onopen = () => setWsStatus('connected');
+    ws.onclose = () => setWsStatus('disconnected');
+    ws.onerror = () => setWsStatus('disconnected');
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data as string);
+        if (msg.type === 'frame' && canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          if (!ctx) return;
+          const img = new Image();
+          img.onload = () => {
+            if (!canvasRef.current) return;
+            canvasRef.current.width = msg.w as number;
+            canvasRef.current.height = msg.h as number;
+            ctx.drawImage(img, 0, 0);
+          };
+          img.src = `data:image/jpeg;base64,${msg.data as string}`;
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    wsRef.current = ws;
+    return () => { ws.close(); wsRef.current = null; };
+  }, [selectedId, selectedWs?.running]);
+
+  // Keyboard forwarding
+  useEffect(() => {
+    if (selectedId === null) return;
+    const send = (action: string) => (e: KeyboardEvent) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      e.preventDefault();
+      wsRef.current.send(JSON.stringify({
+        type: 'key', action,
+        key: e.key, code: e.code,
+        modifiers: (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0),
+      }));
+    };
+    const kd = send('keyDown');
+    const ku = send('keyUp');
+    document.addEventListener('keydown', kd);
+    document.addEventListener('keyup', ku);
+    return () => { document.removeEventListener('keydown', kd); document.removeEventListener('keyup', ku); };
+  }, [selectedId]);
+
+  const sendMouse = useCallback((action: string) => (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    wsRef.current.send(JSON.stringify({
+      type: 'mouse', action,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      button: e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle',
+      buttons: e.buttons,
+    }));
+  }, []);
+
+  const sendWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    wsRef.current?.send(JSON.stringify({ type: 'wheel', x: e.clientX, y: e.clientY, deltaX: e.deltaX, deltaY: e.deltaY }));
+  }, []);
+
+  const running = workspaces.filter(w => w.running).length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px',
-        borderRadius: 11, border: `1px solid ${conn ? '#16a34a55' : theme.border}`,
-        background: conn ? '#052e1611' : theme.surface,
-      }}>
-        <div style={{ width: 7, height: 7, borderRadius: '50%', background: conn ? '#4ade80' : theme.textFaint }} />
-        <p style={{ fontSize: 13, color: conn ? '#4ade80' : theme.textMuted, fontWeight: 500 }}>
-          {conn ? 'Session đang hoạt động — Facebook kết nối thành công' : 'Chưa có session — Vui lòng kết nối Facebook'}
-        </p>
-        {conn && (
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4ade80', background: '#052e1633', border: '1px solid #16a34a44', padding: '3px 9px', borderRadius: 7 }}>
-            Expires: {status.expiresLabel}
-          </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* Status bar */}
+      <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+        <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
+        <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
+        <button onClick={refresh} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+          <RefreshCw size={12} /> Làm mới
+        </button>
+      </div>
+
+      {/* Account list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {workspaces.length === 0 && (
+          <p style={{ color: theme.textMuted, fontSize: 13, textAlign: 'center', padding: 20 }}>Chưa có tài khoản Facebook nào</p>
         )}
-      </div>
-
-      <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: theme.surfaceAlt, borderBottom: `1px solid ${theme.border}` }}>
-          <Row style={{ gap: 5 }}>
-            {['#ef4444','#f59e0b','#22c55e'].map(c => <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />)}
-          </Row>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, background: theme.surface, borderRadius: 7, padding: '4px 11px', margin: '0 10px' }}>
-            <span style={{ fontSize: 12 }}>🔒</span>
-            <span style={{ color: theme.textFaint, fontSize: 12 }}>https://www.facebook.com</span>
-          </div>
-          {conn && (
-            <button onClick={disconnect} style={{ background: 'none', border: 'none', color: theme.textFaint, fontSize: 11, cursor: 'pointer' }}>Reset</button>
-          )}
-        </div>
-
-        <div style={{ minHeight: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
-          {!conn ? (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ width: 60, height: 60, background: theme.facebook, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-                <span style={{ color: '#fff', fontSize: 28, fontWeight: 900 }}>f</span>
-              </div>
-              <p style={{ color: '#f9fafb', fontWeight: 600, fontSize: 16, marginBottom: 7 }}>Kết nối tài khoản Facebook</p>
-              <p style={{ color: theme.textMuted, fontSize: 13, marginBottom: 22, maxWidth: 260 }}>
-                Đăng nhập để AutoFlow thu thập leads và chạy AI agents trong các nhóm của bạn
-              </p>
-              <button onClick={connect} disabled={isConnecting} style={{
-                ...cardStyle(),
-                border: 'none', cursor: isConnecting ? 'not-allowed' : 'pointer',
-                background: isConnecting ? '#374151' : theme.facebook,
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                color: '#fff', fontSize: 14, padding: '10px 20px',
-              }}>
-                {isConnecting
-                  ? <><RefreshCw size={14} className="spin" />Đang kết nối...</>
-                  : <><LogIn size={14} />Đăng nhập Facebook</>
-                }
+        {workspaces.map(w => (
+          <div
+            key={w.accountId}
+            onClick={() => w.running && setSelectedId(prev => prev === w.accountId ? null : w.accountId)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+              background: selectedId === w.accountId ? '#1a2a1a' : theme.surface,
+              border: `1px solid ${selectedId === w.accountId ? '#16a34a' : theme.border}`,
+              borderRadius: 10, cursor: w.running ? 'pointer' : 'default',
+            }}
+          >
+            <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: w.running ? '#4ade80' : theme.textFaint }} />
+            <Monitor size={14} color={theme.textMuted} />
+            <span style={{ flex: 1, color: theme.text, fontWeight: 500, fontSize: 13 }}>{w.accountName}</span>
+            {w.loggedIn && (
+              <span style={{ fontSize: 11, color: '#60a5fa', background: '#1e3a5f33', border: '1px solid #3b82f644', padding: '2px 8px', borderRadius: 6 }}>
+                <CheckCircle size={10} style={{ marginRight: 3 }} />Đã đăng nhập
+              </span>
+            )}
+            {!w.running ? (
+              <button
+                onClick={e => { e.stopPropagation(); void start(w.accountId).then(() => setSelectedId(w.accountId)); }}
+                disabled={actionLoading.has(w.accountId)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
+              >
+                {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
+                {actionLoading.has(w.accountId) ? 'Đang khởi động...' : 'Bắt đầu'}
               </button>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ width: 60, height: 60, background: theme.greenDark, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-                <Check size={28} color="#fff" />
-              </div>
-              <p style={{ color: '#f9fafb', fontWeight: 600, fontSize: 16, marginBottom: 5 }}>Kết nối thành công!</p>
-              <p style={{ color: theme.textMuted, fontSize: 13, marginBottom: 18 }}>
-                Tài khoản: <strong style={{ color: '#fff' }}>{status.account}</strong>
-              </p>
-              <Row style={{ gap: 11, justifyContent: 'center' }}>
-                {[
-                  { l: 'Nhóm', v: String(status.groups ?? 0) },
-                  { l: 'Leads hôm nay', v: String(status.leadsToday ?? 0) },
-                  { l: 'Agents', v: String(status.agents ?? 0) },
-                ].map(s => (
-                  <div key={s.l} style={{ background: theme.border, borderRadius: 9, padding: '9px 16px', textAlign: 'center' }}>
-                    <p style={{ color: '#fff', fontWeight: 700, fontSize: 17 }}>{s.v}</p>
-                    <p style={{ color: theme.textMuted, fontSize: 10 }}>{s.l}</p>
-                  </div>
-                ))}
-              </Row>
-            </div>
-          )}
-        </div>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); void stop(w.accountId).then(() => { if (selectedId === w.accountId) setSelectedId(null); }); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7f1d1d', border: 'none', borderRadius: 7, color: '#fca5a5', fontSize: 12, cursor: 'pointer' }}
+              >
+                <StopCircle size={12} /> Dừng
+              </button>
+            )}
+          </div>
+        ))}
       </div>
+
+      {/* Live screen viewer */}
+      {selectedId !== null && selectedWs?.running && (
+        <div style={{ background: '#000', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+          {/* Title bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: theme.surfaceAlt, borderBottom: `1px solid ${theme.border}` }}>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {['#ef4444', '#f59e0b', '#22c55e'].map(c => <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />)}
+            </div>
+            <span style={{ color: theme.textFaint, fontSize: 12, flex: 1 }}>🔒 facebook.com — {selectedWs.accountName}</span>
+            <span style={{ fontSize: 11, color: wsStatus === 'connected' ? '#4ade80' : '#f59e0b' }}>
+              {wsStatus === 'connected' ? '● Đã kết nối' : wsStatus === 'connecting' ? '● Đang kết nối...' : '● Mất kết nối'}
+            </span>
+          </div>
+
+          {/* Canvas */}
+          <canvas
+            ref={canvasRef}
+            style={{ display: 'block', width: '100%', cursor: 'crosshair' }}
+            tabIndex={0}
+            onMouseMove={sendMouse('mouseMoved')}
+            onMouseDown={sendMouse('mousePressed')}
+            onMouseUp={sendMouse('mouseReleased')}
+            onWheel={sendWheel}
+            onContextMenu={e => e.preventDefault()}
+          />
+
+          {/* Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
+            {!selectedWs.loggedIn && (
+              <button
+                onClick={() => void markLoggedIn(selectedId)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <CheckCircle size={14} /> Đánh dấu đã đăng nhập
+              </button>
+            )}
+            {selectedWs.loggedIn && (
+              <span style={{ color: '#4ade80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <CheckCircle size={13} /> Session đã được lưu
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

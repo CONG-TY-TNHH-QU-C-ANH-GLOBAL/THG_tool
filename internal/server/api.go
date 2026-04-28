@@ -390,6 +390,10 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	app.Use("/ws/vnc/:id", wsJWTAuth)
 	app.Get("/ws/vnc/:id", fiberws.New(s.perAccountVNCProxyHandler()))
 
+	// WebSocket: per-account CDP screen proxy (JPEG screencast + input forwarding)
+	app.Use("/ws/screen/:id", wsJWTAuth)
+	app.Get("/ws/screen/:id", fiberws.New(s.screenProxyHandler()))
+
 	// WebSocket: legacy single-display VNC proxy
 	app.Use("/ws/vnc", wsJWTAuth)
 	app.Get("/ws/vnc", fiberws.New(s.vncProxyHandler()))

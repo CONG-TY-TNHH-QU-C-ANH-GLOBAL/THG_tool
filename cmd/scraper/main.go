@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/thg/scraper/internal/accounts"
@@ -145,6 +146,24 @@ func main() {
 		restartCtrl.OnUnhealthy(ctx, accountID)
 	})
 	log.Println("✅ Health checker started (15s interval)")
+
+	watchdog := browser.NewWatchdog(workspaceMgr, 30*time.Second, func(accountID int64, outcome browser.SessionOutcome, reason string) {
+		switch outcome {
+		case browser.SessionCDPDown:
+			log.Printf("[Watchdog] CDP_DOWN account %d — safe restart: %s", accountID, reason)
+			if err := browser.SafeRestart(ctx, workspaceMgr, accountID, ""); err != nil {
+				log.Printf("[Watchdog] SafeRestart failed account %d: %v", accountID, err)
+			}
+		case browser.SessionCheckpoint:
+			log.Printf("[Watchdog] CHECKPOINT account %d — manual login required: %s", accountID, reason)
+		case browser.SessionExpired:
+			log.Printf("[Watchdog] EXPIRED account %d — session lost: %s", accountID, reason)
+		case browser.SessionBlocked:
+			log.Printf("[Watchdog] BLOCKED account %d — ban detected: %s", accountID, reason)
+		}
+	})
+	go watchdog.Run(ctx)
+	log.Println("✅ Session watchdog started (30s interval)")
 
 	// Session registry — in-memory mirror for fast API reads
 	sessionReg := session_pkg.NewRegistry(appStore)

@@ -102,6 +102,17 @@ export interface FacebookStatus {
   agents?: number;
 }
 
+export interface Workspace {
+  accountId: number;
+  accountName: string;
+  accountStatus: string;
+  loggedIn: boolean;
+  running: boolean;
+  vncPort?: number;
+  cdpPort?: number;
+  startedAt?: string;
+}
+
 export interface OrgSummary {
   id: number;
   name: string;

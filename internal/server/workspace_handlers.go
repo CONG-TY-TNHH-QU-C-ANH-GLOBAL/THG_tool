@@ -66,6 +66,10 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 && acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	}
 
 	inst, err := s.workspace.Start(id, acc.Name)
 	if err != nil {
@@ -112,6 +116,12 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 // POST /api/browser/workspaces/:id/stop
 func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	if acc, err := s.db.GetAccount(id); err == nil && acc != nil {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID != 0 && acc.OrgID != orgID {
+			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		}
+	}
 	if s.workspace != nil {
 		s.workspace.Stop(id)
 	}
@@ -135,6 +145,12 @@ func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
 // POST /api/browser/workspaces/:id/set-logged-in
 func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	if acc, err := s.db.GetAccount(id); err == nil && acc != nil {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID != 0 && acc.OrgID != orgID {
+			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		}
+	}
 	var body struct {
 		LoggedIn bool `json:"logged_in"`
 	}
