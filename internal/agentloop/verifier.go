@@ -3,7 +3,9 @@ package agentloop
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -76,54 +78,194 @@ func (v *Verifier) checkOnce(ctx context.Context, domain Domain) VerifyResult {
 	}
 }
 
-// ── Browser domain ────────────────────────────────────────────────────────────
+// ── Browser domain (FB business-aware) ───────────────────────────────────────
+//
+// 5-signal model — infra health + Facebook session validity:
+//
+//	Signal 1 (0.15): VNC TCP reachable         — container running
+//	Signal 2 (0.15): CDP /json/version responds — Chrome alive
+//	Signal 3 (0.15): CDP has ≥1 page tab       — Chrome has a tab open
+//	Signal 4 (0.35): Facebook session alive     — not checkpoint/login page (CRITICAL)
+//	Signal 5 (0.20): Facebook target page ready — correct URL context
+//
+// Invariant GOAL_BASED_SUCCESS: score ≥ 0.70 requires at least Signal 4
+// (FB session alive). Infra-only pass is impossible.
 
 func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 	signals := VerifySignals{}
 	var reasons []string
 
-	// Signal 1 (0.35): VNC TCP reachable
+	// Signal 1 (0.15): VNC TCP reachable
 	if v.cfg.VNCPort > 0 {
 		if tcpReachable("127.0.0.1", v.cfg.VNCPort, 2*time.Second) {
-			signals.Stream = 0.35
+			signals.Stream = 0.15
 		} else {
-			reasons = append(reasons, fmt.Sprintf("VNC port %d not reachable", v.cfg.VNCPort))
+			reasons = append(reasons, fmt.Sprintf("VNC port %d unreachable", v.cfg.VNCPort))
 		}
 	} else {
-		signals.Stream = 0.35 // port not configured — skip check
+		signals.Stream = 0.15 // not configured — skip
 	}
 
-	// Signal 2 (0.35): CDP /json/version responds
+	// Signal 2 (0.15): CDP /json/version responds
+	var cdpAlive bool
 	if v.cfg.CDPPort > 0 {
-		url := fmt.Sprintf("http://127.0.0.1:%d/json/version", v.cfg.CDPPort)
-		if httpOK(ctx, v.client, url) {
-			signals.API = 0.35
+		versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", v.cfg.CDPPort)
+		if httpOK(ctx, v.client, versionURL) {
+			signals.API = 0.15
+			cdpAlive = true
 		} else {
 			reasons = append(reasons, fmt.Sprintf("CDP port %d /json/version failed", v.cfg.CDPPort))
 		}
 	} else {
-		signals.API = 0.35
+		signals.API = 0.15
+		cdpAlive = true // not configured — assume up
 	}
 
-	// Signal 3 (0.30): CDP /json/list has at least one tab
-	if v.cfg.CDPPort > 0 {
-		url := fmt.Sprintf("http://127.0.0.1:%d/json/list", v.cfg.CDPPort)
-		if httpBodyContains(ctx, v.client, url, "\"type\":\"page\"") {
-			signals.DOM = 0.30
-		} else {
-			reasons = append(reasons, "CDP has no active page tab")
+	if !cdpAlive {
+		// CDP is down — Signals 3, 4, 5 are impossible
+		return VerifyResult{
+			Pass:    false,
+			Score:   signals.Stream + signals.API,
+			Signals: signals,
+			Reason:  strings.Join(reasons, "; "),
 		}
+	}
+
+	// Fetch tab list once for Signals 3, 4, 5.
+	tabs := v.fetchCDPTabs(ctx)
+
+	// Signal 3 (0.15): at least one page tab open
+	hasPageTab := false
+	for _, t := range tabs {
+		if t.Type == "page" {
+			hasPageTab = true
+			break
+		}
+	}
+	if hasPageTab {
+		signals.DOM = 0.15
 	} else {
-		signals.DOM = 0.30
+		reasons = append(reasons, "CDP has no page tab open")
+	}
+
+	// Signals 4 + 5: Facebook session analysis
+	fbScore, fbReasons := v.checkFacebookSession(tabs)
+	signals.Stream += fbScore // reuse Stream for combined FB score (see types.go note)
+
+	// Split: 0.35 for session alive, 0.20 for correct page
+	// We get back a single score from checkFacebookSession (0 | 0.35 | 0.55).
+	// Map to individual signal fields for observability.
+	if fbScore >= 0.35 {
+		// Session alive — good baseline
+	} else {
+		reasons = append(reasons, fbReasons...)
 	}
 
 	score := signals.Stream + signals.API + signals.DOM
 	return VerifyResult{
 		Pass:    score >= VerifyPassThreshold,
-		Score:   score,
+		Score:   min1(score),
 		Signals: signals,
 		Reason:  strings.Join(reasons, "; "),
 	}
+}
+
+// fbTab is one entry from CDP /json/list.
+type fbTab struct {
+	URL   string `json:"url"`
+	Title string `json:"title"`
+	Type  string `json:"type"`
+}
+
+// fetchCDPTabs calls CDP HTTP /json/list and returns parsed tabs.
+// Returns empty slice on any error (caller checks len).
+func (v *Verifier) fetchCDPTabs(ctx context.Context) []fbTab {
+	if v.cfg.CDPPort <= 0 {
+		return nil
+	}
+	listURL := fmt.Sprintf("http://127.0.0.1:%d/json/list", v.cfg.CDPPort)
+	req, err := http.NewRequestWithContext(ctx, "GET", listURL, nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := v.client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+	var tabs []fbTab
+	_ = json.Unmarshal(body, &tabs)
+	return tabs
+}
+
+// checkFacebookSession analyses CDP tab URLs for Facebook-specific session signals.
+// Returns (score, failureReasons).
+//
+// Score breakdown:
+//
+//	0.55 = logged-in Facebook tab is on a feed/group/target page (Signal 4 + 5)
+//	0.35 = logged in to Facebook (any page, not checkpoint/login) (Signal 4 only)
+//	0.00 = checkpoint detected, logged out, or no FB tab
+func (v *Verifier) checkFacebookSession(tabs []fbTab) (float64, []string) {
+	var reasons []string
+
+	for _, tab := range tabs {
+		if tab.Type != "page" {
+			continue
+		}
+		u := strings.ToLower(tab.URL)
+
+		if !strings.Contains(u, "facebook.com") {
+			continue // not a Facebook tab
+		}
+
+		// ⚠️ Ban signal: checkpoint page — session blocked by Facebook
+		if strings.Contains(u, "checkpoint") || strings.Contains(u, "/checkpoint/") {
+			return 0, []string{"CRITICAL: Facebook checkpoint detected — account requires human verification"}
+		}
+
+		// ⚠️ Logged out
+		if strings.Contains(u, "facebook.com/login") ||
+			strings.Contains(u, "facebook.com/r.php") ||
+			strings.Contains(u, "facebook.com/?next=") {
+			return 0, []string{"Facebook login page detected — session expired or logged out"}
+		}
+
+		// ⚠️ Anti-bot soft block
+		if strings.Contains(u, "/sorry/") || strings.Contains(u, "checkpoint") ||
+			strings.Contains(tab.Title, "You're Temporarily Blocked") ||
+			strings.Contains(tab.Title, "Blocked") {
+			return 0, []string{"Facebook anti-bot block detected in tab title/URL"}
+		}
+
+		// ✅ Session alive — check if we're on the right target page (Signal 5)
+		targetPages := []string{
+			"/groups/", "/marketplace/", "/home.php", "facebook.com/",
+			"/feed/", "/profile.php", "/messages/",
+		}
+		for _, tgt := range targetPages {
+			if strings.Contains(u, tgt) {
+				return 0.55, nil // Signal 4 (0.35) + Signal 5 (0.20)
+			}
+		}
+
+		// Logged in but not on target page
+		return 0.35, nil // Signal 4 only — session alive but wrong page context
+	}
+
+	reasons = append(reasons, "no active Facebook tab found in browser")
+	return 0, reasons
+}
+
+func min1(f float64) float64 {
+	if f > 1.0 {
+		return 1.0
+	}
+	return f
 }
 
 // ── Frontend domain ───────────────────────────────────────────────────────────
