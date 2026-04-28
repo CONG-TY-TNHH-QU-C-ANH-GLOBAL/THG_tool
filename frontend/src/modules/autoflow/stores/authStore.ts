@@ -12,6 +12,10 @@ interface AuthState {
   setUser(user: AuthUser | null): void;
 }
 
+// Module-level flag: prevents concurrent refresh calls when multiple components
+// hit 401 at the same time. Not in Zustand state to avoid triggering re-renders.
+let isRefreshing = false;
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: authService.getStoredToken(),
@@ -34,11 +38,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   async refresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
     try {
       const token = await authService.refreshToken();
       set({ token });
     } catch {
       set({ user: null, token: null });
+    } finally {
+      isRefreshing = false;
     }
   },
 

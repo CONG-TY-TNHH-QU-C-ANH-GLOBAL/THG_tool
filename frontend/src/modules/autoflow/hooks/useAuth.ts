@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useRoleStore } from '../stores/roleStore';
 import { initToken, getMe } from '../services/authService';
@@ -6,8 +6,13 @@ import { initToken, getMe } from '../services/authService';
 export function useAuth() {
   const { user, token, isLoading, login, logout, setUser, refresh } = useAuthStore();
   const { setRole } = useRoleStore();
+  // Prevents infinite loop: if the new token from refresh is also invalid
+  // (e.g. backend issued a bad token), we stop after one retry.
+  const hasRetried = useRef(false);
 
   useEffect(() => {
+    // Reset retry guard whenever the token changes (new login or successful refresh).
+    hasRetried.current = false;
     initToken();
     if (token && !user) {
       getMe()
@@ -21,6 +26,12 @@ export function useAuth() {
           // automatically), stores the new access token, and updates authStore.token.
           // Updating the store re-triggers this effect with the new token, which then
           // calls getMe() cleanly. No need to call getMe() here again.
+          if (hasRetried.current) {
+            // Refreshed once but still getting 401 — token is bad. Force re-login.
+            setUser(null);
+            return;
+          }
+          hasRetried.current = true;
           try {
             await refresh();
           } catch {
