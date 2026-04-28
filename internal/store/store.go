@@ -1437,6 +1437,50 @@ func (s *Store) GetOutboundByStatus(status string, limit int) ([]models.Outbound
 	return messages, nil
 }
 
+// GetOutboundByFilter returns outbound messages filtered by optional status and/or type.
+func (s *Store) GetOutboundByFilter(status, msgType string, limit int) ([]models.OutboundMessage, error) {
+	query := `SELECT id, type, platform, account_id, target_url, target_name, content, context,
+		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+		FROM outbound_messages`
+	var args []any
+	var clauses []string
+	if status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, status)
+	}
+	if msgType != "" {
+		clauses = append(clauses, "type = ?")
+		args = append(args, msgType)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []models.OutboundMessage
+	for rows.Next() {
+		var m models.OutboundMessage
+		var sentAt string
+		err := rows.Scan(&m.ID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
+			&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if sentAt != "" {
+			m.SentAt, _ = time.Parse("2006-01-02 15:04:05", sentAt)
+		}
+		messages = append(messages, m)
+	}
+	return messages, nil
+}
+
 // GetSentGroupPosts returns group_post messages that were successfully sent (within last N days).
 func (s *Store) GetSentGroupPosts(withinDays int) ([]models.OutboundMessage, error) {
 	rows, err := s.db.Query(

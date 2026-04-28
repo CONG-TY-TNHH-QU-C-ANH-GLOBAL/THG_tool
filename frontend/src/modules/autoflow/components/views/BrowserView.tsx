@@ -95,10 +95,17 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     }));
   }, []);
 
-  const sendWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    wsRef.current?.send(JSON.stringify({ type: 'wheel', x: e.clientX, y: e.clientY, deltaX: e.deltaX, deltaY: e.deltaY }));
-  }, []);
+  // Wheel must be non-passive to allow preventDefault; attach manually via useEffect.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || selectedId === null || !selectedWs?.running) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      wsRef.current?.send(JSON.stringify({ type: 'wheel', x: e.clientX, y: e.clientY, deltaX: e.deltaX, deltaY: e.deltaY }));
+    };
+    canvas.addEventListener('wheel', handler, { passive: false });
+    return () => canvas.removeEventListener('wheel', handler);
+  }, [selectedId, selectedWs?.running]);
 
   const running = workspaces.filter(w => w.running).length;
 
@@ -210,7 +217,6 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               onMouseMove={sendMouse('mouseMoved')}
               onMouseDown={sendMouse('mousePressed')}
               onMouseUp={sendMouse('mouseReleased')}
-              onWheel={sendWheel}
               onContextMenu={e => e.preventDefault()}
             />
           )}

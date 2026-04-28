@@ -49,6 +49,11 @@ type Config struct {
 	VNCPort    int // VNC server TCP port (default 5900)
 	CDPPort    int // Chrome DevTools Protocol debug port (default 9222)
 	DisplayNum int // X11 display number for Xvfb (default 99)
+
+	// Google OAuth
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURI  string
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -212,6 +217,12 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	authGroup.Post("/login", authLimiter, s.login)
 	authGroup.Post("/refresh", s.refresh)
 	authGroup.Post("/logout", s.logout) // no JWT required — only needs refresh token cookie
+
+	// Google OAuth
+	authGroup.Get("/google", s.googleLoginRedirect)
+	authGroup.Get("/google/callback", s.googleCallback)
+	authGroup.Get("/google/status", s.googleStatus)
+	authGroup.Post("/google/token", s.googleToken)
 
 	// Auth routes (require valid JWT)
 	protected := authGroup.Group("", authpkg.RequireAuth(cfg.JWTSecret))
@@ -839,8 +850,9 @@ func (s *Server) aiHistory(c *fiber.Ctx) error {
 
 func (s *Server) getOutbox(c *fiber.Ctx) error {
 	status := c.Query("status", "")
+	msgType := c.Query("type", "")
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
-	messages, err := s.db.GetOutboundByStatus(status, limit)
+	messages, err := s.db.GetOutboundByFilter(status, msgType, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

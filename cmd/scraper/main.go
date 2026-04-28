@@ -71,6 +71,24 @@ func main() {
 		}
 	}
 
+	// Upsert superadmin unconditionally — works even when DB already has users.
+	// Set SUPERADMIN_EMAIL + SUPERADMIN_PASSWORD in .env to activate.
+	if saEmail := os.Getenv("SUPERADMIN_EMAIL"); saEmail != "" {
+		saPass := os.Getenv("SUPERADMIN_PASSWORD")
+		if saPass == "" {
+			log.Println("⚠️  SUPERADMIN_EMAIL set but SUPERADMIN_PASSWORD is empty — skipping")
+		} else {
+			hash, err := authpkg.HashPassword(saPass)
+			if err != nil {
+				log.Printf("⚠️  Superadmin password hashing failed: %v", err)
+			} else if err := db.EnsureSuperAdmin(saEmail, hash, os.Getenv("SUPERADMIN_NAME")); err != nil {
+				log.Printf("⚠️  Superadmin upsert failed: %v", err)
+			} else {
+				log.Printf("✅ Superadmin ready: %s", saEmail)
+			}
+		}
+	}
+
 	// Auto-backup SQLite daily (Fix #4: data protection)
 	if cfg.BackupEnabled {
 		db.StartAutoBackup(cfg.DBPath)
@@ -216,9 +234,12 @@ func main() {
 		Headless:       cfg.Headless,
 		ServerHost:     cfg.ServerHost,
 		SSHPort:        cfg.SSHPort,
-		VNCPort:        cfg.VNCPort,
-		CDPPort:        cfg.CDPPort,
-		DisplayNum:     cfg.DisplayNum,
+		VNCPort:            cfg.VNCPort,
+		CDPPort:            cfg.CDPPort,
+		DisplayNum:         cfg.DisplayNum,
+		GoogleClientID:     cfg.GoogleClientID,
+		GoogleClientSecret: cfg.GoogleClientSecret,
+		GoogleRedirectURI:  cfg.GoogleRedirectURI,
 	})
 
 	srv.SetSessionRegistry(sessionReg)

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { theme, cardStyle, primaryBtn, secondaryBtn } from '../constants/styles';
 import { useStaff } from '../hooks/useStaff';
+import { get, put } from '../services/api';
 import { Palette, Shield, Users, Zap, CreditCard, UserPlus, Check, X, Upload } from 'lucide-react';
 
 interface SettingsPageProps { org: Organization; orgId: string; isAdmin: boolean; }
@@ -28,6 +29,35 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
   const [pwOk, setPwOk] = useState(false);
   const [color, setColor] = useState(org.color || theme.primary);
   const [abbr, setAbbr] = useState(org.abbr || 'ORG');
+  const [brandName, setBrandName] = useState(org.name || '');
+  const [brandDomain, setBrandDomain] = useState('');
+  const [orgApiData, setOrgApiData] = useState<{ name: string; domain: string; plan_tier: string; max_accounts: number } | null>(null);
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [orgSaved, setOrgSaved] = useState(false);
+
+  useEffect(() => {
+    get<{ org: { name: string; domain: string; plan_tier: string; max_accounts: number } }>('/org')
+      .then(r => setOrgApiData(r.org))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (orgApiData) {
+      setBrandName(orgApiData.name);
+      setBrandDomain(orgApiData.domain || '');
+    }
+  }, [orgApiData]);
+
+  const saveBrand = async () => {
+    setOrgSaving(true);
+    setOrgSaved(false);
+    try {
+      await put('/org', { name: brandName, domain: brandDomain });
+      setOrgSaved(true);
+      setTimeout(() => setOrgSaved(false), 2000);
+    } catch {}
+    finally { setOrgSaving(false); }
+  };
 
   const handleAdd = async () => {
     if (!newStaff.name || !newStaff.email) return;
@@ -66,7 +96,8 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                 <button style={{ ...secondaryBtn({ padding: '4px 10px', fontSize: 11 }), marginTop: 6 }}>Upload</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div><Lbl t="Tên tổ chức" /><input style={inp} defaultValue={org.name} /></div>
+                <div><Lbl t="Tên tổ chức" /><input style={inp} value={brandName} onChange={e => setBrandName(e.target.value)} /></div>
+                <div><Lbl t="Domain" /><input style={inp} value={brandDomain} onChange={e => setBrandDomain(e.target.value)} placeholder="company.vn" /></div>
                 <div>
                   <Lbl t="Viết tắt (2–3 ký tự)" />
                   <input style={inp} value={abbr} onChange={e => setAbbr(e.target.value.slice(0, 3).toUpperCase())} placeholder="VF" />
@@ -90,7 +121,12 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
               <button style={secondaryBtn({ fontSize: 12, padding: '6px 14px' }) as React.CSSProperties}>Chọn file</button>
             </div>
           </div>
-          <button style={{ ...primaryBtn({ padding: '10px 24px' }), alignSelf: 'flex-end' } as React.CSSProperties}>Lưu thay đổi</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'flex-end' }}>
+            {orgSaved && <span style={{ color: '#4ade80', fontSize: 12 }}>Đã lưu ✓</span>}
+            <button onClick={saveBrand} disabled={orgSaving} style={{ ...primaryBtn({ padding: '10px 24px' }), opacity: orgSaving ? 0.6 : 1 } as React.CSSProperties}>
+              {orgSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -235,7 +271,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
                 <p style={{ color: theme.textMuted, fontSize: 11, marginBottom: 3 }}>Gói hiện tại</p>
-                <p style={{ color: theme.primaryPale, fontSize: 18, fontWeight: 700 }}>{org.plan} Plan</p>
+                <p style={{ color: theme.primaryPale, fontSize: 18, fontWeight: 700 }}>{orgApiData?.plan_tier || 'Free'} Plan</p>
               </div>
               <Badge label="Active" />
             </div>
@@ -249,7 +285,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
           </div>
           <div style={cardStyle()}>
             <p style={{ color: theme.text, fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Mức sử dụng tháng này</p>
-            {[{ l: 'AI Messages', c: 8400, m: 10000 }, { l: 'Leads', c: 284, m: 500 }, { l: 'Nhân viên', c: staff.length, m: 20 }].map(u => (
+            {[{ l: 'AI Messages', c: 8400, m: 10000 }, { l: 'Leads', c: 284, m: 500 }, { l: 'Nhân viên', c: staff.length, m: orgApiData?.max_accounts || 20 }].map(u => (
               <div key={u.l} style={{ marginBottom: 13 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                   <span style={{ color: theme.textMuted, fontSize: 12 }}>{u.l}</span>

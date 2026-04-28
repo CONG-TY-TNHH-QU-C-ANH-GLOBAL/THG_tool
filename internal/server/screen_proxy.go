@@ -73,42 +73,45 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		}
 
 		// Fetch CDP targets from Chrome inside the container.
-		// Chrome takes 3-8s to start its CDP listener after x11vnc is ready,
-		// so retry for up to 15s before giving up.
+		// Chrome takes 3-8s to start its CDP listener after x11vnc is ready;
+		// even when /json responds it may briefly return no page targets.
+		// Retry for up to 20s, combining both waits into a single loop.
 		targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", inst.CDPPort)
-		var (
-			resp *http.Response
-			body []byte
-		)
-		for attempt := 0; attempt < 15; attempt++ {
-			resp, err = http.Get(targetsURL) //nolint:noctx
-			if err == nil {
-				body, _ = io.ReadAll(resp.Body)
-				resp.Body.Close()
-				break
-			}
-			time.Sleep(time.Second)
-		}
-		if err != nil {
-			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "CDP unreachable sau 15s: " + err.Error()})
-			return
-		}
-
-		var targets []struct {
-			WS   string `json:"webSocketDebuggerUrl"`
-			Type string `json:"type"`
-		}
-		_ = json.Unmarshal(body, &targets)
-
 		var cdpWSURL string
-		for _, t := range targets {
-			if t.Type == "page" {
-				cdpWSURL = t.WS
+		for attempt := 0; attempt < 20; attempt++ {
+			if attempt > 0 {
+				time.Sleep(time.Second)
+			}
+			resp, httpErr := http.Get(targetsURL) //nolint:noctx
+			if httpErr != nil {
+				err = httpErr
+				continue
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			err = nil
+
+			var targets []struct {
+				WS   string `json:"webSocketDebuggerUrl"`
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(body, &targets)
+			for _, t := range targets {
+				if t.Type == "page" {
+					cdpWSURL = t.WS
+					break
+				}
+			}
+			if cdpWSURL != "" {
 				break
 			}
 		}
 		if cdpWSURL == "" {
-			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "no Chrome page target found"})
+			msg := "no Chrome page target after 20s"
+			if err != nil {
+				msg = "CDP unreachable after 20s: " + err.Error()
+			}
+			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: msg})
 			return
 		}
 

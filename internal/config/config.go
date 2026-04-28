@@ -44,6 +44,11 @@ type Config struct {
 	CDPPort    int // Chrome DevTools Protocol debug port (default 9222)
 	DisplayNum int // X11 display number for Xvfb (default 99)
 
+	// Google OAuth
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURI  string
+
 	// Web
 	WebPort int
 
@@ -86,6 +91,9 @@ func Load() *Config {
 		MaxWorkers:         getEnvInt("MAX_WORKERS", 1),
 		ScrollTimeout:      getEnvInt("SCROLL_TIMEOUT_SEC", 60),
 		ScanIntervalMin:    getEnvInt("SCAN_INTERVAL_MIN", 30),
+		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),
 	}
 
 	if proxyStr := getEnv("PROXY_LIST", ""); proxyStr != "" {

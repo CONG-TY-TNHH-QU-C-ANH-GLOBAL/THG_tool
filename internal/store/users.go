@@ -92,6 +92,24 @@ func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
 	return err
 }
 
+// EnsureSuperAdmin upserts a superadmin user unconditionally (unlike EnsureAdminUser which
+// only runs on an empty DB). Safe to call on every startup: if the email already exists and
+// already has role=superadmin, only the password hash is refreshed. If the email belongs to
+// a non-superadmin it is promoted. If no row exists, one is created.
+func (s *Store) EnsureSuperAdmin(email, passwordHash, name string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO users (org_id, email, name, password_hash, role, active)
+		VALUES (0, ?, ?, ?, 'superadmin', 1)
+		ON CONFLICT(email) DO UPDATE SET
+			password_hash = excluded.password_hash,
+			role          = 'superadmin',
+			active        = 1,
+			org_id        = 0,
+			updated_at    = CURRENT_TIMESTAMP`,
+		email, name, passwordHash)
+	return err
+}
+
 // UpdateUserPassword sets a new bcrypt hash for the user.
 func (s *Store) UpdateUserPassword(id int64, newHash string) error {
 	_, err := s.db.Exec(`UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, newHash, id)

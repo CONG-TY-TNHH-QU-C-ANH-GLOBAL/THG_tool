@@ -1,0 +1,241 @@
+package server
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	authpkg "github.com/thg/scraper/internal/auth"
+)
+
+const (
+	googleAuthEndpoint     = "https://accounts.google.com/o/oauth2/v2/auth"
+	googleTokenEndpoint    = "https://oauth2.googleapis.com/token"
+	googleUserInfoEndpoint = "https://www.googleapis.com/oauth2/v2/userinfo"
+	oauthStateCookie       = "g_oauth_state"
+)
+
+// googleLoginRedirect redirects the browser to the Google OAuth consent screen.
+// GET /api/auth/google
+func (s *Server) googleLoginRedirect(c *fiber.Ctx) error {
+	if s.cfg.GoogleClientID == "" {
+		return c.Status(501).JSON(fiber.Map{"error": "Google OAuth not configured — set GOOGLE_CLIENT_ID"})
+	}
+
+	state, err := randomHex(16)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "state generation failed"})
+	}
+
+	c.Cookie(&fiber.Cookie{
+		Name:     oauthStateCookie,
+		Value:    state,
+		MaxAge:   300,
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Lax",
+	})
+
+	q := url.Values{
+		"client_id":     {s.cfg.GoogleClientID},
+		"redirect_uri":  {s.cfg.GoogleRedirectURI},
+		"response_type": {"code"},
+		"scope":         {"openid email profile"},
+		"state":         {state},
+		"access_type":   {"online"},
+		"prompt":        {"select_account"},
+	}
+	return c.Redirect(googleAuthEndpoint+"?"+q.Encode(), fiber.StatusTemporaryRedirect)
+}
+
+// googleCallback handles the OAuth consent redirect.
+// GET /api/auth/google/callback
+func (s *Server) googleCallback(c *fiber.Ctx) error {
+	// CSRF guard
+	state := c.Query("state")
+	if state == "" || state != c.Cookies(oauthStateCookie) {
+		return redirectWithError(c, "invalid OAuth state")
+	}
+	c.Cookie(&fiber.Cookie{Name: oauthStateCookie, MaxAge: -1}) // clear
+
+	code := c.Query("code")
+	if code == "" {
+		return redirectWithError(c, c.Query("error", "access denied"))
+	}
+
+	// Exchange authorization code → access token
+	accessToken, err := exchangeGoogleCode(code, s.cfg.GoogleClientID, s.cfg.GoogleClientSecret, s.cfg.GoogleRedirectURI)
+	if err != nil {
+		log.Printf("[GoogleAuth] Token exchange failed: %v", err)
+		return redirectWithError(c, "token exchange failed")
+	}
+
+	// Fetch user info from Google
+	info, err := fetchGoogleUserInfo(accessToken)
+	if err != nil {
+		log.Printf("[GoogleAuth] User info failed: %v", err)
+		return redirectWithError(c, "failed to get user info")
+	}
+
+	// Find existing user — Google Sign-In only works for pre-registered accounts.
+	user, err := s.db.GetUserByEmail(info.Email)
+	if err != nil || user == nil {
+		log.Printf("[GoogleAuth] Unknown email: %s", info.Email)
+		return redirectWithError(c, "no account found — please register first")
+	}
+
+	// Issue JWT pair
+	jwtToken, err := authpkg.GenerateAccessToken(user.ID, user.OrgID, user.Email, string(user.Role), s.cfg.JWTSecret)
+	if err != nil {
+		return redirectWithError(c, "token generation failed")
+	}
+	refreshToken, err := authpkg.GenerateRefreshToken()
+	if err != nil {
+		return redirectWithError(c, "refresh token failed")
+	}
+	expiresAt := time.Now().Add(authpkg.RefreshTokenTTL)
+	if err := s.db.SaveRefreshToken(user.ID, refreshToken, expiresAt); err != nil {
+		return redirectWithError(c, "session save failed")
+	}
+
+	// Set refresh token cookie
+	c.Cookie(&fiber.Cookie{
+		Name:     refreshCookie,
+		Value:    refreshToken,
+		Path:     cookiePath,
+		Expires:  expiresAt,
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Lax",
+	})
+
+	// Pass access token via a short-lived readable cookie so the SPA can bootstrap.
+	c.Cookie(&fiber.Cookie{
+		Name:     "g_at",
+		Value:    jwtToken,
+		MaxAge:   60, // 60s — frontend reads and clears it immediately
+		HTTPOnly: false,
+		Secure:   true,
+		SameSite: "Lax",
+	})
+
+	s.db.InsertAuditLog(user.ID, "google_login", c.IP(), fmt.Sprintf(`{"email":%q}`, user.Email))
+	log.Printf("[GoogleAuth] Login: %s (role=%s)", user.Email, user.Role)
+
+	return c.Redirect("/?google_auth=1", fiber.StatusTemporaryRedirect)
+}
+
+// ------- helpers -------
+
+type googleUserInfo struct {
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
+}
+
+func exchangeGoogleCode(code, clientID, clientSecret, redirectURI string) (string, error) {
+	resp, err := http.PostForm(googleTokenEndpoint, url.Values{
+		"code":          {code},
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+		"redirect_uri":  {redirectURI},
+		"grant_type":    {"authorization_code"},
+	})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parse token response: %w", err)
+	}
+	if result.Error != "" {
+		return "", fmt.Errorf("google: %s", result.Error)
+	}
+	return result.AccessToken, nil
+}
+
+func fetchGoogleUserInfo(accessToken string) (*googleUserInfo, error) {
+	req, _ := http.NewRequest(http.MethodGet, googleUserInfoEndpoint, nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var info googleUserInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, err
+	}
+	if info.Email == "" {
+		return nil, fmt.Errorf("empty email from Google")
+	}
+	return &info, nil
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func redirectWithError(c *fiber.Ctx, msg string) error {
+	return c.Redirect("/?auth_error="+url.QueryEscape(msg), fiber.StatusTemporaryRedirect)
+}
+
+// googleStatus returns whether Google OAuth is configured.
+// GET /api/auth/google/status  (used by frontend to decide whether to show the button)
+func (s *Server) googleStatus(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"enabled": s.cfg.GoogleClientID != "",
+	})
+}
+
+// googleToken lets the SPA exchange the short-lived g_at cookie for a proper auth response.
+// POST /api/auth/google/token  (called immediately after redirect back from Google)
+func (s *Server) googleToken(c *fiber.Ctx) error {
+	token := c.Cookies("g_at")
+	if token == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "no pending Google auth"})
+	}
+	// Clear the cookie
+	c.Cookie(&fiber.Cookie{Name: "g_at", MaxAge: -1, HTTPOnly: false})
+
+	// Validate the token and return user info
+	claims, err := authpkg.ValidateAccessToken(token, s.cfg.JWTSecret)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
+	}
+
+	user, err := s.db.GetUserByEmail(claims.Email)
+	if err != nil || user == nil {
+		return c.Status(401).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	return c.JSON(fiber.Map{
+		"access_token": token,
+		"expires_in":   int(authpkg.AccessTokenTTL.Seconds()),
+		"user": fiber.Map{
+			"id":     user.ID,
+			"org_id": user.OrgID,
+			"email":  user.Email,
+			"name":   user.Name,
+			"role":   user.Role,
+		},
+	})
+}
