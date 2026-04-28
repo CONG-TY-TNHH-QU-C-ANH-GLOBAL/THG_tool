@@ -20,6 +20,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	fiberws "github.com/gofiber/websocket/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/thg/scraper/internal/agentloop"
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/browser"
@@ -59,8 +60,9 @@ type Server struct {
 	postProcessor PostProcessor       // called after agent submits scraped posts
 	wsHub         *WSHub              // Chrome Extension WebSocket hub
 	vncDisplay    *browser.VNCDisplay // virtual X11 display + VNC server (Linux only)
-	workspace     *workspace.Manager  // per-account Chrome workspace manager
-	sessionReg    *session.Registry   // optional — nil disables /api/sessions/stats
+	workspace     *workspace.Manager     // per-account Chrome workspace manager
+	sessionReg    *session.Registry      // optional — nil disables /api/sessions/stats
+	agentHandler  *agentloop.Handler     // self-healing agent OS — nil = disabled
 	port          int
 	cfg           Config
 }
@@ -68,6 +70,12 @@ type Server struct {
 // SetSessionRegistry wires in the in-memory session registry for the stats endpoint.
 func (s *Server) SetSessionRegistry(r *session.Registry) {
 	s.sessionReg = r
+}
+
+// SetAgentHandler wires in the self-healing agent OS handler.
+// When set, POST /api/agent/run and GET /api/agent/status are enabled.
+func (s *Server) SetAgentHandler(h *agentloop.Handler) {
+	s.agentHandler = h
 }
 
 // SetPostProcessor wires the AI pipeline callback (called from main.go after orchestrator is ready).
@@ -316,6 +324,13 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Get("/browser/status", s.vncStatus)
 	r.Post("/browser/start", s.vncStart)
 	r.Post("/browser/stop", s.vncStop)
+
+	// Self-healing Agent OS (admin only — applies patches to live files)
+	if s.agentHandler != nil {
+		agentGrp := r.Group("/agent", adminOnly)
+		agentGrp.Post("/run", s.agentHandler.Handle)
+		agentGrp.Get("/status", s.agentHandler.HandleStatus)
+	}
 
 	// Session stats (requires registry to be wired via SetSessionRegistry)
 	r.Get("/sessions/stats", s.getSessionStats)
