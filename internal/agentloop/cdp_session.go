@@ -37,6 +37,7 @@ type FBSessionState struct {
 	IsLoginPage   bool   `json:"is_login_page"`  // /login or r.php in URL
 	IsBlocked     bool   `json:"is_blocked"`     // "blocked" or "banned" in title
 	CookieCount   int    `json:"cookie_count"`   // number of cookies set
+	UserID        string `json:"user_id"`        // c_user cookie value — FB numeric user ID
 }
 
 // NewCDPSessionChecker creates a checker for the given CDP port.
@@ -49,9 +50,14 @@ func NewCDPSessionChecker(cdpPort int) *CDPSessionChecker {
 
 // sessionEvalJS is the expression evaluated inside the browser tab.
 // Kept as a single-line string to fit in one CDP Runtime.evaluate call.
+// user_id extracts the Facebook numeric user ID from the c_user cookie —
+// the same identifier Facebook's own code relies on for session ownership.
 const sessionEvalJS = `(function(){` +
 	`var u=window.location.href;` +
 	`var t=document.title.toLowerCase();` +
+	`var cuser='';` +
+	`var cm=document.cookie.match(/(?:^|;)\s*c_user=(\d+)/);` +
+	`if(cm)cuser=cm[1];` +
 	`return JSON.stringify({` +
 	`url:u,` +
 	`title:document.title,` +
@@ -59,7 +65,8 @@ const sessionEvalJS = `(function(){` +
 	`has_checkpoint:document.body.innerText.toLowerCase().indexOf('checkpoint')>=0,` +
 	`is_login_page:u.indexOf('/login')>=0||u.indexOf('r.php')>=0,` +
 	`is_blocked:t.indexOf('blocked')>=0||t.indexOf('banned')>=0,` +
-	`cookie_count:document.cookie.split(';').filter(function(c){return c.trim()!==''}).length` +
+	`cookie_count:document.cookie.split(';').filter(function(c){return c.trim()!==''}).length,` +
+	`user_id:cuser` +
 	`});})()`
 
 // Check finds the active Facebook tab, connects to its CDP WebSocket,
@@ -186,7 +193,10 @@ func (c *CDPSessionChecker) evalInTab(ctx context.Context, wsURL string) (*FBSes
 
 // IsSessionHealthy returns (true, "") when the FB session is fully interactive,
 // or (false, reason) when any blocking condition is detected.
-func (s *FBSessionState) IsSessionHealthy() (bool, string) {
+//
+// expectedUserID: Facebook numeric user ID (c_user cookie) that must be present.
+// Pass "" to skip identity verification.
+func (s *FBSessionState) IsSessionHealthy(expectedUserID string) (bool, string) {
 	if s.HasCheckpoint {
 		return false, "CRITICAL: Facebook checkpoint overlay detected in DOM"
 	}
@@ -198,6 +208,15 @@ func (s *FBSessionState) IsSessionHealthy() (bool, string) {
 	}
 	if s.CookieCount == 0 {
 		return false, "no cookies present — browser profile cleared or session invalidated"
+	}
+	// Identity check: prevent cross-account contamination.
+	// If we expected account A but account B is logged in, the verifier must fail.
+	if expectedUserID != "" && s.UserID != expectedUserID {
+		got := s.UserID
+		if got == "" {
+			got = "(none)"
+		}
+		return false, fmt.Sprintf("CRITICAL: wrong Facebook account — expected uid=%s, got uid=%s", expectedUserID, got)
 	}
 	if !s.HasFeed && !strings.Contains(s.URL, "/groups/") && !strings.Contains(s.URL, "/marketplace/") {
 		return false, fmt.Sprintf("Facebook page loaded but feed element absent (url: %s)", s.URL)

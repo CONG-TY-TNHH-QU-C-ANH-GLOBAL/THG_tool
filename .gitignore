@@ -40,3 +40,22 @@ dist/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+
+# Root node_modules (TypeScript tooling)
+node_modules/
+package-lock.json
+
+# Agent OS runtime artifacts (patch history, sandbox, backups)
+.agentloop/
+*.agentbak.*
+tmp/
+
+# Local Claude config (may contain prompt tuning / secrets)
+.claude/
+
+# AI experiments / internal strategy (not for public repo)
+ai/
+out.txt
+
+# TypeScript config (only needed if TS tooling is published)
+tsconfig.json

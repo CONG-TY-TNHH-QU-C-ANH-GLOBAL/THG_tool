@@ -32,11 +32,26 @@ func NewVerifier(cfg VerifyConfig) *Verifier {
 	}
 }
 
-// Verify runs a stability loop: 3 checks at T+0, T+2s, T+4s.
-// All 3 must pass for overall Pass=true.
+// stabilityCheckpoints returns the timing for the stability loop by domain.
+//
+// Browser sessions require a longer soak: Facebook's anti-bot checks,
+// lazy-loading, and goroutine startup can cause false passes at T+4s that
+// become failures at T+30s.
+//
+// Other domains are lower-risk; a shorter loop avoids unnecessary latency.
+func stabilityCheckpoints(domain Domain) []time.Duration {
+	if domain == DomainBrowser {
+		return []time.Duration{0, 5 * time.Second, 15 * time.Second, 30 * time.Second}
+	}
+	return []time.Duration{0, 2 * time.Second, 4 * time.Second}
+}
+
+// Verify runs a domain-appropriate stability loop.
+// Browser: T+0, T+5s, T+15s, T+30s.  Others: T+0, T+2s, T+4s.
+// All checkpoints must pass for overall Pass=true.
 // Invariant: one failure in the stability loop → FAIL.
 func (v *Verifier) Verify(ctx context.Context, domain Domain) VerifyResult {
-	checkpoints := []time.Duration{0, 2 * time.Second, 4 * time.Second}
+	checkpoints := stabilityCheckpoints(domain)
 	var lastResult VerifyResult
 
 	for i, delay := range checkpoints {
@@ -50,7 +65,8 @@ func (v *Verifier) Verify(ctx context.Context, domain Domain) VerifyResult {
 
 		result := v.checkOnce(ctx, domain)
 		slog.DebugContext(ctx, "verifier stability check",
-			"checkpoint", i, "score", result.Score, "pass", result.Pass)
+			"checkpoint", i, "delay_s", int(delay.Seconds()),
+			"score", result.Score, "pass", result.Pass)
 
 		if !result.Pass {
 			result.Reason = fmt.Sprintf("stability loop failed at T+%ds: %s", int(delay.Seconds()), result.Reason)
@@ -156,7 +172,7 @@ func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 		if cdpErr != nil {
 			reasons = append(reasons, "CDP session eval failed: "+cdpErr.Error())
 		} else {
-			ok, reason := state.IsSessionHealthy()
+			ok, reason := state.IsSessionHealthy(v.cfg.ExpectedFBUserID)
 			if ok {
 				// Session alive + determine if on a target page (Signal 5 = +0.20)
 				if strings.Contains(state.URL, "/groups/") ||

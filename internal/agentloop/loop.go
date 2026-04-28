@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,18 +20,30 @@ const MinPlannerConfidence = 0.50
 // MinArchitectConfidence: below this the loop escalates to HUMAN_REQUIRED.
 const MinArchitectConfidence = 0.60
 
+// domainLocks prevents two agent runs from patching the same domain concurrently.
+// A corrupted codebase is worse than a delayed fix.
+// Invariant SINGLE_WRITER_PER_DOMAIN: only one active run per domain at a time.
+var domainLocks sync.Map
+
+func acquireDomainLock(domain Domain) func() {
+	mu, _ := domainLocks.LoadOrStore(domain, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
+}
+
 // AgentLoop is the main orchestrator.
 //
 // Full pipeline per iteration:
 //
-//	Planner (LLM) → Architect (LLM) → SandboxValidator → Verifier → Promote|Rollback
+//	Planner (LLM) → Architect (LLM) → IsolatedSandbox → Verifier → Promote|Rollback
 //
 // Safe-deployment contract:
 //
 //	Patches are NEVER permanently applied until:
-//	  1. go build ./... passes (sandbox validation)
+//	  1. go build ./... passes in /tmp sandbox (not production)
 //	  2. Verifier score ≥ VerifyPassThreshold (goal-based success)
-//	  3. Verifier stability loop passes (T+0, T+2s, T+4s)
+//	  3. Verifier stability loop passes (domain-appropriate timing)
 //
 // On any failure after patches are applied → automatic rollback via Snapshot.
 //
@@ -43,6 +56,10 @@ type AgentLoop struct {
 	verifier  *Verifier
 	ledger    *ActionLedger
 	baseDir   string
+	// AlertFn is called on terminal/escalation states.
+	// Wire to Telegram, Slack, or any notification channel.
+	// Optional — nil disables alerts.
+	AlertFn func(state AgentState, traceID, reason string)
 }
 
 // New creates a fully wired AgentLoop.
@@ -57,8 +74,23 @@ func New(apiKey, plannerModel, architectModel, baseDir string, verifyCfg VerifyC
 	}
 }
 
+// alert fires AlertFn if set, and always logs at the appropriate level.
+func (a *AgentLoop) alert(ctx context.Context, state AgentState, traceID, reason string) {
+	switch state {
+	case StatePoison, StateAborted, StateFailed:
+		slog.ErrorContext(ctx, "agent terminal state",
+			"trace_id", traceID, "state", state, "reason", reason)
+	case StateHumanRequired:
+		slog.WarnContext(ctx, "agent escalated to human",
+			"trace_id", traceID, "state", state, "reason", reason)
+	}
+	if a.AlertFn != nil {
+		a.AlertFn(state, traceID, reason)
+	}
+}
+
 // Run executes the full agent loop for the given task.
-// Safe to call concurrently — each invocation gets its own ledger, trace, and sandbox.
+// Concurrent calls on the same domain are serialised via domainLocks.
 func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 	traceID := uuid.New().String()[:8]
 	trace := newDecisionTrace(traceID)
@@ -86,6 +118,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 		trace.Record(0, "planner", "classify task", err.Error(), "failed", 0, planMs)
 		result.Reason = "planner error: " + err.Error()
 		state = StateFailed
+		a.alert(ctx, state, traceID, result.Reason)
 		return result
 	}
 	planDomain = plan.Domain
@@ -99,8 +132,14 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 		result.Reason = fmt.Sprintf("planner confidence %.2f < %.2f — escalating to human", plan.Confidence, MinPlannerConfidence)
 		metricHumanEscalation("planner")
 		state = StateHumanRequired
+		a.alert(ctx, state, traceID, result.Reason)
 		return result
 	}
+
+	// ── Domain lock: only one active run per domain ────────────────────────────
+	// Prevents two concurrent runs from racing to patch the same files.
+	unlock := acquireDomainLock(plan.Domain)
+	defer unlock()
 
 	// ── Re-think Loop ──────────────────────────────────────────────────────────
 	var prevFailure string
@@ -114,6 +153,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 		case <-ctx.Done():
 			result.Reason = "context cancelled"
 			state = StateAborted
+			a.alert(ctx, state, traceID, result.Reason)
 			return result
 		default:
 		}
@@ -140,6 +180,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 			result.Reason = fmt.Sprintf("architect confidence %.2f < %.2f — escalating to human", design.Confidence, MinArchitectConfidence)
 			metricHumanEscalation("architect")
 			state = StateHumanRequired
+			a.alert(ctx, state, traceID, result.Reason)
 			return result
 		}
 
@@ -168,6 +209,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 		if poisoned {
 			state = StatePoison
 			result.Reason = fmt.Sprintf("poison patch detected — failed %d× before", PoisonThreshold)
+			a.alert(ctx, state, traceID, result.Reason)
 			return result
 		}
 
@@ -178,6 +220,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 				trace.Record(iter, "executor", "blast radius exceeded", brErr.Error(), "failed", 0, 0)
 				result.Reason = brErr.Error()
 				state = StateFailed
+				a.alert(ctx, state, traceID, result.Reason)
 				return result
 			}
 		}
@@ -224,6 +267,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 						trace.Record(iter, "executor", "patch is now poisoned "+patch.File, buildErr.Error(), "poison", 0, execMs)
 						state = StatePoison
 						result.Reason = fmt.Sprintf("patch %s marked as poison after build failure: %v", patch.File, buildErr)
+						a.alert(ctx, state, traceID, result.Reason)
 						return result
 					}
 				}
@@ -291,7 +335,7 @@ func (a *AgentLoop) Run(ctx context.Context, task Task) RunResult {
 	// All iterations exhausted.
 	state = StateAborted
 	result.Reason = fmt.Sprintf("max iterations (%d) reached — last failure: %s", MaxIterations, prevFailure)
-	slog.WarnContext(ctx, "agent loop aborted", "trace_id", traceID, "reason", result.Reason)
+	a.alert(ctx, state, traceID, result.Reason)
 	return result
 }
 
