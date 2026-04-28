@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	fiberws "github.com/gofiber/websocket/v2"
 	gorillaWS "github.com/gorilla/websocket"
@@ -72,14 +73,26 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		}
 
 		// Fetch CDP targets from Chrome inside the container.
+		// Chrome takes 3-8s to start its CDP listener after x11vnc is ready,
+		// so retry for up to 15s before giving up.
 		targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", inst.CDPPort)
-		resp, err := http.Get(targetsURL) //nolint:noctx
+		var (
+			resp *http.Response
+			body []byte
+		)
+		for attempt := 0; attempt < 15; attempt++ {
+			resp, err = http.Get(targetsURL) //nolint:noctx
+			if err == nil {
+				body, _ = io.ReadAll(resp.Body)
+				resp.Body.Close()
+				break
+			}
+			time.Sleep(time.Second)
+		}
 		if err != nil {
-			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "CDP unreachable: " + err.Error()})
+			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "CDP unreachable sau 15s: " + err.Error()})
 			return
 		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
 
 		var targets []struct {
 			WS   string `json:"webSocketDebuggerUrl"`
