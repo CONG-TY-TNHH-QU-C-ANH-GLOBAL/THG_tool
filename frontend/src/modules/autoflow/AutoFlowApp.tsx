@@ -6,7 +6,7 @@ import MainApp from './components/MainApp';
 import SuperAdmin from './components/SuperAdmin';
 import { useAuth } from './hooks/useAuth';
 import { useRoleStore } from './stores/roleStore';
-import { initToken } from './services/authService';
+import { initAuthSync } from './services/authSync';
 
 type Screen = 'landing' | 'auth' | 'app' | 'superadmin';
 type AuthMode = 'login' | 'register' | 'forgot' | 'success';
@@ -17,9 +17,9 @@ export default function AutoFlowApp() {
   const { user, logout } = useAuth();
   const { role, isSuperAdmin } = useRoleStore();
 
-  // On mount, restore token and redirect if already logged in
+  // On mount: schedule silent pre-expiry refresh + multi-tab sync
   useEffect(() => {
-    initToken();
+    initAuthSync();
   }, []);
 
   useEffect(() => {

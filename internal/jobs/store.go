@@ -56,10 +56,14 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("exec migration: %w\nstmt: %s", err, stmt)
 		}
 	}
-	// Idempotent column addition for existing databases that predate progress column.
-	_, err := s.db.Exec(`ALTER TABLE scheduler_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0`)
-	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		return fmt.Errorf("alter scheduler_jobs add progress: %w", err)
+	// Idempotent column additions for databases that predate these columns.
+	for _, col := range []string{
+		`ALTER TABLE scheduler_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE scheduler_jobs ADD COLUMN retry_after DATETIME`,
+	} {
+		if _, err := s.db.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("alter scheduler_jobs: %w (stmt: %s)", err, col)
+		}
 	}
 	return nil
 }
@@ -77,7 +81,8 @@ func (s *Store) Submit(ctx context.Context, task *Task, payload string) (*Job, e
 	return s.GetByTaskID(ctx, task.TaskID)
 }
 
-// Claim atomically picks the next pending job using a single UPDATE … RETURNING.
+// Claim atomically picks the next pending job that is ready to run
+// (retry_after IS NULL or retry_after has passed).
 // Returns nil, nil when the queue is empty.
 func (s *Store) Claim(ctx context.Context, workerID string) (*Job, error) {
 	now := time.Now().UTC()
@@ -85,7 +90,10 @@ func (s *Store) Claim(ctx context.Context, workerID string) (*Job, error) {
 		`UPDATE scheduler_jobs
 		 SET status='running', claimed_by=?, claimed_at=?, updated_at=CURRENT_TIMESTAMP
 		 WHERE id = (
-		   SELECT id FROM scheduler_jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1
+		   SELECT id FROM scheduler_jobs
+		   WHERE status='pending'
+		     AND (retry_after IS NULL OR retry_after <= CURRENT_TIMESTAMP)
+		   ORDER BY created_at ASC LIMIT 1
 		 )
 		 RETURNING id, task_id, intent, payload, status, attempt, max_attempts,
 		           error, claimed_by, claimed_at, progress, result, created_at, updated_at`,
@@ -116,12 +124,23 @@ func (s *Store) Complete(ctx context.Context, id int64, result string) error {
 	return err
 }
 
-// Fail increments attempt. If attempt < max_attempts the job is reset to pending for retry;
-// otherwise it is marked failed.
+// Fail increments attempt. If attempt < max_attempts the job is reset to pending
+// with an exponential backoff delay (attempt 0→1s, 1→3s, 2→7s, 3+→15s).
+// Otherwise the job is marked failed permanently.
 func (s *Store) Fail(ctx context.Context, id int64, errMsg string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE scheduler_jobs
-		 SET status     = CASE WHEN attempt + 1 < max_attempts THEN 'pending' ELSE 'failed' END,
+		 SET status      = CASE WHEN attempt + 1 < max_attempts THEN 'pending' ELSE 'failed' END,
+		     retry_after = CASE
+		       WHEN attempt + 1 < max_attempts THEN
+		         datetime('now', '+' || CASE attempt
+		           WHEN 0 THEN '1'
+		           WHEN 1 THEN '3'
+		           WHEN 2 THEN '7'
+		           ELSE '15'
+		         END || ' seconds')
+		       ELSE NULL
+		     END,
 		     attempt    = attempt + 1,
 		     error      = ?,
 		     claimed_by = '',

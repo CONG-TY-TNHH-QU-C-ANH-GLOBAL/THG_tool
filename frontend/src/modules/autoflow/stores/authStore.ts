@@ -2,19 +2,17 @@ import { create } from 'zustand';
 import * as authService from '../services/authService';
 import type { Role, AuthUser } from '../services/authService';
 
+const TOKEN_KEY = 'autoflow_token';
+
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
   isLoading: boolean;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
-  refresh(): Promise<void>;
+  setToken(token: string | null): void;
   setUser(user: AuthUser | null): void;
 }
-
-// Module-level flag: prevents concurrent refresh calls when multiple components
-// hit 401 at the same time. Not in Zustand state to avoid triggering re-renders.
-let isRefreshing = false;
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
@@ -37,17 +35,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: null, token: null });
   },
 
-  async refresh() {
-    if (isRefreshing) return;
-    isRefreshing = true;
-    try {
-      const token = await authService.refreshToken();
-      set({ token });
-    } catch {
-      set({ user: null, token: null });
-    } finally {
-      isRefreshing = false;
-    }
+  setToken(token) {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+    set({ token });
   },
 
   setUser(user) { set({ user }); },

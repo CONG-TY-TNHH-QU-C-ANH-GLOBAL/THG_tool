@@ -1,0 +1,19 @@
+{
+  "name": "thg-ai-architect",
+  "version": "1.0.0",
+  "scripts": {
+    "ai": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" ai/architect/runner.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "glob": "^10.3.10",
+    "openai": "^6.34.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}
