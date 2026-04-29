@@ -70,6 +70,9 @@ func (w *Watchdog) checkInstance(ctx context.Context, inst *workspace.Instance) 
 	if inst.CDPPort == 0 {
 		return
 	}
+	if time.Since(inst.StartedAt) < 2*time.Minute {
+		return
+	}
 
 	logger := slog.With("account_id", inst.AccountID, "cdp_port", inst.CDPPort)
 

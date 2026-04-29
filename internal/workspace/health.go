@@ -28,14 +28,16 @@ type HealthChecker struct {
 	interval   time.Duration
 	timeout    time.Duration
 	hbMaxAge   time.Duration // sessions with heartbeat older than this are unhealthy
+	startGrace time.Duration
 }
 
 // NewHealthChecker creates a checker with sensible production defaults.
 func NewHealthChecker() *HealthChecker {
 	return &HealthChecker{
-		interval: 15 * time.Second,
-		timeout:  2 * time.Second,
-		hbMaxAge: 90 * time.Second, // 3× the 30s heartbeat interval
+		interval:   15 * time.Second,
+		timeout:    2 * time.Second,
+		startGrace: 2 * time.Minute,
+		hbMaxAge:   90 * time.Second, // 3× the 30s heartbeat interval
 	}
 }
 
@@ -112,6 +114,9 @@ func (h *HealthChecker) Run(ctx context.Context, mgr ManagerIface, onUnhealthy f
 			return
 		case <-ticker.C:
 			for _, inst := range mgr.List() {
+				if time.Since(inst.StartedAt) < h.startGrace {
+					continue
+				}
 				status := h.Check(ctx, inst)
 				h.reportMetrics(status)
 				if !status.Healthy {

@@ -108,7 +108,7 @@ export interface Workspace {
   accountStatus: string;
   loggedIn: boolean;
   running: boolean;
-  browserState?: 'initializing' | 'ready' | 'idle' | 'active' | 'error' | 'terminated' | string;
+  browserState?: 'initializing' | 'display_ready' | 'ready' | 'idle' | 'active' | 'error' | 'terminated' | string;
   errorMsg?: string;
   vncPort?: number;
   cdpPort?: number;

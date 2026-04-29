@@ -84,7 +84,6 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		// even when /json responds it may briefly return no page targets.
 		// Retry for up to 90s, sending a status ping every 3s so the client
 		// knows the connection is alive during Chrome's startup window.
-		targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", inst.CDPPort)
 		var cdpWSURL string
 		var targetID string
 		// Immediate ping so the client knows we're working (before any delay)
@@ -97,31 +96,7 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 					_ = ws.WriteJSON(screenFrame{Type: "status", Msg: fmt.Sprintf("waiting for Chrome... (%ds)", attempt)})
 				}
 			}
-			ctx5s, cancel5s := context.WithTimeout(context.Background(), 5*time.Second)
-			req, _ := http.NewRequestWithContext(ctx5s, http.MethodGet, targetsURL, nil)
-			resp, httpErr := http.DefaultClient.Do(req)
-			cancel5s()
-			if httpErr != nil {
-				err = httpErr
-				continue
-			}
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			err = nil
-
-			var targets []struct {
-				ID   string `json:"id"`
-				WS   string `json:"webSocketDebuggerUrl"`
-				Type string `json:"type"`
-			}
-			_ = json.Unmarshal(body, &targets)
-			for _, t := range targets {
-				if t.Type == "page" {
-					cdpWSURL = t.WS
-					targetID = t.ID
-					break
-				}
-			}
+			cdpWSURL, targetID, err = resolveCDPPageWebSocket(inst.CDPPort)
 			if cdpWSURL != "" {
 				break
 			}
@@ -282,4 +257,65 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		<-ctx.Done()
 		log.Printf("[Screen] account %d session closed", id)
 	}
+}
+
+type cdpTargetInfo struct {
+	ID   string `json:"id"`
+	WS   string `json:"webSocketDebuggerUrl"`
+	Type string `json:"type"`
+}
+
+func resolveCDPPageWebSocket(cdpPort int) (string, string, error) {
+	targets, err := fetchCDPTargets(cdpPort)
+	if err != nil {
+		return "", "", err
+	}
+	for _, t := range targets {
+		if t.Type == "page" && t.WS != "" {
+			return t.WS, t.ID, nil
+		}
+	}
+
+	// Chrome can expose /json/version before it has a page target. Create a
+	// visible Facebook tab instead of leaving the operator staring at a blank
+	// screencast forever. Recent Chrome requires PUT for /json/new.
+	ctx5s, cancel5s := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel5s()
+	newURL := fmt.Sprintf("http://127.0.0.1:%d/json/new?%s", cdpPort, url.QueryEscape("https://www.facebook.com"))
+	req, _ := http.NewRequestWithContext(ctx5s, http.MethodPut, newURL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", fmt.Errorf("CDP /json/new failed: HTTP %d", resp.StatusCode)
+	}
+	var target cdpTargetInfo
+	if err := json.Unmarshal(body, &target); err != nil {
+		return "", "", fmt.Errorf("CDP /json/new parse failed: %w", err)
+	}
+	if target.Type == "page" && target.WS != "" {
+		return target.WS, target.ID, nil
+	}
+	return "", "", fmt.Errorf("CDP has no page target")
+}
+
+func fetchCDPTargets(cdpPort int) ([]cdpTargetInfo, error) {
+	ctx5s, cancel5s := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel5s()
+	targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", cdpPort)
+	req, _ := http.NewRequestWithContext(ctx5s, http.MethodGet, targetsURL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var targets []cdpTargetInfo
+	if err := json.Unmarshal(body, &targets); err != nil {
+		return nil, fmt.Errorf("CDP /json parse failed: %w", err)
+	}
+	return targets, nil
 }

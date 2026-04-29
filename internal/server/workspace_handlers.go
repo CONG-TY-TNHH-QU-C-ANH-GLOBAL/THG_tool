@@ -200,24 +200,38 @@ func (s *Server) watchWorkspaceReadiness(accountID, orgID int64, inst *workspace
 	if inst == nil {
 		return
 	}
-	vncReady := workspace.WaitForVNC(inst.VNCPort, 60*time.Second)
-	cdpReady := workspace.WaitForCDP(inst.CDPPort, 90*time.Second)
-	if vncReady && cdpReady {
+
+	vncCh := make(chan bool, 1)
+	cdpCh := make(chan bool, 1)
+	go func() { vncCh <- workspace.WaitForVNC(inst.VNCPort, 60*time.Second) }()
+	go func() { cdpCh <- workspace.WaitForCDP(inst.CDPPort, 90*time.Second) }()
+
+	vncReady := <-vncCh
+	if vncReady {
+		// VNC is the operator-facing live desktop. Mark it separately so the
+		// dashboard can render the browser even while CDP is still warming up.
+		s.recordBrowserSession(accountID, orgID, inst, "display_ready", "")
+		log.Printf("[Workspace] Account %d browser desktop ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
+	} else {
+		cdpReady := <-cdpCh
+		msg := "VNC did not become ready; check x11vnc/Xvfb in docker logs"
+		if !cdpReady {
+			msg = "VNC and Chrome CDP did not become ready; rebuild thg-browser and check docker logs"
+		}
+		s.recordBrowserSession(accountID, orgID, inst, "error", msg)
+		log.Printf("[Workspace] Account %d browser startup warning: %s", accountID, msg)
+		return
+	}
+
+	cdpReady := <-cdpCh
+	if cdpReady {
 		s.recordBrowserSession(accountID, orgID, inst, "ready", "")
 		log.Printf("[Workspace] Account %d browser ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
 		return
 	}
 
-	var msg string
-	switch {
-	case !vncReady && !cdpReady:
-		msg = "VNC and Chrome CDP did not become ready; rebuild thg-browser and check docker logs"
-	case !vncReady:
-		msg = "VNC did not become ready; check x11vnc/Xvfb in docker logs"
-	default:
-		msg = "Chrome CDP did not become ready; check Chromium startup in docker logs"
-	}
-	s.recordBrowserSession(accountID, orgID, inst, "error", msg)
+	msg := "Desktop is visible, but Chrome CDP did not become ready; automation/login verification may wait. Check Chromium startup in docker logs"
+	s.recordBrowserSession(accountID, orgID, inst, "display_ready", msg)
 	log.Printf("[Workspace] Account %d browser startup warning: %s", accountID, msg)
 }
 
