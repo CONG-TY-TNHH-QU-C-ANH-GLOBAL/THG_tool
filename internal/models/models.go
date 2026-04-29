@@ -360,15 +360,24 @@ type GroupQuality struct {
 type UserRole string
 
 const (
-	RoleSuperAdmin UserRole = "superadmin" // platform owner — sees all orgs
+	RoleFounder    UserRole = "founder"    // platform owner — sees all orgs
+	RoleSuperAdmin UserRole = "superadmin" // legacy platform role; migrate to founder
 	RoleAdmin      UserRole = "admin"      // org admin — manages their org
 	RoleSales      UserRole = "sales"      // org member — read + action
 )
 
+func IsPlatformRole(role UserRole) bool {
+	return role == RoleFounder || role == RoleSuperAdmin
+}
+
+func IsPlatformUser(orgID int64, role UserRole) bool {
+	return orgID == 0 && IsPlatformRole(role)
+}
+
 // User represents a dashboard user account with RBAC.
 type User struct {
 	ID           int64     `json:"id"`
-	OrgID        int64     `json:"org_id"` // 0 = superadmin (cross-org)
+	OrgID        int64     `json:"org_id"` // 0 = founder/platform owner (cross-org)
 	Email        string    `json:"email"`
 	Name         string    `json:"name"`
 	PasswordHash string    `json:"-"` // never serialized in JSON responses

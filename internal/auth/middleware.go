@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/models"
 )
 
 // RequireAuth validates the JWT and injects user context into Fiber locals.
@@ -45,8 +46,17 @@ func RequireRole(roles ...string) fiber.Handler {
 	}
 	return func(c *fiber.Ctx) error {
 		role, _ := c.Locals("user_role").(string)
-		// superadmin passes ALL role checks
-		if role == "superadmin" || allowed[role] {
+		orgID, _ := c.Locals("org_id").(int64)
+		// Platform owners pass all role checks, but only with the platform org context.
+		if models.IsPlatformRole(models.UserRole(role)) {
+			if orgID == 0 {
+				return c.Next()
+			}
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "invalid platform role context",
+			})
+		}
+		if allowed[role] {
 			return c.Next()
 		}
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{

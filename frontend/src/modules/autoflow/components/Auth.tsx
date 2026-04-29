@@ -1,15 +1,22 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, Building2, Check, LockKeyhole, Mail, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { isPlatformRole, type AuthUser } from '../services/authService';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'success';
+type AuthSuccessRole = 'admin' | 'staff' | 'founder' | 'superadmin';
 
 interface AuthProps {
   mode: AuthMode;
   setMode: (m: AuthMode) => void;
-  onSuccess: (role: 'admin' | 'staff' | 'superadmin') => void;
+  onSuccess: (role: AuthSuccessRole) => void;
   onNeedsOnboarding?: () => void;
   goBack: () => void;
+}
+
+function routeRoleFor(user?: Partial<AuthUser> | null): AuthSuccessRole {
+  if (isPlatformRole(user?.role)) return 'founder';
+  return user?.role === 'admin' ? 'admin' : 'staff';
 }
 
 const GoogleIcon = () => (
@@ -56,10 +63,12 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
         const { useAuthStore } = await import('../stores/authStore');
         useAuthStore.getState().setAuth(data.access_token, data.user);
         history.replaceState(null, '', window.location.pathname);
-        if (data.needs_onboarding && onNeedsOnboarding) {
+        if (isPlatformRole(data.user?.role)) {
+          onSuccess(routeRoleFor(data.user));
+        } else if (data.needs_onboarding && onNeedsOnboarding) {
           onNeedsOnboarding();
         } else {
-          onSuccess(data.user?.role === 'superadmin' ? 'superadmin' : data.user?.role === 'admin' ? 'admin' : 'staff');
+          onSuccess(routeRoleFor(data.user));
         }
       })
       .catch(() => setError('Google đăng nhập thất bại'));
@@ -92,7 +101,7 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
       if (data.needs_onboarding && onNeedsOnboarding) {
         onNeedsOnboarding();
       } else {
-        onSuccess(data.user?.role === 'admin' ? 'admin' : 'staff');
+        onSuccess(routeRoleFor(data.user));
       }
     } catch {
       setRegError('Lỗi kết nối, thử lại sau');
@@ -107,11 +116,15 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
       await login(email, password);
       const { useAuthStore } = await import('../stores/authStore');
       const user = useAuthStore.getState().user;
+      if (isPlatformRole(user?.role)) {
+        onSuccess(routeRoleFor(user));
+        return;
+      }
       if (user?.org_id === 0 && onNeedsOnboarding) {
         onNeedsOnboarding();
         return;
       }
-      onSuccess(user?.role === 'superadmin' ? 'superadmin' : user?.role === 'admin' ? 'admin' : 'staff');
+      onSuccess(routeRoleFor(user));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Đăng nhập thất bại');
     }

@@ -15,6 +15,7 @@ import (
 
 	fiberws "github.com/gofiber/websocket/v2"
 	gorillaWS "github.com/gorilla/websocket"
+	"github.com/thg/scraper/internal/models"
 )
 
 type screenFrame struct {
@@ -72,7 +73,8 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			return
 		}
 		orgID, _ := ws.Locals("org_id").(int64)
-		if orgID != 0 && acc.OrgID != orgID {
+		role, _ := ws.Locals("user_role").(string)
+		if !models.IsPlatformUser(orgID, models.UserRole(role)) && acc.OrgID != orgID {
 			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "access denied"})
 			return
 		}

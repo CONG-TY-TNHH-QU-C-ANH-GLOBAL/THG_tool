@@ -89,6 +89,9 @@ func (s *Server) onboardingSetup(c *fiber.Ctx) error {
 	if err != nil || user == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
+	if models.IsPlatformRole(user.Role) {
+		return c.Status(403).JSON(fiber.Map{"error": "founder accounts do not use workspace onboarding"})
+	}
 	if user.OrgID != 0 {
 		return c.Status(409).JSON(fiber.Map{"error": "user already belongs to an organization"})
 	}
@@ -264,6 +267,13 @@ func (s *Server) getInviteInfo(c *fiber.Ctx) error {
 func (s *Server) acceptInvite(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(int64)
 	token := c.Params("token")
+	user, err := s.db.GetUserByID(userID)
+	if err != nil || user == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	if models.IsPlatformRole(user.Role) {
+		return c.Status(403).JSON(fiber.Map{"error": "founder accounts cannot join workspaces"})
+	}
 
 	var orgID int64
 	var email string
@@ -282,7 +292,7 @@ func (s *Server) acceptInvite(c *fiber.Ctx) error {
 	s.db.DB().ExecContext(c.Context(),
 		`UPDATE org_invites SET used_at = CURRENT_TIMESTAMP WHERE token = ?`, token)
 
-	user, _ := s.db.GetUserByID(userID)
+	user, _ = s.db.GetUserByID(userID)
 	newToken, _ := authpkg.GenerateAccessToken(userID, orgID, user.Email, string(models.RoleSales), s.cfg.JWTSecret)
 
 	s.db.InsertAuditLog(userID, "invite_accepted", c.IP(), `{}`)

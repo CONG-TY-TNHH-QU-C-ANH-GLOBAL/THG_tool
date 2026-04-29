@@ -217,10 +217,15 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	tenantReady := func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		role, _ := c.Locals("user_role").(string)
-		if orgID == 0 && role != string(models.RoleSuperAdmin) {
+		if orgID == 0 && !models.IsPlatformRole(models.UserRole(role)) {
 			return c.Status(403).JSON(fiber.Map{
 				"error": "onboarding required",
 				"code":  "ONBOARDING_REQUIRED",
+			})
+		}
+		if orgID != 0 && models.IsPlatformRole(models.UserRole(role)) {
+			return c.Status(403).JSON(fiber.Map{
+				"error": "invalid platform role context",
 			})
 		}
 		return c.Next()
@@ -314,7 +319,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Delete("/org/invites/:id", adminOnly, s.revokeInvite)
 
 	// Superadmin: org management — /superadmin prefix keeps it separate from /admin
-	superAdminGrp := r.Group("/superadmin", authpkg.RequireRole("superadmin"))
+	superAdminGrp := r.Group("/superadmin", authpkg.RequireRole(string(models.RoleFounder)))
 	superAdminGrp.Get("/orgs", s.listOrgs)
 	superAdminGrp.Put("/orgs/:id", s.adminUpdateOrg)
 	superAdminGrp.Delete("/orgs/:id", s.superAdminDeleteOrg)
@@ -403,6 +408,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 		}
 		c.Locals("user_id", claims.UserID)
 		c.Locals("org_id", claims.OrgID)
+		c.Locals("user_role", claims.Role)
 		return c.Next()
 	}
 

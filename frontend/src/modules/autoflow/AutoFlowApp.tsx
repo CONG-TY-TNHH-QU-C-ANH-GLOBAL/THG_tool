@@ -8,6 +8,7 @@ import Onboarding from './components/Onboarding';
 import { useAuth } from './hooks/useAuth';
 import { useRoleStore } from './stores/roleStore';
 import { initAuthSync } from './services/authSync';
+import { isPlatformRole } from './services/authService';
 
 type Screen = 'landing' | 'auth' | 'onboarding' | 'app' | 'superadmin';
 type AuthMode = 'login' | 'register' | 'forgot' | 'success';
@@ -21,7 +22,7 @@ export default function AutoFlowApp() {
     () => new URLSearchParams(window.location.search).has('google_auth'),
   );
   const { user, logout } = useAuth();
-  const { role, isSuperAdmin } = useRoleStore();
+  const { role } = useRoleStore();
 
   // On mount: schedule silent pre-expiry refresh + multi-tab sync
   useEffect(() => {
@@ -39,10 +40,12 @@ export default function AutoFlowApp() {
         const { useAuthStore } = await import('./stores/authStore');
         useAuthStore.getState().setAuth(data.access_token, data.user);
         setGoogleAuthPending(false);
-        if (data.needs_onboarding) {
+        if (isPlatformRole(data.user?.role)) {
+          setScreen('superadmin');
+        } else if (data.needs_onboarding) {
           setScreen('onboarding');
         } else {
-          setScreen(data.user?.role === 'superadmin' ? 'superadmin' : 'app');
+          setScreen('app');
         }
       })
       .catch(() => setGoogleAuthPending(false));
@@ -53,25 +56,27 @@ export default function AutoFlowApp() {
   useEffect(() => {
     if (googleAuthPending) return;
     if (user && screen !== 'app' && screen !== 'superadmin' && screen !== 'onboarding') {
-      if ((user as { org_id?: number }).org_id === 0) {
+      if (isPlatformRole(user.role)) {
+        setScreen('superadmin');
+      } else if ((user as { org_id?: number }).org_id === 0) {
         // Only send to onboarding from the auth screen (fresh login/signup).
         // Prevents a stale org_id=0 token in localStorage from wrongly
         // redirecting an already-onboarded user who did a Google re-login.
         if (screen === 'auth') setScreen('onboarding');
       } else {
-        setScreen(isSuperAdmin ? 'superadmin' : 'app');
+        setScreen('app');
       }
     }
-  }, [user, isSuperAdmin, screen, googleAuthPending]);
+  }, [user, screen, googleAuthPending]);
 
-  const mainRole: 'admin' | 'staff' = role === 'admin' || role === 'superadmin' ? 'admin' : 'staff';
+  const mainRole: 'admin' | 'staff' = role === 'admin' || isPlatformRole(role) ? 'admin' : 'staff';
 
   if (screen === 'superadmin') {
     return <SuperAdmin goBack={() => setScreen('landing')} />;
   }
 
   if (screen === 'onboarding') {
-    return <Onboarding onComplete={(r) => setScreen(r === 'superadmin' ? 'superadmin' : 'app')} />;
+    return <Onboarding onComplete={(r) => setScreen(isPlatformRole(r) ? 'superadmin' : 'app')} />;
   }
 
   if (screen === 'app') {
@@ -84,7 +89,7 @@ export default function AutoFlowApp() {
         mode={authMode}
         setMode={setAuthMode}
         onSuccess={(r) => {
-          const nextScreen = r === 'superadmin' ? 'superadmin' : 'app';
+          const nextScreen = isPlatformRole(r) ? 'superadmin' : 'app';
           setScreen(nextScreen);
         }}
         onNeedsOnboarding={() => setScreen('onboarding')}

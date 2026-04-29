@@ -59,7 +59,7 @@ type ProvisionedOrgClaim struct {
 
 // FindProvisionedOrgByEmail resolves a pending workspace/org assignment for an
 // email. Invites are explicit and win first; otherwise a Facebook account row
-// with the same email is treated as a superadmin-provisioned workspace claim.
+// with the same email is treated as a founder-provisioned workspace claim.
 func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, error) {
 	email = normalizeEmail(email)
 	if email == "" {
@@ -92,7 +92,7 @@ func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, e
 		        FROM users u
 		        WHERE u.org_id = a.org_id
 		          AND u.active = 1
-		          AND u.role <> 'superadmin') AS member_count
+		          AND u.role NOT IN ('founder', 'superadmin')) AS member_count
 		FROM accounts a
 		JOIN organizations o ON o.id = a.org_id
 		WHERE lower(trim(COALESCE(a.email, ''))) = ?
@@ -147,6 +147,7 @@ func (s *Store) ListUsers(orgID int64) ([]models.User, error) {
 
 // EnsureAdminUser creates a superadmin if the users table is empty (bootstrap only).
 func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
+	email = normalizeEmail(email)
 	var count int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
 		return err
@@ -156,26 +157,31 @@ func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
 	}
 	_, err := s.db.Exec(`
 		INSERT INTO users (org_id, email, name, password_hash, role, active)
-		VALUES (0, ?, ?, ?, 'superadmin', 1)`, email, name, passwordHash)
+		VALUES (0, ?, ?, ?, ?, 1)`, email, name, passwordHash, models.RoleFounder)
 	return err
 }
 
-// EnsureSuperAdmin upserts a superadmin user unconditionally (unlike EnsureAdminUser which
-// only runs on an empty DB). Safe to call on every startup: if the email already exists and
-// already has role=superadmin, only the password hash is refreshed. If the email belongs to
-// a non-superadmin it is promoted. If no row exists, one is created.
-func (s *Store) EnsureSuperAdmin(email, passwordHash, name string) error {
+// EnsureFounder upserts the platform founder unconditionally (unlike EnsureAdminUser which
+// only runs on an empty DB). Safe to call on every startup: if the email already exists, the
+// account is promoted to founder with org_id=0 and the password hash is refreshed.
+func (s *Store) EnsureFounder(email, passwordHash, name string) error {
+	email = normalizeEmail(email)
 	_, err := s.db.Exec(`
 		INSERT INTO users (org_id, email, name, password_hash, role, active)
-		VALUES (0, ?, ?, ?, 'superadmin', 1)
+		VALUES (0, ?, ?, ?, ?, 1)
 		ON CONFLICT(email) DO UPDATE SET
 			password_hash = excluded.password_hash,
-			role          = 'superadmin',
+			role          = excluded.role,
 			active        = 1,
 			org_id        = 0,
 			updated_at    = CURRENT_TIMESTAMP`,
-		email, name, passwordHash)
+		email, name, passwordHash, models.RoleFounder)
 	return err
+}
+
+// EnsureSuperAdmin is kept for legacy callers; new code should use EnsureFounder.
+func (s *Store) EnsureSuperAdmin(email, passwordHash, name string) error {
+	return s.EnsureFounder(email, passwordHash, name)
 }
 
 // UpdateUserOrg assigns a user to an org and sets their role (used after onboarding).

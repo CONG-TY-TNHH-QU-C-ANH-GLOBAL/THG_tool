@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'staff' | 'super_admin';
+export type Role = 'founder' | 'superadmin' | 'admin' | 'staff' | 'sales';
 export type PlanTier = 'Starter' | 'Pro' | 'Enterprise';
 export type LeadStatus = 'Hot' | 'Warm' | 'Cold';
 export type ThreadStatus = 'Active' | 'Converted' | 'Pending';

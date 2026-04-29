@@ -277,7 +277,7 @@ func (s *Server) googleToken(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"access_token":     token,
 		"expires_in":       int(authpkg.AccessTokenTTL.Seconds()),
-		"needs_onboarding": user.OrgID == 0,
+		"needs_onboarding": user.OrgID == 0 && !models.IsPlatformRole(user.Role),
 		"user": fiber.Map{
 			"id":     user.ID,
 			"org_id": user.OrgID,

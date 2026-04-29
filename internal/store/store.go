@@ -347,6 +347,8 @@ func (s *Store) migrate() error {
 	s.db.Exec(`INSERT OR IGNORE INTO organizations (id, name, domain, plan_tier, max_accounts) VALUES (1, 'THG Platform', 'thgfulfill.com', 'enterprise', 0)`)
 	// Add org_id to users (existing users → org 0 = superadmin)
 	s.db.Exec(`ALTER TABLE users ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	// Rename the legacy platform role; old JWTs with superadmin remain accepted by RBAC.
+	s.db.Exec(`UPDATE users SET role = 'founder' WHERE role = 'superadmin' AND COALESCE(org_id,0) = 0`)
 	// Add org_id to accounts (existing accounts → org 1 = default org)
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
 	// Add org_id to groups

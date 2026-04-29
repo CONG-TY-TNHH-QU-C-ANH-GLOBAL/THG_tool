@@ -86,7 +86,7 @@ func main() {
 			hash, err := authpkg.HashPassword(saPass)
 			if err != nil {
 				log.Printf("⚠️  Superadmin password hashing failed: %v", err)
-			} else if err := db.EnsureSuperAdmin(saEmail, hash, os.Getenv("SUPERADMIN_NAME")); err != nil {
+			} else if err := db.EnsureFounder(saEmail, hash, os.Getenv("SUPERADMIN_NAME")); err != nil {
 				log.Printf("⚠️  Superadmin upsert failed: %v", err)
 			} else {
 				log.Printf("✅ Superadmin ready: %s", saEmail)

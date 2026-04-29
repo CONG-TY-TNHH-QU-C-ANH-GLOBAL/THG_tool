@@ -8,6 +8,7 @@ import (
 	"time"
 
 	fiberws "github.com/gofiber/websocket/v2"
+	"github.com/thg/scraper/internal/models"
 )
 
 // perAccountVNCProxyHandler handles GET /ws/vnc/:id.
@@ -28,6 +29,18 @@ func (s *Server) perAccountVNCProxyHandler() func(*fiberws.Conn) {
 		inst := s.workspace.Get(accountID)
 		if inst == nil || inst.VNCPort == 0 {
 			_ = ws.WriteMessage(fiberws.TextMessage, []byte("browser not running; start it first"))
+			return
+		}
+
+		acc, err := s.db.GetAccount(accountID)
+		if err != nil || acc == nil {
+			_ = ws.WriteMessage(fiberws.TextMessage, []byte("account not found"))
+			return
+		}
+		orgID, _ := ws.Locals("org_id").(int64)
+		role, _ := ws.Locals("user_role").(string)
+		if !models.IsPlatformUser(orgID, models.UserRole(role)) && acc.OrgID != orgID {
+			_ = ws.WriteMessage(fiberws.TextMessage, []byte("access denied"))
 			return
 		}
 

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { theme } from '../constants/styles';
 import { Building2, User, Check, Zap } from 'lucide-react';
-import { getMe, refreshToken } from '../services/authService';
+import { getMe, isPlatformRole, refreshToken } from '../services/authService';
 import { useAuthStore } from '../stores/authStore';
 
 interface OnboardingProps {
-  onComplete: (role: 'admin' | 'staff' | 'superadmin') => void;
+  onComplete: (role: 'admin' | 'staff' | 'founder' | 'superadmin') => void;
 }
 
 const D = { background: theme.bg, color: theme.text, fontFamily: 'system-ui, sans-serif' };
@@ -33,14 +33,19 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     let cancelled = false;
     getMe()
       .then(async user => {
-        if (cancelled || user.org_id === 0) return;
+        if (cancelled) return;
+        if (isPlatformRole(user.role)) {
+          onComplete('founder');
+          return;
+        }
+        if (user.org_id === 0) return;
         try {
           const token = await refreshToken();
           useAuthStore.getState().setAuth(token, user);
         } catch {
           useAuthStore.getState().setUser(user);
         }
-        onComplete(user.role === 'superadmin' ? 'superadmin' : user.role === 'admin' ? 'admin' : 'staff');
+        onComplete(user.role === 'admin' ? 'admin' : 'staff');
       })
       .catch(() => {});
     return () => { cancelled = true; };

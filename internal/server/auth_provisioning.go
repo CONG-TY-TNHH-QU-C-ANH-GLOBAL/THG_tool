@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) attachProvisionedOrgIfNeeded(user *models.User, ip string) (bool, error) {
-	if user == nil || user.OrgID != 0 || user.Role == models.RoleSuperAdmin {
+	if user == nil || user.OrgID != 0 || models.IsPlatformRole(user.Role) {
 		return false, nil
 	}
 

@@ -1,6 +1,10 @@
 import * as api from './api';
 
-export type Role = 'superadmin' | 'admin' | 'sales';
+export type Role = 'founder' | 'superadmin' | 'admin' | 'sales';
+
+export function isPlatformRole(role?: string | null): boolean {
+  return role === 'founder' || role === 'superadmin';
+}
 
 export interface AuthUser {
   id: number;

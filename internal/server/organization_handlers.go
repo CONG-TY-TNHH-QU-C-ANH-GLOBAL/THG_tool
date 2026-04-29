@@ -195,6 +195,7 @@ func (s *Server) adminUpdateOrg(c *fiber.Ctx) error {
 func (s *Server) createOrgUser(c *fiber.Ctx) error {
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
+	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
 
 	var req struct {
 		Email    string `json:"email"`
@@ -217,7 +218,7 @@ func (s *Server) createOrgUser(c *fiber.Ctx) error {
 
 	// Only superadmin can create users in arbitrary orgs; org admins create in own org
 	targetOrgID := callerOrgID
-	if callerRole == "superadmin" {
+	if callerIsPlatform {
 		if req.OrgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "org_id is required when superadmin creates a user"})
 		}
@@ -232,8 +233,8 @@ func (s *Server) createOrgUser(c *fiber.Ctx) error {
 	if req.Role == "" {
 		req.Role = "sales"
 	}
-	if callerRole != "superadmin" && req.Role == "superadmin" {
-		return c.Status(403).JSON(fiber.Map{"error": "cannot create superadmin users"})
+	if req.Role != string(models.RoleAdmin) && req.Role != string(models.RoleSales) {
+		return c.Status(400).JSON(fiber.Map{"error": "role must be admin or sales"})
 	}
 
 	existing, _ := s.db.GetUserByEmail(req.Email)

@@ -293,11 +293,12 @@ func (s *Server) adminUpdateUser(c *fiber.Ctx) error {
 	}
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
-	if callerRole != string(models.RoleSuperAdmin) && user.OrgID != callerOrgID {
+	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
+	if !callerIsPlatform && user.OrgID != callerOrgID {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
-	if callerRole != string(models.RoleSuperAdmin) && user.Role == models.RoleSuperAdmin {
-		return c.Status(403).JSON(fiber.Map{"error": "cannot modify superadmin users"})
+	if !callerIsPlatform && models.IsPlatformRole(user.Role) {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
 	}
 	name := user.Name
 	if req.Name != "" {
@@ -346,11 +347,12 @@ func (s *Server) adminDeleteUser(c *fiber.Ctx) error {
 	}
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
-	if callerRole != string(models.RoleSuperAdmin) && user.OrgID != callerOrgID {
+	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
+	if !callerIsPlatform && user.OrgID != callerOrgID {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
-	if callerRole != string(models.RoleSuperAdmin) && user.Role == models.RoleSuperAdmin {
-		return c.Status(403).JSON(fiber.Map{"error": "cannot delete superadmin users"})
+	if !callerIsPlatform && models.IsPlatformRole(user.Role) {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot delete founder users"})
 	}
 	if err := s.db.DeleteUser(id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "delete failed"})
