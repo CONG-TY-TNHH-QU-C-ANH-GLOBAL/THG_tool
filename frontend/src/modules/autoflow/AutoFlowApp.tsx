@@ -15,6 +15,11 @@ type AuthMode = 'login' | 'register' | 'forgot' | 'success';
 export default function AutoFlowApp() {
   const [screen, setScreen] = useState<Screen>('landing');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  // True while we're exchanging the g_at cookie from a Google OAuth redirect.
+  // Suppresses the org-based routing until the exchange completes.
+  const [googleAuthPending, setGoogleAuthPending] = useState(
+    () => new URLSearchParams(window.location.search).has('google_auth'),
+  );
   const { user, logout } = useAuth();
   const { role, isSuperAdmin } = useRoleStore();
 
@@ -23,16 +28,41 @@ export default function AutoFlowApp() {
     initAuthSync();
   }, []);
 
+  // Handle Google OAuth redirect (/?google_auth=1) at the top level so it works
+  // regardless of which screen the app starts on.
   useEffect(() => {
+    if (!googleAuthPending) return;
+    history.replaceState(null, '', window.location.pathname);
+    fetch('/api/auth/google/token', { method: 'POST' })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(async (data) => {
+        const { useAuthStore } = await import('./stores/authStore');
+        useAuthStore.getState().setAuth(data.access_token, data.user);
+        setGoogleAuthPending(false);
+        if (data.needs_onboarding) {
+          setScreen('onboarding');
+        } else {
+          setScreen(data.user?.role === 'superadmin' ? 'superadmin' : 'app');
+        }
+      })
+      .catch(() => setGoogleAuthPending(false));
+  }, []);
+
+  // Route authenticated users to the correct screen.
+  // Suppressed while googleAuthPending to avoid racing with the OAuth exchange.
+  useEffect(() => {
+    if (googleAuthPending) return;
     if (user && screen !== 'app' && screen !== 'superadmin' && screen !== 'onboarding') {
-      // If user has no org yet, send to onboarding
       if ((user as { org_id?: number }).org_id === 0) {
-        setScreen('onboarding');
+        // Only send to onboarding from the auth screen (fresh login/signup).
+        // Prevents a stale org_id=0 token in localStorage from wrongly
+        // redirecting an already-onboarded user who did a Google re-login.
+        if (screen === 'auth') setScreen('onboarding');
       } else {
         setScreen(isSuperAdmin ? 'superadmin' : 'app');
       }
     }
-  }, [user, isSuperAdmin, screen]);
+  }, [user, isSuperAdmin, screen, googleAuthPending]);
 
   const mainRole: 'admin' | 'staff' = role === 'admin' || role === 'superadmin' ? 'admin' : 'staff';
 
