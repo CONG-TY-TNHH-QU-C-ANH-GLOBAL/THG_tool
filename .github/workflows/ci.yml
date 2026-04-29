@@ -26,8 +26,8 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: Build cmd/scraper
-        run: go build ./cmd/scraper/
+      - name: Build production Go binaries
+        run: go build ./cmd/scraper/ ./cmd/worker/
 
       - name: Run tests (with race detector)
         run: go test -race -timeout 120s ./...
