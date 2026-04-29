@@ -58,9 +58,10 @@ func (e *TaskExecutor) Execute(ctx context.Context, skillName string, params map
 	taskID = skillRunTaskID(skillName, accountID, params)
 
 	task := &jobs.Task{
-		TaskID:  taskID,
-		Intent:  fmt.Sprintf("skill_run:%s (account %d)", skillName, accountID),
-		OrgID:   0,
+		TaskID:    taskID,
+		AccountID: accountID,
+		Intent:    fmt.Sprintf("skill_run:%s (account %d)", skillName, accountID),
+		OrgID:     0,
 		CrawlPlan: jobs.CrawlPlan{
 			Sources: []jobs.Source{{Type: "skill", URL: skillName}},
 		},

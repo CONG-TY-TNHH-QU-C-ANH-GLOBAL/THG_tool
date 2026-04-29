@@ -1,6 +1,15 @@
 import type { KPIConfig, StaffMember, ScoredStaff } from '../types';
-import { DEFAULT_KPI_CONFIG } from './mockData';
 import * as api from './api';
+
+const DEFAULT_KPI_CONFIG: KPIConfig = {
+  conv: 10,
+  conv2: 50,
+  cmt: 2,
+  bonus: 1000,
+  bonusAmt: 500000,
+  pen: 300,
+  penAmt: 100000,
+};
 
 interface BackendKPIConfig {
   conv_pts: number; conv2_pts: number; cmt_pts: number;

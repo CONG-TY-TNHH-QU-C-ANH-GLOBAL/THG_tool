@@ -5,6 +5,23 @@
 
 ---
 
+## 0. Production Open Crawler Boundary
+
+THG production crawling is prompt-scoped, not a fixed configured-group scraper.
+Telegram and dashboard chat are ingress transports into the same AI agent/action
+pipeline. The agent must turn explicit user intent into durable jobs such as
+`facebook_crawl`, `web_crawl`, or `lead_gen`.
+
+System rules:
+
+- A crawler job needs a concrete target URL, search query, or campaign context.
+- Broad "scan all" requests must ask for a target instead of scanning every saved group.
+- Workers attach to the selected account's visible workspace Chrome session.
+- Classification against current business context runs before candidates become leads.
+- Mock frontend data, embedded legacy HTML, hidden browser pools, and duplicate API services are prohibited in production.
+
+---
+
 ## 1. Global Architecture Diagram
 
 ```

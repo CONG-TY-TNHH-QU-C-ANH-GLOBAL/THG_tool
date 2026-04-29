@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thg/scraper/internal/models"
@@ -18,10 +19,11 @@ func hashToken(token string) string {
 
 // GetUserByEmail returns the user with the given email, or nil if not found.
 func (s *Store) GetUserByEmail(email string) (*models.User, error) {
+	email = normalizeEmail(email)
 	row := s.db.QueryRow(`
 		SELECT id, COALESCE(org_id,0), email, name, password_hash, role, active,
 		       failed_logins, locked_until, created_at, updated_at
-		FROM users WHERE email = ? AND active = 1`, email)
+		FROM users WHERE lower(trim(email)) = ? AND active = 1`, email)
 	return scanUser(row)
 }
 
@@ -36,6 +38,7 @@ func (s *Store) GetUserByID(id int64) (*models.User, error) {
 
 // CreateUser inserts a new user and returns their assigned ID.
 func (s *Store) CreateUser(u *models.User) (int64, error) {
+	u.Email = normalizeEmail(u.Email)
 	res, err := s.db.Exec(`
 		INSERT INTO users (org_id, email, name, password_hash, role, active)
 		VALUES (?, ?, ?, ?, ?, 1)`,
@@ -44,6 +47,71 @@ func (s *Store) CreateUser(u *models.User) (int64, error) {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// ProvisionedOrgClaim identifies an org that was pre-provisioned for an email
+// before the dashboard user account existed.
+type ProvisionedOrgClaim struct {
+	OrgID  int64
+	Role   models.UserRole
+	Source string
+}
+
+// FindProvisionedOrgByEmail resolves a pending workspace/org assignment for an
+// email. Invites are explicit and win first; otherwise a Facebook account row
+// with the same email is treated as a superadmin-provisioned workspace claim.
+func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, nil
+	}
+
+	var inviteOrgID int64
+	err := s.db.QueryRow(`
+		SELECT i.org_id
+		FROM org_invites i
+		JOIN organizations o ON o.id = i.org_id
+		WHERE lower(trim(i.email)) = ?
+		  AND i.used_at IS NULL
+		  AND i.expires_at > CURRENT_TIMESTAMP
+		  AND o.active = 1
+		ORDER BY i.created_at DESC
+		LIMIT 1`, email).Scan(&inviteOrgID)
+	if err == nil {
+		return &ProvisionedOrgClaim{OrgID: inviteOrgID, Role: models.RoleSales, Source: "invite"}, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	var accountOrgID int64
+	var memberCount int
+	err = s.db.QueryRow(`
+		SELECT a.org_id,
+		       (SELECT COUNT(1)
+		        FROM users u
+		        WHERE u.org_id = a.org_id
+		          AND u.active = 1
+		          AND u.role <> 'superadmin') AS member_count
+		FROM accounts a
+		JOIN organizations o ON o.id = a.org_id
+		WHERE lower(trim(COALESCE(a.email, ''))) = ?
+		  AND a.org_id > 0
+		  AND o.active = 1
+		ORDER BY a.created_at DESC
+		LIMIT 1`, email).Scan(&accountOrgID, &memberCount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	role := models.RoleSales
+	if memberCount == 0 {
+		role = models.RoleAdmin
+	}
+	return &ProvisionedOrgClaim{OrgID: accountOrgID, Role: role, Source: "account_email"}, nil
 }
 
 // ListUsers returns all users for an org (orgID=0 means all users — superadmin only).
@@ -255,4 +323,8 @@ func scanUser(row scanner) (*models.User, error) {
 		u.LockedUntil = lockedUntil.Time
 	}
 	return &u, nil
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }

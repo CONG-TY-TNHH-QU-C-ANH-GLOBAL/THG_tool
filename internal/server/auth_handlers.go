@@ -65,6 +65,10 @@ func (s *Server) login(c *fiber.Ctx) error {
 
 	// Successful login
 	s.db.ResetFailedLogins(user.ID)
+	if _, err := s.attachProvisionedOrgIfNeeded(user, ip); err != nil {
+		log.Printf("[Auth] Provisioned org claim failed for %s: %v", user.Email, err)
+		return c.Status(500).JSON(fiber.Map{"error": "workspace assignment failed"})
+	}
 
 	accessToken, err := auth.GenerateAccessToken(user.ID, user.OrgID, user.Email, string(user.Role), s.cfg.JWTSecret)
 	if err != nil {
@@ -88,7 +92,7 @@ func (s *Server) login(c *fiber.Ctx) error {
 		Path:     cookiePath,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		Secure:   false, // set to true only in production with HTTPS
+		Secure:   secureCookie(c),
 		SameSite: "Lax",
 	})
 
@@ -96,9 +100,8 @@ func (s *Server) login(c *fiber.Ctx) error {
 	log.Printf("[Auth] Login: %s (role=%s) from %s", user.Email, user.Role, ip)
 
 	return c.JSON(fiber.Map{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken, // also in body so clients behind cookie-stripping proxies can store it
-		"expires_in":    int(auth.AccessTokenTTL.Seconds()),
+		"access_token": accessToken,
+		"expires_in":   int(auth.AccessTokenTTL.Seconds()),
 		"user": fiber.Map{
 			"id":     user.ID,
 			"org_id": user.OrgID,
@@ -130,6 +133,10 @@ func (s *Server) refresh(c *fiber.Ctx) error {
 	if err != nil || user == nil {
 		return c.Status(401).JSON(fiber.Map{"error": "user not found"})
 	}
+	if _, err := s.attachProvisionedOrgIfNeeded(user, c.IP()); err != nil {
+		log.Printf("[Auth] Provisioned org claim failed during refresh for user %d: %v", user.ID, err)
+		return c.Status(500).JSON(fiber.Map{"error": "workspace assignment failed"})
+	}
 
 	// Rotate: delete old token, issue new one
 	s.db.DeleteRefreshToken(token)
@@ -154,14 +161,13 @@ func (s *Server) refresh(c *fiber.Ctx) error {
 		Path:     cookiePath,
 		Expires:  expiresAt,
 		HTTPOnly: true,
-		Secure:   false, // set to true only in production with HTTPS
+		Secure:   secureCookie(c),
 		SameSite: "Lax",
 	})
 
 	return c.JSON(fiber.Map{
-		"access_token":  accessToken,
-		"refresh_token": newRefresh, // also in body for clients that can't rely on cookies
-		"expires_in":    int(auth.AccessTokenTTL.Seconds()),
+		"access_token": accessToken,
+		"expires_in":   int(auth.AccessTokenTTL.Seconds()),
 	})
 }
 
@@ -180,7 +186,7 @@ func (s *Server) logout(c *fiber.Ctx) error {
 		Path:     cookiePath,
 		Expires:  time.Unix(0, 0),
 		HTTPOnly: true,
-		Secure:   false, // set to true only in production with HTTPS
+		Secure:   secureCookie(c),
 		SameSite: "Lax",
 	})
 	userID, _ := c.Locals("user_id").(int64)
@@ -195,8 +201,13 @@ func (s *Server) me(c *fiber.Ctx) error {
 	if err != nil || user == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
+	if _, err := s.attachProvisionedOrgIfNeeded(user, c.IP()); err != nil {
+		log.Printf("[Auth] Provisioned org claim failed during /me for user %d: %v", user.ID, err)
+		return c.Status(500).JSON(fiber.Map{"error": "workspace assignment failed"})
+	}
 	return c.JSON(fiber.Map{
 		"id":         user.ID,
+		"org_id":     user.OrgID,
 		"email":      user.Email,
 		"name":       user.Name,
 		"role":       user.Role,
@@ -280,6 +291,14 @@ func (s *Server) adminUpdateUser(c *fiber.Ctx) error {
 	if err != nil || user == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
+	callerOrgID, _ := c.Locals("org_id").(int64)
+	callerRole, _ := c.Locals("user_role").(string)
+	if callerRole != string(models.RoleSuperAdmin) && user.OrgID != callerOrgID {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	if callerRole != string(models.RoleSuperAdmin) && user.Role == models.RoleSuperAdmin {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot modify superadmin users"})
+	}
 	name := user.Name
 	if req.Name != "" {
 		name = req.Name
@@ -320,6 +339,18 @@ func (s *Server) adminDeleteUser(c *fiber.Ctx) error {
 	adminID, _ := c.Locals("user_id").(int64)
 	if id == adminID {
 		return c.Status(400).JSON(fiber.Map{"error": "cannot delete your own account"})
+	}
+	user, err := s.db.GetUserByID(id)
+	if err != nil || user == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	callerOrgID, _ := c.Locals("org_id").(int64)
+	callerRole, _ := c.Locals("user_role").(string)
+	if callerRole != string(models.RoleSuperAdmin) && user.OrgID != callerOrgID {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	if callerRole != string(models.RoleSuperAdmin) && user.Role == models.RoleSuperAdmin {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot delete superadmin users"})
 	}
 	if err := s.db.DeleteUser(id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "delete failed"})

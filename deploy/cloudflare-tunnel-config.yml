@@ -9,7 +9,7 @@ credentials-file: /root/.cloudflared/TUNNEL_ID_HERE.json
 
 ingress:
   - hostname: sale.thgfulfill.com
-    service: http://localhost:8080
+    service: http://localhost:80
     originRequest:
       connectTimeout: 30s
   - service: http_status:404

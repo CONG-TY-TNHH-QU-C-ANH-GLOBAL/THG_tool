@@ -192,7 +192,7 @@ func (b *Bot) handleScan(c tele.Context) error {
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        fmt.Sprintf("tg-scan-%s-%d", platform, time.Now().UnixMilli()),
-		Intent:        "scrape_group",
+		Intent:        "facebook_crawl",
 		CrawlPlan: jobs.CrawlPlan{
 			Sources:  []jobs.Source{{Type: string(platform) + "_group", URL: target}},
 			MaxItems: 50,
@@ -208,34 +208,7 @@ func (b *Bot) handleScan(c tele.Context) error {
 }
 
 func (b *Bot) handleScanAll(c tele.Context) error {
-	groups, err := b.db.GetActiveGroups(models.PlatformFacebook)
-	if err != nil {
-		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
-	}
-
-	if len(groups) == 0 {
-		return c.Send("⚠️ Chưa có group nào được cấu hình. Dùng `/add <url>` để thêm.", tele.ModeMarkdown)
-	}
-
-	jobCount := 0
-	ctx := context.Background()
-	for _, g := range groups {
-		task := &jobs.Task{
-			SchemaVersion: "1",
-			TaskID:        fmt.Sprintf("tg-scanall-%s-%d", g.Platform, g.ID),
-			Intent:        "scrape_group",
-			CrawlPlan: jobs.CrawlPlan{
-				Sources:  []jobs.Source{{Type: string(g.Platform) + "_group", URL: g.URL}},
-				MaxItems: 50,
-			},
-		}
-		taskPayload, _ := json.Marshal(task)
-		if _, err := b.jobStore.Submit(ctx, task, string(taskPayload)); err == nil {
-			jobCount++
-		}
-	}
-
-	return c.Send(fmt.Sprintf("🚀 Đã tạo %d jobs cho %d groups!\n⏳ Đang xử lý...", jobCount, len(groups)))
+	return c.Send("`/scan_all` da duoc tat trong production. Hay gui prompt cu the kem URL hoac yeu cau tim nhom de Agent tao crawler job dung ngu canh.", tele.ModeMarkdown)
 }
 
 func (b *Bot) handleStatus(c tele.Context) error {
@@ -581,52 +554,7 @@ func (b *Bot) handleFreeText(c tele.Context) error {
 		return send(response)
 	}
 
-	// Fallback: keyword matching
-	textLower := strings.ToLower(text)
-	if strings.Contains(textLower, "cào") || strings.Contains(textLower, "scrape") || strings.Contains(textLower, "scan") {
-		platform := models.PlatformFacebook
-		if strings.Contains(textLower, "tiktok") || strings.Contains(textLower, "tik tok") {
-			platform = models.PlatformTikTok
-		} else if strings.Contains(textLower, "zalo") {
-			platform = models.PlatformZalo
-		}
-
-		if strings.Contains(textLower, "tất cả") || strings.Contains(textLower, "all") || strings.Contains(textLower, "hết") {
-			groups, _ := b.db.GetActiveGroups(platform)
-			if len(groups) == 0 {
-				return send(fmt.Sprintf("⚠️ Chưa có group %s nào. Dùng `/add <url>`", platform))
-			}
-			count := 0
-			for _, g := range groups {
-				task := &jobs.Task{
-					SchemaVersion: "1",
-					TaskID:        fmt.Sprintf("tg-freetext-%s-%d", g.Platform, g.ID),
-					Intent:        "scrape_group",
-					CrawlPlan: jobs.CrawlPlan{
-						Sources:  []jobs.Source{{Type: string(g.Platform) + "_group", URL: g.URL}},
-						MaxItems: 50,
-					},
-				}
-				ftPayload, _ := json.Marshal(task)
-				if _, err := b.jobStore.Submit(context.Background(), task, string(ftPayload)); err == nil {
-					count++
-				}
-			}
-			return send(fmt.Sprintf("🤖 Hiểu rồi! Đã tạo %d jobs cào %s.\n⏳ Đang xử lý...", count, platform))
-		}
-
-		return send(fmt.Sprintf("🤖 Tôi hiểu bạn muốn cào %s.\n💡 Hãy thêm group trước bằng `/add <url>`, sau đó `/scan_all`", platform))
-	}
-
-	if strings.Contains(textLower, "thống kê") || strings.Contains(textLower, "stats") || strings.Contains(textLower, "báo cáo") {
-		return b.handleStats(c)
-	}
-
-	if strings.Contains(textLower, "kết quả") || strings.Contains(textLower, "leads") || strings.Contains(textLower, "result") {
-		return b.handleResults(c)
-	}
-
-	return send("🤖 Tôi chưa hiểu lệnh này. Gõ /help để xem hướng dẫn.\n💡 Cấu hình OPENAI_API_KEY để dùng AI Agent thông minh hơn!")
+	return send("AI Agent chua duoc cau hinh. Production crawler can OPENAI_API_KEY de hieu prompt mo va tranh chay sai y nguoi dung.")
 }
 
 // --- Helpers ---

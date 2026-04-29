@@ -1,5 +1,5 @@
 # Multi-stage build for ARM64 (Oracle Cloud Always Free)
-FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 ARG TARGETARCH
 ARG TARGETOS

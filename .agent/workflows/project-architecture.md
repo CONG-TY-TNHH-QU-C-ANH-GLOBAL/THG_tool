@@ -1,104 +1,124 @@
 ---
-description: THG Agentic Scraper v2 — full project architecture and module map
+description: THG open crawler production architecture and module map
 ---
 
-# THG Agentic Scraper v2 — Project Architecture
+# THG Open Crawler - Production Architecture
 
-## Overview
-An autonomous AI-powered lead generation and recruitment pipeline for Facebook. The system:
-1. **Scrapes** Facebook groups for buyer-intent posts
-2. **Classifies** posts as hot/warm/cold leads using AI (GPT)
-3. **Auto-comments** on qualified leads with contextual sales messages + images
-4. **Auto-posts** professional JD (Job Description) content to recruitment groups
-5. **Manages** multi-account Facebook access with persistent Chrome profiles
-6. **Orchestrates** everything via Telegram chatbot commands
+## Mindset
 
-## Tech Stack
-- **Language**: Go 1.21+
-- **Browser Automation**: chromedp (headless Chrome via CDP)
-- **AI**: OpenAI API (gpt-4.1 for content, gpt-4o-mini for classification)
-- **Database**: SQLite via go-sqlite3
-- **Telegram**: go-telegram-bot-api
-- **Deployment**: Docker + GitHub Actions → VPS (PM2)
+THG is no longer a fixed "scan configured groups" scraper. Production work enters
+through open prompts from Telegram or the dashboard chat. The AI agent parses the
+operator's request, turns it into a durable crawler job, runs it inside the
+selected Facebook workspace, and stores only classified, relevant outputs.
 
-## Directory Structure
+The important contract is:
+
+1. User prompt defines the target, intent, filters, and expected output.
+2. Browser automation reuses the real logged-in Facebook workspace for the chosen account.
+3. Raw crawled items pass through business-aware classification before becoming leads.
+4. No mock data, hidden local Chrome pool, or hardcoded fallback scan should decide production behavior.
+
+## Runtime Flow
+
 ```
-THG_sale/
-├── cmd/scraper/main.go          # Entry point — wires all components
-├── internal/
-│   ├── ai/                      # AI layer
-│   │   ├── agent.go             # Telegram AI Agent (OpenAI Function Calling)
-│   │   ├── classifier.go        # Post → Lead classification
-│   │   ├── msggen.go            # Comment/Inbox/JD post generation
-│   │   ├── group_scorer.go      # Group quality scoring
-│   │   ├── pricer.go            # Price list extraction (Vision API)
-│   │   └── selector.go          # AI-driven CSS selector discovery
-│   ├── orchestrator/
-│   │   ├── orchestrator.go      # Main coordinator (1800 lines)
-│   │   └── recruitment_pipeline.go  # JD posting pipeline
-│   ├── scraper/
-│   │   ├── autocomment.go       # Facebook posting/commenting engine
-│   │   ├── careerscraper.go     # Careers page scraper
-│   │   └── imagescraper.go      # JD card image generator
-│   ├── browser/                 # Chrome browser pool management
-│   ├── queue/                   # Job queue with workers
-│   ├── store/                   # SQLite database layer
-│   ├── models/                  # Data models and types
-│   ├── accounts/                # Multi-account management
-│   ├── telegram/                # Telegram bot
-│   ├── config/                  # Environment config
-│   └── server/                  # REST API + Web UI
-├── data/
-│   ├── scraper.db               # SQLite database
-│   ├── profiles/                # Chrome user profiles
-│   └── images/careers/          # Generated JD card images
-├── dist/                        # Web UI static files
-└── .env                         # Environment variables
+Telegram / Dashboard Chat
+        |
+        v
+AI Agent Router
+        |
+        v
+Open Crawler Job (scheduler_jobs)
+        |
+        v
+Worker Handler (facebook_crawl / web_crawl / lead_gen)
+        |
+        v
+Runtime Factory -> Workspace Chrome CDP session
+        |
+        v
+Facebook / Web target visible in Browser tab
+        |
+        v
+Universal Classifier -> Leads / Outputs / Audit logs
 ```
 
-## Component Dependency Graph
-```
-Telegram Bot → AI Agent → Orchestrator → {Scraper, Queue, Store, AI}
-                                            ↓
-                                     AutoCommenter → Browser Pool → Chrome (CDP)
-```
+## Production Services
 
-## Key Models (internal/models/)
-| Model | Purpose |
+| Service | Binary | Responsibility |
+|---|---|---|
+| Backend API | `cmd/scraper` | Auth, REST API, WebSocket screen proxy, Telegram bot, job submission, workspace orchestration |
+| Worker | `cmd/worker` | Durable job execution and open crawler handlers |
+| Frontend | `frontend` (Next.js) | Dashboard UI, Browser page, chat/control surfaces |
+
+Legacy `cmd/api`, embedded `internal/server/static`, hidden `browser.NewPool`, and
+`internal/accounts` fallback account manager are intentionally removed. The backend
+API and WebSocket surface is served by `cmd/scraper` on port `8080`.
+
+## Key Modules
+
+| Package | Purpose |
 |---|---|
-| `Group` | Facebook group (URL, name, platform, niche) |
-| `GroupQuality` | AI-scored quality (finalScore, category, blacklist) |
-| `Post` | Scraped Facebook post (content, author, URL) |
-| `Lead` | Classified lead (hot/warm/cold, niche, assigned staff) |
-| `OutboundMessage` | Queued message to send (comment/inbox/group_post) |
-| `CareerJob` | Job position from careers page |
-| `Account` | Facebook account for automation |
+| `internal/server` | Gofiber API, auth/session endpoints, workspace handlers, screen WebSocket |
+| `internal/workspace` | Starts and tracks persistent per-account Chrome profiles |
+| `internal/runtime` | CDP runtime adapters used by crawler handlers |
+| `internal/jobs` | Durable SQLite scheduler, idempotent submit/claim/retry |
+| `internal/handlers/facebook_crawl` | Prompt-driven Facebook crawler handler |
+| `internal/ai` | Agent router, message generation, universal lead classification |
+| `internal/store` | SQLite persistence and migrations |
+| `internal/telegram` | Telegram transport into the same AI/action pipeline |
+| `frontend/src/modules/autoflow` | Production dashboard UI and browser observability |
 
-## Configuration (.env)
-```env
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini           # For scraping/classification (cheap)
-OPENAI_COMMENT_MODEL=gpt-4.1       # For content generation (quality)
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_ADMIN_CHAT_ID=...
-CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
-PROFILE_DIR=data/profiles
-WEB_PORT=8080
-SCAN_INTERVAL_MIN=60
-MAX_WORKERS=2
-```
+## Crawler Contract
 
-## Startup Flow (cmd/scraper/main.go)
-```
-1. Load .env → config.Load()
-2. store.New() → SQLite init + migrations
-3. browser.NewPool() → Chrome contexts
-4. queue.New() → Job queue with workers
-5. ai.NewClassifier() → gpt-4o-mini
-6. ai.NewMessageGenerator() → gpt-4.1
-7. ai.NewAgent() → gpt-4.1 (Telegram AI)
-8. accounts.NewManager() → Multi-account
-9. orchestrator.New() → Wire everything
-10. telegram.Bot.Start() → Listen for commands
-11. server.New().Start() → REST API + Web UI
-```
+Crawler jobs should use `Intent: "facebook_crawl"` (or another open task intent),
+not a fixed `scrape_group` skill. A task payload carries:
+
+- `Source.Type`: `facebook_group`, `facebook_post`, `facebook_search`, or `web_url`
+- `Source.URL` or query text supplied by the user
+- optional `Keywords` derived from the prompt
+- `Limit` from the prompt or API request
+- `OutputSchema: "open_crawler_v1"`
+
+`scrape_group` may exist only as a temporary compatibility alias for draining old
+jobs, gated by `ENABLE_LEGACY_SCRAPE_GROUP=true` in the worker.
+
+## Classification Contract
+
+Every candidate item is first parsed into structured output, then classified
+against the current business context. If OpenAI is configured, the universal
+classifier can reject mismatched items before they become leads. If the model call
+fails, deterministic scoring is allowed only as a fallback signal, not as the
+primary product promise.
+
+Context is maintained through agent actions:
+
+- `set_context`
+- `describe_business`
+- future prompt-defined campaign settings
+
+The classifier must prefer "reject" over false positives when intent, product,
+region, or customer profile is unclear.
+
+## Browser Visibility
+
+Users must be able to observe Facebook automation from the dashboard Browser tab:
+
+- one persistent Chrome profile per Facebook account
+- real Facebook login saved in `data/profiles/account_<id>/`
+- screen streamed through CDP WebSocket
+- mouse, keyboard, and wheel events forwarded back to Chrome
+- session validation prevents mixing the same account record with the wrong Facebook `c_user`
+
+Production automation should attach to that visible workspace session instead of
+launching a separate hidden Chrome.
+
+## Anti-Patterns
+
+- Reintroducing `cmd/api` or a second backend API on port `8081`
+- Serving the old embedded `internal/server/static/index.html`
+- Returning mock frontend data when production APIs fail
+- Starting hidden local browser pools for real Facebook work
+- Running `/scan_all` or configured-group loops without a user prompt target
+- Hardcoding one scrape source as the main product path
+- Creating leads before business-aware classification
+

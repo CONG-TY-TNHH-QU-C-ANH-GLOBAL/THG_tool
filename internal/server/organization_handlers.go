@@ -83,10 +83,9 @@ func (s *Server) registerOrg(c *fiber.Ctx) error {
 	log.Printf("[Register] New org: %q (id=%d) admin=%s", req.OrgName, orgID, req.AdminEmail)
 
 	return c.Status(201).JSON(fiber.Map{
-		"org_id":        orgID,
-		"org_name":      req.OrgName,
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+		"org_id":       orgID,
+		"org_name":     req.OrgName,
+		"access_token": accessToken,
 		"user": fiber.Map{
 			"id":     userID,
 			"org_id": orgID,
@@ -202,6 +201,7 @@ func (s *Server) createOrgUser(c *fiber.Ctx) error {
 		Name     string `json:"name"`
 		Password string `json:"password"`
 		Role     string `json:"role"`
+		OrgID    int64  `json:"org_id"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
@@ -218,7 +218,14 @@ func (s *Server) createOrgUser(c *fiber.Ctx) error {
 	// Only superadmin can create users in arbitrary orgs; org admins create in own org
 	targetOrgID := callerOrgID
 	if callerRole == "superadmin" {
-		targetOrgID = 0 // will default to the caller-chosen org (pass org_id in body if needed)
+		if req.OrgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "org_id is required when superadmin creates a user"})
+		}
+		targetOrgID = req.OrgID
+	}
+	org, err := s.db.GetOrganization(targetOrgID)
+	if err != nil || org == nil || !org.Active {
+		return c.Status(404).JSON(fiber.Map{"error": "organization not found"})
 	}
 
 	// Limit role escalation: org admins can only create admin/sales
@@ -263,8 +270,9 @@ func setRefreshCookie(c *fiber.Ctx, token string) {
 		Name:     "refresh_token",
 		Value:    token,
 		Path:     "/api/auth",
+		Expires:  time.Now().Add(authpkg.RefreshTokenTTL),
 		HTTPOnly: true,
-		Secure:   false,
+		Secure:   secureCookie(c),
 		SameSite: "Lax",
 	})
 }

@@ -31,8 +31,9 @@ type StatefulSession struct {
 const tabTTL = 5 * time.Minute
 const maxEmptyRuns = 3
 
-// NewStatefulSession opens a new tab in the Chrome instance at cdpPort.
-// The tab is closed when Close() is called or the 5-minute TTL fires.
+// NewStatefulSession attaches to the visible page in the Chrome instance at
+// cdpPort. The context is released when Close() is called or the 5-minute TTL
+// fires.
 func NewStatefulSession(ctx context.Context, cdpPort int, accountID int64, cache PaginationCache) (*StatefulSession, error) {
 	wsURL, err := chromeWSURL(cdpPort)
 	if err != nil {
@@ -40,7 +41,14 @@ func NewStatefulSession(ctx context.Context, cdpPort int, accountID int64, cache
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, wsURL)
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
+	targetID, targetErr := visiblePageTargetID(allocCtx)
+	var tabCtx context.Context
+	var tabCancel context.CancelFunc
+	if targetErr == nil {
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx, chromedp.WithTargetID(targetID))
+	} else {
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx)
+	}
 
 	s := &StatefulSession{
 		accountID:   accountID,

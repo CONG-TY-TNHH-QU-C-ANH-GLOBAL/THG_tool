@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -221,7 +222,7 @@ func (m *Manager) Stop(accountID int64) {
 	defer m.mu.Unlock()
 	containerName := fmt.Sprintf("%s%d", containerPrefix, accountID)
 	exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
-	exec.Command("docker", "rm", containerName).Run()               //nolint:errcheck
+	exec.Command("docker", "rm", containerName).Run()              //nolint:errcheck
 	delete(m.instances, accountID)
 	if m.portRegistry != nil {
 		m.portRegistry.Release(accountID)
@@ -236,7 +237,7 @@ func (m *Manager) StopAll() {
 	for id := range m.instances {
 		containerName := fmt.Sprintf("%s%d", containerPrefix, id)
 		exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
-		exec.Command("docker", "rm", containerName).Run()               //nolint:errcheck
+		exec.Command("docker", "rm", containerName).Run()              //nolint:errcheck
 		delete(m.instances, id)
 	}
 	log.Println("[Workspace] All browser containers stopped")
@@ -304,6 +305,27 @@ func WaitForVNC(vncPort int, timeout time.Duration) bool {
 		if err == nil {
 			conn.Close()
 			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}
+
+// WaitForCDP blocks until Chrome's DevTools endpoint is reachable or timeout elapses.
+func WaitForCDP(cdpPort int, timeout time.Duration) bool {
+	if cdpPort <= 0 {
+		return false
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", cdpPort)
+	client := &http.Client{Timeout: 800 * time.Millisecond}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return true
+			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

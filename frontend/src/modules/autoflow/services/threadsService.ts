@@ -1,5 +1,4 @@
 import type { Thread, Message } from '../types';
-import { MOCK_THREADS } from './mockData';
 import * as api from './api';
 
 interface BackendThread {
@@ -43,7 +42,7 @@ export async function getThreads(orgId: string): Promise<Thread[]> {
     const res = await api.get<ThreadsResponse>('/threads');
     return (res.threads ?? []).map(toThread);
   } catch {
-    return [...MOCK_THREADS];
+    return [];
   }
 }
 
@@ -63,6 +62,6 @@ export async function sendMessage(orgId: string, threadId: number, content: stri
     const res = await api.post<BackendMessage>(`/threads/${threadId}/messages`, { content });
     return toMessage(res);
   } catch {
-    return { from: 'agent', text: content, time: new Date().toTimeString().slice(0, 5) };
+    throw new Error('send message failed');
   }
 }

@@ -18,6 +18,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [newLoading, setNewLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const remoteSizeRef = useRef({ w: 1280, h: 800 });
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
 
@@ -45,6 +46,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       ws.onerror = () => setWsStatus('disconnected');
 
       ws.onmessage = (e) => {
+        if (wsRef.current !== ws) return;
         try {
           const msg = JSON.parse(e.data as string);
           if (msg.type === 'error') {
@@ -53,13 +55,17 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             setWsError(null);
           } else if (msg.type === 'frame' && canvasRef.current) {
             setWsError(null);
-            const ctx = canvasRef.current.getContext('2d');
-            if (!ctx) return;
             const img = new Image();
             img.onload = () => {
-              if (!canvasRef.current) return;
-              canvasRef.current.width = msg.w as number;
-              canvasRef.current.height = msg.h as number;
+              if (!canvasRef.current || wsRef.current !== ws) return;
+              const w = Number(msg.w) || 1280;
+              const h = Number(msg.h) || 800;
+              remoteSizeRef.current = { w, h };
+              canvasRef.current.width = w;
+              canvasRef.current.height = h;
+              canvasRef.current.style.aspectRatio = `${w} / ${h}`;
+              const ctx = canvasRef.current.getContext('2d');
+              if (!ctx) return;
               ctx.drawImage(img, 0, 0);
             };
             img.src = `data:image/jpeg;base64,${msg.data as string}`;
@@ -89,17 +95,36 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     };
   }, [selectedId, selectedWs?.running]);
 
+  const modifiers = (e: MouseEvent | WheelEvent | KeyboardEvent | React.MouseEvent<HTMLCanvasElement>) =>
+    (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
+
+  const canvasPoint = (canvas: HTMLCanvasElement, clientX: number, clientY: number) => {
+    const rect = canvas.getBoundingClientRect();
+    const remote = remoteSizeRef.current;
+    return {
+      x: Math.max(0, Math.min(remote.w, ((clientX - rect.left) * remote.w) / rect.width)),
+      y: Math.max(0, Math.min(remote.h, ((clientY - rect.top) * remote.h) / rect.height)),
+    };
+  };
+
   // Keyboard forwarding
   useEffect(() => {
     if (selectedId === null) return;
-    const send = (action: string) => (e: KeyboardEvent) => {
+    const send = (action: 'keyDown' | 'keyUp') => (e: KeyboardEvent) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
       e.preventDefault();
       wsRef.current.send(JSON.stringify({
         type: 'key', action,
         key: e.key, code: e.code,
-        modifiers: (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0),
+        modifiers: modifiers(e),
       }));
+      if (action === 'keyDown' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        wsRef.current.send(JSON.stringify({
+          type: 'key', action: 'char',
+          key: e.key, code: e.code,
+          modifiers: modifiers(e),
+        }));
+      }
     };
     const kd = send('keyDown');
     const ku = send('keyUp');
@@ -110,13 +135,14 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const sendMouse = useCallback((action: string) => (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const p = canvasPoint(e.currentTarget, e.clientX, e.clientY);
     wsRef.current.send(JSON.stringify({
       type: 'mouse', action,
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: p.x,
+      y: p.y,
       button: e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle',
       buttons: e.buttons,
+      modifiers: modifiers(e),
     }));
   }, []);
 
@@ -126,7 +152,15 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     if (!canvas || selectedId === null || !selectedWs?.running) return;
     const handler = (e: WheelEvent) => {
       e.preventDefault();
-      wsRef.current?.send(JSON.stringify({ type: 'wheel', x: e.clientX, y: e.clientY, deltaX: e.deltaX, deltaY: e.deltaY }));
+      const p = canvasPoint(canvas, e.clientX, e.clientY);
+      wsRef.current?.send(JSON.stringify({
+        type: 'wheel',
+        x: p.x,
+        y: p.y,
+        deltaX: e.deltaX,
+        deltaY: e.deltaY,
+        modifiers: modifiers(e),
+      }));
     };
     canvas.addEventListener('wheel', handler, { passive: false });
     return () => canvas.removeEventListener('wheel', handler);
@@ -237,7 +271,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           ) : (
             <canvas
               ref={canvasRef}
-              style={{ display: 'block', width: '100%', cursor: 'crosshair' }}
+              style={{ display: 'block', width: '100%', aspectRatio: '16 / 10', background: '#050505', cursor: 'crosshair' }}
               tabIndex={0}
               onMouseMove={sendMouse('mouseMoved')}
               onMouseDown={sendMouse('mousePressed')}
@@ -251,7 +285,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             {!selectedWs.loggedIn && (
               <button
                 onClick={() => void markLoggedIn(selectedId)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                disabled={actionLoading.has(selectedId)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: actionLoading.has(selectedId) ? 'wait' : 'pointer', opacity: actionLoading.has(selectedId) ? 0.6 : 1 }}
               >
                 <CheckCircle size={14} /> Đánh dấu đã đăng nhập
               </button>

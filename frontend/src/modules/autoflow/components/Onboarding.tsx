@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { theme } from '../constants/styles';
 import { Building2, User, Check, Zap } from 'lucide-react';
+import { getMe, refreshToken } from '../services/authService';
+import { useAuthStore } from '../stores/authStore';
 
 interface OnboardingProps {
   onComplete: (role: 'admin' | 'staff' | 'superadmin') => void;
@@ -26,6 +28,23 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMe()
+      .then(async user => {
+        if (cancelled || user.org_id === 0) return;
+        try {
+          const token = await refreshToken();
+          useAuthStore.getState().setAuth(token, user);
+        } catch {
+          useAuthStore.getState().setUser(user);
+        }
+        onComplete(user.role === 'superadmin' ? 'superadmin' : user.role === 'admin' ? 'admin' : 'staff');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleSetup() {
     setError('');

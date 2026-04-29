@@ -1,5 +1,4 @@
 import type { StaffMember, MemberStatus } from '../types';
-import { MOCK_STAFF } from './mockData';
 import * as api from './api';
 
 interface BackendStaff {
@@ -28,29 +27,25 @@ export async function getStaff(orgId: string): Promise<StaffMember[]> {
     const res = await api.get<StaffResponse>('/staff');
     return (res.staff ?? []).map(toStaff);
   } catch {
-    return [...MOCK_STAFF];
+    return [];
   }
 }
 
 export async function addStaff(orgId: string, data: Pick<StaffMember, 'name' | 'email' | 'role'>): Promise<StaffMember> {
   void orgId;
-  const member: StaffMember = {
-    ...data, id: Date.now(), status: 'Active',
-    joined: new Date().toLocaleDateString('vi'), convs: 0, converted: 0, cmts: 0,
-  };
-  MOCK_STAFF.push(member);
-  return member;
+  void data;
+  throw new Error('staff creation is not wired to production API');
 }
 
 export async function updateStaffStatus(orgId: string, staffId: number, status: MemberStatus): Promise<StaffMember> {
   void orgId;
-  const idx = MOCK_STAFF.findIndex(s => s.id === staffId);
-  if (idx !== -1) MOCK_STAFF[idx] = { ...MOCK_STAFF[idx], status };
-  return MOCK_STAFF[idx];
+  void staffId;
+  void status;
+  throw new Error('staff status update is not wired to production API');
 }
 
 export async function deleteStaff(orgId: string, staffId: number): Promise<void> {
   void orgId;
-  const idx = MOCK_STAFF.findIndex(s => s.id === staffId);
-  if (idx !== -1) MOCK_STAFF.splice(idx, 1);
+  void staffId;
+  throw new Error('staff deletion is not wired to production API');
 }

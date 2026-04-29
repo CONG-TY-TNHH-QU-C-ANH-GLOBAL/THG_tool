@@ -1,5 +1,4 @@
 import type { Lead, LeadStatus } from '../types';
-import { MOCK_LEADS } from './mockData';
 import * as api from './api';
 
 interface LeadsResponse { leads: BackendLead[]; count: number; }
@@ -13,7 +12,7 @@ function normalizeScore(s: string): LeadStatus {
   return map[s.toLowerCase()] ?? 'Cold';
 }
 
-function toLead(b: BackendLead, idx: number): Lead {
+function toLead(b: BackendLead): Lead {
   return {
     id: b.id,
     name: b.author || `Lead #${b.id}`,
@@ -33,13 +32,12 @@ export async function getLeads(orgId: string, status?: LeadStatus | 'All'): Prom
     const res = await api.get<LeadsResponse>(`/leads${param}`);
     return (res.leads ?? []).map(toLead);
   } catch {
-    return status && status !== 'All' ? MOCK_LEADS.filter(l => l.status === status) : [...MOCK_LEADS];
+    return [];
   }
 }
 
 export async function createLead(orgId: string, data: Pick<Lead, 'name' | 'phone' | 'group'>): Promise<Lead> {
   void orgId;
-  const lead: Lead = { ...data, id: Date.now(), status: 'Warm', agent: '', last: 'vừa xong', score: 50 };
-  MOCK_LEADS.push(lead);
-  return lead;
+  void data;
+  throw new Error('manual lead creation is not wired to production API');
 }

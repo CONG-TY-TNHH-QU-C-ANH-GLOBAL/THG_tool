@@ -19,10 +19,10 @@ const (
 // PortRegistry tracks which host ports are allocated to which accounts.
 // Persists assignments in the port_registry table and recovers them on restart.
 type PortRegistry struct {
-	mu    sync.Mutex
-	cdp   map[int]int64 // port → accountID; 0 = free
-	vnc   map[int]int64
-	db    *sql.DB
+	mu  sync.Mutex
+	cdp map[int]int64 // port → accountID; 0 = free
+	vnc map[int]int64
+	db  *sql.DB
 }
 
 // NewPortRegistry initialises the registry and seeds the port maps.
@@ -86,7 +86,7 @@ func (r *PortRegistry) ReconcileFromDocker() {
 		cdpLabel, _ := exec.Command("docker", "inspect",
 			"--format={{index .Config.Labels \"thg.cdp_port\"}}", name).Output()
 		vncLabel, _ := exec.Command("docker", "inspect",
-			"--format={{index .Config.Labels \"thg.account_id\"}}", name).Output()
+			"--format={{index .Config.Labels \"thg.vnc_port\"}}", name).Output()
 		acctLabel, _ := exec.Command("docker", "inspect",
 			"--format={{index .Config.Labels \"thg.account_id\"}}", name).Output()
 

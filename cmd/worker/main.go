@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/thg/scraper/internal/ai"
 	facebookcrawl "github.com/thg/scraper/internal/handlers/facebook_crawl"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/livesession"
@@ -47,7 +48,7 @@ func main() {
 
 	// ── Session allocator + live session factory ─────────────────────────────
 	// The allocator atomically claims idle browser sessions per job.
-	// When no session is idle, the handler falls back to MockRuntime.
+	// When no session is idle, jobs fail loudly unless ALLOW_MOCK_RUNTIME=true.
 	rawDB := appStore.DB()
 	sm := session.NewStateMachine(rawDB)
 	allocator := session.NewAllocator(rawDB, sm)
@@ -55,23 +56,35 @@ func main() {
 	log.Println("✅ Session allocator initialized")
 
 	// ── Handler ──────────────────────────────────────────────────────────────
-	// MockRuntime is the fallback when no browser session is idle.
+	// MockRuntime is opt-in only. In production, missing browser sessions must
+	// fail loudly instead of producing fake leads.
+	var fallback runtime.Runtime
+	if envOr("ALLOW_MOCK_RUNTIME", "false") == "true" {
+		fallback = runtime.NewMockRuntime()
+		log.Println("⚠️  ALLOW_MOCK_RUNTIME=true — worker may emit mock crawl data")
+	}
 	scorer := scoring.New(scoring.DefaultConfig())
-	h := facebookcrawl.New(runtime.NewMockRuntime(), scorer, jobStore, appStore)
+	h := facebookcrawl.New(fallback, scorer, jobStore, appStore)
 	h.SetAllocator(allocator, lsFactory)
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		model := envOr("OPENAI_MODEL", "gpt-4o")
+		h.SetUniversalClassifier(mainStore, ai.NewMessageGenerator(apiKey, model))
+		log.Printf("✅ Universal AI classifier enabled (model: %s)", model)
+	}
 
-	// ── Registry — map every intent the API/Telegram can submit ─────────────
+	// ── Registry — map every open crawler intent the API/Telegram can submit ──
 	registry := jobs.NewRegistry()
 
-	// "scrape_group" is the default intent from Telegram /scan and POST /api/jobs.
-	// All other intents map to the same facebook_crawl handler for now; swap
-	// individual entries for specialised handlers as the skills layer matures.
+	// Production uses prompt-open intents. Legacy "scrape_group" can be enabled
+	// only to drain old queued jobs during migration.
 	intents := []string{
-		"scrape_group",   // Telegram /scan + API POST /api/jobs
 		"facebook_crawl", // explicit browser crawl intent
 		"facebook_group", // alias used by some skill routes
 		"lead_gen",       // generic lead-generation intent
 		"web_crawl",      // generic web crawl
+	}
+	if envOr("ENABLE_LEGACY_SCRAPE_GROUP", "false") == "true" {
+		intents = append(intents, "scrape_group")
 	}
 	for _, intent := range intents {
 		registry.Register(intent, h)

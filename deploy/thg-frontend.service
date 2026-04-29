@@ -4,7 +4,7 @@
 
 [Unit]
 Description=THG Lead Intelligence — Next.js Frontend
-After=network.target thg-api.service
+After=network.target thg-scraper.service
 Wants=network-online.target
 
 [Service]
@@ -18,7 +18,7 @@ WorkingDirectory=/opt/thg-scraper/frontend-standalone
 # /usr/bin/env resolves 'node' from PATH — works regardless of NodeSource install path
 ExecStart=/usr/bin/env node server.js
 
-Environment=API_URL=http://127.0.0.1:8081
+Environment=API_URL=http://127.0.0.1:8080
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
 Environment=PORT=3000

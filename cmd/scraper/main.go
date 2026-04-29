@@ -2,20 +2,25 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/thg/scraper/internal/accounts"
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/browser"
 	"github.com/thg/scraper/internal/config"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/logstream"
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/server"
 	session_pkg "github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
@@ -102,35 +107,12 @@ func main() {
 		log.Printf("⚠️ Failed to reset orphaned outbounds: %v", err)
 	}
 
-	// Initialize browser pool (with persistent profile support)
-	proxyURL := ""
-	if len(cfg.ProxyList) > 0 {
-		proxyURL = cfg.ProxyList[0]
-	}
-	pool, err := browser.NewPool(cfg.MaxWorkers, cfg.ChromePath, proxyURL, cfg.ProfileDir)
-	if err != nil {
-		log.Printf("⚠️  Browser pool init failed: %v (scraping disabled)", err)
-		pool = nil
-	} else {
-		defer pool.Shutdown()
-		log.Printf("✅ Browser pool initialized (%d contexts, profile: %s)", cfg.MaxWorkers, cfg.ProfileDir)
-	}
-
 	// Initialize job store (scheduler_jobs table — idempotent, replaces chan-based queue)
 	jobStore, err := jobs.NewStore(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("❌ Job store init failed: %v", err)
 	}
 	log.Println("✅ Job store initialized")
-
-	// Initialize AI classifier (OpenAI)
-	classifier := ai.NewClassifier(cfg.OpenAIAPIKey, cfg.OpenAIModel, db)
-	_ = classifier // used by future skill handlers
-
-	// Initialize account manager (for multi-account Facebook access)
-	accountMgr := accounts.NewManager(db, cfg.ChromePath, cfg.ProfileDir)
-	log.Printf("✅ Account manager initialized (profiles: %s)", cfg.ProfileDir)
-	_ = accountMgr // used by future skills
 
 	// Initialize AppStore (app_tasks, task_leads, browser infra tables)
 	appStore, err := store.NewAppStore(db)
@@ -200,6 +182,7 @@ func main() {
 	var agent *ai.Agent
 	if cfg.OpenAIAPIKey != "" {
 		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
+		agent.ActionHandler = makeAgentActionHandler(db, jobStore)
 		log.Printf("✅ AI Agent initialized (model: %s)", cfg.OpenAICommentModel)
 	} else {
 		log.Println("⚠️  OPENAI_API_KEY not set, AI Agent disabled")
@@ -226,17 +209,14 @@ func main() {
 
 	// Start web server (non-blocking)
 	srv := server.New(db, jobStore, agent, workspaceMgr, server.Config{
-		Port:           cfg.WebPort,
-		JWTSecret:      cfg.JWTSecret,
-		AllowedOrigins: cfg.AllowedOrigins,
-		ChromePath:     cfg.ChromePath,
-		ProfileDir:     cfg.ProfileDir,
-		Headless:       cfg.Headless,
-		ServerHost:     cfg.ServerHost,
-		SSHPort:        cfg.SSHPort,
-		VNCPort:            cfg.VNCPort,
-		CDPPort:            cfg.CDPPort,
-		DisplayNum:         cfg.DisplayNum,
+		Port:               cfg.WebPort,
+		JWTSecret:          cfg.JWTSecret,
+		AllowedOrigins:     cfg.AllowedOrigins,
+		ChromePath:         cfg.ChromePath,
+		ProfileDir:         cfg.ProfileDir,
+		Headless:           cfg.Headless,
+		ServerHost:         cfg.ServerHost,
+		SSHPort:            cfg.SSHPort,
 		GoogleClientID:     cfg.GoogleClientID,
 		GoogleClientSecret: cfg.GoogleClientSecret,
 		GoogleRedirectURI:  cfg.GoogleRedirectURI,
@@ -262,4 +242,203 @@ func main() {
 	<-quit
 	log.Println("🛑 Shutting down gracefully...")
 	cancel() // stop health checker and other ctx-bound goroutines
+}
+
+func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store) func(string, map[string]any) (string, error) {
+	return func(action string, args map[string]any) (string, error) {
+		switch action {
+		case "set_context":
+			key, value := argString(args, "key"), argString(args, "value")
+			if key == "" || value == "" {
+				return "", fmt.Errorf("set_context requires key and value")
+			}
+			if err := db.SetContext(key, value); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("da luu context %q", key), nil
+		case "describe_business":
+			desc := argString(args, "description")
+			if desc == "" {
+				return "", fmt.Errorf("describe_business requires description")
+			}
+			if err := db.SetContext("business_desc", desc); err != nil {
+				return "", err
+			}
+			return "da luu mo ta doanh nghiep cho crawler/classifier", nil
+		case "get_stats":
+			stats, err := db.GetStats()
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("posts=%d leads=%d hot=%d jobs_running=%d", stats.TotalPosts, stats.TotalLeads, stats.HotLeads, stats.RunningJobs), nil
+		case "add_group":
+			u, name := argString(args, "url"), argString(args, "name")
+			if u == "" {
+				return "", fmt.Errorf("add_group requires url")
+			}
+			if name == "" {
+				name = u
+			}
+			id, err := db.AddGroup(&models.Group{
+				Platform:  detectPlatformFromURL(u),
+				Name:      name,
+				URL:       u,
+				Active:    true,
+				JoinState: "none",
+			})
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("da them group #%d", id), nil
+		case "scrape_group":
+			u := argString(args, "url")
+			if u == "" {
+				return "", fmt.Errorf("scrape_group requires url")
+			}
+			return submitOpenCrawl(context.Background(), jobStore, "facebook_crawl", []jobs.Source{{Type: sourceTypeFromURL(u), URL: u, Label: "prompt_url"}}, args)
+		case "scrape_comments":
+			u := argString(args, "post_url")
+			if u == "" {
+				return "", fmt.Errorf("scrape_comments requires post_url")
+			}
+			return submitOpenCrawl(context.Background(), jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_post", URL: u, Label: "prompt_post"}}, args)
+		case "scrape_all":
+			return "", fmt.Errorf("scrape_all fixed configured groups is disabled in production; ask for a target URL or search query")
+		case "classify_leads":
+			return "classification runs inline during every crawler job using the current business context", nil
+		default:
+			return "", fmt.Errorf("agent action %q is not wired to a production handler yet", action)
+		}
+	}
+}
+
+func submitOpenCrawl(ctx context.Context, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
+	if len(sources) == 0 {
+		return "", fmt.Errorf("crawler requires at least one source")
+	}
+	maxItems := int(argInt64(args, "max_items"))
+	if maxItems <= 0 {
+		maxItems = 50
+	}
+	keywords := splitKeywords(argString(args, "keywords"))
+	task := &jobs.Task{
+		SchemaVersion: "1",
+		TaskID:        openCrawlTaskID(intent, sources, args),
+		AccountID:     argInt64(args, "account_id"),
+		Intent:        intent,
+		Keywords:      keywords,
+		CrawlPlan:     jobs.CrawlPlan{Sources: sources, MaxItems: maxItems, BatchSize: 20},
+		Filters:       jobs.Filters{Keywords: keywords, MinContentLength: 20, KeywordMinScore: 0},
+		ScoringConfig: jobs.ScoringConfig{
+			HotThreshold:  70,
+			WarmThreshold: 40,
+			Weights: jobs.ScoringWeights{
+				KeywordRelevance: 0.4,
+				Engagement:       0.2,
+				ContentQuality:   0.4,
+			},
+		},
+		RetryPolicy:         jobs.RetryPolicy{MaxAttempts: 3, BackoffMs: 1000},
+		ExecutionMode:       "async",
+		OutputSchema:        "open_crawler_v1",
+		OutputSchemaVersion: "1",
+	}
+	payload, err := json.Marshal(task)
+	if err != nil {
+		return "", err
+	}
+	job, err := jobStore.Submit(ctx, task, string(payload))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, intent), nil
+}
+
+func openCrawlTaskID(intent string, sources []jobs.Source, args map[string]any) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s|day=%s|", intent, time.Now().UTC().Format("2006-01-02"))
+	for _, src := range sources {
+		fmt.Fprintf(h, "%s:%s|", src.Type, src.URL)
+	}
+	fmt.Fprintf(h, "account=%d", argInt64(args, "account_id"))
+	return fmt.Sprintf("open-crawl-%x", h.Sum(nil))[:27]
+}
+
+func argString(args map[string]any, key string) string {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case fmt.Stringer:
+		return strings.TrimSpace(t.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(t))
+	}
+}
+
+func argInt64(args map[string]any, key string) int64 {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch t := v.(type) {
+	case int64:
+		return t
+	case int:
+		return int64(t)
+	case float64:
+		return int64(t)
+	case json.Number:
+		n, _ := t.Int64()
+		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func splitKeywords(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	fields := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ';' || r == '\n' })
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func sourceTypeFromURL(u string) string {
+	lower := strings.ToLower(u)
+	switch {
+	case strings.Contains(lower, "facebook.com") || strings.Contains(lower, "fb.com"):
+		if strings.Contains(lower, "/posts/") || strings.Contains(lower, "story_fbid") || strings.Contains(lower, "/permalink/") {
+			return "facebook_post"
+		}
+		return "facebook_group"
+	default:
+		return "web_url"
+	}
+}
+
+func detectPlatformFromURL(u string) models.Platform {
+	lower := strings.ToLower(u)
+	switch {
+	case strings.Contains(lower, "facebook.com") || strings.Contains(lower, "fb.com"):
+		return models.PlatformFacebook
+	case strings.Contains(lower, "tiktok.com"):
+		return models.PlatformTikTok
+	case strings.Contains(lower, "zalo"):
+		return models.PlatformZalo
+	default:
+		return models.PlatformFacebook
+	}
 }

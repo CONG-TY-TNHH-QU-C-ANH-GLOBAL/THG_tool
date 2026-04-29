@@ -1,21 +1,18 @@
 package server
 
 import (
-	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	fiberws "github.com/gofiber/websocket/v2"
@@ -23,16 +20,12 @@ import (
 	"github.com/thg/scraper/internal/agentloop"
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
-	"github.com/thg/scraper/internal/browser"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/workspace"
 )
-
-//go:embed all:static
-var staticFS embed.FS
 
 // Config holds security-sensitive configuration for the API server.
 type Config struct {
@@ -44,11 +37,6 @@ type Config struct {
 	Headless       bool   // true = VPS without display; Chrome login uses SSH tunnel flow
 	ServerHost     string // public hostname/IP for SSH tunnel instructions
 	SSHPort        int    // SSH port for tunnel (default 22)
-
-	// noVNC browser workspace
-	VNCPort    int // VNC server TCP port (default 5900)
-	CDPPort    int // Chrome DevTools Protocol debug port (default 9222)
-	DisplayNum int // X11 display number for Xvfb (default 99)
 
 	// Google OAuth
 	GoogleClientID     string
@@ -62,12 +50,11 @@ type Server struct {
 	db            *store.Store
 	jobStore      *jobs.Store
 	agent         *ai.Agent
-	postProcessor PostProcessor       // called after agent submits scraped posts
-	wsHub         *WSHub              // Chrome Extension WebSocket hub
-	vncDisplay    *browser.VNCDisplay // virtual X11 display + VNC server (Linux only)
-	workspace     *workspace.Manager     // per-account Chrome workspace manager
-	sessionReg    *session.Registry      // optional — nil disables /api/sessions/stats
-	agentHandler  *agentloop.Handler     // self-healing agent OS — nil = disabled
+	postProcessor PostProcessor      // called after agent submits scraped posts
+	wsHub         *WSHub             // Chrome Extension WebSocket hub
+	workspace     *workspace.Manager // per-account Chrome workspace manager
+	sessionReg    *session.Registry  // optional — nil disables /api/sessions/stats
+	agentHandler  *agentloop.Handler // self-healing agent OS — nil = disabled
 	port          int
 	cfg           Config
 }
@@ -103,25 +90,15 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 		IdleTimeout:  0,
 	})
 
-	vncPort := cfg.VNCPort
-	if vncPort == 0 {
-		vncPort = 5900
-	}
-	displayNum := cfg.DisplayNum
-	if displayNum == 0 {
-		displayNum = 99
-	}
-
 	s := &Server{
-		app:        app,
-		db:         db,
-		jobStore:   jobStore,
-		agent:      agent,
-		port:       cfg.Port,
-		cfg:        cfg,
-		wsHub:      NewWSHub(),
-		vncDisplay: browser.NewVNCDisplay(displayNum, vncPort),
-		workspace:  wm,
+		app:       app,
+		db:        db,
+		jobStore:  jobStore,
+		agent:     agent,
+		port:      cfg.Port,
+		cfg:       cfg,
+		wsHub:     NewWSHub(),
+		workspace: wm,
 	}
 
 	// Health check — no auth, no rate limiting, for load balancers / monitors
@@ -237,17 +214,29 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// Admin-only auth routes
 	adminOnly := authpkg.RequireRole("admin")
-	protected.Post("/users", adminOnly, s.createOrgUser)
-	protected.Get("/users", adminOnly, s.listUsers)
-	protected.Put("/users/:id", adminOnly, s.adminUpdateUser)
-	protected.Delete("/users/:id", adminOnly, s.adminDeleteUser)
-	protected.Get("/audit", adminOnly, s.getAuditLogs)
+	tenantReady := func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		role, _ := c.Locals("user_role").(string)
+		if orgID == 0 && role != string(models.RoleSuperAdmin) {
+			return c.Status(403).JSON(fiber.Map{
+				"error": "onboarding required",
+				"code":  "ONBOARDING_REQUIRED",
+			})
+		}
+		return c.Next()
+	}
+	protected.Post("/users", tenantReady, adminOnly, s.createOrgUser)
+	protected.Get("/users", tenantReady, adminOnly, s.listUsers)
+	protected.Put("/users/:id", tenantReady, adminOnly, s.adminUpdateUser)
+	protected.Delete("/users/:id", tenantReady, adminOnly, s.adminDeleteUser)
+	protected.Get("/audit", tenantReady, adminOnly, s.getAuditLogs)
 
 	// Public health check (no auth required)
 	api.Get("/stats", s.getStats)
+	api.Post("/onboarding/setup", authpkg.RequireAuth(cfg.JWTSecret), s.onboardingSetup)
 
 	// Protected API routes — require JWT
-	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret))
+	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady)
 
 	// Leads — sales can read and delete individual; admin deletes all
 	r.Get("/leads", s.getLeads)
@@ -314,7 +303,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	agentGrp.Get("/images", s.agentServeImage)
 
 	// Onboarding — new users with org_id=0 must complete this before accessing org features
-	r.Post("/onboarding/setup", s.onboardingSetup)
 
 	// Org self-service (any authenticated user sees their org)
 	r.Get("/org", s.getMyOrg)
@@ -353,10 +341,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Post("/browser/workspaces/:id/set-logged-in", s.workspaceSetLoggedIn)
 	r.Post("/browser/workspaces/:id/resolve-checkpoint", s.resolveCheckpoint)
 	r.Get("/browser/checkpoints", s.listCheckpoints)
-	// Legacy VNC single-instance (Linux only)
-	r.Get("/browser/status", s.vncStatus)
-	r.Post("/browser/start", s.vncStart)
-	r.Post("/browser/stop", s.vncStop)
 
 	// Self-healing Agent OS (admin only — applies patches to live files)
 	if s.agentHandler != nil {
@@ -430,10 +414,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	app.Use("/ws/screen/:id", wsJWTAuth)
 	app.Get("/ws/screen/:id", fiberws.New(s.screenProxyHandler()))
 
-	// WebSocket: legacy single-display VNC proxy
-	app.Use("/ws/vnc", wsJWTAuth)
-	app.Get("/ws/vnc", fiberws.New(s.vncProxyHandler()))
-
 	// WebSocket: Chrome Extension hub — token in first WS message
 	app.Use("/ws/agent", func(c *fiber.Ctx) error {
 		if fiberws.IsWebSocketUpgrade(c) {
@@ -443,14 +423,16 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	})
 	app.Get("/ws/agent", fiberws.New(s.wsHub.wsHandler(db)))
 
-	// Serve embedded static files (Web UI)
-	staticSub, _ := fs.Sub(staticFS, "static")
-	app.Use("/", filesystem.New(filesystem.Config{
-		Root:         http.FS(staticSub),
-		Browse:       false,
-		Index:        "index.html",
-		NotFoundFile: "index.html",
-	}))
+	// The production frontend is the Next.js app on port 3000 behind nginx.
+	// Keep scraper as an API/WebSocket service only, so stale embedded UI can
+	// never appear as a fallback in production.
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"service":  "thg-scraper-api",
+			"status":   "ok",
+			"frontend": "nextjs",
+		})
+	})
 
 	return s
 }
@@ -609,26 +591,43 @@ func (s *Server) getJobs(c *fiber.Ctx) error {
 
 func (s *Server) createJob(c *fiber.Ctx) error {
 	var req struct {
-		Intent   string `json:"intent"`
-		Platform string `json:"platform"`
-		Target   string `json:"target"`
+		Intent    string `json:"intent"`
+		Platform  string `json:"platform"`
+		Target    string `json:"target"`
+		AccountID int64  `json:"account_id"`
+		Text      string `json:"text"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	if req.Intent == "" {
-		req.Intent = "scrape_group"
+		req.Intent = "facebook_crawl"
+	}
+	if req.Target == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "target URL is required for crawler jobs; use /api/ai/prompt for free-form agent prompts"})
+	}
+	if req.Platform == "" {
+		req.Platform = "facebook"
 	}
 
+	sourceType := req.Platform + "_group"
+	if req.Platform == "web" || req.Platform == "website" {
+		sourceType = "web_url"
+	}
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        fmt.Sprintf("api-%s-%d", req.Intent, time.Now().UnixMilli()),
+		AccountID:     req.AccountID,
 		Intent:        req.Intent,
+		Keywords:      strings.Fields(req.Text),
 		CrawlPlan: jobs.CrawlPlan{
-			Sources:  []jobs.Source{{Type: req.Platform + "_group", URL: req.Target}},
+			Sources:  []jobs.Source{{Type: sourceType, URL: req.Target}},
 			MaxItems: 50,
 		},
+		OutputSchema:        "open_crawler_v1",
+		OutputSchemaVersion: "1",
 	}
+	task.OrgID, _ = c.Locals("org_id").(int64)
 	payload, _ := json.Marshal(task)
 	j, err := s.jobStore.Submit(c.Context(), task, string(payload))
 	if err != nil {
@@ -795,6 +794,15 @@ func (s *Server) updateAccountStatus(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
+	acc, err := s.db.GetAccount(id)
+	if err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 && acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	}
+
 	if err := s.db.UpdateAccountStatus(id, models.AccountStatus(req.Status)); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -815,6 +823,15 @@ func (s *Server) updateAccountCookies(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
+	acc, err := s.db.GetAccount(id)
+	if err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 && acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	}
+
 	if err := s.db.UpdateAccountCookies(id, req.CookiesJSON); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -826,6 +843,15 @@ func (s *Server) deleteAccount(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+
+	acc, err := s.db.GetAccount(id)
+	if err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 && acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
 
 	if err := s.db.DeleteAccount(id); err != nil {

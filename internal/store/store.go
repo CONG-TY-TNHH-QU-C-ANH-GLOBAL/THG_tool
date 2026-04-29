@@ -370,6 +370,7 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'server'`)
 	// Auto-migrate: browser_logged_in tracks whether account has logged into Facebook via dashboard browser
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN browser_logged_in INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
 	// Org invites: token-based invite links for joining an org
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS org_invites (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1168,11 +1169,11 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	err := s.db.QueryRow(
 		`SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
 		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
-		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0)
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0), COALESCE(a.fb_user_id,'')
 		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
 		 WHERE a.id = ?`, id,
 	).Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL, &a.UserAgent,
-		&a.Status, &a.Notes, &lastUsed, &a.CreatedAt, &a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn)
+		&a.Status, &a.Notes, &lastUsed, &a.CreatedAt, &a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn, &a.FBUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -1184,10 +1185,18 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 }
 
 // SetBrowserLoggedIn marks whether an account has successfully logged into Facebook via the dashboard browser.
-func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool) error {
+func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool, fbUserID ...string) error {
 	v := 0
 	if loggedIn {
 		v = 1
+	}
+	if loggedIn && len(fbUserID) > 0 && fbUserID[0] != "" {
+		_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ?, fb_user_id = ? WHERE id = ?`, v, fbUserID[0], accountID)
+		return err
+	}
+	if !loggedIn {
+		_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ?, fb_user_id = '' WHERE id = ?`, v, accountID)
+		return err
 	}
 	_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
 	return err
@@ -1197,7 +1206,7 @@ func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool) error {
 func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
 	q := `SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
 		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
-		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0)
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0), COALESCE(a.fb_user_id,'')
 		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id`
 	var args []any
 	if orgID > 0 {
@@ -1217,7 +1226,7 @@ func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
 		var lastUsed string
 		if err := rows.Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
 			&a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt,
-			&a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn); err != nil {
+			&a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn, &a.FBUserID); err != nil {
 			return nil, err
 		}
 		if lastUsed != "" {
@@ -2241,10 +2250,10 @@ func (s *Store) IncrementThreadUnread(threadID int64) error {
 // ── AutoFlow: Facebook Status (workspace summary) ─────────────────────────
 
 type FacebookStatusSummary struct {
-	Connected   bool
-	Account     string
-	Groups      int
-	LeadsToday  int
+	Connected  bool
+	Account    string
+	Groups     int
+	LeadsToday int
 }
 
 func (s *Store) GetFacebookStatusForOrg(orgID int64) FacebookStatusSummary {

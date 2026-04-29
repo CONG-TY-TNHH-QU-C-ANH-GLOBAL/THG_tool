@@ -1,6 +1,6 @@
 #!/bin/bash
-# Cloudflare Tunnel setup — routes sale.thgfulfill.com → localhost:8080
-# No server needed. Runs on your own PC/laptop or any cheap VPS.
+# Cloudflare Tunnel setup — routes sale.thgfulfill.com → local nginx on port 80
+# Nginx then splits traffic to Next.js, scraper API, API v1, and WebSockets.
 # Cost: $0 (Cloudflare Tunnel is free forever)
 #
 # Usage: bash cloudflare-tunnel.sh
@@ -8,7 +8,7 @@ set -euo pipefail
 
 echo "======================================"
 echo "  Cloudflare Tunnel Setup"
-echo "  sale.thgfulfill.com → localhost:8080"
+echo "  sale.thgfulfill.com → localhost:80"
 echo "======================================"
 
 # ── 1. Install cloudflared ────────────────────────────────────────────────
@@ -72,10 +72,10 @@ create_config() {
 tunnel: $TUNNEL_ID
 credentials-file: $CONFIG_DIR/${TUNNEL_ID}.json
 
-# Route sale.thgfulfill.com → Go app on localhost:8080
+# Route sale.thgfulfill.com → nginx on localhost:80
 ingress:
   - hostname: sale.thgfulfill.com
-    service: http://localhost:8080
+    service: http://localhost:80
     originRequest:
       connectTimeout: 30s
       noTLSVerify: false

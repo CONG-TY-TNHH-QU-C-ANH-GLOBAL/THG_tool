@@ -20,16 +20,32 @@ export function useWorkspaces() {
     return () => clearInterval(interval);
   }, [refresh]);
 
+  const clearActionLoading = (id: number) => {
+    setActionLoading(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   const start = async (id: number) => {
     setActionLoading(prev => new Set(prev).add(id));
-    await startWorkspace(id);
-    refresh();
+    try {
+      await startWorkspace(id);
+      await refresh();
+    } finally {
+      clearActionLoading(id);
+    }
   };
 
   const stop = async (id: number) => {
     setActionLoading(prev => new Set(prev).add(id));
-    await stopWorkspace(id);
-    refresh();
+    try {
+      await stopWorkspace(id);
+      await refresh();
+    } finally {
+      clearActionLoading(id);
+    }
   };
 
   const startNew = async (): Promise<number> => {
@@ -40,8 +56,12 @@ export function useWorkspaces() {
 
   const markLoggedIn = async (id: number) => {
     setActionLoading(prev => new Set(prev).add(id));
-    await setWorkspaceLoggedIn(id);
-    refresh();
+    try {
+      await setWorkspaceLoggedIn(id);
+      await refresh();
+    } finally {
+      clearActionLoading(id);
+    }
   };
 
   return { workspaces, loading, actionLoading, refresh, start, startNew, stop, markLoggedIn };

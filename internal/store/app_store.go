@@ -251,10 +251,18 @@ func (a *AppStore) GetFacebookAccounts(ctx context.Context, orgID int64) ([]Face
 }
 
 // SetFacebookAccountLoggedIn updates the browser_logged_in flag for an account.
-func (a *AppStore) SetFacebookAccountLoggedIn(ctx context.Context, accountID int64, loggedIn bool) error {
+func (a *AppStore) SetFacebookAccountLoggedIn(ctx context.Context, accountID int64, loggedIn bool, fbUserID ...string) error {
 	v := 0
 	if loggedIn {
 		v = 1
+	}
+	if loggedIn && len(fbUserID) > 0 && fbUserID[0] != "" {
+		_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ?, fb_user_id = ? WHERE id = ?`, v, fbUserID[0], accountID)
+		return err
+	}
+	if !loggedIn {
+		_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ?, fb_user_id = '' WHERE id = ?`, v, accountID)
+		return err
 	}
 	_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
 	return err

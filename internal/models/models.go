@@ -193,6 +193,7 @@ type Account struct {
 	AssignedUserID   int64         `json:"assigned_user_id"`
 	AssignedUserName string        `json:"assigned_user_name"` // resolved from users JOIN
 	BrowserLoggedIn  bool          `json:"browser_logged_in" db:"browser_logged_in"`
+	FBUserID         string        `json:"fb_user_id" db:"fb_user_id"`
 }
 
 // PromptLog records every AI prompt interaction for learning.
@@ -309,7 +310,7 @@ type ConversationThread struct {
 type ConversationMessage struct {
 	ID          int64     `json:"id"`
 	ThreadID    int64     `json:"thread_id"`
-	Direction   string    `json:"direction"`    // outbound (we sent) | inbound (they replied)
+	Direction   string    `json:"direction"` // outbound (we sent) | inbound (they replied)
 	Content     string    `json:"content"`
 	AIGenerated bool      `json:"ai_generated"` // true = our AI wrote it
 	CreatedAt   time.Time `json:"created_at"`
@@ -344,7 +345,7 @@ type GroupQuality struct {
 	ContentQualityScore  float64   `json:"content_quality_score"`
 	SpamPenalty          float64   `json:"spam_penalty"`
 	FinalScore           float64   `json:"final_score"`
-	Decision             string    `json:"decision"`  // use|monitor|reject
+	Decision             string    `json:"decision"` // use|monitor|reject
 	Reason               string    `json:"reason"`
 	Whitelist            bool      `json:"whitelist"`
 	Blacklist            bool      `json:"blacklist"`
@@ -393,9 +394,9 @@ type AuditLog struct {
 type CandidateMatch struct {
 	Author      string
 	AuthorURL   string
-	Content     string  // candidate's comment text
-	PostURL     string  // URL of the post they commented on
-	PostContent string  // original post topic (for domain-aware matching)
+	Content     string // candidate's comment text
+	PostURL     string // URL of the post they commented on
+	PostContent string // original post topic (for domain-aware matching)
 	Job         CareerJob
 	Score       float64 // 0.0–1.0 AI match score
 	Reason      string  // one-sentence explanation

@@ -89,13 +89,22 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 	isNew := false
 	user, err := s.db.GetUserByEmail(info.Email)
 	if err != nil || user == nil {
+		orgID := int64(0)
+		role := models.RoleAdmin
+		if claim, claimErr := s.db.FindProvisionedOrgByEmail(info.Email); claimErr != nil {
+			log.Printf("[GoogleAuth] Provisioned org lookup failed: %v", claimErr)
+			return redirectWithError(c, "workspace assignment failed")
+		} else if claim != nil {
+			orgID = claim.OrgID
+			role = claim.Role
+		}
 		// Auto-create user with org_id=0; they'll be sent to onboarding.
 		newID, createErr := s.db.CreateUser(&models.User{
-			OrgID:        0,
+			OrgID:        orgID,
 			Email:        info.Email,
 			Name:         info.Name,
 			PasswordHash: "", // no password — Google-only account
-			Role:         models.RoleAdmin,
+			Role:         role,
 		})
 		if createErr != nil {
 			log.Printf("[GoogleAuth] Auto-create user failed: %v", createErr)
@@ -107,6 +116,9 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 		}
 		isNew = true
 		log.Printf("[GoogleAuth] Auto-created user: %s (id=%d)", info.Email, newID)
+	} else if _, err := s.attachProvisionedOrgIfNeeded(user, c.IP()); err != nil {
+		log.Printf("[GoogleAuth] Provisioned org claim failed for %s: %v", user.Email, err)
+		return redirectWithError(c, "workspace assignment failed")
 	}
 
 	// Issue JWT pair
@@ -251,6 +263,15 @@ func (s *Server) googleToken(c *fiber.Ctx) error {
 	user, err := s.db.GetUserByEmail(claims.Email)
 	if err != nil || user == nil {
 		return c.Status(401).JSON(fiber.Map{"error": "user not found"})
+	}
+	if claimed, err := s.attachProvisionedOrgIfNeeded(user, c.IP()); err != nil {
+		log.Printf("[GoogleAuth] Provisioned org claim failed during token exchange for %s: %v", user.Email, err)
+		return c.Status(500).JSON(fiber.Map{"error": "workspace assignment failed"})
+	} else if claimed {
+		token, err = authpkg.GenerateAccessToken(user.ID, user.OrgID, user.Email, string(user.Role), s.cfg.JWTSecret)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "token generation failed"})
+		}
 	}
 
 	return c.JSON(fiber.Map{

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ func (p *RuleBasedParser) Parse(_ context.Context, text string) (*jobs.Task, err
 
 	keywords := extractKeywords(lower)
 	urls := extractURLs(text)
+	accountID := extractAccountID(lower)
 
 	sources := make([]jobs.Source, 0, len(urls))
 	for _, u := range urls {
@@ -48,6 +50,7 @@ func (p *RuleBasedParser) Parse(_ context.Context, text string) (*jobs.Task, err
 	return &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        taskID,
+		AccountID:     accountID,
 		Intent:        intent,
 		Keywords:      keywords,
 		CrawlPlan: jobs.CrawlPlan{
@@ -74,6 +77,20 @@ func (p *RuleBasedParser) Parse(_ context.Context, text string) (*jobs.Task, err
 		OutputSchema:        "facebook_crawl_v1",
 		OutputSchemaVersion: "1",
 	}, nil
+}
+
+func extractAccountID(lower string) int64 {
+	for _, tok := range strings.Fields(lower) {
+		tok = strings.Trim(tok, ".,!?;:")
+		for _, prefix := range []string{"account_id=", "account=", "fb_account="} {
+			if strings.HasPrefix(tok, prefix) {
+				if n, err := strconv.ParseInt(strings.TrimPrefix(tok, prefix), 10, 64); err == nil && n > 0 {
+					return n
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func detectIntent(lower string) string {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/filter"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/livesession"
@@ -23,13 +24,15 @@ import (
 // Handler implements jobs.Handler for all crawl-based intents.
 // Filters AND scoring run inline per item — nothing is accumulated before evaluation.
 type Handler struct {
-	rt        runtime.Runtime // fallback when no browser session is idle
+	rt        runtime.Runtime // optional mock/runtime fallback for development only
 	fe        *filter.Engine
 	scorer    *scoring.Scorer
 	jobStore  *jobs.Store
 	appStore  *store.AppStore
 	allocator *session.Allocator
 	lsFactory *livesession.LiveSessionFactory
+	ctxStore  *store.Store
+	aiClass   *ai.MessageGenerator
 }
 
 func New(rt runtime.Runtime, scorer *scoring.Scorer, jobStore *jobs.Store, appStore *store.AppStore) *Handler {
@@ -49,6 +52,14 @@ func (h *Handler) SetAllocator(a *session.Allocator, f *livesession.LiveSessionF
 	h.lsFactory = f
 }
 
+// SetUniversalClassifier enables prompt/business-profile driven lead
+// classification. It is optional; without it the deterministic scorer remains
+// the fallback.
+func (h *Handler) SetUniversalClassifier(ctxStore *store.Store, mg *ai.MessageGenerator) {
+	h.ctxStore = ctxStore
+	h.aiClass = mg
+}
+
 func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 	var task jobs.Task
 	if err := json.Unmarshal([]byte(job.Payload), &task); err != nil {
@@ -56,11 +67,17 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 	}
 
 	// Attempt to acquire a live browser session for real CDP scraping.
-	// Falls back to h.rt (MockRuntime) when no session is idle.
+	// h.rt is an optional development fallback; production keeps it nil.
 	rt := h.rt
+	var acquireErr error
 	if h.allocator != nil && h.lsFactory != nil {
 		workerID := uuid.New().String()
-		if sess, err := h.allocator.Acquire(ctx, 0, session.PolicyAny, workerID); err == nil {
+		accountID := task.AccountID
+		policy := session.PolicyAny
+		if accountID != 0 {
+			policy = session.PolicySticky
+		}
+		if sess, err := h.allocator.Acquire(ctx, accountID, policy, workerID); err == nil {
 			ls, lsErr := h.lsFactory.Wrap(*sess, workerID)
 			if lsErr != nil {
 				slog.WarnContext(ctx, "wrap live session failed, using fallback runtime",
@@ -68,26 +85,44 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				_ = h.allocator.Release(ctx, sess.AccountID, workerID)
 			} else {
 				rt = ls.Runtime()
-				defer ls.Close(ctx)
+				sessionCtx, sessionCancel := context.WithCancel(ctx)
+				defer func() {
+					sessionCancel()
+					closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = ls.Close(closeCtx)
+				}()
 				// Heartbeat every 30s so the health checker knows the session is in use.
 				go func() {
 					ticker := time.NewTicker(30 * time.Second)
 					defer ticker.Stop()
 					for {
 						select {
-						case <-ctx.Done():
+						case <-sessionCtx.Done():
 							return
 						case <-ticker.C:
-							if err := ls.Heartbeat(ctx); err != nil {
-								slog.WarnContext(ctx, "session heartbeat failed",
+							if err := ls.Heartbeat(sessionCtx); err != nil {
+								slog.WarnContext(sessionCtx, "session heartbeat failed",
 									"account_id", ls.AccountID(), "error", err)
 							}
 						}
 					}
 				}()
 			}
+		} else {
+			acquireErr = err
 		}
 		// ErrNoIdleSession is non-fatal — continue with fallback runtime
+	}
+
+	if rt == nil {
+		if acquireErr != nil {
+			if task.AccountID != 0 {
+				return "", fmt.Errorf("facebook account %d has no logged-in idle browser session available for real crawl: %w", task.AccountID, acquireErr)
+			}
+			return "", fmt.Errorf("no logged-in idle Facebook browser session available for real crawl: %w", acquireErr)
+		}
+		return "", errors.New("no browser runtime configured; start and log in a Facebook workspace first")
 	}
 
 	// Ensure task row exists, then mark running (both calls are idempotent).
@@ -105,6 +140,12 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 
 	scorerCfg := scoringConfig(task.ScoringConfig)
 	sc := scoring.New(scorerCfg)
+	var businessProfile *ai.BusinessProfile
+	if h.ctxStore != nil && h.aiClass != nil && h.aiClass.Available() {
+		if p := ai.LoadProfile(h.ctxStore); p != nil && p.IsConfigured() {
+			businessProfile = p
+		}
+	}
 
 	filterCfg := filter.Config{
 		Keywords:         task.Filters.Keywords,
@@ -190,8 +231,33 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					continue
 				}
 
-				// Stage 2: score (inline, no post-processing)
+				// Stage 2: classify/score inline, no post-processing. Prefer the
+				// universal AI classifier when the business profile is configured;
+				// fallback to deterministic scoring only when AI context is missing.
 				sr := sc.Score(item.Content, task.Keywords, item.Reactions, item.Comments, item.AuthorProfileURL)
+				if businessProfile != nil {
+					classifyCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+					aiResult, err := h.aiClass.UniversalClassify(classifyCtx, item.Content, item.AuthorName, businessProfile)
+					cancel()
+					if err != nil {
+						slog.WarnContext(ctx, "universal classify failed, using deterministic score",
+							"job_id", job.ID, "item_id", item.ID, "error", err)
+					} else {
+						if aiResult.Priority == "rejected" {
+							stats.TotalFiltered++
+							continue
+						}
+						sr.Score = aiResult.Score * 100
+						sr.Category = aiResult.Priority
+						sr.Signals = append(sr.Signals,
+							"ai_intent:"+aiResult.Intent,
+							"ai_reason:"+aiResult.Reason,
+						)
+						if sr.Category == "" {
+							sr.Category = "cold"
+						}
+					}
+				}
 
 				seen[item.ID] = true
 				rec := toRecord(item, fr.Signals, sr)

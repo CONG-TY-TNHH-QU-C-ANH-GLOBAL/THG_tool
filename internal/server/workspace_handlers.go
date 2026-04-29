@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/session"
@@ -29,6 +31,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		Status      string     `json:"account_status"`
 		LoggedIn    bool       `json:"logged_in"`
 		Running     bool       `json:"running"`
+		CDPPort     int        `json:"cdp_port,omitempty"`
 		VNCPort     int        `json:"vnc_port,omitempty"`
 		StartedAt   *time.Time `json:"started_at,omitempty"`
 	}
@@ -44,6 +47,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		if s.workspace != nil {
 			if inst := s.workspace.Get(acc.ID); inst != nil {
 				e.Running = true
+				e.CDPPort = inst.CDPPort
 				e.VNCPort = inst.VNCPort
 				t := inst.StartedAt
 				e.StartedAt = &t
@@ -86,6 +90,13 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 		})
 	}
 
+	if !workspace.WaitForCDP(inst.CDPPort, 45*time.Second) {
+		s.workspace.Stop(id)
+		return c.Status(500).JSON(fiber.Map{
+			"error": "container started but Chrome CDP did not become ready - check Docker logs for the browser container",
+		})
+	}
+
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 
 	// Persist session metadata so the worker can discover the CDP port.
@@ -96,7 +107,7 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 		_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
 			AccountID:    id,
 			OrgID:        orgID,
-			Status:       "active",
+			Status:       "idle",
 			CDPPort:      inst.CDPPort,
 			VNCPort:      inst.VNCPort,
 			StartedAt:    now,
@@ -172,12 +183,20 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 
+	if !workspace.WaitForCDP(inst.CDPPort, 45*time.Second) {
+		s.workspace.Stop(id)
+		_ = s.db.DeleteAccount(id)
+		return c.Status(500).JSON(fiber.Map{
+			"error": "Chrome CDP không sẵn sàng - kiểm tra Docker logs của browser container",
+		})
+	}
+
 	if appStore, err2 := store.NewAppStore(s.db); err2 == nil {
 		now := time.Now().UTC()
 		_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
 			AccountID:    id,
 			OrgID:        orgID,
-			Status:       "active",
+			Status:       "idle",
 			CDPPort:      inst.CDPPort,
 			VNCPort:      inst.VNCPort,
 			StartedAt:    now,
@@ -203,11 +222,13 @@ func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
 // POST /api/browser/workspaces/:id/set-logged-in
 func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	if acc, err := s.db.GetAccount(id); err == nil && acc != nil {
-		orgID, _ := c.Locals("org_id").(int64)
-		if orgID != 0 && acc.OrgID != orgID {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
-		}
+	acc, err := s.db.GetAccount(id)
+	if err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 && acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
 	var body struct {
 		LoggedIn bool `json:"logged_in"`
@@ -215,10 +236,72 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
-	if err := s.db.SetBrowserLoggedIn(id, body.LoggedIn); err != nil {
+	var fbUserID string
+	if body.LoggedIn {
+		if s.workspace == nil {
+			return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+		}
+		inst := s.workspace.Get(id)
+		if inst == nil || inst.CDPPort == 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
+		}
+		var err error
+		fbUserID, err = facebookUserIDFromCDP(inst.CDPPort)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "not logged in to Facebook yet: " + err.Error()})
+		}
+		if acc.FBUserID != "" && acc.FBUserID != fbUserID {
+			return c.Status(409).JSON(fiber.Map{
+				"error": "this account profile is logged into a different Facebook user; create another Facebook account slot for multi-account automation, or clear this profile before reusing it",
+			})
+		}
+	}
+	if err := s.db.SetBrowserLoggedIn(id, body.LoggedIn, fbUserID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn})
+	if body.LoggedIn {
+		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+		if appStore, err := store.NewAppStore(s.db); err == nil {
+			if sess, err := appStore.GetSession(context.Background(), id); err == nil && sess != nil && sess.Status != "terminated" {
+				now := time.Now().UTC()
+				sess.Status = "idle"
+				sess.LastActiveAt = now
+				if inst := s.workspace.Get(id); inst != nil {
+					sess.CDPPort = inst.CDPPort
+					sess.VNCPort = inst.VNCPort
+				}
+				_ = appStore.UpsertSession(context.Background(), *sess)
+			}
+		}
+	}
+	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn, "fb_user_id": fbUserID})
+}
+
+func facebookUserIDFromCDP(cdpPort int) (string, error) {
+	ctx, cancel, err := cdpContext(cdpPort, 8*time.Second)
+	if err != nil {
+		return "", err
+	}
+	defer cancel()
+
+	var cookies []*network.Cookie
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var e error
+		cookies, e = network.GetCookies().WithURLs([]string{
+			"https://www.facebook.com",
+			"https://facebook.com",
+		}).Do(ctx)
+		return e
+	})); err != nil {
+		return "", err
+	}
+
+	for _, ck := range cookies {
+		if ck.Name == "c_user" && ck.Value != "" {
+			return ck.Value, nil
+		}
+	}
+	return "", fmt.Errorf("missing c_user cookie")
 }
 
 // resolveCheckpoint marks a session as ready after an operator manually passed the
@@ -245,4 +328,3 @@ func (s *Server) listCheckpoints(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"checkpoints": pending, "count": len(pending)})
 }
-

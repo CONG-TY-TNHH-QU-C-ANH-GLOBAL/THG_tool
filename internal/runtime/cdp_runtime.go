@@ -14,7 +14,9 @@ import (
 // Ensure json is used for unmarshaling extracted post data.
 
 // CDPRuntime connects to an existing Chrome instance via CDP and scrapes
-// Facebook group posts without disturbing the user's active session.
+// Facebook group posts through the visible page target. That keeps the
+// dashboard live view aligned with the automation instead of hiding work in a
+// background tab.
 type CDPRuntime struct {
 	wsURL string // Chrome DevTools WebSocket URL
 }
@@ -30,8 +32,8 @@ func NewCDPRuntime(cdpPort int) (*CDPRuntime, error) {
 	return &CDPRuntime{wsURL: wsURL}, nil
 }
 
-// FetchBatch opens a new background tab in the attached Chrome, navigates to
-// sourceURL, and extracts posts from the Facebook group feed via JS injection.
+// FetchBatch drives the visible Facebook tab, navigates to sourceURL, and
+// extracts posts from the Facebook group feed via JS injection.
 // Stateless single-batch mode: returns nil when offset > 0.
 func (r *CDPRuntime) FetchBatch(ctx context.Context, sourceURL string, offset, batchSize int) ([]RawItem, error) {
 	if offset > 0 {
@@ -41,7 +43,15 @@ func (r *CDPRuntime) FetchBatch(ctx context.Context, sourceURL string, offset, b
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, r.wsURL)
 	defer allocCancel()
 
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
+	targetID, targetErr := visiblePageTargetID(allocCtx)
+	var tabCtx context.Context
+	var tabCancel context.CancelFunc
+	if targetErr == nil {
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx, chromedp.WithTargetID(targetID))
+	} else {
+		log.Printf("[CDPRuntime] No visible page target, opening a new tab: %v", targetErr)
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx)
+	}
 	defer tabCancel()
 
 	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, 60*time.Second)

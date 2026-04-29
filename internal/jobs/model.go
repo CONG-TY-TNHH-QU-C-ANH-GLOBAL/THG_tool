@@ -8,6 +8,7 @@ type Task struct {
 	SchemaVersion       string        `json:"schema_version"`
 	TaskID              string        `json:"task_id"`
 	OrgID               int64         `json:"org_id"`
+	AccountID           int64         `json:"account_id,omitempty"`
 	Intent              string        `json:"intent"`
 	Keywords            []string      `json:"keywords"`
 	Entities            []string      `json:"entities,omitempty"`
@@ -15,7 +16,7 @@ type Task struct {
 	Filters             Filters       `json:"filters"`
 	ScoringConfig       ScoringConfig `json:"scoring_config"`
 	RetryPolicy         RetryPolicy   `json:"retry_policy"`
-	ExecutionMode       string        `json:"execution_mode,omitempty"`        // sync | async
+	ExecutionMode       string        `json:"execution_mode,omitempty"` // sync | async
 	OutputSchema        string        `json:"output_schema"`
 	OutputSchemaVersion string        `json:"output_schema_version,omitempty"` // e.g. "1"
 }
@@ -49,7 +50,7 @@ type CrawlPlan struct {
 
 // Source is a single crawl target.
 type Source struct {
-	Type  string `json:"type"`  // facebook_group | facebook_post | facebook_profile | web_url
+	Type  string `json:"type"` // facebook_group | facebook_post | facebook_profile | web_url
 	URL   string `json:"url"`
 	Label string `json:"label,omitempty"`
 }

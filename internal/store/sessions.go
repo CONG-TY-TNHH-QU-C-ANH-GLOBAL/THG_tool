@@ -88,15 +88,15 @@ func (a *AppStore) ListSessions(ctx context.Context, orgID int64) ([]BrowserSess
 	return out, rows.Err()
 }
 
-// GetFirstActiveCDPSession returns the first browser session that has an active
-// Chrome container with a reachable CDP port. Used by the worker to pick a session
-// without knowing the specific account ID.
+// GetFirstActiveCDPSession returns the first non-terminated browser session
+// with a reachable CDP port. Legacy callers use this when they do not own the
+// allocator path yet.
 func (a *AppStore) GetFirstActiveCDPSession(ctx context.Context) (*BrowserSession, error) {
 	row := a.db.QueryRowContext(ctx, `
 		SELECT id, account_id, org_id, status, cdp_port, vnc_port,
 		       started_at, last_active_at, error_msg
 		FROM browser_sessions
-		WHERE status = 'active' AND cdp_port > 0
+		WHERE status IN ('idle', 'ready', 'active') AND cdp_port > 0
 		ORDER BY last_active_at DESC
 		LIMIT 1`)
 	return scanSession(row)

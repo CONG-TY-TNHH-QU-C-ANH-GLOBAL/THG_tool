@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -153,8 +154,11 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 
 		// Atomic message ID counter for CDP commands.
 		var msgID int64
+		var cdpWriteMu sync.Mutex
 		send := func(method string, params map[string]any) {
 			mid := atomic.AddInt64(&msgID, 1)
+			cdpWriteMu.Lock()
+			defer cdpWriteMu.Unlock()
 			_ = cdp.WriteJSON(map[string]any{"id": mid, "method": method, "params": params})
 		}
 
@@ -196,8 +200,17 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 				}
 				data, _ := params["data"].(string)
 				sid, _ := params["sessionId"].(float64)
+				width, height := 1280, 800
+				if meta, _ := params["metadata"].(map[string]any); meta != nil {
+					if v, ok := meta["deviceWidth"].(float64); ok && v > 0 {
+						width = int(v)
+					}
+					if v, ok := meta["deviceHeight"].(float64); ok && v > 0 {
+						height = int(v)
+					}
+				}
 				send("Page.screencastFrameAck", map[string]any{"sessionId": int(sid)})
-				if err := ws.WriteJSON(screenFrame{Type: "frame", Data: data, W: 1280, H: 800}); err != nil {
+				if err := ws.WriteJSON(screenFrame{Type: "frame", Data: data, W: width, H: height}); err != nil {
 					return
 				}
 			}
@@ -222,22 +235,31 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 				}
 				switch inp.Type {
 				case "mouse":
+					button := inp.Button
+					if button == "" {
+						button = "none"
+					}
+					clickCount := 0
+					if inp.Action == "mousePressed" || inp.Action == "mouseReleased" {
+						clickCount = 1
+					}
 					send("Input.dispatchMouseEvent", map[string]any{
 						"type":       inp.Action,
 						"x":          inp.X,
 						"y":          inp.Y,
-						"button":     inp.Button,
+						"button":     button,
 						"buttons":    inp.Buttons,
-						"clickCount": 1,
+						"clickCount": clickCount,
 						"modifiers":  inp.Modifiers,
 					})
 				case "wheel":
 					send("Input.dispatchMouseEvent", map[string]any{
-						"type":   "mouseWheel",
-						"x":      inp.X,
-						"y":      inp.Y,
-						"deltaX": inp.DeltaX,
-						"deltaY": inp.DeltaY,
+						"type":      "mouseWheel",
+						"x":         inp.X,
+						"y":         inp.Y,
+						"deltaX":    inp.DeltaX,
+						"deltaY":    inp.DeltaY,
+						"modifiers": inp.Modifiers,
 					})
 				case "key":
 					txt := ""

@@ -17,8 +17,8 @@ type AllocationPolicy string
 
 const (
 	PolicyAny         AllocationPolicy = "any"          // first available, least-recently-used
-	PolicySticky      AllocationPolicy = "sticky"        // must use the specific account_id
-	PolicyLeastLoaded AllocationPolicy = "least_loaded"  // fewest active jobs (future)
+	PolicySticky      AllocationPolicy = "sticky"       // must use the specific account_id
+	PolicyLeastLoaded AllocationPolicy = "least_loaded" // fewest active jobs (future)
 )
 
 // ErrNoIdleSession is returned when Acquire finds no session currently in idle state.
@@ -83,7 +83,7 @@ func (a *Allocator) tryAcquire(
 	// Step 1: find the candidate row
 	q := `SELECT id, account_id, version, cdp_port, vnc_port, org_id
 	      FROM browser_sessions
-	      WHERE status = 'idle' AND cdp_port > 0`
+	      WHERE status IN ('idle', 'ready') AND cdp_port > 0`
 	args := []any{}
 
 	if accountID != 0 || policy == PolicySticky {
@@ -107,9 +107,9 @@ func (a *Allocator) tryAcquire(
 		 SET status = 'active',
 		     version = version + 1,
 		     worker_id = ?,
-		     status_prev = 'idle',
+		     status_prev = status,
 		     last_active_at = CURRENT_TIMESTAMP
-		 WHERE id = ? AND status = 'idle' AND version = ?`,
+		 WHERE id = ? AND status IN ('idle', 'ready') AND version = ?`,
 		workerID, id, version,
 	)
 	if err != nil {
@@ -124,8 +124,8 @@ func (a *Allocator) tryAcquire(
 	// Write audit log (non-fatal)
 	_, _ = a.db.ExecContext(ctx,
 		`INSERT INTO session_audit_log (account_id, from_status, to_status, triggered_by, reason)
-		 VALUES (?, 'idle', 'active', ?, 'worker acquired')`,
-		acctID, workerID,
+		 VALUES (?, (SELECT status_prev FROM browser_sessions WHERE id = ?), 'active', ?, 'worker acquired')`,
+		acctID, id, workerID,
 	)
 
 	slog.InfoContext(ctx, "session acquired",

@@ -1,5 +1,4 @@
 import { theme } from '../constants/styles';
-import { MOCK_LEADS } from '../services/mockData';
 import { Zap, Check } from 'lucide-react';
 
 interface LandingProps {
@@ -12,6 +11,12 @@ const D = { background: theme.bg, color: theme.text, fontFamily: 'system-ui, san
 const PB = (p: Record<string, unknown> = {}) => ({ padding: '10px 20px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, background: theme.primary, color: '#fff', ...p });
 const SB = (p: Record<string, unknown> = {}) => ({ padding: '10px 20px', borderRadius: 9, border: '1px solid #374151', cursor: 'pointer', fontSize: 13, background: 'transparent', color: '#d1d5db', ...p });
 const sc = (s: string) => ({ Hot: '#ef4444', Warm: '#f59e0b', Cold: '#3b82f6' }[s] ?? '#6b7280');
+
+const PREVIEW_ROWS = [
+  { name: 'Lead thật từ crawler', status: 'Hot', score: 92 },
+  { name: 'Bài viết cần tư vấn', status: 'Warm', score: 74 },
+  { name: 'Tín hiệu yếu', status: 'Cold', score: 41 },
+];
 
 const FEATS = [
   { e: '⚡', t: 'AI Agents 24/7', d: 'Tự động tư vấn, chốt lead liên tục không cần nhân viên trực.' },
@@ -82,8 +87,8 @@ export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) 
                 ))}
               </div>
               <div style={{ flex: 1, background: '#1e2130', borderRadius: 7, padding: 10 }}>
-                {MOCK_LEADS.slice(0, 3).map(l => (
-                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+                {PREVIEW_ROWS.map(l => (
+                  <div key={l.name} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
                     <div style={{ width: 18, height: 18, background: theme.primary, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: '#fff' }}>{l.name[0]}</div>
                     <span style={{ color: '#d1d5db', fontSize: 10, flex: 1 }}>{l.name}</span>
                     <span style={{ background: sc(l.status) + '22', color: sc(l.status), fontSize: 9, padding: '1px 6px', borderRadius: 99 }}>{l.status}</span>

@@ -3,7 +3,7 @@
 
 [Unit]
 Description=THG Lead Intelligence — Background Worker
-After=network.target thg-api.service
+After=network.target thg-scraper.service
 Wants=network-online.target
 
 [Service]
