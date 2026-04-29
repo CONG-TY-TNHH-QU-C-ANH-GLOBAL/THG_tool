@@ -1,4 +1,4 @@
-import { get, post } from './api';
+import { get, post, del } from './api';
 
 export interface SAOrg { id: number; name: string; domain: string; plan_tier: string; max_accounts: number; active: boolean; created_at: string; }
 export interface SAAccount { id: number; org_id: number; name: string; platform: string; email: string; status: string; browser_logged_in: boolean; created_at: string; }
@@ -11,3 +11,8 @@ export async function getAccounts(): Promise<SAAccount[]> { const r = await get<
 export async function getUsers(): Promise<SAUser[]> { const r = await get<{users: SAUser[]}>('/superadmin/users'); return r.users ?? []; }
 export async function getSessions(): Promise<SASession[]> { const r = await get<{sessions: SASession[]}>('/superadmin/sessions'); return r.sessions ?? []; }
 export async function runQuery(sql: string): Promise<QueryResult> { return post<QueryResult>('/superadmin/query', { sql }); }
+
+export async function deleteOrg(id: number): Promise<void> { return del(`/superadmin/orgs/${id}`); }
+export async function deleteAccount(id: number): Promise<void> { return del(`/superadmin/accounts/${id}`); }
+export async function deleteUser(id: number): Promise<void> { return del(`/superadmin/users/${id}`); }
+export async function terminateSession(accountId: number): Promise<void> { return del(`/superadmin/sessions/${accountId}`); }

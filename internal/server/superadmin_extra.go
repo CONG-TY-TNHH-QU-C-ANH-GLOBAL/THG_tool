@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -75,6 +76,59 @@ func (s *Server) superAdminSessions(c *fiber.Ctx) error {
 		sessions = append(sessions, ss)
 	}
 	return c.JSON(fiber.Map{"sessions": sessions, "count": len(sessions)})
+}
+
+func (s *Server) superAdminDeleteOrg(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	if id == 1 {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot delete platform org"})
+	}
+	if _, err := s.db.DB().ExecContext(c.Context(), `DELETE FROM organizations WHERE id = ?`, id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+func (s *Server) superAdminDeleteAccount(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	if err := s.db.DeleteAccount(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+func (s *Server) superAdminDeleteUser(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	// Prevent self-delete
+	if selfID, _ := c.Locals("user_id").(int64); selfID == id {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot delete your own account"})
+	}
+	if err := s.db.DeleteUser(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+func (s *Server) superAdminTerminateSession(c *fiber.Ctx) error {
+	accountID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	_, err = s.db.DB().ExecContext(c.Context(),
+		`UPDATE browser_sessions SET status = 'terminated' WHERE account_id = ?`, accountID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true})
 }
 
 func (s *Server) superAdminQuery(c *fiber.Ctx) error {

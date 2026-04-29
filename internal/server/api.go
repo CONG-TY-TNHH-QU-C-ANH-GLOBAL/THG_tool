@@ -316,9 +316,13 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	superAdminGrp := r.Group("/superadmin", authpkg.RequireRole("superadmin"))
 	superAdminGrp.Get("/orgs", s.listOrgs)
 	superAdminGrp.Put("/orgs/:id", s.adminUpdateOrg)
+	superAdminGrp.Delete("/orgs/:id", s.superAdminDeleteOrg)
 	superAdminGrp.Get("/accounts", s.superAdminAccounts)
+	superAdminGrp.Delete("/accounts/:id", s.superAdminDeleteAccount)
 	superAdminGrp.Get("/users", s.superAdminUsers)
+	superAdminGrp.Delete("/users/:id", s.superAdminDeleteUser)
 	superAdminGrp.Get("/sessions", s.superAdminSessions)
+	superAdminGrp.Delete("/sessions/:id", s.superAdminTerminateSession)
 	superAdminGrp.Post("/query", s.superAdminQuery)
 
 	// Admin: manage agent tokens (JWT auth + admin role)
