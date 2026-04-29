@@ -30,40 +30,63 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
     if (selectedId === null || !selectedWs?.running) return;
 
-    const token = useAuthStore.getState().token ?? '';
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/screen/${selectedId}?token=${token}`);
+    let cancelled = false;
 
-    setWsStatus('connecting');
-    ws.onopen = () => setWsStatus('connected');
-    ws.onclose = () => setWsStatus('disconnected');
-    ws.onerror = () => setWsStatus('disconnected');
+    // Ping /api/auth/me so the auth middleware can issue a silent token refresh
+    // before we open the WebSocket (prevents 401 on a freshly-expired 15-min token).
+    const openWs = (token: string) => {
+      if (cancelled) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${window.location.host}/ws/screen/${selectedId}?token=${token}`);
 
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data as string);
-        if (msg.type === 'error') {
-          setWsError(msg.msg as string);
-        } else if (msg.type === 'status') {
-          setWsError(null); // clear any stale error, show canvas with overlay
-        } else if (msg.type === 'frame' && canvasRef.current) {
-          setWsError(null);
-          const ctx = canvasRef.current.getContext('2d');
-          if (!ctx) return;
-          const img = new Image();
-          img.onload = () => {
-            if (!canvasRef.current) return;
-            canvasRef.current.width = msg.w as number;
-            canvasRef.current.height = msg.h as number;
-            ctx.drawImage(img, 0, 0);
-          };
-          img.src = `data:image/jpeg;base64,${msg.data as string}`;
-        }
-      } catch { /* ignore parse errors */ }
+      setWsStatus('connecting');
+      ws.onopen = () => setWsStatus('connected');
+      ws.onclose = () => setWsStatus('disconnected');
+      ws.onerror = () => setWsStatus('disconnected');
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data as string);
+          if (msg.type === 'error') {
+            setWsError(msg.msg as string);
+          } else if (msg.type === 'status') {
+            setWsError(null);
+          } else if (msg.type === 'frame' && canvasRef.current) {
+            setWsError(null);
+            const ctx = canvasRef.current.getContext('2d');
+            if (!ctx) return;
+            const img = new Image();
+            img.onload = () => {
+              if (!canvasRef.current) return;
+              canvasRef.current.width = msg.w as number;
+              canvasRef.current.height = msg.h as number;
+              ctx.drawImage(img, 0, 0);
+            };
+            img.src = `data:image/jpeg;base64,${msg.data as string}`;
+          }
+        } catch { /* ignore parse errors */ }
+      };
+
+      wsRef.current = ws;
     };
 
-    wsRef.current = ws;
-    return () => { ws.close(); wsRef.current = null; };
+    // Attempt a silent refresh; fall back to the stored token if it fails.
+    const currentToken = useAuthStore.getState().token ?? '';
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${currentToken}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(() => {
+        // Re-read token after potential refresh
+        openWs(useAuthStore.getState().token ?? currentToken);
+      });
+
+    return () => {
+      cancelled = true;
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
   }, [selectedId, selectedWs?.running]);
 
   // Keyboard forwarding

@@ -83,6 +83,9 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		// knows the connection is alive during Chrome's startup window.
 		targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", inst.CDPPort)
 		var cdpWSURL string
+		var targetID string
+		// Immediate ping so the client knows we're working (before any delay)
+		_ = ws.WriteJSON(screenFrame{Type: "status", Msg: "connecting to Chrome..."})
 		for attempt := 0; attempt < 30; attempt++ {
 			if attempt > 0 {
 				time.Sleep(time.Second)
@@ -91,7 +94,10 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 					_ = ws.WriteJSON(screenFrame{Type: "status", Msg: fmt.Sprintf("waiting for Chrome... (%ds)", attempt)})
 				}
 			}
-			resp, httpErr := http.Get(targetsURL) //nolint:noctx
+			ctx5s, cancel5s := context.WithTimeout(context.Background(), 5*time.Second)
+			req, _ := http.NewRequestWithContext(ctx5s, http.MethodGet, targetsURL, nil)
+			resp, httpErr := http.DefaultClient.Do(req)
+			cancel5s()
 			if httpErr != nil {
 				err = httpErr
 				continue
@@ -101,6 +107,7 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			err = nil
 
 			var targets []struct {
+				ID   string `json:"id"`
 				WS   string `json:"webSocketDebuggerUrl"`
 				Type string `json:"type"`
 			}
@@ -108,6 +115,7 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			for _, t := range targets {
 				if t.Type == "page" {
 					cdpWSURL = t.WS
+					targetID = t.ID
 					break
 				}
 			}
@@ -150,6 +158,9 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			_ = cdp.WriteJSON(map[string]any{"id": mid, "method": method, "params": params})
 		}
 
+		if targetID != "" {
+			send("Target.activateTarget", map[string]any{"targetId": targetID})
+		}
 		send("Page.enable", nil)
 		send("Page.startScreencast", map[string]any{
 			"format":        "jpeg",

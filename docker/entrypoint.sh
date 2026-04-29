@@ -12,7 +12,8 @@ echo "[Browser] Starting virtual display :${DISPLAY_NUM} (${SCREEN_RES})"
 rm -f "/tmp/.X${DISPLAY_NUM}-lock" "/tmp/.X11-unix/X${DISPLAY_NUM}" 2>/dev/null || true
 
 # Start Xvfb (virtual framebuffer — no physical monitor needed)
-Xvfb ":${DISPLAY_NUM}" -screen 0 "${SCREEN_RES}" -ac +extension RANDR &
+Xvfb ":${DISPLAY_NUM}" -screen 0 "${SCREEN_RES}" -ac \
+    +extension GLX +extension RANDR +extension RENDER -noreset &
 XVFB_PID=$!
 echo "[Browser] Xvfb pid=${XVFB_PID}"
 sleep 1
@@ -52,6 +53,8 @@ exec google-chrome \
     --no-sandbox \
     --disable-dev-shm-usage \
     --disable-setuid-sandbox \
+    --use-gl=swiftshader \
+    --disable-gpu-sandbox \
     --user-data-dir="${PROFILE_DIR}" \
     --window-size=1280,800 \
     --start-maximized \

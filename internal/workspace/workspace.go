@@ -152,7 +152,7 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 
 	args := append([]string{"run", "-d", "--name", containerName}, portArgs...)
 	args = append(args,
-		"--shm-size=1g",
+		"--shm-size=2g",
 		"--cpus=1.0",
 		"--memory=2g",
 		"--memory-swap=2g",

@@ -413,9 +413,12 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 		if token == "" {
 			return c.Status(401).JSON(fiber.Map{"error": "token required"})
 		}
-		if _, err := authpkg.ValidateAccessToken(token, cfg.JWTSecret); err != nil {
+		claims, err := authpkg.ValidateAccessToken(token, cfg.JWTSecret)
+		if err != nil {
 			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
 		}
+		c.Locals("user_id", claims.UserID)
+		c.Locals("org_id", claims.OrgID)
 		return c.Next()
 	}
 
