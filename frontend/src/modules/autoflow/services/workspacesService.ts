@@ -33,6 +33,6 @@ export async function stopWorkspace(id: number): Promise<void> {
   await post(`/browser/workspaces/${id}/stop`, {});
 }
 
-export async function setWorkspaceLoggedIn(id: number): Promise<void> {
-  await post(`/browser/workspaces/${id}/set-logged-in`, {});
+export async function setWorkspaceLoggedIn(id: number, loggedIn = true): Promise<void> {
+  await post(`/browser/workspaces/${id}/set-logged-in`, { logged_in: loggedIn });
 }

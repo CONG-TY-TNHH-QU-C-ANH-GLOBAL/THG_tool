@@ -193,7 +193,10 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 			exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
 			return nil, fmt.Errorf("get container VNC port: %w", err)
 		}
-		cdpPort, _ = m.queryContainerPort(containerName, "9222")
+		cdpPort, err = m.queryContainerPort(containerName, "9222")
+		if err != nil {
+			log.Printf("[Workspace] WARNING: CDP port query failed for account %d: %v (screen proxy will retry)", accountID, err)
+		}
 	}
 
 	inst := &Instance{

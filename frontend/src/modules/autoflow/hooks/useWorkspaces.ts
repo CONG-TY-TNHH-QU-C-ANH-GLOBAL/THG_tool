@@ -7,12 +7,11 @@ export function useWorkspaces() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<Set<number>>(new Set());
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    getWorkspaces().then(data => {
-      setWorkspaces(data);
-      setLoading(false);
-    });
+    const data = await getWorkspaces();
+    setWorkspaces(data);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -35,7 +34,7 @@ export function useWorkspaces() {
 
   const startNew = async (): Promise<number> => {
     const result = await startNewWorkspace();
-    refresh();
+    await refresh();
     return result.accountId;
   };
 

@@ -59,6 +59,10 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "account container not running"})
 			return
 		}
+		if inst.CDPPort == 0 {
+			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "CDP port not available — container may still be starting, try refreshing"})
+			return
+		}
 
 		// Org-scope guard: superadmin (orgID=0) bypasses check.
 		acc, err := s.db.GetAccount(id)
@@ -75,12 +79,17 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		// Fetch CDP targets from Chrome inside the container.
 		// Chrome takes 3-8s to start its CDP listener after x11vnc is ready;
 		// even when /json responds it may briefly return no page targets.
-		// Retry for up to 20s, combining both waits into a single loop.
+		// Retry for up to 30s, sending a status ping every 3s so the client
+		// knows the connection is alive during Chrome's startup window.
 		targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", inst.CDPPort)
 		var cdpWSURL string
-		for attempt := 0; attempt < 20; attempt++ {
+		for attempt := 0; attempt < 30; attempt++ {
 			if attempt > 0 {
 				time.Sleep(time.Second)
+				// Ping the client every 3 attempts so Cloudflare/nginx don't close idle WS
+				if attempt%3 == 0 {
+					_ = ws.WriteJSON(screenFrame{Type: "status", Msg: fmt.Sprintf("waiting for Chrome... (%ds)", attempt)})
+				}
 			}
 			resp, httpErr := http.Get(targetsURL) //nolint:noctx
 			if httpErr != nil {
@@ -107,9 +116,9 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			}
 		}
 		if cdpWSURL == "" {
-			msg := "no Chrome page target after 20s"
+			msg := "Chrome không phản hồi sau 30s — thử Stop và Start lại container"
 			if err != nil {
-				msg = "CDP unreachable after 20s: " + err.Error()
+				msg = "CDP không kết nối được: " + err.Error()
 			}
 			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: msg})
 			return

@@ -44,6 +44,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         const msg = JSON.parse(e.data as string);
         if (msg.type === 'error') {
           setWsError(msg.msg as string);
+        } else if (msg.type === 'status') {
+          setWsError(null); // clear any stale error, show canvas with overlay
         } else if (msg.type === 'frame' && canvasRef.current) {
           setWsError(null);
           const ctx = canvasRef.current.getContext('2d');
