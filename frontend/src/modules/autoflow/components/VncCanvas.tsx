@@ -499,11 +499,11 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
           }}
           onContextMenu={e => e.preventDefault()}
         />
-        {(!hasFrame || error || errorMsg) && (
+        {(!hasFrame || error) && (
           <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center', pointerEvents: 'none' }}>
             <div style={{ color: error || errorMsg ? '#fca5a5' : theme.textMuted, fontSize: 13, lineHeight: 1.6 }}>
               {error ? `⚠ ${error}` : message}
-              {errorMsg && <div style={{ color: '#fca5a5', marginTop: 8 }}>{errorMsg}</div>}
+              {!hasFrame && errorMsg && <div style={{ color: '#fca5a5', marginTop: 8 }}>{errorMsg}</div>}
               <div style={{ color: theme.textFaint, marginTop: 8 }}>vnc:{vncPort ?? '-'} · cdp:{cdpPort ?? '-'}</div>
             </div>
           </div>
