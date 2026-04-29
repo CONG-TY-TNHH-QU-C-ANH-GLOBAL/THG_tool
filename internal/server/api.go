@@ -215,6 +215,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
+	authGroup.Post("/signup", regLimiter, s.signupUser)
 	authGroup.Post("/refresh", s.refresh)
 	authGroup.Post("/logout", s.logout) // no JWT required — only needs refresh token cookie
 
@@ -224,11 +225,15 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	authGroup.Get("/google/status", s.googleStatus)
 	authGroup.Post("/google/token", s.googleToken)
 
+	// Invite info (public — shows org name + email hint for join page)
+	authGroup.Get("/invite/:token", s.getInviteInfo)
+
 	// Auth routes (require valid JWT)
 	protected := authGroup.Group("", authpkg.RequireAuth(cfg.JWTSecret))
 	protected.Get("/me", s.me)
 	protected.Put("/me", s.updateOwnProfile)
 	protected.Put("/me/password", s.changeOwnPassword)
+	protected.Post("/join/:token", s.acceptInvite)
 
 	// Admin-only auth routes
 	adminOnly := authpkg.RequireRole("admin")
@@ -308,9 +313,17 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	agentGrp.Post("/outbox/:id/failed", s.agentOutboxFailed)
 	agentGrp.Get("/images", s.agentServeImage)
 
+	// Onboarding — new users with org_id=0 must complete this before accessing org features
+	r.Post("/onboarding/setup", s.onboardingSetup)
+
 	// Org self-service (any authenticated user sees their org)
 	r.Get("/org", s.getMyOrg)
 	r.Put("/org", authpkg.RequireRole("admin"), s.updateOrg)
+
+	// Org invites — admin creates/lists/revokes invite links
+	r.Post("/org/invites", adminOnly, s.createInvite)
+	r.Get("/org/invites", adminOnly, s.listInvites)
+	r.Delete("/org/invites/:id", adminOnly, s.revokeInvite)
 
 	// Superadmin: org management — /superadmin prefix keeps it separate from /admin
 	superAdminGrp := r.Group("/superadmin", authpkg.RequireRole("superadmin"))

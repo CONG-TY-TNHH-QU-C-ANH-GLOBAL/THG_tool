@@ -110,6 +110,14 @@ func (s *Store) EnsureSuperAdmin(email, passwordHash, name string) error {
 	return err
 }
 
+// UpdateUserOrg assigns a user to an org and sets their role (used after onboarding).
+func (s *Store) UpdateUserOrg(id, orgID int64, role models.UserRole) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET org_id = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		orgID, string(role), id)
+	return err
+}
+
 // UpdateUserPassword sets a new bcrypt hash for the user.
 func (s *Store) UpdateUserPassword(id int64, newHash string) error {
 	_, err := s.db.Exec(`UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, newHash, id)

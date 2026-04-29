@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	authpkg "github.com/thg/scraper/internal/auth"
+	"github.com/thg/scraper/internal/models"
 )
 
 const (
@@ -84,11 +85,28 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 		return redirectWithError(c, "failed to get user info")
 	}
 
-	// Find existing user — Google Sign-In only works for pre-registered accounts.
+	// Find or create user — Google Sign-In creates new accounts on first login.
+	isNew := false
 	user, err := s.db.GetUserByEmail(info.Email)
 	if err != nil || user == nil {
-		log.Printf("[GoogleAuth] Unknown email: %s", info.Email)
-		return redirectWithError(c, "no account found — please register first")
+		// Auto-create user with org_id=0; they'll be sent to onboarding.
+		newID, createErr := s.db.CreateUser(&models.User{
+			OrgID:        0,
+			Email:        info.Email,
+			Name:         info.Name,
+			PasswordHash: "", // no password — Google-only account
+			Role:         models.RoleAdmin,
+		})
+		if createErr != nil {
+			log.Printf("[GoogleAuth] Auto-create user failed: %v", createErr)
+			return redirectWithError(c, "failed to create account")
+		}
+		user, err = s.db.GetUserByID(newID)
+		if err != nil || user == nil {
+			return redirectWithError(c, "account lookup failed")
+		}
+		isNew = true
+		log.Printf("[GoogleAuth] Auto-created user: %s (id=%d)", info.Email, newID)
 	}
 
 	// Issue JWT pair
@@ -126,10 +144,18 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 		SameSite: "Lax",
 	})
 
-	s.db.InsertAuditLog(user.ID, "google_login", c.IP(), fmt.Sprintf(`{"email":%q}`, user.Email))
-	log.Printf("[GoogleAuth] Login: %s (role=%s)", user.Email, user.Role)
+	action := "google_login"
+	if isNew {
+		action = "google_signup"
+	}
+	s.db.InsertAuditLog(user.ID, action, c.IP(), fmt.Sprintf(`{"email":%q}`, user.Email))
+	log.Printf("[GoogleAuth] %s: %s (role=%s)", action, user.Email, user.Role)
 
-	return c.Redirect("/?google_auth=1", fiber.StatusTemporaryRedirect)
+	redirectURL := "/?google_auth=1"
+	if isNew {
+		redirectURL = "/?google_auth=1&new=1"
+	}
+	return c.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 }
 
 // ------- helpers -------
@@ -228,8 +254,9 @@ func (s *Server) googleToken(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"access_token": token,
-		"expires_in":   int(authpkg.AccessTokenTTL.Seconds()),
+		"access_token":     token,
+		"expires_in":       int(authpkg.AccessTokenTTL.Seconds()),
+		"needs_onboarding": user.OrgID == 0,
 		"user": fiber.Map{
 			"id":     user.ID,
 			"org_id": user.OrgID,

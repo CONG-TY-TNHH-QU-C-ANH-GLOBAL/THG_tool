@@ -12,6 +12,7 @@ interface AuthState {
   logout(): Promise<void>;
   setToken(token: string | null): void;
   setUser(user: AuthUser | null): void;
+  setAuth(token: string, user: AuthUser): void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -42,6 +43,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   setUser(user) { set({ user }); },
+
+  setAuth(token, user) {
+    localStorage.setItem(TOKEN_KEY, token);
+    authService.initToken();
+    set({ token, user });
+  },
 }));
 
 export type { Role, AuthUser };

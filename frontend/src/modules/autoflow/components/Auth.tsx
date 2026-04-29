@@ -9,6 +9,7 @@ interface AuthProps {
   mode: AuthMode;
   setMode: (m: AuthMode) => void;
   onSuccess: (role: 'admin' | 'staff' | 'superadmin') => void;
+  onNeedsOnboarding?: () => void;
   goBack: () => void;
 }
 
@@ -23,26 +24,63 @@ const Inp = (p: React.InputHTMLAttributes<HTMLInputElement>) => <input style={in
 
 const box = { maxWidth: 460, margin: '48px auto', ...card({ padding: 36 }) };
 
-export default function Auth({ mode, setMode, onSuccess, goBack }: AuthProps) {
-  const [step, setStep] = useState(1);
+export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBack }: AuthProps) {
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirm, setRegConfirm] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regError, setRegError] = useState('');
   const { login, isLoading } = useAuth();
 
   useEffect(() => {
-    if (!window.location.search.includes('google_auth=1')) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('google_auth')) return;
     fetch('/api/auth/google/token', { method: 'POST' })
       .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => {
-        const { useAuthStore } = require('../stores/authStore');
+      .then(async data => {
+        const { useAuthStore } = await import('../stores/authStore');
         useAuthStore.getState().setAuth(data.access_token, data.user);
         history.replaceState(null, '', window.location.pathname);
-        onSuccess(data.user?.role === 'superadmin' ? 'superadmin' : data.user?.role === 'admin' ? 'admin' : 'staff');
+        if (data.needs_onboarding && onNeedsOnboarding) {
+          onNeedsOnboarding();
+        } else {
+          onSuccess(data.user?.role === 'superadmin' ? 'superadmin' : data.user?.role === 'admin' ? 'admin' : 'staff');
+        }
       })
       .catch(() => setError('Google đăng nhập thất bại'));
   }, []);
+
+  async function handleSignup() {
+    setRegError('');
+    if (!regName || !regEmail || !regPassword) { setRegError('Vui lòng điền đầy đủ thông tin'); return; }
+    if (regPassword !== regConfirm) { setRegError('Mật khẩu không khớp'); return; }
+    setRegLoading(true);
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: regName, email: regEmail, password: regPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRegError(data.error || 'Đăng ký thất bại'); return; }
+      const { useAuthStore } = await import('../stores/authStore');
+      useAuthStore.getState().setAuth(data.access_token, data.user);
+      if (data.needs_onboarding && onNeedsOnboarding) {
+        onNeedsOnboarding();
+      } else {
+        onSuccess(data.user?.role === 'admin' ? 'admin' : 'staff');
+      }
+    } catch {
+      setRegError('Lỗi kết nối, thử lại sau');
+    } finally {
+      setRegLoading(false);
+    }
+  }
 
   async function handleLogin() {
     setError('');
@@ -165,43 +203,32 @@ export default function Auth({ mode, setMode, onSuccess, goBack }: AuthProps) {
         <button onClick={goBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: '#9ca3af', fontSize: 12, cursor: 'pointer', marginBottom: 20, padding: 0 }}>
           <ArrowLeft size={13} />Trang chủ
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 26, justifyContent: 'center' }}>
-          {[1, 2].map(s => (
-            <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: step >= s ? theme.primary : '#2a2f45', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 600 }}>
-                {step > s ? <Check size={13} /> : s}
-              </div>
-              {s < 2 && <div style={{ width: 40, height: 2, background: step > 1 ? theme.primary : '#2a2f45' }} />}
-            </span>
-          ))}
-        </div>
-        {step === 1 ? (
-          <>
-            <h2 style={{ color: '#f9fafb', fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Tạo tài khoản</h2>
-            <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 22 }}>Bước 1: Thông tin cá nhân</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13, marginBottom: 13 }}>
-              <div><Lbl t="Họ và tên" /><Inp placeholder="Nguyễn Văn A" /></div>
-              <div><Lbl t="Email" /><Inp type="email" placeholder="you@company.com" /></div>
-              <div><Lbl t="Mật khẩu" /><Inp type="password" placeholder="Tối thiểu 8 ký tự" /></div>
-              <div><Lbl t="Xác nhận mật khẩu" /><Inp type="password" placeholder="Nhập lại" /></div>
-            </div>
-            <button onClick={() => setStep(2)} style={{ ...PB(), width: '100%', padding: '11px' } as React.CSSProperties}>Tiếp theo →</button>
-          </>
-        ) : (
-          <>
-            <h2 style={{ color: '#f9fafb', fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Tạo tổ chức</h2>
-            <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 22 }}>Bước 2: Thông tin tổ chức</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13, marginBottom: 13 }}>
-              <div style={{ gridColumn: '1/-1' }}><Lbl t="Tên tổ chức" /><Inp placeholder="VinFast Sản Xuất" /></div>
-              <div><Lbl t="Lĩnh vực" /><select style={inp}><option>Sản xuất</option><option>Bán lẻ</option><option>Công nghệ</option><option>Bất động sản</option><option>Khác</option></select></div>
-              <div><Lbl t="Số nhân viên" /><select style={inp}><option>1-5</option><option>6-20</option><option>21-50</option><option>50+</option></select></div>
-              <div><Lbl t="Gói dịch vụ" /><select style={inp}><option>Starter — 990K/tháng</option><option>Pro — 2.9M/tháng</option><option>Enterprise</option></select></div>
-              <div><Lbl t="Mã giới thiệu" /><Inp placeholder="REF-XXXX (nếu có)" /></div>
-            </div>
-            <button onClick={() => setMode('success')} style={{ ...PB(), width: '100%', padding: '11px', fontWeight: 700 } as React.CSSProperties}>Tạo tổ chức →</button>
-            <button onClick={() => setStep(1)} style={{ display: 'block', background: 'none', border: 'none', color: '#9ca3af', fontSize: 12, cursor: 'pointer', margin: '12px auto 0' }}>← Quay lại</button>
-          </>
-        )}
+        <>
+          <h2 style={{ color: '#f9fafb', fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Tạo tài khoản</h2>
+          <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 22 }}>Nhập thông tin để bắt đầu</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13, marginBottom: 13 }}>
+            <div><Lbl t="Họ và tên" /><Inp placeholder="Nguyễn Văn A" value={regName} onChange={e => setRegName(e.target.value)} /></div>
+            <div><Lbl t="Email" /><Inp type="email" placeholder="you@company.com" value={regEmail} onChange={e => setRegEmail(e.target.value)} /></div>
+            <div><Lbl t="Mật khẩu" /><Inp type="password" placeholder="Tối thiểu 8 ký tự" value={regPassword} onChange={e => setRegPassword(e.target.value)} /></div>
+            <div><Lbl t="Xác nhận mật khẩu" /><Inp type="password" placeholder="Nhập lại" value={regConfirm} onChange={e => setRegConfirm(e.target.value)} /></div>
+          </div>
+          {regError && <p style={{ color: '#f87171', fontSize: 12, marginBottom: 10, textAlign: 'center' }}>{regError}</p>}
+          <button onClick={handleSignup} disabled={regLoading} style={{ ...PB(), width: '100%', padding: '11px', opacity: regLoading ? 0.6 : 1 } as React.CSSProperties}>
+            {regLoading ? 'Đang tạo...' : 'Tạo tài khoản →'}
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+            <div style={{ flex: 1, height: 1, background: '#374151' }} />
+            <span style={{ color: '#6b7280', fontSize: 11 }}>hoặc</span>
+            <div style={{ flex: 1, height: 1, background: '#374151' }} />
+          </div>
+          <button
+            onClick={() => { window.location.href = '/api/auth/google'; }}
+            style={{ width: '100%', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 10, fontSize: 13, fontWeight: 500, cursor: 'pointer', marginTop: 12 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+            Đăng ký với Google
+          </button>
+        </>
       </div>
     </div>
   );

@@ -370,6 +370,19 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'server'`)
 	// Auto-migrate: browser_logged_in tracks whether account has logged into Facebook via dashboard browser
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN browser_logged_in INTEGER NOT NULL DEFAULT 0`)
+	// Org invites: token-based invite links for joining an org
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS org_invites (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id     INTEGER NOT NULL,
+		email      TEXT NOT NULL DEFAULT '',
+		token      TEXT NOT NULL UNIQUE,
+		created_by INTEGER NOT NULL,
+		expires_at DATETIME NOT NULL,
+		used_at    DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_token ON org_invites(token)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id)`)
 
 	// Agent tokens: staff download the agent binary and authenticate with these tokens
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS agent_tokens (

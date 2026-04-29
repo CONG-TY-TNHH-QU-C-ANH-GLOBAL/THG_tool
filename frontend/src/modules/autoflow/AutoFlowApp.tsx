@@ -4,11 +4,12 @@ import Landing from './components/Landing';
 import Auth from './components/Auth';
 import MainApp from './components/MainApp';
 import SuperAdmin from './components/SuperAdmin';
+import Onboarding from './components/Onboarding';
 import { useAuth } from './hooks/useAuth';
 import { useRoleStore } from './stores/roleStore';
 import { initAuthSync } from './services/authSync';
 
-type Screen = 'landing' | 'auth' | 'app' | 'superadmin';
+type Screen = 'landing' | 'auth' | 'onboarding' | 'app' | 'superadmin';
 type AuthMode = 'login' | 'register' | 'forgot' | 'success';
 
 export default function AutoFlowApp() {
@@ -23,8 +24,13 @@ export default function AutoFlowApp() {
   }, []);
 
   useEffect(() => {
-    if (user && screen !== 'app' && screen !== 'superadmin') {
-      setScreen(isSuperAdmin ? 'superadmin' : 'app');
+    if (user && screen !== 'app' && screen !== 'superadmin' && screen !== 'onboarding') {
+      // If user has no org yet, send to onboarding
+      if ((user as { org_id?: number }).org_id === 0) {
+        setScreen('onboarding');
+      } else {
+        setScreen(isSuperAdmin ? 'superadmin' : 'app');
+      }
     }
   }, [user, isSuperAdmin, screen]);
 
@@ -32,6 +38,10 @@ export default function AutoFlowApp() {
 
   if (screen === 'superadmin') {
     return <SuperAdmin goBack={() => setScreen('landing')} />;
+  }
+
+  if (screen === 'onboarding') {
+    return <Onboarding onComplete={(r) => setScreen(r === 'superadmin' ? 'superadmin' : 'app')} />;
   }
 
   if (screen === 'app') {
@@ -47,6 +57,7 @@ export default function AutoFlowApp() {
           const nextScreen = r === 'superadmin' ? 'superadmin' : 'app';
           setScreen(nextScreen);
         }}
+        onNeedsOnboarding={() => setScreen('onboarding')}
         goBack={() => { setScreen('landing'); setAuthMode('login'); }}
       />
     );
