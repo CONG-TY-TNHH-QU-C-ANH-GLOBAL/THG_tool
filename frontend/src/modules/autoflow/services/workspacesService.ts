@@ -10,6 +10,8 @@ export async function getWorkspaces(): Promise<Workspace[]> {
       accountStatus: item.account_status,
       loggedIn: item.logged_in,
       running: item.running,
+      browserState: item.browser_state,
+      errorMsg: item.error_msg,
       vncPort: item.vnc_port,
       cdpPort: item.cdp_port,
       startedAt: item.started_at,

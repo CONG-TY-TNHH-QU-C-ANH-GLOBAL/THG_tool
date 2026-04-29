@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useAuthStore } from '../../stores/authStore';
+import { refreshToken } from '../../services/authService';
 import { Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus } from 'lucide-react';
 import '../../autoflow.css';
 
@@ -15,6 +16,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>('disconnected');
   const [wsError, setWsError] = useState<string | null>(null);
+  const [wsMessage, setWsMessage] = useState<string>('Chọn một workspace để mở browser');
+  const [hasFrame, setHasFrame] = useState(false);
   const [newLoading, setNewLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -22,28 +25,49 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
 
+  useEffect(() => {
+    if (selectedId !== null && selectedWs?.running) return;
+    const firstRunning = workspaces.find(w => w.running);
+    setSelectedId(firstRunning?.accountId ?? null);
+  }, [selectedId, selectedWs?.running, workspaces]);
+
+  useEffect(() => {
+    if (newLoading && workspaces.some(w => w.running)) {
+      setNewLoading(false);
+    }
+  }, [newLoading, workspaces]);
+
   // Open/close screen WebSocket when selection changes
   useEffect(() => {
     wsRef.current?.close();
     wsRef.current = null;
     setWsStatus('disconnected');
     setWsError(null);
+    setHasFrame(false);
 
     if (selectedId === null || !selectedWs?.running) return;
 
     let cancelled = false;
 
-    // Ping /api/auth/me so the auth middleware can issue a silent token refresh
-    // before we open the WebSocket (prevents 401 on a freshly-expired 15-min token).
     const openWs = (token: string) => {
       if (cancelled) return;
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(`${proto}//${window.location.host}/ws/screen/${selectedId}?token=${token}`);
 
       setWsStatus('connecting');
-      ws.onopen = () => setWsStatus('connected');
-      ws.onclose = () => setWsStatus('disconnected');
-      ws.onerror = () => setWsStatus('disconnected');
+      setWsMessage('Đang mở luồng Chrome...');
+      ws.onopen = () => {
+        setWsStatus('connected');
+        setWsMessage('Đang chờ Chrome render frame đầu tiên...');
+      };
+      ws.onclose = () => {
+        setWsStatus('disconnected');
+        setWsMessage('Kết nối browser đã đóng');
+      };
+      ws.onerror = () => {
+        setWsStatus('disconnected');
+        setWsMessage('Không kết nối được browser WebSocket');
+      };
 
       ws.onmessage = (e) => {
         if (wsRef.current !== ws) return;
@@ -53,8 +77,10 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             setWsError(msg.msg as string);
           } else if (msg.type === 'status') {
             setWsError(null);
+            setWsMessage((msg.msg as string) || 'Đang khởi động Chrome...');
           } else if (msg.type === 'frame' && canvasRef.current) {
             setWsError(null);
+            setWsMessage('');
             const img = new Image();
             img.onload = () => {
               if (!canvasRef.current || wsRef.current !== ws) return;
@@ -67,6 +93,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               const ctx = canvasRef.current.getContext('2d');
               if (!ctx) return;
               ctx.drawImage(img, 0, 0);
+              setHasFrame(true);
             };
             img.src = `data:image/jpeg;base64,${msg.data as string}`;
           }
@@ -76,24 +103,18 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       wsRef.current = ws;
     };
 
-    // Attempt a silent refresh; fall back to the stored token if it fails.
+    // WebSockets cannot use apiFetch's automatic 401 retry, so refresh once before opening.
     const currentToken = useAuthStore.getState().token ?? '';
-    fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${currentToken}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null)
-      .then(() => {
-        // Re-read token after potential refresh
-        openWs(useAuthStore.getState().token ?? currentToken);
-      });
+    refreshToken()
+      .catch(() => currentToken)
+      .then((token) => openWs(token || useAuthStore.getState().token || currentToken));
 
     return () => {
       cancelled = true;
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [selectedId, selectedWs?.running]);
+  }, [selectedId, selectedWs?.running, selectedWs?.browserState]);
 
   const modifiers = (e: MouseEvent | WheelEvent | KeyboardEvent | React.MouseEvent<HTMLCanvasElement>) =>
     (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
@@ -228,6 +249,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                 <CheckCircle size={10} style={{ marginRight: 3 }} />Đã đăng nhập
               </span>
             )}
+            {w.browserState && (
+              <span style={{ fontSize: 11, color: w.browserState === 'error' ? '#fca5a5' : '#a7f3d0', background: w.browserState === 'error' ? '#7f1d1d55' : '#064e3b44', border: `1px solid ${w.browserState === 'error' ? '#ef444466' : '#10b98155'}`, padding: '2px 8px', borderRadius: 6 }}>
+                {w.browserState}
+              </span>
+            )}
             {!w.running ? (
               <button
                 onClick={e => { e.stopPropagation(); void start(w.accountId).then(() => setSelectedId(w.accountId)); }}
@@ -264,11 +290,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           </div>
 
           {/* Canvas / Error */}
-          {wsError ? (
-            <div style={{ padding: 24, textAlign: 'center', color: '#fca5a5', fontSize: 13 }}>
-              ⚠ {wsError}
-            </div>
-          ) : (
+          <div style={{ position: 'relative', minHeight: 360, background: '#050505' }}>
             <canvas
               ref={canvasRef}
               style={{ display: 'block', width: '100%', aspectRatio: '16 / 10', background: '#050505', cursor: 'crosshair' }}
@@ -278,7 +300,20 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               onMouseUp={sendMouse('mouseReleased')}
               onContextMenu={e => e.preventDefault()}
             />
-          )}
+            {(wsError || !hasFrame) && (
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center', pointerEvents: 'none' }}>
+                <div style={{ color: wsError ? '#fca5a5' : theme.textMuted, fontSize: 13, lineHeight: 1.6 }}>
+                  {wsError ? `⚠ ${wsError}` : wsMessage}
+                  {selectedWs?.errorMsg && (
+                    <div style={{ color: '#fca5a5', marginTop: 8 }}>{selectedWs.errorMsg}</div>
+                  )}
+                  {!wsError && selectedWs?.cdpPort && (
+                    <div style={{ color: theme.textFaint, marginTop: 8 }}>cdp:{selectedWs.cdpPort} · vnc:{selectedWs.vncPort ?? '-'}</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Toolbar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>

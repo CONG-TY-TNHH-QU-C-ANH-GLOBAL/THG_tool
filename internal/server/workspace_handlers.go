@@ -16,7 +16,7 @@ import (
 	"github.com/thg/scraper/internal/workspace"
 )
 
-// workspaceList returns all Facebook accounts with their live Docker container status.
+// workspaceList returns all Facebook accounts with their live browser status.
 // GET /api/browser/workspaces
 func (s *Server) workspaceList(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -26,16 +26,19 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	}
 
 	type entry struct {
-		AccountID   int64      `json:"account_id"`
-		AccountName string     `json:"account_name"`
-		Status      string     `json:"account_status"`
-		LoggedIn    bool       `json:"logged_in"`
-		Running     bool       `json:"running"`
-		CDPPort     int        `json:"cdp_port,omitempty"`
-		VNCPort     int        `json:"vnc_port,omitempty"`
-		StartedAt   *time.Time `json:"started_at,omitempty"`
+		AccountID    int64      `json:"account_id"`
+		AccountName  string     `json:"account_name"`
+		Status       string     `json:"account_status"`
+		LoggedIn     bool       `json:"logged_in"`
+		Running      bool       `json:"running"`
+		CDPPort      int        `json:"cdp_port,omitempty"`
+		VNCPort      int        `json:"vnc_port,omitempty"`
+		StartedAt    *time.Time `json:"started_at,omitempty"`
+		BrowserState string     `json:"browser_state,omitempty"`
+		ErrorMsg     string     `json:"error_msg,omitempty"`
 	}
 
+	appStore, _ := store.NewAppStore(s.db)
 	result := make([]entry, 0, len(accounts))
 	for _, acc := range accounts {
 		e := entry{
@@ -53,13 +56,29 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 				e.StartedAt = &t
 			}
 		}
+		if appStore != nil {
+			if sess, err := appStore.GetSession(c.Context(), acc.ID); err == nil && sess != nil && sess.Status != "terminated" {
+				e.BrowserState = sess.Status
+				e.ErrorMsg = sess.ErrorMsg
+				if e.CDPPort == 0 {
+					e.CDPPort = sess.CDPPort
+				}
+				if e.VNCPort == 0 {
+					e.VNCPort = sess.VNCPort
+				}
+				if e.StartedAt == nil {
+					t := sess.StartedAt
+					e.StartedAt = &t
+				}
+			}
+		}
 		result = append(result, e)
 	}
 	return c.JSON(fiber.Map{"workspaces": result, "count": len(result)})
 }
 
-// workspaceStart launches a Docker container for a specific account and waits
-// until the VNC port inside the container is connectable (up to 45s).
+// workspaceStart launches a Docker browser for a specific account.
+// Readiness is tracked asynchronously so production proxies never time out.
 // POST /api/browser/workspaces/:id/start
 func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	if s.workspace == nil {
@@ -81,49 +100,20 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("container start failed: %v", err)})
 	}
 
-	// Block until x11vnc inside the container is listening on the host-mapped port.
-	// Container startup (Xvfb + x11vnc + Chrome) typically takes 5-15s.
-	if !workspace.WaitForVNC(inst.VNCPort, 45*time.Second) {
-		s.workspace.Stop(id)
-		return c.Status(500).JSON(fiber.Map{
-			"error": "container started but VNC did not become ready — check the Docker image: docker build -t thg-browser ./docker/",
-		})
-	}
-
-	if !workspace.WaitForCDP(inst.CDPPort, 45*time.Second) {
-		s.workspace.Stop(id)
-		return c.Status(500).JSON(fiber.Map{
-			"error": "container started but Chrome CDP did not become ready - check Docker logs for the browser container",
-		})
-	}
-
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+	s.recordBrowserSession(id, orgID, inst, "initializing", "")
+	go s.watchWorkspaceReadiness(id, orgID, inst)
 
-	// Persist session metadata so the worker can discover the CDP port.
-	appStore, err := store.NewAppStore(s.db)
-	if err == nil {
-		orgID, _ := c.Locals("org_id").(int64)
-		now := time.Now().UTC()
-		_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
-			AccountID:    id,
-			OrgID:        orgID,
-			Status:       "idle",
-			CDPPort:      inst.CDPPort,
-			VNCPort:      inst.VNCPort,
-			StartedAt:    now,
-			LastActiveAt: now,
-		})
-	}
-
-	log.Printf("[Workspace] Account %d (%s) browser ready, vnc=%d cdp=%d", id, acc.Name, inst.VNCPort, inst.CDPPort)
+	log.Printf("[Workspace] Account %d (%s) browser starting, vnc=%d cdp=%d", id, acc.Name, inst.VNCPort, inst.CDPPort)
 	return c.JSON(fiber.Map{
-		"status":   "running",
-		"vnc_port": inst.VNCPort,
-		"cdp_port": inst.CDPPort,
+		"status":     "starting",
+		"account_id": id,
+		"vnc_port":   inst.VNCPort,
+		"cdp_port":   inst.CDPPort,
 	})
 }
 
-// workspaceStop kills the Docker container for a specific account.
+// workspaceStop kills the Docker browser for a specific account.
 // POST /api/browser/workspaces/:id/stop
 func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -142,9 +132,8 @@ func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
-// workspaceNew creates a fresh Facebook account + starts its Chrome container in one shot.
-// No form required — the account name is auto-generated from the timestamp.
-// After the user logs in via the canvas they click "Đánh dấu đã đăng nhập" to save the session.
+// workspaceNew creates a fresh Facebook account and starts its browser.
+// It returns as soon as Docker launches; CDP/VNC readiness is tracked async.
 // POST /api/browser/workspaces/new
 func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	if s.workspace == nil {
@@ -173,52 +162,75 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "container start failed: " + err.Error()})
 	}
 
-	if !workspace.WaitForVNC(inst.VNCPort, 45*time.Second) {
-		s.workspace.Stop(id)
-		_ = s.db.DeleteAccount(id)
-		return c.Status(500).JSON(fiber.Map{
-			"error": "VNC không sẵn sàng — kiểm tra Docker image: docker build -t thg-browser ./docker/",
-		})
-	}
-
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+	s.recordBrowserSession(id, orgID, inst, "initializing", "")
+	go s.watchWorkspaceReadiness(id, orgID, inst)
 
-	if !workspace.WaitForCDP(inst.CDPPort, 45*time.Second) {
-		s.workspace.Stop(id)
-		_ = s.db.DeleteAccount(id)
-		return c.Status(500).JSON(fiber.Map{
-			"error": "Chrome CDP không sẵn sàng - kiểm tra Docker logs của browser container",
-		})
-	}
-
-	if appStore, err2 := store.NewAppStore(s.db); err2 == nil {
-		now := time.Now().UTC()
-		_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
-			AccountID:    id,
-			OrgID:        orgID,
-			Status:       "idle",
-			CDPPort:      inst.CDPPort,
-			VNCPort:      inst.VNCPort,
-			StartedAt:    now,
-			LastActiveAt: now,
-		})
-	}
-
-	log.Printf("[Workspace] New session: account %d (%s) vnc=%d cdp=%d", id, name, inst.VNCPort, inst.CDPPort)
-	return c.JSON(fiber.Map{"account_id": id, "vnc_port": inst.VNCPort, "cdp_port": inst.CDPPort})
-}
-
-// workspaceNavigate is a no-op in Docker/VNC mode.
-// Navigation happens directly in the browser via mouse/keyboard through noVNC.
-// POST /api/browser/workspaces/:id/navigate
-func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
-	return c.Status(501).JSON(fiber.Map{
-		"error": "navigate is not available in VNC mode — use the browser directly via the dashboard",
+	log.Printf("[Workspace] New session starting: account %d (%s) vnc=%d cdp=%d", id, name, inst.VNCPort, inst.CDPPort)
+	return c.JSON(fiber.Map{
+		"status":     "starting",
+		"account_id": id,
+		"vnc_port":   inst.VNCPort,
+		"cdp_port":   inst.CDPPort,
 	})
 }
 
-// workspaceSetLoggedIn marks whether an account has successfully logged into Facebook
-// via the live browser view. Called by the frontend when user clicks "Mark as Logged In".
+func (s *Server) recordBrowserSession(accountID, orgID int64, inst *workspace.Instance, status, errorMsg string) {
+	if inst == nil {
+		return
+	}
+	appStore, err := store.NewAppStore(s.db)
+	if err != nil {
+		log.Printf("[Workspace] session store unavailable for account %d: %v", accountID, err)
+		return
+	}
+	_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
+		AccountID:    accountID,
+		OrgID:        orgID,
+		Status:       status,
+		CDPPort:      inst.CDPPort,
+		VNCPort:      inst.VNCPort,
+		StartedAt:    inst.StartedAt.UTC(),
+		LastActiveAt: time.Now().UTC(),
+		ErrorMsg:     errorMsg,
+	})
+}
+
+func (s *Server) watchWorkspaceReadiness(accountID, orgID int64, inst *workspace.Instance) {
+	if inst == nil {
+		return
+	}
+	vncReady := workspace.WaitForVNC(inst.VNCPort, 60*time.Second)
+	cdpReady := workspace.WaitForCDP(inst.CDPPort, 90*time.Second)
+	if vncReady && cdpReady {
+		s.recordBrowserSession(accountID, orgID, inst, "ready", "")
+		log.Printf("[Workspace] Account %d browser ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
+		return
+	}
+
+	var msg string
+	switch {
+	case !vncReady && !cdpReady:
+		msg = "VNC and Chrome CDP did not become ready; rebuild thg-browser and check docker logs"
+	case !vncReady:
+		msg = "VNC did not become ready; check x11vnc/Xvfb in docker logs"
+	default:
+		msg = "Chrome CDP did not become ready; check Chromium startup in docker logs"
+	}
+	s.recordBrowserSession(accountID, orgID, inst, "error", msg)
+	log.Printf("[Workspace] Account %d browser startup warning: %s", accountID, msg)
+}
+
+// workspaceNavigate is a no-op in Docker/VNC mode.
+// Navigation happens directly in the browser via mouse/keyboard through the viewer.
+// POST /api/browser/workspaces/:id/navigate
+func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
+	return c.Status(501).JSON(fiber.Map{
+		"error": "navigate is not available in browser-view mode; use the browser directly via the dashboard",
+	})
+}
+
+// workspaceSetLoggedIn marks whether an account has successfully logged into Facebook.
 // POST /api/browser/workspaces/:id/set-logged-in
 func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -236,6 +248,7 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
+
 	var fbUserID string
 	if body.LoggedIn {
 		if s.workspace == nil {
@@ -256,6 +269,7 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 			})
 		}
 	}
+
 	if err := s.db.SetBrowserLoggedIn(id, body.LoggedIn, fbUserID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -263,9 +277,8 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 		if appStore, err := store.NewAppStore(s.db); err == nil {
 			if sess, err := appStore.GetSession(context.Background(), id); err == nil && sess != nil && sess.Status != "terminated" {
-				now := time.Now().UTC()
 				sess.Status = "idle"
-				sess.LastActiveAt = now
+				sess.LastActiveAt = time.Now().UTC()
 				if inst := s.workspace.Get(id); inst != nil {
 					sess.CDPPort = inst.CDPPort
 					sess.VNCPort = inst.VNCPort
@@ -305,7 +318,7 @@ func facebookUserIDFromCDP(cdpPort int) (string, error) {
 }
 
 // resolveCheckpoint marks a session as ready after an operator manually passed the
-// Facebook verification gate via the VNC viewer.
+// Facebook verification gate via the browser viewer.
 // POST /api/browser/workspaces/:id/resolve-checkpoint
 func (s *Server) resolveCheckpoint(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)

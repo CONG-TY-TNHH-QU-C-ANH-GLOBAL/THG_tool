@@ -42,9 +42,10 @@ rm -f \
 export DISPLAY=":${DISPLAY_NUM}"
 
 CDP_PORT=${CDP_PORT:-9222}
+BROWSER_BIN=${BROWSER_BIN:-chromium}
 
-echo "[Browser] Launching Chrome (profile=${PROFILE_DIR}, cdp=:${CDP_PORT})"
-exec google-chrome \
+echo "[Browser] Launching ${BROWSER_BIN} (profile=${PROFILE_DIR}, cdp=:${CDP_PORT})"
+exec "${BROWSER_BIN}" \
     --no-first-run \
     --no-default-browser-check \
     --disable-notifications \
