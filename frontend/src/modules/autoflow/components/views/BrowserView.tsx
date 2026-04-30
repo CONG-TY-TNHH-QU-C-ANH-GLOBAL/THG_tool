@@ -243,8 +243,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             </div>
             <div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>CDP</p>
-              <p style={{ color: syncError ? '#fca5a5' : theme.textMuted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {syncError ? 'đang chờ' : syncLoading ? 'đang đồng bộ' : 'sẵn sàng'}
+              <p style={{ color: syncError || sessionInfo?.cookieError ? '#fca5a5' : theme.textMuted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng')}
               </p>
             </div>
             <button

@@ -439,6 +439,19 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
     rfbRef.current?.pointer(mask, p.x, p.y);
   };
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const mask = e.deltaY < 0 ? 8 : 16;
+      sendPointer(mask, e.clientX, e.clientY);
+      sendPointer(0, e.clientX, e.clientY);
+    };
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [accountId]);
+
   const buttonBit = (button: number) => {
     if (button === 0) return 1;
     if (button === 1) return 2;
@@ -477,12 +490,6 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
           onMouseMove={e => sendPointer(buttonMaskRef.current, e.clientX, e.clientY)}
           onMouseLeave={e => {
             buttonMaskRef.current = 0;
-            sendPointer(0, e.clientX, e.clientY);
-          }}
-          onWheel={e => {
-            e.preventDefault();
-            const mask = e.deltaY < 0 ? 8 : 16;
-            sendPointer(mask, e.clientX, e.clientY);
             sendPointer(0, e.clientX, e.clientY);
           }}
           onKeyDown={e => {

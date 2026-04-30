@@ -305,19 +305,43 @@ func resolveCDPPageWebSocket(cdpPort int) (string, string, error) {
 }
 
 func fetchCDPTargets(cdpPort int) ([]cdpTargetInfo, error) {
-	ctx5s, cancel5s := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel5s()
-	targetsURL := fmt.Sprintf("http://127.0.0.1:%d/json", cdpPort)
-	req, _ := http.NewRequestWithContext(ctx5s, http.MethodGet, targetsURL, nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+	if cdpPort <= 0 {
+		return nil, fmt.Errorf("CDP port not available")
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var targets []cdpTargetInfo
-	if err := json.Unmarshal(body, &targets); err != nil {
-		return nil, fmt.Errorf("CDP /json parse failed: %w", err)
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	endpoints := []string{"json/list", "json"}
+	deadline := time.Now().Add(8 * time.Second)
+	var lastErr error
+
+	for time.Now().Before(deadline) {
+		for _, endpoint := range endpoints {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			targetsURL := fmt.Sprintf("http://127.0.0.1:%d/%s", cdpPort, endpoint)
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, targetsURL, nil)
+			resp, err := client.Do(req)
+			if err != nil {
+				cancel()
+				lastErr = err
+				continue
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			cancel()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				lastErr = fmt.Errorf("CDP /%s HTTP %d", endpoint, resp.StatusCode)
+				continue
+			}
+			var targets []cdpTargetInfo
+			if err := json.Unmarshal(body, &targets); err != nil {
+				lastErr = fmt.Errorf("CDP /%s parse failed: %w", endpoint, err)
+				continue
+			}
+			return targets, nil
+		}
+		time.Sleep(350 * time.Millisecond)
 	}
-	return targets, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("CDP target list timed out")
+	}
+	return nil, lastErr
 }

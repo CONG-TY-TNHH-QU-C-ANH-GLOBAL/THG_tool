@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -257,6 +258,8 @@ type facebookSessionSnapshot struct {
 	CurrentTitle string `json:"current_title,omitempty"`
 	Checkpoint   bool   `json:"checkpoint"`
 	CookieError  string `json:"cookie_error,omitempty"`
+	CookiesCount int    `json:"cookies_count,omitempty"`
+	cookiesJSON  string
 }
 
 // workspaceSyncSession probes the running browser and persists the Facebook
@@ -297,6 +300,11 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 		if err := s.db.SetBrowserLoggedIn(id, true, snap.FBUserID); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		if snap.cookiesJSON != "" {
+			if err := s.db.UpdateAccountCookies(id, snap.cookiesJSON); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": "save cookies failed: " + err.Error()})
+			}
+		}
 		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 		snap.LoggedIn = true
 		snap.StoredFBID = snap.FBUserID
@@ -316,31 +324,38 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 }
 
 func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, error) {
+	snap := &facebookSessionSnapshot{}
 	targets, err := fetchCDPTargets(cdpPort)
 	if err != nil {
-		return nil, err
-	}
-	snap := &facebookSessionSnapshot{}
-	for _, t := range targets {
-		if t.Type != "page" {
-			continue
-		}
-		if strings.Contains(strings.ToLower(t.URL), "facebook.com") || snap.CurrentURL == "" {
-			snap.CurrentURL = t.URL
-			snap.CurrentTitle = t.Title
+		snap.CookieError = "CDP target list unavailable: " + err.Error()
+	} else {
+		for _, t := range targets {
+			if t.Type != "page" {
+				continue
+			}
+			if strings.Contains(strings.ToLower(t.URL), "facebook.com") || snap.CurrentURL == "" {
+				snap.CurrentURL = t.URL
+				snap.CurrentTitle = t.Title
+			}
 		}
 	}
 
 	lower := strings.ToLower(snap.CurrentURL + " " + snap.CurrentTitle)
 	snap.Checkpoint = strings.Contains(lower, "checkpoint") || strings.Contains(lower, "security")
 
-	fbUserID, err := facebookUserIDFromCDP(cdpPort)
+	fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDP(cdpPort)
 	if err != nil {
-		snap.CookieError = err.Error()
+		if snap.CookieError != "" {
+			snap.CookieError += "; cookies: " + err.Error()
+		} else {
+			snap.CookieError = err.Error()
+		}
 		return snap, nil
 	}
 	snap.FBUserID = fbUserID
 	snap.LoggedIn = fbUserID != ""
+	snap.CookiesCount = cookieCount
+	snap.cookiesJSON = cookiesJSON
 	return snap, nil
 }
 
@@ -364,6 +379,7 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	}
 
 	var fbUserID string
+	var cookiesJSON string
 	if body.LoggedIn {
 		if s.workspace == nil {
 			return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
@@ -372,11 +388,13 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		if inst == nil || inst.CDPPort == 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
 		}
+		var cookieCount int
 		var err error
-		fbUserID, err = facebookUserIDFromCDP(inst.CDPPort)
+		fbUserID, cookiesJSON, cookieCount, err = facebookCookiesFromCDP(inst.CDPPort)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "not logged in to Facebook yet: " + err.Error()})
 		}
+		_ = cookieCount
 		if acc.FBUserID != "" && acc.FBUserID != fbUserID {
 			return c.Status(409).JSON(fiber.Map{
 				"error": "this account profile is logged into a different Facebook user; create another Facebook account slot for multi-account automation, or clear this profile before reusing it",
@@ -388,6 +406,11 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	if body.LoggedIn {
+		if cookiesJSON != "" {
+			if err := s.db.UpdateAccountCookies(id, cookiesJSON); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": "save cookies failed: " + err.Error()})
+			}
+		}
 		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 		if appStore, err := store.NewAppStore(s.db); err == nil {
 			if sess, err := appStore.GetSession(context.Background(), id); err == nil && sess != nil && sess.Status != "terminated" {
@@ -405,14 +428,19 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 }
 
 func facebookUserIDFromCDP(cdpPort int) (string, error) {
+	fbUserID, _, _, err := facebookCookiesFromCDP(cdpPort)
+	return fbUserID, err
+}
+
+func facebookCookiesFromCDP(cdpPort int) (string, string, int, error) {
 	ctx, cancel, err := cdpContext(cdpPort, 8*time.Second)
 	if err != nil {
-		return "", err
+		return "", "", 0, err
 	}
 	defer cancel()
 
 	var cookies []*network.Cookie
-	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+	if err := chromedp.Run(ctx, network.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
 		var e error
 		cookies, e = network.GetCookies().WithURLs([]string{
 			"https://www.facebook.com",
@@ -420,15 +448,42 @@ func facebookUserIDFromCDP(cdpPort int) (string, error) {
 		}).Do(ctx)
 		return e
 	})); err != nil {
-		return "", err
+		return "", "", 0, err
 	}
 
+	type exportCookie struct {
+		Name     string  `json:"name"`
+		Value    string  `json:"value"`
+		Domain   string  `json:"domain"`
+		Path     string  `json:"path"`
+		Expires  float64 `json:"expires,omitempty"`
+		HTTPOnly bool    `json:"httpOnly"`
+		Secure   bool    `json:"secure"`
+	}
+	out := make([]exportCookie, 0, len(cookies))
+	var fbUserID string
 	for _, ck := range cookies {
 		if ck.Name == "c_user" && ck.Value != "" {
-			return ck.Value, nil
+			fbUserID = ck.Value
 		}
+		out = append(out, exportCookie{
+			Name:     ck.Name,
+			Value:    ck.Value,
+			Domain:   ck.Domain,
+			Path:     ck.Path,
+			Expires:  float64(ck.Expires),
+			HTTPOnly: bool(ck.HTTPOnly),
+			Secure:   bool(ck.Secure),
+		})
 	}
-	return "", fmt.Errorf("missing c_user cookie")
+	if fbUserID == "" {
+		return "", "", len(cookies), fmt.Errorf("missing c_user cookie")
+	}
+	cookiesJSON, err := json.Marshal(out)
+	if err != nil {
+		return "", "", len(cookies), fmt.Errorf("serialize cookies: %w", err)
+	}
+	return fbUserID, string(cookiesJSON), len(cookies), nil
 }
 
 // resolveCheckpoint marks a session as ready after an operator manually passed the

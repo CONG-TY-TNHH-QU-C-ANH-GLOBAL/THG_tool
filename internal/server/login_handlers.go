@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -55,6 +56,10 @@ func chromeBrowserWS(port int) (string, error) {
 	}
 	if err := json.Unmarshal(body, &info); err != nil || info.WebSocketDebuggerURL == "" {
 		return "", fmt.Errorf("cannot parse chrome debug endpoint")
+	}
+	if u, err := url.Parse(info.WebSocketDebuggerURL); err == nil && u.Scheme != "" {
+		u.Host = fmt.Sprintf("127.0.0.1:%d", port)
+		info.WebSocketDebuggerURL = u.String()
 	}
 	return info.WebSocketDebuggerURL, nil
 }
