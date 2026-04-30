@@ -26,12 +26,6 @@ func (s *Server) perAccountVNCProxyHandler() func(*fiberws.Conn) {
 			return
 		}
 
-		inst := s.workspace.Get(accountID)
-		if inst == nil || inst.VNCPort == 0 {
-			_ = ws.WriteMessage(fiberws.TextMessage, []byte("browser not running; start it first"))
-			return
-		}
-
 		acc, err := s.db.GetAccount(accountID)
 		if err != nil || acc == nil {
 			_ = ws.WriteMessage(fiberws.TextMessage, []byte("account not found"))
@@ -41,6 +35,12 @@ func (s *Server) perAccountVNCProxyHandler() func(*fiberws.Conn) {
 		role, _ := ws.Locals("user_role").(string)
 		if !models.IsPlatformUser(orgID, models.UserRole(role)) && acc.OrgID != orgID {
 			_ = ws.WriteMessage(fiberws.TextMessage, []byte("access denied"))
+			return
+		}
+
+		inst := s.workspaceInstanceForAccount(accountID, acc.Name)
+		if inst == nil || inst.VNCPort == 0 {
+			_ = ws.WriteMessage(fiberws.TextMessage, []byte("browser not running; start it first"))
 			return
 		}
 

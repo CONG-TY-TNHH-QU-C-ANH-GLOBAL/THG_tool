@@ -55,7 +55,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 			FBUserID:    acc.FBUserID,
 		}
 		if s.workspace != nil {
-			if inst := s.workspace.Get(acc.ID); inst != nil {
+			if inst := s.workspaceInstanceForAccount(acc.ID, acc.Name); inst != nil {
 				e.Running = true
 				e.CDPPort = inst.CDPPort
 				e.VNCPort = inst.VNCPort
@@ -210,6 +210,64 @@ func (s *Server) recordBrowserSession(accountID, orgID int64, inst *workspace.In
 	})
 }
 
+func (s *Server) workspaceInstanceForAccount(accountID int64, accountName string) *workspace.Instance {
+	if s.workspace == nil {
+		return nil
+	}
+	if inst := s.workspace.Get(accountID); inst != nil && (inst.CDPPort > 0 || inst.VNCPort > 0) {
+		return inst
+	}
+
+	appStore, err := store.NewAppStore(s.db)
+	if err != nil {
+		return nil
+	}
+	sess, err := appStore.GetSession(context.Background(), accountID)
+	if err != nil || sess == nil || sess.Status == "terminated" {
+		return nil
+	}
+
+	// The API can restart while Docker browser containers keep running. Reconcile
+	// before returning "not running" so sync-session/VNC do not lose a live login.
+	s.workspace.ReconcileRunning()
+	if inst := s.workspace.Get(accountID); inst != nil && (inst.CDPPort > 0 || inst.VNCPort > 0) {
+		return inst
+	}
+
+	if sess.CDPPort <= 0 && sess.VNCPort <= 0 {
+		return nil
+	}
+	if !localPortReachable(sess.CDPPort, 250*time.Millisecond) && !localPortReachable(sess.VNCPort, 250*time.Millisecond) {
+		return nil
+	}
+	startedAt := sess.StartedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+	log.Printf("[Workspace] Using recovered browser ports for account %d (vnc=%d cdp=%d)", accountID, sess.VNCPort, sess.CDPPort)
+	return &workspace.Instance{
+		AccountID:   accountID,
+		AccountName: accountName,
+		ProfileDir:  "",
+		ContainerID: "",
+		CDPPort:     sess.CDPPort,
+		VNCPort:     sess.VNCPort,
+		StartedAt:   startedAt,
+	}
+}
+
+func localPortReachable(port int, timeout time.Duration) bool {
+	if port <= 0 {
+		return false
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), timeout)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
 func (s *Server) recordWorkspaceHumanRequired(accountID, orgID int64, inst *workspace.Instance, snap *facebookSessionSnapshot) {
 	if inst == nil {
 		return
@@ -315,11 +373,10 @@ func (s *Server) watchWorkspaceLogin(accountID, orgID int64, inst *workspace.Ins
 			if err != nil {
 				continue
 			}
-			if snap.HumanRequired {
-				s.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
-				continue
-			}
 			if snap.FBUserID == "" {
+				if snap.HumanRequired {
+					s.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
+				}
 				continue
 			}
 			fbUserID, cookiesJSON := snap.FBUserID, snap.cookiesJSON
@@ -331,6 +388,10 @@ func (s *Server) watchWorkspaceLogin(accountID, orgID int64, inst *workspace.Ins
 			}
 			if err := s.persistFacebookBrowserSession(accountID, orgID, inst, fbUserID, cookiesJSON); err != nil {
 				log.Printf("[Workspace] Account %d auto session persist failed: %v", accountID, err)
+				continue
+			}
+			if snap.HumanRequired {
+				s.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
 				continue
 			}
 			log.Printf("[Workspace] Account %d Facebook session auto-saved (fb_user_id=%s)", accountID, fbUserID)
@@ -419,7 +480,7 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 	if s.workspace == nil {
 		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
 	}
-	inst := s.workspace.Get(id)
+	inst := s.workspaceInstanceForAccount(id, acc.Name)
 	if inst == nil || inst.CDPPort == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
 	}
@@ -432,11 +493,6 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 	snap.AccountName = acc.Name
 	snap.StoredFBID = acc.FBUserID
 
-	if snap.HumanRequired {
-		s.recordWorkspaceHumanRequired(id, orgID, inst, snap)
-		return c.JSON(snap)
-	}
-
 	if snap.FBUserID != "" {
 		if acc.FBUserID != "" && acc.FBUserID != snap.FBUserID {
 			return c.Status(409).JSON(fiber.Map{
@@ -448,6 +504,11 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 		}
 		snap.LoggedIn = true
 		snap.StoredFBID = snap.FBUserID
+	}
+
+	if snap.HumanRequired {
+		s.recordWorkspaceHumanRequired(id, orgID, inst, snap)
+		return c.JSON(snap)
 	}
 
 	return c.JSON(snap)
@@ -695,7 +756,7 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		if s.workspace == nil {
 			return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
 		}
-		inst := s.workspace.Get(id)
+		inst := s.workspaceInstanceForAccount(id, acc.Name)
 		if inst == nil || inst.CDPPort == 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
 		}
@@ -723,7 +784,7 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	}
 
 	if body.LoggedIn {
-		if err := s.persistFacebookBrowserSession(id, orgID, s.workspace.Get(id), fbUserID, cookiesJSON); err != nil {
+		if err := s.persistFacebookBrowserSession(id, orgID, s.workspaceInstanceForAccount(id, acc.Name), fbUserID, cookiesJSON); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	} else if err := s.db.SetBrowserLoggedIn(id, false); err != nil {

@@ -124,6 +124,35 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 
 	containerName := fmt.Sprintf("%s%d", containerPrefix, accountID)
 
+	// If the API process restarted while the browser container kept running,
+	// re-attach instead of deleting the live Chrome profile. This preserves
+	// in-progress Meta verification and the just-created Facebook session.
+	if m.containerAlive(containerName) {
+		vncPort, err := m.queryContainerPort(containerName, "5900")
+		if err != nil {
+			return nil, fmt.Errorf("reattach running container VNC port: %w", err)
+		}
+		cdpPort, _ := m.queryContainerPort(containerName, "9222")
+		shortIDOut, _ := exec.Command("docker", "inspect", "--format={{slice .Id 0 12}}", containerName).Output()
+		shortID := strings.TrimSpace(string(shortIDOut))
+		if shortID == "" {
+			shortID = containerName
+		}
+		inst := &Instance{
+			AccountID:   accountID,
+			AccountName: accountName,
+			ProfileDir:  profileDir,
+			ContainerID: shortID,
+			CDPPort:     cdpPort,
+			VNCPort:     vncPort,
+			StartedAt:   time.Now(),
+		}
+		m.instances[accountID] = inst
+		log.Printf("[Workspace] Re-attached running container for account %d (%s) - id=%s vnc=127.0.0.1:%d cdp=127.0.0.1:%d",
+			accountID, accountName, shortID, vncPort, cdpPort)
+		return inst, nil
+	}
+
 	// Remove any leftover container from a previous crash or stop
 	exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
 

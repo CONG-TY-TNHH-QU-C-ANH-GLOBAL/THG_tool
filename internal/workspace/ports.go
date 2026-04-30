@@ -116,6 +116,22 @@ func (r *PortRegistry) ClaimPair(accountID int64) (cdpPort, vncPort int, err err
 	defer r.mu.Unlock()
 
 	for p, owner := range r.cdp {
+		if owner == accountID {
+			cdpPort = p
+			break
+		}
+	}
+	for p, owner := range r.vnc {
+		if owner == accountID {
+			vncPort = p
+			break
+		}
+	}
+	if cdpPort > 0 && vncPort > 0 {
+		return cdpPort, vncPort, nil
+	}
+
+	for p, owner := range r.cdp {
 		if owner == 0 {
 			cdpPort = p
 			break

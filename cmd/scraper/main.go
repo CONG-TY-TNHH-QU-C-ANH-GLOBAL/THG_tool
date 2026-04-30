@@ -135,7 +135,11 @@ func main() {
 	workspaceMgr.SetPortRegistry(portRegistry)
 
 	workspaceMgr.ReconcileRunning() // re-attach containers that survived a server restart
-	defer workspaceMgr.StopAll()
+	if os.Getenv("WORKSPACE_STOP_ON_SHUTDOWN") == "1" {
+		defer workspaceMgr.StopAll()
+	} else {
+		log.Println("[Workspace] Browser containers will survive API shutdown for session continuity")
+	}
 	log.Println("✅ Workspace manager initialized")
 
 	// Circuit breaker + health checker — prevent restart storms
