@@ -11,6 +11,8 @@ export interface Organization {
   abbr: string;
   plan: PlanTier;
   color: string;
+  logo_url?: string;
+  avatar_url?: string;
 }
 
 export interface Lead {
@@ -22,6 +24,7 @@ export interface Lead {
   last: string;
   score: number;
   phone: string;
+  facebookUrl?: string;
 }
 
 export interface Thread {
@@ -35,7 +38,7 @@ export interface Thread {
 }
 
 export interface Message {
-  from: 'lead' | 'agent';
+  from: 'lead' | 'agent' | 'user' | 'assistant' | 'system';
   text: string;
   time: string;
 }
@@ -62,6 +65,7 @@ export interface Comment {
 
 export interface StaffMember {
   id: number;
+  orgId: number;
   name: string;
   email: string;
   role: string;
@@ -72,11 +76,45 @@ export interface StaffMember {
   cmts: number;
 }
 
+export interface StaffInvite {
+  id: number;
+  email: string;
+  role: string;
+  token: string;
+  inviteUrl: string;
+  inviteFullUrl?: string;
+  createdBy: number;
+  expiresAt: string;
+  createdAt: string;
+  emailStatus?: 'sent' | 'failed' | 'not_configured' | 'pending' | string;
+  emailError?: string;
+}
+
 export interface FileRecord {
   id: number;
   name: string;
   size: string;
+  sizeBytes: number;
   date: string;
+}
+
+export type DataSourceType = 'google_sheet' | 'google_drive';
+export type DataSourceStatus = 'pending' | 'synced' | 'error' | 'needs_auth';
+
+export interface DataSource {
+  id: number;
+  org_id: number;
+  type: DataSourceType;
+  name: string;
+  source_url: string;
+  status: DataSourceStatus;
+  item_count: number;
+  summary: string;
+  metadata_json: string;
+  last_error: string;
+  last_sync_at?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface KPIConfig {
@@ -107,12 +145,25 @@ export interface Workspace {
   accountName: string;
   accountStatus: string;
   loggedIn: boolean;
+  fbUserId?: string;
   running: boolean;
   browserState?: 'initializing' | 'display_ready' | 'ready' | 'idle' | 'active' | 'error' | 'terminated' | string;
   errorMsg?: string;
   vncPort?: number;
   cdpPort?: number;
   startedAt?: string;
+}
+
+export interface WorkspaceSessionSnapshot {
+  accountId: number;
+  accountName: string;
+  loggedIn: boolean;
+  fbUserId?: string;
+  storedFbUserId?: string;
+  currentUrl?: string;
+  currentTitle?: string;
+  checkpoint: boolean;
+  cookieError?: string;
 }
 
 export interface OrgSummary {

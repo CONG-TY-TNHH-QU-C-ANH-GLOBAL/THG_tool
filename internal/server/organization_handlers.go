@@ -1,12 +1,17 @@
 package server
 
 import (
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
 )
 
 // registerOrg handles POST /api/register (public — no auth required).
@@ -132,6 +137,8 @@ func (s *Server) updateOrg(c *fiber.Ctx) error {
 	var req struct {
 		Name   string `json:"name"`
 		Domain string `json:"domain"`
+		Abbr   string `json:"abbr"`
+		Color  string `json:"color"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
@@ -146,10 +153,89 @@ func (s *Server) updateOrg(c *fiber.Ctx) error {
 	if req.Domain != "" {
 		org.Domain = req.Domain
 	}
-	if err := s.db.UpdateOrganization(orgID, org.Name, org.Domain, org.PlanTier, org.MaxAccounts, org.Active); err != nil {
+	if req.Abbr != "" {
+		org.Abbr = strings.ToUpper(strings.TrimSpace(req.Abbr))
+	}
+	if req.Color != "" {
+		org.Color = req.Color
+	}
+	if err := s.db.UpdateOrganizationBrand(orgID, org.Name, org.Domain, org.Abbr, org.Color); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"status": "updated", "org": org})
+}
+
+const orgAssetDir = "data/org_assets"
+
+func (s *Server) uploadOrgAsset(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "no org context"})
+	}
+	kind := c.Params("kind")
+	if kind != "logo" && kind != "avatar" {
+		return c.Status(400).JSON(fiber.Map{"error": "kind must be logo or avatar"})
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "no file provided"})
+	}
+	if fh.Size > 5*1024*1024 {
+		return c.Status(413).JSON(fiber.Map{"error": "file too large (max 5MB)"})
+	}
+	mime := strings.ToLower(fh.Header.Get("Content-Type"))
+	if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" && mime != "image/svg+xml" {
+		return c.Status(415).JSON(fiber.Map{"error": "unsupported image type"})
+	}
+	dir := filepath.Join(orgAssetDir, fmt.Sprintf("%d", orgID))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "storage error"})
+	}
+	ext := strings.ToLower(filepath.Ext(fh.Filename))
+	if ext == "" {
+		switch mime {
+		case "image/jpeg":
+			ext = ".jpg"
+		case "image/webp":
+			ext = ".webp"
+		case "image/svg+xml":
+			ext = ".svg"
+		default:
+			ext = ".png"
+		}
+	}
+	dest := filepath.Join(dir, kind+ext)
+	if err := c.SaveFile(fh, dest); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "save error"})
+	}
+	if err := s.db.UpdateOrganizationAsset(orgID, kind, dest); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(201).JSON(fiber.Map{
+		"kind": kind,
+		"url":  fmt.Sprintf("/api/public/org-assets/%d/%s?v=%d", orgID, kind, time.Now().Unix()),
+	})
+}
+
+func (s *Server) serveOrgAsset(c *fiber.Ctx) error {
+	orgID, err := c.ParamsInt("orgID")
+	if err != nil || orgID <= 0 {
+		return c.Status(400).SendString("invalid org")
+	}
+	kind := c.Params("kind")
+	if kind != "logo" && kind != "avatar" {
+		return c.Status(404).SendString("not found")
+	}
+	org, err := s.db.GetOrganization(int64(orgID))
+	if err != nil || org == nil {
+		return c.Status(404).SendString("not found")
+	}
+	dir := filepath.Join(orgAssetDir, fmt.Sprintf("%d", org.ID))
+	matches, _ := filepath.Glob(filepath.Join(dir, kind+".*"))
+	if len(matches) == 0 {
+		return c.Status(404).SendString("not found")
+	}
+	return c.SendFile(matches[0])
 }
 
 // adminUpdateOrg handles PUT /api/admin/orgs/:id — superadmin changes plan/limits.
@@ -190,12 +276,18 @@ func (s *Server) adminUpdateOrg(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "updated", "org": org})
 }
 
-// createOrgUser handles POST /api/auth/users — now creates users scoped to the caller's org.
-// Overrides the existing handler to inject org_id automatically.
+// createOrgUser handles POST /api/auth/users for platform-founder maintenance.
+// Tenant workspaces must use /api/org/invites so staff create their own accounts.
 func (s *Server) createOrgUser(c *fiber.Ctx) error {
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
 	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
+	if !callerIsPlatform {
+		return c.Status(409).JSON(fiber.Map{
+			"error": "workspace staff must be invited and create their own account",
+			"code":  "INVITE_REQUIRED",
+		})
+	}
 
 	var req struct {
 		Email    string `json:"email"`
@@ -257,11 +349,26 @@ func (s *Server) createOrgUser(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	_ = s.db.UpsertStaffKPI(id, targetOrgID, store.KPIDelta{})
+	adminID, _ := c.Locals("user_id").(int64)
+	s.db.InsertAuditLog(adminID, "workspace_member_created", c.IP(),
+		fmt.Sprintf(`{"user_id":%d,"org_id":%d,"role":%q}`, id, targetOrgID, req.Role))
 	return c.Status(201).JSON(fiber.Map{
 		"user_id": id,
 		"org_id":  targetOrgID,
 		"email":   req.Email,
+		"name":    req.Name,
 		"role":    req.Role,
+		"active":  true,
+		"user": fiber.Map{
+			"id":         id,
+			"org_id":     targetOrgID,
+			"email":      req.Email,
+			"name":       req.Name,
+			"role":       req.Role,
+			"active":     true,
+			"created_at": time.Now().Format(time.RFC3339),
+		},
 	})
 }
 

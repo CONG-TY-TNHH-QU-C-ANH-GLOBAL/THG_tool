@@ -1,4 +1,4 @@
-import { get } from './api';
+import { del, get, put } from './api';
 
 export interface OutboundMessage {
   id: number;
@@ -29,4 +29,20 @@ export async function getOutbox(params?: { type?: string; status?: string; limit
   if (params?.limit) q.set('limit', String(params.limit));
   const qs = q.toString();
   return get<OutboxResponse>('/outbox' + (qs ? '?' + qs : ''));
+}
+
+export async function approveOutbox(id: number): Promise<void> {
+  await put(`/outbox/${id}/approve`, {});
+}
+
+export async function rejectOutbox(id: number): Promise<void> {
+  await put(`/outbox/${id}/reject`, {});
+}
+
+export async function updateOutboxContent(id: number, content: string): Promise<void> {
+  await put(`/outbox/${id}/content`, { content });
+}
+
+export async function deleteOutbox(id: number): Promise<void> {
+  await del(`/outbox/${id}`);
 }

@@ -52,9 +52,10 @@ func (s *Store) CreateUser(u *models.User) (int64, error) {
 // ProvisionedOrgClaim identifies an org that was pre-provisioned for an email
 // before the dashboard user account existed.
 type ProvisionedOrgClaim struct {
-	OrgID  int64
-	Role   models.UserRole
-	Source string
+	OrgID    int64
+	Role     models.UserRole
+	Source   string
+	InviteID int64
 }
 
 // FindProvisionedOrgByEmail resolves a pending workspace/org assignment for an
@@ -66,9 +67,10 @@ func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, e
 		return nil, nil
 	}
 
-	var inviteOrgID int64
+	var inviteID, inviteOrgID int64
+	var inviteRole string
 	err := s.db.QueryRow(`
-		SELECT i.org_id
+		SELECT i.id, i.org_id, COALESCE(NULLIF(i.role, ''), 'sales')
 		FROM org_invites i
 		JOIN organizations o ON o.id = i.org_id
 		WHERE lower(trim(i.email)) = ?
@@ -76,9 +78,9 @@ func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, e
 		  AND i.expires_at > CURRENT_TIMESTAMP
 		  AND o.active = 1
 		ORDER BY i.created_at DESC
-		LIMIT 1`, email).Scan(&inviteOrgID)
+		LIMIT 1`, email).Scan(&inviteID, &inviteOrgID, &inviteRole)
 	if err == nil {
-		return &ProvisionedOrgClaim{OrgID: inviteOrgID, Role: models.RoleSales, Source: "invite"}, nil
+		return &ProvisionedOrgClaim{OrgID: inviteOrgID, Role: normalizeWorkspaceRole(inviteRole), Source: "invite", InviteID: inviteID}, nil
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -112,6 +114,28 @@ func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, e
 		role = models.RoleAdmin
 	}
 	return &ProvisionedOrgClaim{OrgID: accountOrgID, Role: role, Source: "account_email"}, nil
+}
+
+func normalizeWorkspaceRole(role string) models.UserRole {
+	switch models.UserRole(strings.ToLower(strings.TrimSpace(role))) {
+	case models.RoleAdmin:
+		return models.RoleAdmin
+	default:
+		return models.RoleSales
+	}
+}
+
+func (s *Store) MarkInviteUsed(inviteID, acceptedBy int64) error {
+	if inviteID <= 0 || acceptedBy <= 0 {
+		return nil
+	}
+	_, err := s.db.Exec(`
+		UPDATE org_invites
+		SET used_at = COALESCE(used_at, CURRENT_TIMESTAMP),
+		    accepted_by = CASE WHEN accepted_by = 0 THEN ? ELSE accepted_by END
+		WHERE id = ?`,
+		acceptedBy, inviteID)
+	return err
 }
 
 // ListUsers returns all users for an org (orgID=0 means all users — superadmin only).
@@ -291,6 +315,29 @@ func (s *Store) GetAuditLogs(limit int) ([]models.AuditLog, error) {
 	rows, err := s.db.Query(`
 		SELECT id, user_id, action, ip_address, metadata, created_at
 		FROM audit_logs ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []models.AuditLog
+	for rows.Next() {
+		var l models.AuditLog
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Action, &l.IPAddress, &l.Metadata, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, rows.Err()
+}
+
+// GetAuditLogsByOrg returns audit events for users in one organization.
+func (s *Store) GetAuditLogsByOrg(orgID int64, limit int) ([]models.AuditLog, error) {
+	rows, err := s.db.Query(`
+		SELECT a.id, a.user_id, a.action, a.ip_address, a.metadata, a.created_at
+		FROM audit_logs a
+		JOIN users u ON u.id = a.user_id
+		WHERE u.org_id = ?
+		ORDER BY a.created_at DESC LIMIT ?`, orgID, limit)
 	if err != nil {
 		return nil, err
 	}

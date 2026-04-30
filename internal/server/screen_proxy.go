@@ -260,9 +260,11 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 }
 
 type cdpTargetInfo struct {
-	ID   string `json:"id"`
-	WS   string `json:"webSocketDebuggerUrl"`
-	Type string `json:"type"`
+	ID    string `json:"id"`
+	WS    string `json:"webSocketDebuggerUrl"`
+	Type  string `json:"type"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
 }
 
 func resolveCDPPageWebSocket(cdpPort int) (string, string, error) {

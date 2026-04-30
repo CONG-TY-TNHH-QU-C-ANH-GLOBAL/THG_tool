@@ -2,9 +2,11 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,6 +23,7 @@ func (s *Server) autoflowGetStaff(c *fiber.Ctx) error {
 	}
 	type row struct {
 		ID        int64  `json:"id"`
+		OrgID     int64  `json:"org_id"`
 		Name      string `json:"name"`
 		Email     string `json:"email"`
 		Role      string `json:"role"`
@@ -38,7 +41,7 @@ func (s *Server) autoflowGetStaff(c *fiber.Ctx) error {
 			status = "Suspended"
 		}
 		out = append(out, row{
-			ID: m.UserID, Name: m.Name, Email: m.Email, Role: m.Role,
+			ID: m.UserID, OrgID: m.OrgID, Name: m.Name, Email: m.Email, Role: m.Role,
 			Status: status, Joined: m.Joined,
 			Convs: m.Convs, Converted: m.Converted, Cmts: m.Cmts, Pts: m.Pts,
 		})
@@ -138,11 +141,11 @@ const fileUploadDir = "data/files"
 const maxFileSize = 50 * 1024 * 1024 // 50 MB
 
 var allowedMimes = map[string]bool{
-	"application/pdf":                                                       true,
+	"application/pdf": true,
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       true,
-	"text/plain":  true,
-	"text/csv":    true,
+	"text/plain": true,
+	"text/csv":   true,
 }
 
 func (s *Server) autoflowListFiles(c *fiber.Ctx) error {
@@ -198,9 +201,37 @@ func (s *Server) autoflowUploadFile(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	s.refreshPrivateFilesContext(orgID)
 	return c.Status(201).JSON(fiber.Map{
 		"id": id, "name": fh.Filename, "size_bytes": fh.Size, "mime_type": mime, "created_at": time.Now(),
 	})
+}
+
+func (s *Server) refreshPrivateFilesContext(orgID int64) {
+	key := orgContextKey(orgID, "private_files_summary")
+	files, err := s.db.GetPrivateFiles(orgID)
+	if err != nil {
+		return
+	}
+	var b strings.Builder
+	for _, file := range files {
+		snippet := ""
+		if file.MimeType == "text/plain" || file.MimeType == "text/csv" {
+			if f, err := os.Open(file.Path); err == nil {
+				func() {
+					defer f.Close()
+					bytes, _ := io.ReadAll(io.LimitReader(f, 4096))
+					snippet = strings.TrimSpace(string(bytes))
+				}()
+			}
+		}
+		b.WriteString(fmt.Sprintf("- %s (%s)", file.Name, file.MimeType))
+		if snippet != "" {
+			b.WriteString("\n  Notes: " + snippet)
+		}
+		b.WriteString("\n")
+	}
+	_ = s.db.SetContext(key, strings.TrimSpace(b.String()))
 }
 
 func (s *Server) autoflowDeleteFile(c *fiber.Ctx) error {
@@ -223,6 +254,7 @@ func (s *Server) autoflowDeleteFile(c *fiber.Ctx) error {
 	if err := s.db.DeletePrivateFile(fileID, orgID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	s.refreshPrivateFilesContext(orgID)
 	return c.JSON(fiber.Map{"ok": true})
 }
 
@@ -281,8 +313,8 @@ func (s *Server) autoflowSendMessage(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(201).JSON(fiber.Map{
-		"direction": "outbound",
-		"content":   body.Content,
+		"direction":  "outbound",
+		"content":    body.Content,
 		"created_at": time.Now(),
 	})
 }
@@ -297,5 +329,58 @@ func (s *Server) autoflowFacebookStatus(c *fiber.Ctx) error {
 		"account":     summary.Account,
 		"groups":      summary.Groups,
 		"leads_today": summary.LeadsToday,
+	})
+}
+
+func orgContextKey(orgID int64, name string) string {
+	return fmt.Sprintf("org:%d:%s", orgID, name)
+}
+
+func (s *Server) getBusinessContext(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
+	profile, _ := s.db.GetContext(orgContextKey(orgID, "business_profile"))
+	files, _ := s.db.GetContext(orgContextKey(orgID, "private_files_summary"))
+	sources, _ := s.db.GetContext(orgContextKey(orgID, "data_sources_summary"))
+	return c.JSON(fiber.Map{
+		"business_profile": profile,
+		"private_files":    files,
+		"data_sources":     sources,
+	})
+}
+
+func (s *Server) updateBusinessContext(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
+	var body struct {
+		BusinessProfile string `json:"business_profile"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+	profile := strings.TrimSpace(body.BusinessProfile)
+	if err := s.db.SetContext(orgContextKey(orgID, "business_profile"), profile); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "business_profile": profile})
+}
+
+func (s *Server) billingSummary(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
+	org, err := s.db.GetOrganization(orgID)
+	if err != nil || org == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "organization not found"})
+	}
+	accountCount, _ := s.db.CountAccountsByOrg(orgID)
+	staff, _ := s.db.GetStaffWithKPI(orgID)
+	fb := s.db.GetFacebookStatusForOrg(orgID)
+	outboxCounts, _ := s.db.CountOutboundByStatusForOrg(orgID)
+	return c.JSON(fiber.Map{
+		"plan_tier":      org.PlanTier,
+		"max_accounts":   org.MaxAccounts,
+		"account_count":  accountCount,
+		"staff_count":    len(staff),
+		"groups":         fb.Groups,
+		"leads_today":    fb.LeadsToday,
+		"outbox_counts":  outboxCounts,
+		"payment_status": "manual",
 	})
 }

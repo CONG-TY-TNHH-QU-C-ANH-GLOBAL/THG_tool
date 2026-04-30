@@ -12,6 +12,7 @@ type Config struct {
 	// Telegram
 	TelegramBotToken  string
 	TelegramAdminChat int64
+	TelegramOrgID     int64
 
 	// AI (OpenAI only)
 	OpenAIAPIKey       string
@@ -49,6 +50,18 @@ type Config struct {
 	GoogleClientSecret string
 	GoogleRedirectURI  string
 
+	// Email invites
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUsername   string
+	SMTPPassword   string
+	SMTPFromEmail  string
+	SMTPFromName   string
+	SMTPTLS        bool
+	SMTPStartTLS   bool
+	SMTPSkipVerify bool
+	AppBaseURL     string
+
 	// Web
 	WebPort int
 
@@ -67,6 +80,7 @@ func Load() *Config {
 	cfg := &Config{
 		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramAdminChat:  getEnvInt64("TELEGRAM_ADMIN_CHAT_ID", 0),
+		TelegramOrgID:      getEnvInt64("TELEGRAM_ORG_ID", 1),
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", ""),
 		OpenAIModel:        getEnv("OPENAI_MODEL", "gpt-4o-mini"),
 		OpenAICommentModel: getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
@@ -94,6 +108,16 @@ func Load() *Config {
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),
+		SMTPHost:           getEnv("SMTP_HOST", ""),
+		SMTPPort:           getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:       getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:       getEnv("SMTP_PASSWORD", ""),
+		SMTPFromEmail:      getEnv("SMTP_FROM_EMAIL", ""),
+		SMTPFromName:       getEnv("SMTP_FROM_NAME", "THG AutoFlow"),
+		SMTPTLS:            getEnvBool("SMTP_TLS", false),
+		SMTPStartTLS:       getEnvBool("SMTP_STARTTLS", true),
+		SMTPSkipVerify:     getEnvBool("SMTP_SKIP_VERIFY", false),
+		AppBaseURL:         getEnv("APP_BASE_URL", getEnv("PUBLIC_APP_URL", getEnv("NEXT_PUBLIC_SITE_URL", ""))),
 	}
 
 	if proxyStr := getEnv("PROXY_LIST", ""); proxyStr != "" {
@@ -138,6 +162,18 @@ func getEnvInt64(key string, fallback int64) int64 {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "y", "on":
+			return true
+		case "0", "false", "no", "n", "off":
+			return false
 		}
 	}
 	return fallback

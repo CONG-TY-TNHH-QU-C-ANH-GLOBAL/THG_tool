@@ -5,16 +5,20 @@ import Auth from './components/Auth';
 import MainApp from './components/MainApp';
 import SuperAdmin from './components/SuperAdmin';
 import Onboarding from './components/Onboarding';
+import JoinWorkspace from './components/JoinWorkspace';
 import { useAuth } from './hooks/useAuth';
 import { useRoleStore } from './stores/roleStore';
 import { initAuthSync } from './services/authSync';
 import { isPlatformRole } from './services/authService';
 
-type Screen = 'landing' | 'auth' | 'onboarding' | 'app' | 'superadmin';
+type Screen = 'landing' | 'auth' | 'onboarding' | 'app' | 'superadmin' | 'join';
 type AuthMode = 'login' | 'register' | 'forgot' | 'success';
 
 export default function AutoFlowApp() {
-  const [screen, setScreen] = useState<Screen>('landing');
+  const inviteToken = window.location.pathname.startsWith('/join/')
+    ? decodeURIComponent(window.location.pathname.replace('/join/', '').split('/')[0] ?? '')
+    : '';
+  const [screen, setScreen] = useState<Screen>(inviteToken ? 'join' : 'landing');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   // True while we're exchanging the g_at cookie from a Google OAuth redirect.
   // Suppresses the org-based routing until the exchange completes.
@@ -55,7 +59,7 @@ export default function AutoFlowApp() {
   // Suppressed while googleAuthPending to avoid racing with the OAuth exchange.
   useEffect(() => {
     if (googleAuthPending) return;
-    if (user && screen !== 'app' && screen !== 'superadmin' && screen !== 'onboarding') {
+    if (user && screen !== 'app' && screen !== 'superadmin' && screen !== 'onboarding' && screen !== 'join') {
       if (isPlatformRole(user.role)) {
         setScreen('superadmin');
       } else if ((user as { org_id?: number }).org_id === 0) {
@@ -77,6 +81,19 @@ export default function AutoFlowApp() {
 
   if (screen === 'onboarding') {
     return <Onboarding onComplete={(r) => setScreen(isPlatformRole(r) ? 'superadmin' : 'app')} />;
+  }
+
+  if (screen === 'join' && inviteToken) {
+    return (
+      <JoinWorkspace
+        token={inviteToken}
+        onJoined={(r) => {
+          history.replaceState(null, '', '/');
+          setScreen(isPlatformRole(r) ? 'superadmin' : 'app');
+        }}
+        goBack={() => { history.replaceState(null, '', '/'); setScreen('landing'); }}
+      />
+    );
   }
 
   if (screen === 'app') {

@@ -14,6 +14,7 @@ import (
 // AgentToken mirrors the agent_tokens table.
 type AgentToken struct {
 	ID        int64      `json:"id"`
+	OrgID     int64      `json:"org_id"`
 	Name      string     `json:"name"`
 	CreatedBy int64      `json:"created_by"`
 	Hostname  string     `json:"hostname"`
@@ -30,7 +31,7 @@ func hashAgentToken(plain string) string {
 }
 
 // CreateAgentToken generates a new token, stores its hash, and returns the plaintext (shown once).
-func (s *Store) CreateAgentToken(name string, createdBy int64) (int64, string, error) {
+func (s *Store) CreateAgentToken(name string, createdBy, orgID int64) (int64, string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return 0, "", fmt.Errorf("generate token: %w", err)
@@ -39,8 +40,8 @@ func (s *Store) CreateAgentToken(name string, createdBy int64) (int64, string, e
 	hash := hashAgentToken(plain)
 
 	res, err := s.db.Exec(
-		`INSERT INTO agent_tokens (name, token_hash, created_by) VALUES (?, ?, ?)`,
-		name, hash, createdBy,
+		`INSERT INTO agent_tokens (org_id, name, token_hash, created_by) VALUES (?, ?, ?, ?)`,
+		orgID, name, hash, createdBy,
 	)
 	if err != nil {
 		return 0, "", err
@@ -53,12 +54,12 @@ func (s *Store) CreateAgentToken(name string, createdBy int64) (int64, string, e
 func (s *Store) ValidateAgentToken(plain string) (*AgentToken, error) {
 	hash := hashAgentToken(plain)
 	row := s.db.QueryRow(
-		`SELECT id, name, created_by, COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''), last_seen, active, created_at FROM agent_tokens WHERE token_hash = ? AND active = 1`,
+		`SELECT id, COALESCE(org_id,0), name, created_by, COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''), last_seen, active, created_at FROM agent_tokens WHERE token_hash = ? AND active = 1`,
 		hash,
 	)
 	var t AgentToken
 	var lastSeen sql.NullTime
-	err := row.Scan(&t.ID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version, &lastSeen, &t.Active, &t.CreatedAt)
+	err := row.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version, &lastSeen, &t.Active, &t.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -81,9 +82,11 @@ func (s *Store) UpdateAgentHeartbeat(id int64, hostname, os, version string) err
 }
 
 // ListAgentTokens returns all tokens for the admin UI (no token hashes exposed).
-func (s *Store) ListAgentTokens() ([]AgentToken, error) {
+func (s *Store) ListAgentTokens(orgID int64) ([]AgentToken, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, created_by, COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''), last_seen, active, created_at FROM agent_tokens ORDER BY created_at DESC`,
+		`SELECT id, COALESCE(org_id,0), name, created_by, COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''), last_seen, active, created_at
+		 FROM agent_tokens WHERE org_id = ? ORDER BY created_at DESC`,
+		orgID,
 	)
 	if err != nil {
 		return nil, err
@@ -94,7 +97,7 @@ func (s *Store) ListAgentTokens() ([]AgentToken, error) {
 	for rows.Next() {
 		var t AgentToken
 		var lastSeen sql.NullTime
-		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version, &lastSeen, &t.Active, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version, &lastSeen, &t.Active, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		if lastSeen.Valid {
@@ -106,9 +109,16 @@ func (s *Store) ListAgentTokens() ([]AgentToken, error) {
 }
 
 // RevokeAgentToken deactivates a token by ID.
-func (s *Store) RevokeAgentToken(id int64) error {
-	_, err := s.db.Exec(`UPDATE agent_tokens SET active = 0 WHERE id = ?`, id)
-	return err
+func (s *Store) RevokeAgentToken(id, orgID int64) error {
+	res, err := s.db.Exec(`UPDATE agent_tokens SET active = 0 WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // InsertPostsBatch inserts a slice of posts from an agent result, skipping duplicates.

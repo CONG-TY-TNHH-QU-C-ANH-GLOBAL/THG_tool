@@ -26,6 +26,7 @@ type Bot struct {
 	agent    *ai.Agent
 	pricer   *ai.PriceExtractor
 	adminID  int64
+	orgID    int64
 }
 
 // New creates a new Telegram bot.
@@ -47,10 +48,18 @@ func New(token string, adminID int64, db *store.Store, jobStore *jobs.Store, age
 		agent:    agent,
 		pricer:   pricer,
 		adminID:  adminID,
+		orgID:    1,
 	}
 
 	bot.registerHandlers()
 	return bot, nil
+}
+
+// SetDefaultOrgID scopes Telegram free-text automation to an organization.
+func (b *Bot) SetDefaultOrgID(orgID int64) {
+	if orgID > 0 {
+		b.orgID = orgID
+	}
 }
 
 // Start begins polling for Telegram updates.
@@ -192,6 +201,7 @@ func (b *Bot) handleScan(c tele.Context) error {
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        fmt.Sprintf("tg-scan-%s-%d", platform, time.Now().UnixMilli()),
+		OrgID:         b.orgID,
 		Intent:        "facebook_crawl",
 		CrawlPlan: jobs.CrawlPlan{
 			Sources:  []jobs.Source{{Type: string(platform) + "_group", URL: target}},
@@ -534,7 +544,7 @@ func (b *Bot) handleFreeText(c tele.Context) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
 			prompt := fmt.Sprintf("crawl ảnh từ catalog url: %s", url)
-			response, err := b.agent.ProcessPrompt(ctx, prompt, "telegram")
+			response, err := b.agent.ProcessPromptForOrg(ctx, prompt, "telegram", b.orgID)
 			if err != nil {
 				return send(fmt.Sprintf("❌ Lỗi crawl ảnh: %v", err))
 			}
@@ -547,7 +557,7 @@ func (b *Bot) handleFreeText(c tele.Context) error {
 		_ = send("🤖 Đang xử lý...")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		response, err := b.agent.ProcessPrompt(ctx, text, "telegram")
+		response, err := b.agent.ProcessPromptForOrg(ctx, text, "telegram", b.orgID)
 		if err != nil {
 			return send(fmt.Sprintf("❌ AI Agent lỗi: %v", err))
 		}

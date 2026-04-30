@@ -81,7 +81,8 @@ func (s *Server) getSentimentStats(c *fiber.Ctx) error {
 		topNiches = topNiches[:10]
 	}
 
-	outboundCounts, _ := s.db.CountOutboundByStatus()
+	orgID, _ := c.Locals("org_id").(int64)
+	outboundCounts, _ := s.db.CountOutboundByStatusForOrg(orgID)
 
 	return c.JSON(fiber.Map{
 		"stats":           stats,

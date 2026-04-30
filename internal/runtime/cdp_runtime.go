@@ -58,6 +58,19 @@ func (r *CDPRuntime) FetchBatch(ctx context.Context, sourceURL string, offset, b
 	defer timeoutCancel()
 
 	var rawJSON string
+	if strings.Contains(sourceURL, "/search/groups") {
+		err := chromedp.Run(tabCtx,
+			chromedp.Navigate(sourceURL),
+			chromedp.WaitReady(`body`, chromedp.ByQuery),
+			chromedp.Sleep(3*time.Second),
+			chromedp.Evaluate(extractGroupsJS(batchSize), &rawJSON),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("cdp navigate/extract groups %s: %w", sourceURL, err)
+		}
+		return parseRawItems(rawJSON, sourceURL)
+	}
+
 	err := chromedp.Run(tabCtx,
 		chromedp.Navigate(sourceURL),
 		chromedp.WaitVisible(`[role="feed"]`, chromedp.ByQuery),
@@ -68,6 +81,15 @@ func (r *CDPRuntime) FetchBatch(ctx context.Context, sourceURL string, offset, b
 		return nil, fmt.Errorf("cdp navigate/extract %s: %w", sourceURL, err)
 	}
 
+	items, err := parseRawItems(rawJSON, sourceURL)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("[CDPRuntime] Extracted %d posts from %s", len(items), sourceURL)
+	return items, nil
+}
+
+func parseRawItems(rawJSON, sourceURL string) ([]RawItem, error) {
 	var raw []struct {
 		ID        string `json:"id"`
 		Content   string `json:"content"`
@@ -96,7 +118,6 @@ func (r *CDPRuntime) FetchBatch(ctx context.Context, sourceURL string, offset, b
 			Shares:           r.Shares,
 		})
 	}
-	log.Printf("[CDPRuntime] Extracted %d posts from %s", len(items), sourceURL)
 	return items, nil
 }
 
@@ -156,6 +177,37 @@ func extractPostsJS(limit int) string {
     });
   }
   return JSON.stringify(posts);
+})()
+`, limit)
+}
+
+func extractGroupsJS(limit int) string {
+	return fmt.Sprintf(`
+(function() {
+  var out = [];
+  var anchors = Array.from(document.querySelectorAll('a[href*="/groups/"]'));
+  var seen = {};
+  for (var i = 0; i < anchors.length && out.length < %d; i++) {
+    var a = anchors[i];
+    var href = a.href || '';
+    if (!href || href.indexOf('/groups/') === -1 || seen[href]) continue;
+    var label = (a.innerText || a.getAttribute('aria-label') || '').trim();
+    if (!label || label.length < 3) continue;
+    seen[href] = true;
+    var card = a.closest('[role="article"], [role="main"] div') || a.parentElement;
+    var text = card ? (card.innerText || '').trim() : label;
+    out.push({
+      id: href,
+      content: text || label,
+      author: label,
+      author_url: href,
+      post_url: href,
+      reactions: 0,
+      comments: 0,
+      shares: 0
+    });
+  }
+  return JSON.stringify(out);
 })()
 `, limit)
 }

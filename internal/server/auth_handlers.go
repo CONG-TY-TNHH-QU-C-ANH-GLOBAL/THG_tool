@@ -374,7 +374,17 @@ func (s *Server) listUsers(c *fiber.Ctx) error {
 // getAuditLogs handles GET /api/auth/audit — admin views the security audit trail.
 func (s *Server) getAuditLogs(c *fiber.Ctx) error {
 	limit := 100
-	logs, err := s.db.GetAuditLogs(limit)
+	orgID, _ := c.Locals("org_id").(int64)
+	role, _ := c.Locals("user_role").(string)
+	var (
+		logs []models.AuditLog
+		err  error
+	)
+	if models.IsPlatformUser(orgID, models.UserRole(role)) {
+		logs, err = s.db.GetAuditLogs(limit)
+	} else {
+		logs, err = s.db.GetAuditLogsByOrg(orgID, limit)
+	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

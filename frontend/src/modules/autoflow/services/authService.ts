@@ -76,5 +76,5 @@ export async function logout(): Promise<void> {
 }
 
 export async function changePassword(current: string, next: string): Promise<void> {
-  await api.put('/auth/me/password', { current_password: current, new_password: next });
+  await api.put('/auth/me/password', { current_password: current, new_password: next, confirm_password: next });
 }

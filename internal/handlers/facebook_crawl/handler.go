@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/thg/scraper/internal/filter"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/livesession"
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/output"
 	"github.com/thg/scraper/internal/runtime"
 	"github.com/thg/scraper/internal/scoring"
@@ -142,7 +144,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 	sc := scoring.New(scorerCfg)
 	var businessProfile *ai.BusinessProfile
 	if h.ctxStore != nil && h.aiClass != nil && h.aiClass.Available() {
-		if p := ai.LoadProfile(h.ctxStore); p != nil && p.IsConfigured() {
+		if p := h.loadBusinessProfile(task.OrgID); p != nil && p.IsConfigured() {
 			businessProfile = p
 		}
 	}
@@ -220,6 +222,35 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					stats.TotalDeduped++
 					continue
 				}
+				if src.Type == "facebook_search" {
+					seen[item.ID] = true
+					if h.ctxStore != nil && item.SourceURL != "" {
+						_, _ = h.ctxStore.AddGroup(&models.Group{
+							OrgID:     task.OrgID,
+							Platform:  models.PlatformFacebook,
+							Name:      firstNonEmpty(item.AuthorName, item.SourceURL),
+							URL:       item.SourceURL,
+							Active:    true,
+							JoinState: "none",
+						})
+					}
+					records = append(records, output.Record{
+						ID:               item.ID,
+						Content:          item.Content,
+						AuthorName:       item.AuthorName,
+						AuthorProfileURL: item.AuthorProfileURL,
+						SourceURL:        item.SourceURL,
+						Timestamp:        item.Timestamp,
+						LeadScore:        50,
+						Category:         "source_candidate",
+						Signals:          []string{"source_discovery"},
+					})
+					stats.TotalReturned++
+					if stats.TotalReturned >= maxItems {
+						break
+					}
+					continue
+				}
 
 				// Stage 1: filter (inline discard)
 				fr := h.fe.Evaluate(
@@ -281,6 +312,30 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 						log.Printf("handler: insert lead: %v", err)
 					}
 				}
+				if h.ctxStore != nil && sr.Category != "cold" {
+					leadID, err := h.ctxStore.InsertLead(&models.Lead{
+						OrgID:        task.OrgID,
+						SourceType:   "post",
+						SourceID:     0,
+						SourceURL:    item.SourceURL,
+						Platform:     models.PlatformFacebook,
+						Author:       item.AuthorName,
+						AuthorURL:    item.AuthorProfileURL,
+						Content:      item.Content,
+						Score:        models.LeadScore(sr.Category),
+						ServiceMatch: sr.Category,
+						AuthorRole:   "AI classifier",
+						PainPoint:    strings.Join(sr.Signals, "; "),
+						AIReasoning:  strings.Join(sr.Signals, "; "),
+						Niche:        strings.Join(task.Keywords, ", "),
+						ClassifiedAt: time.Now().UTC(),
+					})
+					if err != nil {
+						log.Printf("handler: insert legacy lead: %v", err)
+					} else if leadID > 0 {
+						log.Printf("handler: inserted lead #%d for org %d", leadID, task.OrgID)
+					}
+				}
 
 				if stats.TotalReturned >= maxItems {
 					break
@@ -331,6 +386,22 @@ func buildResult(records []output.Record, stats output.Stats) (string, error) {
 	return string(b), nil
 }
 
+func (h *Handler) loadBusinessProfile(orgID int64) *ai.BusinessProfile {
+	if h.ctxStore == nil {
+		return &ai.BusinessProfile{}
+	}
+	ctxMap, err := h.ctxStore.GetAllContext()
+	if err != nil {
+		return &ai.BusinessProfile{}
+	}
+	if orgID > 0 {
+		if profile, _ := h.ctxStore.GetContext(fmt.Sprintf("org:%d:business_profile", orgID)); strings.TrimSpace(profile) != "" {
+			ctxMap["business_desc"] = strings.TrimSpace(profile)
+		}
+	}
+	return ai.ProfileFromContext(ctxMap)
+}
+
 func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) output.Record {
 	allSignals := make([]string, 0, len(filterSignals)+len(sr.Signals))
 	allSignals = append(allSignals, filterSignals...)
@@ -351,6 +422,15 @@ func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) o
 		Signals:          allSignals,
 		FilterSignals:    filterSignals,
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func scoringConfig(cfg jobs.ScoringConfig) scoring.Config {

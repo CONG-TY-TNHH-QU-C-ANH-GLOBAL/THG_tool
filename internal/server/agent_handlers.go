@@ -26,6 +26,7 @@ func (s *Server) agentAuth(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "invalid or revoked agent token"})
 	}
 	c.Locals("agent_id", tok.ID)
+	c.Locals("agent_org_id", tok.OrgID)
 	c.Locals("agent_name", tok.Name)
 	_ = s.db.UpdateAgentHeartbeat(tok.ID, c.Get("X-Agent-Hostname"), c.Get("X-Agent-OS"), c.Get("X-Agent-Version"))
 	return c.Next()
@@ -114,7 +115,8 @@ func (s *Server) agentJobFail(c *fiber.Ctx) error {
 // agentGetOutbox returns approved outbound messages for local execution.
 // GET /api/agent/outbox
 func (s *Server) agentGetOutbox(c *fiber.Ctx) error {
-	msgs, err := s.db.GetOutboundByStatus("approved", 5)
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	msgs, err := s.db.GetOutboundByStatusForOrg(orgID, "approved", 5)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -124,12 +126,19 @@ func (s *Server) agentGetOutbox(c *fiber.Ctx) error {
 // agentOutboxSent marks an outbound message as sent (agent executed it successfully).
 // POST /api/agent/outbox/:id/sent
 func (s *Server) agentOutboxSent(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("agent_org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.UpdateOutboundStatus(id, models.OutboundSent); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundSent); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
+	}
+	if msg, err := s.db.GetOutboundForOrg(orgID, id); err == nil && msg.Type == "inbox" && msg.TargetURL != "" {
+		threadID, threadErr := s.db.CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, "")
+		if threadErr == nil {
+			_ = s.db.AddThreadMessage(threadID, "outbound", msg.Content, true)
+		}
 	}
 	return c.JSON(fiber.Map{"status": "sent"})
 }
@@ -137,12 +146,13 @@ func (s *Server) agentOutboxSent(c *fiber.Ctx) error {
 // agentOutboxFailed marks an outbound message as failed.
 // POST /api/agent/outbox/:id/failed
 func (s *Server) agentOutboxFailed(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("agent_org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.UpdateOutboundStatus(id, models.OutboundFailed); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundFailed); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
 	}
 	return c.JSON(fiber.Map{"status": "failed"})
 }
@@ -157,7 +167,8 @@ func (s *Server) agentCreateToken(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
 	}
 	userID, _ := c.Locals("user_id").(int64)
-	id, plain, err := s.db.CreateAgentToken(req.Name, userID)
+	orgID, _ := c.Locals("org_id").(int64)
+	id, plain, err := s.db.CreateAgentToken(req.Name, userID, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -172,7 +183,8 @@ func (s *Server) agentCreateToken(c *fiber.Ctx) error {
 // agentListTokens lists all agent tokens (admin only, JWT auth).
 // GET /api/admin/agent-tokens
 func (s *Server) agentListTokens(c *fiber.Ctx) error {
-	tokens, err := s.db.ListAgentTokens()
+	orgID, _ := c.Locals("org_id").(int64)
+	tokens, err := s.db.ListAgentTokens(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -182,12 +194,13 @@ func (s *Server) agentListTokens(c *fiber.Ctx) error {
 // agentRevokeToken deactivates an agent token (admin only, JWT auth).
 // DELETE /api/admin/agent-tokens/:id
 func (s *Server) agentRevokeToken(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.RevokeAgentToken(id); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.RevokeAgentToken(id, orgID); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "agent token not found"})
 	}
 	return c.JSON(fiber.Map{"status": "revoked"})
 }
@@ -213,4 +226,3 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 	_ = s.db.UpdateAgentHeartbeat(agentID, c.Get("X-Agent-Hostname"), c.Get("X-Agent-OS"), c.Get("X-Agent-Version"))
 	return c.JSON(fiber.Map{"ts": time.Now().Unix()})
 }
-

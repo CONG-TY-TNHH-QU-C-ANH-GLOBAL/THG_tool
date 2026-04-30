@@ -19,6 +19,10 @@ type Organization struct {
 	Domain      string    `json:"domain"`       // e.g., thgfulfill.com
 	PlanTier    PlanTier  `json:"plan_tier"`    // free | pro | enterprise
 	MaxAccounts int       `json:"max_accounts"` // 0 = unlimited
+	Abbr        string    `json:"abbr"`
+	Color       string    `json:"color"`
+	LogoURL     string    `json:"logo_url"`
+	AvatarURL   string    `json:"avatar_url"`
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"created_at"`
 }

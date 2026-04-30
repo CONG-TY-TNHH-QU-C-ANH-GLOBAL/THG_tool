@@ -146,6 +146,8 @@ Every organization must provide a business context before meaningful automation:
 - Competitors or alternatives
 - Uploaded private files: product list, service deck, FAQ, sales scripts,
   customer examples, policy documents
+- Connected private data sources: Google Sheets for pricing/product/policy
+  tables and Google Drive folders for real brand media/assets
 - Approval policy: what the AI may draft, what requires human approval, what is
   forbidden
 
@@ -153,6 +155,57 @@ Existing hook: `internal/ai/business.go` already has `BusinessProfile`.
 Do not hardcode THG, logistics, recruitment, POD, or any single vertical into
 the crawler. Store the business profile per org and make all classifiers consume
 that context.
+
+### 2.1.1 Data Private and Data Connectors
+
+Many client organizations keep business assets outside the app:
+
+- Google Drive folders for real product images, ad creatives, brand videos,
+  proof images, and sales collateral
+- Google Sheets for detailed pricing, packages, product catalogs, stock notes,
+  SOPs, FAQs, and discount policies
+- uploaded PDF/DOCX/XLSX/TXT/CSV files for decks, policies, resumes, scripts,
+  and company knowledge
+
+The product surface for this is `Data Private`, implemented as a knowledge hub,
+not only a file uploader.
+
+Current implementation:
+
+- `private_files` stores org-scoped uploaded files.
+- `data_sources` stores org-scoped external connectors.
+- `GET/POST/DELETE /api/data-sources` manage connector records.
+- `POST /api/data-sources/:id/sync` syncs source metadata/content into
+  summarized AI context.
+- Google Sheets quick sync supports published/exportable CSV URLs and standard
+  `docs.google.com/spreadsheets/d/...` URLs that can be exported as CSV.
+- Google Drive sources are stored as `needs_auth` until read-only Drive OAuth is
+  implemented; do not fake Drive media sync.
+- AI prompt context includes:
+  - `org:{id}:business_profile`
+  - `org:{id}:private_files_summary`
+  - `org:{id}:data_sources_summary`
+
+Connector rules:
+
+- Every source must be org-scoped.
+- Sync must be explicit and auditable.
+- Do not scan an entire Drive by default; user must choose a folder/file.
+- Use read-only scopes for OAuth connectors.
+- Store OAuth tokens encrypted.
+- Summarize or retrieve relevant context instead of injecting large raw files
+  into prompts.
+- Use real uploaded/connected media only. Do not generate AI images.
+
+Frontend ownership:
+
+- `frontend/src/modules/autoflow/components/views/DataPrivateView.tsx` is the
+  orchestrator only.
+- Data Private subcomponents live under
+  `frontend/src/modules/autoflow/components/data/`.
+- Service/hook ownership:
+  - `services/dataSourceService.ts`
+  - `hooks/useDataSources.ts`
 
 ### 2.2 Facebook Account Workspace
 
@@ -455,10 +508,14 @@ Purpose:
 Rules:
 
 - Default status is draft.
-- Admin approval required for first production release.
+- Admin approval is the default path.
+- Explicit execute/auto mode may queue comments as `approved` immediately when
+  the org/campaign/prompt permits speed-first automation.
 - Each account has rate limits and cooldowns.
 - Message must reference the specific post context.
 - Never mass-comment the same template.
+- Backend must block duplicate comments for the same org + post URL even if AI
+  calls the tool repeatedly.
 
 Existing hooks:
 
@@ -476,9 +533,14 @@ Purpose:
 
 Rules:
 
-- First-message automation should remain approval-gated.
+- First-message automation is draft/approval-gated by default.
+- Explicit execute/auto mode may queue first messages as `approved`, but only
+  after org-scoped guardrails confirm no active duplicate/cooldown conflict.
 - Follow-up must use thread history.
 - Store conversation state by org and profile URL.
+- If `last_inbound_at > last_outbound_at`, treat the thread like customer
+  service and answer the latest reply; otherwise do not send repeated inboxes
+  inside the cooldown window.
 
 Existing hooks:
 
@@ -497,9 +559,31 @@ Purpose:
 Rules:
 
 - Posting is higher risk than passive reading.
-- Require explicit campaign approval.
+- Require explicit campaign approval or explicit execute/auto policy.
 - Respect group rules and org approval policy.
 - Support scheduling, not immediate blast by default.
+- Backend should queue `group_post` rows per target group and still apply
+  cooldown/dedup before `approved` execution.
+
+### 4.9 Prompt Compatibility and Auto Execution
+
+Dashboard chat and Telegram prompt must route through the same org-scoped AI
+operator path. A prompt such as "find customer segment A/B/C on Facebook" should
+create a prompt-scoped source discovery/crawl job, not a broad scan-all job. A
+follow-up prompt such as "comment these leads" or "inbox hot leads" should act
+on the org's real leads from the latest crawler/app lead stores.
+
+Implementation notes:
+
+- Use `ProcessPromptForOrg` for Dashboard and Telegram so business data,
+  account mapping, and tool calls remain tenant-scoped.
+- Tool calls for `search_groups`, `comment_all_leads`, `inbox_all_leads`, and
+  `create_job_post` must write real scheduler jobs or `outbound_messages`.
+- `auto=true` or org `outbound_mode=auto` may set outbox status to `approved`.
+- `CanQueueOutboundForOrg` remains the final gate for dedup, cooldown, closed
+  threads, and reply-aware customer-service behavior.
+- Connected data from Data Private/Sheets/Drive summaries is context for AI
+  decisions; it does not bypass outbound safety rules.
 
 ## 5. AI Pipeline
 
@@ -959,6 +1043,15 @@ GET    /api/business/profile
 PUT    /api/business/profile
 POST   /api/business/profile/extract
 
+Private data connectors:
+GET    /api/files
+POST   /api/files
+DELETE /api/files/:id
+GET    /api/data-sources
+POST   /api/data-sources
+POST   /api/data-sources/:id/sync
+DELETE /api/data-sources/:id
+
 Customer segments:
 GET    /api/customer-segments
 POST   /api/customer-segments
@@ -1210,16 +1303,17 @@ Guardrails:
 Recommended next implementation order:
 
 1. Org-scoped business profile API and UI.
-2. Customer segments table/API/UI.
-3. Rich signal classifier and market signals table.
-4. Source catalog and source discovery.
-5. Market Signals and Opportunity Map views.
-6. Strategy recommendations.
-7. Campaign approval and outbound guardrails.
-8. Learning loop from outcomes.
-9. Workspace Skill Designer and blueprint validation.
-10. HR/recruitment reference blueprint.
-11. Production database upgrade to Postgres when traffic grows.
+2. Data Private connectors: Google Sheets quick sync, Drive OAuth, media library.
+3. Customer segments table/API/UI.
+4. Rich signal classifier and market signals table.
+5. Source catalog and source discovery.
+6. Market Signals and Opportunity Map views.
+7. Strategy recommendations.
+8. Campaign approval and outbound guardrails.
+9. Learning loop from outcomes.
+10. Workspace Skill Designer and blueprint validation.
+11. HR/recruitment reference blueprint.
+12. Production database upgrade to Postgres when traffic grows.
 
 This order keeps the product aligned with business analysis first, and prevents
 the engineering path from drifting back into generic automation or fixed

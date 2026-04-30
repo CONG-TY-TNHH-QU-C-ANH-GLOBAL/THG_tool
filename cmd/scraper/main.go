@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/thg/scraper/internal/config"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/logstream"
+	"github.com/thg/scraper/internal/mailer"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/server"
 	session_pkg "github.com/thg/scraper/internal/session"
@@ -180,9 +182,11 @@ func main() {
 
 	// Initialize AI Agent (OpenAI Function Calling) — v2
 	var agent *ai.Agent
+	var msgGen *ai.MessageGenerator
 	if cfg.OpenAIAPIKey != "" {
+		msgGen = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
 		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
-		agent.ActionHandler = makeAgentActionHandler(db, jobStore)
+		agent.ActionHandler = makeAgentActionHandler(db, jobStore, msgGen)
 		log.Printf("✅ AI Agent initialized (model: %s)", cfg.OpenAICommentModel)
 	} else {
 		log.Println("⚠️  OPENAI_API_KEY not set, AI Agent disabled")
@@ -192,6 +196,9 @@ func main() {
 	var bot *telegram.Bot
 	if cfg.TelegramBotToken != "" {
 		bot, err = telegram.New(cfg.TelegramBotToken, cfg.TelegramAdminChat, db, jobStore, agent, pricer)
+		if bot != nil {
+			bot.SetDefaultOrgID(cfg.TelegramOrgID)
+		}
 		if err != nil {
 			log.Printf("⚠️  Telegram bot init failed: %v", err)
 		} else {
@@ -220,6 +227,19 @@ func main() {
 		GoogleClientID:     cfg.GoogleClientID,
 		GoogleClientSecret: cfg.GoogleClientSecret,
 		GoogleRedirectURI:  cfg.GoogleRedirectURI,
+		Mailer: mailer.Config{
+			Host:               cfg.SMTPHost,
+			Port:               cfg.SMTPPort,
+			Username:           cfg.SMTPUsername,
+			Password:           cfg.SMTPPassword,
+			FromEmail:          cfg.SMTPFromEmail,
+			FromName:           cfg.SMTPFromName,
+			AppBaseURL:         cfg.AppBaseURL,
+			UseTLS:             cfg.SMTPTLS,
+			UseStartTLS:        cfg.SMTPStartTLS,
+			InsecureSkipVerify: cfg.SMTPSkipVerify,
+			Timeout:            10 * time.Second,
+		},
 	})
 
 	srv.SetSessionRegistry(sessionReg)
@@ -244,13 +264,24 @@ func main() {
 	cancel() // stop health checker and other ctx-bound goroutines
 }
 
-func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store) func(string, map[string]any) (string, error) {
+func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.MessageGenerator) func(string, map[string]any) (string, error) {
 	return func(action string, args map[string]any) (string, error) {
 		switch action {
 		case "set_context":
 			key, value := argString(args, "key"), argString(args, "value")
 			if key == "" || value == "" {
 				return "", fmt.Errorf("set_context requires key and value")
+			}
+			if orgID := argInt64(args, "org_id"); orgID > 0 {
+				switch key {
+				case "business_profile", "private_files_summary", "data_sources_summary", "outbound_mode":
+					key = fmt.Sprintf("org:%d:%s", orgID, key)
+				case "auto_comment_mode":
+					key = fmt.Sprintf("org:%d:outbound_mode", orgID)
+					if value == "true" || value == "1" {
+						value = "auto"
+					}
+				}
 			}
 			if err := db.SetContext(key, value); err != nil {
 				return "", err
@@ -261,7 +292,11 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store) func(string, 
 			if desc == "" {
 				return "", fmt.Errorf("describe_business requires description")
 			}
-			if err := db.SetContext("business_desc", desc); err != nil {
+			key := "business_desc"
+			if orgID := argInt64(args, "org_id"); orgID > 0 {
+				key = fmt.Sprintf("org:%d:business_profile", orgID)
+			}
+			if err := db.SetContext(key, desc); err != nil {
 				return "", err
 			}
 			return "da luu mo ta doanh nghiep cho crawler/classifier", nil
@@ -280,6 +315,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store) func(string, 
 				name = u
 			}
 			id, err := db.AddGroup(&models.Group{
+				OrgID:     argInt64(args, "org_id"),
 				Platform:  detectPlatformFromURL(u),
 				Name:      name,
 				URL:       u,
@@ -306,6 +342,19 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store) func(string, 
 			return "", fmt.Errorf("scrape_all fixed configured groups is disabled in production; ask for a target URL or search query")
 		case "classify_leads":
 			return "classification runs inline during every crawler job using the current business context", nil
+		case "search_groups":
+			query := argString(args, "query")
+			if query == "" {
+				return "", fmt.Errorf("search_groups requires query")
+			}
+			searchURL := "https://www.facebook.com/search/groups/?q=" + url.QueryEscape(query)
+			return submitOpenCrawl(context.Background(), jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_search", URL: searchURL, Label: "group_search"}}, args)
+		case "auto_comment", "comment_all_leads":
+			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args)
+		case "auto_inbox", "inbox_all_leads":
+			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args)
+		case "create_job_post":
+			return queueGroupPost(context.Background(), db, msgGen, args)
 		default:
 			return "", fmt.Errorf("agent action %q is not wired to a production handler yet", action)
 		}
@@ -324,6 +373,7 @@ func submitOpenCrawl(ctx context.Context, jobStore *jobs.Store, intent string, s
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        openCrawlTaskID(intent, sources, args),
+		OrgID:         argInt64(args, "org_id"),
 		AccountID:     argInt64(args, "account_id"),
 		Intent:        intent,
 		Keywords:      keywords,
@@ -354,13 +404,251 @@ func submitOpenCrawl(ctx context.Context, jobStore *jobs.Store, intent string, s
 	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, intent), nil
 }
 
+func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any) (string, error) {
+	orgID := argInt64(args, "org_id")
+	if orgID <= 0 {
+		return "", fmt.Errorf("org_id is required for outbound automation")
+	}
+	accountID := argInt64(args, "account_id")
+	if accountID <= 0 {
+		accounts, err := db.GetAllAccounts(orgID)
+		if err != nil {
+			return "", err
+		}
+		for _, acc := range accounts {
+			if acc.Platform == models.PlatformFacebook && acc.BrowserLoggedIn && acc.Status == models.AccountActive {
+				accountID = acc.ID
+				break
+			}
+		}
+		if accountID <= 0 && len(accounts) > 0 {
+			accountID = accounts[0].ID
+		}
+	}
+	if accountID <= 0 {
+		return "", fmt.Errorf("no Facebook account available for org %d", orgID)
+	}
+
+	auto := argBool(args, "auto") || strings.EqualFold(orgContext(db, orgID, "outbound_mode"), "auto")
+	status := models.OutboundDraft
+	if auto {
+		status = models.OutboundApproved
+	}
+
+	leads, err := leadsFromActionArgs(db, orgID, msgType, args)
+	if err != nil {
+		return "", err
+	}
+	if len(leads) == 0 {
+		return "khong co lead phu hop de queue outbound", nil
+	}
+
+	businessContext := businessContextForOrg(db, orgID)
+	template := argString(args, "template")
+	queued, skipped := 0, 0
+	skipReasons := map[string]int{}
+	for _, lead := range leads {
+		targetURL := strings.TrimSpace(lead.SourceURL)
+		profileURL := strings.TrimSpace(lead.AuthorURL)
+		if msgType == "inbox" {
+			targetURL = profileURL
+		}
+		if targetURL == "" {
+			skipped++
+			skipReasons["missing_target"]++
+			continue
+		}
+		guard, err := db.CanQueueOutboundForOrg(orgID, msgType, targetURL, profileURL, 24*time.Hour)
+		if err != nil {
+			return "", err
+		}
+		if !guard.Allowed {
+			skipped++
+			skipReasons[guard.Reason]++
+			continue
+		}
+
+		content := template
+		if msgGen != nil && msgGen.Available() {
+			genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+			if template != "" && msgType == "comment" {
+				content, err = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
+			} else if msgType == "comment" {
+				content, err = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, businessContext, lead.ServiceMatch, "")
+			} else {
+				content, err = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, businessContext, "")
+			}
+			cancel()
+			if err != nil {
+				skipped++
+				skipReasons["generation_failed"]++
+				continue
+			}
+		}
+		content = strings.TrimSpace(content)
+		if content == "" {
+			skipped++
+			skipReasons["empty_content"]++
+			continue
+		}
+
+		_, err = db.InsertOutboundMessage(&models.OutboundMessage{
+			OrgID:      orgID,
+			Type:       msgType,
+			Platform:   models.PlatformFacebook,
+			AccountID:  accountID,
+			TargetURL:  targetURL,
+			TargetName: lead.Author,
+			Content:    content,
+			Context:    lead.Content,
+			Status:     status,
+			AIModel:    "agent",
+		})
+		if err != nil {
+			return "", err
+		}
+		queued++
+	}
+
+	mode := "draft"
+	if status == models.OutboundApproved {
+		mode = "approved_auto"
+	}
+	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v", msgType, queued, skipped, mode, skipReasons), nil
+}
+
+func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {
+	if msgType == "comment" {
+		if target := firstNonEmpty(argString(args, "post_url"), argString(args, "target_url")); target != "" {
+			return []models.Lead{{
+				OrgID:      orgID,
+				SourceURL:  target,
+				Author:     argString(args, "target_name"),
+				AuthorURL:  argString(args, "author_url"),
+				Content:    argString(args, "context"),
+				Score:      models.LeadHot,
+				Platform:   models.PlatformFacebook,
+				SourceType: "prompt_target",
+			}}, nil
+		}
+	} else if target := argString(args, "target_url"); target != "" {
+		return []models.Lead{{
+			OrgID:      orgID,
+			AuthorURL:  target,
+			Author:     argString(args, "target_name"),
+			Content:    argString(args, "context"),
+			Score:      models.LeadHot,
+			Platform:   models.PlatformFacebook,
+			SourceType: "prompt_target",
+		}}, nil
+	}
+	score := argString(args, "score_filter")
+	if score == "" && msgType == "inbox" {
+		score = "hot"
+	}
+	limit := int(argInt64(args, "limit"))
+	if limit <= 0 {
+		limit = 25
+	}
+	return db.GetAutomationLeadsForOrg(orgID, score, limit)
+}
+
+func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any) (string, error) {
+	orgID := argInt64(args, "org_id")
+	if orgID <= 0 {
+		return "", fmt.Errorf("org_id is required for group posting")
+	}
+	accountID := argInt64(args, "account_id")
+	if accountID <= 0 {
+		accounts, err := db.GetAllAccounts(orgID)
+		if err != nil {
+			return "", err
+		}
+		if len(accounts) == 0 {
+			return "", fmt.Errorf("no Facebook account available for org %d", orgID)
+		}
+		accountID = accounts[0].ID
+	}
+
+	content := firstNonEmpty(argString(args, "content"), argString(args, "description"), argString(args, "title"))
+	if msgGen != nil && msgGen.Available() && argString(args, "title") != "" {
+		genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		generated, err := msgGen.GenerateJobPost(genCtx,
+			argString(args, "title"),
+			argString(args, "description"),
+			argString(args, "requirements"),
+			argString(args, "benefits"),
+			argString(args, "salary"),
+			argString(args, "email"),
+		)
+		cancel()
+		if err == nil && strings.TrimSpace(generated) != "" {
+			content = generated
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		return "", fmt.Errorf("group post content is required")
+	}
+
+	targets := []string{}
+	if u := argString(args, "group_url"); u != "" {
+		targets = append(targets, u)
+	} else {
+		groups, err := db.GetAllGroups(orgID)
+		if err != nil {
+			return "", err
+		}
+		for _, g := range groups {
+			if g.Active && strings.TrimSpace(g.URL) != "" {
+				targets = append(targets, g.URL)
+				if len(targets) >= 3 {
+					break
+				}
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return "khong co group target de queue group_post", nil
+	}
+
+	status := models.OutboundDraft
+	if argBool(args, "auto") || strings.EqualFold(orgContext(db, orgID, "outbound_mode"), "auto") {
+		status = models.OutboundApproved
+	}
+	queued, skipped := 0, 0
+	for _, target := range targets {
+		guard, err := db.CanQueueOutboundForOrg(orgID, "group_post", target, "", 24*time.Hour)
+		if err != nil {
+			return "", err
+		}
+		if !guard.Allowed {
+			skipped++
+			continue
+		}
+		if _, err := db.InsertOutboundMessage(&models.OutboundMessage{
+			OrgID:     orgID,
+			Type:      "group_post",
+			Platform:  models.PlatformFacebook,
+			AccountID: accountID,
+			TargetURL: target,
+			Content:   strings.TrimSpace(content),
+			Status:    status,
+			AIModel:   "agent",
+		}); err != nil {
+			return "", err
+		}
+		queued++
+	}
+	return fmt.Sprintf("queued_group_posts=%d skipped=%d status=%s", queued, skipped, status), nil
+}
+
 func openCrawlTaskID(intent string, sources []jobs.Source, args map[string]any) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|day=%s|", intent, time.Now().UTC().Format("2006-01-02"))
 	for _, src := range sources {
 		fmt.Fprintf(h, "%s:%s|", src.Type, src.URL)
 	}
-	fmt.Fprintf(h, "account=%d", argInt64(args, "account_id"))
+	fmt.Fprintf(h, "org=%d|account=%d", argInt64(args, "org_id"), argInt64(args, "account_id"))
 	return fmt.Sprintf("open-crawl-%x", h.Sum(nil))[:27]
 }
 
@@ -376,6 +664,26 @@ func argString(args map[string]any, key string) string {
 		return strings.TrimSpace(t.String())
 	default:
 		return strings.TrimSpace(fmt.Sprint(t))
+	}
+}
+
+func argBool(args map[string]any, key string) bool {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		s := strings.ToLower(strings.TrimSpace(t))
+		return s == "true" || s == "1" || s == "yes" || s == "auto"
+	case float64:
+		return t != 0
+	case int:
+		return t != 0
+	default:
+		return false
 	}
 }
 
@@ -400,6 +708,43 @@ func argInt64(args map[string]any, key string) int64 {
 	default:
 		return 0
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func orgContext(db *store.Store, orgID int64, key string) string {
+	value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
+	return strings.TrimSpace(value)
+}
+
+func businessContextForOrg(db *store.Store, orgID int64) string {
+	parts := []string{}
+	for _, item := range []struct {
+		label string
+		key   string
+	}{
+		{"Business profile", "business_profile"},
+		{"Private files", "private_files_summary"},
+		{"Connected data sources", "data_sources_summary"},
+	} {
+		if value := orgContext(db, orgID, item.key); value != "" {
+			parts = append(parts, item.label+":\n"+value)
+		}
+	}
+	if price := strings.TrimSpace(db.GetPriceListText()); price != "" {
+		parts = append(parts, price)
+	}
+	if len(parts) == 0 {
+		return "Business context is not configured yet. Avoid making claims about prices, inventory, guarantees, or policies."
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func splitKeywords(raw string) []string {

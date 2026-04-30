@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/thg/scraper/internal/models"
 )
@@ -22,7 +23,10 @@ func (s *Store) CreateOrganization(org *models.Organization) (int64, error) {
 // GetOrganization returns an organization by ID.
 func (s *Store) GetOrganization(id int64) (*models.Organization, error) {
 	row := s.db.QueryRow(`
-		SELECT id, name, domain, plan_tier, max_accounts, active, created_at
+		SELECT id, name, domain, plan_tier, max_accounts,
+		       COALESCE(abbr,''), COALESCE(color,'#4f46e5'),
+		       COALESCE(logo_path,''), COALESCE(avatar_path,''),
+		       active, created_at
 		FROM organizations WHERE id = ?`, id)
 	return scanOrg(row)
 }
@@ -30,7 +34,10 @@ func (s *Store) GetOrganization(id int64) (*models.Organization, error) {
 // GetOrganizationByDomain returns an organization by domain (for registration).
 func (s *Store) GetOrganizationByDomain(domain string) (*models.Organization, error) {
 	row := s.db.QueryRow(`
-		SELECT id, name, domain, plan_tier, max_accounts, active, created_at
+		SELECT id, name, domain, plan_tier, max_accounts,
+		       COALESCE(abbr,''), COALESCE(color,'#4f46e5'),
+		       COALESCE(logo_path,''), COALESCE(avatar_path,''),
+		       active, created_at
 		FROM organizations WHERE domain = ?`, domain)
 	org, err := scanOrg(row)
 	if err != nil || org == nil {
@@ -42,7 +49,10 @@ func (s *Store) GetOrganizationByDomain(domain string) (*models.Organization, er
 // ListOrganizations returns all organizations (superadmin only).
 func (s *Store) ListOrganizations() ([]models.Organization, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, domain, plan_tier, max_accounts, active, created_at
+		SELECT id, name, domain, plan_tier, max_accounts,
+		       COALESCE(abbr,''), COALESCE(color,'#4f46e5'),
+		       COALESCE(logo_path,''), COALESCE(avatar_path,''),
+		       active, created_at
 		FROM organizations ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -68,6 +78,28 @@ func (s *Store) UpdateOrganization(id int64, name, domain string, plan models.Pl
 	return err
 }
 
+func (s *Store) UpdateOrganizationBrand(id int64, name, domain, abbr, color string) error {
+	_, err := s.db.Exec(`
+		UPDATE organizations SET name=?, domain=?, abbr=?, color=?
+		WHERE id = ?`,
+		name, domain, abbr, color, id)
+	return err
+}
+
+func (s *Store) UpdateOrganizationAsset(id int64, kind, path string) error {
+	col := ""
+	switch kind {
+	case "logo":
+		col = "logo_path"
+	case "avatar":
+		col = "avatar_path"
+	default:
+		return fmt.Errorf("invalid asset kind")
+	}
+	_, err := s.db.Exec(`UPDATE organizations SET `+col+`=? WHERE id=?`, path, id)
+	return err
+}
+
 // CountAccountsByOrg returns how many FB accounts an org has.
 func (s *Store) CountAccountsByOrg(orgID int64) (int, error) {
 	var n int
@@ -78,7 +110,8 @@ func (s *Store) CountAccountsByOrg(orgID int64) (int, error) {
 func scanOrg(row scanner) (*models.Organization, error) {
 	var o models.Organization
 	var planTier string
-	err := row.Scan(&o.ID, &o.Name, &o.Domain, &planTier, &o.MaxAccounts, &o.Active, &o.CreatedAt)
+	var logoPath, avatarPath string
+	err := row.Scan(&o.ID, &o.Name, &o.Domain, &planTier, &o.MaxAccounts, &o.Abbr, &o.Color, &logoPath, &avatarPath, &o.Active, &o.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -86,5 +119,11 @@ func scanOrg(row scanner) (*models.Organization, error) {
 		return nil, err
 	}
 	o.PlanTier = models.PlanTier(planTier)
+	if logoPath != "" {
+		o.LogoURL = fmt.Sprintf("/api/public/org-assets/%d/logo", o.ID)
+	}
+	if avatarPath != "" {
+		o.AvatarURL = fmt.Sprintf("/api/public/org-assets/%d/avatar", o.ID)
+	}
 	return &o, nil
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getWorkspaces, startNewWorkspace, startWorkspace, stopWorkspace, setWorkspaceLoggedIn } from '../services/workspacesService';
-import { Workspace } from '../types';
+import { getWorkspaces, startNewWorkspace, startWorkspace, stopWorkspace, setWorkspaceLoggedIn, syncWorkspaceSession } from '../services/workspacesService';
+import { Workspace, WorkspaceSessionSnapshot } from '../types';
 
 export function useWorkspaces() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -64,5 +64,11 @@ export function useWorkspaces() {
     }
   };
 
-  return { workspaces, loading, actionLoading, refresh, start, startNew, stop, markLoggedIn };
+  const syncSession = async (id: number): Promise<WorkspaceSessionSnapshot> => {
+    const snapshot = await syncWorkspaceSession(id);
+    await refresh();
+    return snapshot;
+  };
+
+  return { workspaces, loading, actionLoading, refresh, start, startNew, stop, markLoggedIn, syncSession };
 }

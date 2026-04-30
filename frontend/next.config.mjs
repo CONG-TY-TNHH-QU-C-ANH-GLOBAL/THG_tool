@@ -17,6 +17,10 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: '/join/:token*',
+        destination: '/',
+      },
+      {
         source: '/api/:path*',
         destination: `${process.env.API_URL ?? 'http://localhost:8080'}/api/:path*`,
       },

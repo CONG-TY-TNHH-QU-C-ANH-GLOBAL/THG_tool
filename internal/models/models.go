@@ -103,6 +103,7 @@ type InboxMessage struct {
 // Lead represents an AI-classified lead derived from a post or comment.
 type Lead struct {
 	ID           int64     `json:"id" db:"id"`
+	OrgID        int64     `json:"org_id" db:"org_id"`
 	SourceType   string    `json:"source_type" db:"source_type"` // post, comment, inbox
 	SourceID     int64     `json:"source_id" db:"source_id"`
 	SourceURL    string    `json:"source_url" db:"source_url"` // URL of the original post
@@ -254,6 +255,7 @@ const (
 // OutboundMessage represents an auto-comment or auto-inbox message.
 type OutboundMessage struct {
 	ID         int64          `json:"id" db:"id"`
+	OrgID      int64          `json:"org_id" db:"org_id"`
 	Type       string         `json:"type" db:"type"` // comment, inbox
 	Platform   Platform       `json:"platform" db:"platform"`
 	AccountID  int64          `json:"account_id" db:"account_id"`
@@ -295,6 +297,7 @@ type CompanyImage struct {
 // One thread per profile URL — persists across sessions so AI always has context.
 type ConversationThread struct {
 	ID             int64     `json:"id"`
+	OrgID          int64     `json:"org_id"`
 	LeadID         int64     `json:"lead_id"`
 	Platform       Platform  `json:"platform"`
 	ProfileURL     string    `json:"profile_url"`  // lead's FB profile URL (unique key)

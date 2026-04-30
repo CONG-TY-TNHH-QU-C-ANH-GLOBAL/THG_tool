@@ -175,6 +175,45 @@ src/modules/autoflow/
 
 ## Design Token System
 
+## Data Private Component Update
+
+`DataPrivateView.tsx` should stay an orchestrator. Feature UI for the private
+knowledge hub is split into focused components under
+`components/data/`:
+
+- `DataStatsGrid.tsx`
+- `BusinessMemoryPanel.tsx`
+- `DataSourcesPanel.tsx`
+- `FileUploadPanel.tsx`
+- `ContextSummaryPanel.tsx`
+- `PrivateFilesTable.tsx`
+
+Server state for external data sources is owned by:
+
+- `services/dataSourceService.ts`
+- `hooks/useDataSources.ts`
+- backend `data_sources` table
+- backend handlers in `internal/server/data_connector_handlers.go`
+
+No Data Private panel should display fake source counts, fake sync state, or
+fake Drive media. Google Drive stays `needs_auth` until read-only Drive OAuth is
+implemented.
+
+## Outbound Automation State
+
+Outbound execution is API-backed through `outbound_messages`. Draft remains the
+default status, but explicit auto/execute prompts can queue rows as `approved`
+for local agents to send immediately. The final backend gate is
+`CanQueueOutboundForOrg`, which blocks duplicate comments, repeated inboxes
+inside cooldown, closed conversations, and non-org-scoped targets.
+
+Dashboard chat and Telegram must both call the org-scoped AI path
+`ProcessPromptForOrg`. Tool calls such as `search_groups`,
+`comment_all_leads`, `inbox_all_leads`, and `create_job_post` must produce real
+jobs/outbox rows, not fake UI state.
+
+## Design Token System
+
 Replace all inline style factories with typed constants:
 ```typescript
 // constants/styles.ts

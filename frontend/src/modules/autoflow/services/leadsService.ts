@@ -4,7 +4,8 @@ import * as api from './api';
 interface LeadsResponse { leads: BackendLead[]; count: number; }
 interface BackendLead {
   id: number; author: string; author_url: string; content: string;
-  score: string; niche: string; source_url: string; classified_at: string; created_at: string;
+  score: string; service_match: string; author_role: string; pain_point: string;
+  niche: string; source_url: string; classified_at: string; created_at: string;
 }
 
 function normalizeScore(s: string): LeadStatus {
@@ -12,16 +13,24 @@ function normalizeScore(s: string): LeadStatus {
   return map[s.toLowerCase()] ?? 'Cold';
 }
 
+function numericScore(s: LeadStatus): number {
+  if (s === 'Hot') return 92;
+  if (s === 'Warm') return 70;
+  return 45;
+}
+
 function toLead(b: BackendLead): Lead {
+  const status = normalizeScore(b.score);
   return {
     id: b.id,
     name: b.author || `Lead #${b.id}`,
-    status: normalizeScore(b.score),
+    status,
     group: b.niche,
-    agent: 'Agent_01',
+    agent: b.author_role || b.service_match || 'AI classifier',
     last: new Date(b.created_at).toLocaleDateString('vi'),
-    score: 50,
-    phone: '',
+    score: numericScore(status),
+    phone: b.pain_point || '',
+    facebookUrl: b.author_url || b.source_url,
   };
 }
 

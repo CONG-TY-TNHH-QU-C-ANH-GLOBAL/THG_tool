@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
 )
 
 const (
@@ -91,12 +92,14 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 	if err != nil || user == nil {
 		orgID := int64(0)
 		role := models.RoleAdmin
+		var provisionedClaim *store.ProvisionedOrgClaim
 		if claim, claimErr := s.db.FindProvisionedOrgByEmail(info.Email); claimErr != nil {
 			log.Printf("[GoogleAuth] Provisioned org lookup failed: %v", claimErr)
 			return redirectWithError(c, "workspace assignment failed")
 		} else if claim != nil {
 			orgID = claim.OrgID
 			role = claim.Role
+			provisionedClaim = claim
 		}
 		// Auto-create user with org_id=0; they'll be sent to onboarding.
 		newID, createErr := s.db.CreateUser(&models.User{
@@ -109,6 +112,10 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 		if createErr != nil {
 			log.Printf("[GoogleAuth] Auto-create user failed: %v", createErr)
 			return redirectWithError(c, "failed to create account")
+		}
+		if claimErr := s.completeProvisionedClaim(newID, provisionedClaim, c.IP()); claimErr != nil {
+			log.Printf("[GoogleAuth] Complete provisioned claim failed: %v", claimErr)
+			return redirectWithError(c, "workspace assignment failed")
 		}
 		user, err = s.db.GetUserByID(newID)
 		if err != nil || user == nil {

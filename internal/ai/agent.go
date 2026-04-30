@@ -47,15 +47,31 @@ func (a *Agent) Available() bool {
 // ProcessPrompt takes a user prompt, sends it to OpenAI with function definitions,
 // and executes the appropriate action. Returns the AI response text.
 func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (string, error) {
+	return a.ProcessPromptForOrg(ctx, prompt, source, 0)
+}
+
+// ProcessPromptForOrg runs a prompt with tenant-scoped business context and
+// injects org_id into production tool calls.
+func (a *Agent) ProcessPromptForOrg(ctx context.Context, prompt, source string, orgID int64) (string, error) {
 	if !a.Available() {
 		return "", fmt.Errorf("OpenAI API key not configured")
 	}
 
 	// Load dynamic user context (business rules, niche, etc.)
 	userContext := a.loadUserContext()
+	if orgID > 0 {
+		for _, key := range []string{"business_profile", "private_files_summary", "data_sources_summary", "outbound_mode"} {
+			if v, err := a.db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); err == nil && strings.TrimSpace(v) != "" {
+				userContext["org_"+key] = strings.TrimSpace(v)
+			}
+		}
+		if userContext["org_business_profile"] != "" {
+			userContext["business_desc"] = userContext["org_business_profile"]
+		}
+	}
 
 	// Load accounts for AI account mapping
-	accounts, _ := a.db.GetAllAccounts(0)
+	accounts, _ := a.db.GetAllAccounts(orgID)
 
 	// Get semantically relevant few-shot examples
 	fewShots := a.getFewShotExamples(prompt)
@@ -128,6 +144,15 @@ func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (strin
 
 			var args map[string]any
 			_ = json.Unmarshal([]byte(fnArgs), &args)
+			if args == nil {
+				args = map[string]any{}
+			}
+			if orgID > 0 {
+				args["org_id"] = orgID
+			}
+			if wantsAutoOutbound(prompt) {
+				args["auto"] = true
+			}
 
 			if a.ActionHandler != nil {
 				fnResult, err := a.ActionHandler(fnName, args)
@@ -176,6 +201,22 @@ func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (strin
 	}
 
 	return responseText, nil
+}
+
+func wantsAutoOutbound(prompt string) bool {
+	lower := strings.ToLower(prompt)
+	triggers := []string{
+		"gửi luôn", "gui luon", "chạy luôn", "chay luon", "tự động", "tu dong",
+		"không cần duyệt", "khong can duyet", "auto", "automation hết", "automation het",
+		"comment lên", "comment len", "inbox leads", "inbox tất cả", "inbox tat ca",
+		"post lên", "post len", "đăng lên", "dang len", "posting",
+	}
+	for _, t := range triggers {
+		if strings.Contains(lower, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Dynamic Context ---
@@ -264,6 +305,17 @@ KHÔNG hành xử như generic assistant. Mọi action phải phục vụ busine
 	}
 
 	// ── ACCOUNTS ─────────────────────────────────────────────────────────────
+	if files := strings.TrimSpace(userCtx["org_private_files_summary"]); files != "" {
+		sb.WriteString("## PRIVATE FILES SUMMARY\n")
+		sb.WriteString(files)
+		sb.WriteString("\n\n")
+	}
+	if sources := strings.TrimSpace(userCtx["org_data_sources_summary"]); sources != "" {
+		sb.WriteString("## CONNECTED DATA SOURCES SUMMARY\n")
+		sb.WriteString(sources)
+		sb.WriteString("\n\n")
+	}
+
 	if len(accounts) > 0 {
 		sb.WriteString("## TÀI KHOẢN FACEBOOK (ACCOUNT MAPPING)\n")
 		sb.WriteString("Danh sách accounts hiện có. Khi user đề cập đến account, map về account_id và LUÔN truyền vào tool call:\n\n")

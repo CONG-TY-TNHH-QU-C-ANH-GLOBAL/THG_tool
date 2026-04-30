@@ -44,6 +44,17 @@ rules. This is a Claude-style workflow designer, not arbitrary code execution.
   session, livesession, runtime, and browser packages.
 - Task execution: prompt-scoped jobs, not broad fixed scrapes.
 - Auth: JWT access tokens plus HTTP-only refresh cookie.
+- Dashboard data is expected to be API-backed. Do not reintroduce fake cards for
+  Settings, Staff, AI Agents, Billing, Posting, Commenting, Inbox, Leads, or
+  Data Private.
+- Data Private is now a knowledge hub:
+  - manual uploads are stored in `private_files`
+  - business memory is stored per org in `user_context` keys prefixed with
+    `org:{id}:`
+  - external data connectors are stored in `data_sources`
+  - Google Sheets quick sync reads published/exportable CSV data into AI context
+  - Google Drive sources are registered as `needs_auth` until read-only Drive
+    OAuth is implemented; do not fake Drive media sync
 
 Legacy embedded static frontend files under `internal/server/static/` are not
 the production UI and must not be reintroduced.
@@ -64,8 +75,18 @@ the production UI and must not be reintroduced.
   query, source, or campaign context.
 - Default outbound comments, inbox messages, and posts to draft or
   approval-required.
+- Explicit auto/execution mode is allowed only for an org/campaign/prompt that
+  asks for it. Even then, outbound must pass org-scoped dedup, cooldown, and
+  conversation-thread guardrails before entering `approved` outbox state.
+- AI must treat inbox as customer-service state, not one-shot blasting: if a
+  lead replied, answer the latest reply with thread context; if they have not
+  replied, do not keep sending repeated inbox messages inside the cooldown.
 - If Facebook shows login wall/checkpoint, return `human_required`.
 - Do not generate AI images. Only use real user-uploaded files/images.
+- External business data connectors must be org-scoped, read-only by default,
+  auditable, and explicit. Never scan a user's entire Google Drive.
+- AI context should be summarized/retrieved from org data sources; do not dump
+  large raw files or sheets directly into prompts.
 
 ## Important Code Areas
 
@@ -81,20 +102,35 @@ the production UI and must not be reintroduced.
 - Task schema: `internal/jobs/model.go`
 - App task/leads store: `internal/store/app_store.go`
 - Org/account/user store: `internal/store/`
+- Data Private and connectors:
+  - `internal/server/autoflow_handlers.go`
+  - `internal/server/data_connector_handlers.go`
+  - `internal/store/data_sources.go`
+  - `frontend/src/modules/autoflow/components/views/DataPrivateView.tsx`
+  - `frontend/src/modules/autoflow/components/data/`
+  - `frontend/src/modules/autoflow/services/dataSourceService.ts`
+- Outbound automation guardrails:
+  - `cmd/scraper/main.go` wires `search_groups`, `comment_all_leads`,
+    `inbox_all_leads`, and `create_job_post` into real jobs/outbox rows.
+  - `internal/store/store.go` owns `CanQueueOutboundForOrg`, conversation
+    thread state, and org-scoped lead retrieval for automation.
+  - Dashboard and Telegram prompts should call `ProcessPromptForOrg` so account
+    mapping, data context, and outbound actions stay tenant-scoped.
 
 ## Implementation Guidance
 
 When adding business-analysis features, prefer this sequence:
 
 1. Org-scoped business profile.
-2. Customer segments.
-3. Market signals.
-4. Source catalog and discovery.
-5. Strategy recommendations.
-6. Campaign approval.
-7. Outcome learning.
-8. Workspace Skill Designer and blueprint validation.
-9. HR/recruitment reference blueprint.
+2. Private data connectors and business memory.
+3. Customer segments.
+4. Market signals.
+5. Source catalog and discovery.
+6. Strategy recommendations.
+7. Campaign approval.
+8. Outcome learning.
+9. Workspace Skill Designer and blueprint validation.
+10. HR/recruitment reference blueprint.
 
 For Go changes, run:
 

@@ -1,23 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { StaffMember, MemberStatus } from '../types';
-import { getStaff, addStaff, updateStaffStatus, deleteStaff } from '../services/staffService';
+import type { StaffInvite, StaffMember, MemberStatus } from '../types';
+import { getStaff, getStaffInvites, inviteStaff, resendStaffInvite, revokeStaffInvite, updateStaffStatus, deleteStaff } from '../services/staffService';
 
 export function useStaff(orgId: string) {
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [invites, setInvites] = useState<StaffInvite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
-    getStaff(orgId).then(data => {
-      if (!cancelled) { setStaff(data); setIsLoading(false); }
-    });
+    Promise.allSettled([getStaff(orgId), getStaffInvites(orgId)])
+      .then(([members, pending]) => {
+        if (!cancelled) {
+          if (members.status === 'fulfilled') setStaff(members.value);
+          if (pending.status === 'fulfilled') setInvites(pending.value);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoading(false);
+      });
     return () => { cancelled = true; };
   }, [orgId]);
 
-  const add = useCallback(async (data: Pick<StaffMember, 'name' | 'email' | 'role'>) => {
-    const member = await addStaff(orgId, data);
-    setStaff(prev => [...prev, member]);
+  const invite = useCallback(async (data: Pick<StaffMember, 'email' | 'role'>) => {
+    const created = await inviteStaff(orgId, data);
+    setInvites(prev => [created, ...prev]);
+    return created;
+  }, [orgId]);
+
+  const revokeInvite = useCallback(async (inviteId: number) => {
+    await revokeStaffInvite(orgId, inviteId);
+    setInvites(prev => prev.filter(inv => inv.id !== inviteId));
+  }, [orgId]);
+
+  const resendInvite = useCallback(async (inviteId: number) => {
+    const updated = await resendStaffInvite(orgId, inviteId);
+    setInvites(prev => prev.map(inv => inv.id === inviteId ? { ...inv, ...updated } : inv));
+    return updated;
   }, [orgId]);
 
   const toggleStatus = useCallback(async (staffId: number) => {
@@ -33,5 +54,5 @@ export function useStaff(orgId: string) {
     setStaff(prev => prev.filter(s => s.id !== staffId));
   }, [orgId]);
 
-  return { staff, isLoading, add, toggleStatus, remove };
+  return { staff, invites, isLoading, invite, resendInvite, revokeInvite, toggleStatus, remove };
 }

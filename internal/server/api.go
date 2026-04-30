@@ -21,6 +21,7 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/mailer"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
@@ -42,6 +43,8 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURI  string
+
+	Mailer mailer.Config
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -238,6 +241,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// Public health check (no auth required)
 	api.Get("/stats", s.getStats)
+	api.Get("/public/org-assets/:orgID/:kind", s.serveOrgAsset)
 	api.Post("/onboarding/setup", authpkg.RequireAuth(cfg.JWTSecret), s.onboardingSetup)
 
 	// Protected API routes — require JWT
@@ -312,10 +316,12 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Org self-service (any authenticated user sees their org)
 	r.Get("/org", s.getMyOrg)
 	r.Put("/org", authpkg.RequireRole("admin"), s.updateOrg)
+	r.Post("/org/assets/:kind", adminOnly, s.uploadOrgAsset)
 
 	// Org invites — admin creates/lists/revokes invite links
 	r.Post("/org/invites", adminOnly, s.createInvite)
 	r.Get("/org/invites", adminOnly, s.listInvites)
+	r.Post("/org/invites/:id/resend", adminOnly, s.resendInvite)
 	r.Delete("/org/invites/:id", adminOnly, s.revokeInvite)
 
 	// Superadmin: org management — /superadmin prefix keeps it separate from /admin
@@ -343,6 +349,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Post("/browser/workspaces/:id/start", s.workspaceStart)
 	r.Post("/browser/workspaces/:id/stop", s.workspaceStop)
 	r.Post("/browser/workspaces/:id/navigate", s.workspaceNavigate)
+	r.Post("/browser/workspaces/:id/sync-session", s.workspaceSyncSession)
 	r.Post("/browser/workspaces/:id/set-logged-in", s.workspaceSetLoggedIn)
 	r.Post("/browser/workspaces/:id/resolve-checkpoint", s.resolveCheckpoint)
 	r.Get("/browser/checkpoints", s.listCheckpoints)
@@ -359,6 +366,9 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// Analytics
 	r.Get("/analytics/sentiment", s.getSentimentStats)
+	r.Get("/billing/summary", s.billingSummary)
+	r.Get("/context/business", s.getBusinessContext)
+	r.Put("/context/business", s.updateBusinessContext)
 
 	// AutoFlow: Staff KPI
 	r.Get("/staff", s.autoflowGetStaff)
@@ -372,6 +382,10 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Get("/files", s.autoflowListFiles)
 	r.Post("/files", s.autoflowUploadFile)
 	r.Delete("/files/:id", s.autoflowDeleteFile)
+	r.Get("/data-sources", s.listDataSources)
+	r.Post("/data-sources", adminOnly, s.createDataSource)
+	r.Post("/data-sources/:id/sync", adminOnly, s.syncDataSource)
+	r.Delete("/data-sources/:id", adminOnly, s.deleteDataSource)
 
 	// AutoFlow: Conversation Threads
 	r.Get("/threads", s.autoflowListThreads)
@@ -881,7 +895,20 @@ func (s *Server) aiPrompt(c *fiber.Ctx) error {
 		return c.Status(503).JSON(fiber.Map{"error": "AI agent not configured (check OPENAI_API_KEY)"})
 	}
 
-	response, err := s.agent.ProcessPrompt(c.Context(), req.Prompt, "dashboard")
+	prompt := req.Prompt
+	if orgID, ok := c.Locals("org_id").(int64); ok && orgID > 0 {
+		if profile, _ := s.db.GetContext(orgContextKey(orgID, "business_profile")); profile != "" {
+			prompt = "Organization business context:\n" + profile + "\n\nUser request:\n" + prompt
+		}
+		if files, _ := s.db.GetContext(orgContextKey(orgID, "private_files_summary")); files != "" {
+			prompt = "Private uploaded data summary:\n" + files + "\n\n" + prompt
+		}
+		if sources, _ := s.db.GetContext(orgContextKey(orgID, "data_sources_summary")); sources != "" {
+			prompt = "Connected business data sources:\n" + sources + "\n\n" + prompt
+		}
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	response, err := s.agent.ProcessPromptForOrg(c.Context(), prompt, "dashboard", orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -901,14 +928,15 @@ func (s *Server) aiHistory(c *fiber.Ctx) error {
 // --- v3: Outbound Message Handlers ---
 
 func (s *Server) getOutbox(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	status := c.Query("status", "")
 	msgType := c.Query("type", "")
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
-	messages, err := s.db.GetOutboundByFilter(status, msgType, limit)
+	messages, err := s.db.GetOutboundByFilterForOrg(orgID, status, msgType, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	counts, _ := s.db.CountOutboundByStatus()
+	counts, _ := s.db.CountOutboundByStatusForOrg(orgID)
 	return c.JSON(fiber.Map{"messages": messages, "count": len(messages), "counts": counts})
 }
 
@@ -920,6 +948,7 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 		TargetName string `json:"target_name"`
 		Content    string `json:"content"` // manual content (optional, AI generates if empty)
 		Context    string `json:"context"` // original post for AI context
+		Auto       bool   `json:"auto"`    // true = queue as approved for immediate agent execution
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
@@ -928,8 +957,36 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 	if req.Type == "" {
 		req.Type = "comment"
 	}
+	if req.Type != "comment" && req.Type != "inbox" && req.Type != "group_post" {
+		return c.Status(400).JSON(fiber.Map{"error": "unsupported outbound type"})
+	}
+	orgID := c.Locals("org_id").(int64)
+	if req.AccountID <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "account_id is required"})
+	}
+	acct, err := s.db.GetAccount(req.AccountID)
+	if err != nil || acct == nil || acct.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+	}
 
+	guard, err := s.db.CanQueueOutboundForOrg(orgID, req.Type, req.TargetURL, req.TargetURL, 24*time.Hour)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if !guard.Allowed {
+		return c.Status(409).JSON(fiber.Map{
+			"error":       "outbound_blocked",
+			"reason":      guard.Reason,
+			"existing_id": guard.ExistingID,
+		})
+	}
+
+	status := models.OutboundDraft
+	if req.Auto {
+		status = models.OutboundApproved
+	}
 	msg := &models.OutboundMessage{
+		OrgID:      orgID,
 		Type:       req.Type,
 		Platform:   models.PlatformFacebook,
 		AccountID:  req.AccountID,
@@ -937,7 +994,7 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 		TargetName: req.TargetName,
 		Content:    req.Content,
 		Context:    req.Context,
-		Status:     models.OutboundDraft,
+		Status:     status,
 	}
 
 	id, err := s.db.InsertOutboundMessage(msg)
@@ -945,32 +1002,41 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.Status(201).JSON(fiber.Map{"message_id": id, "status": "draft"})
+	if status == models.OutboundApproved && s.wsHub != nil {
+		s.wsHub.NotifyOutboxReady(1)
+	}
+	return c.Status(201).JSON(fiber.Map{"message_id": id, "status": status})
 }
 
 func (s *Server) approveOutbound(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.UpdateOutboundStatus(id, models.OutboundApproved); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundApproved); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
+	}
+	if s.wsHub != nil {
+		s.wsHub.NotifyOutboxReady(1)
 	}
 	return c.JSON(fiber.Map{"status": "approved", "message": "Đã duyệt! Tin nhắn sẽ được gửi tự động."})
 }
 
 func (s *Server) rejectOutbound(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.UpdateOutboundStatus(id, models.OutboundRejected); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundRejected); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
 	}
 	return c.JSON(fiber.Map{"status": "rejected"})
 }
 
 func (s *Server) editOutbound(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
@@ -981,25 +1047,27 @@ func (s *Server) editOutbound(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-	if err := s.db.UpdateOutboundContent(id, req.Content); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.UpdateOutboundContentForOrg(orgID, id, req.Content); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
 	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
 
 func (s *Server) deleteOutbound(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.DeleteOutbound(id); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	if err := s.db.DeleteOutboundForOrg(orgID, id); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
 	}
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
 func (s *Server) deleteAllOutboundComments(c *fiber.Ctx) error {
-	count, err := s.db.DeleteAllOutboundComments()
+	orgID := c.Locals("org_id").(int64)
+	count, err := s.db.DeleteAllOutboundCommentsForOrg(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

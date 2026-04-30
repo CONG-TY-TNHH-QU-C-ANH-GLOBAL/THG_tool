@@ -13,6 +13,7 @@ function toFileRecord(b: BackendFile): FileRecord {
     id: b.id,
     name: b.name,
     size,
+    sizeBytes: b.size_bytes,
     date: new Date(b.created_at).toLocaleDateString('vi', { day: '2-digit', month: '2-digit' }),
   };
 }

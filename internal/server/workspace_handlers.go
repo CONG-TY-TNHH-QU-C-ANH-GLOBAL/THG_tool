@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
@@ -30,6 +31,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		AccountName  string     `json:"account_name"`
 		Status       string     `json:"account_status"`
 		LoggedIn     bool       `json:"logged_in"`
+		FBUserID     string     `json:"fb_user_id,omitempty"`
 		Running      bool       `json:"running"`
 		CDPPort      int        `json:"cdp_port,omitempty"`
 		VNCPort      int        `json:"vnc_port,omitempty"`
@@ -46,6 +48,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 			AccountName: acc.Name,
 			Status:      string(acc.Status),
 			LoggedIn:    acc.BrowserLoggedIn,
+			FBUserID:    acc.FBUserID,
 		}
 		if s.workspace != nil {
 			if inst := s.workspace.Get(acc.ID); inst != nil {
@@ -242,6 +245,103 @@ func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
 	return c.Status(501).JSON(fiber.Map{
 		"error": "navigate is not available in browser-view mode; use the browser directly via the dashboard",
 	})
+}
+
+type facebookSessionSnapshot struct {
+	AccountID    int64  `json:"account_id"`
+	AccountName  string `json:"account_name"`
+	LoggedIn     bool   `json:"logged_in"`
+	FBUserID     string `json:"fb_user_id,omitempty"`
+	StoredFBID   string `json:"stored_fb_user_id,omitempty"`
+	CurrentURL   string `json:"current_url,omitempty"`
+	CurrentTitle string `json:"current_title,omitempty"`
+	Checkpoint   bool   `json:"checkpoint"`
+	CookieError  string `json:"cookie_error,omitempty"`
+}
+
+// workspaceSyncSession probes the running browser and persists the Facebook
+// identity when the c_user cookie is available.
+// POST /api/browser/workspaces/:id/sync-session
+func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	acc, err := s.db.GetAccount(id)
+	if err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 && acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	}
+	if s.workspace == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+	}
+	inst := s.workspace.Get(id)
+	if inst == nil || inst.CDPPort == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
+	}
+
+	snap, err := facebookSessionSnapshotFromCDP(inst.CDPPort)
+	if err != nil {
+		return c.Status(503).JSON(fiber.Map{"error": "session probe failed: " + err.Error()})
+	}
+	snap.AccountID = id
+	snap.AccountName = acc.Name
+	snap.StoredFBID = acc.FBUserID
+
+	if snap.FBUserID != "" {
+		if acc.FBUserID != "" && acc.FBUserID != snap.FBUserID {
+			return c.Status(409).JSON(fiber.Map{
+				"error": "this browser profile is logged into a different Facebook user; use a separate account slot for multi-account automation",
+			})
+		}
+		if err := s.db.SetBrowserLoggedIn(id, true, snap.FBUserID); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+		snap.LoggedIn = true
+		snap.StoredFBID = snap.FBUserID
+		if appStore, err := store.NewAppStore(s.db); err == nil {
+			if sess, err := appStore.GetSession(context.Background(), id); err == nil && sess != nil && sess.Status != "terminated" {
+				sess.Status = "idle"
+				sess.LastActiveAt = time.Now().UTC()
+				sess.ErrorMsg = ""
+				sess.CDPPort = inst.CDPPort
+				sess.VNCPort = inst.VNCPort
+				_ = appStore.UpsertSession(context.Background(), *sess)
+			}
+		}
+	}
+
+	return c.JSON(snap)
+}
+
+func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, error) {
+	targets, err := fetchCDPTargets(cdpPort)
+	if err != nil {
+		return nil, err
+	}
+	snap := &facebookSessionSnapshot{}
+	for _, t := range targets {
+		if t.Type != "page" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(t.URL), "facebook.com") || snap.CurrentURL == "" {
+			snap.CurrentURL = t.URL
+			snap.CurrentTitle = t.Title
+		}
+	}
+
+	lower := strings.ToLower(snap.CurrentURL + " " + snap.CurrentTitle)
+	snap.Checkpoint = strings.Contains(lower, "checkpoint") || strings.Contains(lower, "security")
+
+	fbUserID, err := facebookUserIDFromCDP(cdpPort)
+	if err != nil {
+		snap.CookieError = err.Error()
+		return snap, nil
+	}
+	snap.FBUserID = fbUserID
+	snap.LoggedIn = fbUserID != ""
+	return snap, nil
 }
 
 // workspaceSetLoggedIn marks whether an account has successfully logged into Facebook.

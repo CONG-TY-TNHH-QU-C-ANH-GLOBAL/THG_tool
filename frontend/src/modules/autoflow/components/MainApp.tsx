@@ -6,10 +6,11 @@ import { get } from '../services/api';
 import SettingsPage from './SettingsPage';
 import {
   Users, Globe, MessageSquare, FileText, MessageCircle,
-  Trophy, Database, Settings, Zap, Bell,
+  Trophy, Database, Settings, Zap, Bell, Bot,
 } from 'lucide-react';
 
 const LeadsView      = lazy(() => import('./views/LeadsView'));
+const WorkspaceChatView = lazy(() => import('./views/WorkspaceChatView'));
 const BrowserView    = lazy(() => import('./views/BrowserView'));
 const InboxView      = lazy(() => import('./views/InboxView'));
 const PostingView    = lazy(() => import('./views/PostingView'));
@@ -17,7 +18,7 @@ const CommentingView = lazy(() => import('./views/CommentingView'));
 const LeaderboardView = lazy(() => import('./views/LeaderboardView'));
 const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
 
-type Tab = 'leads' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'data' | 'settings';
+type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'data' | 'settings';
 
 interface MainAppProps {
   role: 'admin' | 'staff';
@@ -28,6 +29,7 @@ interface NavItem { id: Tab; l: string; I: React.ComponentType<{ size?: number |
 
 const ADMIN_TABS: NavItem[] = [
   { id: 'leads',       l: 'Leads',        I: Users },
+  { id: 'chat',        l: 'Chat',         I: Bot },
   { id: 'browser',     l: 'Browser',      I: Globe },
   { id: 'inbox',       l: 'Inbox',        I: MessageSquare, badge: 8 },
   { id: 'posting',     l: 'Posting',      I: FileText },
@@ -38,13 +40,14 @@ const ADMIN_TABS: NavItem[] = [
 
 const STAFF_TABS: NavItem[] = [
   { id: 'leads',       l: 'My Leads',     I: Users },
+  { id: 'chat',        l: 'Chat',         I: Bot },
   { id: 'inbox',       l: 'Inbox',        I: MessageSquare, badge: 3 },
   { id: 'leaderboard', l: 'Leaderboard',  I: Trophy },
   { id: 'data',        l: 'Data Private', I: Database },
 ];
 
 const TAB_LABELS: Record<Tab, string> = {
-  leads: 'Leads', browser: 'Browser', inbox: 'Inbox', posting: 'Posting',
+  leads: 'Leads', chat: 'Chat', browser: 'Browser', inbox: 'Inbox', posting: 'Posting',
   commenting: 'Commenting', leaderboard: 'Leaderboard', data: 'Data Private', settings: 'Settings',
 };
 
@@ -88,6 +91,7 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
   const renderView = () => {
     switch (tab) {
       case 'leads':       return <LeadsView orgId={orgId} isAdmin={isAdmin} />;
+      case 'chat':        return <WorkspaceChatView orgId={orgId} />;
       case 'browser':     return <BrowserView orgId={orgId} />;
       case 'inbox':       return <InboxView orgId={orgId} />;
       case 'posting':     return <PostingView orgId={orgId} />;

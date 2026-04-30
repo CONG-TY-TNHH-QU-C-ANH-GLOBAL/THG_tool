@@ -114,6 +114,7 @@ func (s *Store) migrate() error {
 
 	CREATE TABLE IF NOT EXISTS leads (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL DEFAULT 0,
 		source_type TEXT NOT NULL,
 		source_id INTEGER NOT NULL,
 		source_url TEXT DEFAULT '',
@@ -213,6 +214,7 @@ func (s *Store) migrate() error {
 
 	CREATE TABLE IF NOT EXISTS outbound_messages (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL DEFAULT 0,
 		type TEXT NOT NULL DEFAULT 'comment',
 		platform TEXT NOT NULL DEFAULT 'facebook',
 		account_id INTEGER NOT NULL DEFAULT 0,
@@ -362,6 +364,13 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN source_url TEXT DEFAULT ''`)
 	// Auto-migrate: add image_path to outbound_messages if missing
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`UPDATE outbound_messages
+		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
+		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_org_status ON outbound_messages(org_id, status, type)`)
+	s.db.Exec(`ALTER TABLE leads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_score ON leads(org_id, score)`)
 	// Auto-migrate: add niche to leads if missing
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN niche TEXT DEFAULT 'logistics'`)
 	// Auto-migrate: add source_url to company_images if missing
@@ -378,18 +387,30 @@ func (s *Store) migrate() error {
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id     INTEGER NOT NULL,
 		email      TEXT NOT NULL DEFAULT '',
+		role       TEXT NOT NULL DEFAULT 'sales',
 		token      TEXT NOT NULL UNIQUE,
 		created_by INTEGER NOT NULL,
 		expires_at DATETIME NOT NULL,
 		used_at    DATETIME,
+		accepted_by INTEGER NOT NULL DEFAULT 0,
+		email_status TEXT NOT NULL DEFAULT 'pending',
+		email_sent_at DATETIME,
+		email_error TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`)
+	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN role TEXT NOT NULL DEFAULT 'sales'`)
+	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN accepted_by INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN email_status TEXT NOT NULL DEFAULT 'pending'`)
+	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN email_sent_at DATETIME`)
+	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN email_error TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_token ON org_invites(token)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email, used_at, expires_at)`)
 
 	// Agent tokens: staff download the agent binary and authenticate with these tokens
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS agent_tokens (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL DEFAULT 0,
 		name TEXT NOT NULL,
 		token_hash TEXT NOT NULL UNIQUE,
 		created_by INTEGER NOT NULL DEFAULT 0,
@@ -400,7 +421,12 @@ func (s *Store) migrate() error {
 		active INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`UPDATE agent_tokens
+		SET org_id = COALESCE((SELECT org_id FROM users WHERE users.id = agent_tokens.created_by), org_id)
+		WHERE COALESCE(org_id,0) = 0 AND created_by > 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_org ON agent_tokens(org_id, active)`)
 
 	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches
 	// These are logistics groups that must not be touched by the recruitment pipeline
@@ -504,13 +530,37 @@ func (s *Store) migrate() error {
 	)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_private_files_org ON private_files(org_id)`)
 
+	// AutoFlow: org-scoped external data sources (Sheets/Drive/other connectors)
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS data_sources (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id        INTEGER NOT NULL,
+		type          TEXT NOT NULL,
+		name          TEXT NOT NULL,
+		source_url    TEXT NOT NULL DEFAULT '',
+		status        TEXT NOT NULL DEFAULT 'pending',
+		item_count    INTEGER NOT NULL DEFAULT 0,
+		summary       TEXT NOT NULL DEFAULT '',
+		metadata_json TEXT NOT NULL DEFAULT '{}',
+		last_error    TEXT NOT NULL DEFAULT '',
+		last_sync_at  DATETIME,
+		created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_data_sources_org ON data_sources(org_id, type, status)`)
+	s.db.Exec(`ALTER TABLE data_sources ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`)
+	s.db.Exec(`ALTER TABLE data_sources ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`)
+
 	// AutoFlow: extend conversation_threads with org scoping and unread tracking
 	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+	s.db.Exec(`DROP INDEX IF EXISTS idx_thread_profile`)
+	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_org_profile ON conversation_threads(org_id, profile_url)`)
 
 	// AutoFlow: extend organizations with branding fields
 	s.db.Exec(`ALTER TABLE organizations ADD COLUMN abbr TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE organizations ADD COLUMN color TEXT NOT NULL DEFAULT '#4f46e5'`)
+	s.db.Exec(`ALTER TABLE organizations ADD COLUMN logo_path TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE organizations ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''`)
 
 	return nil
 }
@@ -939,9 +989,9 @@ func (s *Store) InsertLead(l *models.Lead) (int64, error) {
 		l.Niche = "logistics"
 	}
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO leads (source_type, source_id, source_url, platform, author, author_url, content, score, service_match, author_role, pain_point, ai_reasoning, niche, classified_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.SourceType, l.SourceID, l.SourceURL, l.Platform, l.Author, l.AuthorURL, l.Content,
+		`INSERT OR IGNORE INTO leads (org_id, source_type, source_id, source_url, platform, author, author_url, content, score, service_match, author_role, pain_point, ai_reasoning, niche, classified_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.OrgID, l.SourceType, l.SourceID, l.SourceURL, l.Platform, l.Author, l.AuthorURL, l.Content,
 		l.Score, l.ServiceMatch, l.AuthorRole, l.PainPoint, l.AIReasoning, l.Niche, l.ClassifiedAt,
 	)
 	if err != nil {
@@ -957,7 +1007,7 @@ func (s *Store) GetLeads(score string, limit, offset int) ([]models.Lead, error)
 
 // GetLeadsFiltered returns leads filtered by score, niche, and org. orgID=0 returns all.
 func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID int64) ([]models.Lead, error) {
-	query := `SELECT l.id, l.source_type, l.source_id,
+	query := `SELECT l.id, COALESCE(l.org_id,0), l.source_type, l.source_id,
 	           COALESCE(NULLIF(l.source_url, ''), p.url, '') as source_url,
 	           l.platform, l.author, l.author_url, l.content, l.score, l.service_match,
 	           l.author_role, l.pain_point, l.ai_reasoning, COALESCE(NULLIF(l.niche,''),'logistics'),
@@ -970,7 +1020,7 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	var args []any
 	var where []string
 	if orgID > 0 {
-		where = append(where, "(g.org_id = ? OR p.group_id IS NULL)")
+		where = append(where, "(COALESCE(NULLIF(l.org_id,0), g.org_id, 0) = ?)")
 		args = append(args, orgID)
 	}
 	if score != "" {
@@ -996,7 +1046,7 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	var leads []models.Lead
 	for rows.Next() {
 		var l models.Lead
-		if err := rows.Scan(&l.ID, &l.SourceType, &l.SourceID, &l.SourceURL, &l.Platform,
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceType, &l.SourceID, &l.SourceURL, &l.Platform,
 			&l.Author, &l.AuthorURL, &l.Content, &l.Score, &l.ServiceMatch,
 			&l.AuthorRole, &l.PainPoint, &l.AIReasoning, &l.Niche,
 			&l.ClassifiedAt, &l.CreatedAt, &l.Commented); err != nil {
@@ -1005,6 +1055,101 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 		leads = append(leads, l)
 	}
 	return leads, nil
+}
+
+// GetAutomationLeadsForOrg returns leads that automation can act on. It reads
+// both the legacy leads table and the prompt-scoped task_leads table used by
+// the open crawler, then deduplicates by post/profile target.
+func (s *Store) GetAutomationLeadsForOrg(orgID int64, score string, limit int) ([]models.Lead, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	legacy, err := s.GetLeadsFiltered(normalizeLeadScoreFilter(score), "", limit, 0, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]models.Lead, 0, limit)
+	seen := map[string]bool{}
+	add := func(l models.Lead) {
+		if len(out) >= limit {
+			return
+		}
+		key := strings.TrimSpace(l.AuthorURL)
+		if key == "" {
+			key = strings.TrimSpace(l.SourceURL)
+		}
+		if key == "" {
+			key = fmt.Sprintf("lead:%d", l.ID)
+		}
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, l)
+	}
+	for _, l := range legacy {
+		add(l)
+	}
+	if len(out) >= limit {
+		return out, nil
+	}
+
+	if taskLeads, err := s.getTaskLeadsForAutomation(orgID, score, limit-len(out)); err == nil {
+		for _, l := range taskLeads {
+			add(l)
+		}
+	} else if !strings.Contains(err.Error(), "no such table") {
+		return out, err
+	}
+	return out, nil
+}
+
+func normalizeLeadScoreFilter(score string) string {
+	score = strings.ToLower(strings.TrimSpace(score))
+	switch score {
+	case "", "all":
+		return ""
+	case "hot", "warm", "cold":
+		return score
+	default:
+		return ""
+	}
+}
+
+func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) ([]models.Lead, error) {
+	query := `SELECT id, org_id, source_url, author_profile_url, author_name, content, lead_score, category, created_at
+		FROM task_leads WHERE org_id = ?`
+	args := []any{orgID}
+	if f := normalizeLeadScoreFilter(score); f != "" {
+		query += ` AND category = ?`
+		args = append(args, f)
+	}
+	query += ` ORDER BY lead_score DESC, created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var leads []models.Lead
+	for rows.Next() {
+		var l models.Lead
+		var numericScore float64
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceURL, &l.AuthorURL, &l.Author, &l.Content, &numericScore, &l.Score, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		l.SourceType = "task_lead"
+		l.Platform = models.PlatformFacebook
+		l.ServiceMatch = string(l.Score)
+		l.AuthorRole = "AI classifier"
+		l.PainPoint = fmt.Sprintf("score %.0f", numericScore)
+		l.ClassifiedAt = l.CreatedAt
+		leads = append(leads, l)
+	}
+	return leads, rows.Err()
 }
 
 // DeleteLead removes a lead by ID.
@@ -1415,9 +1560,9 @@ func DedupHash(platform, contentType, url, author, date, content string) string 
 // InsertOutboundMessage creates a new outbound message in the queue.
 func (s *Store) InsertOutboundMessage(msg *models.OutboundMessage) (int64, error) {
 	result, err := s.db.Exec(
-		`INSERT INTO outbound_messages (type, platform, account_id, target_url, target_name, content, context, image_path, status, ai_model)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.Status, msg.AIModel,
+		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, status, ai_model)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.Status, msg.AIModel,
 	)
 	if err != nil {
 		return 0, err
@@ -1425,9 +1570,79 @@ func (s *Store) InsertOutboundMessage(msg *models.OutboundMessage) (int64, error
 	return result.LastInsertId()
 }
 
+// OutboundGuardDecision is the queue-level safety check result for automated
+// comments/inbox messages. AI can propose actions, but this guard is the final
+// production gate before anything reaches an executable outbox state.
+type OutboundGuardDecision struct {
+	Allowed        bool
+	Reason         string
+	ExistingID     int64
+	LastOutboundAt time.Time
+	LastInboundAt  time.Time
+}
+
+// CanQueueOutboundForOrg prevents repeated comments/messages against the same
+// post/profile unless the lead has replied and the conversation needs service.
+func (s *Store) CanQueueOutboundForOrg(orgID int64, msgType, targetURL, profileURL string, cooldown time.Duration) (OutboundGuardDecision, error) {
+	msgType = strings.TrimSpace(strings.ToLower(msgType))
+	targetURL = strings.TrimSpace(targetURL)
+	profileURL = strings.TrimSpace(profileURL)
+	if targetURL == "" {
+		return OutboundGuardDecision{Allowed: false, Reason: "missing_target_url"}, nil
+	}
+	if cooldown <= 0 {
+		cooldown = 24 * time.Hour
+	}
+
+	var existingID int64
+	var status string
+	var createdAt string
+	err := s.db.QueryRow(
+		`SELECT id, status, COALESCE(sent_at, created_at)
+		 FROM outbound_messages
+		 WHERE org_id = ? AND type = ? AND target_url = ?
+		   AND status NOT IN ('failed','rejected')
+		 ORDER BY created_at DESC LIMIT 1`,
+		orgID, msgType, targetURL,
+	).Scan(&existingID, &status, &createdAt)
+	if err != nil && err != sql.ErrNoRows {
+		return OutboundGuardDecision{}, err
+	}
+	if err == nil {
+		lastAt := parseSQLiteTime(createdAt)
+		if msgType == "comment" || status == string(models.OutboundDraft) || status == string(models.OutboundApproved) {
+			return OutboundGuardDecision{Allowed: false, Reason: "duplicate_outbound_target", ExistingID: existingID, LastOutboundAt: lastAt}, nil
+		}
+		if time.Since(lastAt) < cooldown {
+			return OutboundGuardDecision{Allowed: false, Reason: "outbound_cooldown_active", ExistingID: existingID, LastOutboundAt: lastAt}, nil
+		}
+	}
+
+	if msgType == "inbox" {
+		if profileURL == "" {
+			profileURL = targetURL
+		}
+		if thread, err := s.GetThreadByProfileForOrg(orgID, profileURL); err == nil && thread != nil {
+			if thread.Status == "closed" || thread.Status == "converted" {
+				return OutboundGuardDecision{Allowed: false, Reason: "conversation_closed", LastOutboundAt: thread.LastOutboundAt, LastInboundAt: thread.LastInboundAt}, nil
+			}
+			if !thread.LastInboundAt.IsZero() && thread.LastInboundAt.After(thread.LastOutboundAt) {
+				return OutboundGuardDecision{Allowed: true, Reason: "lead_replied", LastOutboundAt: thread.LastOutboundAt, LastInboundAt: thread.LastInboundAt}, nil
+			}
+			if !thread.LastOutboundAt.IsZero() && time.Since(thread.LastOutboundAt) < cooldown {
+				return OutboundGuardDecision{Allowed: false, Reason: "awaiting_reply_cooldown", LastOutboundAt: thread.LastOutboundAt, LastInboundAt: thread.LastInboundAt}, nil
+			}
+		} else if err != nil && err != sql.ErrNoRows {
+			return OutboundGuardDecision{}, err
+		}
+	}
+
+	return OutboundGuardDecision{Allowed: true, Reason: "ok"}, nil
+}
+
 // GetOutboundByStatus returns outbound messages filtered by status.
 func (s *Store) GetOutboundByStatus(status string, limit int) ([]models.OutboundMessage, error) {
-	query := `SELECT id, type, platform, account_id, target_url, target_name, content, context,
+	query := `SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
 		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
 		FROM outbound_messages`
 	var args []any
@@ -1446,24 +1661,23 @@ func (s *Store) GetOutboundByStatus(status string, limit int) ([]models.Outbound
 
 	var messages []models.OutboundMessage
 	for rows.Next() {
-		var m models.OutboundMessage
-		var sentAt string
-		err := rows.Scan(&m.ID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-			&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+		m, err := scanOutboundMessage(rows)
 		if err != nil {
 			continue
 		}
-		if sentAt != "" {
-			m.SentAt, _ = time.Parse("2006-01-02 15:04:05", sentAt)
-		}
-		messages = append(messages, m)
+		messages = append(messages, *m)
 	}
 	return messages, nil
 }
 
+// GetOutboundByStatusForOrg returns outbound messages for one tenant.
+func (s *Store) GetOutboundByStatusForOrg(orgID int64, status string, limit int) ([]models.OutboundMessage, error) {
+	return s.GetOutboundByFilterForOrg(orgID, status, "", limit)
+}
+
 // GetOutboundByFilter returns outbound messages filtered by optional status and/or type.
 func (s *Store) GetOutboundByFilter(status, msgType string, limit int) ([]models.OutboundMessage, error) {
-	query := `SELECT id, type, platform, account_id, target_url, target_name, content, context,
+	query := `SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
 		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
 		FROM outbound_messages`
 	var args []any
@@ -1490,17 +1704,48 @@ func (s *Store) GetOutboundByFilter(status, msgType string, limit int) ([]models
 
 	var messages []models.OutboundMessage
 	for rows.Next() {
-		var m models.OutboundMessage
-		var sentAt string
-		err := rows.Scan(&m.ID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-			&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+		m, err := scanOutboundMessage(rows)
 		if err != nil {
 			continue
 		}
-		if sentAt != "" {
-			m.SentAt, _ = time.Parse("2006-01-02 15:04:05", sentAt)
+		messages = append(messages, *m)
+	}
+	return messages, nil
+}
+
+// GetOutboundByFilterForOrg returns tenant-scoped outbound messages.
+func (s *Store) GetOutboundByFilterForOrg(orgID int64, status, msgType string, limit int) ([]models.OutboundMessage, error) {
+	query := `SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
+		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+		FROM outbound_messages`
+	var args []any
+	clauses := []string{"org_id = ?"}
+	args = append(args, orgID)
+	if status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, status)
+	}
+	if msgType != "" {
+		clauses = append(clauses, "type = ?")
+		args = append(args, msgType)
+	}
+	query += " WHERE " + strings.Join(clauses, " AND ")
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []models.OutboundMessage
+	for rows.Next() {
+		m, err := scanOutboundMessage(rows)
+		if err != nil {
+			continue
 		}
-		messages = append(messages, m)
+		messages = append(messages, *m)
 	}
 	return messages, nil
 }
@@ -1508,7 +1753,7 @@ func (s *Store) GetOutboundByFilter(status, msgType string, limit int) ([]models
 // GetSentGroupPosts returns group_post messages that were successfully sent (within last N days).
 func (s *Store) GetSentGroupPosts(withinDays int) ([]models.OutboundMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT id, type, platform, account_id, target_url, target_name, content, context,
+		`SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
 			COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
 		FROM outbound_messages
 		WHERE type = 'group_post' AND status IN ('sent', 'approved')
@@ -1523,17 +1768,11 @@ func (s *Store) GetSentGroupPosts(withinDays int) ([]models.OutboundMessage, err
 
 	var messages []models.OutboundMessage
 	for rows.Next() {
-		var m models.OutboundMessage
-		var sentAt string
-		err := rows.Scan(&m.ID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-			&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+		m, err := scanOutboundMessage(rows)
 		if err != nil {
 			continue
 		}
-		if sentAt != "" {
-			m.SentAt, _ = time.Parse("2006-01-02 15:04:05", sentAt)
-		}
-		messages = append(messages, m)
+		messages = append(messages, *m)
 	}
 	return messages, nil
 }
@@ -1543,10 +1782,10 @@ func (s *Store) GetOutbound(id int64) (*models.OutboundMessage, error) {
 	var m models.OutboundMessage
 	var sentAt string
 	err := s.db.QueryRow(
-		`SELECT id, type, platform, account_id, target_url, target_name, content, context,
+		`SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
 		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
 		FROM outbound_messages WHERE id = ?`, id,
-	).Scan(&m.ID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
+	).Scan(&m.ID, &m.OrgID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
 		&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -1555,6 +1794,18 @@ func (s *Store) GetOutbound(id int64) (*models.OutboundMessage, error) {
 		m.SentAt, _ = time.Parse("2006-01-02 15:04:05", sentAt)
 	}
 	return &m, nil
+}
+
+// GetOutboundForOrg returns one tenant-scoped outbound message.
+func (s *Store) GetOutboundForOrg(orgID, id int64) (*models.OutboundMessage, error) {
+	msg, err := s.GetOutbound(id)
+	if err != nil {
+		return nil, err
+	}
+	if msg.OrgID != orgID {
+		return nil, sql.ErrNoRows
+	}
+	return msg, nil
 }
 
 // UpdateOutboundStatus updates the status of an outbound message.
@@ -1567,16 +1818,59 @@ func (s *Store) UpdateOutboundStatus(id int64, status models.OutboundStatus) err
 	return err
 }
 
+// UpdateOutboundStatusForOrg updates status only when the message belongs to the tenant.
+func (s *Store) UpdateOutboundStatusForOrg(orgID, id int64, status models.OutboundStatus) error {
+	query := `UPDATE outbound_messages SET status = ? WHERE id = ? AND org_id = ?`
+	if status == models.OutboundSent {
+		query = `UPDATE outbound_messages SET status = ?, sent_at = CURRENT_TIMESTAMP WHERE id = ? AND org_id = ?`
+	}
+	res, err := s.db.Exec(query, status, id, orgID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // UpdateOutboundContent updates the content of a draft message.
 func (s *Store) UpdateOutboundContent(id int64, content string) error {
 	_, err := s.db.Exec(`UPDATE outbound_messages SET content = ? WHERE id = ? AND status = 'draft'`, content, id)
 	return err
 }
 
+// UpdateOutboundContentForOrg updates draft content only within one tenant.
+func (s *Store) UpdateOutboundContentForOrg(orgID, id int64, content string) error {
+	res, err := s.db.Exec(`UPDATE outbound_messages SET content = ? WHERE id = ? AND org_id = ? AND status = 'draft'`, content, id, orgID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // DeleteOutbound deletes an outbound message.
 func (s *Store) DeleteOutbound(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM outbound_messages WHERE id = ?`, id)
 	return err
+}
+
+// DeleteOutboundForOrg deletes an outbound message only within one tenant.
+func (s *Store) DeleteOutboundForOrg(orgID, id int64) error {
+	res, err := s.db.Exec(`DELETE FROM outbound_messages WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // CountOutboundByStatus returns counts for each status.
@@ -1595,6 +1889,51 @@ func (s *Store) CountOutboundByStatus() (map[string]int, error) {
 		}
 	}
 	return counts, nil
+}
+
+// CountOutboundByStatusForOrg returns tenant-scoped status counts.
+func (s *Store) CountOutboundByStatusForOrg(orgID int64) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT status, COUNT(*) FROM outbound_messages WHERE org_id = ? GROUP BY status`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err == nil {
+			counts[status] = count
+		}
+	}
+	return counts, nil
+}
+
+func scanOutboundMessage(rows *sql.Rows) (*models.OutboundMessage, error) {
+	var m models.OutboundMessage
+	var sentAt string
+	err := rows.Scan(&m.ID, &m.OrgID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
+		&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if sentAt != "" {
+		m.SentAt, _ = time.Parse("2006-01-02 15:04:05", sentAt)
+	}
+	return &m, nil
+}
+
+func parseSQLiteTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339, "2006-01-02T15:04:05Z07:00"} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // --- User Context (dynamic business rules) ---
@@ -1680,6 +2019,16 @@ func (s *Store) HasContactedCandidate(authorURL string) bool {
 // DeleteAllOutboundComments deletes all outbound comment messages (to allow re-commenting).
 func (s *Store) DeleteAllOutboundComments() (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM outbound_messages WHERE type = 'comment'`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// DeleteAllOutboundCommentsForOrg deletes comment outbox rows only for one tenant.
+func (s *Store) DeleteAllOutboundCommentsForOrg(orgID int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM outbound_messages WHERE type = 'comment' AND org_id = ?`, orgID)
 	if err != nil {
 		return 0, err
 	}
@@ -1914,25 +2263,56 @@ func (s *Store) CreateThread(leadID int64, platform, profileURL, profileName, ni
 	return id, nil
 }
 
+// CreateThreadForOrg creates or returns a conversation thread scoped to one org.
+func (s *Store) CreateThreadForOrg(orgID, leadID int64, platform, profileURL, profileName, niche string) (int64, error) {
+	res, err := s.db.Exec(
+		`INSERT OR IGNORE INTO conversation_threads (org_id, lead_id, platform, profile_url, profile_name, niche, status, last_outbound_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'initiated', CURRENT_TIMESTAMP)`,
+		orgID, leadID, platform, profileURL, profileName, niche,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, _ := res.LastInsertId()
+	if id == 0 {
+		s.db.QueryRow(`SELECT id FROM conversation_threads WHERE org_id = ? AND profile_url = ?`, orgID, profileURL).Scan(&id)
+	}
+	return id, nil
+}
+
 // GetThreadByProfile returns the thread for a profile URL, or nil if none.
 func (s *Store) GetThreadByProfile(profileURL string) (*models.ConversationThread, error) {
 	var t models.ConversationThread
 	var lastOut, lastIn string
 	err := s.db.QueryRow(
-		`SELECT id, lead_id, platform, profile_url, profile_name, niche, status,
+		`SELECT id, COALESCE(org_id,0), lead_id, platform, profile_url, profile_name, niche, status,
 		 COALESCE(last_outbound_at,''), COALESCE(last_inbound_at,''), created_at
 		 FROM conversation_threads WHERE profile_url = ?`, profileURL,
-	).Scan(&t.ID, &t.LeadID, &t.Platform, &t.ProfileURL, &t.ProfileName, &t.Niche,
+	).Scan(&t.ID, &t.OrgID, &t.LeadID, &t.Platform, &t.ProfileURL, &t.ProfileName, &t.Niche,
 		&t.Status, &lastOut, &lastIn, &t.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
-	if lastOut != "" {
-		t.LastOutboundAt, _ = time.Parse("2006-01-02 15:04:05", lastOut)
+	t.LastOutboundAt = parseSQLiteTime(lastOut)
+	t.LastInboundAt = parseSQLiteTime(lastIn)
+	return &t, nil
+}
+
+// GetThreadByProfileForOrg returns the thread for a profile URL within one org.
+func (s *Store) GetThreadByProfileForOrg(orgID int64, profileURL string) (*models.ConversationThread, error) {
+	var t models.ConversationThread
+	var lastOut, lastIn string
+	err := s.db.QueryRow(
+		`SELECT id, COALESCE(org_id,0), lead_id, platform, profile_url, profile_name, niche, status,
+		 COALESCE(last_outbound_at,''), COALESCE(last_inbound_at,''), created_at
+		 FROM conversation_threads WHERE org_id = ? AND profile_url = ?`, orgID, profileURL,
+	).Scan(&t.ID, &t.OrgID, &t.LeadID, &t.Platform, &t.ProfileURL, &t.ProfileName, &t.Niche,
+		&t.Status, &lastOut, &lastIn, &t.CreatedAt)
+	if err != nil {
+		return nil, err
 	}
-	if lastIn != "" {
-		t.LastInboundAt, _ = time.Parse("2006-01-02 15:04:05", lastIn)
-	}
+	t.LastOutboundAt = parseSQLiteTime(lastOut)
+	t.LastInboundAt = parseSQLiteTime(lastIn)
 	return &t, nil
 }
 
@@ -1976,12 +2356,8 @@ func scanThreads(rows *sql.Rows) ([]models.ConversationThread, error) {
 			&t.Status, &lastOut, &lastIn, &t.CreatedAt); err != nil {
 			return nil, err
 		}
-		if lastOut != "" {
-			t.LastOutboundAt, _ = time.Parse("2006-01-02 15:04:05", lastOut)
-		}
-		if lastIn != "" {
-			t.LastInboundAt, _ = time.Parse("2006-01-02 15:04:05", lastIn)
-		}
+		t.LastOutboundAt = parseSQLiteTime(lastOut)
+		t.LastInboundAt = parseSQLiteTime(lastIn)
 		threads = append(threads, t)
 	}
 	return threads, nil
@@ -1998,7 +2374,10 @@ func (s *Store) AddThreadMessage(threadID int64, direction, content string, aiGe
 	}
 	// Update thread timestamps and status
 	if direction == "outbound" {
-		_, err = s.db.Exec(`UPDATE conversation_threads SET last_outbound_at = CURRENT_TIMESTAMP WHERE id = ?`, threadID)
+		_, err = s.db.Exec(`UPDATE conversation_threads
+			SET last_outbound_at = CURRENT_TIMESTAMP,
+			    status = CASE WHEN status = 'replied' THEN 'follow_up_sent' ELSE status END
+			WHERE id = ?`, threadID)
 	} else {
 		_, err = s.db.Exec(
 			`UPDATE conversation_threads SET last_inbound_at = CURRENT_TIMESTAMP, status = 'replied' WHERE id = ?`, threadID,
@@ -2092,7 +2471,7 @@ func (s *Store) GetStaffWithKPI(orgID int64) ([]StaffKPI, error) {
 		       COALESCE(k.convs,0), COALESCE(k.converted,0), COALESCE(k.cmts,0), COALESCE(k.pts,0)
 		FROM users u
 		LEFT JOIN staff_kpi k ON k.user_id = u.id
-		WHERE u.org_id = ? AND u.active = 1
+		WHERE u.org_id = ?
 		ORDER BY COALESCE(k.pts,0) DESC`, orgID)
 	if err != nil {
 		return nil, err
@@ -2219,10 +2598,10 @@ func (s *Store) GetThreadsByOrg(orgID int64, limit int) ([]ThreadSummary, error)
 	rows, err := s.db.Query(`
 		SELECT t.id, t.profile_name, t.profile_url, t.status, t.unread_count,
 		       COALESCE((SELECT content FROM conversation_messages WHERE thread_id=t.id ORDER BY created_at DESC LIMIT 1),''),
-		       COALESCE(t.last_outbound_at, t.created_at)
+		       COALESCE(t.last_inbound_at, t.last_outbound_at, t.created_at)
 		FROM conversation_threads t
 		WHERE t.org_id = ?
-		ORDER BY COALESCE(t.last_outbound_at, t.created_at) DESC
+		ORDER BY COALESCE(t.last_inbound_at, t.last_outbound_at, t.created_at) DESC
 		LIMIT ?`, orgID, limit)
 	if err != nil {
 		return nil, err

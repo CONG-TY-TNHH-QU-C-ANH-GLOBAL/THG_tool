@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
 )
 
 func (s *Server) attachProvisionedOrgIfNeeded(user *models.User, ip string) (bool, error) {
@@ -24,9 +25,27 @@ func (s *Server) attachProvisionedOrgIfNeeded(user *models.User, ip string) (boo
 	user.OrgID = claim.OrgID
 	user.Role = claim.Role
 
-	_ = s.db.InsertAuditLog(user.ID, "provisioned_workspace_claimed", ip,
-		fmt.Sprintf(`{"org_id":%d,"role":%q,"source":%q}`, claim.OrgID, claim.Role, claim.Source))
+	if err := s.completeProvisionedClaim(user.ID, claim, ip); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+func (s *Server) completeProvisionedClaim(userID int64, claim *store.ProvisionedOrgClaim, ip string) error {
+	if claim == nil || userID <= 0 || claim.OrgID <= 0 {
+		return nil
+	}
+	if claim.Source == "invite" {
+		if err := s.db.MarkInviteUsed(claim.InviteID, userID); err != nil {
+			return err
+		}
+	}
+	if err := s.db.UpsertStaffKPI(userID, claim.OrgID, store.KPIDelta{}); err != nil {
+		return err
+	}
+	_ = s.db.InsertAuditLog(userID, "provisioned_workspace_claimed", ip,
+		fmt.Sprintf(`{"org_id":%d,"role":%q,"source":%q,"invite_id":%d}`, claim.OrgID, claim.Role, claim.Source, claim.InviteID))
+	return nil
 }
 
 func secureCookie(c *fiber.Ctx) bool {
