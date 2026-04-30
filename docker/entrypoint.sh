@@ -32,6 +32,13 @@ x11vnc \
 echo "[Browser] x11vnc started on port ${VNC_PORT}"
 sleep 1
 
+mkdir -p "${PROFILE_DIR}" "${PROFILE_DIR}/Default"
+if ! touch "${PROFILE_DIR}/.thg-write-test" 2>/dev/null; then
+    echo "[Browser] ERROR: Chrome profile is not writable: ${PROFILE_DIR}" >&2
+    exit 1
+fi
+rm -f "${PROFILE_DIR}/.thg-write-test" 2>/dev/null || true
+
 # Remove Chrome singleton locks left by a previous container crash
 rm -f \
     "${PROFILE_DIR}/SingletonLock" \
@@ -50,12 +57,12 @@ exec "${BROWSER_BIN}" \
     --no-default-browser-check \
     --disable-notifications \
     --disable-infobars \
-    --disable-blink-features=AutomationControlled \
     --no-sandbox \
     --disable-dev-shm-usage \
     --disable-setuid-sandbox \
     --use-gl=swiftshader \
-    --disable-gpu-sandbox \
+    --password-store=basic \
+    --use-mock-keychain \
     --user-data-dir="${PROFILE_DIR}" \
     --window-size=1280,800 \
     --start-maximized \

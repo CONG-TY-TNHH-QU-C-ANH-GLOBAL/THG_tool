@@ -77,8 +77,16 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [sessionInfo, setSessionInfo] = useState<WorkspaceSessionSnapshot | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [autoSyncPaused, setAutoSyncPaused] = useState(false);
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
+  const humanRequired = Boolean(
+    sessionInfo?.humanRequired ||
+    sessionInfo?.checkpoint ||
+    selectedWs?.browserState === 'checkpoint' ||
+    selectedWs?.browserState === 'human_required'
+  );
+  const manualCaptureMode = humanRequired || autoSyncPaused;
 
   useEffect(() => {
     if (selectedId !== null && selectedWs?.running) return;
@@ -96,6 +104,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     if (selectedId === null || !selectedWs?.running) {
       setSessionInfo(null);
       setSyncError(null);
+      setAutoSyncPaused(false);
+      return;
+    }
+    if (humanRequired || autoSyncPaused) {
+      setSyncLoading(false);
       return;
     }
 
@@ -107,10 +120,14 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         if (!cancelled) {
           setSessionInfo(snap);
           setSyncError(null);
+          if (!snap.loggedIn || snap.humanRequired || snap.checkpoint || snap.cookieError) {
+            setAutoSyncPaused(true);
+          }
         }
       } catch (e) {
         if (!cancelled) {
           setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
+          setAutoSyncPaused(true);
         }
       } finally {
         if (!cancelled) setSyncLoading(false);
@@ -123,15 +140,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [selectedId, selectedWs?.running]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedWs?.running, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
-  const humanRequired = Boolean(
-    sessionInfo?.humanRequired ||
-    sessionInfo?.checkpoint ||
-    selectedWs?.browserState === 'checkpoint' ||
-    selectedWs?.browserState === 'human_required'
-  );
 
   const handleNewSession = async () => {
     setNewLoading(true);
@@ -150,8 +161,10 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       const snap = await syncSession(selectedId);
       setSessionInfo(snap);
       setSyncError(null);
+      setAutoSyncPaused(!snap.loggedIn || snap.humanRequired || snap.checkpoint || Boolean(snap.cookieError));
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
+      setAutoSyncPaused(true);
     } finally {
       setSyncLoading(false);
     }
@@ -260,9 +273,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             <button
               onClick={() => void handleManualSync()}
               disabled={syncLoading}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: syncLoading ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: manualCaptureMode ? '#78350f44' : 'transparent', border: `1px solid ${manualCaptureMode ? '#f59e0b66' : theme.border}`, borderRadius: 8, color: manualCaptureMode ? '#fcd34d' : theme.textMuted, fontSize: 12, cursor: syncLoading ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
             >
-              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} /> Đồng bộ
+              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} /> {manualCaptureMode ? 'Đã vào Facebook - đồng bộ' : 'Đồng bộ'}
             </button>
           </div>
           <VncCanvas
@@ -274,9 +287,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
-            {humanRequired ? (
+            {manualCaptureMode ? (
               <span style={{ color: '#fcd34d', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <AlertTriangle size={13} /> Meta yêu cầu xác minh thủ công, agent đang tạm dừng
+                <AlertTriangle size={13} /> Auto-sync tạm dừng trong lúc đăng nhập, vào News Feed rồi bấm đồng bộ
               </span>
             ) : selectedWs.loggedIn ? (
               <span style={{ color: '#4ade80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
