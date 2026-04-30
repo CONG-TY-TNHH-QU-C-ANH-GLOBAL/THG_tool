@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -308,6 +309,13 @@ func fetchCDPTargets(cdpPort int) ([]cdpTargetInfo, error) {
 	if cdpPort <= 0 {
 		return nil, fmt.Errorf("CDP port not available")
 	}
+	return fetchCDPTargetsFromEndpoint(cdpEndpointFromPort(cdpPort))
+}
+
+func fetchCDPTargetsFromEndpoint(ep cdpEndpoint) ([]cdpTargetInfo, error) {
+	if ep.BaseURL == "" {
+		return nil, fmt.Errorf("CDP endpoint not available")
+	}
 	client := &http.Client{Timeout: 1500 * time.Millisecond}
 	endpoints := []string{"json/list", "json"}
 	deadline := time.Now().Add(8 * time.Second)
@@ -316,7 +324,7 @@ func fetchCDPTargets(cdpPort int) ([]cdpTargetInfo, error) {
 	for time.Now().Before(deadline) {
 		for _, endpoint := range endpoints {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			targetsURL := fmt.Sprintf("http://127.0.0.1:%d/%s", cdpPort, endpoint)
+			targetsURL := strings.TrimRight(ep.BaseURL, "/") + "/" + endpoint
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, targetsURL, nil)
 			resp, err := client.Do(req)
 			if err != nil {

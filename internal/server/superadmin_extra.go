@@ -97,6 +97,9 @@ func (s *Server) superAdminDeleteAccount(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
+	if s.workspace != nil {
+		s.workspace.Stop(id)
+	}
 	if err := s.db.DeleteAccount(id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -122,6 +125,9 @@ func (s *Server) superAdminTerminateSession(c *fiber.Ctx) error {
 	accountID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	if s.workspace != nil {
+		s.workspace.Stop(accountID)
 	}
 	_, err = s.db.DB().ExecContext(c.Context(),
 		`UPDATE browser_sessions SET status = 'terminated' WHERE account_id = ?`, accountID)

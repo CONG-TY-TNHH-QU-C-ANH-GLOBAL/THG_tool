@@ -68,7 +68,7 @@ function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading:
 
 export default function BrowserView({ orgId }: BrowserViewProps) {
   void orgId;
-  const { workspaces, actionLoading, refresh, start, startNew, stop, markLoggedIn, syncSession } = useWorkspaces();
+  const { workspaces, actionLoading, refresh, start, startNew, stop, syncSession } = useWorkspaces();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newLoading, setNewLoading] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<WorkspaceSessionSnapshot | null>(null);
@@ -115,7 +115,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     };
 
     void run();
-    const timer = setInterval(run, 15000);
+    const timer = setInterval(run, 5000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -143,21 +143,6 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       setSyncError(null);
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
-    } finally {
-      setSyncLoading(false);
-    }
-  };
-
-  const handleMarkLoggedIn = async () => {
-    if (selectedId === null) return;
-    setSyncLoading(true);
-    try {
-      await markLoggedIn(selectedId);
-      const snap = await syncSession(selectedId);
-      setSessionInfo(snap);
-      setSyncError(null);
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'KhÃ´ng xÃ¡c thá»±c Ä‘Æ°á»£c session');
     } finally {
       setSyncLoading(false);
     }
@@ -279,18 +264,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
-            {!selectedWs.loggedIn && (
-              <button
-                onClick={() => void handleMarkLoggedIn()}
-                disabled={actionLoading.has(selectedId) || syncLoading}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: actionLoading.has(selectedId) || syncLoading ? 'wait' : 'pointer', opacity: actionLoading.has(selectedId) || syncLoading ? 0.6 : 1 }}
-              >
-                <CheckCircle size={14} /> Đánh dấu đã đăng nhập
-              </button>
-            )}
-            {selectedWs.loggedIn && (
+            {selectedWs.loggedIn ? (
               <span style={{ color: '#4ade80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <CheckCircle size={13} /> Session đã được lưu
+              </span>
+            ) : (
+              <span style={{ color: theme.textMuted, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <RefreshCw size={13} className={syncLoading ? 'spin' : ''} /> Đang tự xác thực session
               </span>
             )}
           </div>

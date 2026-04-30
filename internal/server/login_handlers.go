@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,21 @@ var loginSessions sync.Map // map[int64]*loginSession
 // maxConcurrentSessions prevents OOM on VPS when users click Login multiple times.
 const maxConcurrentSessions = 5
 
+type cdpEndpoint struct {
+	BaseURL string
+	WSHost  string
+	Label   string
+}
+
+func cdpEndpointFromPort(port int) cdpEndpoint {
+	host := fmt.Sprintf("127.0.0.1:%d", port)
+	return cdpEndpoint{
+		BaseURL: "http://" + host,
+		WSHost:  host,
+		Label:   host,
+	}
+}
+
 func findFreePort() (int, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -44,8 +60,16 @@ func findFreePort() (int, error) {
 
 // chromeBrowserWS returns the browser-level WebSocket URL from Chrome's debug endpoint.
 func chromeBrowserWS(port int) (string, error) {
+	return chromeBrowserWSFromEndpoint(cdpEndpointFromPort(port))
+}
+
+func chromeBrowserWSFromEndpoint(ep cdpEndpoint) (string, error) {
+	if ep.BaseURL == "" {
+		return "", fmt.Errorf("chrome CDP endpoint is empty")
+	}
+	versionURL := strings.TrimRight(ep.BaseURL, "/") + "/json/version"
 	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
+	resp, err := client.Get(versionURL)
 	if err != nil {
 		return "", fmt.Errorf("chrome not ready: %w", err)
 	}
@@ -55,10 +79,14 @@ func chromeBrowserWS(port int) (string, error) {
 		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil || info.WebSocketDebuggerURL == "" {
-		return "", fmt.Errorf("cannot parse chrome debug endpoint")
+		return "", fmt.Errorf("cannot parse chrome debug endpoint %s", versionURL)
 	}
 	if u, err := url.Parse(info.WebSocketDebuggerURL); err == nil && u.Scheme != "" {
-		u.Host = fmt.Sprintf("127.0.0.1:%d", port)
+		if ep.WSHost != "" {
+			u.Host = ep.WSHost
+		} else if base, err := url.Parse(ep.BaseURL); err == nil {
+			u.Host = base.Host
+		}
 		info.WebSocketDebuggerURL = u.String()
 	}
 	return info.WebSocketDebuggerURL, nil
@@ -67,7 +95,11 @@ func chromeBrowserWS(port int) (string, error) {
 // cdpContext connects to the running Chrome and returns a ready chromedp context.
 // The returned cancel must always be called.
 func cdpContext(port int, timeout time.Duration) (context.Context, context.CancelFunc, error) {
-	wsURL, err := chromeBrowserWS(port)
+	return cdpContextForEndpoint(cdpEndpointFromPort(port), timeout)
+}
+
+func cdpContextForEndpoint(ep cdpEndpoint, timeout time.Duration) (context.Context, context.CancelFunc, error) {
+	wsURL, err := chromeBrowserWSFromEndpoint(ep)
 	if err != nil {
 		return nil, nil, err
 	}

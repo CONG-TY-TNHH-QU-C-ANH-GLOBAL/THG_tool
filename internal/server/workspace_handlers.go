@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -107,6 +109,7 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 	s.recordBrowserSession(id, orgID, inst, "initializing", "")
 	go s.watchWorkspaceReadiness(id, orgID, inst)
+	go s.watchWorkspaceLogin(id, orgID, inst)
 
 	log.Printf("[Workspace] Account %d (%s) browser starting, vnc=%d cdp=%d", id, acc.Name, inst.VNCPort, inst.CDPPort)
 	return c.JSON(fiber.Map{
@@ -169,6 +172,7 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 	s.recordBrowserSession(id, orgID, inst, "initializing", "")
 	go s.watchWorkspaceReadiness(id, orgID, inst)
+	go s.watchWorkspaceLogin(id, orgID, inst)
 
 	log.Printf("[Workspace] New session starting: account %d (%s) vnc=%d cdp=%d", id, name, inst.VNCPort, inst.CDPPort)
 	return c.JSON(fiber.Map{
@@ -198,6 +202,85 @@ func (s *Server) recordBrowserSession(accountID, orgID int64, inst *workspace.In
 		LastActiveAt: time.Now().UTC(),
 		ErrorMsg:     errorMsg,
 	})
+}
+
+func (s *Server) persistFacebookBrowserSession(accountID, orgID int64, inst *workspace.Instance, fbUserID, cookiesJSON string) error {
+	if fbUserID == "" {
+		return fmt.Errorf("facebook user id is empty")
+	}
+	if err := s.db.SetBrowserLoggedIn(accountID, true, fbUserID); err != nil {
+		return err
+	}
+	if cookiesJSON != "" {
+		if err := s.db.UpdateAccountCookies(accountID, cookiesJSON); err != nil {
+			return fmt.Errorf("save cookies failed: %w", err)
+		}
+	}
+	_ = s.db.UpdateAccountStatus(accountID, models.AccountActive)
+	if appStore, err := store.NewAppStore(s.db); err == nil {
+		sess, err := appStore.GetSession(context.Background(), accountID)
+		if err == nil && sess != nil && sess.Status != "terminated" {
+			sess.Status = "idle"
+			sess.LastActiveAt = time.Now().UTC()
+			sess.ErrorMsg = ""
+			if inst != nil {
+				sess.CDPPort = inst.CDPPort
+				sess.VNCPort = inst.VNCPort
+			}
+			_ = appStore.UpsertSession(context.Background(), *sess)
+		} else if inst != nil {
+			s.recordBrowserSession(accountID, orgID, inst, "idle", "")
+		}
+	}
+	return nil
+}
+
+func (s *Server) watchWorkspaceLogin(accountID, orgID int64, inst *workspace.Instance) {
+	if inst == nil {
+		return
+	}
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	deadline := time.NewTimer(15 * time.Minute)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case <-deadline.C:
+			return
+		case <-ticker.C:
+			if s.workspace == nil {
+				return
+			}
+			current := s.workspace.Get(accountID)
+			if current == nil || current.ContainerID != inst.ContainerID {
+				return
+			}
+			acc, err := s.db.GetAccount(accountID)
+			if err != nil || acc == nil {
+				return
+			}
+			if acc.BrowserLoggedIn && acc.FBUserID != "" {
+				return
+			}
+			fbUserID, cookiesJSON, _, err := facebookCookiesFromInstance(inst)
+			if err != nil {
+				continue
+			}
+			if acc.FBUserID != "" && acc.FBUserID != fbUserID {
+				msg := "Facebook profile mismatch; create a separate account slot for this Facebook user"
+				s.recordBrowserSession(accountID, orgID, inst, "error", msg)
+				log.Printf("[Workspace] Account %d login mismatch stored=%s current=%s", accountID, acc.FBUserID, fbUserID)
+				return
+			}
+			if err := s.persistFacebookBrowserSession(accountID, orgID, inst, fbUserID, cookiesJSON); err != nil {
+				log.Printf("[Workspace] Account %d auto session persist failed: %v", accountID, err)
+				continue
+			}
+			log.Printf("[Workspace] Account %d Facebook session auto-saved (fb_user_id=%s)", accountID, fbUserID)
+			return
+		}
+	}
 }
 
 func (s *Server) watchWorkspaceReadiness(accountID, orgID int64, inst *workspace.Instance) {
@@ -283,7 +366,7 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
 	}
 
-	snap, err := facebookSessionSnapshotFromCDP(inst.CDPPort)
+	snap, err := facebookSessionSnapshotFromInstance(inst)
 	if err != nil {
 		return c.Status(503).JSON(fiber.Map{"error": "session probe failed: " + err.Error()})
 	}
@@ -297,35 +380,53 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 				"error": "this browser profile is logged into a different Facebook user; use a separate account slot for multi-account automation",
 			})
 		}
-		if err := s.db.SetBrowserLoggedIn(id, true, snap.FBUserID); err != nil {
+		if err := s.persistFacebookBrowserSession(id, orgID, inst, snap.FBUserID, snap.cookiesJSON); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		if snap.cookiesJSON != "" {
-			if err := s.db.UpdateAccountCookies(id, snap.cookiesJSON); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": "save cookies failed: " + err.Error()})
-			}
-		}
-		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 		snap.LoggedIn = true
 		snap.StoredFBID = snap.FBUserID
-		if appStore, err := store.NewAppStore(s.db); err == nil {
-			if sess, err := appStore.GetSession(context.Background(), id); err == nil && sess != nil && sess.Status != "terminated" {
-				sess.Status = "idle"
-				sess.LastActiveAt = time.Now().UTC()
-				sess.ErrorMsg = ""
-				sess.CDPPort = inst.CDPPort
-				sess.VNCPort = inst.VNCPort
-				_ = appStore.UpsertSession(context.Background(), *sess)
-			}
-		}
 	}
 
 	return c.JSON(snap)
 }
 
+func facebookSessionSnapshotFromInstance(inst *workspace.Instance) (*facebookSessionSnapshot, error) {
+	if inst == nil {
+		return nil, fmt.Errorf("browser instance is not running")
+	}
+	var lastSnap *facebookSessionSnapshot
+	var errors []string
+	for _, ep := range cdpEndpointsForInstance(inst) {
+		snap, err := facebookSessionSnapshotFromCDPEndpoint(ep)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", ep.Label, err))
+			continue
+		}
+		if snap.CookieError == "" || snap.FBUserID != "" {
+			return snap, nil
+		}
+		if !isCDPUnavailableMessage(snap.CookieError) {
+			return snap, nil
+		}
+		lastSnap = snap
+		errors = append(errors, fmt.Sprintf("%s: %s", ep.Label, snap.CookieError))
+	}
+	if lastSnap != nil {
+		if len(errors) > 0 {
+			lastSnap.CookieError = strings.Join(errors, "; ")
+		}
+		return lastSnap, nil
+	}
+	return nil, fmt.Errorf("no CDP endpoint succeeded: %s", strings.Join(errors, "; "))
+}
+
 func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, error) {
+	return facebookSessionSnapshotFromCDPEndpoint(cdpEndpointFromPort(cdpPort))
+}
+
+func facebookSessionSnapshotFromCDPEndpoint(ep cdpEndpoint) (*facebookSessionSnapshot, error) {
 	snap := &facebookSessionSnapshot{}
-	targets, err := fetchCDPTargets(cdpPort)
+	targets, err := fetchCDPTargetsFromEndpoint(ep)
 	if err != nil {
 		snap.CookieError = "CDP target list unavailable: " + err.Error()
 	} else {
@@ -343,7 +444,7 @@ func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, erro
 	lower := strings.ToLower(snap.CurrentURL + " " + snap.CurrentTitle)
 	snap.Checkpoint = strings.Contains(lower, "checkpoint") || strings.Contains(lower, "security")
 
-	fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDP(cdpPort)
+	fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDPEndpoint(ep)
 	if err != nil {
 		if snap.CookieError != "" {
 			snap.CookieError += "; cookies: " + err.Error()
@@ -357,6 +458,36 @@ func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, erro
 	snap.CookiesCount = cookieCount
 	snap.cookiesJSON = cookiesJSON
 	return snap, nil
+}
+
+func cdpEndpointsForInstance(inst *workspace.Instance) []cdpEndpoint {
+	if inst == nil {
+		return nil
+	}
+	endpoints := []cdpEndpoint{}
+	if inst.CDPPort > 0 {
+		endpoints = append(endpoints, cdpEndpointFromPort(inst.CDPPort))
+	}
+	if ip := dockerContainerIP(inst); ip != "" {
+		host := net.JoinHostPort(ip, "9222")
+		endpoints = append(endpoints, cdpEndpoint{
+			BaseURL: "http://" + host,
+			WSHost:  host,
+			Label:   "container " + host,
+		})
+	}
+	return endpoints
+}
+
+func dockerContainerIP(inst *workspace.Instance) string {
+	if inst == nil || inst.ContainerID == "" {
+		return ""
+	}
+	out, err := exec.Command("docker", "inspect", "--format={{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", inst.ContainerID).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // workspaceSetLoggedIn marks whether an account has successfully logged into Facebook.
@@ -390,7 +521,7 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		}
 		var cookieCount int
 		var err error
-		fbUserID, cookiesJSON, cookieCount, err = facebookCookiesFromCDP(inst.CDPPort)
+		fbUserID, cookiesJSON, cookieCount, err = facebookCookiesFromInstance(inst)
 		if err != nil {
 			if isCDPUnavailable(err) {
 				msg := "CDP endpoint is not reachable from the API host; restart this browser session after the thg-browser image is rebuilt"
@@ -411,27 +542,12 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		}
 	}
 
-	if err := s.db.SetBrowserLoggedIn(id, body.LoggedIn, fbUserID); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
 	if body.LoggedIn {
-		if cookiesJSON != "" {
-			if err := s.db.UpdateAccountCookies(id, cookiesJSON); err != nil {
-				return c.Status(500).JSON(fiber.Map{"error": "save cookies failed: " + err.Error()})
-			}
+		if err := s.persistFacebookBrowserSession(id, orgID, s.workspace.Get(id), fbUserID, cookiesJSON); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
-		if appStore, err := store.NewAppStore(s.db); err == nil {
-			if sess, err := appStore.GetSession(context.Background(), id); err == nil && sess != nil && sess.Status != "terminated" {
-				sess.Status = "idle"
-				sess.LastActiveAt = time.Now().UTC()
-				if inst := s.workspace.Get(id); inst != nil {
-					sess.CDPPort = inst.CDPPort
-					sess.VNCPort = inst.VNCPort
-				}
-				_ = appStore.UpsertSession(context.Background(), *sess)
-			}
-		}
+	} else if err := s.db.SetBrowserLoggedIn(id, false); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn, "fb_user_id": fbUserID})
 }
@@ -442,7 +558,29 @@ func facebookUserIDFromCDP(cdpPort int) (string, error) {
 }
 
 func facebookCookiesFromCDP(cdpPort int) (string, string, int, error) {
-	ctx, cancel, err := cdpContext(cdpPort, 8*time.Second)
+	return facebookCookiesFromCDPEndpoint(cdpEndpointFromPort(cdpPort))
+}
+
+func facebookCookiesFromInstance(inst *workspace.Instance) (string, string, int, error) {
+	if inst == nil {
+		return "", "", 0, fmt.Errorf("browser instance is not running")
+	}
+	var errors []string
+	for _, ep := range cdpEndpointsForInstance(inst) {
+		fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDPEndpoint(ep)
+		if err == nil {
+			return fbUserID, cookiesJSON, cookieCount, nil
+		}
+		if isMissingFacebookUserCookie(err) {
+			return "", "", cookieCount, err
+		}
+		errors = append(errors, fmt.Sprintf("%s: %v", ep.Label, err))
+	}
+	return "", "", 0, fmt.Errorf("no CDP endpoint succeeded: %s", strings.Join(errors, "; "))
+}
+
+func facebookCookiesFromCDPEndpoint(ep cdpEndpoint) (string, string, int, error) {
+	ctx, cancel, err := cdpContextForEndpoint(ep, 8*time.Second)
 	if err != nil {
 		return "", "", 0, err
 	}
@@ -499,12 +637,21 @@ func isCDPUnavailable(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
+	return isCDPUnavailableMessage(err.Error())
+}
+
+func isCDPUnavailableMessage(message string) bool {
+	msg := strings.ToLower(message)
 	return strings.Contains(msg, "chrome not ready") ||
+		strings.Contains(msg, "no cdp endpoint succeeded") ||
 		strings.Contains(msg, "cdp target list unavailable") ||
 		strings.Contains(msg, "/json/version") ||
 		strings.Contains(msg, "connection refused") ||
 		strings.Contains(msg, "eof")
+}
+
+func isMissingFacebookUserCookie(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "missing c_user")
 }
 
 // resolveCheckpoint marks a session as ready after an operator manually passed the
