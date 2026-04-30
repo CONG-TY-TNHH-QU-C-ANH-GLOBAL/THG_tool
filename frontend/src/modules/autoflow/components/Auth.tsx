@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ArrowLeft, Building2, Check, LockKeyhole, Mail, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { isPlatformRole, type AuthUser } from '../services/authService';
@@ -53,26 +53,6 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState('');
   const { login, isLoading } = useAuth();
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has('google_auth')) return;
-    fetch('/api/auth/google/token', { method: 'POST' })
-      .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(async data => {
-        const { useAuthStore } = await import('../stores/authStore');
-        useAuthStore.getState().setAuth(data.access_token, data.user);
-        history.replaceState(null, '', window.location.pathname);
-        if (isPlatformRole(data.user?.role)) {
-          onSuccess(routeRoleFor(data.user));
-        } else if (data.needs_onboarding && onNeedsOnboarding) {
-          onNeedsOnboarding();
-        } else {
-          onSuccess(routeRoleFor(data.user));
-        }
-      })
-      .catch(() => setError('Google đăng nhập thất bại'));
-  }, [onNeedsOnboarding, onSuccess]);
 
   async function handleSignup() {
     setRegError('');
