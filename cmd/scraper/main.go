@@ -153,27 +153,33 @@ func main() {
 	})
 	log.Println("✅ Health checker started (15s interval)")
 
-	watchdog := browser.NewWatchdog(workspaceMgr, 30*time.Second, func(accountID int64, outcome browser.SessionOutcome, reason string) {
-		switch outcome {
-		case browser.SessionCDPDown:
-			if os.Getenv("WORKSPACE_AUTO_RESTART_CDP_DOWN") != "1" {
-				log.Printf("[Watchdog] CDP_DOWN account %d - keeping browser alive during login/session flow: %s", accountID, reason)
-				return
+	// Keep login/checkpoint sessions untouched unless ops explicitly enables
+	// the watchdog. HealthChecker still keeps the container observable via VNC.
+	if os.Getenv("WORKSPACE_SESSION_WATCHDOG") == "1" {
+		watchdog := browser.NewWatchdog(workspaceMgr, 30*time.Second, func(accountID int64, outcome browser.SessionOutcome, reason string) {
+			switch outcome {
+			case browser.SessionCDPDown:
+				if os.Getenv("WORKSPACE_AUTO_RESTART_CDP_DOWN") != "1" {
+					log.Printf("[Watchdog] CDP_DOWN account %d - keeping browser alive during login/session flow: %s", accountID, reason)
+					return
+				}
+				log.Printf("[Watchdog] CDP_DOWN account %d — safe restart: %s", accountID, reason)
+				if err := browser.SafeRestart(ctx, workspaceMgr, accountID, ""); err != nil {
+					log.Printf("[Watchdog] SafeRestart failed account %d: %v", accountID, err)
+				}
+			case browser.SessionCheckpoint:
+				log.Printf("[Watchdog] CHECKPOINT account %d — manual login required: %s", accountID, reason)
+			case browser.SessionExpired:
+				log.Printf("[Watchdog] EXPIRED account %d — session lost: %s", accountID, reason)
+			case browser.SessionBlocked:
+				log.Printf("[Watchdog] BLOCKED account %d — ban detected: %s", accountID, reason)
 			}
-			log.Printf("[Watchdog] CDP_DOWN account %d — safe restart: %s", accountID, reason)
-			if err := browser.SafeRestart(ctx, workspaceMgr, accountID, ""); err != nil {
-				log.Printf("[Watchdog] SafeRestart failed account %d: %v", accountID, err)
-			}
-		case browser.SessionCheckpoint:
-			log.Printf("[Watchdog] CHECKPOINT account %d — manual login required: %s", accountID, reason)
-		case browser.SessionExpired:
-			log.Printf("[Watchdog] EXPIRED account %d — session lost: %s", accountID, reason)
-		case browser.SessionBlocked:
-			log.Printf("[Watchdog] BLOCKED account %d — ban detected: %s", accountID, reason)
-		}
-	})
-	go watchdog.Run(ctx)
-	log.Println("✅ Session watchdog started (30s interval)")
+		})
+		go watchdog.Run(ctx)
+		log.Println("✅ Session watchdog started (30s interval)")
+	} else {
+		log.Println("[Workspace] Session watchdog disabled; browser login runs VNC-only until manual sync")
+	}
 
 	// Session registry — in-memory mirror for fast API reads
 	sessionReg := session_pkg.NewRegistry(appStore)

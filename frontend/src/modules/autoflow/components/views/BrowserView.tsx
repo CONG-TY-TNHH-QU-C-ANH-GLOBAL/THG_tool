@@ -86,7 +86,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     selectedWs?.browserState === 'checkpoint' ||
     selectedWs?.browserState === 'human_required'
   );
-  const manualCaptureMode = humanRequired || autoSyncPaused;
+  const hasSavedSession = Boolean(sessionInfo?.loggedIn || selectedWs?.loggedIn);
+  const manualCaptureMode = !hasSavedSession || humanRequired || autoSyncPaused;
 
   useEffect(() => {
     if (selectedId !== null && selectedWs?.running) return;
@@ -107,7 +108,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       setAutoSyncPaused(false);
       return;
     }
-    if (humanRequired || autoSyncPaused) {
+    if (!hasSavedSession || humanRequired || autoSyncPaused) {
       setSyncLoading(false);
       return;
     }
@@ -140,7 +141,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [selectedId, selectedWs?.running, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedWs?.running, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
 

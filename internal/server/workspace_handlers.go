@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -112,7 +113,11 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 	s.recordBrowserSession(id, orgID, inst, "initializing", "")
 	go s.watchWorkspaceReadiness(id, orgID, inst)
-	go s.watchWorkspaceLogin(id, orgID, inst)
+	// Login/checkpoint must remain a VNC-only human flow by default. CDP polling
+	// during Meta verification can destabilize the browser session.
+	if os.Getenv("WORKSPACE_AUTO_LOGIN_WATCHER") == "1" {
+		go s.watchWorkspaceLogin(id, orgID, inst)
+	}
 
 	log.Printf("[Workspace] Account %d (%s) browser starting, vnc=%d cdp=%d", id, acc.Name, inst.VNCPort, inst.CDPPort)
 	return c.JSON(fiber.Map{
@@ -175,7 +180,11 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	_ = s.db.UpdateAccountStatus(id, models.AccountActive)
 	s.recordBrowserSession(id, orgID, inst, "initializing", "")
 	go s.watchWorkspaceReadiness(id, orgID, inst)
-	go s.watchWorkspaceLogin(id, orgID, inst)
+	// Login/checkpoint must remain a VNC-only human flow by default. CDP polling
+	// during Meta verification can destabilize the browser session.
+	if os.Getenv("WORKSPACE_AUTO_LOGIN_WATCHER") == "1" {
+		go s.watchWorkspaceLogin(id, orgID, inst)
+	}
 
 	log.Printf("[Workspace] New session starting: account %d (%s) vnc=%d cdp=%d", id, name, inst.VNCPort, inst.CDPPort)
 	return c.JSON(fiber.Map{
