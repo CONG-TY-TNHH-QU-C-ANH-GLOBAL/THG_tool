@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import type { WorkspaceSessionSnapshot } from '../../types';
-import { ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -15,6 +15,8 @@ function stateLabel(state?: string): string {
     case 'ready': return 'ready';
     case 'idle': return 'idle';
     case 'active': return 'active';
+    case 'checkpoint': return 'human required';
+    case 'human_required': return 'human required';
     case 'error': return 'error';
     default: return state || '';
   }
@@ -22,6 +24,7 @@ function stateLabel(state?: string): string {
 
 function stateTone(state?: string) {
   if (state === 'error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
+  if (state === 'checkpoint' || state === 'human_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
   if (state === 'initializing') return { color: '#fde68a', bg: '#78350f44', border: '#f59e0b55' };
   return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
 }
@@ -123,6 +126,12 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   }, [selectedId, selectedWs?.running]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
+  const humanRequired = Boolean(
+    sessionInfo?.humanRequired ||
+    sessionInfo?.checkpoint ||
+    selectedWs?.browserState === 'checkpoint' ||
+    selectedWs?.browserState === 'human_required'
+  );
 
   const handleNewSession = async () => {
     setNewLoading(true);
@@ -229,8 +238,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto', gap: 10, alignItems: 'center', padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
             <div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>Session</p>
-              <p style={{ color: sessionInfo?.loggedIn || selectedWs.loggedIn ? '#4ade80' : theme.textMuted, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <ShieldCheck size={12} /> {sessionInfo?.loggedIn || selectedWs.loggedIn ? 'Đã lưu' : 'Chưa xác thực'}
+              <p style={{ color: humanRequired ? '#fcd34d' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? '#4ade80' : theme.textMuted), fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {humanRequired ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
+                {humanRequired ? 'Cần xác minh' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'Đã lưu' : 'Chưa xác thực')}
               </p>
             </div>
             <div>
@@ -244,7 +254,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             <div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>CDP</p>
               <p style={{ color: syncError || sessionInfo?.cookieError ? '#fca5a5' : theme.textMuted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng')}
+                {humanRequired ? (sessionInfo?.humanReason || 'human_required') : (syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng'))}
               </p>
             </div>
             <button
@@ -264,7 +274,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
-            {selectedWs.loggedIn ? (
+            {humanRequired ? (
+              <span style={{ color: '#fcd34d', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <AlertTriangle size={13} /> Meta yêu cầu xác minh thủ công, agent đang tạm dừng
+              </span>
+            ) : selectedWs.loggedIn ? (
               <span style={{ color: '#4ade80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <CheckCircle size={13} /> Session đã được lưu
               </span>

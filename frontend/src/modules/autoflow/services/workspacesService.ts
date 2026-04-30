@@ -51,6 +51,8 @@ export async function syncWorkspaceSession(id: number): Promise<WorkspaceSession
     currentUrl: r.current_url,
     currentTitle: r.current_title,
     checkpoint: Boolean(r.checkpoint),
+    humanRequired: Boolean(r.human_required),
+    humanReason: r.human_reason,
     cookieError: r.cookie_error,
   };
 }

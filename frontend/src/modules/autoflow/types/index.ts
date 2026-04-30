@@ -147,7 +147,7 @@ export interface Workspace {
   loggedIn: boolean;
   fbUserId?: string;
   running: boolean;
-  browserState?: 'initializing' | 'display_ready' | 'ready' | 'idle' | 'active' | 'error' | 'terminated' | string;
+  browserState?: 'initializing' | 'display_ready' | 'ready' | 'idle' | 'active' | 'checkpoint' | 'human_required' | 'error' | 'terminated' | string;
   errorMsg?: string;
   vncPort?: number;
   cdpPort?: number;
@@ -163,6 +163,8 @@ export interface WorkspaceSessionSnapshot {
   currentUrl?: string;
   currentTitle?: string;
   checkpoint: boolean;
+  humanRequired?: boolean;
+  humanReason?: string;
   cookieError?: string;
 }
 

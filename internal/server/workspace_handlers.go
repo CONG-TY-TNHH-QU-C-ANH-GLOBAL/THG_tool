@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	cdptarget "github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
@@ -192,6 +193,11 @@ func (s *Server) recordBrowserSession(accountID, orgID int64, inst *workspace.In
 		log.Printf("[Workspace] session store unavailable for account %d: %v", accountID, err)
 		return
 	}
+	if status != "checkpoint" && status != "idle" && status != "terminated" && status != "error" {
+		if existing, err := appStore.GetSession(context.Background(), accountID); err == nil && existing != nil && existing.Status == "checkpoint" {
+			return
+		}
+	}
 	_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
 		AccountID:    accountID,
 		OrgID:        orgID,
@@ -202,6 +208,44 @@ func (s *Server) recordBrowserSession(accountID, orgID int64, inst *workspace.In
 		LastActiveAt: time.Now().UTC(),
 		ErrorMsg:     errorMsg,
 	})
+}
+
+func (s *Server) recordWorkspaceHumanRequired(accountID, orgID int64, inst *workspace.Instance, snap *facebookSessionSnapshot) {
+	if inst == nil {
+		return
+	}
+	reason := "Meta requires manual verification"
+	if snap != nil && snap.HumanReason != "" {
+		reason = snap.HumanReason
+	}
+	if snap != nil && snap.CurrentURL != "" {
+		reason += ": " + snap.CurrentURL
+	}
+
+	wasCheckpoint := false
+	if appStore, err := store.NewAppStore(s.db); err == nil {
+		if sess, err := appStore.GetSession(context.Background(), accountID); err == nil && sess != nil && sess.Status == "checkpoint" {
+			wasCheckpoint = true
+		}
+	}
+	s.recordBrowserSession(accountID, orgID, inst, "checkpoint", reason)
+	checkpointURL := ""
+	if snap != nil {
+		checkpointURL = snap.CurrentURL
+	}
+	_, _ = s.db.DB().ExecContext(context.Background(),
+		`UPDATE browser_sessions
+		 SET checkpoint_url = ?, checkpoint_at = COALESCE(checkpoint_at, CURRENT_TIMESTAMP), last_active_at = CURRENT_TIMESTAMP
+		 WHERE account_id = ?`,
+		checkpointURL, accountID,
+	)
+	if !wasCheckpoint {
+		_, _ = s.db.DB().ExecContext(context.Background(),
+			`UPDATE accounts SET checkpoint_count = COALESCE(checkpoint_count, 0) + 1 WHERE id = ?`,
+			accountID,
+		)
+	}
+	log.Printf("[Workspace] Account %d requires human verification: %s", accountID, reason)
 }
 
 func (s *Server) persistFacebookBrowserSession(accountID, orgID int64, inst *workspace.Instance, fbUserID, cookiesJSON string) error {
@@ -232,6 +276,10 @@ func (s *Server) persistFacebookBrowserSession(accountID, orgID int64, inst *wor
 			s.recordBrowserSession(accountID, orgID, inst, "idle", "")
 		}
 	}
+	_, _ = s.db.DB().ExecContext(context.Background(),
+		`UPDATE browser_sessions SET checkpoint_url = '', checkpoint_at = NULL WHERE account_id = ?`,
+		accountID,
+	)
 	return nil
 }
 
@@ -263,10 +311,18 @@ func (s *Server) watchWorkspaceLogin(accountID, orgID int64, inst *workspace.Ins
 			if acc.BrowserLoggedIn && acc.FBUserID != "" {
 				return
 			}
-			fbUserID, cookiesJSON, _, err := facebookCookiesFromInstance(inst)
+			snap, err := facebookSessionSnapshotFromInstance(inst)
 			if err != nil {
 				continue
 			}
+			if snap.HumanRequired {
+				s.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
+				continue
+			}
+			if snap.FBUserID == "" {
+				continue
+			}
+			fbUserID, cookiesJSON := snap.FBUserID, snap.cookiesJSON
 			if acc.FBUserID != "" && acc.FBUserID != fbUserID {
 				msg := "Facebook profile mismatch; create a separate account slot for this Facebook user"
 				s.recordBrowserSession(accountID, orgID, inst, "error", msg)
@@ -332,17 +388,19 @@ func (s *Server) workspaceNavigate(c *fiber.Ctx) error {
 }
 
 type facebookSessionSnapshot struct {
-	AccountID    int64  `json:"account_id"`
-	AccountName  string `json:"account_name"`
-	LoggedIn     bool   `json:"logged_in"`
-	FBUserID     string `json:"fb_user_id,omitempty"`
-	StoredFBID   string `json:"stored_fb_user_id,omitempty"`
-	CurrentURL   string `json:"current_url,omitempty"`
-	CurrentTitle string `json:"current_title,omitempty"`
-	Checkpoint   bool   `json:"checkpoint"`
-	CookieError  string `json:"cookie_error,omitempty"`
-	CookiesCount int    `json:"cookies_count,omitempty"`
-	cookiesJSON  string
+	AccountID     int64  `json:"account_id"`
+	AccountName   string `json:"account_name"`
+	LoggedIn      bool   `json:"logged_in"`
+	FBUserID      string `json:"fb_user_id,omitempty"`
+	StoredFBID    string `json:"stored_fb_user_id,omitempty"`
+	CurrentURL    string `json:"current_url,omitempty"`
+	CurrentTitle  string `json:"current_title,omitempty"`
+	Checkpoint    bool   `json:"checkpoint"`
+	HumanRequired bool   `json:"human_required"`
+	HumanReason   string `json:"human_reason,omitempty"`
+	CookieError   string `json:"cookie_error,omitempty"`
+	CookiesCount  int    `json:"cookies_count,omitempty"`
+	cookiesJSON   string
 }
 
 // workspaceSyncSession probes the running browser and persists the Facebook
@@ -374,6 +432,11 @@ func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 	snap.AccountName = acc.Name
 	snap.StoredFBID = acc.FBUserID
 
+	if snap.HumanRequired {
+		s.recordWorkspaceHumanRequired(id, orgID, inst, snap)
+		return c.JSON(snap)
+	}
+
 	if snap.FBUserID != "" {
 		if acc.FBUserID != "" && acc.FBUserID != snap.FBUserID {
 			return c.Status(409).JSON(fiber.Map{
@@ -402,7 +465,7 @@ func facebookSessionSnapshotFromInstance(inst *workspace.Instance) (*facebookSes
 			errors = append(errors, fmt.Sprintf("%s: %v", ep.Label, err))
 			continue
 		}
-		if snap.CookieError == "" || snap.FBUserID != "" {
+		if snap.HumanRequired || snap.CookieError == "" || snap.FBUserID != "" {
 			return snap, nil
 		}
 		if !isCDPUnavailableMessage(snap.CookieError) {
@@ -426,6 +489,7 @@ func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, erro
 
 func facebookSessionSnapshotFromCDPEndpoint(ep cdpEndpoint) (*facebookSessionSnapshot, error) {
 	snap := &facebookSessionSnapshot{}
+	var targets []cdpTargetInfo
 	targets, err := fetchCDPTargetsFromEndpoint(ep)
 	if err != nil {
 		snap.CookieError = "CDP target list unavailable: " + err.Error()
@@ -441,8 +505,10 @@ func facebookSessionSnapshotFromCDPEndpoint(ep cdpEndpoint) (*facebookSessionSna
 		}
 	}
 
-	lower := strings.ToLower(snap.CurrentURL + " " + snap.CurrentTitle)
-	snap.Checkpoint = strings.Contains(lower, "checkpoint") || strings.Contains(lower, "security")
+	if err := enrichSnapshotFromCDP(ep, snap, targets); err != nil && snap.CookieError == "" {
+		snap.CookieError = "CDP page probe unavailable: " + err.Error()
+	}
+	applyFacebookHumanChallengeDetection(snap, "")
 
 	fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDPEndpoint(ep)
 	if err != nil {
@@ -458,6 +524,120 @@ func facebookSessionSnapshotFromCDPEndpoint(ep cdpEndpoint) (*facebookSessionSna
 	snap.CookiesCount = cookieCount
 	snap.cookiesJSON = cookiesJSON
 	return snap, nil
+}
+
+func enrichSnapshotFromCDP(ep cdpEndpoint, snap *facebookSessionSnapshot, targets []cdpTargetInfo) error {
+	if snap == nil {
+		return nil
+	}
+	targetID := bestFacebookCDPTargetID(targets)
+	ctx, cancel, err := cdpContextForEndpointTarget(ep, targetID, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	var dom struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
+		Text  string `json:"text"`
+	}
+	script := `({
+		url: location.href || "",
+		title: document.title || "",
+		text: document.body && document.body.innerText ? document.body.innerText.slice(0, 12000) : ""
+	})`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &dom)); err != nil {
+		return err
+	}
+	if dom.URL != "" && dom.URL != "about:blank" && !strings.HasPrefix(dom.URL, "devtools://") {
+		snap.CurrentURL = dom.URL
+	}
+	if dom.Title != "" {
+		snap.CurrentTitle = dom.Title
+	}
+	applyFacebookHumanChallengeDetection(snap, dom.Text)
+	return nil
+}
+
+func bestFacebookCDPTargetID(targets []cdpTargetInfo) string {
+	fallback := ""
+	for _, t := range targets {
+		if t.Type != "page" || t.ID == "" {
+			continue
+		}
+		lower := strings.ToLower(t.URL + " " + t.Title)
+		if strings.Contains(lower, "facebook.com") {
+			return t.ID
+		}
+		if fallback == "" && t.URL != "about:blank" && !strings.HasPrefix(t.URL, "devtools://") {
+			fallback = t.ID
+		}
+		if fallback == "" {
+			fallback = t.ID
+		}
+	}
+	return fallback
+}
+
+func cdpContextForEndpointTarget(ep cdpEndpoint, targetID string, timeout time.Duration) (context.Context, context.CancelFunc, error) {
+	if targetID == "" {
+		return cdpContextForEndpoint(ep, timeout)
+	}
+	wsURL, err := chromeBrowserWSFromEndpoint(ep)
+	if err != nil {
+		return nil, nil, err
+	}
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
+	ctx, ctxCancel := chromedp.NewContext(allocCtx, chromedp.WithTargetID(cdptarget.ID(targetID)))
+	ctx, timeoutCancel := context.WithTimeout(ctx, timeout)
+	cancel := func() {
+		timeoutCancel()
+		ctxCancel()
+		allocCancel()
+	}
+	return ctx, cancel, nil
+}
+
+func applyFacebookHumanChallengeDetection(snap *facebookSessionSnapshot, bodyText string) {
+	if snap == nil {
+		return
+	}
+	haystack := strings.ToLower(strings.Join([]string{
+		snap.CurrentURL,
+		snap.CurrentTitle,
+		bodyText,
+	}, " "))
+
+	reason := ""
+	switch {
+	case containsAny(haystack, "checkpoint", "/checkpoint/", "checkpoint_src", "/sorry/"):
+		reason = "facebook_checkpoint"
+	case containsAny(haystack, "captcha", "recaptcha", "not a robot", "i'm not a robot", "robot check", "security check", "are you a robot", "not a bot"):
+		reason = "facebook_captcha"
+	case containsAny(haystack, "confirm your identity", "identity confirmation", "verify your identity", "xác minh", "xác nhận danh tính", "kiểm tra bảo mật"):
+		reason = "facebook_identity_verification"
+	case containsAny(haystack, "unusual activity", "suspicious activity", "automated behavior", "temporarily blocked"):
+		reason = "facebook_risk_checkpoint"
+	}
+	if reason == "" {
+		return
+	}
+	snap.Checkpoint = true
+	snap.HumanRequired = true
+	snap.HumanReason = reason
+	if snap.CookieError == "" {
+		snap.CookieError = "Meta requires manual verification before automation can continue"
+	}
+}
+
+func containsAny(s string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func cdpEndpointsForInstance(inst *workspace.Instance) []cdpEndpoint {
