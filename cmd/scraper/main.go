@@ -156,6 +156,10 @@ func main() {
 	watchdog := browser.NewWatchdog(workspaceMgr, 30*time.Second, func(accountID int64, outcome browser.SessionOutcome, reason string) {
 		switch outcome {
 		case browser.SessionCDPDown:
+			if os.Getenv("WORKSPACE_AUTO_RESTART_CDP_DOWN") != "1" {
+				log.Printf("[Watchdog] CDP_DOWN account %d - keeping browser alive during login/session flow: %s", accountID, reason)
+				return
+			}
 			log.Printf("[Watchdog] CDP_DOWN account %d — safe restart: %s", accountID, reason)
 			if err := browser.SafeRestart(ctx, workspaceMgr, accountID, ""); err != nil {
 				log.Printf("[Watchdog] SafeRestart failed account %d: %v", accountID, err)

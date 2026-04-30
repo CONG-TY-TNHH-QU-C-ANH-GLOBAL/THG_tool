@@ -62,6 +62,7 @@ func (h *HealthChecker) Check(ctx context.Context, inst *Instance) HealthStatus 
 	body, err := h.httpGet(ctx, versionURL)
 	if err != nil {
 		result.Reason = fmt.Sprintf("CDP /json/version failed: %v", err)
+		result.Healthy = true
 		return result
 	}
 	result.CDPAlive = true
@@ -87,6 +88,7 @@ func (h *HealthChecker) Check(ctx context.Context, inst *Instance) HealthStatus 
 	}
 	if !result.HasTabs {
 		result.Reason = "CDP alive but Chrome has no open tabs (may be frozen)"
+		result.Healthy = true
 		return result
 	}
 

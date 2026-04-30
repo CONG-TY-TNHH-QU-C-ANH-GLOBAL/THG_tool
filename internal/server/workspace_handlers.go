@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/storage"
 	cdptarget "github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/gofiber/fiber/v2"
@@ -571,7 +573,7 @@ func facebookSessionSnapshotFromCDPEndpoint(ep cdpEndpoint) (*facebookSessionSna
 	}
 	applyFacebookHumanChallengeDetection(snap, "")
 
-	fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDPEndpoint(ep)
+	fbUserID, cookiesJSON, cookieCount, err := facebookCookiesFromCDPEndpointTargets(ep, targets)
 	if err != nil {
 		if snap.CookieError != "" {
 			snap.CookieError += "; cookies: " + err.Error()
@@ -821,7 +823,19 @@ func facebookCookiesFromInstance(inst *workspace.Instance) (string, string, int,
 }
 
 func facebookCookiesFromCDPEndpoint(ep cdpEndpoint) (string, string, int, error) {
-	ctx, cancel, err := cdpContextForEndpoint(ep, 8*time.Second)
+	targets, err := fetchCDPTargetsFromEndpoint(ep)
+	if err != nil {
+		return "", "", 0, err
+	}
+	return facebookCookiesFromCDPEndpointTargets(ep, targets)
+}
+
+func facebookCookiesFromCDPEndpointTargets(ep cdpEndpoint, targets []cdpTargetInfo) (string, string, int, error) {
+	targetID := bestFacebookCDPTargetID(targets)
+	if targetID == "" {
+		return "", "", 0, fmt.Errorf("no page target available for cookie capture")
+	}
+	ctx, cancel, err := cdpContextForEndpointTarget(ep, targetID, 8*time.Second)
 	if err != nil {
 		return "", "", 0, err
 	}
@@ -829,11 +843,12 @@ func facebookCookiesFromCDPEndpoint(ep cdpEndpoint) (string, string, int, error)
 
 	var cookies []*network.Cookie
 	if err := chromedp.Run(ctx, network.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
+		c := chromedp.FromContext(ctx)
+		if c == nil || c.Browser == nil {
+			return fmt.Errorf("browser executor unavailable")
+		}
 		var e error
-		cookies, e = network.GetCookies().WithURLs([]string{
-			"https://www.facebook.com",
-			"https://facebook.com",
-		}).Do(ctx)
+		cookies, e = storage.GetCookies().Do(cdp.WithExecutor(ctx, c.Browser))
 		return e
 	})); err != nil {
 		return "", "", 0, err
@@ -851,6 +866,9 @@ func facebookCookiesFromCDPEndpoint(ep cdpEndpoint) (string, string, int, error)
 	out := make([]exportCookie, 0, len(cookies))
 	var fbUserID string
 	for _, ck := range cookies {
+		if !isFacebookCookieDomain(ck.Domain) {
+			continue
+		}
 		if ck.Name == "c_user" && ck.Value != "" {
 			fbUserID = ck.Value
 		}
@@ -865,13 +883,18 @@ func facebookCookiesFromCDPEndpoint(ep cdpEndpoint) (string, string, int, error)
 		})
 	}
 	if fbUserID == "" {
-		return "", "", len(cookies), fmt.Errorf("missing c_user cookie")
+		return "", "", len(out), fmt.Errorf("missing c_user cookie")
 	}
 	cookiesJSON, err := json.Marshal(out)
 	if err != nil {
-		return "", "", len(cookies), fmt.Errorf("serialize cookies: %w", err)
+		return "", "", len(out), fmt.Errorf("serialize cookies: %w", err)
 	}
-	return fbUserID, string(cookiesJSON), len(cookies), nil
+	return fbUserID, string(cookiesJSON), len(out), nil
+}
+
+func isFacebookCookieDomain(domain string) bool {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	return d == "facebook.com" || d == ".facebook.com" || strings.HasSuffix(d, ".facebook.com")
 }
 
 func isCDPUnavailable(err error) bool {
