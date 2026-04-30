@@ -12,6 +12,23 @@
 import { useAuthStore } from '../stores/authStore';
 
 const BASE = '/api';
+let rateLimitedUntil = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function noteRateLimit(res: Response): void {
+  if (res.status !== 429) return;
+  const retryAfter = Number(res.headers.get('Retry-After') ?? '0');
+  const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 10_000;
+  rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + delay);
+}
+
+async function waitForRateLimitWindow(): Promise<void> {
+  const waitMs = rateLimitedUntil - Date.now();
+  if (waitMs > 0) await sleep(Math.min(waitMs, 30_000));
+}
 
 // ── Layer 2: Silent pre-expiry refresh scheduler ─────────────────────────────
 
@@ -49,10 +66,15 @@ let refreshWaiters: Array<(token: string | null) => void> = [];
  */
 async function doRefresh(): Promise<string | null> {
   try {
+    await waitForRateLimitWindow();
     const res = await fetch(`${BASE}/auth/refresh`, {
       method: 'POST',
       credentials: 'include', // sends httpOnly refresh_token cookie
     });
+    noteRateLimit(res);
+    if (res.status === 429) {
+      return useAuthStore.getState().token;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     return (data.access_token as string) ?? null;
@@ -104,12 +126,16 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       },
     });
 
+  await waitForRateLimitWindow();
   let res = await makeReq(useAuthStore.getState().token);
+  noteRateLimit(res);
 
   if (res.status === 401) {
     const newToken = await ensureRefresh();
     if (!newToken) throw new Error('UNAUTHENTICATED');
+    await waitForRateLimitWindow();
     res = await makeReq(newToken);
+    noteRateLimit(res);
   }
 
   return res;
@@ -121,7 +147,8 @@ async function handleJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const err = body as Record<string, string>;
-    const message = err.error ?? err.message ?? `HTTP ${res.status}`;
+    const fallback = res.status === 429 ? 'API đang bị giới hạn tạm thời, hệ thống sẽ tự thử lại' : `HTTP ${res.status}`;
+    const message = err.error ?? err.message ?? fallback;
     throw new Error(err.hint ? `${message}. ${err.hint}` : message);
   }
   if (res.status === 204) return undefined as T;
@@ -165,10 +192,13 @@ export async function upload<T>(path: string, file: File): Promise<T> {
   };
 
   let res = await makeUpload(useAuthStore.getState().token);
+  noteRateLimit(res);
   if (res.status === 401) {
     const newToken = await ensureRefresh();
     if (!newToken) throw new Error('UNAUTHENTICATED');
+    await waitForRateLimitWindow();
     res = await makeUpload(newToken);
+    noteRateLimit(res);
   }
   return handleJSON<T>(res);
 }

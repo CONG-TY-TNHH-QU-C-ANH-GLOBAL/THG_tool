@@ -115,7 +115,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     };
 
     void run();
-    const timer = setInterval(run, 5000);
+    const timer = setInterval(run, 10000);
     return () => {
       cancelled = true;
       clearInterval(timer);

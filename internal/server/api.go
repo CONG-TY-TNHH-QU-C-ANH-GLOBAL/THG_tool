@@ -85,12 +85,15 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:      "THG Agentic Scraper",
-		ServerHeader: "THG-Scraper",
-		BodyLimit:    4 * 1024 * 1024, // 4 MB max body
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 0, // no timeout — WebSocket (noVNC/agent) connections are long-lived
-		IdleTimeout:  0,
+		AppName:                 "THG Agentic Scraper",
+		ServerHeader:            "THG-Scraper",
+		BodyLimit:               4 * 1024 * 1024, // 4 MB max body
+		ReadTimeout:             30 * time.Second,
+		WriteTimeout:            0, // no timeout — WebSocket (noVNC/agent) connections are long-lived
+		IdleTimeout:             0,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		TrustedProxies:          []string{"127.0.0.1", "::1"},
 	})
 
 	s := &Server{
@@ -157,9 +160,11 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// --- Route Groups ---
 	api := app.Group("/api")
 
-	// 3. General rate limiting — 1000 req / 15 min per IP (Applied to API only)
+	// 3. General rate limiting — dashboard APIs are realtime and poll session
+	// state, so keep the global guard high and enforce stricter limits only on
+	// auth/register endpoints.
 	api.Use(limiter.New(limiter.Config{
-		Max:        1000,
+		Max:        5000,
 		Expiration: 15 * time.Minute,
 		KeyGenerator: func(c *fiber.Ctx) string {
 			return c.IP()

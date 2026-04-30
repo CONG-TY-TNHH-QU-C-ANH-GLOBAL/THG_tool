@@ -91,8 +91,9 @@ fi
 # Add rate limit zones and Cloudflare real_ip restore
 cat > /etc/nginx/conf.d/cloudflare.conf << 'EOF'
 # Rate limit zones
-limit_req_zone $binary_remote_addr zone=api:10m   rate=20r/m;
-limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+limit_req_zone $binary_remote_addr zone=api:10m          rate=10r/s;
+limit_req_zone $binary_remote_addr zone=auth_login:10m   rate=10r/m;
+limit_req_zone $binary_remote_addr zone=auth_refresh:10m rate=60r/m;
 
 # Restore real client IP from Cloudflare
 set_real_ip_from 173.245.48.0/20;
