@@ -392,6 +392,15 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		var err error
 		fbUserID, cookiesJSON, cookieCount, err = facebookCookiesFromCDP(inst.CDPPort)
 		if err != nil {
+			if isCDPUnavailable(err) {
+				msg := "CDP endpoint is not reachable from the API host; restart this browser session after the thg-browser image is rebuilt"
+				s.recordBrowserSession(id, acc.OrgID, inst, "display_ready", msg+": "+err.Error())
+				return c.Status(503).JSON(fiber.Map{
+					"error": "browser CDP is not ready: " + err.Error(),
+					"code":  "CDP_UNAVAILABLE",
+					"hint":  msg,
+				})
+			}
 			return c.Status(400).JSON(fiber.Map{"error": "not logged in to Facebook yet: " + err.Error()})
 		}
 		_ = cookieCount
@@ -484,6 +493,18 @@ func facebookCookiesFromCDP(cdpPort int) (string, string, int, error) {
 		return "", "", len(cookies), fmt.Errorf("serialize cookies: %w", err)
 	}
 	return fbUserID, string(cookiesJSON), len(cookies), nil
+}
+
+func isCDPUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "chrome not ready") ||
+		strings.Contains(msg, "cdp target list unavailable") ||
+		strings.Contains(msg, "/json/version") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "eof")
 }
 
 // resolveCheckpoint marks a session as ready after an operator manually passed the

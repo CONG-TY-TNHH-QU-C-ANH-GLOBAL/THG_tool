@@ -166,13 +166,22 @@ jobs:
             sudo chown -R thg-scraper:thg-scraper /opt/thg-scraper/frontend-standalone
             echo "Frontend deployed"
 
-            # Build Docker browser image if missing or changed.
-            if ! docker image inspect thg-browser:latest > /dev/null 2>&1 || \
-               [ "/tmp/thg-deploy/docker/Dockerfile" -nt "/opt/thg-scraper/docker/Dockerfile" ] 2>/dev/null; then
+            # Build Docker browser image if missing or changed. Compare both
+            # Dockerfile and entrypoint because CDP flags live in entrypoint.sh.
+            sudo mkdir -p /opt/thg-scraper/docker
+            REBUILD_BROWSER=false
+            if ! docker image inspect thg-browser:latest > /dev/null 2>&1; then
+              REBUILD_BROWSER=true
+            elif ! cmp -s /tmp/thg-deploy/docker/Dockerfile /opt/thg-scraper/docker/Dockerfile 2>/dev/null; then
+              REBUILD_BROWSER=true
+            elif ! cmp -s /tmp/thg-deploy/docker/entrypoint.sh /opt/thg-scraper/docker/entrypoint.sh 2>/dev/null; then
+              REBUILD_BROWSER=true
+            fi
+
+            sudo cp -r /tmp/thg-deploy/docker/. /opt/thg-scraper/docker/
+            sudo chmod +x /opt/thg-scraper/docker/entrypoint.sh
+            if [ "$REBUILD_BROWSER" = "true" ]; then
               echo "Building thg-browser Docker image..."
-              sudo mkdir -p /opt/thg-scraper/docker
-              sudo cp -r /tmp/thg-deploy/docker/. /opt/thg-scraper/docker/
-              sudo chmod +x /opt/thg-scraper/docker/entrypoint.sh
               docker build -t thg-browser:latest /opt/thg-scraper/docker/
               echo "Docker image built"
             else

@@ -121,7 +121,8 @@ async function handleJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const err = body as Record<string, string>;
-    throw new Error(err.error ?? err.message ?? `HTTP ${res.status}`);
+    const message = err.error ?? err.message ?? `HTTP ${res.status}`;
+    throw new Error(err.hint ? `${message}. ${err.hint}` : message);
   }
   if (res.status === 204) return undefined as T;
   return res.json();

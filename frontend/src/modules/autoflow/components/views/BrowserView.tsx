@@ -148,6 +148,21 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     }
   };
 
+  const handleMarkLoggedIn = async () => {
+    if (selectedId === null) return;
+    setSyncLoading(true);
+    try {
+      await markLoggedIn(selectedId);
+      const snap = await syncSession(selectedId);
+      setSessionInfo(snap);
+      setSyncError(null);
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'KhÃ´ng xÃ¡c thá»±c Ä‘Æ°á»£c session');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
@@ -266,9 +281,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
             {!selectedWs.loggedIn && (
               <button
-                onClick={() => void markLoggedIn(selectedId)}
-                disabled={actionLoading.has(selectedId)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: actionLoading.has(selectedId) ? 'wait' : 'pointer', opacity: actionLoading.has(selectedId) ? 0.6 : 1 }}
+                onClick={() => void handleMarkLoggedIn()}
+                disabled={actionLoading.has(selectedId) || syncLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#16a34a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: actionLoading.has(selectedId) || syncLoading ? 'wait' : 'pointer', opacity: actionLoading.has(selectedId) || syncLoading ? 0.6 : 1 }}
               >
                 <CheckCircle size={14} /> Đánh dấu đã đăng nhập
               </button>

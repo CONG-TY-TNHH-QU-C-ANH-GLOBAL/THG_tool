@@ -61,4 +61,5 @@ exec "${BROWSER_BIN}" \
     --start-maximized \
     --remote-debugging-port="${CDP_PORT}" \
     --remote-debugging-address=0.0.0.0 \
+    --remote-allow-origins="*" \
     "https://www.facebook.com"
