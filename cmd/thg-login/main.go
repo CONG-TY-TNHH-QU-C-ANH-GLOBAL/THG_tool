@@ -724,11 +724,12 @@ func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBr
 	}
 	for _, cmd := range commands {
 		errText := ""
-		if err := executeConnectorCommand(cmd, bridges); err != nil {
+		result, err := executeConnectorCommand(cmd, bridges)
+		if err != nil {
 			errText = err.Error()
 			fmt.Printf("[warn] input command %d failed: %s\n", cmd.ID, errText)
 		} else {
-			fmt.Printf("[Input] command %d (%s) sent to account %d\n", cmd.ID, cmd.Type, cmd.AccountID)
+			fmt.Printf("[Input] command %d (%s) sent to account %d -> %s\n", cmd.ID, cmd.Type, cmd.AccountID, result)
 		}
 		if err := completeConnectorCommand(serverURL, token, cmd.ID, errText); err != nil {
 			if isDeviceTokenRejected(err) {
@@ -741,10 +742,10 @@ func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBr
 	return true
 }
 
-func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBridge) error {
+func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBridge) (string, error) {
 	bridge := bridges[cmd.AccountID]
 	if bridge == nil || bridge.ctx == nil || bridge.err != nil {
-		return fmt.Errorf("Chrome profile for account %d is not ready", cmd.AccountID)
+		return "", fmt.Errorf("Chrome profile for account %d is not ready", cmd.AccountID)
 	}
 	switch strings.ToLower(strings.TrimSpace(cmd.Type)) {
 	case "click":
@@ -759,11 +760,12 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 			Clicks      int64   `json:"clicks"`
 		}
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
-			return err
+			return "", err
 		}
 		x, y := scaleInputPoint(cmdCtx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
 		var result string
-		return chromedp.Run(cmdCtx, chromedp.Evaluate(clickElementAtPointJS(x, y, mouseButtonNumber(payload.Button)), &result))
+		err := chromedp.Run(cmdCtx, chromedp.Evaluate(clickElementAtPointJS(x, y, mouseButtonNumber(payload.Button)), &result))
+		return result, err
 	case "scroll":
 		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
 		defer cancel()
@@ -776,14 +778,15 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 			DeltaY      float64 `json:"delta_y"`
 		}
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
-			return err
+			return "", err
 		}
 		if payload.DeltaY == 0 {
 			payload.DeltaY = 400
 		}
 		x, y := scaleInputPoint(cmdCtx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
 		var result string
-		return chromedp.Run(cmdCtx, chromedp.Evaluate(scrollAtPointJS(x, y, payload.DeltaX, payload.DeltaY), &result))
+		err := chromedp.Run(cmdCtx, chromedp.Evaluate(scrollAtPointJS(x, y, payload.DeltaX, payload.DeltaY), &result))
+		return result, err
 	case "text":
 		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
 		defer cancel()
@@ -791,16 +794,17 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
-			return err
+			return "", err
 		}
 		if payload.Text == "" {
-			return nil
+			return "empty_text", nil
 		}
 		if len([]rune(payload.Text)) > 256 {
-			return fmt.Errorf("text command is too long")
+			return "", fmt.Errorf("text command is too long")
 		}
 		var result string
-		return chromedp.Run(cmdCtx, chromedp.Evaluate(insertTextIntoActiveElementJS(payload.Text), &result))
+		err := chromedp.Run(cmdCtx, chromedp.Evaluate(insertTextIntoActiveElementJS(payload.Text), &result))
+		return result, err
 	case "key":
 		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
 		defer cancel()
@@ -813,22 +817,24 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 			MetaKey bool   `json:"meta_key"`
 		}
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
-			return err
+			return "", err
 		}
 		if len([]rune(payload.Key)) == 1 && !payload.CtrlKey && !payload.AltKey && !payload.MetaKey {
 			var result string
-			return chromedp.Run(cmdCtx, chromedp.Evaluate(insertTextIntoActiveElementJS(payload.Key), &result))
+			err := chromedp.Run(cmdCtx, chromedp.Evaluate(insertTextIntoActiveElementJS(payload.Key), &result))
+			return result, err
 		}
 		if payload.Key == "Backspace" || payload.Key == "Tab" || payload.Key == "Enter" {
 			var result string
-			return chromedp.Run(cmdCtx, chromedp.Evaluate(specialKeyJS(payload.Key, payload.Shift), &result))
+			err := chromedp.Run(cmdCtx, chromedp.Evaluate(specialKeyJS(payload.Key, payload.Shift), &result))
+			return result, err
 		}
 		key, code, vk := normalizeKey(payload.Key, payload.Code)
 		if key == "" {
-			return nil
+			return "empty_key", nil
 		}
 		modifiers := keyModifiers(payload.CtrlKey, payload.AltKey, payload.Shift, payload.MetaKey)
-		return chromedp.Run(cmdCtx,
+		err := chromedp.Run(cmdCtx,
 			chromedp.ActionFunc(func(ctx context.Context) error {
 				return cdpinput.DispatchKeyEvent(cdpinput.KeyRawDown).
 					WithKey(key).
@@ -848,8 +854,9 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 					Do(ctx)
 			}),
 		)
+		return "cdp_key", err
 	default:
-		return fmt.Errorf("unsupported command type %q", cmd.Type)
+		return "", fmt.Errorf("unsupported command type %q", cmd.Type)
 	}
 }
 
@@ -904,20 +911,37 @@ func clickElementAtPointJS(x, y float64, button int) string {
   const x = %s, y = %s, button = %d;
   const raw = document.elementFromPoint(x, y);
   if (!raw) return 'no_element';
-  const target = (raw.closest && raw.closest('input,textarea,button,a,[role="button"],[contenteditable="true"],label,select')) || raw;
+  let target = (raw.closest && raw.closest('input,textarea,button,a,[role="button"],[contenteditable="true"],label,select')) || raw;
+  const isTypingTarget = (node) => node && (node.matches && node.matches('input,textarea,[contenteditable="true"]'));
+  if (!isTypingTarget(target)) {
+    const inputs = Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"]'))
+      .filter(node => {
+        const r = node.getBoundingClientRect();
+        return r.width > 20 && r.height > 10 && r.bottom >= 0 && r.right >= 0 && r.top <= innerHeight && r.left <= innerWidth;
+      })
+      .map(node => {
+        const r = node.getBoundingClientRect();
+        const cx = Math.max(r.left, Math.min(x, r.right));
+        const cy = Math.max(r.top, Math.min(y, r.bottom));
+        return {node, d: Math.hypot(x - cx, y - cy)};
+      })
+      .sort((a, b) => a.d - b.d);
+    if (inputs[0] && inputs[0].d <= 180) target = inputs[0].node;
+  }
   const opts = {bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button,buttons:button === 2 ? 2 : button === 1 ? 4 : 1};
   try { target.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (_) {}
   try { target.dispatchEvent(new MouseEvent('mousedown', opts)); } catch (_) {}
   if (typeof target.focus === 'function') {
     try { target.focus({preventScroll:true}); } catch (_) { try { target.focus(); } catch (_) {} }
   }
+  if (isTypingTarget(target)) window.__thgLastInput = target;
   try { target.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (_) {}
   try { target.dispatchEvent(new MouseEvent('mouseup', opts)); } catch (_) {}
   try { target.dispatchEvent(new MouseEvent('click', opts)); } catch (_) {}
   try { if (typeof target.click === 'function') target.click(); } catch (_) {}
   if (target.tagName === 'LABEL') {
     const input = target.control || (target.getAttribute('for') ? document.getElementById(target.getAttribute('for')) : null);
-    if (input && typeof input.focus === 'function') input.focus();
+    if (input && typeof input.focus === 'function') { input.focus(); window.__thgLastInput = input; }
   }
   return (target.tagName || 'element') + ':' + ((target.getAttribute && (target.getAttribute('name') || target.getAttribute('type') || target.id)) || '');
 })()`, jsFloat(x), jsFloat(y), button)
@@ -936,8 +960,20 @@ func scrollAtPointJS(x, y, deltaX, deltaY float64) string {
 func insertTextIntoActiveElementJS(text string) string {
 	return fmt.Sprintf(`(() => {
   const text = %s;
-  const el = document.activeElement;
-  if (!el || el === document.body || el === document.documentElement) return 'no_active_element';
+  let el = document.activeElement;
+  const usable = (node) => node && node.isConnected && (node.isContentEditable || ('value' in node));
+  if (!usable(el) || el === document.body || el === document.documentElement) {
+    if (usable(window.__thgLastInput)) el = window.__thgLastInput;
+  }
+  if (!usable(el) || el === document.body || el === document.documentElement) {
+    el = Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"]')).find(node => {
+      const r = node.getBoundingClientRect();
+      return r.width > 20 && r.height > 10 && r.bottom >= 0 && r.right >= 0 && r.top <= innerHeight && r.left <= innerWidth;
+    });
+  }
+  if (!usable(el) || el === document.body || el === document.documentElement) return 'no_active_element';
+  try { if (typeof el.focus === 'function') el.focus({preventScroll:true}); } catch (_) { try { el.focus(); } catch (_) {} }
+  window.__thgLastInput = el;
   if (el.isContentEditable) {
     document.execCommand('insertText', false, text);
     return 'contenteditable';

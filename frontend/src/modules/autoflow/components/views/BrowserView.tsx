@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
@@ -357,6 +357,7 @@ function LocalChromeViewer({
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const keyboardRef = useRef<HTMLTextAreaElement | null>(null);
   const inputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastWheelAtRef = useRef(0);
   const [inputStatus, setInputStatus] = useState<string | null>(null);
@@ -377,6 +378,16 @@ function LocalChromeViewer({
       });
   }, [accountId, screen?.imageData]);
 
+  const focusRemoteKeyboard = () => {
+    window.setTimeout(() => {
+      try {
+        keyboardRef.current?.focus({ preventScroll: true });
+      } catch {
+        keyboardRef.current?.focus();
+      }
+    }, 0);
+  };
+
   const imagePoint = (clientX: number, clientY: number) => {
     const img = imgRef.current;
     if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
@@ -392,6 +403,7 @@ function LocalChromeViewer({
     if (!screen?.imageData) return;
     setInputActive(true);
     surfaceRef.current?.focus();
+    focusRemoteKeyboard();
     const point = imagePoint(e.clientX, e.clientY);
     if (!point) return;
     void queueInput('click', {
@@ -402,6 +414,41 @@ function LocalChromeViewer({
       button: e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left',
       clicks: Math.max(1, e.detail || 1),
     });
+  };
+
+  const handleKeyboardInput = (e: FormEvent<HTMLTextAreaElement>) => {
+    if (!screen?.imageData) return;
+    const el = e.currentTarget;
+    const text = el.value;
+    if (!text) return;
+    el.value = '';
+    void queueInput('text', { text: text.slice(0, 256) });
+  };
+
+  const handleKeyboardPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!screen?.imageData) return;
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    e.preventDefault();
+    void queueInput('text', { text: text.slice(0, 256) });
+  };
+
+  const handleKeyboardKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!screen?.imageData) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+      return;
+    }
+    if (isRemoteControlKey(e.key) || e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      void queueInput('key', {
+        key: e.key,
+        code: e.code,
+        ctrl_key: e.ctrlKey,
+        alt_key: e.altKey,
+        shift_key: e.shiftKey,
+        meta_key: e.metaKey,
+      });
+    }
   };
 
   const handleWheel = (e: WheelEvent<HTMLImageElement>) => {
@@ -420,40 +467,6 @@ function LocalChromeViewer({
       delta_y: e.deltaY,
     });
   };
-
-  useEffect(() => {
-    if (!inputActive || !screen?.imageData) return;
-    const handleWindowKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        e.preventDefault();
-        queueInput('text', { text: e.key });
-        return;
-      }
-      if (isRemoteControlKey(e.key) || e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        queueInput('key', {
-          key: e.key,
-          code: e.code,
-          ctrl_key: e.ctrlKey,
-          alt_key: e.altKey,
-          shift_key: e.shiftKey,
-          meta_key: e.metaKey,
-        });
-      }
-    };
-    const handleWindowPaste = (e: globalThis.ClipboardEvent) => {
-      const text = e.clipboardData?.getData('text') ?? '';
-      if (!text) return;
-      e.preventDefault();
-      queueInput('text', { text: text.slice(0, 256) });
-    };
-    window.addEventListener('keydown', handleWindowKeyDown, true);
-    window.addEventListener('paste', handleWindowPaste, true);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown, true);
-      window.removeEventListener('paste', handleWindowPaste, true);
-    };
-  }, [inputActive, queueInput, screen?.imageData]);
 
   return (
     <div style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
@@ -477,8 +490,27 @@ function LocalChromeViewer({
       <div
         ref={surfaceRef}
         tabIndex={0}
-        style={{ minHeight: 420, display: 'grid', placeItems: 'center', background: '#000', outline: 'none' }}
+        style={{ position: 'relative', minHeight: 420, display: 'grid', placeItems: 'center', background: '#000', outline: 'none' }}
       >
+        <textarea
+          ref={keyboardRef}
+          aria-label="THG remote browser keyboard"
+          autoCapitalize="off"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          onInput={handleKeyboardInput}
+          onPaste={handleKeyboardPaste}
+          onKeyDown={handleKeyboardKeyDown}
+          style={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            opacity: 0,
+            pointerEvents: 'none',
+            resize: 'none',
+          }}
+        />
         {screen?.imageData ? (
           <img
             ref={imgRef}
