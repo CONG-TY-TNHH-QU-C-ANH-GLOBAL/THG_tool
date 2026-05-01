@@ -185,7 +185,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
           >
             <option value="">Tự chọn</option>
             {activeAccounts.map(w => (
-              <option key={w.accountId} value={w.accountId}>{w.accountName}</option>
+              <option key={w.accountId} value={w.accountId}>{w.email ? `${w.accountName} · ${w.email}` : w.accountName}</option>
             ))}
           </select>
           {activeAccounts.length === 0 && (
@@ -204,6 +204,9 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12 }}>
               <span>Session</span><span style={{ color: selectedAccount?.loggedIn ? '#4ade80' : theme.textMuted }}>{selectedAccount?.loggedIn ? 'saved' : 'pending'}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12, gap: 8 }}>
+              <span>Email</span><span style={{ color: selectedAccount?.email ? theme.text : theme.textFaint, overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedAccount?.email || 'chưa xác minh'}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12, gap: 8 }}>
               <span>FB ID</span><span style={{ color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedAccount?.fbUserId ?? '-'}</span>

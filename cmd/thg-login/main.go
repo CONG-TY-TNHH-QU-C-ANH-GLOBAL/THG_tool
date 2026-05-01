@@ -63,6 +63,7 @@ type chromeBridge struct {
 	cancel            context.CancelFunc
 	err               error
 	loginIdentifier   string
+	loginCaptureLog   string
 	windowHidden      bool
 	windowWarned      bool
 	lastWindowPosture time.Time
@@ -99,6 +100,53 @@ type connectorCommand struct {
 
 type connectorCommandsResponse struct {
 	Commands []connectorCommand `json:"commands"`
+}
+
+type localCrawlTask struct {
+	TaskID    string            `json:"task_id"`
+	OrgID     int64             `json:"org_id"`
+	AccountID int64             `json:"account_id"`
+	Intent    string            `json:"intent"`
+	Keywords  []string          `json:"keywords"`
+	CrawlPlan localCrawlPlan    `json:"crawl_plan"`
+	Filters   localCrawlFilters `json:"filters"`
+}
+
+type localCrawlPlan struct {
+	Sources   []localCrawlSource `json:"sources"`
+	MaxItems  int                `json:"max_items"`
+	BatchSize int                `json:"batch_size"`
+}
+
+type localCrawlSource struct {
+	Type  string `json:"type"`
+	URL   string `json:"url"`
+	Label string `json:"label"`
+}
+
+type localCrawlFilters struct {
+	Keywords []string `json:"keywords"`
+}
+
+type localCrawlItem struct {
+	ID               string `json:"id"`
+	SourceURL        string `json:"source_url"`
+	AuthorProfileURL string `json:"author_profile_url"`
+	AuthorName       string `json:"author_name"`
+	Content          string `json:"content"`
+	Reactions        int    `json:"reactions"`
+	Comments         int    `json:"comments"`
+	Shares           int    `json:"shares"`
+}
+
+type localCrawlResult struct {
+	TaskID    string           `json:"task_id"`
+	Intent    string           `json:"intent"`
+	AccountID int64            `json:"account_id"`
+	Status    string           `json:"status"`
+	Error     string           `json:"error,omitempty"`
+	Keywords  []string         `json:"keywords"`
+	Items     []localCrawlItem `json:"items"`
 }
 
 func main() {
@@ -315,6 +363,7 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	if err := chromedp.Run(ctx,
+		installFacebookLoginCaptureOnNewDocument(),
 		chromedp.Navigate("https://www.facebook.com"),
 		chromedp.Sleep(2*time.Second),
 		installFacebookLoginCapture(),
@@ -573,6 +622,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	}
 	if loginIdentifier != "" {
 		bridge.loginIdentifier = loginIdentifier
+		logCapturedLoginIdentifier(bridge, loginIdentifier)
 	}
 	lowerURL := strings.ToLower(href)
 	humanRequired := isFacebookHumanRequiredURL(lowerURL)
@@ -586,6 +636,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		)
 		if loginIdentifier != "" {
 			bridge.loginIdentifier = loginIdentifier
+			logCapturedLoginIdentifier(bridge, loginIdentifier)
 		}
 		lowerURL = strings.ToLower(href)
 		humanRequired = isFacebookHumanRequiredURL(lowerURL)
@@ -656,59 +707,139 @@ func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVis
 	}
 }
 
+func installFacebookLoginCaptureOnNewDocument() chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		_, err := cdppage.AddScriptToEvaluateOnNewDocument(facebookLoginCaptureSource()).Do(ctx)
+		return err
+	})
+}
+
 func installFacebookLoginCapture() chromedp.Action {
-	return chromedp.Evaluate(`(() => {
+	return chromedp.Evaluate(facebookLoginCaptureSource(), nil)
+}
+
+func facebookLoginCaptureSource() string {
+	return `(() => {
 		try {
 			const key = "__thg_last_facebook_login_identifier";
+			const prop = "__thgLastFacebookLoginIdentifier";
 			const selectors = [
 				'input[name="email"]',
 				'input#email',
 				'input[autocomplete="username"]',
-				'input[type="email"]'
+				'input[type="email"]',
+				'input[type="text"][name*="email" i]',
+				'input[type="text"][autocomplete="username"]'
 			];
-			const field = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
-			if (!field) return false;
-			const remember = () => {
-				const value = String(field.value || field.getAttribute("value") || "").trim();
-				if (value) {
-					window.localStorage.setItem(key, value.slice(0, 320));
-				}
+			const readField = () => selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+			const save = (value) => {
+				value = String(value || "").trim();
+				if (!value) return "";
+				value = value.slice(0, 320);
+				window[prop] = value;
+				try { window.localStorage.setItem(key, value); } catch (_) {}
+				try { window.sessionStorage.setItem(key, value); } catch (_) {}
+				return value;
 			};
-			remember();
-			if (!field.dataset.thgLoginCaptureBound) {
+			const remember = () => {
+				const field = readField();
+				if (!field) return "";
+				return save(field.value || field.getAttribute("value") || "");
+			};
+			const bindField = () => {
+				const field = readField();
+				if (!field || field.dataset.thgLoginCaptureBound) return Boolean(field);
 				field.dataset.thgLoginCaptureBound = "1";
-				["input", "change", "keyup", "blur"].forEach((eventName) => {
-					field.addEventListener(eventName, remember, { passive: true });
+				["input", "change", "keyup", "keydown", "blur", "focusout"].forEach((eventName) => {
+					field.addEventListener(eventName, remember, true);
 				});
-			}
-			return true;
+				remember();
+				return true;
+			};
+			const bindDocument = () => {
+				if (window.__thgFacebookLoginDocumentBound) return;
+				window.__thgFacebookLoginDocumentBound = true;
+				["submit", "click", "keydown", "beforeunload", "pagehide"].forEach((eventName) => {
+					document.addEventListener(eventName, remember, true);
+				});
+				const observer = new MutationObserver(() => bindField());
+				observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, attributeFilter: ["value"] });
+			};
+			bindDocument();
+			bindField();
+			return Boolean(window[prop] || (() => {
+				try {
+					return window.localStorage.getItem(key) || window.sessionStorage.getItem(key) || "";
+				} catch (_) {
+					return "";
+				}
+			})());
 		} catch (_) {
 			return false;
 		}
-	})()`, nil)
+	})()`
 }
 
 func facebookLoginIdentifierScript() string {
 	return `(() => {
 		try {
 			const key = "__thg_last_facebook_login_identifier";
-			const stored = String(window.localStorage.getItem(key) || "").trim();
+			const prop = "__thgLastFacebookLoginIdentifier";
+			const fromWindow = String(window[prop] || "").trim();
+			if (fromWindow) return fromWindow.slice(0, 320);
+			let stored = "";
+			try { stored = String(window.localStorage.getItem(key) || "").trim(); } catch (_) {}
+			if (!stored) {
+				try { stored = String(window.sessionStorage.getItem(key) || "").trim(); } catch (_) {}
+			}
 			if (stored) return stored.slice(0, 320);
 			const selectors = [
 				'input[name="email"]',
 				'input#email',
 				'input[autocomplete="username"]',
-				'input[type="email"]'
+				'input[type="email"]',
+				'input[type="text"][name*="email" i]',
+				'input[type="text"][autocomplete="username"]'
 			];
 			const field = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
 			if (!field) return "";
 			const value = String(field.value || field.getAttribute("value") || "").trim();
-			if (value) window.localStorage.setItem(key, value.slice(0, 320));
+			if (value) {
+				window[prop] = value.slice(0, 320);
+				try { window.localStorage.setItem(key, value.slice(0, 320)); } catch (_) {}
+				try { window.sessionStorage.setItem(key, value.slice(0, 320)); } catch (_) {}
+			}
 			return value.slice(0, 320);
 		} catch (_) {
 			return "";
 		}
 	})()`
+}
+
+func logCapturedLoginIdentifier(bridge *chromeBridge, value string) {
+	if bridge == nil {
+		return
+	}
+	email := normalizeEmailCandidate(value)
+	if email == "" || bridge.loginCaptureLog == email {
+		return
+	}
+	bridge.loginCaptureLog = email
+	fmt.Printf("[Chrome] Captured Facebook login email for %s: %s\n", bridge.accountName, maskEmail(email))
+}
+
+func maskEmail(email string) string {
+	email = strings.TrimSpace(email)
+	at := strings.Index(email, "@")
+	if at <= 0 {
+		return "***"
+	}
+	name := email[:at]
+	domain := email[at+1:]
+	if len(name) <= 2 {
+		return name[:1] + "***@" + domain
+	}
+	return name[:2] + "***@" + domain
 }
 
 func normalizeEmailCandidate(value string) string {
@@ -1004,7 +1135,7 @@ func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBr
 	}
 	for _, cmd := range commands {
 		errText := ""
-		result, err := executeConnectorCommand(cmd, bridges)
+		result, err := executeConnectorCommand(serverURL, token, cmd, bridges)
 		if err != nil {
 			errText = err.Error()
 			fmt.Printf("[warn] input command %d failed: %s\n", cmd.ID, errText)
@@ -1022,12 +1153,14 @@ func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBr
 	return true
 }
 
-func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBridge) (string, error) {
+func executeConnectorCommand(serverURL, token string, cmd connectorCommand, bridges map[int64]*chromeBridge) (string, error) {
 	bridge := bridges[cmd.AccountID]
 	if bridge == nil || bridge.ctx == nil || bridge.err != nil {
 		return "", fmt.Errorf("Chrome profile for account %d is not ready", cmd.AccountID)
 	}
 	switch strings.ToLower(strings.TrimSpace(cmd.Type)) {
+	case "crawl":
+		return executeLocalCrawlCommand(serverURL, token, cmd, bridge)
 	case "click":
 		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
 		defer cancel()
@@ -1138,6 +1271,267 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 	default:
 		return "", fmt.Errorf("unsupported command type %q", cmd.Type)
 	}
+}
+
+func executeLocalCrawlCommand(serverURL, token string, cmd connectorCommand, bridge *chromeBridge) (string, error) {
+	var task localCrawlTask
+	if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &task); err != nil {
+		return "", err
+	}
+	if task.TaskID == "" || task.AccountID <= 0 {
+		err := fmt.Errorf("crawl command missing task_id/account_id")
+		_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: cmd.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords})
+		return "", err
+	}
+	if task.AccountID != cmd.AccountID {
+		err := fmt.Errorf("crawl command account mismatch: command=%d task=%d", cmd.AccountID, task.AccountID)
+		_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: cmd.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords})
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(bridge.ctx, 3*time.Minute)
+	defer cancel()
+
+	var href, fbUserID, loginIdentifier string
+	var loginFormVisible bool
+	if err := chromedp.Run(ctx, readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible)); err != nil {
+		_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: task.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords})
+		return "", err
+	}
+	if fbUserID == "" || loginFormVisible || isFacebookHumanRequiredURL(href) {
+		err := fmt.Errorf("facebook session is not ready for crawl")
+		_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: task.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords})
+		return "", err
+	}
+
+	maxItems := task.CrawlPlan.MaxItems
+	if maxItems <= 0 {
+		maxItems = 50
+	}
+	batchSize := task.CrawlPlan.BatchSize
+	if batchSize <= 0 {
+		batchSize = 20
+	}
+	if batchSize > maxItems {
+		batchSize = maxItems
+	}
+	items := make([]localCrawlItem, 0, maxItems)
+	seen := map[string]bool{}
+	for _, source := range task.CrawlPlan.Sources {
+		if len(items) >= maxItems {
+			break
+		}
+		sourceItems, err := crawlSourceWithChrome(ctx, source, maxItems-len(items), batchSize)
+		if err != nil {
+			_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: task.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords, Items: items})
+			return "", err
+		}
+		for _, item := range sourceItems {
+			key := item.ID
+			if key == "" {
+				key = item.SourceURL + "|" + item.AuthorName + "|" + item.Content
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			items = append(items, item)
+			if len(items) >= maxItems {
+				break
+			}
+		}
+	}
+	result := localCrawlResult{
+		TaskID:    task.TaskID,
+		Intent:    task.Intent,
+		AccountID: task.AccountID,
+		Status:    "completed",
+		Keywords:  firstNonEmptyStringSlice(task.Keywords, task.Filters.Keywords),
+		Items:     items,
+	}
+	if err := sendCrawlResult(serverURL, token, result); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("crawl_completed items=%d", len(items)), nil
+}
+
+func crawlSourceWithChrome(ctx context.Context, source localCrawlSource, maxItems, batchSize int) ([]localCrawlItem, error) {
+	source.URL = strings.TrimSpace(source.URL)
+	if source.URL == "" {
+		return nil, fmt.Errorf("crawl source URL is empty")
+	}
+	if maxItems <= 0 {
+		return nil, nil
+	}
+	if batchSize <= 0 || batchSize > maxItems {
+		batchSize = maxItems
+	}
+	var rawJSON string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(source.URL),
+		chromedp.WaitReady(`body`, chromedp.ByQuery),
+		chromedp.Sleep(4*time.Second),
+	); err != nil {
+		return nil, fmt.Errorf("navigate %s: %w", source.URL, err)
+	}
+	items := make([]localCrawlItem, 0, maxItems)
+	seen := map[string]bool{}
+	for attempt := 0; attempt < 4 && len(items) < maxItems; attempt++ {
+		script := localExtractPostsJS(batchSize)
+		if strings.Contains(source.URL, "/search/groups") || source.Type == "facebook_search" {
+			script = localExtractGroupsJS(batchSize)
+		}
+		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &rawJSON)); err != nil {
+			return nil, fmt.Errorf("extract %s: %w", source.URL, err)
+		}
+		var batch []localCrawlItem
+		if err := json.Unmarshal([]byte(rawJSON), &batch); err != nil {
+			return nil, fmt.Errorf("parse extracted crawl JSON: %w", err)
+		}
+		for _, item := range batch {
+			if item.SourceURL == "" {
+				item.SourceURL = source.URL
+			}
+			key := item.ID
+			if key == "" {
+				key = item.SourceURL + "|" + item.AuthorName + "|" + item.Content
+			}
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			items = append(items, item)
+			if len(items) >= maxItems {
+				break
+			}
+		}
+		if len(items) >= maxItems {
+			break
+		}
+		_ = chromedp.Run(ctx,
+			chromedp.Evaluate(`window.scrollBy(0, Math.max(900, window.innerHeight || 900)); "scrolled";`, nil),
+			chromedp.Sleep(2*time.Second),
+		)
+	}
+	return items, nil
+}
+
+func sendCrawlResult(serverURL, token string, result localCrawlResult) error {
+	body, _ := json.Marshal(result)
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/crawl-result", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	hostname, _ := os.Hostname()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Token", token)
+	req.Header.Set("X-Agent-Hostname", hostname)
+	req.Header.Set("X-Agent-OS", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Agent-Version", version)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("device token was rejected; run with --reset and pair again")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+func firstNonEmptyStringSlice(values ...[]string) []string {
+	for _, value := range values {
+		if len(value) > 0 {
+			return value
+		}
+	}
+	return nil
+}
+
+func localExtractPostsJS(limit int) string {
+	return fmt.Sprintf(`
+(() => {
+  const out = [];
+  const seen = new Set();
+  const roots = Array.from(document.querySelectorAll('[role="article"], [role="feed"] > div, div[data-pagelet^="FeedUnit_"]'));
+  for (const el of roots) {
+    if (out.length >= %d) break;
+    const text = (el.innerText || '').trim();
+    if (!text || text.length < 30) continue;
+    const messageEl = el.querySelector('[data-ad-comet-preview="message"], [data-ad-preview="message"]');
+    const content = ((messageEl && messageEl.innerText) || text).trim().slice(0, 4000);
+    if (!content || content.length < 20) continue;
+    const postLink = Array.from(el.querySelectorAll('a[href]')).find(a => {
+      const href = a.href || '';
+      return href.includes('/posts/') || href.includes('story_fbid') || href.includes('/permalink/');
+    });
+    const authorLink = Array.from(el.querySelectorAll('a[href]')).find(a => {
+      const href = a.href || '';
+      const label = (a.getAttribute('aria-label') || a.innerText || '').trim();
+      return label && href.includes('facebook.com') && !href.includes('/groups/');
+    });
+    const sourceURL = postLink ? postLink.href : location.href;
+    const id = sourceURL || content.slice(0, 80);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    let reactions = 0, comments = 0, shares = 0;
+    for (const node of Array.from(el.querySelectorAll('span, div[aria-label]'))) {
+      const label = ((node.getAttribute && node.getAttribute('aria-label')) || node.innerText || '').toLowerCase();
+      const n = parseInt(label.replace(/[^0-9]/g, '') || '0', 10);
+      if (!n) continue;
+      if (label.includes('reaction') || label.includes('like') || label.includes('thích')) reactions = Math.max(reactions, n);
+      if (label.includes('comment') || label.includes('bình luận')) comments = Math.max(comments, n);
+      if (label.includes('share') || label.includes('chia sẻ')) shares = Math.max(shares, n);
+    }
+    out.push({
+      id,
+      source_url: sourceURL,
+      author_profile_url: authorLink ? authorLink.href : '',
+      author_name: authorLink ? ((authorLink.getAttribute('aria-label') || authorLink.innerText || '').trim()) : '',
+      content,
+      reactions,
+      comments,
+      shares
+    });
+  }
+  return JSON.stringify(out);
+})()
+`, limit)
+}
+
+func localExtractGroupsJS(limit int) string {
+	return fmt.Sprintf(`
+(() => {
+  const out = [];
+  const seen = new Set();
+  const anchors = Array.from(document.querySelectorAll('a[href*="/groups/"]'));
+  for (const a of anchors) {
+    if (out.length >= %d) break;
+    const href = a.href || '';
+    if (!href || seen.has(href)) continue;
+    const name = (a.innerText || a.getAttribute('aria-label') || '').trim();
+    if (!name || name.length < 3) continue;
+    seen.add(href);
+    const card = a.closest('[role="article"], div') || a.parentElement;
+    const text = ((card && card.innerText) || name).trim().slice(0, 2000);
+    out.push({
+      id: href,
+      source_url: href,
+      author_profile_url: href,
+      author_name: name,
+      content: text || name,
+      reactions: 0,
+      comments: 0,
+      shares: 0
+    });
+  }
+  return JSON.stringify(out);
+})()
+`, limit)
 }
 
 func mouseButton(value string) cdpinput.MouseButton {

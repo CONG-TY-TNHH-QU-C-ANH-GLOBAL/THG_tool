@@ -220,6 +220,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	api.Post("/connectors/chrome-status", s.agentAuth, s.agentChromeStatus)
 	api.Get("/connectors/browser-targets", s.agentAuth, s.agentBrowserTargets)
 	api.Post("/connectors/screenshot", s.agentAuth, s.agentScreenshot)
+	api.Post("/connectors/crawl-result", s.agentAuth, s.agentConnectorCrawlResult)
 	api.Get("/connectors/commands", s.agentAuth, s.agentConnectorCommands)
 	api.Post("/connectors/commands/:id/done", s.agentAuth, s.agentConnectorCommandDone)
 
@@ -335,6 +336,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	agentGrp.Post("/chrome-status", s.agentChromeStatus)
 	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
 	agentGrp.Post("/screenshot", s.agentScreenshot)
+	agentGrp.Post("/crawl-result", s.agentConnectorCrawlResult)
 	agentGrp.Get("/commands", s.agentConnectorCommands)
 	agentGrp.Post("/commands/:id/done", s.agentConnectorCommandDone)
 	agentGrp.Get("/jobs/next", s.agentGetNextJob)

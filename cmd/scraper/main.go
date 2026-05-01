@@ -346,13 +346,13 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			if u == "" {
 				return "", fmt.Errorf("scrape_group requires url")
 			}
-			return submitOpenCrawl(context.Background(), jobStore, "facebook_crawl", []jobs.Source{{Type: sourceTypeFromURL(u), URL: u, Label: "prompt_url"}}, args)
+			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: sourceTypeFromURL(u), URL: u, Label: "prompt_url"}}, args)
 		case "scrape_comments":
 			u := argString(args, "post_url")
 			if u == "" {
 				return "", fmt.Errorf("scrape_comments requires post_url")
 			}
-			return submitOpenCrawl(context.Background(), jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_post", URL: u, Label: "prompt_post"}}, args)
+			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_post", URL: u, Label: "prompt_post"}}, args)
 		case "scrape_all":
 			return "", fmt.Errorf("scrape_all fixed configured groups is disabled in production; ask for a target URL or search query")
 		case "classify_leads":
@@ -363,7 +363,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 				return "", fmt.Errorf("search_groups requires query")
 			}
 			searchURL := "https://www.facebook.com/search/groups/?q=" + url.QueryEscape(query)
-			return submitOpenCrawl(context.Background(), jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_search", URL: searchURL, Label: "group_search"}}, args)
+			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_search", URL: searchURL, Label: "group_search"}}, args)
 		case "auto_comment", "comment_all_leads":
 			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args)
 		case "auto_inbox", "inbox_all_leads":
@@ -376,7 +376,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 	}
 }
 
-func submitOpenCrawl(ctx context.Context, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
+func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
 	if len(sources) == 0 {
 		return "", fmt.Errorf("crawler requires at least one source")
 	}
@@ -415,11 +415,50 @@ func submitOpenCrawl(ctx context.Context, jobStore *jobs.Store, intent string, s
 	if err != nil {
 		return "", err
 	}
+	if db != nil {
+		if result, routed, err := submitLocalRuntimeCrawl(ctx, db, task, string(payload)); routed {
+			return result, err
+		}
+	}
 	job, err := jobStore.Submit(ctx, task, string(payload))
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, intent), nil
+}
+
+func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Task, payload string) (string, bool, error) {
+	if task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
+		return "", false, nil
+	}
+	screen, err := db.GetLatestConnectorScreenshot(task.OrgID, task.AccountID)
+	if err != nil {
+		return "", true, err
+	}
+	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") && time.Since(screen.UpdatedAt) <= 90*time.Second {
+		appStore, err := store.NewAppStore(db)
+		if err != nil {
+			return "", true, err
+		}
+		_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
+		_ = appStore.StartTask(ctx, task.TaskID)
+		cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, screen.AgentID, 0, "crawl", payload)
+		if err != nil {
+			_ = appStore.FailTask(ctx, task.TaskID, err.Error())
+			return "", true, err
+		}
+		return fmt.Sprintf("da tao local crawler command #%d task=%s intent=%s mode=local_runtime", cmdID, task.TaskID, task.Intent), true, nil
+	}
+
+	appStore, err := store.NewAppStore(db)
+	if err != nil {
+		return "", true, err
+	}
+	sess, _ := appStore.GetSession(ctx, task.AccountID)
+	if sess != nil && sess.CDPPort > 0 && (sess.Status == "idle" || sess.Status == "ready" || sess.Status == "active") {
+		return "", false, nil
+	}
+	return "", true, fmt.Errorf("Facebook account #%d đã lưu session nhưng chưa có THG Local Runtime stream online để chạy crawl thật. Mở Browser, chạy lại THG Local Kit và chờ trạng thái Facebook local ready rồi gửi lại lệnh", task.AccountID)
 }
 
 func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any) (string, error) {

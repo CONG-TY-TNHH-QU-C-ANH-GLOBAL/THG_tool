@@ -409,6 +409,195 @@ func (s *Server) agentConnectorCommandDone(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
+// agentConnectorCrawlResult stores crawl output produced by THG Local Runtime.
+// The runtime runs on the user's device, so this is the production path for
+// Local Browser sessions that the server cannot attach to by CDP directly.
+// POST /api/connectors/crawl-result
+func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
+	agentID, _ := c.Locals("agent_id").(int64)
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	if orgID <= 0 {
+		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
+	}
+	var body struct {
+		TaskID    string   `json:"task_id"`
+		Intent    string   `json:"intent"`
+		AccountID int64    `json:"account_id"`
+		Status    string   `json:"status"`
+		Error     string   `json:"error"`
+		Keywords  []string `json:"keywords"`
+		Items     []struct {
+			ID               string `json:"id"`
+			SourceURL        string `json:"source_url"`
+			AuthorProfileURL string `json:"author_profile_url"`
+			AuthorName       string `json:"author_name"`
+			Content          string `json:"content"`
+			Reactions        int    `json:"reactions"`
+			Comments         int    `json:"comments"`
+			Shares           int    `json:"shares"`
+		} `json:"items"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+	body.TaskID = strings.TrimSpace(body.TaskID)
+	if body.TaskID == "" || body.AccountID <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "task_id and account_id are required"})
+	}
+	acc, err := s.db.GetAccount(body.AccountID)
+	if err != nil || acc == nil || acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+	}
+	screen, err := s.db.GetLatestConnectorScreenshot(orgID, body.AccountID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if screen == nil || screen.AgentID != agentID {
+		return c.Status(403).JSON(fiber.Map{"error": "connector does not own this account stream"})
+	}
+
+	appStore, err := store.NewAppStore(s.db)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	intent := strings.TrimSpace(body.Intent)
+	if intent == "" {
+		intent = "facebook_crawl"
+	}
+	_ = appStore.CreateTask(c.Context(), body.TaskID, orgID, intent)
+	_ = appStore.StartTask(c.Context(), body.TaskID)
+	if strings.EqualFold(body.Status, "failed") || strings.TrimSpace(body.Error) != "" {
+		errMsg := strings.TrimSpace(body.Error)
+		if errMsg == "" {
+			errMsg = "local runtime crawl failed"
+		}
+		_ = appStore.FailTask(c.Context(), body.TaskID, errMsg)
+		return c.JSON(fiber.Map{"status": "failed", "error": errMsg})
+	}
+
+	keywords := normalizeCrawlKeywords(body.Keywords)
+	inserted := 0
+	fetched := 0
+	for _, item := range body.Items {
+		content := strings.TrimSpace(item.Content)
+		if content == "" || len([]rune(content)) < 20 {
+			continue
+		}
+		fetched++
+		score, category, signals := scoreConnectorCrawlItem(content, keywords, item.Reactions, item.Comments, item.Shares)
+		if category == "cold" {
+			continue
+		}
+		sourceURL := strings.TrimSpace(item.SourceURL)
+		if sourceURL == "" {
+			sourceURL = strings.TrimSpace(item.ID)
+		}
+		lead := store.TaskLead{
+			TaskID:           body.TaskID,
+			OrgID:            orgID,
+			SourceURL:        sourceURL,
+			AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
+			AuthorName:       strings.TrimSpace(item.AuthorName),
+			Content:          content,
+			LeadScore:        score,
+			Category:         category,
+			Signals:          signals,
+		}
+		if err := appStore.InsertLead(c.Context(), body.TaskID, orgID, lead); err == nil {
+			inserted++
+		}
+		if _, err := s.db.InsertLead(&models.Lead{
+			OrgID:        orgID,
+			SourceType:   "post",
+			SourceID:     0,
+			SourceURL:    sourceURL,
+			Platform:     models.PlatformFacebook,
+			Author:       lead.AuthorName,
+			AuthorURL:    lead.AuthorProfileURL,
+			Content:      content,
+			Score:        models.LeadScore(category),
+			ServiceMatch: category,
+			AuthorRole:   "Local Runtime classifier",
+			PainPoint:    strings.Join(signals, "; "),
+			AIReasoning:  strings.Join(signals, "; "),
+			Niche:        strings.Join(keywords, ", "),
+			ClassifiedAt: time.Now().UTC(),
+		}); err != nil {
+			log.Printf("[ConnectorCrawl] insert legacy lead failed task=%s: %v", body.TaskID, err)
+		}
+	}
+	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
+	return c.JSON(fiber.Map{
+		"status":   "stored",
+		"task_id":  body.TaskID,
+		"fetched":  fetched,
+		"inserted": inserted,
+	})
+}
+
+func normalizeCrawlKeywords(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func scoreConnectorCrawlItem(content string, keywords []string, reactions, comments, shares int) (float64, string, []string) {
+	lower := strings.ToLower(content)
+	signals := []string{"local_runtime_crawl"}
+	matches := 0
+	for _, kw := range keywords {
+		if kw != "" && strings.Contains(lower, kw) {
+			matches++
+			if matches <= 5 {
+				signals = append(signals, "keyword:"+kw)
+			}
+		}
+	}
+	score := float64(matches * 22)
+	if matches == 0 && len(keywords) == 0 {
+		score = 35
+	}
+	if reactions > 0 {
+		score += minFloat(15, float64(reactions)/4)
+		signals = append(signals, "engagement:reactions")
+	}
+	if comments > 0 {
+		score += minFloat(15, float64(comments)*2)
+		signals = append(signals, "engagement:comments")
+	}
+	if shares > 0 {
+		score += minFloat(8, float64(shares)*2)
+	}
+	if len([]rune(content)) > 120 {
+		score += 10
+	}
+	if score > 100 {
+		score = 100
+	}
+	category := "cold"
+	if score >= 70 {
+		category = "hot"
+	} else if score >= 40 {
+		category = "warm"
+	}
+	return score, category, signals
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // agentScreenshot stores the latest observable frame from the user's real Chrome.
 // POST /api/agent/screenshot
 func (s *Server) agentScreenshot(c *fiber.Ctx) error {

@@ -425,12 +425,20 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 	if m := regexp.MustCompile(`job #(\d+)`).FindStringSubmatch(raw); len(m) == 2 {
 		jobID = m[1]
 	}
+	localCommandID := ""
+	if m := regexp.MustCompile(`local crawler command #(\d+)`).FindStringSubmatch(raw); len(m) == 2 {
+		localCommandID = m[1]
+	}
 	taskID := ""
 	if m := regexp.MustCompile(`task=([a-zA-Z0-9_-]+)`).FindStringSubmatch(raw); len(m) == 2 {
 		taskID = m[1]
 	}
 	var sb strings.Builder
-	sb.WriteString("Đã nhận lệnh crawl và đưa vào hàng đợi xử lý.\n\n")
+	if localCommandID != "" {
+		sb.WriteString("Đã gửi lệnh crawl xuống THG Local Runtime đang online.\n\n")
+	} else {
+		sb.WriteString("Đã nhận lệnh crawl và đưa vào hàng đợi xử lý.\n\n")
+	}
 	sb.WriteString("Mục tiêu: ")
 	sb.WriteString(strings.TrimSpace(stripDashboardContext(prompt)))
 	sb.WriteString("\n")
@@ -442,12 +450,21 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 		sb.WriteString(jobID)
 		sb.WriteString("\n")
 	}
+	if localCommandID != "" {
+		sb.WriteString("Local command: #")
+		sb.WriteString(localCommandID)
+		sb.WriteString("\n")
+	}
 	if taskID != "" {
 		sb.WriteString("Task: ")
 		sb.WriteString(taskID)
 		sb.WriteString("\n")
 	}
-	sb.WriteString("\nHệ thống sẽ dùng Facebook session đã kết nối để thu thập dữ liệu thật, lọc tín hiệu theo nhu cầu trong prompt, phân loại leads hot/warm/cold và lưu kết quả về Leads.")
+	if localCommandID != "" {
+		sb.WriteString("\nRuntime sẽ điều khiển Chrome Facebook thật trên thiết bị đã ghép, thu dữ liệu từ nguồn bạn đưa, lọc tín hiệu theo prompt và lưu leads đủ điều kiện về Leads. Bạn có thể quan sát luồng chạy trong tab Browser.")
+	} else {
+		sb.WriteString("\nHệ thống sẽ dùng Facebook session đã kết nối để thu thập dữ liệu thật, lọc tín hiệu theo nhu cầu trong prompt, phân loại leads hot/warm/cold và lưu kết quả về Leads.")
+	}
 	return sb.String()
 }
 
