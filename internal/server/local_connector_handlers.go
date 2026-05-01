@@ -1,7 +1,10 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -126,8 +129,14 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 		StreamStatus:     req.StreamStatus,
 	})
 	if err != nil {
+		log.Printf("[ConnectorPair] rejected code_fp=%s kind=%s transport=%s ip=%s err=%v", pairingCodeFingerprint(req.Code), kind, transport, c.IP(), err)
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
+	log.Printf("[ConnectorPair] claimed connector_id=%d org_id=%d kind=%s transport=%s account_id=%d ip=%s token_fp=%s",
+		tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID, c.IP(), agentTokenFingerprint(deviceToken))
+	_ = s.db.InsertAuditLog(tok.CreatedBy, "local_connector_pairing_claimed", c.IP(),
+		fmt.Sprintf(`{"connector_id":%d,"org_id":%d,"kind":%q,"transport":%q,"account_id":%d}`,
+			tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID))
 	return c.Status(201).JSON(fiber.Map{
 		"device_token": deviceToken,
 		"connector":    tok,
@@ -213,4 +222,18 @@ func (s *Server) disconnectLocalConnectorPost(c *fiber.Ctx) error {
 // DELETE /api/connectors/:id
 func (s *Server) revokeLocalConnector(c *fiber.Ctx) error {
 	return s.disconnectLocalConnector(c)
+}
+
+func pairingCodeFingerprint(code string) string {
+	var normalized strings.Builder
+	for _, r := range strings.ToUpper(strings.TrimSpace(code)) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			normalized.WriteRune(r)
+		}
+	}
+	if normalized.Len() == 0 {
+		return "empty"
+	}
+	sum := sha256.Sum256([]byte(normalized.String()))
+	return hex.EncodeToString(sum[:])[:12]
 }

@@ -151,8 +151,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	}
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
-		AllowMethods:     "GET,POST,PUT,DELETE",
-		AllowHeaders:     "Content-Type,Authorization,X-Refresh-Token",
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Content-Type,Authorization,X-Refresh-Token,X-Agent-Token,X-Agent-Hostname,X-Agent-OS,X-Agent-Version",
 		ExposeHeaders:    "Content-Length",
 		AllowCredentials: true, // needed for httpOnly cookie refresh token
 	}))
@@ -210,6 +210,12 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 		},
 	})
 	api.Post("/connectors/pair", pairingLimiter, s.claimLocalConnectorPairingCode)
+	// Connector-auth aliases keep the extension control plane under the same
+	// /api/connectors namespace as pairing. /api/agent remains for older agents.
+	api.Post("/connectors/heartbeat", s.agentAuth, s.agentHeartbeat)
+	api.Post("/connectors/chrome-status", s.agentAuth, s.agentChromeStatus)
+	api.Get("/connectors/browser-targets", s.agentAuth, s.agentBrowserTargets)
+	api.Post("/connectors/screenshot", s.agentAuth, s.agentScreenshot)
 
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)

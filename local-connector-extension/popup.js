@@ -22,7 +22,7 @@ function normalizePairingCode(value) {
 async function refreshStatus() {
   const res = await sendMessage({ type: 'status' });
   if (!res?.ok) {
-    setStatus(res?.error || 'Not paired yet', 'error');
+    setStatus(res?.error || 'Chưa có phiên kết nối hợp lệ. Tạo mã mới trong dashboard rồi kết nối lại.', 'error');
     return;
   }
   const cfg = res.config || {};

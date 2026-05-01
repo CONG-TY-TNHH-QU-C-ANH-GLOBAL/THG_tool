@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strconv"
@@ -21,17 +23,28 @@ type PostProcessor func(ctx context.Context, groupURL string, posts []models.Pos
 func (s *Server) agentAuth(c *fiber.Ctx) error {
 	plain := c.Get("X-Agent-Token")
 	if plain == "" {
+		log.Printf("[AgentAuth] missing token path=%s ip=%s ua=%q", c.Path(), c.IP(), c.Get("User-Agent"))
 		return c.Status(401).JSON(fiber.Map{"error": "missing X-Agent-Token"})
 	}
 	tok, err := s.db.ValidateAgentToken(plain)
 	if err != nil || tok == nil {
+		log.Printf("[AgentAuth] rejected token path=%s ip=%s fp=%s err=%v", c.Path(), c.IP(), agentTokenFingerprint(plain), err)
 		return c.Status(401).JSON(fiber.Map{"error": "invalid or revoked agent token"})
 	}
 	c.Locals("agent_id", tok.ID)
 	c.Locals("agent_org_id", tok.OrgID)
 	c.Locals("agent_name", tok.Name)
+	c.Locals("agent_token_fp", agentTokenFingerprint(plain))
 	_ = s.db.UpdateAgentHeartbeat(tok.ID, c.Get("X-Agent-Hostname"), c.Get("X-Agent-OS"), c.Get("X-Agent-Version"))
 	return c.Next()
+}
+
+func agentTokenFingerprint(plain string) string {
+	if strings.TrimSpace(plain) == "" {
+		return "empty"
+	}
+	sum := sha256.Sum256([]byte(plain))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // agentGetNextJob returns the oldest pending local job, or 204 if none.
@@ -225,6 +238,7 @@ func (s *Server) agentServeImage(c *fiber.Ctx) error {
 // POST /api/agent/heartbeat
 func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
+	orgID, _ := c.Locals("agent_org_id").(int64)
 	var body struct {
 		Hostname         string `json:"hostname"`
 		OS               string `json:"os"`
@@ -259,7 +273,12 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 		FBUserID:          body.FBUserID,
 		StreamStatus:      body.StreamStatus,
 	})
-	return c.JSON(fiber.Map{"ts": time.Now().Unix()})
+	return c.JSON(fiber.Map{
+		"status":       "ok",
+		"connector_id": agentID,
+		"org_id":       orgID,
+		"ts":           time.Now().Unix(),
+	})
 }
 
 // agentChromeStatus is the explicit local Chrome handshake endpoint.

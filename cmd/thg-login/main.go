@@ -482,7 +482,7 @@ func sendHeartbeat(serverURL, token string, snap chromeSnapshot) error {
 		"fb_user_id":        snap.FBUserID,
 		"stream_status":     defaultString(snap.Status, "connector_online"),
 	})
-	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/agent/heartbeat", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/heartbeat", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -518,7 +518,7 @@ func sendChromeStatus(serverURL, token string, snap chromeSnapshot) error {
 		"fb_user_id":    snap.FBUserID,
 		"stream_status": defaultString(snap.Status, "chrome_not_connected"),
 	})
-	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/agent/chrome-status", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/chrome-status", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -559,7 +559,7 @@ func sendScreenshot(serverURL, token string, snap chromeSnapshot) error {
 		"fb_user_id":    snap.FBUserID,
 		"stream_status": defaultString(snap.Status, "connector_online"),
 	})
-	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/agent/screenshot", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/screenshot", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -587,7 +587,7 @@ func sendScreenshot(serverURL, token string, snap chromeSnapshot) error {
 }
 
 func fetchBrowserTargets(serverURL, token string) ([]browserTarget, error) {
-	req, err := http.NewRequest(http.MethodGet, serverURL+"/api/agent/browser-targets", nil)
+	req, err := http.NewRequest(http.MethodGet, serverURL+"/api/connectors/browser-targets", nil)
 	if err != nil {
 		return nil, err
 	}

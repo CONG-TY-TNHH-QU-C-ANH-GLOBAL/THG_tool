@@ -137,6 +137,15 @@ async function agentFetch(path, options = {}) {
   return fetch(`${cfg.serverUrl}${path}`, { ...options, headers });
 }
 
+async function clearDeviceToken() {
+  await chrome.storage.local.remove([
+    'deviceToken',
+    'connectorId',
+    'connectorName',
+    'lastStatus'
+  ]);
+}
+
 async function sendHeartbeat(state) {
   const body = {
     hostname: 'Chrome Extension',
@@ -149,16 +158,20 @@ async function sendHeartbeat(state) {
     fb_user_id: state.fbUserId,
     stream_status: state.streamStatus
   };
-  const res = await agentFetch('/api/agent/heartbeat', {
+  const res = await agentFetch('/api/connectors/heartbeat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (!res.ok) throw new Error(`heartbeat failed (${res.status})`);
+  if (res.status === 401 || res.status === 403) {
+    await clearDeviceToken();
+    throw new Error('Phiên kết nối Chrome đã hết hiệu lực hoặc đã bị ngắt khỏi workspace. Vui lòng tạo mã kết nối mới trên dashboard và kết nối lại.');
+  }
+  if (!res.ok) throw new Error(`Không đồng bộ được kênh kết nối Chrome (${res.status})`);
 }
 
 async function sendChromeStatus(target, state) {
-  const res = await agentFetch('/api/agent/chrome-status', {
+  const res = await agentFetch('/api/connectors/chrome-status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -172,7 +185,7 @@ async function sendChromeStatus(target, state) {
 }
 
 async function fetchTargets() {
-  const res = await agentFetch('/api/agent/browser-targets');
+  const res = await agentFetch('/api/connectors/browser-targets');
   if (!res.ok) return [];
   const payload = await res.json().catch(() => ({}));
   return Array.isArray(payload.targets) ? payload.targets : [];
@@ -186,7 +199,7 @@ async function maybeSendScreenshot(target, state) {
   const accountId = target?.account_id || target?.accountId || 0;
   if (!accountId || !state.tab || !state.tab.active || !state.currentUrl) return;
   const imageData = await captureVisibleTab(state.tab.windowId);
-  const res = await agentFetch('/api/agent/screenshot', {
+  const res = await agentFetch('/api/connectors/screenshot', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
