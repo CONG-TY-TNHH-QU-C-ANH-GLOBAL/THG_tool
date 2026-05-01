@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,9 +55,20 @@ func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (strin
 // ProcessPromptForOrg runs a prompt with tenant-scoped business context and
 // injects org_id into production tool calls.
 func (a *Agent) ProcessPromptForOrg(ctx context.Context, prompt, source string, orgID int64) (string, error) {
+	return a.ProcessPromptForOrgWithAccount(ctx, prompt, source, orgID, 0)
+}
+
+// ProcessPromptForOrgWithAccount runs a prompt with tenant scope plus an
+// optional dashboard-selected Facebook account. The selected account is kept
+// out of user-visible prompt text and injected directly into tool args.
+func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, source string, orgID int64, selectedAccountID int64) (string, error) {
 	if !a.Available() {
 		return "", fmt.Errorf("OpenAI API key not configured")
 	}
+	if selectedAccountID <= 0 {
+		selectedAccountID = extractDashboardAccountID(prompt)
+	}
+	prompt = stripDashboardContext(prompt)
 
 	// Load dynamic user context (business rules, niche, etc.)
 	userContext := a.loadUserContext()
@@ -72,6 +85,12 @@ func (a *Agent) ProcessPromptForOrg(ctx context.Context, prompt, source string, 
 
 	// Load accounts for AI account mapping
 	accounts, _ := a.db.GetAllAccounts(orgID)
+	if requiresFacebookBrowser(prompt) {
+		if ok, msg := facebookBrowserPreflight(accounts, selectedAccountID); !ok {
+			a.logPrompt(source, prompt, msg, "browser_preflight", "", false)
+			return msg, nil
+		}
+	}
 
 	// Get semantically relevant few-shot examples
 	fewShots := a.getFewShotExamples(prompt)
@@ -150,6 +169,15 @@ func (a *Agent) ProcessPromptForOrg(ctx context.Context, prompt, source string, 
 			if orgID > 0 {
 				args["org_id"] = orgID
 			}
+			if selectedAccountID > 0 && argMissing(args, "account_id") {
+				args["account_id"] = selectedAccountID
+			}
+			args["user_prompt"] = prompt
+			if isCrawlerTool(fnName) && argStringFromMap(args, "keywords") == "" {
+				if kw := promptKeywords(prompt); kw != "" {
+					args["keywords"] = kw
+				}
+			}
 			if wantsAutoOutbound(prompt) {
 				args["auto"] = true
 			}
@@ -173,7 +201,7 @@ func (a *Agent) ProcessPromptForOrg(ctx context.Context, prompt, source string, 
 			}
 		}
 
-		responseText = strings.Join(allResults, "\n\n")
+		responseText = polishActionResponse(actionTaken, strings.Join(allResults, "\n\n"), prompt)
 
 		// If user is setting context via prompt, learn it
 		if actionTaken == "set_context" && success {
@@ -217,6 +245,210 @@ func wantsAutoOutbound(prompt string) bool {
 		}
 	}
 	return false
+}
+
+func stripDashboardContext(prompt string) string {
+	marker := "\n\nDashboard context:"
+	if idx := strings.Index(prompt, marker); idx >= 0 {
+		return strings.TrimSpace(prompt[:idx])
+	}
+	return strings.TrimSpace(prompt)
+}
+
+func extractDashboardAccountID(prompt string) int64 {
+	re := regexp.MustCompile(`account_id\s*=\s*(\d+)`)
+	m := re.FindStringSubmatch(prompt)
+	if len(m) < 2 {
+		return 0
+	}
+	id, _ := strconv.ParseInt(m[1], 10, 64)
+	return id
+}
+
+func requiresFacebookBrowser(prompt string) bool {
+	lower := strings.ToLower(stripDashboardContext(prompt))
+	if strings.Contains(lower, "facebook.com") || strings.Contains(lower, "fb.com") {
+		return true
+	}
+	triggers := []string{
+		"cào", "cao ", "crawl", "scrape", "quét", "quet ",
+		"tìm tệp", "tim tep", "tệp khách", "tep khach", "tìm khách", "tim khach",
+		"lead", "leads", "group", "nhóm", "nhom",
+		"comment", "bình luận", "binh luan", "inbox", "messenger",
+		"đăng bài", "dang bai", "posting", "post lên", "post len",
+	}
+	for _, t := range triggers {
+		if strings.Contains(lower, t) {
+			return true
+		}
+	}
+	return false
+}
+
+func facebookBrowserPreflight(accounts []models.Account, selectedAccountID int64) (bool, string) {
+	if selectedAccountID > 0 {
+		for _, acc := range accounts {
+			if acc.ID != selectedAccountID {
+				continue
+			}
+			if accountReadyForFacebookAutomation(acc) {
+				return true, ""
+			}
+			return false, browserNotReadyMessage(&acc)
+		}
+		return false, browserNotReadyMessage(nil)
+	}
+	for _, acc := range accounts {
+		if accountReadyForFacebookAutomation(acc) {
+			return true, ""
+		}
+	}
+	return false, browserNotReadyMessage(nil)
+}
+
+func accountReadyForFacebookAutomation(acc models.Account) bool {
+	return acc.Platform == models.PlatformFacebook &&
+		acc.BrowserLoggedIn &&
+		acc.Status == models.AccountActive &&
+		strings.TrimSpace(acc.FBUserID) != ""
+}
+
+func browserNotReadyMessage(acc *models.Account) string {
+	target := "Workspace chưa có Facebook session sẵn sàng."
+	if acc != nil {
+		target = fmt.Sprintf("Facebook account %q chưa sẵn sàng để chạy automation.", acc.Name)
+	}
+	return target + `
+
+Để bảo toàn dữ liệu và tránh chạy sai tài khoản, THG chỉ bắt đầu crawl khi Browser đã xác nhận Facebook session thật.
+
+Bạn hãy hoàn tất kết nối trong tab Browser:
+1. Mở tab Browser của workspace.
+2. Chạy THG Local Kit trên thiết bị đã ghép.
+3. Mở đúng Facebook account và đăng nhập nếu hệ thống yêu cầu.
+4. Chờ trạng thái chuyển sang Facebook local ready.
+
+Sau khi Browser sẵn sàng, gửi lại lệnh này. Agent sẽ bắt đầu crawl ngay với đúng account và dữ liệu thật.`
+}
+
+func argMissing(args map[string]any, key string) bool {
+	if args == nil {
+		return true
+	}
+	v, ok := args[key]
+	if !ok || v == nil {
+		return true
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t) == ""
+	case float64:
+		return t == 0
+	case int:
+		return t == 0
+	case int64:
+		return t == 0
+	default:
+		return false
+	}
+}
+
+func argStringFromMap(args map[string]any, key string) string {
+	if args == nil {
+		return ""
+	}
+	v, ok := args[key]
+	if !ok || v == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
+}
+
+func isCrawlerTool(name string) bool {
+	switch name {
+	case "scrape_group", "scrape_comments", "search_groups":
+		return true
+	default:
+		return false
+	}
+}
+
+func promptKeywords(prompt string) string {
+	prompt = stripDashboardContext(prompt)
+	prompt = regexp.MustCompile(`https?://\S+`).ReplaceAllString(prompt, " ")
+	cleaner := strings.NewReplacer(
+		"\n", " ", "\t", " ", ".", " ", ",", ",", ";", ",", ":", " ",
+		"(", " ", ")", " ", "[", " ", "]", " ", "\"", " ", "'", " ",
+	)
+	prompt = cleaner.Replace(prompt)
+	fields := strings.FieldsFunc(strings.ToLower(prompt), func(r rune) bool {
+		return r == ',' || r == ';' || r == '|' || r == '/'
+	})
+	stop := map[string]bool{
+		"cào": true, "cao": true, "crawl": true, "scrape": true, "tôi": true, "toi": true,
+		"cần": true, "can": true, "tìm": true, "tim": true, "tệp": true, "tep": true,
+		"khách": true, "khach": true, "có": true, "co": true, "nhu": true, "cầu": true,
+		"cau": true, "hoặc": true, "hoac": true, "từ": true, "tu": true, "đi": true,
+		"di": true, "và": true, "va": true, "the": true, "a": true, "an": true,
+	}
+	out := make([]string, 0, 8)
+	seen := map[string]bool{}
+	for _, raw := range fields {
+		for _, token := range strings.Fields(raw) {
+			token = strings.Trim(token, " -_")
+			if len([]rune(token)) < 3 || stop[token] || seen[token] {
+				continue
+			}
+			seen[token] = true
+			out = append(out, token)
+			if len(out) >= 8 {
+				return strings.Join(out, ", ")
+			}
+		}
+	}
+	return strings.Join(out, ", ")
+}
+
+func polishActionResponse(action, raw, prompt string) string {
+	switch action {
+	case "scrape_group", "scrape_comments":
+		return crawlerQueuedMessage(raw, prompt, "group/post Facebook đã chọn")
+	case "search_groups":
+		return crawlerQueuedMessage(raw, prompt, "tìm nguồn Facebook phù hợp")
+	default:
+		return raw
+	}
+}
+
+func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
+	jobID := ""
+	if m := regexp.MustCompile(`job #(\d+)`).FindStringSubmatch(raw); len(m) == 2 {
+		jobID = m[1]
+	}
+	taskID := ""
+	if m := regexp.MustCompile(`task=([a-zA-Z0-9_-]+)`).FindStringSubmatch(raw); len(m) == 2 {
+		taskID = m[1]
+	}
+	var sb strings.Builder
+	sb.WriteString("Đã nhận lệnh crawl và đưa vào hàng đợi xử lý.\n\n")
+	sb.WriteString("Mục tiêu: ")
+	sb.WriteString(strings.TrimSpace(stripDashboardContext(prompt)))
+	sb.WriteString("\n")
+	sb.WriteString("Nguồn: ")
+	sb.WriteString(sourceLabel)
+	sb.WriteString("\n")
+	if jobID != "" {
+		sb.WriteString("Job: #")
+		sb.WriteString(jobID)
+		sb.WriteString("\n")
+	}
+	if taskID != "" {
+		sb.WriteString("Task: ")
+		sb.WriteString(taskID)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\nHệ thống sẽ dùng Facebook session đã kết nối để thu thập dữ liệu thật, lọc tín hiệu theo nhu cầu trong prompt, phân loại leads hot/warm/cold và lưu kết quả về Leads.")
+	return sb.String()
 }
 
 // --- Dynamic Context ---
@@ -472,8 +704,8 @@ Triggers: "đăng bài tuyển dụng", "post JD vào groups", "đăng tin tuy�
 
 **scan_own_jd_posts**: "quét bài đã đăng", "kiểm tra comments bài JD"
 
-**FIND_CUSTOMERS -> ask for target/search, then use prompt-scoped crawler**
-Triggers: broad scan requests must ask for target URL/search terms instead of scanning configured groups.
+**FIND_CUSTOMERS -> prompt-scoped open crawler**
+Triggers: nếu user có URL group/post Facebook cụ thể thì dùng scrape_group/scrape_comments. Nếu user chỉ mô tả tệp khách/ngách/nhu cầu mà không đưa URL, KHÔNG hỏi lại; dùng search_groups(query=<target/query suy luận từ prompt>) để tìm nguồn phù hợp trước, rồi crawler sẽ lọc/classify theo prompt.
 
 **scrape_group**: user gửi URL group Facebook cụ thể
 
@@ -527,9 +759,10 @@ Ví dụ thực tế:
 
 	sb.WriteString(`## PRODUCTION OPEN CRAWLER OVERRIDE
 
-Triggers: broad scan requests must ask for target URL/search terms instead of scanning configured groups.
+Triggers: broad scan requests should become source discovery jobs, not dead-end clarification.
 - Only call scrape_group when the user provides a concrete Facebook group/post URL.
-- If the user asks to find customers without a target URL/search query, ask for the target market, keywords, and source to crawl.
+- If the user asks to find customers without a target URL/search query but gives a target description, call search_groups with a concise query derived from the target.
+- Ask a follow-up only when there is no business goal, no target description, and no usable source.
 - Open crawler jobs must be prompt-scoped, classified against the business context, and attached to the selected visible workspace account.
 
 `)

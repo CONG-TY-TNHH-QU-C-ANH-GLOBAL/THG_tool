@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -57,6 +58,7 @@ type chromeBridge struct {
 	accountID         int64
 	accountName       string
 	port              int
+	pid               int
 	ctx               context.Context
 	cancel            context.CancelFunc
 	err               error
@@ -290,15 +292,24 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 		port = 9222
 	}
 	devtoolsURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	chromePID := findLocalChromeProcessID(port)
 	wsURL, err := chromeWebSocketURL(devtoolsURL)
 	if err != nil {
-		if launchErr := launchChrome(port, chromeUserDataDir(target.AccountID)); launchErr != nil {
+		pid, launchErr := launchChrome(port, chromeUserDataDir(target.AccountID))
+		if launchErr != nil {
 			return &chromeBridge{accountID: target.AccountID, accountName: target.AccountName, port: port, err: fmt.Errorf("%v; launch chrome: %w", err, launchErr)}
 		}
+		chromePID = pid
 		wsURL, err = waitChromeWebSocketURL(devtoolsURL, 15*time.Second)
 		if err != nil {
 			return &chromeBridge{accountID: target.AccountID, accountName: target.AccountName, port: port, err: err}
 		}
+	}
+	if pid := findLocalChromeProcessID(port); pid > 0 {
+		chromePID = pid
+	}
+	if chromePID == 0 {
+		chromePID = findLocalChromeProcessID(port)
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
@@ -315,6 +326,7 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 		accountID:   target.AccountID,
 		accountName: target.AccountName,
 		port:        port,
+		pid:         chromePID,
 		ctx:         ctx,
 		cancel: func() {
 			cancel()
@@ -362,10 +374,10 @@ func waitChromeWebSocketURL(devtoolsURL string, timeout time.Duration) (string, 
 	return "", lastErr
 }
 
-func launchChrome(port int, userDataDir string) error {
+func launchChrome(port int, userDataDir string) (int, error) {
 	chromePath, err := findChromePath()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", port),
@@ -382,14 +394,20 @@ func launchChrome(port int, userDataDir string) error {
 	}
 	if userDataDir != "" {
 		if err := os.MkdirAll(userDataDir, 0700); err != nil {
-			return err
+			return 0, err
 		}
 		args = append([]string{fmt.Sprintf("--user-data-dir=%s", userDataDir)}, args...)
 	}
 	cmd := exec.Command(chromePath, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	if cmd.Process == nil {
+		return 0, nil
+	}
+	return cmd.Process.Pid, nil
 }
 
 func shouldHideChromeWindow() bool {
@@ -404,37 +422,75 @@ func keepLocalChromeVisibleAfterLogin() bool {
 	return value == "1" || value == "true" || value == "yes" || value == "on"
 }
 
-func hideChromeWindowAfterLogin(ctx context.Context) error {
+func hideChromeWindowAfterLogin(ctx context.Context, pid int) error {
+	var failures []string
+	hidden := false
 	windowID, _, err := cdpbrowser.GetWindowForTarget().Do(ctx)
-	if err != nil {
-		return err
+	if err == nil {
+		if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateMinimized}).Do(ctx); err == nil {
+			hidden = true
+		} else {
+			failures = append(failures, "cdp minimize: "+err.Error())
+		}
+		_ = cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx)
+		if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
+			Left:   -32000,
+			Top:    -32000,
+			Width:  1365,
+			Height: 900,
+		}).Do(ctx); err == nil {
+			hidden = true
+		} else {
+			failures = append(failures, "cdp offscreen: "+err.Error())
+		}
+	} else {
+		failures = append(failures, "cdp window: "+err.Error())
 	}
-	if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateMinimized}).Do(ctx); err == nil {
+	if err := hideLocalChromeProcessWindow(pid); err == nil {
+		hidden = true
+	} else if pid > 0 {
+		failures = append(failures, "native hide: "+err.Error())
+	}
+	if hidden {
 		return nil
 	}
-	_ = cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx)
-	return cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
-		Left:   -32000,
-		Top:    -32000,
-		Width:  1365,
-		Height: 900,
-	}).Do(ctx)
+	return fmt.Errorf("%s", strings.Join(failures, "; "))
 }
 
-func showChromeWindowForLogin(ctx context.Context) error {
+func showChromeWindowForLogin(ctx context.Context, pid int) error {
+	var failures []string
+	shown := false
+	if err := showLocalChromeProcessWindow(pid); err == nil {
+		shown = true
+	} else if pid > 0 {
+		failures = append(failures, "native show: "+err.Error())
+	}
 	windowID, _, err := cdpbrowser.GetWindowForTarget().Do(ctx)
 	if err != nil {
+		if shown {
+			return nil
+		}
 		return err
 	}
-	if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx); err != nil {
-		return err
+	if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx); err == nil {
+		shown = true
+	} else {
+		failures = append(failures, "cdp normal: "+err.Error())
 	}
-	return cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
+	if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
 		Left:   80,
 		Top:    60,
 		Width:  1365,
 		Height: 900,
-	}).Do(ctx)
+	}).Do(ctx); err == nil {
+		shown = true
+	} else {
+		failures = append(failures, "cdp bounds: "+err.Error())
+	}
+	if shown {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(failures, "; "))
 }
 
 func findChromePath() (string, error) {
@@ -518,7 +574,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		bridge.loginIdentifier = loginIdentifier
 	}
 	lowerURL := strings.ToLower(href)
-	humanRequired := strings.Contains(lowerURL, "checkpoint") || strings.Contains(lowerURL, "two_step")
+	humanRequired := isFacebookHumanRequiredURL(lowerURL)
 	if fbUserID != "" && loginFormVisible && !humanRequired && time.Since(bridge.lastLoginRecovery) > 5*time.Second {
 		bridge.lastLoginRecovery = time.Now()
 		fmt.Printf("[Chrome] %s has Facebook cookies but still shows login form. Reloading Facebook feed for dashboard stream.\n", bridge.accountName)
@@ -531,7 +587,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 			bridge.loginIdentifier = loginIdentifier
 		}
 		lowerURL = strings.ToLower(href)
-		humanRequired = strings.Contains(lowerURL, "checkpoint") || strings.Contains(lowerURL, "two_step")
+		humanRequired = isFacebookHumanRequiredURL(lowerURL)
 	}
 	err = chromedp.Run(bridge.ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -613,6 +669,21 @@ func normalizeEmailCandidate(value string) string {
 	return value
 }
 
+func isFacebookHumanRequiredURL(rawURL string) bool {
+	rawURL = strings.TrimSpace(strings.ToLower(rawURL))
+	if rawURL == "" {
+		return false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return strings.Contains(rawURL, "/checkpoint") || strings.Contains(rawURL, "/two_step")
+	}
+	path := strings.ToLower(parsed.EscapedPath())
+	return strings.Contains(path, "/checkpoint") ||
+		strings.Contains(path, "/two_step") ||
+		strings.Contains(path, "/two_step_verification")
+}
+
 func updateChromeWindowPosture(bridge *chromeBridge, status string) {
 	if bridge == nil || bridge.ctx == nil || keepLocalChromeVisibleAfterLogin() {
 		return
@@ -622,7 +693,7 @@ func updateChromeWindowPosture(bridge *chromeBridge, status string) {
 			return
 		}
 		bridge.lastWindowPosture = time.Now()
-		if err := hideChromeWindowAfterLogin(bridge.ctx); err != nil {
+		if err := hideChromeWindowAfterLogin(bridge.ctx, bridge.pid); err != nil {
 			if !bridge.windowWarned {
 				fmt.Printf("[Chrome] Could not move %s to dashboard-only mode: %v\n", bridge.accountName, err)
 				bridge.windowWarned = true
@@ -631,14 +702,14 @@ func updateChromeWindowPosture(bridge *chromeBridge, status string) {
 		}
 		bridge.windowHidden = true
 		bridge.windowWarned = false
-		fmt.Printf("[Chrome] %s logged in. Local Chrome is now hidden; continue in the Browser dashboard.\n", bridge.accountName)
+		fmt.Printf("[Chrome] %s logged in. Local Chrome is locked to dashboard-only mode; continue in the Browser dashboard.\n", bridge.accountName)
 		return
 	}
 	if !bridge.windowHidden && time.Since(bridge.lastWindowPosture) < 5*time.Second {
 		return
 	}
 	bridge.lastWindowPosture = time.Now()
-	if err := showChromeWindowForLogin(bridge.ctx); err != nil {
+	if err := showChromeWindowForLogin(bridge.ctx, bridge.pid); err != nil {
 		if !bridge.windowWarned {
 			fmt.Printf("[Chrome] Could not show %s for local login/checkpoint: %v\n", bridge.accountName, err)
 			bridge.windowWarned = true

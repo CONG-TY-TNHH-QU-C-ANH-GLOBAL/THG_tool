@@ -930,7 +930,8 @@ func (s *Server) deleteAccount(c *fiber.Ctx) error {
 
 func (s *Server) aiPrompt(c *fiber.Ctx) error {
 	var req struct {
-		Prompt string `json:"prompt"`
+		Prompt    string `json:"prompt"`
+		AccountID int64  `json:"account_id"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
@@ -940,20 +941,9 @@ func (s *Server) aiPrompt(c *fiber.Ctx) error {
 		return c.Status(503).JSON(fiber.Map{"error": "AI agent not configured (check OPENAI_API_KEY)"})
 	}
 
-	prompt := req.Prompt
-	if orgID, ok := c.Locals("org_id").(int64); ok && orgID > 0 {
-		if profile, _ := s.db.GetContext(orgContextKey(orgID, "business_profile")); profile != "" {
-			prompt = "Organization business context:\n" + profile + "\n\nUser request:\n" + prompt
-		}
-		if files, _ := s.db.GetContext(orgContextKey(orgID, "private_files_summary")); files != "" {
-			prompt = "Private uploaded data summary:\n" + files + "\n\n" + prompt
-		}
-		if sources, _ := s.db.GetContext(orgContextKey(orgID, "data_sources_summary")); sources != "" {
-			prompt = "Connected business data sources:\n" + sources + "\n\n" + prompt
-		}
-	}
+	prompt := strings.TrimSpace(req.Prompt)
 	orgID, _ := c.Locals("org_id").(int64)
-	response, err := s.agent.ProcessPromptForOrg(c.Context(), prompt, "dashboard", orgID)
+	response, err := s.agent.ProcessPromptForOrgWithAccount(c.Context(), prompt, "dashboard", orgID, req.AccountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

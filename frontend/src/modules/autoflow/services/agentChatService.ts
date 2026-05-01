@@ -41,9 +41,6 @@ export async function getAgentHistory(limit = 20): Promise<AgentChatHistoryItem[
 }
 
 export async function sendAgentPrompt(prompt: string, accountId?: number): Promise<string> {
-  const scopedPrompt = accountId
-    ? `${prompt}\n\nDashboard context: use Facebook account_id=${accountId} for crawler/scraper actions when an account is needed.`
-    : prompt;
-  const res = await post<{ response: string }>('/ai/prompt', { prompt: scopedPrompt });
+  const res = await post<{ response: string }>('/ai/prompt', { prompt, account_id: accountId });
   return res.response;
 }

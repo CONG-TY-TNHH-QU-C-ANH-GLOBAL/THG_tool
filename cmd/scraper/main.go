@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -384,6 +385,9 @@ func submitOpenCrawl(ctx context.Context, jobStore *jobs.Store, intent string, s
 		maxItems = 50
 	}
 	keywords := splitKeywords(argString(args, "keywords"))
+	if len(keywords) == 0 {
+		keywords = splitKeywords(promptKeywordFallback(argString(args, "user_prompt")))
+	}
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        openCrawlTaskID(intent, sources, args),
@@ -773,6 +777,38 @@ func splitKeywords(raw string) []string {
 		}
 	}
 	return out
+}
+
+func promptKeywordFallback(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = regexp.MustCompile(`https?://\S+`).ReplaceAllString(raw, " ")
+	replacer := strings.NewReplacer("\n", " ", "\t", " ", ".", " ", ";", ",", ":", " ", "(", " ", ")", " ")
+	raw = replacer.Replace(strings.ToLower(raw))
+	stop := map[string]bool{
+		"cào": true, "cao": true, "crawl": true, "scrape": true, "tôi": true, "toi": true,
+		"cần": true, "can": true, "tìm": true, "tim": true, "tệp": true, "tep": true,
+		"khách": true, "khach": true, "nhu": true, "cầu": true, "cau": true, "và": true, "va": true,
+		"hoặc": true, "hoac": true, "the": true, "from": true, "with": true,
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, 8)
+	for _, token := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '|' || r == '/' }) {
+		for _, part := range strings.Fields(token) {
+			part = strings.Trim(part, " -_")
+			if len([]rune(part)) < 3 || stop[part] || seen[part] {
+				continue
+			}
+			seen[part] = true
+			out = append(out, part)
+			if len(out) >= 8 {
+				return strings.Join(out, ", ")
+			}
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 func sourceTypeFromURL(u string) string {
