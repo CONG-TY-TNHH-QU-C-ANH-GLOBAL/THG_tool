@@ -23,7 +23,10 @@ export function useThreads(orgId: string) {
     if (activeId === null) return;
     let cancelled = false;
     getMessages(orgId, activeId).then(data => {
-      if (!cancelled) setMessages(data);
+      if (!cancelled) {
+        setMessages(data);
+        window.dispatchEvent(new CustomEvent('autoflow:threads-updated'));
+      }
     });
     return () => { cancelled = true; };
   }, [orgId, activeId]);

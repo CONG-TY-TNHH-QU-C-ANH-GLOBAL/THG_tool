@@ -266,6 +266,10 @@ func (s *Server) autoflowListThreads(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	unreadCount, err := s.db.CountThreadUnreadByOrg(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	type row struct {
 		ID          int64     `json:"id"`
 		ProfileName string    `json:"profile_name"`
@@ -282,13 +286,21 @@ func (s *Server) autoflowListThreads(c *fiber.Ctx) error {
 			Status: t.Status, UnreadCount: t.UnreadCount, LastMessage: t.LastMessage, LastAt: t.LastAt,
 		})
 	}
-	return c.JSON(fiber.Map{"threads": out, "count": len(out)})
+	return c.JSON(fiber.Map{"threads": out, "count": len(out), "unread_count": unreadCount})
 }
 
 func (s *Server) autoflowGetMessages(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	threadID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	ok, err := s.db.ThreadBelongsToOrg(threadID, orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "thread not found"})
 	}
 	_ = s.db.ClearThreadUnread(threadID)
 	msgs, err := s.db.GetThreadMessages(threadID)
@@ -299,9 +311,17 @@ func (s *Server) autoflowGetMessages(c *fiber.Ctx) error {
 }
 
 func (s *Server) autoflowSendMessage(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
 	threadID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	ok, err := s.db.ThreadBelongsToOrg(threadID, orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "thread not found"})
 	}
 	var body struct {
 		Content string `json:"content"`

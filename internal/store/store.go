@@ -2641,6 +2641,24 @@ func (s *Store) GetThreadsByOrg(orgID int64, limit int) ([]ThreadSummary, error)
 	return out, nil
 }
 
+func (s *Store) CountThreadUnreadByOrg(orgID int64) (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COALESCE(SUM(unread_count), 0) FROM conversation_threads WHERE org_id = ?`, orgID).Scan(&count)
+	return count, err
+}
+
+func (s *Store) ThreadBelongsToOrg(threadID, orgID int64) (bool, error) {
+	var id int64
+	err := s.db.QueryRow(`SELECT id FROM conversation_threads WHERE id = ? AND org_id = ?`, threadID, orgID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return id > 0, nil
+}
+
 func (s *Store) ClearThreadUnread(threadID int64) error {
 	_, err := s.db.Exec(`UPDATE conversation_threads SET unread_count = 0 WHERE id = ?`, threadID)
 	return err

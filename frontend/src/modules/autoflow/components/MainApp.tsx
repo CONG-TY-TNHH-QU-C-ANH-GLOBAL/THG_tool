@@ -26,12 +26,16 @@ interface MainAppProps {
 }
 
 interface NavItem { id: Tab; l: string; I: React.ComponentType<{ size?: number | string }>; badge?: number; }
+interface ThreadsBadgeResponse {
+  threads?: Array<{ unread_count?: number }>;
+  unread_count?: number;
+}
 
 const ADMIN_TABS: NavItem[] = [
   { id: 'leads',       l: 'Leads',        I: Users },
   { id: 'chat',        l: 'Chat',         I: Bot },
   { id: 'browser',     l: 'Browser',      I: Globe },
-  { id: 'inbox',       l: 'Inbox',        I: MessageSquare, badge: 8 },
+  { id: 'inbox',       l: 'Inbox',        I: MessageSquare },
   { id: 'posting',     l: 'Posting',      I: FileText },
   { id: 'commenting',  l: 'Commenting',   I: MessageCircle },
   { id: 'leaderboard', l: 'Leaderboard',  I: Trophy },
@@ -41,7 +45,7 @@ const ADMIN_TABS: NavItem[] = [
 const STAFF_TABS: NavItem[] = [
   { id: 'leads',       l: 'My Leads',     I: Users },
   { id: 'chat',        l: 'Chat',         I: Bot },
-  { id: 'inbox',       l: 'Inbox',        I: MessageSquare, badge: 3 },
+  { id: 'inbox',       l: 'Inbox',        I: MessageSquare },
   { id: 'leaderboard', l: 'Leaderboard',  I: Trophy },
   { id: 'data',        l: 'Data Private', I: Database },
 ];
@@ -68,6 +72,7 @@ const ORG_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5
 export default function MainApp({ role, goLanding }: MainAppProps) {
   const [tab, setTab] = useState<Tab>('leads');
   const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: '#4f46e5' });
+  const [inboxBadge, setInboxBadge] = useState(0);
 
   useEffect(() => {
     get<{ org: { id: number; name: string; plan_tier: string } }>('/org').then(res => {
@@ -86,7 +91,39 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
 
   const isAdmin = role === 'admin';
   const orgId = String(org.id);
-  const tabs = isAdmin ? ADMIN_TABS : STAFF_TABS;
+  useEffect(() => {
+    if (org.id <= 0) {
+      setInboxBadge(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadInboxBadge = async () => {
+      try {
+        const res = await get<ThreadsBadgeResponse>('/threads');
+        const unread = typeof res.unread_count === 'number'
+          ? res.unread_count
+          : (res.threads ?? []).reduce((sum, t) => sum + Math.max(0, Number(t.unread_count ?? 0) || 0), 0);
+        if (!cancelled) setInboxBadge(unread);
+      } catch {
+        if (!cancelled) setInboxBadge(0);
+      }
+    };
+
+    void loadInboxBadge();
+    const timer = window.setInterval(() => void loadInboxBadge(), 30_000);
+    const handleThreadsUpdated = () => void loadInboxBadge();
+    window.addEventListener('autoflow:threads-updated', handleThreadsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('autoflow:threads-updated', handleThreadsUpdated);
+      window.clearInterval(timer);
+    };
+  }, [org.id]);
+
+  const tabs = (isAdmin ? ADMIN_TABS : STAFF_TABS).map(item => (
+    item.id === 'inbox' ? { ...item, badge: inboxBadge } : item
+  ));
 
   const renderView = () => {
     switch (tab) {

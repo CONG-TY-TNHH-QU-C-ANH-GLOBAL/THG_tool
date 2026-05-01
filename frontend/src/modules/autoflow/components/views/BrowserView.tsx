@@ -74,10 +74,18 @@ function LocalConnectorPanel({
 }) {
   const online = connectors.filter(c => c.online).length;
   const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
-  const preferred = preferredDownloadKey();
-  const primaryDownload = DOWNLOADS.find(d => d.key === preferred) ?? DOWNLOADS[0];
-  const primaryAvailable = Boolean(systemInfo?.agent_builds?.[primaryDownload.key]);
+  const [selectedDownloadKey, setSelectedDownloadKey] = useState<DownloadKey>(() => preferredDownloadKey());
+  const selectedDownload = DOWNLOADS.find(d => d.key === selectedDownloadKey) ?? DOWNLOADS[0];
+  const selectedAvailable = Boolean(systemInfo?.agent_builds?.[selectedDownload.key]);
   const hasAnyBuild = DOWNLOADS.some(d => systemInfo?.agent_builds?.[d.key]);
+
+  useEffect(() => {
+    if (!systemInfo) return;
+    if (systemInfo.agent_builds?.[selectedDownloadKey]) return;
+    const firstAvailable = DOWNLOADS.find(d => systemInfo.agent_builds?.[d.key]);
+    if (firstAvailable) setSelectedDownloadKey(firstAvailable.key);
+  }, [selectedDownloadKey, systemInfo]);
+
   return (
     <div style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderBottom: `1px solid ${theme.border}` }}>
@@ -102,15 +110,45 @@ function LocalConnectorPanel({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Tải app desktop</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Cài THG Local Connector trên máy đang dùng Chrome/Facebook thật của nhân viên.</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 42 }}>Cài THG Local Connector trên máy đang dùng Chrome/Facebook thật của nhân viên.</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {DOWNLOADS.map(d => {
+                  const available = Boolean(systemInfo?.agent_builds?.[d.key]);
+                  const selected = selectedDownloadKey === d.key;
+                  return (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => setSelectedDownloadKey(d.key)}
+                      disabled={!available}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '6px 8px',
+                        borderRadius: 7,
+                        border: `1px solid ${selected ? '#60a5fa99' : theme.border}`,
+                        background: selected ? '#1d4ed833' : theme.surfaceAlt,
+                        color: available ? '#dbeafe' : theme.textFaint,
+                        cursor: available ? 'pointer' : 'not-allowed',
+                        opacity: available ? 1 : 0.5,
+                        fontSize: 11,
+                        fontWeight: selected ? 800 : 600,
+                      }}
+                    >
+                      <Monitor size={11} /> {d.label}
+                    </button>
+                  );
+                })}
+              </div>
               <a
-                href={primaryAvailable ? primaryDownload.href : undefined}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #3b82f666', background: primaryAvailable ? '#1d4ed833' : '#33415555', color: primaryAvailable ? '#dbeafe' : theme.textFaint, pointerEvents: primaryAvailable ? 'auto' : 'none', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                href={selectedAvailable ? selectedDownload.href : undefined}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #3b82f666', background: selectedAvailable ? '#1d4ed833' : '#33415555', color: selectedAvailable ? '#dbeafe' : theme.textFaint, pointerEvents: selectedAvailable ? 'auto' : 'none', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
               >
-                <Download size={13} /> {primaryAvailable ? `Tải cho ${primaryDownload.label}` : 'Chưa có bản cài'}
+                <Download size={13} /> {selectedAvailable ? `Tải ${selectedDownload.label}` : 'Chưa có bản cài'}
               </a>
-              {!primaryAvailable && hasAnyBuild && (
-                <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Bản cho hệ điều hành này chưa có, chọn bản khác trong mục Settings khi cần.</p>
+              {!selectedAvailable && hasAnyBuild && (
+                <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Bản đang chọn chưa có, chọn hệ điều hành khác trong danh sách.</p>
               )}
             </div>
 
