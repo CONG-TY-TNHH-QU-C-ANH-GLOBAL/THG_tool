@@ -7,6 +7,7 @@ export interface SystemInfo {
     mac_intel?: boolean;
     mac_m1?: boolean;
     linux?: boolean;
+    chrome_extension?: boolean;
   };
 }
 

@@ -119,10 +119,11 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
 		downloadsDir := filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads")
 		agentBuilds := fiber.Map{
-			"windows":   fileExists(filepath.Join(downloadsDir, "thg-login-windows.exe")),
-			"mac_intel": fileExists(filepath.Join(downloadsDir, "thg-login-mac-intel")),
-			"mac_m1":    fileExists(filepath.Join(downloadsDir, "thg-login-mac-m1")),
-			"linux":     fileExists(filepath.Join(downloadsDir, "thg-login-linux")),
+			"windows":          fileExists(filepath.Join(downloadsDir, "thg-login-windows.exe")),
+			"mac_intel":        fileExists(filepath.Join(downloadsDir, "thg-login-mac-intel")),
+			"mac_m1":           fileExists(filepath.Join(downloadsDir, "thg-login-mac-m1")),
+			"linux":            fileExists(filepath.Join(downloadsDir, "thg-login-linux")),
+			"chrome_extension": fileExists(filepath.Join(downloadsDir, "thg-chrome-extension.zip")),
 		}
 		return c.JSON(fiber.Map{
 			"headless":     cfg.Headless,
@@ -319,6 +320,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Agent API — authenticated with X-Agent-Token header (no JWT needed)
 	agentGrp := api.Group("/agent", s.agentAuth)
 	agentGrp.Post("/heartbeat", s.agentHeartbeat)
+	agentGrp.Post("/chrome-status", s.agentChromeStatus)
 	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
 	agentGrp.Post("/screenshot", s.agentScreenshot)
 	agentGrp.Get("/jobs/next", s.agentGetNextJob)

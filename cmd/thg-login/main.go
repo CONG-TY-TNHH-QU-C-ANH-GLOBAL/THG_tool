@@ -27,7 +27,7 @@ import (
 
 var version = "dev"
 
-const capabilitiesJSON = `{"local_chrome":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"extension_bridge":"planned"}`
+const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"extension_bridge":"optional"}`
 
 type connectorConfig struct {
 	ServerURL     string    `json:"server_url"`
@@ -99,8 +99,9 @@ func main() {
 	fmt.Println("==================================================")
 	fmt.Println("        THG LOCAL CONNECTOR")
 	fmt.Println("==================================================")
-	fmt.Println("This app pairs your real desktop Chrome with THG.")
-	fmt.Println("Keep it running while the dashboard automation is active.")
+	fmt.Println("Primary production flow: use the THG Chrome Extension on your already-signed-in Chrome.")
+	fmt.Println("This desktop app is an optional native companion for advanced local streaming/control.")
+	fmt.Println("Keep it running only when the dashboard explicitly asks for native companion mode.")
 	fmt.Println()
 	fmt.Println("Server:", serverURL)
 	fmt.Println("Config:", configPath)
@@ -150,7 +151,10 @@ func main() {
 	}
 
 	if err := sendHeartbeat(serverURL, cfg.DeviceToken, chromeSnapshot{Status: "connector_online"}); err != nil {
-		exitWithError("Heartbeat failed", err)
+		if isDeviceTokenRejected(err) {
+			exitWithError("Heartbeat failed", err)
+		}
+		fmt.Println("[warn] initial heartbeat failed:", err)
 	}
 	fmt.Println("Connector is online. You can return to the dashboard Browser tab.")
 	if *onceFlag {
@@ -504,6 +508,43 @@ func sendHeartbeat(serverURL, token string, snap chromeSnapshot) error {
 	return nil
 }
 
+func sendChromeStatus(serverURL, token string, snap chromeSnapshot) error {
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("missing saved device token")
+	}
+	body, _ := json.Marshal(map[string]any{
+		"account_id":    snap.AccountID,
+		"current_url":   snap.CurrentURL,
+		"fb_user_id":    snap.FBUserID,
+		"stream_status": defaultString(snap.Status, "chrome_not_connected"),
+	})
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/agent/chrome-status", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	hostname, _ := os.Hostname()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Token", token)
+	req.Header.Set("X-Agent-Hostname", hostname)
+	req.Header.Set("X-Agent-OS", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Agent-Version", version)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("device token was rejected; run with --reset and pair again")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
 func sendScreenshot(serverURL, token string, snap chromeSnapshot) error {
 	if strings.TrimSpace(token) == "" {
 		return fmt.Errorf("missing saved device token")
@@ -576,6 +617,56 @@ func fetchBrowserTargets(serverURL, token string) ([]browserTarget, error) {
 	return out.Targets, nil
 }
 
+func probeExistingChromeStatus(port int) chromeSnapshot {
+	if port <= 0 {
+		port = 9222
+	}
+	devtoolsURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	targets, err := chromeTargets(devtoolsURL)
+	if err != nil {
+		return chromeSnapshot{Status: "chrome_not_connected"}
+	}
+	status := "chrome_connected"
+	var currentURL string
+	for _, target := range targets {
+		if target.Type != "page" {
+			continue
+		}
+		if currentURL == "" {
+			currentURL = target.URL
+		}
+		if strings.Contains(strings.ToLower(target.URL), "facebook.com") {
+			currentURL = target.URL
+			status = "facebook_login_required"
+			break
+		}
+	}
+	return chromeSnapshot{CurrentURL: currentURL, Status: status}
+}
+
+type chromeTargetInfo struct {
+	Type  string `json:"type"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
+}
+
+func chromeTargets(devtoolsURL string) ([]chromeTargetInfo, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(devtoolsURL + "/json/list")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Chrome DevTools target list returned %d", resp.StatusCode)
+	}
+	var out []chromeTargetInfo
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func runConnectorLoop(serverURL, token string, basePort int) {
 	if basePort <= 0 {
 		basePort = 9222
@@ -635,11 +726,27 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 	}
 
 	sendFrames := func() bool {
-		best := chromeSnapshot{Status: "connector_online"}
+		best := probeExistingChromeStatus(basePort)
+		if len(bridges) == 0 {
+			if err := sendChromeStatus(serverURL, token, best); err != nil {
+				if isDeviceTokenRejected(err) {
+					fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+					return false
+				}
+				fmt.Println("[warn] chrome status failed:", err)
+			}
+		}
 		for _, bridge := range bridges {
 			snap := snapshotChrome(bridge)
-			if snap.Status == "facebook_logged_in" || best.Status == "connector_online" {
+			if best.AccountID == 0 || best.Status == "chrome_not_connected" || snap.Status == "facebook_logged_in" {
 				best = snap
+			}
+			if err := sendChromeStatus(serverURL, token, snap); err != nil {
+				if isDeviceTokenRejected(err) {
+					fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+					return false
+				}
+				fmt.Printf("[warn] chrome status failed for account %d: %v\n", snap.AccountID, err)
 			}
 			if err := sendScreenshot(serverURL, token, snap); err != nil {
 				if isDeviceTokenRejected(err) {

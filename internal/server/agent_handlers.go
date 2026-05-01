@@ -262,6 +262,53 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ts": time.Now().Unix()})
 }
 
+// agentChromeStatus is the explicit local Chrome handshake endpoint.
+// The desktop connector calls this even before any workspace target exists, so
+// the dashboard can distinguish "device paired" from "Chrome actually attached".
+// POST /api/agent/chrome-status
+func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
+	agentID, _ := c.Locals("agent_id").(int64)
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	var body struct {
+		AccountID    int64  `json:"account_id"`
+		CurrentURL   string `json:"current_url"`
+		FBUserID     string `json:"fb_user_id"`
+		StreamStatus string `json:"stream_status"`
+	}
+	_ = c.BodyParser(&body)
+
+	status := strings.TrimSpace(body.StreamStatus)
+	if status == "" {
+		status = "chrome_not_connected"
+	}
+	_ = s.db.UpdateAgentPresence(agentID, store.AgentPresence{
+		AssignedAccountID: body.AccountID,
+		CurrentURL:        body.CurrentURL,
+		FBUserID:          body.FBUserID,
+		StreamStatus:      status,
+	})
+	if body.AccountID > 0 && orgID > 0 {
+		if appStore, err := store.NewAppStore(s.db); err == nil {
+			_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
+				AccountID:    body.AccountID,
+				OrgID:        orgID,
+				Status:       localSessionStatusFromStream(status),
+				StartedAt:    time.Now().UTC(),
+				LastActiveAt: time.Now().UTC(),
+			})
+		}
+		if body.FBUserID != "" {
+			_ = s.db.SetBrowserLoggedIn(body.AccountID, true, body.FBUserID)
+			_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
+		}
+	}
+	return c.JSON(fiber.Map{
+		"status":        "ok",
+		"stream_status": status,
+		"ts":            time.Now().Unix(),
+	})
+}
+
 // agentBrowserTargets returns the org account slots that should run on local Chrome.
 // GET /api/agent/browser-targets
 func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {

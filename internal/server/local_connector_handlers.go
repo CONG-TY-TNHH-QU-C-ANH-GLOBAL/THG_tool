@@ -89,6 +89,8 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 		Hostname         string `json:"hostname"`
 		OS               string `json:"os"`
 		Version          string `json:"version"`
+		Kind             string `json:"kind"`
+		Transport        string `json:"transport"`
 		CapabilitiesJSON string `json:"capabilities_json"`
 		CurrentURL       string `json:"current_url"`
 		FBUserID         string `json:"fb_user_id"`
@@ -97,12 +99,27 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Code) == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "pairing code is required"})
 	}
+	kind := strings.TrimSpace(req.Kind)
+	if kind == "" {
+		kind = "desktop_connector"
+	}
+	if kind != "desktop_connector" && kind != "extension_connector" {
+		return c.Status(400).JSON(fiber.Map{"error": "unsupported connector kind"})
+	}
+	transport := strings.TrimSpace(req.Transport)
+	if transport == "" {
+		if kind == "extension_connector" {
+			transport = "chrome_extension"
+		} else {
+			transport = "local_chrome"
+		}
+	}
 	tok, deviceToken, err := s.db.ClaimConnectorPairingCode(req.Code, store.AgentPresence{
 		Hostname:         req.Hostname,
 		OS:               req.OS,
 		Version:          req.Version,
-		Kind:             "desktop_connector",
-		Transport:        "websocket",
+		Kind:             kind,
+		Transport:        transport,
 		CapabilitiesJSON: req.CapabilitiesJSON,
 		CurrentURL:       req.CurrentURL,
 		FBUserID:         req.FBUserID,

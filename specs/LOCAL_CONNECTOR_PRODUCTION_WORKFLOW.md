@@ -2,69 +2,93 @@
 
 ## Direction
 
-Cloud browser remains available, but it is no longer the only production path
-for Facebook accounts. The primary scalable path is:
+The production path for Facebook must use the customer's own trusted Chrome
+profile, not a fresh cloud Chrome login and not a separate managed Chrome
+profile by default.
 
-1. Staff signs in to the THG workspace.
-2. Staff creates a short-lived pairing code from the Browser dashboard.
-3. THG Local Connector runs on the staff machine where Chrome/Facebook is
-   already trusted.
-4. The connector claims the pairing code at `/api/connectors/pair` and receives
-   a long-lived device token that is never shown in the dashboard.
-5. The connector heartbeats to `/api/agent/heartbeat` with device, Facebook tab,
-   stream, and account status.
-6. Cloud backend keeps prompt workflows, business memory, leads, outbox,
-   staff KPI, audit logs, and routing policy.
-7. The connector executes Facebook actions locally and reports results back to
-   the cloud.
+Primary UX:
 
-This preserves the value of a visible Facebook workflow while avoiding cloud
-login risk from unfamiliar datacenter Chrome profiles.
+1. Staff opens the Browser dashboard.
+2. Staff downloads or installs **THG Chrome Extension**.
+3. Staff keeps Facebook signed in on their normal personal/work Chrome profile.
+4. Staff creates a short-lived pairing code from the Browser dashboard.
+5. Staff pastes that code into the THG Extension popup.
+6. The extension receives a long-lived device token stored only in Chrome local
+   extension storage.
+7. The extension heartbeats to the backend with Facebook tab status, current
+   URL, `c_user` presence, and active-tab screenshots when a Browser workspace
+   target is running.
+8. Dashboard Browser view observes the real signed-in Facebook tab and routes
+   prompt jobs to that connector.
+
+The desktop app remains a native companion for future OS-level screen sharing,
+pause/resume hotkeys, and advanced local execution. It must not be presented as
+the main Facebook login path because asking users to switch Chrome profiles or
+understand DevTools/remote-debugging increases checkpoint risk and support
+friction.
+
+## User-Facing Language
+
+Avoid exposing these terms in the normal setup flow:
+
+- remote debugging
+- CDP
+- DevTools port
+- cloud profile
+- user-data-dir
+
+Use this language instead:
+
+- "Cài THG Extension vào Chrome đang đăng nhập Facebook."
+- "Tạo mã kết nối."
+- "Dán mã vào popup extension."
+- "Mở tab Facebook thật."
+- "Dashboard đã nhận tín hiệu Facebook."
 
 ## Invariants
 
 - One connector belongs to exactly one `org_id`.
 - A dashboard pairing code is short-lived, one-time, stored hashed, and shown
   only during setup.
-- A connector device token is returned only to the local app after successful
-  pairing and stored hashed in `agent_tokens`.
+- A connector device token is returned only to the extension/native connector
+  after successful pairing and stored hashed in `agent_tokens`.
 - The user who paired a device can disconnect that device from the workspace in
   the Browser dashboard. Admin/founder users can disconnect org devices for
   operations and incident response.
-- A connector device may run many local Chrome account profiles. Each Facebook
-  account slot gets its own persistent local Chrome `user-data-dir` and DevTools
-  port so sessions do not overwrite each other.
-- Dashboard data is fetched from real connector heartbeats, not mocked UI.
+- The production connector should be `extension_connector` with
+  `transport=chrome_extension` when the user chooses personal Chrome.
+- Dashboard data is fetched from real connector heartbeats and screenshots, not
+  mocked UI.
 - If Facebook shows checkpoint/CAPTCHA, the connector must report
   `human_required`; automation must not bypass it.
+- Automation must not ask for or store the user's Facebook password.
 - Cloud browser CDP polling must stay opt-in during login/checkpoint flows.
 
 ## Current Implementation
 
-- `agent_tokens` now stores connector metadata:
+- `agent_tokens` stores connector metadata:
   `kind`, `transport`, `assigned_account_id`, `capabilities_json`,
   `current_url`, `fb_user_id`, and `stream_status`.
 - `GET /api/connectors` lists org-scoped Local Connector devices.
-- `POST /api/connectors` is a legacy alias for creating a short-lived pairing
-  code. It must not expose long-lived connector tokens to the dashboard.
 - `POST /api/connectors/pairing-code` creates a short-lived dashboard pairing
   code.
-- `POST /api/connectors/pair` lets the desktop connector exchange the pairing
-  code for its device token.
-- `PUT /api/connectors/:id/account` binds a connector to an account slot.
-- `DELETE /api/connectors/:id` revokes the connector token.
-- `/api/agent/heartbeat` accepts richer presence fields from desktop or
-  extension connectors.
-- Browser dashboard shows Local Connector devices beside cloud browser
-  workspaces.
-- When an org has an active Local Connector, `POST /api/browser/workspaces/new`
+- `POST /api/connectors/pair` lets the extension or native connector exchange
+  the pairing code for its device token. It accepts `extension_connector` and
+  `desktop_connector`.
+- `/api/agent/heartbeat` accepts richer presence fields from extension/native
+  connectors.
+- `/api/agent/chrome-status` is the explicit Chrome/Facebook status endpoint,
+  so the backend can show `chrome_not_connected`, `chrome_connected`, or
+  `facebook_*` instead of pretending that a paired device is ready.
+- `/api/agent/screenshot` stores active Facebook tab screenshots from the
+  connector; the dashboard reads them from
+  `/api/connectors/screen?account_id=...`.
+- Browser dashboard shows Local Connector devices beside browser workspaces.
+- When an org has an online connector, `POST /api/browser/workspaces/new`
   creates a local account slot instead of starting a cloud browser.
 - `POST /api/browser/workspaces/:id/start` marks that account as
-  `local_starting`; the connector polls `/api/agent/browser-targets` and opens a
-  matching local Chrome profile.
-- The connector captures the visible Chrome frame through CDP and posts it to
-  `/api/agent/screenshot`; the dashboard reads it from
-  `/api/connectors/screen?account_id=...`.
+  `local_starting`; the extension polls `/api/agent/browser-targets` and reports
+  the active Facebook tab for that target.
 - `local_ready`, `local_login_required`, and `local_human_required` are treated
   as first-class browser states in the dashboard.
 - `POST /api/connectors/:id/disconnect` is the dashboard disconnect endpoint.
@@ -72,26 +96,31 @@ login risk from unfamiliar datacenter Chrome profiles.
   device, and marks its local sessions stopped. `DELETE /api/connectors/:id`
   remains as a compatibility alias.
 - Browser start/new-session only uses Local Connector when a connector is
-  online. If a device was paired but the app is closed, the API returns
+  online. If a device was paired but extension/app is closed, the API returns
   `LOCAL_CONNECTOR_OFFLINE` instead of silently waiting forever.
-- Local Connector binaries are built with `scripts/build-local-connector.sh`
-  or `scripts/build-local-connector.ps1` and served from
-  `data/downloads` through `/downloads/*`.
+- `scripts/build-local-connector.sh` and `scripts/build-local-connector.ps1`
+  package `local-connector-extension` as
+  `data/downloads/thg-chrome-extension.zip`.
 
 ## Next Milestones
 
-1. Desktop Connector app:
-   - execute approved outbox/comment/inbox jobs locally,
-   - expose pause/resume per account profile,
-   - surface profile mismatch repair actions.
-2. Live observation:
-   - upgrade screenshot polling to WebRTC/WebSocket streaming,
-   - add input forwarding only with explicit user consent,
-   - action timeline and pause/resume control.
-3. Extension helper:
-   - reads DOM metadata safely,
-   - normalizes post/comment/inbox extraction,
-   - sends structured events to the desktop connector.
-4. Routing:
-   - jobs prefer an online connector bound to the selected account,
-   - fallback to cloud browser only when explicitly enabled.
+1. Publish THG Chrome Extension through Chrome Web Store so setup becomes a
+   one-click install instead of zip sideloading.
+2. Add a WebSocket command channel for the extension:
+   - target account routing,
+   - active tab claim/release,
+   - pause/resume,
+   - action timeline.
+3. Add structured DOM extraction in content scripts:
+   - post metadata,
+   - comment thread metadata,
+   - inbox state,
+   - checkpoint state.
+4. Add local action executor with safety policy:
+   - no CAPTCHA bypass,
+   - stop on checkpoint,
+   - per-lead dedupe,
+   - conversation memory before comment/inbox.
+5. Keep desktop native companion optional for future full-screen observation or
+   OS-level permissions, but do not make it part of the default Facebook login
+   path.

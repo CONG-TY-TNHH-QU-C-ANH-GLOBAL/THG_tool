@@ -30,4 +30,14 @@ foreach ($target in $targets) {
   go build -buildvcs=false -ldflags="-s -w -X main.version=$Version" -o $out ./cmd/thg-login
 }
 
+$ExtensionDir = Join-Path $Root "local-connector-extension"
+$ExtensionZip = Join-Path $OutputDir "thg-chrome-extension.zip"
+if (Test-Path $ExtensionDir) {
+  if (Test-Path $ExtensionZip) {
+    Remove-Item -LiteralPath $ExtensionZip -Force
+  }
+  Write-Host "Packaging thg-chrome-extension.zip"
+  Compress-Archive -Path (Join-Path $ExtensionDir "*") -DestinationPath $ExtensionZip -Force
+}
+
 Write-Host "Local Connector builds written to $OutputDir"

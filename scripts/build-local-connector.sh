@@ -28,4 +28,14 @@ build_target darwin amd64 thg-login-mac-intel
 build_target darwin arm64 thg-login-mac-m1
 
 chmod 0644 "$OUTPUT_DIR"/thg-login-*
+if [ -d "$ROOT/local-connector-extension" ]; then
+  echo "Packaging thg-chrome-extension.zip"
+  rm -f "$OUTPUT_DIR/thg-chrome-extension.zip"
+  if command -v python3 >/dev/null 2>&1; then
+    (cd "$ROOT/local-connector-extension" && python3 -m zipfile -c "$OUTPUT_DIR/thg-chrome-extension.zip" .)
+  else
+    (cd "$ROOT/local-connector-extension" && zip -qr "$OUTPUT_DIR/thg-chrome-extension.zip" .)
+  fi
+  chmod 0644 "$OUTPUT_DIR/thg-chrome-extension.zip"
+fi
 echo "Local Connector builds written to $OUTPUT_DIR"

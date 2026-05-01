@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield, Unplug } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield, Unplug, Puzzle } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -21,7 +21,7 @@ function stateLabel(state?: string): string {
     case 'active': return 'active';
     case 'checkpoint': return 'human required';
     case 'human_required': return 'human required';
-    case 'local_starting': return 'đang mở Chrome thật';
+    case 'local_starting': return 'đang chờ extension';
     case 'local_active': return 'Chrome thật đang chạy';
     case 'local_login_required': return 'cần đăng nhập Facebook';
     case 'local_human_required': return 'Facebook cần xác minh';
@@ -51,22 +51,11 @@ function formatLastSeen(value?: string) {
 
 type DownloadKey = keyof SystemInfo['agent_builds'];
 
-const DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
-  { key: 'windows', label: 'Windows', href: '/downloads/thg-login-windows.exe' },
-  { key: 'mac_m1', label: 'macOS Apple Silicon', href: '/downloads/thg-login-mac-m1' },
-  { key: 'mac_intel', label: 'macOS Intel', href: '/downloads/thg-login-mac-intel' },
-  { key: 'linux', label: 'Linux', href: '/downloads/thg-login-linux' },
-];
-
-function preferredDownloadKey(): DownloadKey {
-  if (typeof navigator === 'undefined') return 'windows';
-  const ua = navigator.userAgent.toLowerCase();
-  const platform = navigator.platform.toLowerCase();
-  if (platform.includes('win') || ua.includes('windows')) return 'windows';
-  if (platform.includes('mac') || ua.includes('mac os')) return 'mac_m1';
-  if (platform.includes('linux') || ua.includes('linux')) return 'linux';
-  return 'windows';
-}
+const EXTENSION_DOWNLOAD: { key: DownloadKey; label: string; href: string } = {
+  key: 'chrome_extension',
+  label: 'Chrome Extension',
+  href: '/downloads/thg-chrome-extension.zip',
+};
 
 function connectorStatusLabel(status?: string): string {
   switch ((status || '').toLowerCase()) {
@@ -77,6 +66,8 @@ function connectorStatusLabel(status?: string): string {
       return 'Sẵn sàng';
     case 'chrome_not_connected':
       return 'Chưa kết nối Chrome';
+    case 'chrome_connected':
+      return 'Đã thấy Chrome local';
     case 'facebook_login_required':
       return 'Chưa đăng nhập Facebook';
     case 'facebook_human_required':
@@ -120,17 +111,7 @@ function LocalConnectorPanel({
   const online = connectors.filter(c => c.online).length;
   const facebookConnected = connectors.filter(c => c.online && c.streamStatus === 'facebook_logged_in').length;
   const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
-  const [selectedDownloadKey, setSelectedDownloadKey] = useState<DownloadKey>(() => preferredDownloadKey());
-  const selectedDownload = DOWNLOADS.find(d => d.key === selectedDownloadKey) ?? DOWNLOADS[0];
-  const selectedAvailable = Boolean(systemInfo?.agent_builds?.[selectedDownload.key]);
-  const hasAnyBuild = DOWNLOADS.some(d => systemInfo?.agent_builds?.[d.key]);
-
-  useEffect(() => {
-    if (!systemInfo) return;
-    if (systemInfo.agent_builds?.[selectedDownloadKey]) return;
-    const firstAvailable = DOWNLOADS.find(d => systemInfo.agent_builds?.[d.key]);
-    if (firstAvailable) setSelectedDownloadKey(firstAvailable.key);
-  }, [selectedDownloadKey, systemInfo]);
+  const extensionAvailable = Boolean(systemInfo?.agent_builds?.[EXTENSION_DOWNLOAD.key]);
 
   return (
     <div style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -139,15 +120,15 @@ function LocalConnectorPanel({
           <Laptop size={17} color="#5eead4" />
         </div>
         <div style={{ minWidth: 0 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật của nhân viên</p>
-          <p style={{ color: theme.textMuted, fontSize: 11 }}>Dùng chính máy và Chrome cá nhân của nhân viên để giữ đúng IP, thiết bị và phiên Facebook thật.</p>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome cá nhân đã đăng nhập Facebook</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: cài THG Extension vào Chrome thật của nhân viên, giữ đúng thiết bị, IP và session Facebook quen thuộc.</p>
         </div>
         <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Radio size={12} /> {facebookConnected}/{connectors.length} Facebook ready
         </span>
         <button onClick={() => setSetupOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px solid #2dd4bf66', background: '#0f766e33', color: '#ccfbf1', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <Laptop size={13} />
-          Bắt đầu kết nối
+          Hướng dẫn kết nối
         </button>
       </div>
 
@@ -155,52 +136,28 @@ function LocalConnectorPanel({
         <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, background: '#07131f' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Tải ứng dụng THG</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 42 }}>Cài app trên đúng máy sẽ dùng Facebook. Máy Windows tải Windows, máy Mac tải macOS.</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                {DOWNLOADS.map(d => {
-                  const available = Boolean(systemInfo?.agent_builds?.[d.key]);
-                  const selected = selectedDownloadKey === d.key;
-                  return (
-                    <button
-                      key={d.key}
-                      type="button"
-                      onClick={() => setSelectedDownloadKey(d.key)}
-                      disabled={!available}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        padding: '6px 8px',
-                        borderRadius: 7,
-                        border: `1px solid ${selected ? '#60a5fa99' : theme.border}`,
-                        background: selected ? '#1d4ed833' : theme.surfaceAlt,
-                        color: available ? '#dbeafe' : theme.textFaint,
-                        cursor: available ? 'pointer' : 'not-allowed',
-                        opacity: available ? 1 : 0.5,
-                        fontSize: 11,
-                        fontWeight: selected ? 800 : 600,
-                      }}
-                    >
-                      <Monitor size={11} /> {d.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Extension</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
+                Cài extension vào chính Chrome cá nhân đang đăng nhập Facebook. Không cần nhập mật khẩu Facebook vào THG.
+              </p>
               <a
-                href={selectedAvailable ? selectedDownload.href : undefined}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #3b82f666', background: selectedAvailable ? '#1d4ed833' : '#33415555', color: selectedAvailable ? '#dbeafe' : theme.textFaint, pointerEvents: selectedAvailable ? 'auto' : 'none', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                href={extensionAvailable ? EXTENSION_DOWNLOAD.href : undefined}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: extensionAvailable ? '#0f766e33' : '#33415555', color: extensionAvailable ? '#ccfbf1' : theme.textFaint, pointerEvents: extensionAvailable ? 'auto' : 'none', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
               >
-                <Download size={13} /> {selectedAvailable ? `Tải ${selectedDownload.label}` : 'Chưa có bản cài'}
+                <Puzzle size={13} /> {extensionAvailable ? 'Tải extension THG' : 'Chưa có extension'}
               </a>
-              {!selectedAvailable && hasAnyBuild && (
-                <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Bản đang chọn chưa có, chọn hệ điều hành khác trong danh sách.</p>
+              {extensionAvailable && (
+                <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>
+                  Bản nội bộ dùng file zip. Production sẽ đổi sang Chrome Web Store để người dùng bấm cài một chạm.
+                </p>
               )}
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Nhập mã vào app</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Bấm tạo mã, sau đó mở THG Local Connector và dán mã này vào app. Khi app báo Connected, mã này không cần dùng lại.</p>
+              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Ghép thiết bị với workspace</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
+                Tạo mã rồi dán vào popup THG Extension trên Chrome cá nhân. Sau khi ghép thành công, extension tự online lại bằng token riêng.
+              </p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
                   <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: 1 }}>{pairingCode}</code>
@@ -218,14 +175,18 @@ function LocalConnectorPanel({
             </div>
 
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Mở Facebook trong Chrome</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Trên cùng máy vừa kết nối, mở Chrome cá nhân và vào facebook.com. Nếu Facebook đã đăng nhập sẵn thì chỉ cần giữ tab đó mở.</p>
+              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Mở tab Facebook thật</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
+                Mở facebook.com trong Chrome cá nhân đã đăng nhập. Bấm Sync now trong extension nếu dashboard chưa nhận tín hiệu ngay.
+              </p>
               <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không nhập mật khẩu Facebook vào THG</span>
             </div>
 
             <div style={{ border: `1px solid ${facebookConnected ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: facebookConnected ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Facebook đã sẵn sàng</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Khi dòng máy bên dưới hiện Đã kết nối Facebook, dashboard đã thấy đúng Chrome/Facebook trên máy đó.</p>
+              <p style={{ color: facebookConnected ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard nhận tín hiệu thật</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
+                Khi thiết bị báo Đã kết nối Facebook, agent mới được phép dùng session đó để quan sát và chạy automation.
+              </p>
               <span style={{ color: facebookConnected ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
                 {facebookConnected ? <CheckCircle size={13} /> : <Radio size={13} />} {facebookConnected ? 'Đã kết nối Facebook' : online ? 'Máy online, đang chờ Chrome/Facebook' : 'Đang chờ máy kết nối'}
               </span>
@@ -235,7 +196,9 @@ function LocalConnectorPanel({
       )}
 
       {connectors.length === 0 ? (
-        <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>Chưa có máy nhân viên nào kết nối. Tải app, nhập mã kết nối, rồi mở Facebook trong Chrome trên máy đó.</p>
+        <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>
+          Chưa có Chrome cá nhân nào kết nối. Cài THG Extension, nhập mã kết nối, rồi mở tab Facebook đã đăng nhập trên Chrome đó.
+        </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
           {connectors.map(c => (
@@ -288,7 +251,7 @@ function LocalChromeViewer({
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật {accountName ? `- ${accountName}` : ''}</p>
           <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {screen?.currentUrl || 'Đang chờ ảnh từ THG Local Connector'}
+            {screen?.currentUrl || 'Đang chờ ảnh từ THG Extension'}
           </p>
         </div>
         {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
@@ -305,7 +268,7 @@ function LocalChromeViewer({
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
             <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome thật trên máy nhân viên</p>
             <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              Bấm mở Chrome thật cho account này, giữ THG Local Connector đang chạy. App sẽ tự mở một Chrome profile riêng và gửi màn hình về dashboard.
+              Mở tab Facebook trong Chrome cá nhân đã cài THG Extension, rồi bấm Sync now trong extension. Dashboard sẽ nhận ảnh và trạng thái từ chính tab đó.
             </p>
           </div>
         )}
@@ -478,7 +441,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   }, [selectedId, selectedWs?.running, selectedIsLocal, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
-  const hasLocalConnector = connectors.length > 0;
+  const hasOnlineConnector = connectors.some(c => c.online);
 
   const handleNewSession = async () => {
     setNewLoading(true);
@@ -524,7 +487,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       await disconnectLocalConnector(connector.id);
       setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
-      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu app còn mở, nó sẽ dừng ở heartbeat kế tiếp.`);
+      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu extension còn mở, token sẽ bị từ chối ở heartbeat kế tiếp.`);
     } catch (e) {
       setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được thiết bị');
     } finally {
@@ -624,7 +587,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? 'Đang khởi động...' : 'Bắt đầu'}
+                  {actionLoading.has(w.accountId) ? (hasOnlineConnector ? 'Đang chờ extension...' : 'Đang khởi động...') : (hasOnlineConnector ? 'Kết nối tab' : 'Bắt đầu')}
                 </button>
               ) : (
                 <button
