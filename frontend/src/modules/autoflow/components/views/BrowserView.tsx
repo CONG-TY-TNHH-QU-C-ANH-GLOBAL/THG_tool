@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Puzzle } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Puzzle, Eye, EyeOff } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -111,7 +111,12 @@ function LocalConnectorPanel({
   const online = connectors.filter(c => c.online).length;
   const facebookConnected = connectors.filter(c => c.online && c.streamStatus === 'facebook_logged_in').length;
   const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
+  const [pairingCodeVisible, setPairingCodeVisible] = useState(false);
   const extensionAvailable = Boolean(systemInfo?.agent_builds?.[EXTENSION_DOWNLOAD.key]);
+
+  useEffect(() => {
+    setPairingCodeVisible(false);
+  }, [pairingCode]);
 
   return (
     <div style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -147,7 +152,7 @@ function LocalConnectorPanel({
                 <Puzzle size={13} /> Tải extension THG
               </a>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Tải zip, giải nén, mở chrome://extensions, bật Developer mode, chọn Load unpacked và trỏ vào thư mục vừa giải nén.
+                Tải zip, giải nén, mở chrome://extensions, bật Developer mode, chọn Load unpacked rồi chọn đúng thư mục có file manifest.json. Chrome không hiện file bên trong, chỉ cần bấm Select Folder.
                 {!extensionAvailable && ' Nếu tải lỗi 404 nghĩa là server production chưa publish artifact extension.'}
               </p>
             </div>
@@ -158,9 +163,25 @@ function LocalConnectorPanel({
                 Tạo mã rồi dán vào popup THG Extension trên Chrome cá nhân. Sau khi ghép thành công, extension tự online lại bằng token riêng.
               </p>
               {pairingCode ? (
-                <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                  <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: 1 }}>{pairingCode}</code>
-                  <button onClick={() => navigator.clipboard?.writeText(pairingCode)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: theme.textMuted, cursor: 'pointer', fontSize: 11 }}>
+                <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: '1 1 130px', letterSpacing: pairingCodeVisible ? 0 : 2 }}>
+                    {pairingCodeVisible ? pairingCode : '••••-••••'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => setPairingCodeVisible(v => !v)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${pairingCodeVisible ? '#f59e0b66' : theme.border}`, background: pairingCodeVisible ? '#78350f33' : theme.surfaceAlt, color: pairingCodeVisible ? '#fcd34d' : theme.textMuted, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}
+                  >
+                    {pairingCodeVisible ? <EyeOff size={12} /> : <Eye size={12} />}
+                    {pairingCodeVisible ? 'Ẩn mã' : 'Hiện mã'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!pairingCodeVisible}
+                    onClick={() => navigator.clipboard?.writeText(pairingCode)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: pairingCodeVisible ? theme.textMuted : theme.textFaint, cursor: pairingCodeVisible ? 'pointer' : 'not-allowed', opacity: pairingCodeVisible ? 1 : 0.55, fontSize: 11 }}
+                    title={pairingCodeVisible ? 'Copy mã kết nối' : 'Hiện mã trước khi copy'}
+                  >
                     <Copy size={12} /> Copy
                   </button>
                 </div>
