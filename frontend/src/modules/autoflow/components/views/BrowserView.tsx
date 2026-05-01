@@ -60,8 +60,7 @@ type DownloadKey = keyof SystemInfo['agent_builds'];
 
 const RUNTIME_DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
   { key: 'local_kit_windows', label: 'Windows', href: '/downloads/thg-local-kit-windows.zip' },
-  { key: 'local_kit_mac_m1', label: 'macOS Apple Silicon', href: '/downloads/thg-local-kit-mac-m1.zip' },
-  { key: 'local_kit_mac_intel', label: 'macOS Intel', href: '/downloads/thg-local-kit-mac-intel.zip' },
+  { key: 'local_kit_mac_m1', label: 'macOS', href: '/downloads/thg-local-kit-mac-m1.zip' },
   { key: 'local_kit_linux', label: 'Linux', href: '/downloads/thg-local-kit-linux.zip' },
 ];
 
