@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -44,6 +45,56 @@ func (s *Server) getLocalConnectorScreen(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"screen": screen})
+}
+
+// createConnectorInputCommand queues a dashboard mouse/keyboard command for THG Local Runtime.
+// POST /api/connectors/input
+func (s *Server) createConnectorInputCommand(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
+	var req struct {
+		AccountID int64           `json:"account_id"`
+		Type      string          `json:"type"`
+		Payload   json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	req.Type = strings.ToLower(strings.TrimSpace(req.Type))
+	switch req.Type {
+	case "click", "key", "text", "scroll":
+	default:
+		return c.Status(400).JSON(fiber.Map{"error": "unsupported input command"})
+	}
+	if req.AccountID <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "account_id is required"})
+	}
+	acc, err := s.db.GetAccount(req.AccountID)
+	if err != nil || acc == nil || acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+	}
+	if len(req.Payload) == 0 || string(req.Payload) == "null" {
+		req.Payload = json.RawMessage(`{}`)
+	}
+	if !json.Valid(req.Payload) {
+		return c.Status(400).JSON(fiber.Map{"error": "payload must be valid JSON"})
+	}
+	if len(req.Payload) > 16*1024 {
+		return c.Status(413).JSON(fiber.Map{"error": "input payload is too large"})
+	}
+
+	screen, err := s.db.GetLatestConnectorScreenshot(orgID, req.AccountID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if screen == nil || screen.AgentID <= 0 {
+		return c.Status(409).JSON(fiber.Map{"error": "local browser stream is not ready for this Facebook account"})
+	}
+	id, err := s.db.CreateConnectorCommand(orgID, req.AccountID, screen.AgentID, userID, req.Type, string(req.Payload))
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(202).JSON(fiber.Map{"status": "queued", "id": id})
 }
 
 // createLocalConnectorPairingCode creates a short-lived code for first-time desktop pairing.

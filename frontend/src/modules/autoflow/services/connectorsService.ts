@@ -63,3 +63,11 @@ export async function revokeLocalConnector(id: number): Promise<void> {
 export async function disconnectLocalConnector(id: number): Promise<void> {
   await post(`/connectors/${id}/disconnect`, {});
 }
+
+export async function sendConnectorInput(accountId: number, type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>): Promise<void> {
+  await post('/connectors/input', {
+    account_id: accountId,
+    type,
+    payload,
+  });
+}

@@ -465,6 +465,23 @@ func (s *Store) migrate() error {
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_org ON connector_screenshots(org_id, updated_at)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_agent ON connector_screenshots(agent_id, updated_at)`)
 
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS connector_commands (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL,
+		account_id INTEGER NOT NULL,
+		agent_id INTEGER NOT NULL DEFAULT 0,
+		type TEXT NOT NULL,
+		payload_json TEXT NOT NULL DEFAULT '{}',
+		status TEXT NOT NULL DEFAULT 'pending',
+		error_msg TEXT NOT NULL DEFAULT '',
+		created_by INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		claimed_at DATETIME,
+		completed_at DATETIME
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_commands_agent ON connector_commands(agent_id, status, id)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_commands_account ON connector_commands(org_id, account_id, status, id)`)
+
 	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches
 	// These are logistics groups that must not be touched by the recruitment pipeline
 	s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)

@@ -345,6 +345,40 @@ func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"targets": targets, "count": len(targets)})
 }
 
+// agentConnectorCommands returns pending dashboard input commands for this local runtime.
+// GET /api/connectors/commands
+func (s *Server) agentConnectorCommands(c *fiber.Ctx) error {
+	agentID, _ := c.Locals("agent_id").(int64)
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	if orgID <= 0 {
+		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
+	}
+	limit := c.QueryInt("limit", 20)
+	commands, err := s.db.ClaimPendingConnectorCommands(orgID, agentID, limit)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"commands": commands, "count": len(commands)})
+}
+
+// agentConnectorCommandDone marks a dashboard input command as executed by this runtime.
+// POST /api/connectors/commands/:id/done
+func (s *Server) agentConnectorCommandDone(c *fiber.Ctx) error {
+	agentID, _ := c.Locals("agent_id").(int64)
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid command id"})
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	_ = c.BodyParser(&body)
+	if err := s.db.CompleteConnectorCommand(id, agentID, body.Error); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "command not found"})
+	}
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
 // agentScreenshot stores the latest observable frame from the user's real Chrome.
 // POST /api/agent/screenshot
 func (s *Server) agentScreenshot(c *fiber.Ctx) error {

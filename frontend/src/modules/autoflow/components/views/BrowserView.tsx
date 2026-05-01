@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
 import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
-import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
+import { disconnectLocalConnector, getLocalConnectorScreen, sendConnectorInput } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
 import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
@@ -336,16 +336,105 @@ function LocalConnectorPanel({
 
 function LocalChromeViewer({
   screen,
+  accountId,
   accountName,
   loading,
   onRefresh,
 }: {
   screen: LocalConnectorScreen | null;
+  accountId: number;
   accountName?: string;
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const lastWheelAtRef = useRef(0);
+  const [inputStatus, setInputStatus] = useState<string | null>(null);
   const age = screen?.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(screen.updatedAt).getTime()) / 1000)) : null;
+
+  const queueInput = async (type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>) => {
+    if (!screen?.imageData) return;
+    try {
+      await sendConnectorInput(accountId, type, payload);
+      setInputStatus(null);
+    } catch (err) {
+      setInputStatus(err instanceof Error ? err.message : 'Khong gui duoc thao tac den THG Local Runtime');
+    }
+  };
+
+  const imagePoint = (clientX: number, clientY: number) => {
+    const img = imgRef.current;
+    if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: Math.max(0, Math.min(img.naturalWidth, (clientX - rect.left) * (img.naturalWidth / rect.width))),
+      y: Math.max(0, Math.min(img.naturalHeight, (clientY - rect.top) * (img.naturalHeight / rect.height))),
+    };
+  };
+
+  const handlePointerDown = (e: MouseEvent<HTMLImageElement>) => {
+    if (!screen?.imageData) return;
+    surfaceRef.current?.focus();
+    const point = imagePoint(e.clientX, e.clientY);
+    if (!point) return;
+    void queueInput('click', {
+      x: point.x,
+      y: point.y,
+      button: e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left',
+      clicks: Math.max(1, e.detail || 1),
+    });
+  };
+
+  const handleWheel = (e: WheelEvent<HTMLImageElement>) => {
+    if (!screen?.imageData) return;
+    const now = Date.now();
+    if (now - lastWheelAtRef.current < 120) return;
+    lastWheelAtRef.current = now;
+    e.preventDefault();
+    const point = imagePoint(e.clientX, e.clientY) ?? { x: 0, y: 0 };
+    void queueInput('scroll', {
+      x: point.x,
+      y: point.y,
+      delta_x: e.deltaX,
+      delta_y: e.deltaY,
+    });
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!screen?.imageData) return;
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      void queueInput('text', { text: e.key });
+      return;
+    }
+    const allowed = new Set([
+      'Enter', 'Backspace', 'Tab', 'Escape', 'Delete',
+      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+      'Home', 'End', 'PageUp', 'PageDown',
+    ]);
+    if (allowed.has(e.key) || e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      void queueInput('key', {
+        key: e.key,
+        code: e.code,
+        ctrl_key: e.ctrlKey,
+        alt_key: e.altKey,
+        shift_key: e.shiftKey,
+        meta_key: e.metaKey,
+      });
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
+    if (!screen?.imageData) return;
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    e.preventDefault();
+    void queueInput('text', { text: text.slice(0, 256) });
+  };
+
   return (
     <div style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
@@ -358,14 +447,29 @@ function LocalChromeViewer({
           </p>
         </div>
         {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
+        {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
         {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
         <button onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>
           <RefreshCw size={12} className={loading ? 'spin' : ''} /> Làm mới
         </button>
       </div>
-      <div style={{ minHeight: 420, display: 'grid', placeItems: 'center', background: '#000' }}>
+      <div
+        ref={surfaceRef}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+        style={{ minHeight: 420, display: 'grid', placeItems: 'center', background: '#000', outline: 'none' }}
+      >
         {screen?.imageData ? (
-          <img src={screen.imageData} alt="Local Chrome Facebook" style={{ width: '100%', height: 'auto', display: 'block', background: '#000' }} />
+          <img
+            ref={imgRef}
+            src={screen.imageData}
+            alt="Local Chrome Facebook"
+            onMouseDown={handlePointerDown}
+            onWheel={handleWheel}
+            onContextMenu={e => e.preventDefault()}
+            style={{ width: '100%', height: 'auto', display: 'block', background: '#000', cursor: 'crosshair', userSelect: 'none' }}
+          />
         ) : (
           <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
@@ -494,7 +598,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       }
     };
     void run();
-    const timer = setInterval(run, 5000);
+    const timer = setInterval(run, 2000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -725,6 +829,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       {selectedId !== null && selectedWs?.running && selectedIsLocal && (
         <LocalChromeViewer
           screen={localScreen}
+          accountId={selectedId}
           accountName={selectedWs.accountName}
           loading={localScreenLoading}
           onRefresh={() => void refreshLocalScreen(selectedId)}

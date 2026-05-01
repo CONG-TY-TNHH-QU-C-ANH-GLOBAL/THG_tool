@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	cdpinput "github.com/chromedp/cdproto/input"
 	cdpnetwork "github.com/chromedp/cdproto/network"
 	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -77,6 +78,17 @@ type browserTarget struct {
 
 type browserTargetsResponse struct {
 	Targets []browserTarget `json:"targets"`
+}
+
+type connectorCommand struct {
+	ID          int64  `json:"id"`
+	AccountID   int64  `json:"account_id"`
+	Type        string `json:"type"`
+	PayloadJSON string `json:"payload_json"`
+}
+
+type connectorCommandsResponse struct {
+	Commands []connectorCommand `json:"commands"`
 }
 
 func main() {
@@ -635,6 +647,310 @@ func fetchBrowserTargets(serverURL, token string) ([]browserTarget, error) {
 	return out.Targets, nil
 }
 
+func fetchConnectorCommands(serverURL, token string) ([]connectorCommand, error) {
+	req, err := http.NewRequest(http.MethodGet, serverURL+"/api/connectors/commands?limit=50", nil)
+	if err != nil {
+		return nil, err
+	}
+	hostname, _ := os.Hostname()
+	req.Header.Set("X-Agent-Token", token)
+	req.Header.Set("X-Agent-Hostname", hostname)
+	req.Header.Set("X-Agent-OS", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Agent-Version", version)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("device token was rejected; run with --reset and pair again")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var out connectorCommandsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Commands, nil
+}
+
+func completeConnectorCommand(serverURL, token string, id int64, errorText string) error {
+	body, _ := json.Marshal(map[string]any{"error": errorText})
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/connectors/commands/%d/done", serverURL, id), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	hostname, _ := os.Hostname()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Token", token)
+	req.Header.Set("X-Agent-Hostname", hostname)
+	req.Header.Set("X-Agent-OS", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Agent-Version", version)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("device token was rejected; run with --reset and pair again")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBridge) bool {
+	commands, err := fetchConnectorCommands(serverURL, token)
+	if err != nil {
+		if isDeviceTokenRejected(err) {
+			fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+			return false
+		}
+		fmt.Println("[warn] input command sync failed:", err)
+		return true
+	}
+	for _, cmd := range commands {
+		errText := ""
+		if err := executeConnectorCommand(cmd, bridges); err != nil {
+			errText = err.Error()
+			fmt.Printf("[warn] input command %d failed: %s\n", cmd.ID, errText)
+		}
+		if err := completeConnectorCommand(serverURL, token, cmd.ID, errText); err != nil {
+			if isDeviceTokenRejected(err) {
+				fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+				return false
+			}
+			fmt.Printf("[warn] input command %d completion failed: %v\n", cmd.ID, err)
+		}
+	}
+	return true
+}
+
+func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBridge) error {
+	bridge := bridges[cmd.AccountID]
+	if bridge == nil || bridge.ctx == nil || bridge.err != nil {
+		return fmt.Errorf("Chrome profile for account %d is not ready", cmd.AccountID)
+	}
+	switch strings.ToLower(strings.TrimSpace(cmd.Type)) {
+	case "click":
+		var payload struct {
+			X      float64 `json:"x"`
+			Y      float64 `json:"y"`
+			Button string  `json:"button"`
+			Clicks int64   `json:"clicks"`
+		}
+		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
+			return err
+		}
+		clicks := payload.Clicks
+		if clicks <= 0 {
+			clicks = 1
+		}
+		button := mouseButton(payload.Button)
+		return chromedp.Run(bridge.ctx,
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return cdpinput.DispatchMouseEvent(cdpinput.MouseMoved, payload.X, payload.Y).Do(ctx)
+			}),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return cdpinput.DispatchMouseEvent(cdpinput.MousePressed, payload.X, payload.Y).
+					WithButton(button).
+					WithButtons(mouseButtonsMask(button)).
+					WithClickCount(clicks).
+					Do(ctx)
+			}),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return cdpinput.DispatchMouseEvent(cdpinput.MouseReleased, payload.X, payload.Y).
+					WithButton(button).
+					WithClickCount(clicks).
+					Do(ctx)
+			}),
+		)
+	case "scroll":
+		var payload struct {
+			X      float64 `json:"x"`
+			Y      float64 `json:"y"`
+			DeltaX float64 `json:"delta_x"`
+			DeltaY float64 `json:"delta_y"`
+		}
+		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
+			return err
+		}
+		if payload.DeltaY == 0 {
+			payload.DeltaY = 400
+		}
+		return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+			return cdpinput.DispatchMouseEvent(cdpinput.MouseWheel, payload.X, payload.Y).
+				WithDeltaX(payload.DeltaX).
+				WithDeltaY(payload.DeltaY).
+				Do(ctx)
+		}))
+	case "text":
+		var payload struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
+			return err
+		}
+		if payload.Text == "" {
+			return nil
+		}
+		if len([]rune(payload.Text)) > 256 {
+			return fmt.Errorf("text command is too long")
+		}
+		return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+			return cdpinput.InsertText(payload.Text).Do(ctx)
+		}))
+	case "key":
+		var payload struct {
+			Key     string `json:"key"`
+			Code    string `json:"code"`
+			CtrlKey bool   `json:"ctrl_key"`
+			AltKey  bool   `json:"alt_key"`
+			Shift   bool   `json:"shift_key"`
+			MetaKey bool   `json:"meta_key"`
+		}
+		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
+			return err
+		}
+		if len([]rune(payload.Key)) == 1 && !payload.CtrlKey && !payload.AltKey && !payload.MetaKey {
+			return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+				return cdpinput.InsertText(payload.Key).Do(ctx)
+			}))
+		}
+		key, code, vk := normalizeKey(payload.Key, payload.Code)
+		if key == "" {
+			return nil
+		}
+		modifiers := keyModifiers(payload.CtrlKey, payload.AltKey, payload.Shift, payload.MetaKey)
+		return chromedp.Run(bridge.ctx,
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return cdpinput.DispatchKeyEvent(cdpinput.KeyRawDown).
+					WithKey(key).
+					WithCode(code).
+					WithWindowsVirtualKeyCode(vk).
+					WithNativeVirtualKeyCode(vk).
+					WithModifiers(modifiers).
+					Do(ctx)
+			}),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				return cdpinput.DispatchKeyEvent(cdpinput.KeyUp).
+					WithKey(key).
+					WithCode(code).
+					WithWindowsVirtualKeyCode(vk).
+					WithNativeVirtualKeyCode(vk).
+					WithModifiers(modifiers).
+					Do(ctx)
+			}),
+		)
+	default:
+		return fmt.Errorf("unsupported command type %q", cmd.Type)
+	}
+}
+
+func mouseButton(value string) cdpinput.MouseButton {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "right":
+		return cdpinput.Right
+	case "middle":
+		return cdpinput.Middle
+	default:
+		return cdpinput.Left
+	}
+}
+
+func mouseButtonsMask(button cdpinput.MouseButton) int64 {
+	switch button {
+	case cdpinput.Right:
+		return 2
+	case cdpinput.Middle:
+		return 4
+	case cdpinput.Left:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func keyModifiers(ctrl, alt, shift, meta bool) cdpinput.Modifier {
+	var out cdpinput.Modifier
+	if alt {
+		out |= 1
+	}
+	if ctrl {
+		out |= 2
+	}
+	if meta {
+		out |= 4
+	}
+	if shift {
+		out |= 8
+	}
+	return out
+}
+
+func normalizeKey(key, code string) (string, string, int64) {
+	key = strings.TrimSpace(key)
+	code = strings.TrimSpace(code)
+	if key == "" {
+		key = code
+	}
+	switch key {
+	case "Enter":
+		return "Enter", defaultString(code, "Enter"), 13
+	case "Backspace":
+		return "Backspace", defaultString(code, "Backspace"), 8
+	case "Tab":
+		return "Tab", defaultString(code, "Tab"), 9
+	case "Escape", "Esc":
+		return "Escape", defaultString(code, "Escape"), 27
+	case "Delete":
+		return "Delete", defaultString(code, "Delete"), 46
+	case "ArrowLeft":
+		return "ArrowLeft", defaultString(code, "ArrowLeft"), 37
+	case "ArrowUp":
+		return "ArrowUp", defaultString(code, "ArrowUp"), 38
+	case "ArrowRight":
+		return "ArrowRight", defaultString(code, "ArrowRight"), 39
+	case "ArrowDown":
+		return "ArrowDown", defaultString(code, "ArrowDown"), 40
+	case "Home":
+		return "Home", defaultString(code, "Home"), 36
+	case "End":
+		return "End", defaultString(code, "End"), 35
+	case "PageUp":
+		return "PageUp", defaultString(code, "PageUp"), 33
+	case "PageDown":
+		return "PageDown", defaultString(code, "PageDown"), 34
+	case " ":
+		return " ", defaultString(code, "Space"), 32
+	default:
+		if len([]rune(key)) == 1 {
+			upper := strings.ToUpper(key)
+			if upper[0] >= 'A' && upper[0] <= 'Z' {
+				if code == "" {
+					code = "Key" + upper
+				}
+				return key, code, int64(upper[0])
+			}
+			if upper[0] >= '0' && upper[0] <= '9' {
+				if code == "" {
+					code = "Digit" + upper
+				}
+				return key, code, int64(upper[0])
+			}
+		}
+		return key, code, 0
+	}
+}
+
 func probeExistingChromeStatus(port int) chromeSnapshot {
 	if port <= 0 {
 		port = 9222
@@ -786,13 +1102,13 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 		return true
 	}
 
-	if !syncTargets() || !sendFrames() {
+	if !syncTargets() || !executePendingCommands(serverURL, token, bridges) || !sendFrames() {
 		return
 	}
 	for {
 		select {
 		case <-ticker.C:
-			if !syncTargets() || !sendFrames() {
+			if !syncTargets() || !executePendingCommands(serverURL, token, bridges) || !sendFrames() {
 				return
 			}
 		case <-stop:

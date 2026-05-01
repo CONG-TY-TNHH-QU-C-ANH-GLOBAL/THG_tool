@@ -220,6 +220,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	api.Post("/connectors/chrome-status", s.agentAuth, s.agentChromeStatus)
 	api.Get("/connectors/browser-targets", s.agentAuth, s.agentBrowserTargets)
 	api.Post("/connectors/screenshot", s.agentAuth, s.agentScreenshot)
+	api.Get("/connectors/commands", s.agentAuth, s.agentConnectorCommands)
+	api.Post("/connectors/commands/:id/done", s.agentAuth, s.agentConnectorCommandDone)
 
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
@@ -333,6 +335,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	agentGrp.Post("/chrome-status", s.agentChromeStatus)
 	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
 	agentGrp.Post("/screenshot", s.agentScreenshot)
+	agentGrp.Get("/commands", s.agentConnectorCommands)
+	agentGrp.Post("/commands/:id/done", s.agentConnectorCommandDone)
 	agentGrp.Get("/jobs/next", s.agentGetNextJob)
 	agentGrp.Post("/jobs/:id/claim", s.agentClaimJob)
 	agentGrp.Post("/jobs/:id/done", s.agentJobDone)
@@ -378,6 +382,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Local Chrome connectors are the production path for trusted user devices.
 	r.Get("/connectors", s.listLocalConnectors)
 	r.Get("/connectors/screen", s.getLocalConnectorScreen)
+	r.Post("/connectors/input", s.createConnectorInputCommand)
 	r.Post("/connectors", s.createLocalConnectorPairingCode) // legacy alias: returns a short-lived pairing code
 	r.Post("/connectors/pairing-code", s.createLocalConnectorPairingCode)
 	r.Post("/connectors/:id/disconnect", s.disconnectLocalConnectorPost)
