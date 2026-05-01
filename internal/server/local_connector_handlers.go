@@ -145,9 +145,8 @@ func (s *Server) assignLocalConnectorAccount(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "updated"})
 }
 
-// revokeLocalConnector deactivates a connector token.
-// DELETE /api/connectors/:id
-func (s *Server) revokeLocalConnector(c *fiber.Ctx) error {
+// disconnectLocalConnector deactivates a connector token and clears local screen state.
+func (s *Server) disconnectLocalConnector(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
 	role, _ := c.Locals("user_role").(string)
@@ -174,11 +173,27 @@ func (s *Server) revokeLocalConnector(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "you can only disconnect your own device"})
 	}
 	_, _ = store.NewAppStore(s.db)
-	_ = s.db.StopLocalSessionsForConnector(int64(id), orgID)
+	if len(connectors) <= 1 {
+		_ = s.db.StopAllLocalSessionsForOrg(orgID)
+	} else {
+		_ = s.db.StopLocalSessionsForConnector(int64(id), orgID)
+	}
 	_ = s.db.DeleteConnectorScreenshotsByAgent(int64(id), orgID)
 	if err := s.db.RevokeAgentToken(int64(id), orgID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
 	}
 	s.db.InsertAuditLog(userID, "local_connector_disconnected", c.IP(), fmt.Sprintf(`{"connector_id":%d}`, id))
 	return c.JSON(fiber.Map{"status": "revoked"})
+}
+
+// disconnectLocalConnectorPost is the dashboard button endpoint.
+// POST /api/connectors/:id/disconnect
+func (s *Server) disconnectLocalConnectorPost(c *fiber.Ctx) error {
+	return s.disconnectLocalConnector(c)
+}
+
+// revokeLocalConnector keeps the DELETE API as a compatibility alias.
+// DELETE /api/connectors/:id
+func (s *Server) revokeLocalConnector(c *fiber.Ctx) error {
+	return s.disconnectLocalConnector(c)
 }

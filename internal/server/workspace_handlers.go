@@ -48,6 +48,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	}
 
 	appStore, _ := store.NewAppStore(s.db)
+	_, localConnectorOnline := s.localConnectorAvailability(orgID)
 	result := make([]entry, 0, len(accounts))
 	for _, acc := range accounts {
 		e := entry{
@@ -71,7 +72,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 				e.BrowserState = sess.Status
 				e.ErrorMsg = sess.ErrorMsg
 				if strings.HasPrefix(sess.Status, "local_") {
-					e.Running = sess.Status != "local_stopped" && sess.Status != "local_error"
+					e.Running = localConnectorOnline && sess.Status != "local_stopped" && sess.Status != "local_error"
 				}
 				if e.CDPPort == 0 {
 					e.CDPPort = sess.CDPPort
@@ -103,7 +104,8 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	if orgID != 0 && acc.OrgID != orgID {
 		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
-	if s.hasLocalConnectors(orgID) {
+	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
+	if hasOnlineLocalConnector {
 		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -112,6 +114,12 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 			"status":     "local_starting",
 			"account_id": id,
 			"local":      true,
+		})
+	}
+	if hasLocalConnector {
+		return c.Status(409).JSON(fiber.Map{
+			"error": "THG Local Connector is offline. Open the desktop app on the paired machine, then press Start again.",
+			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
 	if s.workspace == nil {
@@ -161,20 +169,25 @@ func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
-func (s *Server) hasLocalConnectors(orgID int64) bool {
+func (s *Server) localConnectorAvailability(orgID int64) (bool, bool) {
 	if orgID <= 0 {
-		return false
+		return false, false
 	}
 	connectors, err := s.db.ListLocalConnectors(orgID)
 	if err != nil {
-		return false
+		return false, false
 	}
+	hasAny := false
+	hasOnline := false
 	for _, conn := range connectors {
 		if conn.Active {
-			return true
+			hasAny = true
+			if conn.Online {
+				hasOnline = true
+			}
 		}
 	}
-	return false
+	return hasAny, hasOnline
 }
 
 func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status, errorMsg string) error {
@@ -199,6 +212,13 @@ func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status, error
 func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
+	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
+	if hasLocalConnector && !hasOnlineLocalConnector {
+		return c.Status(409).JSON(fiber.Map{
+			"error": "THG Local Connector is offline. Open the desktop app on the paired machine, then press New session again.",
+			"code":  "LOCAL_CONNECTOR_OFFLINE",
+		})
+	}
 
 	name := fmt.Sprintf("Facebook %s", time.Now().Format("02/01 15:04"))
 	acc := &models.Account{
@@ -212,7 +232,7 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "create account: " + err.Error()})
 	}
-	if s.hasLocalConnectors(orgID) {
+	if hasOnlineLocalConnector {
 		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
 			_ = s.db.DeleteAccount(id)
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})

@@ -362,6 +362,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		        last_seen, active, created_at
 		 FROM agent_tokens
 		 WHERE org_id = ? AND kind IN ('desktop_connector', 'extension_connector')
+		   AND active = 1
 		 ORDER BY last_seen DESC, created_at DESC`,
 		orgID,
 	)
@@ -464,6 +465,19 @@ func (s *Store) StopLocalSessionsForConnector(agentID, orgID int64) error {
 		   	SELECT account_id FROM connector_screenshots WHERE agent_id = ? AND org_id = ?
 		   )`,
 		orgID, agentID, orgID,
+	)
+	return err
+}
+
+func (s *Store) StopAllLocalSessionsForOrg(orgID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE browser_sessions
+		 SET status = 'local_stopped',
+		     last_active_at = CURRENT_TIMESTAMP,
+		     error_msg = ''
+		 WHERE org_id = ?
+		   AND status LIKE 'local_%'`,
+		orgID,
 	)
 	return err
 }

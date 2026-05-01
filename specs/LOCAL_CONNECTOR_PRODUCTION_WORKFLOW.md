@@ -67,9 +67,13 @@ login risk from unfamiliar datacenter Chrome profiles.
   `/api/connectors/screen?account_id=...`.
 - `local_ready`, `local_login_required`, and `local_human_required` are treated
   as first-class browser states in the dashboard.
-- `DELETE /api/connectors/:id` revokes the device token, clears streamed local
-  screenshots for that device, and marks its local sessions stopped. The
-  connector exits cleanly on the next heartbeat when the token is rejected.
+- `POST /api/connectors/:id/disconnect` is the dashboard disconnect endpoint.
+  It revokes the device token, clears streamed local screenshots for that
+  device, and marks its local sessions stopped. `DELETE /api/connectors/:id`
+  remains as a compatibility alias.
+- Browser start/new-session only uses Local Connector when a connector is
+  online. If a device was paired but the app is closed, the API returns
+  `LOCAL_CONNECTOR_OFFLINE` instead of silently waiting forever.
 - Local Connector binaries are built with `scripts/build-local-connector.sh`
   or `scripts/build-local-connector.ps1` and served from
   `data/downloads` through `/downloads/*`.

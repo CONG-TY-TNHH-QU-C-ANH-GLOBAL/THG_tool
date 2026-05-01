@@ -368,6 +368,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Get("/connectors/screen", s.getLocalConnectorScreen)
 	r.Post("/connectors", s.createLocalConnectorPairingCode) // legacy alias: returns a short-lived pairing code
 	r.Post("/connectors/pairing-code", s.createLocalConnectorPairingCode)
+	r.Post("/connectors/:id/disconnect", s.disconnectLocalConnectorPost)
 	r.Put("/connectors/:id/account", adminOnly, s.assignLocalConnectorAccount)
 	r.Delete("/connectors/:id", s.revokeLocalConnector)
 

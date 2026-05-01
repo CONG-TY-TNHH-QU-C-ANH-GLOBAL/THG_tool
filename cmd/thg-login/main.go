@@ -436,7 +436,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			data, err := cdppage.CaptureScreenshot().
 				WithFormat(cdppage.CaptureScreenshotFormatJpeg).
-				WithQuality(55).
+				WithQuality(40).
 				Do(ctx)
 			if err == nil && len(data) > 0 {
 				screenshot = data

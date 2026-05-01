@@ -4,7 +4,7 @@ import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
 import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
-import { getLocalConnectorScreen, revokeLocalConnector } from '../../services/connectorsService';
+import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
 import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield, Unplug } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
@@ -371,6 +371,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [localScreen, setLocalScreen] = useState<LocalConnectorScreen | null>(null);
   const [localScreenLoading, setLocalScreenLoading] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
+  const [connectorNotice, setConnectorNotice] = useState<string | null>(null);
+  const [browserNotice, setBrowserNotice] = useState<string | null>(null);
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
   const selectedIsLocal = Boolean(selectedWs?.browserState?.startsWith('local_'));
@@ -480,9 +482,12 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const handleNewSession = async () => {
     setNewLoading(true);
+    setBrowserNotice(null);
     try {
       const id = await startNew();
       setSelectedId(id);
+    } catch (e) {
+      setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
       setNewLoading(false);
     }
@@ -505,6 +510,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   };
 
   const handleCreateConnector = async () => {
+    setConnectorNotice(null);
     const name = `Local Chrome ${new Date().toLocaleDateString('vi-VN')}`;
     const created = await createPairingCode(name, selectedId ?? undefined);
     setPairingCode(created.code);
@@ -512,13 +518,15 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   };
 
   const handleDisconnectConnector = async (connector: LocalConnector) => {
-    const ok = window.confirm(`Ngắt kết nối workspace với máy ${connector.hostname || connector.name}? THG sẽ revoke token và xóa màn hình local đã stream.`);
-    if (!ok) return;
+    setConnectorNotice(null);
     setDisconnectingId(connector.id);
     try {
-      await revokeLocalConnector(connector.id);
+      await disconnectLocalConnector(connector.id);
       setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
+      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu app còn mở, nó sẽ dừng ở heartbeat kế tiếp.`);
+    } catch (e) {
+      setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được thiết bị');
     } finally {
       setDisconnectingId(null);
     }
@@ -555,6 +563,17 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         onCreate={() => void handleCreateConnector()}
         onDisconnect={connector => void handleDisconnectConnector(connector)}
       />
+
+      {connectorNotice && (
+        <div style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${connectorNotice.includes('Không') ? '#ef444466' : '#22c55e66'}`, background: connectorNotice.includes('Không') ? '#7f1d1d33' : '#064e3b33', color: connectorNotice.includes('Không') ? '#fecaca' : '#bbf7d0', fontSize: 12 }}>
+          {connectorNotice}
+        </div>
+      )}
+      {browserNotice && (
+        <div style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #f59e0b66', background: '#78350f33', color: '#fef3c7', fontSize: 12 }}>
+          {browserNotice}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {workspaces.length === 0 && (
@@ -594,7 +613,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               )}
               {!w.running ? (
                 <button
-                  onClick={e => { e.stopPropagation(); void start(w.accountId).then(() => { setSelectedId(w.accountId); void refreshLocalScreen(w.accountId); }); }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setBrowserNotice(null);
+                    void start(w.accountId)
+                      .then(() => { setSelectedId(w.accountId); void refreshLocalScreen(w.accountId); })
+                      .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không mở được Chrome thật'));
+                  }}
                   disabled={actionLoading.has(w.accountId)}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >

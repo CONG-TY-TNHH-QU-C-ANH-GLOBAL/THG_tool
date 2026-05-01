@@ -59,3 +59,7 @@ export async function assignLocalConnectorAccount(id: number, accountId: number)
 export async function revokeLocalConnector(id: number): Promise<void> {
   await del(`/connectors/${id}`);
 }
+
+export async function disconnectLocalConnector(id: number): Promise<void> {
+  await post(`/connectors/${id}/disconnect`, {});
+}
