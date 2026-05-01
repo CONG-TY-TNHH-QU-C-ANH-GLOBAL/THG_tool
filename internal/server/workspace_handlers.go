@@ -104,7 +104,9 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	if orgID != 0 && acc.OrgID != orgID {
 		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
-	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
+	userID, _ := c.Locals("user_id").(int64)
+	hasOrgLocalConnector, _ := s.localConnectorAvailability(orgID)
+	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailabilityForUser(orgID, userID, id)
 	if hasOnlineLocalConnector {
 		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -118,8 +120,14 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	}
 	if hasLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then start the Facebook session again.",
+			"error": "THG Local Runtime của bạn chưa online. Mở Runtime trên thiết bị của bạn, ghép với workspace này, rồi bấm Mở Chrome local lại.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
+		})
+	}
+	if hasOrgLocalConnector {
+		return c.Status(409).JSON(fiber.Map{
+			"error": "Workspace đã có thiết bị local, nhưng chưa có thiết bị nào gắn với user của bạn hoặc Facebook account này. Hãy tạo mã kết nối riêng trên dashboard này và ghép thiết bị của bạn.",
+			"code":  "LOCAL_CONNECTOR_NOT_ASSIGNED",
 		})
 	}
 	if s.workspace == nil {
@@ -170,6 +178,10 @@ func (s *Server) workspaceStop(c *fiber.Ctx) error {
 }
 
 func (s *Server) localConnectorAvailability(orgID int64) (bool, bool) {
+	return s.localConnectorAvailabilityForUser(orgID, 0, 0)
+}
+
+func (s *Server) localConnectorAvailabilityForUser(orgID, userID, accountID int64) (bool, bool) {
 	if orgID <= 0 {
 		return false, false
 	}
@@ -180,6 +192,9 @@ func (s *Server) localConnectorAvailability(orgID int64) (bool, bool) {
 	hasAny := false
 	hasOnline := false
 	for _, conn := range connectors {
+		if userID > 0 && conn.CreatedBy != userID && (accountID <= 0 || conn.AssignedAccountID != accountID) {
+			continue
+		}
 		if conn.Active {
 			hasAny = true
 			if conn.Online && isDashboardStreamConnector(conn) {
@@ -228,11 +243,18 @@ func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status, error
 func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
-	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
+	hasOrgLocalConnector, _ := s.localConnectorAvailability(orgID)
+	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailabilityForUser(orgID, userID, 0)
 	if hasLocalConnector && !hasOnlineLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then create a new Facebook session again.",
+			"error": "THG Local Runtime của bạn chưa online. Mở Runtime trên thiết bị của bạn, ghép với workspace này, rồi tạo phiên Facebook lại.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
+		})
+	}
+	if !hasLocalConnector && hasOrgLocalConnector {
+		return c.Status(409).JSON(fiber.Map{
+			"error": "Workspace đang dùng thiết bị local, nhưng chưa có thiết bị nào gắn với user của bạn. Mỗi nhân viên cần tự tạo mã kết nối và ghép thiết bị riêng trước khi tạo phiên Facebook.",
+			"code":  "LOCAL_CONNECTOR_NOT_ASSIGNED",
 		})
 	}
 

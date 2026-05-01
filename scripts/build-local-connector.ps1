@@ -62,7 +62,10 @@ echo ================================================
 echo.
 echo 1. Open the Browser dashboard and create a pairing code.
 echo 2. Paste the pairing code here when prompted.
-echo 3. Keep this window open while Facebook automation is running.
+echo 3. Click "Mo Chrome local" in the dashboard.
+echo 4. Log in to Facebook inside the Chrome window opened on this device.
+echo 5. After Facebook opens, local Chrome moves away and the dashboard becomes the main workspace.
+echo 6. Keep this window open while Facebook automation is running.
 echo.
 "%~dp0THG-Local-Runtime.exe" %*
 set EXITCODE=%ERRORLEVEL%
@@ -83,7 +86,10 @@ echo "================================================"
 echo
 echo "1. Open the Browser dashboard and create a pairing code."
 echo "2. Paste the pairing code here when prompted."
-echo "3. Keep this terminal open while Facebook automation is running."
+echo "3. Click \"Mo Chrome local\" in the dashboard."
+echo "4. Log in to Facebook inside the Chrome window opened on this device."
+echo "5. After Facebook opens, local Chrome moves away and the dashboard becomes the main workspace."
+echo "6. Keep this terminal open while Facebook automation is running."
 echo
 chmod +x ./thg-local-runtime 2>/dev/null || true
 ./thg-local-runtime "`$@"
@@ -106,11 +112,15 @@ Production flow:
 1. Open the THG Browser dashboard.
 2. Create a new pairing code.
 3. Run the start script and paste the pairing code.
-4. Keep the Runtime open, then click "Chay Facebook" in the dashboard.
+4. Keep the Runtime open, then click "Mo Chrome local" in the dashboard.
+5. Log in to Facebook inside the Chrome window opened on this device.
+6. After Facebook is ready, Local Runtime moves the Chrome window away.
+7. The dashboard saves the account state and streams automation in Browser.
 
 Security:
 - Do not enter your Facebook password into THG.
-- Runtime runs isolated local Chrome profiles and streams them to the dashboard.
+- Runtime keeps the Facebook session in a local Chrome profile on this device.
+- The dashboard stores account/session status, not your Facebook password.
 "@ | Set-Content -LiteralPath (Join-Path $kitRoot "README.txt") -Encoding UTF8
     Write-Host "Packaging $($target.Kit)"
     Compress-Archive -Path (Join-Path $kitRoot "*") -DestinationPath $kitZip -Force

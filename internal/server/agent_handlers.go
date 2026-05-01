@@ -34,6 +34,8 @@ func (s *Server) agentAuth(c *fiber.Ctx) error {
 	c.Locals("agent_id", tok.ID)
 	c.Locals("agent_org_id", tok.OrgID)
 	c.Locals("agent_name", tok.Name)
+	c.Locals("agent_created_by", tok.CreatedBy)
+	c.Locals("agent_assigned_account_id", tok.AssignedAccountID)
 	c.Locals("agent_token_fp", agentTokenFingerprint(plain))
 	_ = s.db.UpdateAgentHeartbeat(tok.ID, c.Get("X-Agent-Hostname"), c.Get("X-Agent-OS"), c.Get("X-Agent-Version"))
 	return c.Next()
@@ -332,13 +334,16 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 // GET /api/agent/browser-targets
 func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("agent_org_id").(int64)
+	agentID, _ := c.Locals("agent_id").(int64)
+	createdBy, _ := c.Locals("agent_created_by").(int64)
+	assignedAccountID, _ := c.Locals("agent_assigned_account_id").(int64)
 	if orgID <= 0 {
 		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
 	}
 	if _, err := store.NewAppStore(s.db); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	targets, err := s.db.ListLocalBrowserTargets(orgID)
+	targets, err := s.db.ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

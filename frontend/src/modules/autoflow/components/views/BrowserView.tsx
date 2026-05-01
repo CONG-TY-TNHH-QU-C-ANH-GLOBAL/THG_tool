@@ -81,6 +81,12 @@ function isDashboardStreamConnector(connector: LocalConnector): boolean {
     caps.multi_profile === true;
 }
 
+function isUsableConnectorForAccount(connector: LocalConnector, userId: number, accountId?: number | null): boolean {
+  if (!connector.online || !isDashboardStreamConnector(connector)) return false;
+  if (connector.createdBy === userId) return true;
+  return Boolean(accountId && connector.assignedAccountId === accountId);
+}
+
 function connectorStatusLabel(status?: string): string {
   switch ((status || '').toLowerCase()) {
     case 'pairing':
@@ -181,8 +187,8 @@ function LocalConnectorPanel({
           <Laptop size={17} color="#5eead4" />
         </div>
         <div style={{ minWidth: 0 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Browser stream tập trung trên máy nhân viên</p>
-          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: THG Local Runtime chạy Chrome profile riêng trên device/IP thật và stream toàn bộ Facebook về dashboard.</p>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome local đăng nhập trước, dashboard quan sát sau</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: user đăng nhập Facebook trong Chrome local trên device/IP thật, THG tự đồng bộ trạng thái rồi stream automation về Browser.</p>
         </div>
         <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Radio size={12} /> {runtimeOnline}/{connectors.length} runtime ready
@@ -199,7 +205,7 @@ function LocalConnectorPanel({
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Local Kit</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Một gói theo hệ điều hành, bên trong có THG Local Runtime để stream Chrome profile riêng về dashboard.
+                Một gói theo hệ điều hành, bên trong có THG Local Runtime để mở Chrome local, giữ session Facebook trên máy người dùng và stream về dashboard.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {RUNTIME_DOWNLOADS.map(item => (
@@ -213,14 +219,14 @@ function LocalConnectorPanel({
                 ))}
               </div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Sau khi giải nén, chạy file Start trong kit. Windows dùng Start-THG-Local-Runtime.cmd để cửa sổ luôn mở cho bạn nhập mã kết nối.
+                Sau khi giải nén, chạy file Start trong kit. Windows dùng Start-THG-Local-Runtime.cmd để cửa sổ luôn mở cho bạn nhập mã kết nối và xem trạng thái.
               </p>
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Ghép thiết bị với workspace</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Tạo mã rồi dán vào cửa sổ THG Local Runtime. Sau khi ghép thành công, Runtime tự online lại bằng token riêng.
+                Mã này chỉ dành cho thiết bị của bạn. Mỗi nhân viên đăng nhập THG và tự tạo mã riêng; không dùng chung mã trong workspace.
               </p>
               {dashboardServer && (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 9 }}>
@@ -236,7 +242,7 @@ function LocalConnectorPanel({
                 </div>
               )}
               <p style={{ color: '#fef3c7', fontSize: 10, lineHeight: 1.45, marginBottom: 8 }}>
-                THG server trong Runtime phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần và hết hạn sau 10 phút.
+                THG server trong Runtime phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần, gắn với user tạo mã và hết hạn sau 10 phút.
               </p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -286,20 +292,20 @@ function LocalConnectorPanel({
             </div>
 
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Chạy Facebook trong Browser dashboard</p>
+              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Đăng nhập trên Chrome local</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Bấm Chạy Facebook trên account. Runtime sẽ mở Chrome profile riêng trên máy nhân viên và stream về website, không giật tab Chrome cá nhân.
+                Bấm Mở Chrome local trên account. Runtime sẽ mở cửa sổ Chrome trên máy nhân viên; hãy đăng nhập Facebook, 2FA hoặc checkpoint trực tiếp trong cửa sổ đó.
               </p>
               <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không nhập mật khẩu Facebook vào THG</span>
             </div>
 
             <div style={{ border: `1px solid ${runtimeOnline ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: runtimeOnline ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard nhận stream thật</p>
+              <p style={{ color: runtimeOnline ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard tự nhận session</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Khi Runtime online, Browser tab sẽ nhận ảnh từ Chrome profile local và agent mới được phép chạy crawler/comment/inbox qua kênh đó.
+                Khi Chrome đã vào Facebook, Runtime tự đưa cửa sổ local ra nền, dashboard lưu trạng thái/Facebook ID và Browser tab trở thành nơi quan sát automation tập trung.
               </p>
               <span style={{ color: runtimeOnline ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime đã sẵn sàng stream' : online ? 'Đã có thiết bị online, đang chờ Runtime stream' : 'Đang chờ máy kết nối'}
+                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime đã sẵn sàng đồng bộ' : online ? 'Đã có thiết bị online, đang chờ Chrome local' : 'Đang chờ máy kết nối'}
               </span>
             </div>
           </div>
@@ -308,7 +314,7 @@ function LocalConnectorPanel({
 
       {connectors.length === 0 ? (
         <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>
-          Chưa có thiết bị nào kết nối. Cài THG Local Runtime để stream Browser dashboard, tạo mã kết nối, rồi nhập mã trong app.
+          Chưa có thiết bị nào kết nối. Cài THG Local Runtime, tạo mã kết nối, rồi nhập mã trong app để mở Chrome local và đồng bộ session Facebook.
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
@@ -321,6 +327,10 @@ function LocalConnectorPanel({
               </div>
               <p style={{ color: theme.textMuted, fontSize: 11 }}>{c.hostname || 'unknown host'} · {c.os || 'unknown os'} · {c.version || 'no version'}</p>
               <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 5 }}>Lần cuối {formatLastSeen(c.lastSeen)} · {connectorStatusLabel(c.streamStatus)}</p>
+              <p style={{ color: c.createdBy === currentUserId ? '#86efac' : theme.textFaint, fontSize: 11, marginTop: 5 }}>
+                {c.createdBy === currentUserId ? 'Thiết bị của bạn' : `Thiết bị thành viên #${c.createdBy}`}
+                {c.assignedAccountId ? ` · gắn account #${c.assignedAccountId}` : ''}
+              </p>
               {c.currentUrl && <p style={{ color: '#93c5fd', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.currentUrl}</p>}
               {c.streamStatus === 'facebook_logged_in' && c.fbUserId && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>FB {c.fbUserId}</p>}
               {(c.createdBy === currentUserId || currentUserRole === 'admin' || currentUserRole === 'founder' || currentUserRole === 'superadmin') && (
@@ -363,20 +373,21 @@ function LocalChromeViewer({
   const [inputStatus, setInputStatus] = useState<string | null>(null);
   const [inputActive, setInputActive] = useState(false);
   const age = screen?.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(screen.updatedAt).getTime()) / 1000)) : null;
+  const remoteInputEnabled = Boolean(screen?.imageData && (screen.fbUserId || screen.streamStatus === 'facebook_logged_in'));
 
   const queueInput = useCallback((type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>) => {
-    if (!screen?.imageData) return;
+    if (!screen?.imageData || !remoteInputEnabled) return;
     inputQueueRef.current = inputQueueRef.current
       .catch(() => undefined)
       .then(async () => {
         try {
           const res = await sendConnectorInput(accountId, type, payload);
-          setInputStatus(`Input queued #${res.id}`);
+          setInputStatus(`Đã gửi thao tác dự phòng #${res.id}`);
         } catch (err) {
-          setInputStatus(err instanceof Error ? err.message : 'Khong gui duoc thao tac den THG Local Runtime');
+          setInputStatus(err instanceof Error ? err.message : 'Không gửi được thao tác đến THG Local Runtime');
         }
       });
-  }, [accountId, screen?.imageData]);
+  }, [accountId, remoteInputEnabled, screen?.imageData]);
 
   const focusRemoteKeyboard = () => {
     window.setTimeout(() => {
@@ -401,6 +412,10 @@ function LocalChromeViewer({
 
   const handlePointerDown = (e: MouseEvent<HTMLImageElement>) => {
     if (!screen?.imageData) return;
+    if (!remoteInputEnabled) {
+      setInputStatus('Hãy đăng nhập trực tiếp trong cửa sổ Chrome local trên máy nhân viên');
+      return;
+    }
     setInputActive(true);
     surfaceRef.current?.focus();
     focusRemoteKeyboard();
@@ -417,7 +432,7 @@ function LocalChromeViewer({
   };
 
   const handleKeyboardInput = (e: FormEvent<HTMLTextAreaElement>) => {
-    if (!screen?.imageData) return;
+    if (!screen?.imageData || !remoteInputEnabled) return;
     const el = e.currentTarget;
     const text = el.value;
     if (!text) return;
@@ -426,7 +441,7 @@ function LocalChromeViewer({
   };
 
   const handleKeyboardPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!screen?.imageData) return;
+    if (!screen?.imageData || !remoteInputEnabled) return;
     const text = e.clipboardData.getData('text');
     if (!text) return;
     e.preventDefault();
@@ -434,7 +449,7 @@ function LocalChromeViewer({
   };
 
   const handleKeyboardKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!screen?.imageData) return;
+    if (!screen?.imageData || !remoteInputEnabled) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
       return;
     }
@@ -452,7 +467,7 @@ function LocalChromeViewer({
   };
 
   const handleWheel = (e: WheelEvent<HTMLImageElement>) => {
-    if (!screen?.imageData) return;
+    if (!screen?.imageData || !remoteInputEnabled) return;
     const now = Date.now();
     if (now - lastWheelAtRef.current < 120) return;
     lastWheelAtRef.current = now;
@@ -476,10 +491,11 @@ function LocalChromeViewer({
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật {accountName ? `- ${accountName}` : ''}</p>
           <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {screen?.currentUrl || 'Đang chờ ảnh từ THG Local Runtime'}
+            {screen?.currentUrl || 'Đang chờ Chrome local mở Facebook trên máy nhân viên'}
           </p>
         </div>
-        {inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>control active</span>}
+        {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome local</span>}
+        {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>remote fallback</span>}
         {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
         {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
         {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
@@ -524,15 +540,15 @@ function LocalChromeViewer({
               onMouseDown={handlePointerDown}
               onWheel={handleWheel}
               onContextMenu={e => e.preventDefault()}
-              style={{ position: 'absolute', inset: 0, cursor: 'crosshair', background: 'transparent' }}
+              style={{ position: 'absolute', inset: 0, cursor: remoteInputEnabled ? 'crosshair' : 'default', background: 'transparent' }}
             />
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
-            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome thật trên máy nhân viên</p>
+            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome local trên máy nhân viên</p>
             <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              THG Local Runtime sẽ chạy Chrome profile riêng trên máy nhân viên và gửi ảnh về dashboard. Chrome cá nhân của nhân viên không bị tự chuyển tab.
+              Bấm Mở Chrome local, đăng nhập Facebook trong cửa sổ Chrome vừa mở trên máy đó. Sau khi Facebook sẵn sàng, Chrome local sẽ tự ẩn và dashboard nhận stream về đây.
             </p>
           </div>
         )}
@@ -705,15 +721,16 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   }, [selectedId, selectedWs?.running, selectedIsLocal, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
-  const hasOnlineConnector = connectors.some(c => c.online && isDashboardStreamConnector(c));
+  const currentUserId = currentUser?.id ?? 0;
 
   const handleNewSession = async () => {
-    if (!connectors.some(c => c.online)) {
-      setBrowserNotice('Chưa có thiết bị nào online. Mở THG Local Runtime, nhập mã kết nối mới, rồi thực hiện lại.');
+    const ownConnectors = connectors.filter(c => c.createdBy === currentUserId);
+    if (!ownConnectors.some(c => c.online)) {
+      setBrowserNotice('Thiết bị của bạn chưa online. Mỗi nhân viên cần tự tạo mã kết nối riêng, chạy THG Local Runtime trên máy của mình, rồi mới tạo phiên Facebook.');
       return;
     }
-    if (!connectors.some(c => c.online && isDashboardStreamConnector(c))) {
-      setBrowserNotice('Thiết bị hiện tại chưa có THG Local Runtime sẵn sàng stream Browser dashboard. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
+    if (!ownConnectors.some(c => c.online && isDashboardStreamConnector(c))) {
+      setBrowserNotice('Thiết bị của bạn chưa có THG Local Runtime sẵn sàng. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Mở Chrome local.');
       return;
     }
     setNewLoading(true);
@@ -721,7 +738,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
-      setBrowserNotice('Đã tạo phiên Facebook local. THG Local Runtime sẽ chạy Chrome profile riêng trên máy nhân viên và stream ảnh về Browser dashboard.');
+      setBrowserNotice('Đã tạo phiên Facebook local. THG Local Runtime sẽ mở Chrome trên máy nhân viên để user đăng nhập trực tiếp; sau khi vào Facebook, Chrome local tự ẩn và Browser dashboard nhận stream automation.');
     } catch (e) {
       setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
@@ -793,7 +810,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         pairingCode={pairingCode}
         pairingExpiresAt={pairingExpiresAt}
         systemInfo={systemInfo}
-        currentUserId={currentUser?.id ?? 0}
+        currentUserId={currentUserId}
         currentUserRole={currentUser?.role ?? ''}
         disconnectingId={disconnectingId}
         onCreate={() => void handleCreateConnector()}
@@ -818,6 +835,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
         {workspaces.map(w => {
           const tone = stateTone(w.browserState);
+          const rowHasOnlineConnector = connectors.some(c => isUsableConnectorForAccount(c, currentUserId, w.accountId));
           return (
             <div
               key={w.accountId}
@@ -852,23 +870,23 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                   onClick={e => {
                     e.stopPropagation();
                     setBrowserNotice(null);
-                    if (!hasOnlineConnector) {
-                      setBrowserNotice('Browser dashboard cần THG Local Runtime để stream chuyên nghiệp. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
+                    if (!rowHasOnlineConnector) {
+                      setBrowserNotice('Facebook account này cần thiết bị của bạn hoặc thiết bị đã được gắn riêng với account. Tạo mã kết nối riêng trên dashboard này rồi chạy THG Local Runtime.');
                       return;
                     }
                     void start(w.accountId)
                       .then(() => {
                         setSelectedId(w.accountId);
-                        setBrowserNotice('Đang chạy Facebook trên THG Local Runtime. Browser dashboard sẽ nhận ảnh từ Chrome profile local thay vì mở tab Chrome cá nhân.');
+                        setBrowserNotice('Đang mở Chrome local trên máy nhân viên. Hãy đăng nhập Facebook trong cửa sổ đó; khi vào Facebook, Chrome local tự ẩn để mọi quan sát tập trung về Browser dashboard.');
                         void refreshLocalScreen(w.accountId);
                       })
                       .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
                   }}
                   disabled={actionLoading.has(w.accountId)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: hasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: hasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rowHasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: rowHasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? (hasOnlineConnector ? 'Đang mở Facebook...' : 'Đang kiểm tra...') : (hasOnlineConnector ? 'Chạy Facebook' : 'Chưa sẵn sàng')}
+                  {actionLoading.has(w.accountId) ? (rowHasOnlineConnector ? 'Đang mở Chrome...' : 'Đang kiểm tra...') : (rowHasOnlineConnector ? 'Mở Chrome local' : 'Chưa sẵn sàng')}
                 </button>
               ) : (
                 <button

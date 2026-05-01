@@ -518,6 +518,23 @@ func (s *Store) DeleteConnectorScreenshotsByAgent(agentID, orgID int64) error {
 }
 
 func (s *Store) ListLocalBrowserTargets(orgID int64) ([]LocalBrowserTarget, error) {
+	return s.ListLocalBrowserTargetsForConnector(orgID, 0, 0, 0)
+}
+
+func (s *Store) ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID int64) ([]LocalBrowserTarget, error) {
+	ownershipClause := ``
+	args := []any{orgID}
+	if agentID > 0 || createdBy > 0 || assignedAccountID > 0 {
+		ownershipClause = ` AND (
+		   (? > 0 AND a.assigned_user_id = ?)
+		   OR (? > 0 AND a.id = ?)
+		   OR (? > 0 AND EXISTS (
+		   	SELECT 1 FROM connector_screenshots cs
+		   	 WHERE cs.org_id = a.org_id AND cs.account_id = a.id AND cs.agent_id = ?
+		   ))
+		)`
+		args = append(args, createdBy, createdBy, assignedAccountID, assignedAccountID, agentID, agentID)
+	}
 	rows, err := s.db.Query(
 		`SELECT a.id, a.name, COALESCE(a.fb_user_id,''), COALESCE(bs.status,'local_starting')
 		 FROM accounts a
@@ -527,8 +544,9 @@ func (s *Store) ListLocalBrowserTargets(orgID int64) ([]LocalBrowserTarget, erro
 		   AND bs.status LIKE 'local_%'
 		   AND bs.status != 'local_stopped'
 		   AND bs.status != 'terminated'
+		`+ownershipClause+`
 		 ORDER BY bs.last_active_at DESC, a.id DESC`,
-		orgID,
+		args...,
 	)
 	if err != nil {
 		return nil, err

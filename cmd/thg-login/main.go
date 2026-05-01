@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	cdpbrowser "github.com/chromedp/cdproto/browser"
 	cdpinput "github.com/chromedp/cdproto/input"
 	cdpnetwork "github.com/chromedp/cdproto/network"
 	cdppage "github.com/chromedp/cdproto/page"
@@ -29,7 +30,7 @@ import (
 
 var version = "dev"
 
-const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"dashboard_stream":true,"input_relay":true}`
+const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"dashboard_stream":true,"input_relay":true,"local_login_first":true,"hide_local_after_login":true}`
 
 type connectorConfig struct {
 	ServerURL     string    `json:"server_url"`
@@ -53,12 +54,14 @@ type pairResponse struct {
 }
 
 type chromeBridge struct {
-	accountID   int64
-	accountName string
-	port        int
-	ctx         context.Context
-	cancel      context.CancelFunc
-	err         error
+	accountID    int64
+	accountName  string
+	port         int
+	ctx          context.Context
+	cancel       context.CancelFunc
+	err          error
+	windowHidden bool
+	windowWarned bool
 }
 
 type chromeSnapshot struct {
@@ -112,8 +115,10 @@ func main() {
 	fmt.Println("==================================================")
 	fmt.Println("        THG LOCAL CONNECTOR")
 	fmt.Println("==================================================")
-	fmt.Println("Dashboard browser stream: this app runs isolated local Chrome profiles on this device.")
-	fmt.Println("Keep this app open while the Browser dashboard runs Facebook automation.")
+	fmt.Println("Local login first: THG opens a Chrome profile on this device for Facebook login/checkpoint.")
+	fmt.Println("After Facebook is ready, the Browser dashboard observes and controls automation through this Runtime.")
+	fmt.Println("When Facebook login succeeds, the local Chrome window is moved away so the dashboard becomes the main workspace.")
+	fmt.Println("THG does not ask for your Facebook password or upload your Facebook password.")
 	fmt.Println()
 	fmt.Println("Server:", serverURL)
 	fmt.Println("Config:", configPath)
@@ -368,7 +373,7 @@ func launchChrome(port int, userDataDir string) error {
 		"--window-size=1365,900",
 		"https://www.facebook.com",
 	}
-	if strings.TrimSpace(os.Getenv("THG_CHROME_VISIBLE")) != "1" {
+	if shouldHideChromeWindow() {
 		args = append([]string{"--window-position=-32000,-32000"}, args...)
 	}
 	if userDataDir != "" {
@@ -381,6 +386,50 @@ func launchChrome(port int, userDataDir string) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	return cmd.Start()
+}
+
+func shouldHideChromeWindow() bool {
+	visible := strings.TrimSpace(strings.ToLower(os.Getenv("THG_CHROME_VISIBLE")))
+	headlessStream := strings.TrimSpace(strings.ToLower(os.Getenv("THG_CHROME_HEADLESS_STREAM")))
+	return visible == "0" || visible == "false" || visible == "no" || visible == "off" ||
+		headlessStream == "1" || headlessStream == "true" || headlessStream == "yes" || headlessStream == "on"
+}
+
+func keepLocalChromeVisibleAfterLogin() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("THG_KEEP_CHROME_VISIBLE_AFTER_LOGIN")))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+func hideChromeWindowAfterLogin(ctx context.Context) error {
+	windowID, _, err := cdpbrowser.GetWindowForTarget().Do(ctx)
+	if err != nil {
+		return err
+	}
+	if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx); err != nil {
+		return err
+	}
+	return cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
+		Left:   -32000,
+		Top:    -32000,
+		Width:  1365,
+		Height: 900,
+	}).Do(ctx)
+}
+
+func showChromeWindowForLogin(ctx context.Context) error {
+	windowID, _, err := cdpbrowser.GetWindowForTarget().Do(ctx)
+	if err != nil {
+		return err
+	}
+	if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx); err != nil {
+		return err
+	}
+	return cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
+		Left:   80,
+		Top:    60,
+		Width:  1365,
+		Height: 900,
+	}).Do(ctx)
 }
 
 func findChromePath() (string, error) {
@@ -492,11 +541,47 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	if fbUserID != "" {
 		status = "facebook_logged_in"
 	}
+	updateChromeWindowPosture(bridge, status)
 	out := chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, CurrentURL: href, FBUserID: fbUserID, Status: status}
 	if len(screenshot) > 0 {
 		out.ScreenshotData = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
 	return out
+}
+
+func updateChromeWindowPosture(bridge *chromeBridge, status string) {
+	if bridge == nil || bridge.ctx == nil || keepLocalChromeVisibleAfterLogin() {
+		return
+	}
+	if status == "facebook_logged_in" {
+		if bridge.windowHidden {
+			return
+		}
+		if err := hideChromeWindowAfterLogin(bridge.ctx); err != nil {
+			if !bridge.windowWarned {
+				fmt.Printf("[Chrome] Could not move %s to dashboard-only mode: %v\n", bridge.accountName, err)
+				bridge.windowWarned = true
+			}
+			return
+		}
+		bridge.windowHidden = true
+		bridge.windowWarned = false
+		fmt.Printf("[Chrome] %s logged in. Local Chrome is now hidden; continue in the Browser dashboard.\n", bridge.accountName)
+		return
+	}
+	if !bridge.windowHidden {
+		return
+	}
+	if err := showChromeWindowForLogin(bridge.ctx); err != nil {
+		if !bridge.windowWarned {
+			fmt.Printf("[Chrome] Could not show %s for local login/checkpoint: %v\n", bridge.accountName, err)
+			bridge.windowWarned = true
+		}
+		return
+	}
+	bridge.windowHidden = false
+	bridge.windowWarned = false
+	fmt.Printf("[Chrome] %s needs local login/checkpoint. Chrome is visible on this device.\n", bridge.accountName)
 }
 
 func sendHeartbeat(serverURL, token string, snap chromeSnapshot) error {
@@ -1248,6 +1333,8 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 			}
 			port := localChromePort(basePort, target.AccountID)
 			fmt.Printf("[Chrome] Opening %s on local port %d\n", target.AccountName, port)
+			fmt.Println("[Chrome] Log in or finish Facebook checkpoint inside the Chrome window on this device.")
+			fmt.Println("[Chrome] The dashboard will detect the session automatically and stream it back to Browser.")
 			bridge := startChromeBridgeForTarget(target, port)
 			if bridge.err != nil {
 				fmt.Printf("[Chrome] %s not ready: %v\n", target.AccountName, bridge.err)
