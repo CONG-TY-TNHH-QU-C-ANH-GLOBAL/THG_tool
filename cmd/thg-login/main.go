@@ -118,32 +118,7 @@ func main() {
 		exitWithError("Could not read connector config", err)
 	}
 	if cfg.DeviceToken == "" {
-		code := strings.TrimSpace(*pairFlag)
-		if code == "" {
-			code = promptLine("Enter pairing code from Browser workspace: ")
-		}
-		if code == "" {
-			exitWithError("Pairing code is required", nil)
-		}
-		paired, err := pairConnector(serverURL, code)
-		if err != nil {
-			exitWithError("Pairing failed", err)
-		}
-		cfg = connectorConfig{
-			ServerURL:     serverURL,
-			DeviceToken:   paired.DeviceToken,
-			ConnectorID:   paired.Connector.ID,
-			ConnectorName: paired.Connector.Name,
-			WSPath:        defaultString(paired.WSPath, "/ws/agent"),
-			APIBase:       defaultString(paired.APIBase, "/api"),
-			PairedAt:      time.Now().UTC(),
-		}
-		if err := saveConnectorConfig(configPath, cfg); err != nil {
-			exitWithError("Could not save connector token", err)
-		}
-		fmt.Printf("Paired: %s (device #%d)\n", cfg.ConnectorName, cfg.ConnectorID)
-		fmt.Println("The dashboard will use the saved device token from now on.")
-		fmt.Println()
+		cfg = mustPairAndSave(serverURL, configPath, strings.TrimSpace(*pairFlag), "Enter pairing code from Browser workspace: ")
 	} else if cfg.ServerURL != "" {
 		serverURL = normalizeServerURL(cfg.ServerURL)
 		fmt.Printf("Using saved connector: %s (device #%d)\n\n", cfg.ConnectorName, cfg.ConnectorID)
@@ -151,9 +126,19 @@ func main() {
 
 	if err := sendHeartbeat(serverURL, cfg.DeviceToken, chromeSnapshot{Status: "connector_online"}); err != nil {
 		if isDeviceTokenRejected(err) {
-			exitWithError("Heartbeat failed", err)
+			fmt.Println("Saved device token was rejected by the server.")
+			fmt.Println("This usually means the device was disconnected from the dashboard or the workspace was paired again.")
+			if removeErr := os.Remove(configPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				exitWithError("Could not reset rejected connector config", removeErr)
+			}
+			fmt.Println("Old connector config removed. Create a new pairing code in the Browser dashboard.")
+			cfg = mustPairAndSave(serverURL, configPath, strings.TrimSpace(*pairFlag), "Enter new pairing code: ")
+			if err := sendHeartbeat(serverURL, cfg.DeviceToken, chromeSnapshot{Status: "connector_online"}); err != nil {
+				exitWithError("Heartbeat failed after re-pairing", err)
+			}
+		} else {
+			fmt.Println("[warn] initial heartbeat failed:", err)
 		}
-		fmt.Println("[warn] initial heartbeat failed:", err)
 	}
 	fmt.Println("Connector is online. You can return to the dashboard Browser tab.")
 	if *onceFlag {
@@ -164,6 +149,36 @@ func main() {
 		return
 	}
 	runConnectorLoop(serverURL, cfg.DeviceToken, *chromePortFlag)
+}
+
+func mustPairAndSave(serverURL, configPath, code, prompt string) connectorConfig {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = promptLine(prompt)
+	}
+	if code == "" {
+		exitWithError("Pairing code is required", nil)
+	}
+	paired, err := pairConnector(serverURL, code)
+	if err != nil {
+		exitWithError("Pairing failed", err)
+	}
+	cfg := connectorConfig{
+		ServerURL:     serverURL,
+		DeviceToken:   paired.DeviceToken,
+		ConnectorID:   paired.Connector.ID,
+		ConnectorName: paired.Connector.Name,
+		WSPath:        defaultString(paired.WSPath, "/ws/agent"),
+		APIBase:       defaultString(paired.APIBase, "/api"),
+		PairedAt:      time.Now().UTC(),
+	}
+	if err := saveConnectorConfig(configPath, cfg); err != nil {
+		exitWithError("Could not save connector token", err)
+	}
+	fmt.Printf("Paired: %s (device #%d)\n", cfg.ConnectorName, cfg.ConnectorID)
+	fmt.Println("The dashboard will use the saved device token from now on.")
+	fmt.Println()
+	return cfg
 }
 
 func normalizeServerURL(value string) string {
