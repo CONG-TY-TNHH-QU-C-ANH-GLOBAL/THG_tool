@@ -422,11 +422,34 @@ func (s *Store) migrate() error {
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN kind TEXT NOT NULL DEFAULT 'worker'`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN transport TEXT NOT NULL DEFAULT 'poll'`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN assigned_account_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '{}'`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN current_url TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN stream_status TEXT NOT NULL DEFAULT 'idle'`)
 	s.db.Exec(`UPDATE agent_tokens
 		SET org_id = COALESCE((SELECT org_id FROM users WHERE users.id = agent_tokens.created_by), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND created_by > 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_org ON agent_tokens(org_id, active)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_kind ON agent_tokens(org_id, kind, active)`)
+
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS connector_pairing_codes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL,
+		code_hash TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL,
+		created_by INTEGER NOT NULL DEFAULT 0,
+		assigned_account_id INTEGER NOT NULL DEFAULT 0,
+		expires_at DATETIME NOT NULL,
+		used_at DATETIME,
+		device_token_id INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_pairing_hash ON connector_pairing_codes(code_hash)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_pairing_org ON connector_pairing_codes(org_id, expires_at)`)
 
 	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches
 	// These are logistics groups that must not be touched by the recruitment pipeline

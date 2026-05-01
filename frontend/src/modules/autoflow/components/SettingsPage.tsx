@@ -507,14 +507,14 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             ) : agents.map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: `1px solid ${theme.border}` }}>
                 <Row style={{ gap: 10 }}>
-                  <div style={{ width: 8, height: 8, background: a.active ? '#4ade80' : theme.red, borderRadius: '50%' }} />
+                  <div style={{ width: 8, height: 8, background: a.online ? '#4ade80' : (a.active ? theme.yellow : theme.red), borderRadius: '50%' }} />
                   <div>
                     <p style={{ color: '#d1d5db', fontSize: 13, fontWeight: 500 }}>{a.name}</p>
                     <p style={{ color: theme.textFaint, fontSize: 11 }}>{a.hostname || 'No heartbeat'} · {a.os || 'unknown'} · {a.version || 'unknown'} · {formatDate(a.last_seen)}</p>
                   </div>
                 </Row>
                 <Row style={{ gap: 8 }}>
-                  <Badge label={a.active ? 'Active' : 'Suspended'} />
+                  <Badge label={a.online ? 'Online' : (a.active ? 'Active' : 'Suspended')} />
                   {isAdmin && a.active && <button onClick={() => revokeAgent(a.id)} style={secondaryBtn({ padding: '6px 12px', fontSize: 11, color: theme.red })}>Thu hồi</button>}
                 </Row>
               </div>

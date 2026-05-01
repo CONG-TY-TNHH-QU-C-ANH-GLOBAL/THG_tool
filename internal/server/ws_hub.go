@@ -79,11 +79,18 @@ func (h *WSHub) wsHandler(db *store.Store) func(*fiberws.Conn) {
 	return func(c *fiberws.Conn) {
 		// Step 1: first message must be auth
 		var authMsg struct {
-			Type     string `json:"type"`
-			Token    string `json:"token"`
-			Hostname string `json:"hostname"`
-			OS       string `json:"os"`
-			Version  string `json:"version"`
+			Type             string `json:"type"`
+			Token            string `json:"token"`
+			Hostname         string `json:"hostname"`
+			OS               string `json:"os"`
+			Version          string `json:"version"`
+			Kind             string `json:"kind"`
+			Transport        string `json:"transport"`
+			AccountID        int64  `json:"account_id"`
+			CapabilitiesJSON string `json:"capabilities_json"`
+			CurrentURL       string `json:"current_url"`
+			FBUserID         string `json:"fb_user_id"`
+			StreamStatus     string `json:"stream_status"`
 		}
 		_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
 		if err := c.ReadJSON(&authMsg); err != nil || authMsg.Type != "auth" || authMsg.Token == "" {
@@ -108,7 +115,18 @@ func (h *WSHub) wsHandler(db *store.Store) func(*fiberws.Conn) {
 		h.register(client)
 		defer h.deregister(client)
 
-		_ = db.UpdateAgentHeartbeat(tok.ID, authMsg.Hostname, authMsg.OS, authMsg.Version)
+		_ = db.UpdateAgentPresence(tok.ID, store.AgentPresence{
+			Hostname:          authMsg.Hostname,
+			OS:                authMsg.OS,
+			Version:           authMsg.Version,
+			Kind:              authMsg.Kind,
+			Transport:         authMsg.Transport,
+			AssignedAccountID: authMsg.AccountID,
+			CapabilitiesJSON:  authMsg.CapabilitiesJSON,
+			CurrentURL:        authMsg.CurrentURL,
+			FBUserID:          authMsg.FBUserID,
+			StreamStatus:      authMsg.StreamStatus,
+		})
 		log.Printf("[WSHub] Extension %q connected (id=%d), total=%d", client.name, client.agentID, h.ConnectedCount())
 
 		// Send welcome so extension knows auth succeeded
@@ -151,8 +169,20 @@ func (h *WSHub) wsHandler(db *store.Store) func(*fiberws.Conn) {
 			var m map[string]any
 			if json.Unmarshal(raw, &m) == nil {
 				switch t, _ := m["type"].(string); t {
-				case "pong", "status":
+				case "pong":
 					_ = db.UpdateAgentHeartbeat(tok.ID, "", "", "")
+				case "status":
+					p := store.AgentPresence{}
+					if v, ok := m["current_url"].(string); ok {
+						p.CurrentURL = v
+					}
+					if v, ok := m["fb_user_id"].(string); ok {
+						p.FBUserID = v
+					}
+					if v, ok := m["stream_status"].(string); ok {
+						p.StreamStatus = v
+					}
+					_ = db.UpdateAgentPresence(tok.ID, p)
 				}
 			}
 		}

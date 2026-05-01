@@ -28,6 +28,13 @@ export interface AgentToken {
   hostname: string;
   os: string;
   version: string;
+  kind?: string;
+  transport?: string;
+  assigned_account_id?: number;
+  current_url?: string;
+  fb_user_id?: string;
+  stream_status?: string;
+  online?: boolean;
   last_seen?: string;
   active: boolean;
   created_at: string;

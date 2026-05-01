@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
 )
 
 // PostProcessor is called after an agent submits scraped posts so the AI pipeline can classify them.
@@ -223,6 +224,39 @@ func (s *Server) agentServeImage(c *fiber.Ctx) error {
 // POST /api/agent/heartbeat
 func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
-	_ = s.db.UpdateAgentHeartbeat(agentID, c.Get("X-Agent-Hostname"), c.Get("X-Agent-OS"), c.Get("X-Agent-Version"))
+	var body struct {
+		Hostname         string `json:"hostname"`
+		OS               string `json:"os"`
+		Version          string `json:"version"`
+		Kind             string `json:"kind"`
+		Transport        string `json:"transport"`
+		AccountID        int64  `json:"account_id"`
+		CapabilitiesJSON string `json:"capabilities_json"`
+		CurrentURL       string `json:"current_url"`
+		FBUserID         string `json:"fb_user_id"`
+		StreamStatus     string `json:"stream_status"`
+	}
+	_ = c.BodyParser(&body)
+	if body.Hostname == "" {
+		body.Hostname = c.Get("X-Agent-Hostname")
+	}
+	if body.OS == "" {
+		body.OS = c.Get("X-Agent-OS")
+	}
+	if body.Version == "" {
+		body.Version = c.Get("X-Agent-Version")
+	}
+	_ = s.db.UpdateAgentPresence(agentID, store.AgentPresence{
+		Hostname:          body.Hostname,
+		OS:                body.OS,
+		Version:           body.Version,
+		Kind:              body.Kind,
+		Transport:         body.Transport,
+		AssignedAccountID: body.AccountID,
+		CapabilitiesJSON:  body.CapabilitiesJSON,
+		CurrentURL:        body.CurrentURL,
+		FBUserID:          body.FBUserID,
+		StreamStatus:      body.StreamStatus,
+	})
 	return c.JSON(fiber.Map{"ts": time.Now().Unix()})
 }

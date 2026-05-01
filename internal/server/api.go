@@ -198,6 +198,18 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	})
 	api.Post("/register", regLimiter, s.registerOrg)
 
+	pairingLimiter := limiter.New(limiter.Config{
+		Max:        20,
+		Expiration: 10 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return "connector-pair:" + c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(429).JSON(fiber.Map{"error": "too many connector pairing attempts"})
+		},
+	})
+	api.Post("/connectors/pair", pairingLimiter, s.claimLocalConnectorPairingCode)
+
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
 	authGroup.Post("/signup", regLimiter, s.signupUser)
@@ -349,6 +361,13 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	adminGrp.Delete("/agent-tokens/:id", s.agentRevokeToken)
 
 	// Browser workspace — per-account Chrome management
+	// Local Chrome connectors are the production path for trusted user devices.
+	r.Get("/connectors", s.listLocalConnectors)
+	r.Post("/connectors", s.createLocalConnectorPairingCode) // legacy alias: returns a short-lived pairing code
+	r.Post("/connectors/pairing-code", s.createLocalConnectorPairingCode)
+	r.Put("/connectors/:id/account", adminOnly, s.assignLocalConnectorAccount)
+	r.Delete("/connectors/:id", adminOnly, s.revokeLocalConnector)
+
 	r.Get("/browser/workspaces", s.workspaceList)
 	r.Post("/browser/workspaces/new", s.workspaceNew) // must be before /:id routes
 	r.Post("/browser/workspaces/:id/start", s.workspaceStart)

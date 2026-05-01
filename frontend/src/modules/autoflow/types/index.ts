@@ -154,6 +154,27 @@ export interface Workspace {
   startedAt?: string;
 }
 
+export interface LocalConnector {
+  id: number;
+  orgId: number;
+  name: string;
+  createdBy: number;
+  hostname: string;
+  os: string;
+  version: string;
+  kind: string;
+  transport: string;
+  assignedAccountId: number;
+  capabilitiesJson: string;
+  currentUrl: string;
+  fbUserId: string;
+  streamStatus: string;
+  lastSeen?: string;
+  online: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface WorkspaceSessionSnapshot {
   accountId: number;
   accountName: string;

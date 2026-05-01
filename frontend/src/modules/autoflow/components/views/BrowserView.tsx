@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
-import type { WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck } from 'lucide-react';
+import { useConnectors } from '../../hooks/useConnectors';
+import { getSystemInfo, type SystemInfo } from '../../services/systemService';
+import type { LocalConnector, WorkspaceSessionSnapshot } from '../../types';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -29,6 +31,148 @@ function stateTone(state?: string) {
   return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
 }
 
+function formatLastSeen(value?: string) {
+  if (!value) return 'not connected';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+type DownloadKey = keyof SystemInfo['agent_builds'];
+
+const DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
+  { key: 'windows', label: 'Windows', href: '/downloads/thg-login-windows.exe' },
+  { key: 'mac_m1', label: 'macOS Apple Silicon', href: '/downloads/thg-login-mac-m1' },
+  { key: 'mac_intel', label: 'macOS Intel', href: '/downloads/thg-login-mac-intel' },
+  { key: 'linux', label: 'Linux', href: '/downloads/thg-login-linux' },
+];
+
+function preferredDownloadKey(): DownloadKey {
+  if (typeof navigator === 'undefined') return 'windows';
+  const ua = navigator.userAgent.toLowerCase();
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes('win') || ua.includes('windows')) return 'windows';
+  if (platform.includes('mac') || ua.includes('mac os')) return 'mac_m1';
+  if (platform.includes('linux') || ua.includes('linux')) return 'linux';
+  return 'windows';
+}
+
+function LocalConnectorPanel({
+  connectors,
+  creating,
+  pairingCode,
+  pairingExpiresAt,
+  systemInfo,
+  onCreate,
+}: {
+  connectors: LocalConnector[];
+  creating: boolean;
+  pairingCode: string;
+  pairingExpiresAt: string;
+  systemInfo: SystemInfo | null;
+  onCreate: () => void;
+}) {
+  const online = connectors.filter(c => c.online).length;
+  const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
+  const preferred = preferredDownloadKey();
+  const primaryDownload = DOWNLOADS.find(d => d.key === preferred) ?? DOWNLOADS[0];
+  const primaryAvailable = Boolean(systemInfo?.agent_builds?.[primaryDownload.key]);
+  const hasAnyBuild = DOWNLOADS.some(d => systemInfo?.agent_builds?.[d.key]);
+  return (
+    <div style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderBottom: `1px solid ${theme.border}` }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: '#0f766e22', border: '1px solid #2dd4bf55', display: 'grid', placeItems: 'center' }}>
+          <Laptop size={17} color="#5eead4" />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật của nhân viên</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Primary production path: dùng device/IP/profile thật, dashboard chỉ điều phối và quan sát automation.</p>
+        </div>
+        <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Radio size={12} /> {online}/{connectors.length} online
+        </span>
+        <button onClick={() => setSetupOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px solid #2dd4bf66', background: '#0f766e33', color: '#ccfbf1', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+          <Laptop size={13} />
+          Bắt đầu kết nối
+        </button>
+      </div>
+
+      {setupOpen && (
+        <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, background: '#07131f' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+            <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
+              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Tải app desktop</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Cài THG Local Connector trên máy đang dùng Chrome/Facebook thật của nhân viên.</p>
+              <a
+                href={primaryAvailable ? primaryDownload.href : undefined}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #3b82f666', background: primaryAvailable ? '#1d4ed833' : '#33415555', color: primaryAvailable ? '#dbeafe' : theme.textFaint, pointerEvents: primaryAvailable ? 'auto' : 'none', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+              >
+                <Download size={13} /> {primaryAvailable ? `Tải cho ${primaryDownload.label}` : 'Chưa có bản cài'}
+              </a>
+              {!primaryAvailable && hasAnyBuild && (
+                <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Bản cho hệ điều hành này chưa có, chọn bản khác trong mục Settings khi cần.</p>
+              )}
+            </div>
+
+            <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
+              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Tạo mã kết nối</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Mã ngắn hạn chỉ dùng một lần khi cài app. Sau khi pair, app tự lưu device token riêng.</p>
+              {pairingCode ? (
+                <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                  <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: 1 }}>{pairingCode}</code>
+                  <button onClick={() => navigator.clipboard?.writeText(pairingCode)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: theme.textMuted, cursor: 'pointer', fontSize: 11 }}>
+                    <Copy size={12} /> Copy
+                  </button>
+                </div>
+              ) : (
+                <button onClick={onCreate} disabled={creating} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #22c55e66', background: '#16653433', color: '#dcfce7', cursor: creating ? 'wait' : 'pointer', opacity: creating ? 0.65 : 1, fontSize: 12, fontWeight: 700 }}>
+                  {creating ? <RefreshCw size={13} className="spin" /> : <KeyRound size={13} />}
+                  Tạo mã kết nối
+                </button>
+              )}
+              {pairingExpiresAt && <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Hết hạn: {formatLastSeen(pairingExpiresAt)}</p>}
+            </div>
+
+            <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
+              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Mở Chrome Facebook</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Mở app, dán mã kết nối trên máy đang dùng Chrome/Facebook thật. Dashboard sẽ nhận heartbeat tự động.</p>
+              <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không cần nhập mật khẩu Facebook vào THG</span>
+            </div>
+
+            <div style={{ border: `1px solid ${online ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
+              <p style={{ color: online ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Xác nhận online</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Khi thấy trạng thái online, agent có thể nhận lệnh crawler/comment/inbox qua Chrome thật của nhân viên.</p>
+              <span style={{ color: online ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                {online ? <CheckCircle size={13} /> : <Radio size={13} />} {online ? 'Đã có connector online' : 'Đang chờ connector'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {connectors.length === 0 ? (
+        <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>Chưa có máy nhân viên nào kết nối. Tạo mã kết nối rồi cài THG Local Connector trên máy dùng Chrome thật.</p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
+          {connectors.map(c => (
+            <div key={c.id} style={{ border: `1px solid ${c.online ? '#22c55e55' : theme.border}`, borderRadius: 8, background: theme.surfaceAlt, padding: 11 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.online ? '#4ade80' : theme.textFaint }} />
+                <p style={{ color: theme.text, fontSize: 13, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
+                <span style={{ color: c.online ? '#4ade80' : theme.textFaint, fontSize: 10 }}>{c.online ? 'online' : 'offline'}</span>
+              </div>
+              <p style={{ color: theme.textMuted, fontSize: 11 }}>{c.hostname || 'unknown host'} · {c.os || 'unknown os'} · {c.version || 'no version'}</p>
+              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 5 }}>Seen {formatLastSeen(c.lastSeen)} · stream {c.streamStatus || 'idle'}</p>
+              {c.currentUrl && <p style={{ color: '#93c5fd', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.currentUrl}</p>}
+              {c.fbUserId && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>FB {c.fbUserId}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading: boolean }) {
   return (
     <div style={{
@@ -50,7 +194,7 @@ function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading:
         <div style={{ width: 46, height: 46, margin: '0 auto 14px', borderRadius: 12, background: '#0e749033', border: '1px solid #22d3ee66', display: 'grid', placeItems: 'center', boxShadow: '0 0 24px #06b6d455' }}>
           <Cpu size={22} color="#67e8f9" />
         </div>
-        <p style={{ color: '#67e8f9', fontSize: 11, fontWeight: 800, letterSpacing: '0.14em', marginBottom: 8 }}>CYBERTECH SIGNAL</p>
+        <p style={{ color: '#67e8f9', fontSize: 11, fontWeight: 800, marginBottom: 8 }}>CYBERTECH SIGNAL</p>
         <h3 style={{ color: theme.textWhite, fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Workspace chưa có tài khoản Facebook</h3>
         <p style={{ color: theme.textMuted, fontSize: 13, lineHeight: 1.6, marginBottom: 18 }}>
           Khởi tạo phiên Facebook đầu tiên để agent có browser riêng, session riêng và dữ liệu automation được gắn đúng workspace.
@@ -72,12 +216,16 @@ function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading:
 export default function BrowserView({ orgId }: BrowserViewProps) {
   void orgId;
   const { workspaces, actionLoading, refresh, start, startNew, stop, syncSession } = useWorkspaces();
+  const { connectors, creating: connectorCreating, refresh: refreshConnectors, createPairingCode } = useConnectors();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newLoading, setNewLoading] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<WorkspaceSessionSnapshot | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [autoSyncPaused, setAutoSyncPaused] = useState(false);
+  const [pairingCode, setPairingCode] = useState('');
+  const [pairingExpiresAt, setPairingExpiresAt] = useState('');
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
   const humanRequired = Boolean(
@@ -100,6 +248,10 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       setNewLoading(false);
     }
   }, [newLoading, workspaces]);
+
+  useEffect(() => {
+    getSystemInfo().then(setSystemInfo).catch(() => setSystemInfo(null));
+  }, []);
 
   useEffect(() => {
     if (selectedId === null || !selectedWs?.running) {
@@ -171,12 +323,20 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     }
   };
 
+  const handleCreateConnector = async () => {
+    const name = `Local Chrome ${new Date().toLocaleDateString('vi-VN')}`;
+    const created = await createPairingCode(name, selectedId ?? undefined);
+    setPairingCode(created.code);
+    setPairingExpiresAt(created.expires_at);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
-        <button onClick={refresh} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+        <span style={{ color: theme.textMuted, fontSize: 12 }}>Local: <strong style={{ color: connectors.some(c => c.online) ? '#4ade80' : theme.textFaint }}>{connectors.filter(c => c.online).length}</strong></span>
+        <button onClick={() => { void refresh(); void refreshConnectors(); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
           <RefreshCw size={12} /> Làm mới
         </button>
         <button
@@ -188,6 +348,15 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           {newLoading ? 'Đang khởi động...' : 'Phiên mới'}
         </button>
       </div>
+
+      <LocalConnectorPanel
+        connectors={connectors}
+        creating={connectorCreating}
+        pairingCode={pairingCode}
+        pairingExpiresAt={pairingExpiresAt}
+        systemInfo={systemInfo}
+        onCreate={() => void handleCreateConnector()}
+      />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {workspaces.length === 0 && (
