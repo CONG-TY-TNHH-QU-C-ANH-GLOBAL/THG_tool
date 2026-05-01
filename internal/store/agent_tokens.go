@@ -84,8 +84,13 @@ func hashAgentToken(plain string) string {
 }
 
 func hashPairingCode(code string) string {
-	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), "-", ""))
-	normalized = strings.Join(strings.Fields(normalized), "")
+	var b strings.Builder
+	for _, r := range strings.ToUpper(strings.TrimSpace(code)) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	normalized := b.String()
 	h := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(h[:])
 }
@@ -144,6 +149,12 @@ func (s *Store) CreateConnectorPairingCode(name string, createdBy, orgID, accoun
 		name = "Local Chrome"
 	}
 	expiresAt := time.Now().Add(ttl).UTC()
+	_, _ = s.db.Exec(
+		`UPDATE connector_pairing_codes
+		 SET used_at = CURRENT_TIMESTAMP
+		 WHERE org_id = ? AND created_by = ? AND assigned_account_id = ? AND used_at IS NULL`,
+		orgID, createdBy, accountID,
+	)
 	for attempt := 0; attempt < 5; attempt++ {
 		code, err := generatePairingCode(8)
 		if err != nil {
@@ -189,18 +200,22 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 		CreatedBy int64
 		AccountID int64
 		ExpiresAt time.Time
+		UsedAt    sql.NullTime
 	}
 	err = tx.QueryRow(
-		`SELECT id, org_id, name, created_by, assigned_account_id, expires_at
+		`SELECT id, org_id, name, created_by, assigned_account_id, expires_at, used_at
 		 FROM connector_pairing_codes
-		 WHERE code_hash = ? AND used_at IS NULL`,
+		 WHERE code_hash = ?`,
 		hash,
-	).Scan(&row.ID, &row.OrgID, &row.Name, &row.CreatedBy, &row.AccountID, &row.ExpiresAt)
+	).Scan(&row.ID, &row.OrgID, &row.Name, &row.CreatedBy, &row.AccountID, &row.ExpiresAt, &row.UsedAt)
 	if err == sql.ErrNoRows {
-		return nil, "", fmt.Errorf("invalid or already used pairing code")
+		return nil, "", fmt.Errorf("invalid pairing code")
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if row.UsedAt.Valid {
+		return nil, "", fmt.Errorf("pairing code already used")
 	}
 	if time.Now().UTC().After(row.ExpiresAt.UTC()) {
 		return nil, "", fmt.Errorf("pairing code expired")
@@ -212,6 +227,21 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 	}
 	if deviceName == "" {
 		deviceName = "Local Chrome"
+	}
+	kind := strings.TrimSpace(p.Kind)
+	if kind == "" {
+		kind = "desktop_connector"
+	}
+	if kind != "desktop_connector" && kind != "extension_connector" {
+		kind = "desktop_connector"
+	}
+	transport := strings.TrimSpace(p.Transport)
+	if transport == "" {
+		if kind == "extension_connector" {
+			transport = "chrome_extension"
+		} else {
+			transport = "local_chrome"
+		}
 	}
 
 	b := make([]byte, 32)
@@ -225,8 +255,8 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 		`INSERT INTO agent_tokens (
 			org_id, name, token_hash, created_by, kind, transport, assigned_account_id,
 			hostname, os, version, capabilities_json, current_url, fb_user_id, stream_status, last_seen
-		) VALUES (?, ?, ?, ?, 'desktop_connector', 'websocket', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		row.OrgID, deviceName, tokenHash, row.CreatedBy, row.AccountID,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		row.OrgID, deviceName, tokenHash, row.CreatedBy, kind, transport, row.AccountID,
 		p.Hostname, p.OS, p.Version, defaultString(p.CapabilitiesJSON, "{}"), p.CurrentURL, p.FBUserID, defaultString(p.StreamStatus, "idle"),
 	)
 	if err != nil {

@@ -13,6 +13,11 @@ function normalizeServerUrl(value) {
   return (text || DEFAULT_SERVER_URL).replace(/\/+$/, '');
 }
 
+function normalizePairingCode(value) {
+  const cleaned = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return cleaned.length === 8 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}` : cleaned;
+}
+
 function storageGet(keys) {
   return chrome.storage.local.get(keys);
 }
@@ -77,7 +82,7 @@ async function pairConnector(serverUrl, code) {
   const normalized = normalizeServerUrl(serverUrl);
   const state = await collectFacebookState();
   const body = {
-    code: String(code || '').trim(),
+    code: normalizePairingCode(code),
     hostname: 'Chrome Extension',
     os: `${navigator.platform || 'unknown'} / ${navigator.userAgent || 'Chrome'}`,
     version: chrome.runtime.getManifest().version,
@@ -95,7 +100,17 @@ async function pairConnector(serverUrl, code) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Pairing failed (${res.status}): ${text}`);
+    let message = text;
+    try {
+      const payload = JSON.parse(text);
+      message = payload.error || payload.message || text;
+    } catch {
+      message = text;
+    }
+    if (res.status === 400 && /invalid|already used|expired/i.test(message)) {
+      throw new Error('Không xác nhận được mã kết nối. Vui lòng tạo mã mới trong Browser dashboard, kiểm tra THG server trùng với domain dashboard, rồi kết nối lại.');
+    }
+    throw new Error(`Kết nối thất bại (${res.status}): ${message}`);
   }
   const payload = await res.json();
   await storageSet({

@@ -49,6 +49,13 @@ function formatLastSeen(value?: string) {
   return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 type DownloadKey = keyof SystemInfo['agent_builds'];
 
 const EXTENSION_DOWNLOAD: { key: DownloadKey; label: string; href: string } = {
@@ -112,11 +119,36 @@ function LocalConnectorPanel({
   const facebookConnected = connectors.filter(c => c.online && c.streamStatus === 'facebook_logged_in').length;
   const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
   const [pairingCodeVisible, setPairingCodeVisible] = useState(false);
+  const [pairingRemainingMs, setPairingRemainingMs] = useState<number | null>(null);
+  const [dashboardServer, setDashboardServer] = useState('');
   const extensionAvailable = Boolean(systemInfo?.agent_builds?.[EXTENSION_DOWNLOAD.key]);
+  const pairingExpired = pairingCode !== '' && pairingRemainingMs !== null && pairingRemainingMs <= 0;
 
   useEffect(() => {
     setPairingCodeVisible(false);
   }, [pairingCode]);
+
+  useEffect(() => {
+    if (!pairingExpiresAt) {
+      setPairingRemainingMs(null);
+      return;
+    }
+    const expiresAt = new Date(pairingExpiresAt).getTime();
+    if (Number.isNaN(expiresAt)) {
+      setPairingRemainingMs(null);
+      return;
+    }
+    const tick = () => setPairingRemainingMs(Math.max(0, expiresAt - Date.now()));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [pairingExpiresAt]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setDashboardServer(window.location.origin);
+    }
+  }, []);
 
   return (
     <div style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -162,6 +194,22 @@ function LocalConnectorPanel({
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
                 Tạo mã rồi dán vào popup THG Extension trên Chrome cá nhân. Sau khi ghép thành công, extension tự online lại bằng token riêng.
               </p>
+              {dashboardServer && (
+                <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 9 }}>
+                  <code style={{ color: '#bae6fd', fontSize: 11, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dashboardServer}</code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(dashboardServer)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, border: '1px solid #38bdf866', background: '#07598533', color: '#e0f2fe', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}
+                    title="Copy THG server để dán vào extension"
+                  >
+                    <Copy size={11} /> Copy server
+                  </button>
+                </div>
+              )}
+              <p style={{ color: '#fef3c7', fontSize: 10, lineHeight: 1.45, marginBottom: 8 }}>
+                THG server trong extension phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần và hết hạn sau 10 phút.
+              </p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
                   <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: '1 1 130px', letterSpacing: pairingCodeVisible ? 0 : 2 }}>
@@ -170,20 +218,35 @@ function LocalConnectorPanel({
                   <button
                     type="button"
                     onClick={() => setPairingCodeVisible(v => !v)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${pairingCodeVisible ? '#f59e0b66' : theme.border}`, background: pairingCodeVisible ? '#78350f33' : theme.surfaceAlt, color: pairingCodeVisible ? '#fcd34d' : theme.textMuted, cursor: 'pointer', fontSize: 11, fontWeight: 700 }}
+                    disabled={pairingExpired}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${pairingCodeVisible ? '#f59e0b66' : theme.border}`, background: pairingCodeVisible ? '#78350f33' : theme.surfaceAlt, color: pairingExpired ? theme.textFaint : (pairingCodeVisible ? '#fcd34d' : theme.textMuted), cursor: pairingExpired ? 'not-allowed' : 'pointer', opacity: pairingExpired ? 0.6 : 1, fontSize: 11, fontWeight: 700 }}
                   >
                     {pairingCodeVisible ? <EyeOff size={12} /> : <Eye size={12} />}
                     {pairingCodeVisible ? 'Ẩn mã' : 'Hiện mã'}
                   </button>
                   <button
                     type="button"
-                    disabled={!pairingCodeVisible}
-                    onClick={() => navigator.clipboard?.writeText(pairingCode)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: pairingCodeVisible ? theme.textMuted : theme.textFaint, cursor: pairingCodeVisible ? 'pointer' : 'not-allowed', opacity: pairingCodeVisible ? 1 : 0.55, fontSize: 11 }}
-                    title={pairingCodeVisible ? 'Copy mã kết nối' : 'Hiện mã trước khi copy'}
+                    disabled={!pairingCodeVisible || pairingExpired}
+                    onClick={() => {
+                      if (pairingCodeVisible && !pairingExpired) navigator.clipboard?.writeText(pairingCode);
+                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: pairingCodeVisible && !pairingExpired ? theme.textMuted : theme.textFaint, cursor: pairingCodeVisible && !pairingExpired ? 'pointer' : 'not-allowed', opacity: pairingCodeVisible && !pairingExpired ? 1 : 0.55, fontSize: 11 }}
+                    title={pairingExpired ? 'Mã đã hết hạn, hãy tạo mã mới' : (pairingCodeVisible ? 'Copy mã kết nối' : 'Hiện mã trước khi copy')}
                   >
                     <Copy size={12} /> Copy
                   </button>
+                  <button
+                    type="button"
+                    onClick={onCreate}
+                    disabled={creating}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: '1px solid #22c55e66', background: '#16653433', color: '#dcfce7', cursor: creating ? 'wait' : 'pointer', opacity: creating ? 0.65 : 1, fontSize: 11, fontWeight: 700 }}
+                  >
+                    {creating ? <RefreshCw size={12} className="spin" /> : <KeyRound size={12} />}
+                    Tạo mã mới
+                  </button>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 999, border: `1px solid ${pairingExpired ? '#ef444466' : '#22c55e66'}`, background: pairingExpired ? '#7f1d1d33' : '#064e3b33', color: pairingExpired ? '#fecaca' : '#bbf7d0', fontSize: 11, fontWeight: 700 }}>
+                    {pairingExpired ? 'Đã hết hạn' : `Còn ${formatCountdown(pairingRemainingMs ?? 0)}`}
+                  </span>
                 </div>
               ) : (
                 <button onClick={onCreate} disabled={creating} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #22c55e66', background: '#16653433', color: '#dcfce7', cursor: creating ? 'wait' : 'pointer', opacity: creating ? 0.65 : 1, fontSize: 12, fontWeight: 700 }}>
@@ -464,6 +527,10 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const hasOnlineConnector = connectors.some(c => c.online);
 
   const handleNewSession = async () => {
+    if (!connectors.some(c => c.online)) {
+      setBrowserNotice('Chưa xác nhận được kênh kết nối Chrome cá nhân. Mở THG Chrome Helper trên Chrome đã đăng nhập Facebook, bấm Đồng bộ, rồi thực hiện lại.');
+      return;
+    }
     setNewLoading(true);
     setBrowserNotice(null);
     try {
@@ -599,15 +666,19 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                   onClick={e => {
                     e.stopPropagation();
                     setBrowserNotice(null);
+                    if (!hasOnlineConnector) {
+                      setBrowserNotice('Thiết bị Chrome chưa sẵn sàng cho phiên này. Mở THG Chrome Helper, bấm Đồng bộ, hoặc tạo mã kết nối mới nếu thiết bị chưa được ghép với workspace.');
+                      return;
+                    }
                     void start(w.accountId)
                       .then(() => { setSelectedId(w.accountId); void refreshLocalScreen(w.accountId); })
-                      .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không mở được Chrome thật'));
+                      .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
                   }}
                   disabled={actionLoading.has(w.accountId)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: hasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: hasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? (hasOnlineConnector ? 'Đang chờ extension...' : 'Đang khởi động...') : (hasOnlineConnector ? 'Kết nối tab' : 'Bắt đầu')}
+                  {actionLoading.has(w.accountId) ? (hasOnlineConnector ? 'Đang xác nhận...' : 'Đang kiểm tra...') : (hasOnlineConnector ? 'Kết nối tab' : 'Chưa sẵn sàng')}
                 </button>
               ) : (
                 <button

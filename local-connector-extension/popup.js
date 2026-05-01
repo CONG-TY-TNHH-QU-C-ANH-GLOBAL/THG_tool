@@ -14,6 +14,11 @@ function setStatus(text, tone = '') {
   statusBox.className = `status ${tone}`.trim();
 }
 
+function normalizePairingCode(value) {
+  const cleaned = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return cleaned.length === 8 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}` : cleaned;
+}
+
 async function refreshStatus() {
   const res = await sendMessage({ type: 'status' });
   if (!res?.ok) {
@@ -35,6 +40,7 @@ pairButton.addEventListener('click', async () => {
   pairButton.disabled = true;
   setStatus('Đang kết nối...');
   try {
+    pairingCodeInput.value = normalizePairingCode(pairingCodeInput.value);
     const res = await sendMessage({
       type: 'pair',
       serverUrl: serverUrlInput.value,

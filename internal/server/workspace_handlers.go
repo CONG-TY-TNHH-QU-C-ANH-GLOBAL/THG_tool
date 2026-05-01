@@ -118,7 +118,7 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	}
 	if hasLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "THG Local Connector is offline. Open the desktop app on the paired machine, then press Start again.",
+			"error": "Chrome connection channel is not ready. Open THG Chrome Helper on the signed-in Chrome profile, click Sync, then start the session again.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
@@ -215,7 +215,7 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
 	if hasLocalConnector && !hasOnlineLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "THG Local Connector is offline. Open the desktop app on the paired machine, then press New session again.",
+			"error": "Chrome connection channel is not ready. Open THG Chrome Helper on the signed-in Chrome profile, click Sync, then create a new session again.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
