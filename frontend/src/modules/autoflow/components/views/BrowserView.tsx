@@ -351,7 +351,7 @@ function LocalChromeViewer({
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
             <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome thật trên máy nhân viên</p>
             <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              Mở tab Facebook trong Chrome cá nhân đã cài THG Extension, rồi bấm Sync now trong extension. Dashboard sẽ nhận ảnh và trạng thái từ chính tab đó.
+              THG Extension sẽ tự mở hoặc chuyển sang tab Facebook trên Chrome cá nhân để gửi ảnh về dashboard. Nếu chưa thấy ảnh sau 30 giây, mở popup THG Extension và bấm Đồng bộ.
             </p>
           </div>
         )}
@@ -536,6 +536,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
+      setBrowserNotice('Đã tạo phiên Facebook local. THG Extension sẽ tự mở hoặc chuyển sang tab Facebook thật trên Chrome cá nhân để gửi ảnh về dashboard. Nếu chưa thấy ảnh sau 30 giây, mở popup THG Extension và bấm Đồng bộ.');
     } catch (e) {
       setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
@@ -671,14 +672,18 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                       return;
                     }
                     void start(w.accountId)
-                      .then(() => { setSelectedId(w.accountId); void refreshLocalScreen(w.accountId); })
+                      .then(() => {
+                        setSelectedId(w.accountId);
+                        setBrowserNotice('Đang kết nối tab Facebook thật. THG Extension sẽ tự mở hoặc chuyển sang facebook.com trên Chrome cá nhân, sau đó stream ảnh về dashboard.');
+                        void refreshLocalScreen(w.accountId);
+                      })
                       .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
                   }}
                   disabled={actionLoading.has(w.accountId)}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: hasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: hasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? (hasOnlineConnector ? 'Đang xác nhận...' : 'Đang kiểm tra...') : (hasOnlineConnector ? 'Kết nối tab' : 'Chưa sẵn sàng')}
+                  {actionLoading.has(w.accountId) ? (hasOnlineConnector ? 'Đang mở Facebook...' : 'Đang kiểm tra...') : (hasOnlineConnector ? 'Chạy Facebook' : 'Chưa sẵn sàng')}
                 </button>
               ) : (
                 <button

