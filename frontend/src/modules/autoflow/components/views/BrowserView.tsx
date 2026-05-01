@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
+import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
-import type { LocalConnector, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield } from 'lucide-react';
+import { getLocalConnectorScreen, revokeLocalConnector } from '../../services/connectorsService';
+import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield, Unplug } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -19,6 +21,12 @@ function stateLabel(state?: string): string {
     case 'active': return 'active';
     case 'checkpoint': return 'human required';
     case 'human_required': return 'human required';
+    case 'local_starting': return 'đang mở Chrome thật';
+    case 'local_active': return 'Chrome thật đang chạy';
+    case 'local_login_required': return 'cần đăng nhập Facebook';
+    case 'local_human_required': return 'Facebook cần xác minh';
+    case 'local_ready': return 'Facebook local ready';
+    case 'local_error': return 'local error';
     case 'error': return 'error';
     default: return state || '';
   }
@@ -26,8 +34,11 @@ function stateLabel(state?: string): string {
 
 function stateTone(state?: string) {
   if (state === 'error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
+  if (state === 'local_error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
   if (state === 'checkpoint' || state === 'human_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
+  if (state === 'local_human_required' || state === 'local_login_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
   if (state === 'initializing') return { color: '#fde68a', bg: '#78350f44', border: '#f59e0b55' };
+  if (state === 'local_starting' || state === 'local_active' || state === 'local_ready') return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
   return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
 }
 
@@ -57,22 +68,57 @@ function preferredDownloadKey(): DownloadKey {
   return 'windows';
 }
 
+function connectorStatusLabel(status?: string): string {
+  switch ((status || '').toLowerCase()) {
+    case 'pairing':
+      return 'Đã ghép thiết bị';
+    case 'online':
+    case 'connector_online':
+      return 'Sẵn sàng';
+    case 'chrome_not_connected':
+      return 'Chưa kết nối Chrome';
+    case 'facebook_login_required':
+      return 'Chưa đăng nhập Facebook';
+    case 'facebook_human_required':
+      return 'Facebook cần xác minh';
+    case 'facebook_logged_in':
+      return 'Đã kết nối Facebook';
+    case 'idle':
+      return 'Đang chờ lệnh';
+    case 'running':
+      return 'Đang chạy';
+    case 'error':
+      return 'Cần kiểm tra';
+    default:
+      return status || 'Đang chờ lệnh';
+  }
+}
+
 function LocalConnectorPanel({
   connectors,
   creating,
   pairingCode,
   pairingExpiresAt,
   systemInfo,
+  currentUserId,
+  currentUserRole,
+  disconnectingId,
   onCreate,
+  onDisconnect,
 }: {
   connectors: LocalConnector[];
   creating: boolean;
   pairingCode: string;
   pairingExpiresAt: string;
   systemInfo: SystemInfo | null;
+  currentUserId: number;
+  currentUserRole: string;
+  disconnectingId: number | null;
   onCreate: () => void;
+  onDisconnect: (connector: LocalConnector) => void;
 }) {
   const online = connectors.filter(c => c.online).length;
+  const facebookConnected = connectors.filter(c => c.online && c.streamStatus === 'facebook_logged_in').length;
   const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
   const [selectedDownloadKey, setSelectedDownloadKey] = useState<DownloadKey>(() => preferredDownloadKey());
   const selectedDownload = DOWNLOADS.find(d => d.key === selectedDownloadKey) ?? DOWNLOADS[0];
@@ -94,10 +140,10 @@ function LocalConnectorPanel({
         </div>
         <div style={{ minWidth: 0 }}>
           <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật của nhân viên</p>
-          <p style={{ color: theme.textMuted, fontSize: 11 }}>Primary production path: dùng device/IP/profile thật, dashboard chỉ điều phối và quan sát automation.</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Dùng chính máy và Chrome cá nhân của nhân viên để giữ đúng IP, thiết bị và phiên Facebook thật.</p>
         </div>
         <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Radio size={12} /> {online}/{connectors.length} online
+          <Radio size={12} /> {facebookConnected}/{connectors.length} Facebook ready
         </span>
         <button onClick={() => setSetupOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px solid #2dd4bf66', background: '#0f766e33', color: '#ccfbf1', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <Laptop size={13} />
@@ -109,8 +155,8 @@ function LocalConnectorPanel({
         <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, background: '#07131f' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Tải app desktop</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 42 }}>Cài THG Local Connector trên máy đang dùng Chrome/Facebook thật của nhân viên.</p>
+              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Tải ứng dụng THG</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 42 }}>Cài app trên đúng máy sẽ dùng Facebook. Máy Windows tải Windows, máy Mac tải macOS.</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                 {DOWNLOADS.map(d => {
                   const available = Boolean(systemInfo?.agent_builds?.[d.key]);
@@ -153,8 +199,8 @@ function LocalConnectorPanel({
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Tạo mã kết nối</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Mã ngắn hạn chỉ dùng một lần khi cài app. Sau khi pair, app tự lưu device token riêng.</p>
+              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Nhập mã vào app</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Bấm tạo mã, sau đó mở THG Local Connector và dán mã này vào app. Khi app báo Connected, mã này không cần dùng lại.</p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
                   <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: 1 }}>{pairingCode}</code>
@@ -172,16 +218,16 @@ function LocalConnectorPanel({
             </div>
 
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Mở Chrome Facebook</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Mở app, dán mã kết nối trên máy đang dùng Chrome/Facebook thật. Dashboard sẽ nhận heartbeat tự động.</p>
-              <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không cần nhập mật khẩu Facebook vào THG</span>
+              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Mở Facebook trong Chrome</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Trên cùng máy vừa kết nối, mở Chrome cá nhân và vào facebook.com. Nếu Facebook đã đăng nhập sẵn thì chỉ cần giữ tab đó mở.</p>
+              <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không nhập mật khẩu Facebook vào THG</span>
             </div>
 
-            <div style={{ border: `1px solid ${online ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: online ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Xác nhận online</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Khi thấy trạng thái online, agent có thể nhận lệnh crawler/comment/inbox qua Chrome thật của nhân viên.</p>
-              <span style={{ color: online ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                {online ? <CheckCircle size={13} /> : <Radio size={13} />} {online ? 'Đã có connector online' : 'Đang chờ connector'}
+            <div style={{ border: `1px solid ${facebookConnected ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
+              <p style={{ color: facebookConnected ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Facebook đã sẵn sàng</p>
+              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>Khi dòng máy bên dưới hiện Đã kết nối Facebook, dashboard đã thấy đúng Chrome/Facebook trên máy đó.</p>
+              <span style={{ color: facebookConnected ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                {facebookConnected ? <CheckCircle size={13} /> : <Radio size={13} />} {facebookConnected ? 'Đã kết nối Facebook' : online ? 'Máy online, đang chờ Chrome/Facebook' : 'Đang chờ máy kết nối'}
               </span>
             </div>
           </div>
@@ -189,7 +235,7 @@ function LocalConnectorPanel({
       )}
 
       {connectors.length === 0 ? (
-        <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>Chưa có máy nhân viên nào kết nối. Tạo mã kết nối rồi cài THG Local Connector trên máy dùng Chrome thật.</p>
+        <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>Chưa có máy nhân viên nào kết nối. Tải app, nhập mã kết nối, rồi mở Facebook trong Chrome trên máy đó.</p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
           {connectors.map(c => (
@@ -200,13 +246,70 @@ function LocalConnectorPanel({
                 <span style={{ color: c.online ? '#4ade80' : theme.textFaint, fontSize: 10 }}>{c.online ? 'online' : 'offline'}</span>
               </div>
               <p style={{ color: theme.textMuted, fontSize: 11 }}>{c.hostname || 'unknown host'} · {c.os || 'unknown os'} · {c.version || 'no version'}</p>
-              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 5 }}>Seen {formatLastSeen(c.lastSeen)} · stream {c.streamStatus || 'idle'}</p>
+              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 5 }}>Lần cuối {formatLastSeen(c.lastSeen)} · {connectorStatusLabel(c.streamStatus)}</p>
               {c.currentUrl && <p style={{ color: '#93c5fd', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.currentUrl}</p>}
-              {c.fbUserId && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>FB {c.fbUserId}</p>}
+              {c.streamStatus === 'facebook_logged_in' && c.fbUserId && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>FB {c.fbUserId}</p>}
+              {(c.createdBy === currentUserId || currentUserRole === 'admin' || currentUserRole === 'founder' || currentUserRole === 'superadmin') && (
+                <button
+                  type="button"
+                  onClick={() => onDisconnect(c)}
+                  disabled={disconnectingId === c.id}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, padding: '6px 9px', borderRadius: 7, border: '1px solid #ef444455', background: '#7f1d1d33', color: '#fecaca', cursor: disconnectingId === c.id ? 'wait' : 'pointer', opacity: disconnectingId === c.id ? 0.65 : 1, fontSize: 11, fontWeight: 700 }}
+                >
+                  {disconnectingId === c.id ? <RefreshCw size={12} className="spin" /> : <Unplug size={12} />}
+                  {disconnectingId === c.id ? 'Đang ngắt' : 'Disconnect máy này'}
+                </button>
+              )}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function LocalChromeViewer({
+  screen,
+  accountName,
+  loading,
+  onRefresh,
+}: {
+  screen: LocalConnectorScreen | null;
+  accountName?: string;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const age = screen?.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(screen.updatedAt).getTime()) / 1000)) : null;
+  return (
+    <div style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: screen?.imageData ? '#4ade80' : theme.textFaint }} />
+        <Monitor size={14} color="#5eead4" />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật {accountName ? `- ${accountName}` : ''}</p>
+          <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {screen?.currentUrl || 'Đang chờ ảnh từ THG Local Connector'}
+          </p>
+        </div>
+        {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
+        {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
+        <button onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>
+          <RefreshCw size={12} className={loading ? 'spin' : ''} /> Làm mới
+        </button>
+      </div>
+      <div style={{ minHeight: 420, display: 'grid', placeItems: 'center', background: '#000' }}>
+        {screen?.imageData ? (
+          <img src={screen.imageData} alt="Local Chrome Facebook" style={{ width: '100%', height: 'auto', display: 'block', background: '#000' }} />
+        ) : (
+          <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
+            <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
+            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome thật trên máy nhân viên</p>
+            <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
+              Bấm mở Chrome thật cho account này, giữ THG Local Connector đang chạy. App sẽ tự mở một Chrome profile riêng và gửi màn hình về dashboard.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -253,6 +356,7 @@ function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading:
 
 export default function BrowserView({ orgId }: BrowserViewProps) {
   void orgId;
+  const currentUser = useAuthStore(s => s.user);
   const { workspaces, actionLoading, refresh, start, startNew, stop, syncSession } = useWorkspaces();
   const { connectors, creating: connectorCreating, refresh: refreshConnectors, createPairingCode } = useConnectors();
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -264,8 +368,12 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [pairingCode, setPairingCode] = useState('');
   const [pairingExpiresAt, setPairingExpiresAt] = useState('');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [localScreen, setLocalScreen] = useState<LocalConnectorScreen | null>(null);
+  const [localScreenLoading, setLocalScreenLoading] = useState(false);
+  const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
+  const selectedIsLocal = Boolean(selectedWs?.browserState?.startsWith('local_'));
   const humanRequired = Boolean(
     sessionInfo?.humanRequired ||
     sessionInfo?.checkpoint ||
@@ -291,8 +399,42 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     getSystemInfo().then(setSystemInfo).catch(() => setSystemInfo(null));
   }, []);
 
+  const refreshLocalScreen = async (accountId = selectedId) => {
+    if (!accountId) return;
+    setLocalScreenLoading(true);
+    try {
+      setLocalScreen(await getLocalConnectorScreen(accountId));
+    } catch {
+      setLocalScreen(null);
+    } finally {
+      setLocalScreenLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (selectedId === null || !selectedWs?.running) {
+    if (!selectedId || !selectedIsLocal) {
+      setLocalScreen(null);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const screen = await getLocalConnectorScreen(selectedId);
+        if (!cancelled) setLocalScreen(screen);
+      } catch {
+        if (!cancelled) setLocalScreen(null);
+      }
+    };
+    void run();
+    const timer = setInterval(run, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [selectedId, selectedIsLocal]);
+
+  useEffect(() => {
+    if (selectedId === null || !selectedWs?.running || selectedIsLocal) {
       setSessionInfo(null);
       setSyncError(null);
       setAutoSyncPaused(false);
@@ -331,9 +473,10 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [selectedId, selectedWs?.running, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId, selectedWs?.running, selectedIsLocal, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
+  const hasLocalConnector = connectors.length > 0;
 
   const handleNewSession = async () => {
     setNewLoading(true);
@@ -368,6 +511,19 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     setPairingExpiresAt(created.expires_at);
   };
 
+  const handleDisconnectConnector = async (connector: LocalConnector) => {
+    const ok = window.confirm(`Ngắt kết nối workspace với máy ${connector.hostname || connector.name}? THG sẽ revoke token và xóa màn hình local đã stream.`);
+    if (!ok) return;
+    setDisconnectingId(connector.id);
+    try {
+      await revokeLocalConnector(connector.id);
+      setLocalScreen(null);
+      await Promise.all([refreshConnectors(), refresh()]);
+    } finally {
+      setDisconnectingId(null);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
@@ -393,7 +549,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         pairingCode={pairingCode}
         pairingExpiresAt={pairingExpiresAt}
         systemInfo={systemInfo}
+        currentUserId={currentUser?.id ?? 0}
+        currentUserRole={currentUser?.role ?? ''}
+        disconnectingId={disconnectingId}
         onCreate={() => void handleCreateConnector()}
+        onDisconnect={connector => void handleDisconnectConnector(connector)}
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -434,7 +594,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               )}
               {!w.running ? (
                 <button
-                  onClick={e => { e.stopPropagation(); void start(w.accountId).then(() => setSelectedId(w.accountId)); }}
+                  onClick={e => { e.stopPropagation(); void start(w.accountId).then(() => { setSelectedId(w.accountId); void refreshLocalScreen(w.accountId); }); }}
                   disabled={actionLoading.has(w.accountId)}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
@@ -454,7 +614,16 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         })}
       </div>
 
-      {selectedId !== null && selectedWs?.running && (
+      {selectedId !== null && selectedWs?.running && selectedIsLocal && (
+        <LocalChromeViewer
+          screen={localScreen}
+          accountName={selectedWs.accountName}
+          loading={localScreenLoading}
+          onRefresh={() => void refreshLocalScreen(selectedId)}
+        />
+      )}
+
+      {selectedId !== null && selectedWs?.running && !selectedIsLocal && (
         <div style={{ background: '#000', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto', gap: 10, alignItems: 'center', padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
             <div>

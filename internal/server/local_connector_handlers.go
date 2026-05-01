@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -28,6 +29,18 @@ func (s *Server) listLocalConnectors(c *fiber.Ctx) error {
 		"count":      len(connectors),
 		"online":     online,
 	})
+}
+
+// getLocalConnectorScreen returns the latest screenshot streamed by a local connector.
+// GET /api/connectors/screen?account_id=123
+func (s *Server) getLocalConnectorScreen(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("org_id").(int64)
+	accountID := int64(c.QueryInt("account_id", 0))
+	screen, err := s.db.GetLatestConnectorScreenshot(orgID, accountID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"screen": screen})
 }
 
 // createLocalConnectorPairingCode creates a short-lived code for first-time desktop pairing.
@@ -136,12 +149,36 @@ func (s *Server) assignLocalConnectorAccount(c *fiber.Ctx) error {
 // DELETE /api/connectors/:id
 func (s *Server) revokeLocalConnector(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
 	id, err := c.ParamsInt("id")
 	if err != nil || id <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid connector id"})
 	}
+	connectors, err := s.db.ListLocalConnectors(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	var found *store.AgentToken
+	for i := range connectors {
+		if connectors[i].ID == int64(id) {
+			found = &connectors[i]
+			break
+		}
+	}
+	if found == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
+	}
+	isAdmin := role == "admin" || models.IsPlatformRole(models.UserRole(role))
+	if !isAdmin && found.CreatedBy != userID {
+		return c.Status(403).JSON(fiber.Map{"error": "you can only disconnect your own device"})
+	}
+	_, _ = store.NewAppStore(s.db)
+	_ = s.db.StopLocalSessionsForConnector(int64(id), orgID)
+	_ = s.db.DeleteConnectorScreenshotsByAgent(int64(id), orgID)
 	if err := s.db.RevokeAgentToken(int64(id), orgID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
 	}
+	s.db.InsertAuditLog(userID, "local_connector_disconnected", c.IP(), fmt.Sprintf(`{"connector_id":%d}`, id))
 	return c.JSON(fiber.Map{"status": "revoked"})
 }

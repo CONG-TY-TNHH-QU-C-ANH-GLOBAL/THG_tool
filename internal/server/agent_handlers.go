@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -259,4 +260,116 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 		StreamStatus:      body.StreamStatus,
 	})
 	return c.JSON(fiber.Map{"ts": time.Now().Unix()})
+}
+
+// agentBrowserTargets returns the org account slots that should run on local Chrome.
+// GET /api/agent/browser-targets
+func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	if orgID <= 0 {
+		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
+	}
+	if _, err := store.NewAppStore(s.db); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	targets, err := s.db.ListLocalBrowserTargets(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"targets": targets, "count": len(targets)})
+}
+
+// agentScreenshot stores the latest observable frame from the user's real Chrome.
+// POST /api/agent/screenshot
+func (s *Server) agentScreenshot(c *fiber.Ctx) error {
+	agentID, _ := c.Locals("agent_id").(int64)
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	if orgID <= 0 {
+		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
+	}
+
+	var body struct {
+		AccountID    int64  `json:"account_id"`
+		ImageData    string `json:"image_data"`
+		CurrentURL   string `json:"current_url"`
+		FBUserID     string `json:"fb_user_id"`
+		StreamStatus string `json:"stream_status"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+	body.ImageData = strings.TrimSpace(body.ImageData)
+	if body.AccountID <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "account_id is required"})
+	}
+	if !strings.HasPrefix(body.ImageData, "data:image/jpeg;base64,") && !strings.HasPrefix(body.ImageData, "data:image/png;base64,") {
+		return c.Status(400).JSON(fiber.Map{"error": "image_data must be a data URL"})
+	}
+	if len(body.ImageData) > 6*1024*1024 {
+		return c.Status(413).JSON(fiber.Map{"error": "screenshot is too large"})
+	}
+
+	acc, err := s.db.GetAccount(body.AccountID)
+	if err != nil || acc == nil || acc.OrgID != orgID {
+		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+	}
+	if body.FBUserID != "" && acc.FBUserID != "" && acc.FBUserID != body.FBUserID {
+		if appStore, err := store.NewAppStore(s.db); err == nil {
+			_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
+				AccountID:    body.AccountID,
+				OrgID:        orgID,
+				Status:       "local_error",
+				StartedAt:    time.Now().UTC(),
+				LastActiveAt: time.Now().UTC(),
+				ErrorMsg:     "Facebook profile mismatch; create a separate account slot for this Facebook user",
+			})
+		}
+		return c.Status(409).JSON(fiber.Map{"error": "facebook profile mismatch for this account slot"})
+	}
+
+	streamStatus := strings.TrimSpace(body.StreamStatus)
+	if streamStatus == "" {
+		streamStatus = "connector_online"
+	}
+	if err := s.db.UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, streamStatus); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	_ = s.db.UpdateAgentPresence(agentID, store.AgentPresence{
+		CurrentURL:   body.CurrentURL,
+		FBUserID:     body.FBUserID,
+		StreamStatus: streamStatus,
+	})
+
+	localStatus := localSessionStatusFromStream(streamStatus)
+	if appStore, err := store.NewAppStore(s.db); err == nil {
+		_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
+			AccountID:    body.AccountID,
+			OrgID:        orgID,
+			Status:       localStatus,
+			StartedAt:    time.Now().UTC(),
+			LastActiveAt: time.Now().UTC(),
+			ErrorMsg:     "",
+		})
+	}
+	if body.FBUserID != "" {
+		_ = s.db.SetBrowserLoggedIn(body.AccountID, true, body.FBUserID)
+		_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
+	}
+
+	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})
+}
+
+func localSessionStatusFromStream(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "facebook_logged_in":
+		return "local_ready"
+	case "facebook_human_required":
+		return "local_human_required"
+	case "facebook_login_required":
+		return "local_login_required"
+	case "chrome_not_connected":
+		return "local_error"
+	default:
+		return "local_active"
+	}
 }

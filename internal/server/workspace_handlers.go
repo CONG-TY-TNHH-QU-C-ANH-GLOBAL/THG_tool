@@ -70,6 +70,9 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 			if sess, err := appStore.GetSession(c.Context(), acc.ID); err == nil && sess != nil && sess.Status != "terminated" {
 				e.BrowserState = sess.Status
 				e.ErrorMsg = sess.ErrorMsg
+				if strings.HasPrefix(sess.Status, "local_") {
+					e.Running = sess.Status != "local_stopped" && sess.Status != "local_error"
+				}
 				if e.CDPPort == 0 {
 					e.CDPPort = sess.CDPPort
 				}
@@ -91,9 +94,6 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 // Readiness is tracked asynchronously so production proxies never time out.
 // POST /api/browser/workspaces/:id/start
 func (s *Server) workspaceStart(c *fiber.Ctx) error {
-	if s.workspace == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
-	}
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	acc, err := s.db.GetAccount(id)
 	if err != nil || acc == nil {
@@ -102,6 +102,20 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID != 0 && acc.OrgID != orgID {
 		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	}
+	if s.hasLocalConnectors(orgID) {
+		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+		return c.JSON(fiber.Map{
+			"status":     "local_starting",
+			"account_id": id,
+			"local":      true,
+		})
+	}
+	if s.workspace == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
 	}
 
 	inst, err := s.workspace.Start(id, acc.Name)
@@ -147,13 +161,42 @@ func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
+func (s *Server) hasLocalConnectors(orgID int64) bool {
+	if orgID <= 0 {
+		return false
+	}
+	connectors, err := s.db.ListLocalConnectors(orgID)
+	if err != nil {
+		return false
+	}
+	for _, conn := range connectors {
+		if conn.Active {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status, errorMsg string) error {
+	appStore, err := store.NewAppStore(s.db)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	return appStore.UpsertSession(context.Background(), store.BrowserSession{
+		AccountID:    accountID,
+		OrgID:        orgID,
+		Status:       status,
+		StartedAt:    now,
+		LastActiveAt: now,
+		ErrorMsg:     errorMsg,
+	})
+}
+
 // workspaceNew creates a fresh Facebook account and starts its browser.
 // It returns as soon as Docker launches; CDP/VNC readiness is tracked async.
 // POST /api/browser/workspaces/new
 func (s *Server) workspaceNew(c *fiber.Ctx) error {
-	if s.workspace == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
-	}
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
 
@@ -168,6 +211,23 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	id, err := s.db.AddAccount(acc)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "create account: " + err.Error()})
+	}
+	if s.hasLocalConnectors(orgID) {
+		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
+			_ = s.db.DeleteAccount(id)
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
+		log.Printf("[Workspace] New local session requested: account %d (%s)", id, name)
+		return c.JSON(fiber.Map{
+			"status":     "local_starting",
+			"account_id": id,
+			"local":      true,
+		})
+	}
+	if s.workspace == nil {
+		_ = s.db.DeleteAccount(id)
+		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
 	}
 
 	inst, err := s.workspace.Start(id, name)

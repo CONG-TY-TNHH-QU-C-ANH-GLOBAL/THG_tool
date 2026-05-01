@@ -24,12 +24,12 @@ export async function getWorkspaces(): Promise<Workspace[]> {
 
 export async function startNewWorkspace(): Promise<{ accountId: number; vncPort: number; cdpPort: number }> {
   const r = await post<any>('/browser/workspaces/new', {});
-  return { accountId: r.account_id, vncPort: r.vnc_port, cdpPort: r.cdp_port };
+  return { accountId: r.account_id, vncPort: r.vnc_port ?? 0, cdpPort: r.cdp_port ?? 0 };
 }
 
 export async function startWorkspace(id: number): Promise<{ vncPort: number; cdpPort: number }> {
   const r = await post<any>(`/browser/workspaces/${id}/start`, {});
-  return { vncPort: r.vnc_port, cdpPort: r.cdp_port };
+  return { vncPort: r.vnc_port ?? 0, cdpPort: r.cdp_port ?? 0 };
 }
 
 export async function stopWorkspace(id: number): Promise<void> {

@@ -175,6 +175,17 @@ export interface LocalConnector {
   createdAt: string;
 }
 
+export interface LocalConnectorScreen {
+  accountId: number;
+  orgId: number;
+  agentId: number;
+  imageData: string;
+  currentUrl: string;
+  fbUserId: string;
+  streamStatus: string;
+  updatedAt: string;
+}
+
 export interface WorkspaceSessionSnapshot {
   accountId: number;
   accountName: string;

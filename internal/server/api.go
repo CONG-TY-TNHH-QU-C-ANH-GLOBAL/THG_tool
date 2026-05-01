@@ -87,7 +87,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	app := fiber.New(fiber.Config{
 		AppName:                 "THG Agentic Scraper",
 		ServerHeader:            "THG-Scraper",
-		BodyLimit:               4 * 1024 * 1024, // 4 MB max body
+		BodyLimit:               8 * 1024 * 1024, // local Chrome screenshots can be a few MB
 		ReadTimeout:             30 * time.Second,
 		WriteTimeout:            0, // no timeout — WebSocket (noVNC/agent) connections are long-lived
 		IdleTimeout:             0,
@@ -319,6 +319,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Agent API — authenticated with X-Agent-Token header (no JWT needed)
 	agentGrp := api.Group("/agent", s.agentAuth)
 	agentGrp.Post("/heartbeat", s.agentHeartbeat)
+	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
+	agentGrp.Post("/screenshot", s.agentScreenshot)
 	agentGrp.Get("/jobs/next", s.agentGetNextJob)
 	agentGrp.Post("/jobs/:id/claim", s.agentClaimJob)
 	agentGrp.Post("/jobs/:id/done", s.agentJobDone)
@@ -363,10 +365,11 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Browser workspace — per-account Chrome management
 	// Local Chrome connectors are the production path for trusted user devices.
 	r.Get("/connectors", s.listLocalConnectors)
+	r.Get("/connectors/screen", s.getLocalConnectorScreen)
 	r.Post("/connectors", s.createLocalConnectorPairingCode) // legacy alias: returns a short-lived pairing code
 	r.Post("/connectors/pairing-code", s.createLocalConnectorPairingCode)
 	r.Put("/connectors/:id/account", adminOnly, s.assignLocalConnectorAccount)
-	r.Delete("/connectors/:id", adminOnly, s.revokeLocalConnector)
+	r.Delete("/connectors/:id", s.revokeLocalConnector)
 
 	r.Get("/browser/workspaces", s.workspaceList)
 	r.Post("/browser/workspaces/new", s.workspaceNew) // must be before /:id routes

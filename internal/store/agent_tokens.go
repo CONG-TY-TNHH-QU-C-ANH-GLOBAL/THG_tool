@@ -60,6 +60,24 @@ type ConnectorPairingCode struct {
 	CreatedAt         time.Time
 }
 
+type ConnectorScreenshot struct {
+	AccountID    int64     `json:"account_id"`
+	OrgID        int64     `json:"org_id"`
+	AgentID      int64     `json:"agent_id"`
+	ImageData    string    `json:"image_data"`
+	CurrentURL   string    `json:"current_url"`
+	FBUserID     string    `json:"fb_user_id"`
+	StreamStatus string    `json:"stream_status"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type LocalBrowserTarget struct {
+	AccountID   int64  `json:"account_id"`
+	AccountName string `json:"account_name"`
+	FBUserID    string `json:"fb_user_id"`
+	Status      string `json:"status"`
+}
+
 func hashAgentToken(plain string) string {
 	h := sha256.Sum256([]byte(plain))
 	return hex.EncodeToString(h[:])
@@ -383,6 +401,105 @@ func (s *Store) AssignAgentAccount(id, orgID, accountID int64) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (s *Store) UpsertConnectorScreenshot(agentID, orgID, accountID int64, imageData, currentURL, fbUserID, streamStatus string) error {
+	if accountID <= 0 {
+		accountID = 0
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO connector_screenshots
+			(account_id, org_id, agent_id, image_data, current_url, fb_user_id, stream_status, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(org_id, account_id) DO UPDATE SET
+			agent_id = excluded.agent_id,
+			image_data = excluded.image_data,
+			current_url = excluded.current_url,
+			fb_user_id = excluded.fb_user_id,
+			stream_status = excluded.stream_status,
+			updated_at = CURRENT_TIMESTAMP`,
+		accountID, orgID, agentID, imageData, currentURL, fbUserID, streamStatus,
+	)
+	return err
+}
+
+func (s *Store) GetLatestConnectorScreenshot(orgID, accountID int64) (*ConnectorScreenshot, error) {
+	query := `SELECT account_id, org_id, agent_id, image_data, current_url, fb_user_id, stream_status, updated_at
+		FROM connector_screenshots WHERE org_id = ?`
+	args := []any{orgID}
+	if accountID > 0 {
+		query += ` AND account_id = ?`
+		args = append(args, accountID)
+	}
+	query += ` ORDER BY updated_at DESC LIMIT 1`
+
+	var out ConnectorScreenshot
+	var updatedAt string
+	err := s.db.QueryRow(query, args...).Scan(
+		&out.AccountID, &out.OrgID, &out.AgentID, &out.ImageData, &out.CurrentURL, &out.FBUserID, &out.StreamStatus, &updatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
+		out.UpdatedAt = parsed
+	} else if parsed, err := time.Parse("2006-01-02 15:04:05", updatedAt); err == nil {
+		out.UpdatedAt = parsed
+	}
+	return &out, nil
+}
+
+func (s *Store) StopLocalSessionsForConnector(agentID, orgID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE browser_sessions
+		 SET status = 'local_stopped',
+		     last_active_at = CURRENT_TIMESTAMP,
+		     error_msg = ''
+		 WHERE org_id = ?
+		   AND status LIKE 'local_%'
+		   AND account_id IN (
+		   	SELECT account_id FROM connector_screenshots WHERE agent_id = ? AND org_id = ?
+		   )`,
+		orgID, agentID, orgID,
+	)
+	return err
+}
+
+func (s *Store) DeleteConnectorScreenshotsByAgent(agentID, orgID int64) error {
+	_, err := s.db.Exec(`DELETE FROM connector_screenshots WHERE agent_id = ? AND org_id = ?`, agentID, orgID)
+	return err
+}
+
+func (s *Store) ListLocalBrowserTargets(orgID int64) ([]LocalBrowserTarget, error) {
+	rows, err := s.db.Query(
+		`SELECT a.id, a.name, COALESCE(a.fb_user_id,''), COALESCE(bs.status,'local_starting')
+		 FROM accounts a
+		 JOIN browser_sessions bs ON bs.account_id = a.id
+		 WHERE a.org_id = ?
+		   AND a.platform = 'facebook'
+		   AND bs.status LIKE 'local_%'
+		   AND bs.status != 'local_stopped'
+		   AND bs.status != 'terminated'
+		 ORDER BY bs.last_active_at DESC, a.id DESC`,
+		orgID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []LocalBrowserTarget
+	for rows.Next() {
+		var t LocalBrowserTarget
+		if err := rows.Scan(&t.AccountID, &t.AccountName, &t.FBUserID, &t.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // RevokeAgentToken deactivates a token by ID.
