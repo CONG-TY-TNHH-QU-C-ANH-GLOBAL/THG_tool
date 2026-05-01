@@ -91,24 +91,24 @@
   <body>
     <main>
       <h1>THG Chrome Helper</h1>
-      <p>Use this only when you want THG to read the Facebook tab already signed in on this Chrome profile.</p>
+      <p>Kết nối Chrome cá nhân đang đăng nhập Facebook với workspace THG. THG không nhận mật khẩu Facebook của bạn.</p>
 
       <label for="serverUrl">THG server</label>
       <input id="serverUrl" value="https://sale.thgfulfill.com">
 
-      <label for="pairingCode">Pairing code from Browser dashboard</label>
+      <label for="pairingCode">Mã kết nối từ Browser dashboard</label>
       <input id="pairingCode" placeholder="ABCD-1234">
 
       <div class="row">
-        <button id="pairButton">Pair</button>
-        <button id="syncButton" class="secondary">Sync now</button>
+        <button id="pairButton">Kết nối</button>
+        <button id="syncButton" class="secondary">Đồng bộ</button>
       </div>
       <div class="row">
-        <button id="forgetButton" class="secondary">Forget device</button>
+        <button id="forgetButton" class="secondary">Quên thiết bị</button>
       </div>
 
-      <label>Status</label>
-      <div id="status" class="status">Checking...</div>
+      <label>Trạng thái</label>
+      <div id="status" class="status">Đang kiểm tra...</div>
     </main>
     <script src="popup.js"></script>
   </body>

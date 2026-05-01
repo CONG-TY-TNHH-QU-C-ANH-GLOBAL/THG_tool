@@ -37,5 +37,9 @@ if [ -d "$ROOT/local-connector-extension" ]; then
     (cd "$ROOT/local-connector-extension" && zip -qr "$OUTPUT_DIR/thg-chrome-extension.zip" .)
   fi
   chmod 0644 "$OUTPUT_DIR/thg-chrome-extension.zip"
+  if [ -d "$ROOT/frontend" ]; then
+    mkdir -p "$ROOT/frontend/public/downloads"
+    cp "$OUTPUT_DIR/thg-chrome-extension.zip" "$ROOT/frontend/public/downloads/thg-chrome-extension.zip"
+  fi
 fi
 echo "Local Connector builds written to $OUTPUT_DIR"

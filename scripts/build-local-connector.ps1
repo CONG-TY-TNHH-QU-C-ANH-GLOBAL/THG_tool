@@ -38,6 +38,11 @@ if (Test-Path $ExtensionDir) {
   }
   Write-Host "Packaging thg-chrome-extension.zip"
   Compress-Archive -Path (Join-Path $ExtensionDir "*") -DestinationPath $ExtensionZip -Force
+  $FrontendDownloads = Join-Path $Root "frontend\public\downloads"
+  if (Test-Path (Join-Path $Root "frontend")) {
+    New-Item -ItemType Directory -Path $FrontendDownloads -Force | Out-Null
+    Copy-Item -LiteralPath $ExtensionZip -Destination (Join-Path $FrontendDownloads "thg-chrome-extension.zip") -Force
+  }
 }
 
 Write-Host "Local Connector builds written to $OutputDir"

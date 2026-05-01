@@ -44,6 +44,7 @@ thg-login-downloads/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/public/downloads/
 
 # Root node_modules (TypeScript tooling)
 node_modules/

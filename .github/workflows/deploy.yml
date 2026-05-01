@@ -155,10 +155,12 @@ jobs:
             # Install downloadable THG Local Connector builds served by /downloads.
             sudo mkdir -p /opt/thg-scraper/data/downloads
             sudo cp /tmp/thg-deploy/thg-login-downloads/thg-login-* /opt/thg-scraper/data/downloads/
+            sudo cp /tmp/thg-deploy/thg-login-downloads/thg-chrome-extension.zip /opt/thg-scraper/data/downloads/
             sudo chown -R thg-scraper:thg-scraper /opt/thg-scraper/data/downloads
             sudo chmod 750 /opt/thg-scraper/data/downloads
-            sudo chmod 640 /opt/thg-scraper/data/downloads/thg-login-*
-            echo "Local Connector downloads installed"
+            sudo chmod 640 /opt/thg-scraper/data/downloads/thg-login-* /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
+            test -s /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
+            echo "Local Connector and Chrome Extension downloads installed"
 
             # Install Node.js if missing.
             if ! command -v node &>/dev/null; then

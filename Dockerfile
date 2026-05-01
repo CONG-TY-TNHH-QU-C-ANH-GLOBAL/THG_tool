@@ -4,7 +4,7 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 ARG TARGETARCH
 ARG TARGETOS
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git zip
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -13,6 +13,9 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o scraper ./cmd/scraper
+RUN mkdir -p /app/data/downloads \
+ && cd /app/local-connector-extension \
+ && zip -qr /app/data/downloads/thg-chrome-extension.zip .
 
 # ── Runtime image ─────────────────────────────────────────────────────────
 FROM --platform=$TARGETPLATFORM ubuntu:22.04
@@ -33,10 +36,12 @@ WORKDIR /app
 
 # Copy binary owned by root, executable by all
 COPY --from=builder --chown=root:root /app/scraper ./scraper
+RUN mkdir -p /app/data/downloads
+COPY --from=builder --chown=root:root /app/data/downloads/thg-chrome-extension.zip ./data/downloads/thg-chrome-extension.zip
 RUN chmod 755 /app/scraper
 
 # Data directory writable by service user only
-RUN mkdir -p /app/data/logs /app/data/profiles /app/data/backups \
+RUN mkdir -p /app/data/logs /app/data/profiles /app/data/backups /app/data/downloads \
  && chown -R scraper:scraper /app/data \
  && chmod 750 /app/data
 

@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, Download, KeyRound, Shield, Unplug, Puzzle } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Puzzle } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -141,16 +141,15 @@ function LocalConnectorPanel({
                 Cài extension vào chính Chrome cá nhân đang đăng nhập Facebook. Không cần nhập mật khẩu Facebook vào THG.
               </p>
               <a
-                href={extensionAvailable ? EXTENSION_DOWNLOAD.href : undefined}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: extensionAvailable ? '#0f766e33' : '#33415555', color: extensionAvailable ? '#ccfbf1' : theme.textFaint, pointerEvents: extensionAvailable ? 'auto' : 'none', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                href={EXTENSION_DOWNLOAD.href}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
               >
-                <Puzzle size={13} /> {extensionAvailable ? 'Tải extension THG' : 'Chưa có extension'}
+                <Puzzle size={13} /> Tải extension THG
               </a>
-              {extensionAvailable && (
-                <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>
-                  Bản nội bộ dùng file zip. Production sẽ đổi sang Chrome Web Store để người dùng bấm cài một chạm.
-                </p>
-              )}
+              <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
+                Tải zip, giải nén, mở chrome://extensions, bật Developer mode, chọn Load unpacked và trỏ vào thư mục vừa giải nén.
+                {!extensionAvailable && ' Nếu tải lỗi 404 nghĩa là server production chưa publish artifact extension.'}
+              </p>
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>

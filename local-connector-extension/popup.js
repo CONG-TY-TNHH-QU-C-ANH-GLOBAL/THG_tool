@@ -23,24 +23,24 @@ async function refreshStatus() {
   const cfg = res.config || {};
   serverUrlInput.value = cfg.serverUrl || 'https://sale.thgfulfill.com';
   if (!cfg.deviceToken) {
-    setStatus('Not paired. Create a pairing code in the Browser dashboard, then paste it here.');
+    setStatus('Chưa kết nối. Tạo mã trong Browser dashboard, sau đó dán mã vào đây.');
     return;
   }
   const live = res.live || {};
-  const fb = live.fbUserId ? `FB ${live.fbUserId}` : 'No Facebook user yet';
-  setStatus(`Paired: ${cfg.connectorName || 'Chrome Extension'}\n${live.status || cfg.lastStatus || 'online'} - ${fb}`, 'ok');
+  const fb = live.fbUserId ? `FB ${live.fbUserId}` : 'Chưa thấy tài khoản Facebook';
+  setStatus(`Đã kết nối: ${cfg.connectorName || 'Chrome Extension'}\n${live.status || cfg.lastStatus || 'online'} - ${fb}`, 'ok');
 }
 
 pairButton.addEventListener('click', async () => {
   pairButton.disabled = true;
-  setStatus('Pairing...');
+  setStatus('Đang kết nối...');
   try {
     const res = await sendMessage({
       type: 'pair',
       serverUrl: serverUrlInput.value,
       code: pairingCodeInput.value
     });
-    if (!res?.ok) throw new Error(res?.error || 'Pairing failed');
+    if (!res?.ok) throw new Error(res?.error || 'Kết nối thất bại');
     pairingCodeInput.value = '';
     await refreshStatus();
   } catch (err) {
@@ -63,7 +63,7 @@ forgetButton.addEventListener('click', async () => {
   forgetButton.disabled = true;
   try {
     await sendMessage({ type: 'forget' });
-    setStatus('Local extension token removed. Disconnect the device in THG dashboard if you want to revoke it on the server.');
+    setStatus('Đã xóa token trên extension. Vào THG dashboard để disconnect thiết bị trên server.');
   } finally {
     forgetButton.disabled = false;
   }
