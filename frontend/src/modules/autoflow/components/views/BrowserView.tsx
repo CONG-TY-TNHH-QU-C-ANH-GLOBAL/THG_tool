@@ -397,6 +397,8 @@ function LocalChromeViewer({
     void queueInput('click', {
       x: point.x,
       y: point.y,
+      image_width: imgRef.current?.naturalWidth ?? 0,
+      image_height: imgRef.current?.naturalHeight ?? 0,
       button: e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left',
       clicks: Math.max(1, e.detail || 1),
     });
@@ -412,6 +414,8 @@ function LocalChromeViewer({
     void queueInput('scroll', {
       x: point.x,
       y: point.y,
+      image_width: imgRef.current?.naturalWidth ?? 0,
+      image_height: imgRef.current?.naturalHeight ?? 0,
       delta_x: e.deltaX,
       delta_y: e.deltaY,
     });

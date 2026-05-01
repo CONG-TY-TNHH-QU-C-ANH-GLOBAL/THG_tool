@@ -90,6 +90,23 @@ func (s *Server) createConnectorInputCommand(c *fiber.Ctx) error {
 	if screen == nil || screen.AgentID <= 0 {
 		return c.Status(409).JSON(fiber.Map{"error": "local browser stream is not ready for this Facebook account"})
 	}
+	connectors, err := s.db.ListLocalConnectors(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	inputRelayReady := false
+	for _, connector := range connectors {
+		if connector.ID == screen.AgentID && connector.Active && localConnectorSupportsInputRelay(connector.CapabilitiesJSON) {
+			inputRelayReady = true
+			break
+		}
+	}
+	if !inputRelayReady {
+		return c.Status(409).JSON(fiber.Map{
+			"error": "THG Local Runtime on this device is streaming video but does not support remote input yet",
+			"hint":  "download the latest THG Local Kit, close the old runtime window, then start Start-THG-Local-Runtime again",
+		})
+	}
 	id, err := s.db.CreateConnectorCommand(orgID, req.AccountID, screen.AgentID, userID, req.Type, string(req.Payload))
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -287,4 +304,12 @@ func pairingCodeFingerprint(code string) string {
 	}
 	sum := sha256.Sum256([]byte(normalized.String()))
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+func localConnectorSupportsInputRelay(capabilitiesJSON string) bool {
+	var caps map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(capabilitiesJSON)), &caps); err != nil {
+		return false
+	}
+	return caps["input_relay"] == true
 }

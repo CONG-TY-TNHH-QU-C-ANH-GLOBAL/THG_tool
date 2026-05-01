@@ -28,7 +28,7 @@ import (
 
 var version = "dev"
 
-const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"dashboard_stream":true}`
+const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"dashboard_stream":true,"input_relay":true}`
 
 type connectorConfig struct {
 	ServerURL     string    `json:"server_url"`
@@ -362,6 +362,8 @@ func launchChrome(port int, userDataDir string) error {
 		"--remote-debugging-address=127.0.0.1",
 		"--no-first-run",
 		"--no-default-browser-check",
+		"--force-device-scale-factor=1",
+		"--high-dpi-support=1",
 		"--window-size=1365,900",
 		"https://www.facebook.com",
 	}
@@ -747,14 +749,17 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 	switch strings.ToLower(strings.TrimSpace(cmd.Type)) {
 	case "click":
 		var payload struct {
-			X      float64 `json:"x"`
-			Y      float64 `json:"y"`
-			Button string  `json:"button"`
-			Clicks int64   `json:"clicks"`
+			X           float64 `json:"x"`
+			Y           float64 `json:"y"`
+			ImageWidth  float64 `json:"image_width"`
+			ImageHeight float64 `json:"image_height"`
+			Button      string  `json:"button"`
+			Clicks      int64   `json:"clicks"`
 		}
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
 			return err
 		}
+		x, y := scaleInputPoint(bridge.ctx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
 		clicks := payload.Clicks
 		if clicks <= 0 {
 			clicks = 1
@@ -762,17 +767,17 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 		button := mouseButton(payload.Button)
 		return chromedp.Run(bridge.ctx,
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.DispatchMouseEvent(cdpinput.MouseMoved, payload.X, payload.Y).Do(ctx)
+				return cdpinput.DispatchMouseEvent(cdpinput.MouseMoved, x, y).Do(ctx)
 			}),
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.DispatchMouseEvent(cdpinput.MousePressed, payload.X, payload.Y).
+				return cdpinput.DispatchMouseEvent(cdpinput.MousePressed, x, y).
 					WithButton(button).
 					WithButtons(mouseButtonsMask(button)).
 					WithClickCount(clicks).
 					Do(ctx)
 			}),
 			chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.DispatchMouseEvent(cdpinput.MouseReleased, payload.X, payload.Y).
+				return cdpinput.DispatchMouseEvent(cdpinput.MouseReleased, x, y).
 					WithButton(button).
 					WithClickCount(clicks).
 					Do(ctx)
@@ -780,10 +785,12 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 		)
 	case "scroll":
 		var payload struct {
-			X      float64 `json:"x"`
-			Y      float64 `json:"y"`
-			DeltaX float64 `json:"delta_x"`
-			DeltaY float64 `json:"delta_y"`
+			X           float64 `json:"x"`
+			Y           float64 `json:"y"`
+			ImageWidth  float64 `json:"image_width"`
+			ImageHeight float64 `json:"image_height"`
+			DeltaX      float64 `json:"delta_x"`
+			DeltaY      float64 `json:"delta_y"`
 		}
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
 			return err
@@ -791,8 +798,9 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 		if payload.DeltaY == 0 {
 			payload.DeltaY = 400
 		}
+		x, y := scaleInputPoint(bridge.ctx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
 		return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-			return cdpinput.DispatchMouseEvent(cdpinput.MouseWheel, payload.X, payload.Y).
+			return cdpinput.DispatchMouseEvent(cdpinput.MouseWheel, x, y).
 				WithDeltaX(payload.DeltaX).
 				WithDeltaY(payload.DeltaY).
 				Do(ctx)
@@ -869,6 +877,33 @@ func mouseButton(value string) cdpinput.MouseButton {
 	default:
 		return cdpinput.Left
 	}
+}
+
+func scaleInputPoint(ctx context.Context, x, y, imageWidth, imageHeight float64) (float64, float64) {
+	if imageWidth <= 0 || imageHeight <= 0 {
+		return x, y
+	}
+	var viewportWidth, viewportHeight float64
+	err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		_, _, _, cssLayout, cssVisual, _, err := cdppage.GetLayoutMetrics().Do(ctx)
+		if err != nil {
+			return err
+		}
+		if cssVisual != nil && cssVisual.ClientWidth > 0 && cssVisual.ClientHeight > 0 {
+			viewportWidth = cssVisual.ClientWidth
+			viewportHeight = cssVisual.ClientHeight
+			return nil
+		}
+		if cssLayout != nil && cssLayout.ClientWidth > 0 && cssLayout.ClientHeight > 0 {
+			viewportWidth = float64(cssLayout.ClientWidth)
+			viewportHeight = float64(cssLayout.ClientHeight)
+		}
+		return nil
+	}))
+	if err != nil || viewportWidth <= 0 || viewportHeight <= 0 {
+		return x, y
+	}
+	return x * viewportWidth / imageWidth, y * viewportHeight / imageHeight
 }
 
 func mouseButtonsMask(button cdpinput.MouseButton) int64 {
