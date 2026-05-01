@@ -90,6 +90,9 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 			a.logPrompt(source, prompt, msg, "browser_preflight", "", false)
 			return msg, nil
 		}
+		if selectedAccountID <= 0 {
+			selectedAccountID = pickReadyFacebookAccountID(accounts)
+		}
 	}
 
 	// Get semantically relevant few-shot examples
@@ -313,6 +316,15 @@ func accountReadyForFacebookAutomation(acc models.Account) bool {
 		strings.TrimSpace(acc.FBUserID) != ""
 }
 
+func pickReadyFacebookAccountID(accounts []models.Account) int64 {
+	for _, acc := range accounts {
+		if accountReadyForFacebookAutomation(acc) {
+			return acc.ID
+		}
+	}
+	return 0
+}
+
 func browserNotReadyMessage(acc *models.Account) string {
 	target := "Workspace chưa có Facebook session sẵn sàng."
 	if acc != nil {
@@ -421,6 +433,12 @@ func polishActionResponse(action, raw, prompt string) string {
 }
 
 func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "❌") || strings.Contains(strings.ToLower(raw), "lỗi") || strings.Contains(strings.ToLower(raw), "error") {
+		return "Chưa thể khởi động crawler cho lệnh này.\n\n" +
+			"Lý do kỹ thuật: backend chưa trả về mã thực thi hợp lệ từ hàng đợi crawl.\n\n" +
+			"Bạn giữ THG Local Kit đang online ở tab Browser, sau đó gửi lại lệnh. Nếu vẫn lặp lại, kiểm tra terminal Runtime xem có dòng `[Input] received ... command(s)` hoặc lỗi `crawl command` để xác định Runtime có nhận lệnh chưa."
+	}
 	jobID := ""
 	if m := regexp.MustCompile(`job #(\d+)`).FindStringSubmatch(raw); len(m) == 2 {
 		jobID = m[1]
@@ -463,7 +481,7 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 	if localCommandID != "" {
 		sb.WriteString("\nRuntime sẽ điều khiển Chrome Facebook thật trên thiết bị đã ghép, thu dữ liệu từ nguồn bạn đưa, lọc tín hiệu theo prompt và lưu leads đủ điều kiện về Leads. Bạn có thể quan sát luồng chạy trong tab Browser.")
 	} else {
-		sb.WriteString("\nHệ thống sẽ dùng Facebook session đã kết nối để thu thập dữ liệu thật, lọc tín hiệu theo nhu cầu trong prompt, phân loại leads hot/warm/cold và lưu kết quả về Leads.")
+		sb.WriteString("\nHệ thống đã tạo job nền. Nếu bạn đang dùng THG Local Runtime, phản hồi chuẩn phải có `Local command`. Khi không thấy `Local command`, nghĩa là lệnh chưa được dispatch xuống Chrome local và cần kiểm tra account/session routing.")
 	}
 	return sb.String()
 }

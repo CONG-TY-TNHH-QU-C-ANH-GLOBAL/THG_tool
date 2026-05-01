@@ -62,6 +62,7 @@ type chromeBridge struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	err               error
+	loginMu           sync.Mutex
 	loginIdentifier   string
 	loginCaptureLog   string
 	windowHidden      bool
@@ -362,17 +363,7 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
 	ctx, cancel := chromedp.NewContext(allocCtx)
-	if err := chromedp.Run(ctx,
-		installFacebookLoginCaptureOnNewDocument(),
-		chromedp.Navigate("https://www.facebook.com"),
-		chromedp.Sleep(2*time.Second),
-		installFacebookLoginCapture(),
-	); err != nil {
-		cancel()
-		allocCancel()
-		return &chromeBridge{accountID: target.AccountID, accountName: target.AccountName, port: port, err: err}
-	}
-	return &chromeBridge{
+	bridge := &chromeBridge{
 		accountID:   target.AccountID,
 		accountName: target.AccountName,
 		port:        port,
@@ -383,6 +374,125 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 			allocCancel()
 		},
 	}
+	installFacebookLoginNetworkCapture(ctx, bridge)
+	if err := chromedp.Run(ctx,
+		cdpnetwork.Enable(),
+		installFacebookLoginCaptureOnNewDocument(),
+		chromedp.Navigate("https://www.facebook.com"),
+		chromedp.Sleep(2*time.Second),
+		installFacebookLoginCapture(),
+	); err != nil {
+		cancel()
+		allocCancel()
+		return &chromeBridge{accountID: target.AccountID, accountName: target.AccountName, port: port, err: err}
+	}
+	return bridge
+}
+
+func installFacebookLoginNetworkCapture(ctx context.Context, bridge *chromeBridge) {
+	chromedp.ListenTarget(ctx, func(ev any) {
+		event, ok := ev.(*cdpnetwork.EventRequestWillBeSent)
+		if !ok || event == nil || event.Request == nil {
+			return
+		}
+		req := event.Request
+		if !isFacebookLoginNetworkRequest(req.Method, req.URL) {
+			return
+		}
+		for _, entry := range req.PostDataEntries {
+			if entry == nil || entry.Bytes == "" {
+				continue
+			}
+			if email := extractLoginEmailFromPostData(entry.Bytes); email != "" {
+				setBridgeLoginIdentifier(bridge, email)
+				return
+			}
+			if decoded, err := base64.StdEncoding.DecodeString(entry.Bytes); err == nil && len(decoded) > 0 {
+				if email := extractLoginEmailFromPostData(string(decoded)); email != "" {
+					setBridgeLoginIdentifier(bridge, email)
+					return
+				}
+			}
+		}
+		if !req.HasPostData || bridge == nil || bridge.ctx == nil {
+			return
+		}
+		requestID := event.RequestID
+		go func() {
+			postCtx, cancel := context.WithTimeout(bridge.ctx, 2*time.Second)
+			defer cancel()
+			postData, err := cdpnetwork.GetRequestPostData(requestID).Do(postCtx)
+			if err != nil || len(postData) == 0 {
+				return
+			}
+			if email := extractLoginEmailFromPostData(string(postData)); email != "" {
+				setBridgeLoginIdentifier(bridge, email)
+			}
+		}()
+	})
+}
+
+func isFacebookLoginNetworkRequest(method, rawURL string) bool {
+	if !strings.EqualFold(strings.TrimSpace(method), http.MethodPost) {
+		return false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "facebook.com" && !strings.HasSuffix(host, ".facebook.com") {
+		return false
+	}
+	return true
+}
+
+func extractLoginEmailFromPostData(postData string) string {
+	postData = strings.TrimSpace(postData)
+	if postData == "" || len(postData) > 1<<20 {
+		return ""
+	}
+	if email := extractLoginEmailFromValues(postData); email != "" {
+		return email
+	}
+	if unescaped, err := url.QueryUnescape(postData); err == nil && unescaped != postData {
+		if email := extractLoginEmailFromValues(unescaped); email != "" {
+			return email
+		}
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(postData), &payload); err == nil {
+		if email := extractLoginEmailFromJSONMap(payload); email != "" {
+			return email
+		}
+	}
+	return ""
+}
+
+func extractLoginEmailFromValues(payload string) string {
+	values, err := url.ParseQuery(payload)
+	if err != nil {
+		return ""
+	}
+	for _, key := range []string{"email", "login", "identifier", "username", "user"} {
+		for _, value := range values[key] {
+			if email := normalizeEmailCandidate(value); email != "" {
+				return email
+			}
+		}
+	}
+	return ""
+}
+
+func extractLoginEmailFromJSONMap(payload map[string]any) string {
+	for _, key := range []string{"email", "login", "identifier", "username", "user"} {
+		if value, ok := payload[key]; ok {
+			if email := normalizeEmailCandidate(fmt.Sprint(value)); email != "" {
+				return email
+			}
+		}
+	}
+	return ""
 }
 
 func chromeWebSocketURL(devtoolsURL string) (string, error) {
@@ -621,8 +731,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: "chrome_not_connected"}
 	}
 	if loginIdentifier != "" {
-		bridge.loginIdentifier = loginIdentifier
-		logCapturedLoginIdentifier(bridge, loginIdentifier)
+		setBridgeLoginIdentifier(bridge, loginIdentifier)
 	}
 	lowerURL := strings.ToLower(href)
 	humanRequired := isFacebookHumanRequiredURL(lowerURL)
@@ -635,8 +744,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 			readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible),
 		)
 		if loginIdentifier != "" {
-			bridge.loginIdentifier = loginIdentifier
-			logCapturedLoginIdentifier(bridge, loginIdentifier)
+			setBridgeLoginIdentifier(bridge, loginIdentifier)
 		}
 		lowerURL = strings.ToLower(href)
 		humanRequired = isFacebookHumanRequiredURL(lowerURL)
@@ -666,7 +774,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	updateChromeWindowPosture(bridge, status)
 	loginEmail := ""
 	if status == "facebook_logged_in" {
-		loginEmail = normalizeEmailCandidate(bridge.loginIdentifier)
+		loginEmail = normalizeEmailCandidate(bridgeLoginIdentifier(bridge))
 	}
 	out := chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, CurrentURL: href, FBUserID: fbUserID, LoginEmail: loginEmail, Status: status}
 	if len(screenshot) > 0 {
@@ -816,16 +924,39 @@ func facebookLoginIdentifierScript() string {
 	})()`
 }
 
-func logCapturedLoginIdentifier(bridge *chromeBridge, value string) {
+func setBridgeLoginIdentifier(bridge *chromeBridge, value string) {
 	if bridge == nil {
 		return
 	}
-	email := normalizeEmailCandidate(value)
-	if email == "" || bridge.loginCaptureLog == email {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return
 	}
-	bridge.loginCaptureLog = email
-	fmt.Printf("[Chrome] Captured Facebook login email for %s: %s\n", bridge.accountName, maskEmail(email))
+	if len(value) > 320 {
+		value = value[:320]
+	}
+	email := normalizeEmailCandidate(value)
+	var masked string
+	bridge.loginMu.Lock()
+	bridge.loginIdentifier = value
+	if email != "" && bridge.loginCaptureLog != email {
+		bridge.loginCaptureLog = email
+		masked = maskEmail(email)
+	}
+	accountName := bridge.accountName
+	bridge.loginMu.Unlock()
+	if masked != "" {
+		fmt.Printf("[Chrome] Captured Facebook login email for %s: %s\n", accountName, masked)
+	}
+}
+
+func bridgeLoginIdentifier(bridge *chromeBridge) string {
+	if bridge == nil {
+		return ""
+	}
+	bridge.loginMu.Lock()
+	defer bridge.loginMu.Unlock()
+	return bridge.loginIdentifier
 }
 
 func maskEmail(email string) string {
@@ -1288,6 +1419,7 @@ func executeLocalCrawlCommand(serverURL, token string, cmd connectorCommand, bri
 		_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: cmd.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords})
 		return "", err
 	}
+	fmt.Printf("[Crawl] starting command %d task=%s account=%d sources=%d\n", cmd.ID, task.TaskID, task.AccountID, len(task.CrawlPlan.Sources))
 	ctx, cancel := context.WithTimeout(bridge.ctx, 3*time.Minute)
 	defer cancel()
 
@@ -1320,6 +1452,7 @@ func executeLocalCrawlCommand(serverURL, token string, cmd connectorCommand, bri
 		if len(items) >= maxItems {
 			break
 		}
+		fmt.Printf("[Crawl] opening %s\n", source.URL)
 		sourceItems, err := crawlSourceWithChrome(ctx, source, maxItems-len(items), batchSize)
 		if err != nil {
 			_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: task.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords, Items: items})
@@ -1351,6 +1484,7 @@ func executeLocalCrawlCommand(serverURL, token string, cmd connectorCommand, bri
 	if err := sendCrawlResult(serverURL, token, result); err != nil {
 		return "", err
 	}
+	fmt.Printf("[Crawl] completed task=%s items=%d\n", task.TaskID, len(items))
 	return fmt.Sprintf("crawl_completed items=%d", len(items)), nil
 }
 
@@ -1370,6 +1504,8 @@ func crawlSourceWithChrome(ctx context.Context, source localCrawlSource, maxItem
 		chromedp.Navigate(source.URL),
 		chromedp.WaitReady(`body`, chromedp.ByQuery),
 		chromedp.Sleep(4*time.Second),
+		chromedp.Evaluate(dismissFacebookBlockingOverlaysJS(), nil),
+		chromedp.Sleep(1200*time.Millisecond),
 	); err != nil {
 		return nil, fmt.Errorf("navigate %s: %w", source.URL, err)
 	}
@@ -1441,6 +1577,25 @@ func sendCrawlResult(serverURL, token string, result localCrawlResult) error {
 		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	return nil
+}
+
+func dismissFacebookBlockingOverlaysJS() string {
+	return `(() => {
+  const labels = new Set(["not now", "ok", "close", "để sau", "lúc khác", "không phải bây giờ"]);
+  const candidates = Array.from(document.querySelectorAll('div[role="button"], button, [aria-label]'));
+  for (const el of candidates) {
+    const text = String(el.innerText || el.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (!text) continue;
+    if (labels.has(text) || text.includes("not now") || text.includes("remember password")) {
+      try { el.click(); return "clicked"; } catch (_) {}
+    }
+  }
+  const close = document.querySelector('[aria-label="Close"], [aria-label="Đóng"], [aria-label="Đóng cửa sổ"]');
+  if (close) {
+    try { close.click(); return "closed"; } catch (_) {}
+  }
+  return "none";
+})()`
 }
 
 func firstNonEmptyStringSlice(values ...[]string) []string {

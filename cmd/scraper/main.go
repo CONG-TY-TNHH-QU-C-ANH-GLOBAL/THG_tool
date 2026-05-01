@@ -388,11 +388,19 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	if len(keywords) == 0 {
 		keywords = splitKeywords(promptKeywordFallback(argString(args, "user_prompt")))
 	}
+	orgID := argInt64(args, "org_id")
+	accountID := argInt64(args, "account_id")
+	if accountID <= 0 && orgID > 0 && db != nil {
+		if pickedAccountID, err := pickReadyFacebookAccountIDForCrawl(db, orgID); err == nil && pickedAccountID > 0 {
+			accountID = pickedAccountID
+			args["account_id"] = pickedAccountID
+		}
+	}
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        openCrawlTaskID(intent, sources, args),
-		OrgID:         argInt64(args, "org_id"),
-		AccountID:     argInt64(args, "account_id"),
+		OrgID:         orgID,
+		AccountID:     accountID,
 		Intent:        intent,
 		Keywords:      keywords,
 		CrawlPlan:     jobs.CrawlPlan{Sources: sources, MaxItems: maxItems, BatchSize: 20},
@@ -427,6 +435,33 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, intent), nil
 }
 
+func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, error) {
+	screen, err := db.GetLatestConnectorScreenshot(orgID, 0)
+	if err != nil {
+		return 0, err
+	}
+	if screen != nil &&
+		screen.AccountID > 0 &&
+		screen.AgentID > 0 &&
+		strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") &&
+		time.Since(screen.UpdatedAt) <= 5*time.Minute {
+		return screen.AccountID, nil
+	}
+	accounts, err := db.GetAllAccounts(orgID)
+	if err != nil {
+		return 0, err
+	}
+	for _, acc := range accounts {
+		if acc.Platform == models.PlatformFacebook &&
+			acc.BrowserLoggedIn &&
+			acc.Status == models.AccountActive &&
+			strings.TrimSpace(acc.FBUserID) != "" {
+			return acc.ID, nil
+		}
+	}
+	return 0, nil
+}
+
 func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Task, payload string) (string, bool, error) {
 	if task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
 		return "", false, nil
@@ -435,7 +470,7 @@ func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Ta
 	if err != nil {
 		return "", true, err
 	}
-	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") && time.Since(screen.UpdatedAt) <= 90*time.Second {
+	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") && time.Since(screen.UpdatedAt) <= 5*time.Minute {
 		appStore, err := store.NewAppStore(db)
 		if err != nil {
 			return "", true, err
