@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from 'react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
@@ -107,6 +107,14 @@ function connectorStatusLabel(status?: string): string {
     default:
       return status || 'Đang chờ lệnh';
   }
+}
+
+function isRemoteControlKey(key: string): boolean {
+  return [
+    'Enter', 'Backspace', 'Tab', 'Escape', 'Delete',
+    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+    'Home', 'End', 'PageUp', 'PageDown',
+  ].includes(key);
 }
 
 function LocalConnectorPanel({
@@ -349,19 +357,25 @@ function LocalChromeViewer({
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const inputQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastWheelAtRef = useRef(0);
   const [inputStatus, setInputStatus] = useState<string | null>(null);
+  const [inputActive, setInputActive] = useState(false);
   const age = screen?.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(screen.updatedAt).getTime()) / 1000)) : null;
 
-  const queueInput = async (type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>) => {
+  const queueInput = useCallback((type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>) => {
     if (!screen?.imageData) return;
-    try {
-      await sendConnectorInput(accountId, type, payload);
-      setInputStatus(null);
-    } catch (err) {
-      setInputStatus(err instanceof Error ? err.message : 'Khong gui duoc thao tac den THG Local Runtime');
-    }
-  };
+    inputQueueRef.current = inputQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          const res = await sendConnectorInput(accountId, type, payload);
+          setInputStatus(`Input queued #${res.id}`);
+        } catch (err) {
+          setInputStatus(err instanceof Error ? err.message : 'Khong gui duoc thao tac den THG Local Runtime');
+        }
+      });
+  }, [accountId, screen?.imageData]);
 
   const imagePoint = (clientX: number, clientY: number) => {
     const img = imgRef.current;
@@ -376,6 +390,7 @@ function LocalChromeViewer({
 
   const handlePointerDown = (e: MouseEvent<HTMLImageElement>) => {
     if (!screen?.imageData) return;
+    setInputActive(true);
     surfaceRef.current?.focus();
     const point = imagePoint(e.clientX, e.clientY);
     if (!point) return;
@@ -392,7 +407,7 @@ function LocalChromeViewer({
     const now = Date.now();
     if (now - lastWheelAtRef.current < 120) return;
     lastWheelAtRef.current = now;
-    e.preventDefault();
+    setInputActive(true);
     const point = imagePoint(e.clientX, e.clientY) ?? { x: 0, y: 0 };
     void queueInput('scroll', {
       x: point.x,
@@ -402,38 +417,39 @@ function LocalChromeViewer({
     });
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!screen?.imageData) return;
-    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+  useEffect(() => {
+    if (!inputActive || !screen?.imageData) return;
+    const handleWindowKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        queueInput('text', { text: e.key });
+        return;
+      }
+      if (isRemoteControlKey(e.key) || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        queueInput('key', {
+          key: e.key,
+          code: e.code,
+          ctrl_key: e.ctrlKey,
+          alt_key: e.altKey,
+          shift_key: e.shiftKey,
+          meta_key: e.metaKey,
+        });
+      }
+    };
+    const handleWindowPaste = (e: globalThis.ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text') ?? '';
+      if (!text) return;
       e.preventDefault();
-      void queueInput('text', { text: e.key });
-      return;
-    }
-    const allowed = new Set([
-      'Enter', 'Backspace', 'Tab', 'Escape', 'Delete',
-      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-      'Home', 'End', 'PageUp', 'PageDown',
-    ]);
-    if (allowed.has(e.key) || e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      void queueInput('key', {
-        key: e.key,
-        code: e.code,
-        ctrl_key: e.ctrlKey,
-        alt_key: e.altKey,
-        shift_key: e.shiftKey,
-        meta_key: e.metaKey,
-      });
-    }
-  };
-
-  const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
-    if (!screen?.imageData) return;
-    const text = e.clipboardData.getData('text');
-    if (!text) return;
-    e.preventDefault();
-    void queueInput('text', { text: text.slice(0, 256) });
-  };
+      queueInput('text', { text: text.slice(0, 256) });
+    };
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    window.addEventListener('paste', handleWindowPaste, true);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown, true);
+      window.removeEventListener('paste', handleWindowPaste, true);
+    };
+  }, [inputActive, queueInput, screen?.imageData]);
 
   return (
     <div style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
@@ -446,6 +462,7 @@ function LocalChromeViewer({
             {screen?.currentUrl || 'Đang chờ ảnh từ THG Local Runtime'}
           </p>
         </div>
+        {inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>control active</span>}
         {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
         {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
         {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
@@ -456,8 +473,6 @@ function LocalChromeViewer({
       <div
         ref={surfaceRef}
         tabIndex={0}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
         style={{ minHeight: 420, display: 'grid', placeItems: 'center', background: '#000', outline: 'none' }}
       >
         {screen?.imageData ? (

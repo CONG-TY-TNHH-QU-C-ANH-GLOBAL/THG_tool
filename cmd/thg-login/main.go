@@ -717,11 +717,16 @@ func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBr
 		fmt.Println("[warn] input command sync failed:", err)
 		return true
 	}
+	if len(commands) > 0 {
+		fmt.Printf("[Input] received %d dashboard command(s)\n", len(commands))
+	}
 	for _, cmd := range commands {
 		errText := ""
 		if err := executeConnectorCommand(cmd, bridges); err != nil {
 			errText = err.Error()
 			fmt.Printf("[warn] input command %d failed: %s\n", cmd.ID, errText)
+		} else {
+			fmt.Printf("[Input] command %d (%s) sent to account %d\n", cmd.ID, cmd.Type, cmd.AccountID)
 		}
 		if err := completeConnectorCommand(serverURL, token, cmd.ID, errText); err != nil {
 			if isDeviceTokenRejected(err) {
