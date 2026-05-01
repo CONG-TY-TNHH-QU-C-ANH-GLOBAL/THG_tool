@@ -53,6 +53,9 @@ login risk from unfamiliar datacenter Chrome profiles.
   extension connectors.
 - Browser dashboard shows Local Connector devices beside cloud browser
   workspaces.
+- Local Connector binaries are built with `scripts/build-local-connector.sh`
+  or `scripts/build-local-connector.ps1` and served from
+  `data/downloads` through `/downloads/*`.
 
 ## Next Milestones
 

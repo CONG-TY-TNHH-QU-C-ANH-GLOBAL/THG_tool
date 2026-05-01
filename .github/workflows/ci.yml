@@ -27,7 +27,7 @@ jobs:
         run: go vet ./...
 
       - name: Build production Go binaries
-        run: go build ./cmd/scraper/ ./cmd/worker/
+        run: go build ./cmd/scraper/ ./cmd/worker/ ./cmd/thg-login/
 
       - name: Run tests (with race detector)
         run: go test -race -timeout 120s ./...

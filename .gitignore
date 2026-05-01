@@ -35,6 +35,10 @@ Thumbs.db
 
 # Build
 dist/
+.gocache/
+.local-bin/
+data/downloads/
+thg-login-downloads/
 
 # Frontend dependencies (never commit node_modules)
 frontend/node_modules/

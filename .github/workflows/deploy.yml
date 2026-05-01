@@ -61,6 +61,14 @@ jobs:
           ls -lh scraper thg-worker
           echo "Go binaries built"
 
+      - name: Build THG Local Connector downloads
+        env:
+          OUT_DIR: thg-login-downloads
+        run: |
+          bash scripts/build-local-connector.sh "${{ github.sha }}"
+          ls -lh thg-login-downloads
+          file thg-login-downloads/*
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -110,7 +118,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "frontend-standalone.tar.gz,docker/,deploy/"
+          source: "frontend-standalone.tar.gz,docker/,deploy/,thg-login-downloads/"
           target: "/tmp/thg-deploy/"
           overwrite: true
 
@@ -143,6 +151,14 @@ jobs:
               sudo chmod 750 /opt/thg-scraper/$bin
             done
             echo "Go binaries installed"
+
+            # Install downloadable THG Local Connector builds served by /downloads.
+            sudo mkdir -p /opt/thg-scraper/data/downloads
+            sudo cp /tmp/thg-deploy/thg-login-downloads/thg-login-* /opt/thg-scraper/data/downloads/
+            sudo chown -R thg-scraper:thg-scraper /opt/thg-scraper/data/downloads
+            sudo chmod 750 /opt/thg-scraper/data/downloads
+            sudo chmod 640 /opt/thg-scraper/data/downloads/thg-login-*
+            echo "Local Connector downloads installed"
 
             # Install Node.js if missing.
             if ! command -v node &>/dev/null; then

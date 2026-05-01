@@ -24,6 +24,10 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `${process.env.API_URL ?? 'http://localhost:8080'}/api/:path*`,
       },
+      {
+        source: '/downloads/:path*',
+        destination: `${process.env.API_URL ?? 'http://localhost:8080'}/downloads/:path*`,
+      },
     ]
   },
 }
