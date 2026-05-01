@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Puzzle, Eye, EyeOff } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -21,7 +21,7 @@ function stateLabel(state?: string): string {
     case 'active': return 'active';
     case 'checkpoint': return 'human required';
     case 'human_required': return 'human required';
-    case 'local_starting': return 'đang chờ extension';
+    case 'local_starting': return 'đang chờ Runtime';
     case 'local_active': return 'Chrome thật đang chạy';
     case 'local_login_required': return 'cần đăng nhập Facebook';
     case 'local_human_required': return 'Facebook cần xác minh';
@@ -57,12 +57,6 @@ function formatCountdown(ms: number): string {
 }
 
 type DownloadKey = keyof SystemInfo['agent_builds'];
-
-const EXTENSION_DOWNLOAD: { key: DownloadKey; label: string; href: string } = {
-  key: 'chrome_extension',
-  label: 'Chrome Extension',
-  href: '/downloads/thg-chrome-extension.zip',
-};
 
 const RUNTIME_DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
   { key: 'local_kit_windows', label: 'Windows', href: '/downloads/thg-local-kit-windows.zip' },
@@ -145,7 +139,6 @@ function LocalConnectorPanel({
   const [pairingCodeVisible, setPairingCodeVisible] = useState(false);
   const [pairingRemainingMs, setPairingRemainingMs] = useState<number | null>(null);
   const [dashboardServer, setDashboardServer] = useState('');
-  const extensionAvailable = Boolean(systemInfo?.agent_builds?.[EXTENSION_DOWNLOAD.key]);
   const pairingExpired = pairingCode !== '' && pairingRemainingMs !== null && pairingRemainingMs <= 0;
 
   useEffect(() => {
@@ -182,7 +175,7 @@ function LocalConnectorPanel({
         </div>
         <div style={{ minWidth: 0 }}>
           <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Browser stream tập trung trên máy nhân viên</p>
-          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: THG Local Runtime chạy Chrome profile riêng trên device/IP thật, stream toàn bộ Facebook về dashboard. Extension chỉ là lớp xác nhận session cá nhân.</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: THG Local Runtime chạy Chrome profile riêng trên device/IP thật và stream toàn bộ Facebook về dashboard.</p>
         </div>
         <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Radio size={12} /> {runtimeOnline}/{connectors.length} runtime ready
@@ -199,7 +192,7 @@ function LocalConnectorPanel({
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Local Kit</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Một gói theo hệ điều hành, bên trong có cả Runtime và extension. Runtime stream Chrome profile riêng về dashboard.
+                Một gói theo hệ điều hành, bên trong có THG Local Runtime để stream Chrome profile riêng về dashboard.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {RUNTIME_DOWNLOADS.map(item => (
@@ -212,22 +205,15 @@ function LocalConnectorPanel({
                   </a>
                 ))}
               </div>
-              <a
-                href={EXTENSION_DOWNLOAD.href}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 7, border: '1px solid #334155', background: theme.surfaceAlt, color: theme.textMuted, textDecoration: 'none', fontSize: 11, fontWeight: 700, marginTop: 8 }}
-              >
-                <Puzzle size={12} /> Extension riêng cho debug
-              </a>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Người dùng bình thường chỉ tải Local Kit. Link extension riêng chỉ để debug hoặc cài lại helper mà không tải runtime.
-                {!extensionAvailable && ' Nếu tải extension lỗi 404 nghĩa là server production chưa publish artifact extension.'}
+                Người dùng chỉ cần tải Local Kit đúng hệ điều hành. Kit đã đóng gói sẵn các thành phần cần thiết để kết nối workspace và stream Browser dashboard.
               </p>
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Ghép thiết bị với workspace</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Tạo mã rồi dán vào THG Local Runtime. Nếu chỉ cần xác nhận Chrome cá nhân, có thể dán mã vào THG Extension.
+                Tạo mã rồi dán vào THG Local Runtime. Sau khi ghép thành công, Runtime tự online lại bằng token riêng.
               </p>
               {dashboardServer && (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 9 }}>
@@ -236,14 +222,14 @@ function LocalConnectorPanel({
                     type="button"
                     onClick={() => navigator.clipboard?.writeText(dashboardServer)}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, border: '1px solid #38bdf866', background: '#07598533', color: '#e0f2fe', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}
-                    title="Copy THG server để dán vào extension"
+                    title="Copy THG server để dán vào Runtime"
                   >
                     <Copy size={11} /> Copy server
                   </button>
                 </div>
               )}
               <p style={{ color: '#fef3c7', fontSize: 10, lineHeight: 1.45, marginBottom: 8 }}>
-                THG server trong Runtime/Extension phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần và hết hạn sau 10 phút.
+                THG server trong Runtime phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần và hết hạn sau 10 phút.
               </p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -306,7 +292,7 @@ function LocalConnectorPanel({
                 Khi Runtime online, Browser tab sẽ nhận ảnh từ Chrome profile local và agent mới được phép chạy crawler/comment/inbox qua kênh đó.
               </p>
               <span style={{ color: runtimeOnline ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime đã sẵn sàng stream' : online ? 'Extension online, cần Runtime để stream dashboard' : 'Đang chờ máy kết nối'}
+                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime đã sẵn sàng stream' : online ? 'Đã có thiết bị online, đang chờ Runtime stream' : 'Đang chờ máy kết nối'}
               </span>
             </div>
           </div>
@@ -369,7 +355,7 @@ function LocalChromeViewer({
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật {accountName ? `- ${accountName}` : ''}</p>
           <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {screen?.currentUrl || 'Đang chờ ảnh từ THG Extension'}
+            {screen?.currentUrl || 'Đang chờ ảnh từ THG Local Runtime'}
           </p>
         </div>
         {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
@@ -567,7 +553,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       return;
     }
     if (!connectors.some(c => c.online && isDashboardStreamConnector(c))) {
-      setBrowserNotice('Extension đã online nhưng chưa có THG Local Runtime để stream Browser dashboard. Tải Runtime cho hệ điều hành của bạn, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
+      setBrowserNotice('Thiết bị hiện tại chưa có THG Local Runtime sẵn sàng stream Browser dashboard. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
       return;
     }
     setNewLoading(true);
@@ -614,7 +600,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       await disconnectLocalConnector(connector.id);
       setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
-      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu extension còn mở, token sẽ bị từ chối ở heartbeat kế tiếp.`);
+      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu Runtime còn mở, token sẽ bị từ chối ở heartbeat kế tiếp.`);
     } catch (e) {
       setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được thiết bị');
     } finally {
@@ -707,7 +693,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                     e.stopPropagation();
                     setBrowserNotice(null);
                     if (!hasOnlineConnector) {
-                      setBrowserNotice('Extension đã online nhưng Browser dashboard cần THG Local Runtime để stream chuyên nghiệp. Tải Runtime cho hệ điều hành của bạn, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
+                      setBrowserNotice('Browser dashboard cần THG Local Runtime để stream chuyên nghiệp. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
                       return;
                     }
                     void start(w.accountId)

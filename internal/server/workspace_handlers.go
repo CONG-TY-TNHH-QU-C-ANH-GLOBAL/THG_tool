@@ -118,7 +118,7 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	}
 	if hasLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then start the Facebook session again. The Chrome Extension verifies the personal Facebook session, but dashboard streaming requires the native runtime.",
+			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then start the Facebook session again.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
@@ -231,7 +231,7 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
 	if hasLocalConnector && !hasOnlineLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then create a new Facebook session again. The Chrome Extension verifies the personal Facebook session, but dashboard streaming requires the native runtime.",
+			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then create a new Facebook session again.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}

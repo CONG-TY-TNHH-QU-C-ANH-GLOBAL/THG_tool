@@ -27,7 +27,7 @@ import (
 
 var version = "dev"
 
-const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"extension_bridge":"optional"}`
+const capabilitiesJSON = `{"native_companion":true,"browser_control":"user_device","screen_capture":true,"multi_profile":true,"dashboard_stream":true}`
 
 type connectorConfig struct {
 	ServerURL     string    `json:"server_url"`
@@ -100,8 +100,7 @@ func main() {
 	fmt.Println("        THG LOCAL CONNECTOR")
 	fmt.Println("==================================================")
 	fmt.Println("Dashboard browser stream: this app runs isolated local Chrome profiles on this device.")
-	fmt.Println("The THG Chrome Extension can verify your personal Chrome session, but dashboard")
-	fmt.Println("streaming and multi-account automation run through this local runtime.")
+	fmt.Println("Keep this app open while the Browser dashboard runs Facebook automation.")
 	fmt.Println()
 	fmt.Println("Server:", serverURL)
 	fmt.Println("Config:", configPath)

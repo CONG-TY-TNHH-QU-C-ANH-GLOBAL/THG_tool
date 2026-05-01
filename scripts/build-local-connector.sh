@@ -41,29 +41,26 @@ if [ -d "$ROOT/local-connector-extension" ]; then
   package_kit() {
     local binary="$1"
     local kit_name="$2"
+    local runtime_name="$3"
     local kit_root="$OUTPUT_DIR/.kit-${kit_name%.zip}"
     rm -rf "$kit_root" "$OUTPUT_DIR/$kit_name"
-    mkdir -p "$kit_root/extension"
-    cp "$OUTPUT_DIR/$binary" "$kit_root/$binary"
-    cp -R "$ROOT/local-connector-extension"/. "$kit_root/extension/"
+    mkdir -p "$kit_root"
+    cp "$OUTPUT_DIR/$binary" "$kit_root/$runtime_name"
     cat > "$kit_root/README.txt" <<EOF
 THG Local Kit
 
 This package contains:
-- THG Local Runtime: $binary
-- THG Chrome Extension: extension/
+- THG Local Runtime: $runtime_name
 
 Production flow:
 1. Open the THG Browser dashboard.
 2. Create a new pairing code.
 3. Run the THG Local Runtime and paste the pairing code.
 4. Keep the Runtime open, then click "Chay Facebook" in the dashboard.
-5. Optional: load the extension folder in Chrome if the workspace needs to verify a personal Facebook session.
 
 Security:
 - Do not enter your Facebook password into THG.
 - Runtime runs isolated local Chrome profiles and streams them to the dashboard.
-- Extension only verifies an existing signed-in Chrome/Facebook session.
 EOF
     echo "Packaging $kit_name"
     if command -v python3 >/dev/null 2>&1; then
@@ -75,10 +72,10 @@ EOF
     rm -rf "$kit_root"
   }
 
-  package_kit thg-login-windows.exe thg-local-kit-windows.zip
-  package_kit thg-login-linux thg-local-kit-linux.zip
-  package_kit thg-login-mac-intel thg-local-kit-mac-intel.zip
-  package_kit thg-login-mac-m1 thg-local-kit-mac-m1.zip
+  package_kit thg-login-windows.exe thg-local-kit-windows.zip THG-Local-Runtime.exe
+  package_kit thg-login-linux thg-local-kit-linux.zip thg-local-runtime
+  package_kit thg-login-mac-intel thg-local-kit-mac-intel.zip thg-local-runtime
+  package_kit thg-login-mac-m1 thg-local-kit-mac-m1.zip thg-local-runtime
 
   if [ -d "$ROOT/frontend" ]; then
     mkdir -p "$ROOT/frontend/public/downloads"
