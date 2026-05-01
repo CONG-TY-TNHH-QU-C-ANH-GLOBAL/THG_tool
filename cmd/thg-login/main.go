@@ -748,6 +748,8 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 	}
 	switch strings.ToLower(strings.TrimSpace(cmd.Type)) {
 	case "click":
+		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
+		defer cancel()
 		var payload struct {
 			X           float64 `json:"x"`
 			Y           float64 `json:"y"`
@@ -759,31 +761,12 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 		if err := json.Unmarshal([]byte(defaultString(cmd.PayloadJSON, "{}")), &payload); err != nil {
 			return err
 		}
-		x, y := scaleInputPoint(bridge.ctx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
-		clicks := payload.Clicks
-		if clicks <= 0 {
-			clicks = 1
-		}
-		button := mouseButton(payload.Button)
-		return chromedp.Run(bridge.ctx,
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.DispatchMouseEvent(cdpinput.MouseMoved, x, y).Do(ctx)
-			}),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.DispatchMouseEvent(cdpinput.MousePressed, x, y).
-					WithButton(button).
-					WithButtons(mouseButtonsMask(button)).
-					WithClickCount(clicks).
-					Do(ctx)
-			}),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.DispatchMouseEvent(cdpinput.MouseReleased, x, y).
-					WithButton(button).
-					WithClickCount(clicks).
-					Do(ctx)
-			}),
-		)
+		x, y := scaleInputPoint(cmdCtx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
+		var result string
+		return chromedp.Run(cmdCtx, chromedp.Evaluate(clickElementAtPointJS(x, y, mouseButtonNumber(payload.Button)), &result))
 	case "scroll":
+		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
+		defer cancel()
 		var payload struct {
 			X           float64 `json:"x"`
 			Y           float64 `json:"y"`
@@ -798,14 +781,12 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 		if payload.DeltaY == 0 {
 			payload.DeltaY = 400
 		}
-		x, y := scaleInputPoint(bridge.ctx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
-		return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-			return cdpinput.DispatchMouseEvent(cdpinput.MouseWheel, x, y).
-				WithDeltaX(payload.DeltaX).
-				WithDeltaY(payload.DeltaY).
-				Do(ctx)
-		}))
+		x, y := scaleInputPoint(cmdCtx, payload.X, payload.Y, payload.ImageWidth, payload.ImageHeight)
+		var result string
+		return chromedp.Run(cmdCtx, chromedp.Evaluate(scrollAtPointJS(x, y, payload.DeltaX, payload.DeltaY), &result))
 	case "text":
+		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
+		defer cancel()
 		var payload struct {
 			Text string `json:"text"`
 		}
@@ -818,10 +799,11 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 		if len([]rune(payload.Text)) > 256 {
 			return fmt.Errorf("text command is too long")
 		}
-		return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-			return cdpinput.InsertText(payload.Text).Do(ctx)
-		}))
+		var result string
+		return chromedp.Run(cmdCtx, chromedp.Evaluate(insertTextIntoActiveElementJS(payload.Text), &result))
 	case "key":
+		cmdCtx, cancel := context.WithTimeout(bridge.ctx, 5*time.Second)
+		defer cancel()
 		var payload struct {
 			Key     string `json:"key"`
 			Code    string `json:"code"`
@@ -834,16 +816,19 @@ func executeConnectorCommand(cmd connectorCommand, bridges map[int64]*chromeBrid
 			return err
 		}
 		if len([]rune(payload.Key)) == 1 && !payload.CtrlKey && !payload.AltKey && !payload.MetaKey {
-			return chromedp.Run(bridge.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-				return cdpinput.InsertText(payload.Key).Do(ctx)
-			}))
+			var result string
+			return chromedp.Run(cmdCtx, chromedp.Evaluate(insertTextIntoActiveElementJS(payload.Key), &result))
+		}
+		if payload.Key == "Backspace" || payload.Key == "Tab" || payload.Key == "Enter" {
+			var result string
+			return chromedp.Run(cmdCtx, chromedp.Evaluate(specialKeyJS(payload.Key, payload.Shift), &result))
 		}
 		key, code, vk := normalizeKey(payload.Key, payload.Code)
 		if key == "" {
 			return nil
 		}
 		modifiers := keyModifiers(payload.CtrlKey, payload.AltKey, payload.Shift, payload.MetaKey)
-		return chromedp.Run(bridge.ctx,
+		return chromedp.Run(cmdCtx,
 			chromedp.ActionFunc(func(ctx context.Context) error {
 				return cdpinput.DispatchKeyEvent(cdpinput.KeyRawDown).
 					WithKey(key).
@@ -879,31 +864,157 @@ func mouseButton(value string) cdpinput.MouseButton {
 	}
 }
 
+func mouseButtonNumber(value string) int {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "right":
+		return 2
+	case "middle":
+		return 1
+	default:
+		return 0
+	}
+}
+
 func scaleInputPoint(ctx context.Context, x, y, imageWidth, imageHeight float64) (float64, float64) {
 	if imageWidth <= 0 || imageHeight <= 0 {
 		return x, y
 	}
 	var viewportWidth, viewportHeight float64
-	err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		_, _, _, cssLayout, cssVisual, _, err := cdppage.GetLayoutMetrics().Do(ctx)
-		if err != nil {
-			return err
-		}
-		if cssVisual != nil && cssVisual.ClientWidth > 0 && cssVisual.ClientHeight > 0 {
-			viewportWidth = cssVisual.ClientWidth
-			viewportHeight = cssVisual.ClientHeight
-			return nil
-		}
-		if cssLayout != nil && cssLayout.ClientWidth > 0 && cssLayout.ClientHeight > 0 {
-			viewportWidth = float64(cssLayout.ClientWidth)
-			viewportHeight = float64(cssLayout.ClientHeight)
-		}
-		return nil
-	}))
+	scaleCtx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+	defer cancel()
+	var dims []float64
+	err := chromedp.Run(scaleCtx, chromedp.Evaluate(`(() => [
+		window.innerWidth || document.documentElement.clientWidth || 0,
+		window.innerHeight || document.documentElement.clientHeight || 0
+	])()`, &dims))
 	if err != nil || viewportWidth <= 0 || viewportHeight <= 0 {
+		if len(dims) >= 2 {
+			viewportWidth = dims[0]
+			viewportHeight = dims[1]
+		}
+	}
+	if viewportWidth <= 0 || viewportHeight <= 0 {
 		return x, y
 	}
 	return x * viewportWidth / imageWidth, y * viewportHeight / imageHeight
+}
+
+func clickElementAtPointJS(x, y float64, button int) string {
+	return fmt.Sprintf(`(() => {
+  const x = %s, y = %s, button = %d;
+  const raw = document.elementFromPoint(x, y);
+  if (!raw) return 'no_element';
+  const target = (raw.closest && raw.closest('input,textarea,button,a,[role="button"],[contenteditable="true"],label,select')) || raw;
+  const opts = {bubbles:true,cancelable:true,view:window,clientX:x,clientY:y,button,buttons:button === 2 ? 2 : button === 1 ? 4 : 1};
+  try { target.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (_) {}
+  try { target.dispatchEvent(new MouseEvent('mousedown', opts)); } catch (_) {}
+  if (typeof target.focus === 'function') {
+    try { target.focus({preventScroll:true}); } catch (_) { try { target.focus(); } catch (_) {} }
+  }
+  try { target.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (_) {}
+  try { target.dispatchEvent(new MouseEvent('mouseup', opts)); } catch (_) {}
+  try { target.dispatchEvent(new MouseEvent('click', opts)); } catch (_) {}
+  try { if (typeof target.click === 'function') target.click(); } catch (_) {}
+  if (target.tagName === 'LABEL') {
+    const input = target.control || (target.getAttribute('for') ? document.getElementById(target.getAttribute('for')) : null);
+    if (input && typeof input.focus === 'function') input.focus();
+  }
+  return (target.tagName || 'element') + ':' + ((target.getAttribute && (target.getAttribute('name') || target.getAttribute('type') || target.id)) || '');
+})()`, jsFloat(x), jsFloat(y), button)
+}
+
+func scrollAtPointJS(x, y, deltaX, deltaY float64) string {
+	return fmt.Sprintf(`(() => {
+  const x = %s, y = %s;
+  const target = document.elementFromPoint(x, y) || document.scrollingElement || document.documentElement;
+  const scroller = target.closest && target.closest('[style*="overflow"], [data-pagelet], div') || document.scrollingElement || document.documentElement;
+  try { scroller.scrollBy(%s, %s); } catch (_) { window.scrollBy(%s, %s); }
+  return 'scrolled';
+})()`, jsFloat(x), jsFloat(y), jsFloat(deltaX), jsFloat(deltaY), jsFloat(deltaX), jsFloat(deltaY))
+}
+
+func insertTextIntoActiveElementJS(text string) string {
+	return fmt.Sprintf(`(() => {
+  const text = %s;
+  const el = document.activeElement;
+  if (!el || el === document.body || el === document.documentElement) return 'no_active_element';
+  if (el.isContentEditable) {
+    document.execCommand('insertText', false, text);
+    return 'contenteditable';
+  }
+  if (!('value' in el)) return 'active_not_text';
+  const value = String(el.value || '');
+  const start = typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
+  const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+  const next = value.slice(0, start) + text + value.slice(end);
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+  if (setter) setter.call(el, next); else el.value = next;
+  const pos = start + text.length;
+  try { el.setSelectionRange(pos, pos); } catch (_) {}
+  try { el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text})); } catch (_) { el.dispatchEvent(new Event('input', {bubbles:true})); }
+  return 'text_inserted';
+})()`, jsString(text))
+}
+
+func specialKeyJS(key string, shift bool) string {
+	return fmt.Sprintf(`(() => {
+  const key = %s, shift = %t;
+  const el = document.activeElement;
+  const fire = (type) => { try { el && el.dispatchEvent(new KeyboardEvent(type, {key, bubbles:true, cancelable:true, shiftKey:shift})); } catch (_) {} };
+  if (key === 'Tab') {
+    const nodes = Array.from(document.querySelectorAll('input,textarea,button,a[href],select,[tabindex]:not([tabindex="-1"]),[contenteditable="true"]'))
+      .filter(n => !n.disabled && n.offsetParent !== null);
+    if (!nodes.length) return 'tab_no_targets';
+    const index = Math.max(0, nodes.indexOf(el));
+    const next = nodes[(index + (shift ? -1 : 1) + nodes.length) %% nodes.length];
+    next.focus();
+    return 'tab_focus';
+  }
+  if (key === 'Backspace' && el && 'value' in el) {
+    const value = String(el.value || '');
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    const from = start === end ? Math.max(0, start - 1) : start;
+    const nextValue = value.slice(0, from) + value.slice(end);
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+    if (setter) setter.call(el, nextValue); else el.value = nextValue;
+    try { el.setSelectionRange(from, from); } catch (_) {}
+    try { el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'deleteContentBackward'})); } catch (_) { el.dispatchEvent(new Event('input', {bubbles:true})); }
+    return 'backspace';
+  }
+  fire('keydown');
+  if (key === 'Enter') {
+    const active = document.activeElement;
+    const clickable = active && active.closest && active.closest('button,a,[role="button"]');
+    if (clickable && typeof clickable.click === 'function') clickable.click();
+    else {
+      const form = active && active.closest && active.closest('form');
+      if (form) {
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.submit();
+      }
+    }
+  }
+  fire('keyup');
+  return 'key_' + key;
+})()`, jsString(key), shift)
+}
+
+func jsString(value string) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return `""`
+	}
+	return string(data)
+}
+
+func jsFloat(value float64) string {
+	if value != value || value > 1e9 || value < -1e9 {
+		return "0"
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 func mouseButtonsMask(button cdpinput.MouseButton) int64 {
