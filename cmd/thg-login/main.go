@@ -99,9 +99,9 @@ func main() {
 	fmt.Println("==================================================")
 	fmt.Println("        THG LOCAL CONNECTOR")
 	fmt.Println("==================================================")
-	fmt.Println("Primary production flow: use the THG Chrome Extension on your already-signed-in Chrome.")
-	fmt.Println("This desktop app is an optional native companion for advanced local streaming/control.")
-	fmt.Println("Keep it running only when the dashboard explicitly asks for native companion mode.")
+	fmt.Println("Dashboard browser stream: this app runs isolated local Chrome profiles on this device.")
+	fmt.Println("The THG Chrome Extension can verify your personal Chrome session, but dashboard")
+	fmt.Println("streaming and multi-account automation run through this local runtime.")
 	fmt.Println()
 	fmt.Println("Server:", serverURL)
 	fmt.Println("Config:", configPath)
@@ -336,7 +336,11 @@ func launchChrome(port int, userDataDir string) error {
 		"--remote-debugging-address=127.0.0.1",
 		"--no-first-run",
 		"--no-default-browser-check",
+		"--window-size=1365,900",
 		"https://www.facebook.com",
+	}
+	if strings.TrimSpace(os.Getenv("THG_CHROME_VISIBLE")) != "1" {
+		args = append([]string{"--window-position=-32000,-32000"}, args...)
 	}
 	if userDataDir != "" {
 		if err := os.MkdirAll(userDataDir, 0700); err != nil {
@@ -672,7 +676,7 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 		basePort = 9222
 	}
 	bridges := map[int64]*chromeBridge{}
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(frameInterval())
 	defer ticker.Stop()
 
 	stop := make(chan os.Signal, 1)
@@ -798,6 +802,20 @@ func localChromePort(basePort int, accountID int64) int {
 		port = 20000 + offset
 	}
 	return port
+}
+
+func frameInterval() time.Duration {
+	seconds, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_FRAME_INTERVAL_SECONDS")))
+	if seconds <= 0 {
+		seconds = 2
+	}
+	if seconds < 1 {
+		seconds = 1
+	}
+	if seconds > 30 {
+		seconds = 30
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func runHeartbeatLoop(serverURL, token string, bridge *chromeBridge) {

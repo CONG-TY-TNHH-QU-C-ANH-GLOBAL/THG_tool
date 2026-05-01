@@ -118,7 +118,7 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	}
 	if hasLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Chrome connection channel is not ready. Open THG Chrome Helper on the signed-in Chrome profile, click Sync, then start the session again.",
+			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then start the Facebook session again. The Chrome Extension verifies the personal Facebook session, but dashboard streaming requires the native runtime.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
@@ -182,12 +182,28 @@ func (s *Server) localConnectorAvailability(orgID int64) (bool, bool) {
 	for _, conn := range connectors {
 		if conn.Active {
 			hasAny = true
-			if conn.Online {
+			if conn.Online && isDashboardStreamConnector(conn) {
 				hasOnline = true
 			}
 		}
 	}
 	return hasAny, hasOnline
+}
+
+func isDashboardStreamConnector(conn store.AgentToken) bool {
+	if conn.Kind == "desktop_connector" || conn.Transport == "local_chrome" {
+		return true
+	}
+	var caps map[string]any
+	if err := json.Unmarshal([]byte(conn.CapabilitiesJSON), &caps); err == nil {
+		if v, ok := caps["native_companion"].(bool); ok && v {
+			return true
+		}
+		if v, ok := caps["multi_profile"].(bool); ok && v {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status, errorMsg string) error {
@@ -215,7 +231,7 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailability(orgID)
 	if hasLocalConnector && !hasOnlineLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Chrome connection channel is not ready. Open THG Chrome Helper on the signed-in Chrome profile, click Sync, then create a new session again.",
+			"error": "Dashboard browser stream is not ready. Keep THG Local Runtime running on this device, then create a new Facebook session again. The Chrome Extension verifies the personal Facebook session, but dashboard streaming requires the native runtime.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}

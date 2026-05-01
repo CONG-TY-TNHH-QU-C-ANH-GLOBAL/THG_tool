@@ -1,10 +1,12 @@
 const DEFAULT_SERVER_URL = 'https://sale.thgfulfill.com';
 const HEARTBEAT_ALARM = 'thg-heartbeat';
 const FACEBOOK_HOME = 'https://www.facebook.com/';
+const AUTO_FOCUS_FACEBOOK_TAB = false;
 const CAPABILITIES = {
   local_chrome: true,
   browser_control: 'user_chrome_extension',
-  screen_capture: true,
+  screen_capture: 'active_facebook_tab_only',
+  dashboard_stream: false,
   dom_metadata: true,
   extension_bridge: 'supported'
 };
@@ -250,7 +252,7 @@ async function heartbeat() {
   const targets = await fetchTargets().catch(() => []);
   let target = chooseTarget(targets, state.fbUserId);
   if (target) {
-    if (!state.tab || !state.tab.active) {
+    if (AUTO_FOCUS_FACEBOOK_TAB && (!state.tab || !state.tab.active)) {
       state = await ensureFacebookTabVisible();
       target = chooseTarget(targets, state.fbUserId) || target;
     }

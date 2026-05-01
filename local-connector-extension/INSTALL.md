@@ -14,12 +14,12 @@ Ban zip nay dung cho giai doan noi bo truoc khi publish Chrome Web Store.
    Neu thu muc giai nen co them mot lop con, hay mo vao lop con cho den khi thay
    `manifest.json` bang File Explorer, roi chon dung thu muc do trong Chrome.
 8. Bam icon THG Chrome Helper, dan ma ket noi tu dashboard, bam Ket noi.
-9. Trong Browser dashboard, bam `Chay Facebook` tren account muon automation.
-10. Extension se tu mo hoac chuyen sang tab `facebook.com` tren Chrome ca nhan de gui anh ve dashboard.
-    Neu dashboard van chua co anh sau 30 giay, bam icon THG Chrome Helper roi bam `Dong bo`.
+9. Neu can Browser stream tap trung tren dashboard, tai va chay them THG Local Runtime.
+   Runtime se dung ma ket noi moi va mo Chrome profile rieng tren may user de stream ve dashboard.
 
 Luu y bao mat:
 
 - Khong nhap mat khau Facebook vao THG.
-- Extension chi gui trang thai tab Facebook, user id tu cookie `c_user`, va anh tab Facebook khi workspace dang chay.
+- Extension chi gui trang thai tab Facebook va user id tu cookie `c_user`.
+- Browser stream nhieu tai khoan duoc xu ly boi THG Local Runtime, khong phai tab Chrome ca nhan.
 - Neu Facebook hien checkpoint/CAPTCHA, nguoi dung tu xu ly truc tiep tren Chrome. THG khong bypass checkpoint.

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "THG Local Connector Helper",
-  "description": "Connect a signed-in Facebook tab on this Chrome profile to a THG workspace.",
+  "description": "Verify a signed-in Facebook session on this Chrome profile for a THG workspace.",
   "version": "0.1.1",
   "action": {
     "default_title": "THG Helper",

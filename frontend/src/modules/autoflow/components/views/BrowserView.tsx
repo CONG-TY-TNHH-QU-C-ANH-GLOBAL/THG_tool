@@ -64,6 +64,30 @@ const EXTENSION_DOWNLOAD: { key: DownloadKey; label: string; href: string } = {
   href: '/downloads/thg-chrome-extension.zip',
 };
 
+const RUNTIME_DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
+  { key: 'windows', label: 'Windows Runtime', href: '/downloads/thg-login-windows.exe' },
+  { key: 'mac_m1', label: 'macOS Apple Silicon', href: '/downloads/thg-login-mac-m1' },
+  { key: 'mac_intel', label: 'macOS Intel', href: '/downloads/thg-login-mac-intel' },
+  { key: 'linux', label: 'Linux Runtime', href: '/downloads/thg-login-linux' },
+];
+
+function connectorCapabilities(connector: LocalConnector): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(connector.capabilitiesJson || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isDashboardStreamConnector(connector: LocalConnector): boolean {
+  const caps = connectorCapabilities(connector);
+  return connector.kind === 'desktop_connector' ||
+    connector.transport === 'local_chrome' ||
+    caps.native_companion === true ||
+    caps.multi_profile === true;
+}
+
 function connectorStatusLabel(status?: string): string {
   switch ((status || '').toLowerCase()) {
     case 'pairing':
@@ -116,7 +140,7 @@ function LocalConnectorPanel({
   onDisconnect: (connector: LocalConnector) => void;
 }) {
   const online = connectors.filter(c => c.online).length;
-  const facebookConnected = connectors.filter(c => c.online && c.streamStatus === 'facebook_logged_in').length;
+  const runtimeOnline = connectors.filter(c => c.online && isDashboardStreamConnector(c)).length;
   const [setupOpen, setSetupOpen] = useState(connectors.length === 0);
   const [pairingCodeVisible, setPairingCodeVisible] = useState(false);
   const [pairingRemainingMs, setPairingRemainingMs] = useState<number | null>(null);
@@ -157,11 +181,11 @@ function LocalConnectorPanel({
           <Laptop size={17} color="#5eead4" />
         </div>
         <div style={{ minWidth: 0 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome cá nhân đã đăng nhập Facebook</p>
-          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: cài THG Extension vào Chrome thật của nhân viên, giữ đúng thiết bị, IP và session Facebook quen thuộc.</p>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Browser stream tập trung trên máy nhân viên</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: THG Local Runtime chạy Chrome profile riêng trên device/IP thật, stream toàn bộ Facebook về dashboard. Extension chỉ là lớp xác nhận session cá nhân.</p>
         </div>
         <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Radio size={12} /> {facebookConnected}/{connectors.length} Facebook ready
+          <Radio size={12} /> {runtimeOnline}/{connectors.length} runtime ready
         </span>
         <button onClick={() => setSetupOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px solid #2dd4bf66', background: '#0f766e33', color: '#ccfbf1', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <Laptop size={13} />
@@ -173,26 +197,37 @@ function LocalConnectorPanel({
         <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, background: '#07131f' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Extension</p>
+              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Local Runtime</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Cài extension vào chính Chrome cá nhân đang đăng nhập Facebook. Không cần nhập mật khẩu Facebook vào THG.
+                Runtime chạy Chrome profile riêng trên máy nhân viên và stream ảnh về dashboard. Chrome cá nhân sẽ không bị tự chuyển tab.
               </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {RUNTIME_DOWNLOADS.map(item => (
+                  <a
+                    key={item.key}
+                    href={item.href}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700, opacity: systemInfo?.agent_builds?.[item.key] === false ? 0.5 : 1 }}
+                  >
+                    <Laptop size={13} /> {item.label}
+                  </a>
+                ))}
+              </div>
               <a
                 href={EXTENSION_DOWNLOAD.href}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 7, border: '1px solid #334155', background: theme.surfaceAlt, color: theme.textMuted, textDecoration: 'none', fontSize: 11, fontWeight: 700, marginTop: 8 }}
               >
-                <Puzzle size={13} /> Tải extension THG
+                <Puzzle size={12} /> Tải extension xác nhận session
               </a>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Tải zip, giải nén, mở chrome://extensions, bật Developer mode, chọn Load unpacked rồi chọn đúng thư mục có file manifest.json. Chrome không hiện file bên trong, chỉ cần bấm Select Folder.
-                {!extensionAvailable && ' Nếu tải lỗi 404 nghĩa là server production chưa publish artifact extension.'}
+                Với dashboard stream nhiều tài khoản, ưu tiên chạy Runtime và nhập mã kết nối. Extension dùng khi cần xác nhận Chrome cá nhân đã có Facebook thật.
+                {!extensionAvailable && ' Nếu tải extension lỗi 404 nghĩa là server production chưa publish artifact extension.'}
               </p>
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Ghép thiết bị với workspace</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Tạo mã rồi dán vào popup THG Extension trên Chrome cá nhân. Sau khi ghép thành công, extension tự online lại bằng token riêng.
+                Tạo mã rồi dán vào THG Local Runtime. Nếu chỉ cần xác nhận Chrome cá nhân, có thể dán mã vào THG Extension.
               </p>
               {dashboardServer && (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 9 }}>
@@ -208,7 +243,7 @@ function LocalConnectorPanel({
                 </div>
               )}
               <p style={{ color: '#fef3c7', fontSize: 10, lineHeight: 1.45, marginBottom: 8 }}>
-                THG server trong extension phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần và hết hạn sau 10 phút.
+                THG server trong Runtime/Extension phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần và hết hạn sau 10 phút.
               </p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -258,20 +293,20 @@ function LocalConnectorPanel({
             </div>
 
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Mở tab Facebook thật</p>
+              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Chạy Facebook trong Browser dashboard</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Mở facebook.com trong Chrome cá nhân đã đăng nhập. Bấm Sync now trong extension nếu dashboard chưa nhận tín hiệu ngay.
+                Bấm Chạy Facebook trên account. Runtime sẽ mở Chrome profile riêng trên máy nhân viên và stream về website, không giật tab Chrome cá nhân.
               </p>
               <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không nhập mật khẩu Facebook vào THG</span>
             </div>
 
-            <div style={{ border: `1px solid ${facebookConnected ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: facebookConnected ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard nhận tín hiệu thật</p>
+            <div style={{ border: `1px solid ${runtimeOnline ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
+              <p style={{ color: runtimeOnline ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard nhận stream thật</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Khi thiết bị báo Đã kết nối Facebook, agent mới được phép dùng session đó để quan sát và chạy automation.
+                Khi Runtime online, Browser tab sẽ nhận ảnh từ Chrome profile local và agent mới được phép chạy crawler/comment/inbox qua kênh đó.
               </p>
-              <span style={{ color: facebookConnected ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                {facebookConnected ? <CheckCircle size={13} /> : <Radio size={13} />} {facebookConnected ? 'Đã kết nối Facebook' : online ? 'Máy online, đang chờ Chrome/Facebook' : 'Đang chờ máy kết nối'}
+              <span style={{ color: runtimeOnline ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime đã sẵn sàng stream' : online ? 'Extension online, cần Runtime để stream dashboard' : 'Đang chờ máy kết nối'}
               </span>
             </div>
           </div>
@@ -280,7 +315,7 @@ function LocalConnectorPanel({
 
       {connectors.length === 0 ? (
         <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>
-          Chưa có Chrome cá nhân nào kết nối. Cài THG Extension, nhập mã kết nối, rồi mở tab Facebook đã đăng nhập trên Chrome đó.
+          Chưa có thiết bị nào kết nối. Cài THG Local Runtime để stream Browser dashboard, tạo mã kết nối, rồi nhập mã trong app.
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
@@ -351,7 +386,7 @@ function LocalChromeViewer({
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
             <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome thật trên máy nhân viên</p>
             <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              THG Extension sẽ tự mở hoặc chuyển sang tab Facebook trên Chrome cá nhân để gửi ảnh về dashboard. Nếu chưa thấy ảnh sau 30 giây, mở popup THG Extension và bấm Đồng bộ.
+              THG Local Runtime sẽ chạy Chrome profile riêng trên máy nhân viên và gửi ảnh về dashboard. Chrome cá nhân của nhân viên không bị tự chuyển tab.
             </p>
           </div>
         )}
@@ -524,11 +559,15 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   }, [selectedId, selectedWs?.running, selectedIsLocal, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const running = workspaces.filter(w => w.running).length;
-  const hasOnlineConnector = connectors.some(c => c.online);
+  const hasOnlineConnector = connectors.some(c => c.online && isDashboardStreamConnector(c));
 
   const handleNewSession = async () => {
     if (!connectors.some(c => c.online)) {
-      setBrowserNotice('Chưa xác nhận được kênh kết nối Chrome cá nhân. Mở THG Chrome Helper trên Chrome đã đăng nhập Facebook, bấm Đồng bộ, rồi thực hiện lại.');
+      setBrowserNotice('Chưa có thiết bị nào online. Mở THG Local Runtime, nhập mã kết nối mới, rồi thực hiện lại.');
+      return;
+    }
+    if (!connectors.some(c => c.online && isDashboardStreamConnector(c))) {
+      setBrowserNotice('Extension đã online nhưng chưa có THG Local Runtime để stream Browser dashboard. Tải Runtime cho hệ điều hành của bạn, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
       return;
     }
     setNewLoading(true);
@@ -536,7 +575,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
-      setBrowserNotice('Đã tạo phiên Facebook local. THG Extension sẽ tự mở hoặc chuyển sang tab Facebook thật trên Chrome cá nhân để gửi ảnh về dashboard. Nếu chưa thấy ảnh sau 30 giây, mở popup THG Extension và bấm Đồng bộ.');
+      setBrowserNotice('Đã tạo phiên Facebook local. THG Local Runtime sẽ chạy Chrome profile riêng trên máy nhân viên và stream ảnh về Browser dashboard.');
     } catch (e) {
       setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
@@ -668,13 +707,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                     e.stopPropagation();
                     setBrowserNotice(null);
                     if (!hasOnlineConnector) {
-                      setBrowserNotice('Thiết bị Chrome chưa sẵn sàng cho phiên này. Mở THG Chrome Helper, bấm Đồng bộ, hoặc tạo mã kết nối mới nếu thiết bị chưa được ghép với workspace.');
+                      setBrowserNotice('Extension đã online nhưng Browser dashboard cần THG Local Runtime để stream chuyên nghiệp. Tải Runtime cho hệ điều hành của bạn, nhập mã kết nối mới, rồi bấm Chạy Facebook.');
                       return;
                     }
                     void start(w.accountId)
                       .then(() => {
                         setSelectedId(w.accountId);
-                        setBrowserNotice('Đang kết nối tab Facebook thật. THG Extension sẽ tự mở hoặc chuyển sang facebook.com trên Chrome cá nhân, sau đó stream ảnh về dashboard.');
+                        setBrowserNotice('Đang chạy Facebook trên THG Local Runtime. Browser dashboard sẽ nhận ảnh từ Chrome profile local thay vì mở tab Chrome cá nhân.');
                         void refreshLocalScreen(w.accountId);
                       })
                       .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
