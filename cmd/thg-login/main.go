@@ -317,6 +317,7 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate("https://www.facebook.com"),
 		chromedp.Sleep(2*time.Second),
+		installFacebookLoginCapture(),
 	); err != nil {
 		cancel()
 		allocCancel()
@@ -643,6 +644,7 @@ func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVis
 			}
 			return nil
 		}),
+		installFacebookLoginCapture(),
 		chromedp.Evaluate(`(() => {
 			const email = document.querySelector('input[name="email"], input#email');
 			const pass = document.querySelector('input[name="pass"], input#pass');
@@ -650,12 +652,63 @@ func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVis
 			const loginForm = document.querySelector('form[action*="login"], form[action*="/login/"]');
 			return Boolean((email && pass) || (loginForm && loginButton));
 		})()`, loginFormVisible),
-		chromedp.Evaluate(`(() => {
-			const email = document.querySelector('input[name="email"], input#email');
-			if (!email) return "";
-			return String(email.value || email.getAttribute("value") || "").trim().slice(0, 320);
-		})()`, loginIdentifier),
+		chromedp.Evaluate(facebookLoginIdentifierScript(), loginIdentifier),
 	}
+}
+
+func installFacebookLoginCapture() chromedp.Action {
+	return chromedp.Evaluate(`(() => {
+		try {
+			const key = "__thg_last_facebook_login_identifier";
+			const selectors = [
+				'input[name="email"]',
+				'input#email',
+				'input[autocomplete="username"]',
+				'input[type="email"]'
+			];
+			const field = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+			if (!field) return false;
+			const remember = () => {
+				const value = String(field.value || field.getAttribute("value") || "").trim();
+				if (value) {
+					window.localStorage.setItem(key, value.slice(0, 320));
+				}
+			};
+			remember();
+			if (!field.dataset.thgLoginCaptureBound) {
+				field.dataset.thgLoginCaptureBound = "1";
+				["input", "change", "keyup", "blur"].forEach((eventName) => {
+					field.addEventListener(eventName, remember, { passive: true });
+				});
+			}
+			return true;
+		} catch (_) {
+			return false;
+		}
+	})()`, nil)
+}
+
+func facebookLoginIdentifierScript() string {
+	return `(() => {
+		try {
+			const key = "__thg_last_facebook_login_identifier";
+			const stored = String(window.localStorage.getItem(key) || "").trim();
+			if (stored) return stored.slice(0, 320);
+			const selectors = [
+				'input[name="email"]',
+				'input#email',
+				'input[autocomplete="username"]',
+				'input[type="email"]'
+			];
+			const field = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+			if (!field) return "";
+			const value = String(field.value || field.getAttribute("value") || "").trim();
+			if (value) window.localStorage.setItem(key, value.slice(0, 320));
+			return value.slice(0, 320);
+		} catch (_) {
+			return "";
+		}
+	})()`
 }
 
 func normalizeEmailCandidate(value string) string {

@@ -1403,6 +1403,56 @@ func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool, fbUserID ...s
 	return err
 }
 
+// SetAccountFacebookIdentity stores the Facebook identity observed from the
+// local runtime. Email is updated only when the current session's Facebook ID is
+// compatible with the account slot, so a different Facebook profile cannot
+// silently overwrite another account's identity.
+func (s *Store) SetAccountFacebookIdentity(accountID int64, fbUserID, email string) error {
+	fbUserID = strings.TrimSpace(fbUserID)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if accountID <= 0 || fbUserID == "" {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var existingFBUserID string
+	err = tx.QueryRow(`SELECT COALESCE(fb_user_id,'') FROM accounts WHERE id = ?`, accountID).Scan(&existingFBUserID)
+	if err != nil {
+		return err
+	}
+	existingFBUserID = strings.TrimSpace(existingFBUserID)
+	if existingFBUserID != "" && existingFBUserID != fbUserID {
+		return fmt.Errorf("facebook profile mismatch for account slot")
+	}
+
+	if email != "" {
+		_, err = tx.Exec(
+			`UPDATE accounts
+			 SET browser_logged_in = 1,
+			     fb_user_id = ?,
+			     email = ?
+			 WHERE id = ?`,
+			fbUserID, email, accountID,
+		)
+	} else {
+		_, err = tx.Exec(
+			`UPDATE accounts
+			 SET browser_logged_in = 1,
+			     fb_user_id = ?
+			 WHERE id = ?`,
+			fbUserID, accountID,
+		)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SetAccountEmailIfBlank saves a verified login email without overwriting an
 // email that an admin already assigned to the account slot.
 func (s *Store) SetAccountEmailIfBlank(accountID int64, email string) error {

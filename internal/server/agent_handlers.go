@@ -339,9 +339,9 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 			})
 		}
 		if loggedIn {
-			_ = s.db.SetBrowserLoggedIn(body.AccountID, true, body.FBUserID)
-			if email := normalizeFacebookLoginEmail(body.LoginEmail); email != "" {
-				_ = s.db.SetAccountEmailIfBlank(body.AccountID, email)
+			email := normalizeFacebookLoginEmail(body.LoginEmail)
+			if err := s.db.SetAccountFacebookIdentity(body.AccountID, body.FBUserID, email); err != nil {
+				return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 			}
 			_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
 		} else if localFacebookNotReady(status) {
@@ -484,9 +484,9 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 		})
 	}
 	if loggedIn {
-		_ = s.db.SetBrowserLoggedIn(body.AccountID, true, body.FBUserID)
-		if email := normalizeFacebookLoginEmail(body.LoginEmail); email != "" {
-			_ = s.db.SetAccountEmailIfBlank(body.AccountID, email)
+		email := normalizeFacebookLoginEmail(body.LoginEmail)
+		if err := s.db.SetAccountFacebookIdentity(body.AccountID, body.FBUserID, email); err != nil {
+			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 		}
 		_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
 	} else if localFacebookNotReady(streamStatus) {
