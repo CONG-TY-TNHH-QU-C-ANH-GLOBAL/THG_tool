@@ -42,20 +42,65 @@ if [ -d "$ROOT/local-connector-extension" ]; then
     local binary="$1"
     local kit_name="$2"
     local runtime_name="$3"
+    local platform="$4"
     local kit_root="$OUTPUT_DIR/.kit-${kit_name%.zip}"
     rm -rf "$kit_root" "$OUTPUT_DIR/$kit_name"
     mkdir -p "$kit_root"
     cp "$OUTPUT_DIR/$binary" "$kit_root/$runtime_name"
+    local start_script
+    if [ "$platform" = "windows" ]; then
+      start_script="Start-THG-Local-Runtime.cmd"
+      cat > "$kit_root/$start_script" <<'EOF'
+@echo off
+setlocal
+cd /d "%~dp0"
+title THG Local Runtime
+echo ================================================
+echo              THG LOCAL RUNTIME
+echo ================================================
+echo.
+echo 1. Open the Browser dashboard and create a pairing code.
+echo 2. Paste the pairing code here when prompted.
+echo 3. Keep this window open while Facebook automation is running.
+echo.
+"%~dp0THG-Local-Runtime.exe" %*
+set EXITCODE=%ERRORLEVEL%
+echo.
+echo THG Local Runtime stopped with exit code %EXITCODE%.
+echo This window is kept open so you can read any message above.
+pause
+exit /b %EXITCODE%
+EOF
+    else
+      start_script="start-thg-local-runtime.sh"
+      cat > "$kit_root/$start_script" <<'EOF'
+#!/usr/bin/env bash
+set -e
+cd "$(dirname "$0")"
+echo "================================================"
+echo "             THG LOCAL RUNTIME"
+echo "================================================"
+echo
+echo "1. Open the Browser dashboard and create a pairing code."
+echo "2. Paste the pairing code here when prompted."
+echo "3. Keep this terminal open while Facebook automation is running."
+echo
+chmod +x ./thg-local-runtime 2>/dev/null || true
+./thg-local-runtime "$@"
+EOF
+      chmod 0755 "$kit_root/$start_script"
+    fi
     cat > "$kit_root/README.txt" <<EOF
 THG Local Kit
 
 This package contains:
 - THG Local Runtime: $runtime_name
+- Start script: $start_script
 
 Production flow:
 1. Open the THG Browser dashboard.
 2. Create a new pairing code.
-3. Run the THG Local Runtime and paste the pairing code.
+3. Run the start script and paste the pairing code.
 4. Keep the Runtime open, then click "Chay Facebook" in the dashboard.
 
 Security:
@@ -72,10 +117,10 @@ EOF
     rm -rf "$kit_root"
   }
 
-  package_kit thg-login-windows.exe thg-local-kit-windows.zip THG-Local-Runtime.exe
-  package_kit thg-login-linux thg-local-kit-linux.zip thg-local-runtime
-  package_kit thg-login-mac-intel thg-local-kit-mac-intel.zip thg-local-runtime
-  package_kit thg-login-mac-m1 thg-local-kit-mac-m1.zip thg-local-runtime
+  package_kit thg-login-windows.exe thg-local-kit-windows.zip THG-Local-Runtime.exe windows
+  package_kit thg-login-linux thg-local-kit-linux.zip thg-local-runtime unix
+  package_kit thg-login-mac-intel thg-local-kit-mac-intel.zip thg-local-runtime unix
+  package_kit thg-login-mac-m1 thg-local-kit-mac-m1.zip thg-local-runtime unix
 
   if [ -d "$ROOT/frontend" ]; then
     mkdir -p "$ROOT/frontend/public/downloads"

@@ -50,16 +50,62 @@ if (Test-Path $ExtensionDir) {
     }
     New-Item -ItemType Directory -Path $kitRoot -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $OutputDir $target.Name) -Destination (Join-Path $kitRoot $target.RuntimeName) -Force
+    if ($target.GOOS -eq "windows") {
+      @"
+@echo off
+setlocal
+cd /d "%~dp0"
+title THG Local Runtime
+echo ================================================
+echo              THG LOCAL RUNTIME
+echo ================================================
+echo.
+echo 1. Open the Browser dashboard and create a pairing code.
+echo 2. Paste the pairing code here when prompted.
+echo 3. Keep this window open while Facebook automation is running.
+echo.
+"%~dp0THG-Local-Runtime.exe" %*
+set EXITCODE=%ERRORLEVEL%
+echo.
+echo THG Local Runtime stopped with exit code %EXITCODE%.
+echo This window is kept open so you can read any message above.
+pause
+exit /b %EXITCODE%
+"@ | Set-Content -LiteralPath (Join-Path $kitRoot "Start-THG-Local-Runtime.cmd") -Encoding ASCII
+    } else {
+      @"
+#!/usr/bin/env bash
+set -e
+cd "`$(dirname "`$0")"
+echo "================================================"
+echo "             THG LOCAL RUNTIME"
+echo "================================================"
+echo
+echo "1. Open the Browser dashboard and create a pairing code."
+echo "2. Paste the pairing code here when prompted."
+echo "3. Keep this terminal open while Facebook automation is running."
+echo
+chmod +x ./thg-local-runtime 2>/dev/null || true
+./thg-local-runtime "`$@"
+"@ | Set-Content -LiteralPath (Join-Path $kitRoot "start-thg-local-runtime.sh") -Encoding ASCII
+    }
     @"
 THG Local Kit
 
 This package contains:
 - THG Local Runtime: $($target.RuntimeName)
+$(
+if ($target.GOOS -eq "windows") {
+"- Start script: Start-THG-Local-Runtime.cmd"
+} else {
+"- Start script: start-thg-local-runtime.sh"
+}
+)
 
 Production flow:
 1. Open the THG Browser dashboard.
 2. Create a new pairing code.
-3. Run the THG Local Runtime and paste the pairing code.
+3. Run the start script and paste the pairing code.
 4. Keep the Runtime open, then click "Chay Facebook" in the dashboard.
 
 Security:

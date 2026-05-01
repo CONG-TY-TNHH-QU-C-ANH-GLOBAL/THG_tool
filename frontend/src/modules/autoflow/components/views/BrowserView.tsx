@@ -206,14 +206,14 @@ function LocalConnectorPanel({
                 ))}
               </div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Người dùng chỉ cần tải Local Kit đúng hệ điều hành. Kit đã đóng gói sẵn các thành phần cần thiết để kết nối workspace và stream Browser dashboard.
+                Sau khi giải nén, chạy file Start trong kit. Windows dùng Start-THG-Local-Runtime.cmd để cửa sổ luôn mở cho bạn nhập mã kết nối.
               </p>
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Ghép thiết bị với workspace</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Tạo mã rồi dán vào THG Local Runtime. Sau khi ghép thành công, Runtime tự online lại bằng token riêng.
+                Tạo mã rồi dán vào cửa sổ THG Local Runtime. Sau khi ghép thành công, Runtime tự online lại bằng token riêng.
               </p>
               {dashboardServer && (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 9 }}>
