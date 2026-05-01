@@ -512,15 +512,21 @@ function LocalChromeViewer({
           }}
         />
         {screen?.imageData ? (
-          <img
-            ref={imgRef}
-            src={screen.imageData}
-            alt="Local Chrome Facebook"
-            onMouseDown={handlePointerDown}
-            onWheel={handleWheel}
-            onContextMenu={e => e.preventDefault()}
-            style={{ width: '100%', height: 'auto', display: 'block', background: '#000', cursor: 'crosshair', userSelect: 'none' }}
-          />
+          <div style={{ position: 'relative', width: '100%', lineHeight: 0 }}>
+            <img
+              ref={imgRef}
+              src={screen.imageData}
+              alt="Local Chrome Facebook"
+              style={{ width: '100%', height: 'auto', display: 'block', background: '#000', userSelect: 'none' }}
+            />
+            <div
+              aria-label="THG remote browser control surface"
+              onMouseDown={handlePointerDown}
+              onWheel={handleWheel}
+              onContextMenu={e => e.preventDefault()}
+              style={{ position: 'absolute', inset: 0, cursor: 'crosshair', background: 'transparent' }}
+            />
+          </div>
         ) : (
           <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />

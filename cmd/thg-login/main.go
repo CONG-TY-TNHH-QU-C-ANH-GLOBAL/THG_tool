@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -1193,13 +1194,30 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 		basePort = 9222
 	}
 	bridges := map[int64]*chromeBridge{}
-	ticker := time.NewTicker(frameInterval())
-	defer ticker.Stop()
+	var bridgeMu sync.RWMutex
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stop)
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	requestStop := func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+	copyBridges := func() map[int64]*chromeBridge {
+		bridgeMu.RLock()
+		defer bridgeMu.RUnlock()
+		out := make(map[int64]*chromeBridge, len(bridges))
+		for accountID, bridge := range bridges {
+			out[accountID] = bridge
+		}
+		return out
+	}
 	defer func() {
+		bridgeMu.Lock()
+		defer bridgeMu.Unlock()
 		for _, bridge := range bridges {
 			if bridge != nil && bridge.cancel != nil {
 				bridge.cancel()
@@ -1218,6 +1236,8 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 			return true
 		}
 		want := map[int64]browserTarget{}
+		bridgeMu.Lock()
+		defer bridgeMu.Unlock()
 		for _, target := range targets {
 			if target.AccountID <= 0 {
 				continue
@@ -1248,7 +1268,8 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 
 	sendFrames := func() bool {
 		best := probeExistingChromeStatus(basePort)
-		if len(bridges) == 0 {
+		current := copyBridges()
+		if len(current) == 0 {
 			if err := sendChromeStatus(serverURL, token, best); err != nil {
 				if isDeviceTokenRejected(err) {
 					fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
@@ -1257,7 +1278,7 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 				fmt.Println("[warn] chrome status failed:", err)
 			}
 		}
-		for _, bridge := range bridges {
+		for _, bridge := range current {
 			snap := snapshotChrome(bridge)
 			if best.AccountID == 0 || best.Status == "chrome_not_connected" || snap.Status == "facebook_logged_in" {
 				best = snap
@@ -1285,22 +1306,56 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 			fmt.Println("[warn] heartbeat failed:", err)
 			return true
 		}
-		fmt.Printf("heartbeat ok %s - %d Chrome profile(s) - %s\n", time.Now().Format("15:04:05"), len(bridges), connectorConsoleStatus(best))
+		fmt.Printf("heartbeat ok %s - %d Chrome profile(s) - %s\n", time.Now().Format("15:04:05"), len(current), connectorConsoleStatus(best))
 		return true
 	}
 
-	if !syncTargets() || !executePendingCommands(serverURL, token, bridges) || !sendFrames() {
+	if !syncTargets() || !sendFrames() {
 		return
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(inputPollInterval())
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if !executePendingCommands(serverURL, token, copyBridges()) {
+					requestStop()
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	defer func() {
+		requestStop()
+		wg.Wait()
+	}()
+
+	frameTicker := time.NewTicker(frameInterval())
+	defer frameTicker.Stop()
+	targetTicker := time.NewTicker(2 * time.Second)
+	defer targetTicker.Stop()
 	for {
 		select {
-		case <-ticker.C:
-			if !syncTargets() || !executePendingCommands(serverURL, token, bridges) || !sendFrames() {
+		case <-targetTicker.C:
+			if !syncTargets() {
+				return
+			}
+		case <-frameTicker.C:
+			if !sendFrames() {
 				return
 			}
 		case <-stop:
 			fmt.Println()
 			fmt.Println("Connector stopped.")
+			return
+		case <-done:
 			return
 		}
 	}
@@ -1333,6 +1388,20 @@ func frameInterval() time.Duration {
 		seconds = 30
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func inputPollInterval() time.Duration {
+	ms, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_INPUT_POLL_MS")))
+	if ms <= 0 {
+		ms = 250
+	}
+	if ms < 100 {
+		ms = 100
+	}
+	if ms > 2000 {
+		ms = 2000
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 func runHeartbeatLoop(serverURL, token string, bridge *chromeBridge) {
