@@ -1403,6 +1403,17 @@ func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool, fbUserID ...s
 	return err
 }
 
+// SetAccountEmailIfBlank saves a verified login email without overwriting an
+// email that an admin already assigned to the account slot.
+func (s *Store) SetAccountEmailIfBlank(accountID int64, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`UPDATE accounts SET email = ? WHERE id = ? AND COALESCE(NULLIF(email, ''), '') = ''`, email, accountID)
+	return err
+}
+
 // GetAllAccounts returns accounts scoped to an org. orgID=0 returns all (superadmin).
 func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
 	q := `SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,

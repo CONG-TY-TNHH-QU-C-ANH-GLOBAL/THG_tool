@@ -36,6 +36,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	type entry struct {
 		AccountID    int64      `json:"account_id"`
 		AccountName  string     `json:"account_name"`
+		Email        string     `json:"email,omitempty"`
 		Status       string     `json:"account_status"`
 		LoggedIn     bool       `json:"logged_in"`
 		FBUserID     string     `json:"fb_user_id,omitempty"`
@@ -54,6 +55,7 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 		e := entry{
 			AccountID:   acc.ID,
 			AccountName: acc.Name,
+			Email:       acc.Email,
 			Status:      string(acc.Status),
 			LoggedIn:    acc.BrowserLoggedIn,
 			FBUserID:    acc.FBUserID,

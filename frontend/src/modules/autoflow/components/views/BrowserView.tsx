@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen, sendConnectorInput } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff, Mail } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -356,12 +356,14 @@ function LocalChromeViewer({
   screen,
   accountId,
   accountName,
+  accountEmail,
   loading,
   onRefresh,
 }: {
   screen: LocalConnectorScreen | null;
   accountId: number;
   accountName?: string;
+  accountEmail?: string;
   loading: boolean;
   onRefresh: () => void;
 }) {
@@ -373,7 +375,7 @@ function LocalChromeViewer({
   const [inputStatus, setInputStatus] = useState<string | null>(null);
   const [inputActive, setInputActive] = useState(false);
   const age = screen?.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(screen.updatedAt).getTime()) / 1000)) : null;
-  const remoteInputEnabled = Boolean(screen?.imageData && (screen.fbUserId || screen.streamStatus === 'facebook_logged_in'));
+  const remoteInputEnabled = Boolean(screen?.imageData && screen.fbUserId && screen.streamStatus === 'facebook_logged_in');
 
   const queueInput = useCallback((type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>) => {
     if (!screen?.imageData || !remoteInputEnabled) return;
@@ -496,7 +498,8 @@ function LocalChromeViewer({
         </div>
         {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome local</span>}
         {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>remote fallback</span>}
-        {screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
+        {accountEmail && <span title={accountEmail} style={{ color: '#bfdbfe', border: '1px solid #3b82f644', background: '#1e3a8a33', borderRadius: 6, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Mail size={11} />{accountEmail}</span>}
+        {screen?.streamStatus === 'facebook_logged_in' && screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
         {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
         {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
         <button onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>
@@ -860,6 +863,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                   FB {w.fbUserId}
                 </span>
               )}
+              {w.email && (
+                <span title={w.email} style={{ fontSize: 11, color: '#bfdbfe', background: '#1e3a8a33', border: '1px solid #3b82f644', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Mail size={10} /> {w.email}
+                </span>
+              )}
               {w.browserState && (
                 <span style={{ fontSize: 11, color: tone.color, background: tone.bg, border: `1px solid ${tone.border}`, padding: '2px 8px', borderRadius: 6 }}>
                   {stateLabel(w.browserState)}
@@ -906,6 +914,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           screen={localScreen}
           accountId={selectedId}
           accountName={selectedWs.accountName}
+          accountEmail={selectedWs.email}
           loading={localScreenLoading}
           onRefresh={() => void refreshLocalScreen(selectedId)}
         />

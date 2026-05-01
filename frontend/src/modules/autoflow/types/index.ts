@@ -143,6 +143,7 @@ export interface FacebookStatus {
 export interface Workspace {
   accountId: number;
   accountName: string;
+  email?: string;
   accountStatus: string;
   loggedIn: boolean;
   fbUserId?: string;

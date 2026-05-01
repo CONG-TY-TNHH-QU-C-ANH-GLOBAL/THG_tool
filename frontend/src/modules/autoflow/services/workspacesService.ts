@@ -7,6 +7,7 @@ export async function getWorkspaces(): Promise<Workspace[]> {
     return res.workspaces.map(item => ({
       accountId: item.account_id,
       accountName: item.account_name,
+      email: item.email,
       accountStatus: item.account_status,
       loggedIn: item.logged_in,
       fbUserId: item.fb_user_id,

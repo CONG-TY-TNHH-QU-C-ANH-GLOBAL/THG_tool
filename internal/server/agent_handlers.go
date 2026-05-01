@@ -251,6 +251,7 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 		CapabilitiesJSON string `json:"capabilities_json"`
 		CurrentURL       string `json:"current_url"`
 		FBUserID         string `json:"fb_user_id"`
+		LoginEmail       string `json:"login_email"`
 		StreamStatus     string `json:"stream_status"`
 	}
 	_ = c.BodyParser(&body)
@@ -294,6 +295,7 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 		AccountID    int64  `json:"account_id"`
 		CurrentURL   string `json:"current_url"`
 		FBUserID     string `json:"fb_user_id"`
+		LoginEmail   string `json:"login_email"`
 		StreamStatus string `json:"stream_status"`
 	}
 	_ = c.BodyParser(&body)
@@ -308,7 +310,25 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 		FBUserID:          body.FBUserID,
 		StreamStatus:      status,
 	})
+	loggedIn := strings.EqualFold(status, "facebook_logged_in") && strings.TrimSpace(body.FBUserID) != ""
 	if body.AccountID > 0 && orgID > 0 {
+		acc, err := s.db.GetAccount(body.AccountID)
+		if err != nil || acc == nil || acc.OrgID != orgID {
+			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+		}
+		if loggedIn && body.FBUserID != "" && acc.FBUserID != "" && acc.FBUserID != body.FBUserID {
+			if appStore, err := store.NewAppStore(s.db); err == nil {
+				_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
+					AccountID:    body.AccountID,
+					OrgID:        orgID,
+					Status:       "local_error",
+					StartedAt:    time.Now().UTC(),
+					LastActiveAt: time.Now().UTC(),
+					ErrorMsg:     "Facebook profile mismatch; create a separate account slot for this Facebook user",
+				})
+			}
+			return c.Status(409).JSON(fiber.Map{"error": "facebook profile mismatch for this account slot"})
+		}
 		if appStore, err := store.NewAppStore(s.db); err == nil {
 			_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
 				AccountID:    body.AccountID,
@@ -318,9 +338,14 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 				LastActiveAt: time.Now().UTC(),
 			})
 		}
-		if body.FBUserID != "" {
+		if loggedIn {
 			_ = s.db.SetBrowserLoggedIn(body.AccountID, true, body.FBUserID)
+			if email := normalizeFacebookLoginEmail(body.LoginEmail); email != "" {
+				_ = s.db.SetAccountEmailIfBlank(body.AccountID, email)
+			}
 			_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
+		} else if localFacebookNotReady(status) {
+			_ = s.db.SetBrowserLoggedIn(body.AccountID, false)
 		}
 	}
 	return c.JSON(fiber.Map{
@@ -398,6 +423,7 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 		ImageData    string `json:"image_data"`
 		CurrentURL   string `json:"current_url"`
 		FBUserID     string `json:"fb_user_id"`
+		LoginEmail   string `json:"login_email"`
 		StreamStatus string `json:"stream_status"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -436,6 +462,7 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 	if streamStatus == "" {
 		streamStatus = "connector_online"
 	}
+	loggedIn := strings.EqualFold(streamStatus, "facebook_logged_in") && strings.TrimSpace(body.FBUserID) != ""
 	if err := s.db.UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, streamStatus); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -456,12 +483,37 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 			ErrorMsg:     "",
 		})
 	}
-	if body.FBUserID != "" {
+	if loggedIn {
 		_ = s.db.SetBrowserLoggedIn(body.AccountID, true, body.FBUserID)
+		if email := normalizeFacebookLoginEmail(body.LoginEmail); email != "" {
+			_ = s.db.SetAccountEmailIfBlank(body.AccountID, email)
+		}
 		_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
+	} else if localFacebookNotReady(streamStatus) {
+		_ = s.db.SetBrowserLoggedIn(body.AccountID, false)
 	}
 
 	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})
+}
+
+func normalizeFacebookLoginEmail(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || len(value) > 320 {
+		return ""
+	}
+	if strings.ContainsAny(value, " \t\r\n") || !strings.Contains(value, "@") {
+		return ""
+	}
+	return value
+}
+
+func localFacebookNotReady(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "facebook_login_required", "facebook_human_required", "chrome_not_connected":
+		return true
+	default:
+		return false
+	}
 }
 
 func localSessionStatusFromStream(status string) string {
