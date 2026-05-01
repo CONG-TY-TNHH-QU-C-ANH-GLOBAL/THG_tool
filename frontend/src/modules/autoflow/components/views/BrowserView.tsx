@@ -65,10 +65,10 @@ const EXTENSION_DOWNLOAD: { key: DownloadKey; label: string; href: string } = {
 };
 
 const RUNTIME_DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
-  { key: 'windows', label: 'Windows Runtime', href: '/downloads/thg-login-windows.exe' },
-  { key: 'mac_m1', label: 'macOS Apple Silicon', href: '/downloads/thg-login-mac-m1' },
-  { key: 'mac_intel', label: 'macOS Intel', href: '/downloads/thg-login-mac-intel' },
-  { key: 'linux', label: 'Linux Runtime', href: '/downloads/thg-login-linux' },
+  { key: 'local_kit_windows', label: 'Windows', href: '/downloads/thg-local-kit-windows.zip' },
+  { key: 'local_kit_mac_m1', label: 'macOS Apple Silicon', href: '/downloads/thg-local-kit-mac-m1.zip' },
+  { key: 'local_kit_mac_intel', label: 'macOS Intel', href: '/downloads/thg-local-kit-mac-intel.zip' },
+  { key: 'local_kit_linux', label: 'Linux', href: '/downloads/thg-local-kit-linux.zip' },
 ];
 
 function connectorCapabilities(connector: LocalConnector): Record<string, unknown> {
@@ -197,9 +197,9 @@ function LocalConnectorPanel({
         <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, background: '#07131f' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Local Runtime</p>
+              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Local Kit</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Runtime chạy Chrome profile riêng trên máy nhân viên và stream ảnh về dashboard. Chrome cá nhân sẽ không bị tự chuyển tab.
+                Một gói theo hệ điều hành, bên trong có cả Runtime và extension. Runtime stream Chrome profile riêng về dashboard.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {RUNTIME_DOWNLOADS.map(item => (
@@ -208,7 +208,7 @@ function LocalConnectorPanel({
                     href={item.href}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700, opacity: systemInfo?.agent_builds?.[item.key] === false ? 0.5 : 1 }}
                   >
-                    <Laptop size={13} /> {item.label}
+                    <Laptop size={13} /> Tải Kit {item.label}
                   </a>
                 ))}
               </div>
@@ -216,10 +216,10 @@ function LocalConnectorPanel({
                 href={EXTENSION_DOWNLOAD.href}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 7, border: '1px solid #334155', background: theme.surfaceAlt, color: theme.textMuted, textDecoration: 'none', fontSize: 11, fontWeight: 700, marginTop: 8 }}
               >
-                <Puzzle size={12} /> Tải extension xác nhận session
+                <Puzzle size={12} /> Extension riêng cho debug
               </a>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Với dashboard stream nhiều tài khoản, ưu tiên chạy Runtime và nhập mã kết nối. Extension dùng khi cần xác nhận Chrome cá nhân đã có Facebook thật.
+                Người dùng bình thường chỉ tải Local Kit. Link extension riêng chỉ để debug hoặc cài lại helper mà không tải runtime.
                 {!extensionAvailable && ' Nếu tải extension lỗi 404 nghĩa là server production chưa publish artifact extension.'}
               </p>
             </div>

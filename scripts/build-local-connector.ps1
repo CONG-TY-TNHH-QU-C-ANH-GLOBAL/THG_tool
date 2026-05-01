@@ -16,10 +16,10 @@ if (-not $env:GOCACHE) {
 $env:CGO_ENABLED = "0"
 
 $targets = @(
-  @{ GOOS = "windows"; GOARCH = "amd64"; Name = "thg-login-windows.exe" },
-  @{ GOOS = "linux"; GOARCH = "amd64"; Name = "thg-login-linux" },
-  @{ GOOS = "darwin"; GOARCH = "amd64"; Name = "thg-login-mac-intel" },
-  @{ GOOS = "darwin"; GOARCH = "arm64"; Name = "thg-login-mac-m1" }
+  @{ GOOS = "windows"; GOARCH = "amd64"; Name = "thg-login-windows.exe"; Kit = "thg-local-kit-windows.zip" },
+  @{ GOOS = "linux"; GOARCH = "amd64"; Name = "thg-login-linux"; Kit = "thg-local-kit-linux.zip" },
+  @{ GOOS = "darwin"; GOARCH = "amd64"; Name = "thg-login-mac-intel"; Kit = "thg-local-kit-mac-intel.zip" },
+  @{ GOOS = "darwin"; GOARCH = "arm64"; Name = "thg-login-mac-m1"; Kit = "thg-local-kit-mac-m1.zip" }
 )
 
 foreach ($target in $targets) {
@@ -38,10 +38,49 @@ if (Test-Path $ExtensionDir) {
   }
   Write-Host "Packaging thg-chrome-extension.zip"
   Compress-Archive -Path (Join-Path $ExtensionDir "*") -DestinationPath $ExtensionZip -Force
+
+  foreach ($target in $targets) {
+    $kitZip = Join-Path $OutputDir $target.Kit
+    $kitRoot = Join-Path $OutputDir ("kit-" + [IO.Path]::GetFileNameWithoutExtension($target.Kit))
+    if (Test-Path $kitZip) {
+      Remove-Item -LiteralPath $kitZip -Force
+    }
+    if (Test-Path $kitRoot) {
+      Remove-Item -LiteralPath $kitRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $kitRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $kitRoot "extension") -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $OutputDir $target.Name) -Destination (Join-Path $kitRoot $target.Name) -Force
+    Copy-Item -Path (Join-Path $ExtensionDir "*") -Destination (Join-Path $kitRoot "extension") -Recurse -Force
+    @"
+THG Local Kit
+
+This package contains:
+- THG Local Runtime: $($target.Name)
+- THG Chrome Extension: extension/
+
+Production flow:
+1. Open the THG Browser dashboard.
+2. Create a new pairing code.
+3. Run the THG Local Runtime and paste the pairing code.
+4. Keep the Runtime open, then click "Chay Facebook" in the dashboard.
+5. Optional: load the extension folder in Chrome if the workspace needs to verify a personal Facebook session.
+
+Security:
+- Do not enter your Facebook password into THG.
+- Runtime runs isolated local Chrome profiles and streams them to the dashboard.
+- Extension only verifies an existing signed-in Chrome/Facebook session.
+"@ | Set-Content -LiteralPath (Join-Path $kitRoot "README.txt") -Encoding UTF8
+    Write-Host "Packaging $($target.Kit)"
+    Compress-Archive -Path (Join-Path $kitRoot "*") -DestinationPath $kitZip -Force
+    Remove-Item -LiteralPath $kitRoot -Recurse -Force
+  }
+
   $FrontendDownloads = Join-Path $Root "frontend\public\downloads"
   if (Test-Path (Join-Path $Root "frontend")) {
     New-Item -ItemType Directory -Path $FrontendDownloads -Force | Out-Null
     Copy-Item -LiteralPath $ExtensionZip -Destination (Join-Path $FrontendDownloads "thg-chrome-extension.zip") -Force
+    Copy-Item -Path (Join-Path $OutputDir "thg-local-kit-*.zip") -Destination $FrontendDownloads -Force
   }
 }
 

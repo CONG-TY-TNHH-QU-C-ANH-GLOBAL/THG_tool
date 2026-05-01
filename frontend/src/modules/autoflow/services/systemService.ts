@@ -8,6 +8,10 @@ export interface SystemInfo {
     mac_m1?: boolean;
     linux?: boolean;
     chrome_extension?: boolean;
+    local_kit_windows?: boolean;
+    local_kit_mac_m1?: boolean;
+    local_kit_mac_intel?: boolean;
+    local_kit_linux?: boolean;
   };
 }
 

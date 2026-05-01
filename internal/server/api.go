@@ -119,11 +119,15 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
 		downloadsDir := filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads")
 		agentBuilds := fiber.Map{
-			"windows":          fileExists(filepath.Join(downloadsDir, "thg-login-windows.exe")),
-			"mac_intel":        fileExists(filepath.Join(downloadsDir, "thg-login-mac-intel")),
-			"mac_m1":           fileExists(filepath.Join(downloadsDir, "thg-login-mac-m1")),
-			"linux":            fileExists(filepath.Join(downloadsDir, "thg-login-linux")),
-			"chrome_extension": fileExists(filepath.Join(downloadsDir, "thg-chrome-extension.zip")),
+			"windows":             fileExists(filepath.Join(downloadsDir, "thg-login-windows.exe")),
+			"mac_intel":           fileExists(filepath.Join(downloadsDir, "thg-login-mac-intel")),
+			"mac_m1":              fileExists(filepath.Join(downloadsDir, "thg-login-mac-m1")),
+			"linux":               fileExists(filepath.Join(downloadsDir, "thg-login-linux")),
+			"chrome_extension":    fileExists(filepath.Join(downloadsDir, "thg-chrome-extension.zip")),
+			"local_kit_windows":   fileExists(filepath.Join(downloadsDir, "thg-local-kit-windows.zip")),
+			"local_kit_mac_m1":    fileExists(filepath.Join(downloadsDir, "thg-local-kit-mac-m1.zip")),
+			"local_kit_mac_intel": fileExists(filepath.Join(downloadsDir, "thg-local-kit-mac-intel.zip")),
+			"local_kit_linux":     fileExists(filepath.Join(downloadsDir, "thg-local-kit-linux.zip")),
 		}
 		return c.JSON(fiber.Map{
 			"headless":     cfg.Headless,
