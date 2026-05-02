@@ -88,10 +88,29 @@ export async function getAuditLogs(): Promise<AuditLog[]> {
   return res.logs ?? [];
 }
 
-export async function getBusinessContext(): Promise<{ business_profile: string; private_files: string; data_sources: string }> {
+export interface BusinessContext {
+  business_profile: string;
+  business_name: string;
+  business_industry: string;
+  services: string;
+  target_customers: string;
+  target_author_role: string;
+  target_signals: string;
+  negative_signals: string;
+  business_location: string;
+  markets: string;
+  business_usp: string;
+  tone: string;
+  approval_policy: string;
+  reject_rules: string;
+  private_files: string;
+  data_sources: string;
+}
+
+export async function getBusinessContext(): Promise<BusinessContext> {
   return api.get('/context/business');
 }
 
-export async function saveBusinessContext(businessProfile: string): Promise<void> {
-  await api.put('/context/business', { business_profile: businessProfile });
+export async function saveBusinessContext(context: Partial<BusinessContext>): Promise<void> {
+  await api.put('/context/business', context);
 }

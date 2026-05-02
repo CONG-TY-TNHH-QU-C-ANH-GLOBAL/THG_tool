@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, CheckCircle, Cpu, RefreshCw, Send, UserRound } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, CheckCircle, Clock, Cpu, RefreshCw, Send, UserRound } from 'lucide-react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { getAgentHistory, sendAgentPrompt } from '../../services/agentChatService';
+import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
 
 interface WorkspaceChatViewProps { orgId: string; }
 
@@ -20,18 +21,42 @@ function nowLabel() {
   return new Date().toLocaleTimeString('vi', { hour: '2-digit', minute: '2-digit' });
 }
 
+function scheduleLabel(value: string | undefined) {
+  if (!value) return '-';
+  const ts = new Date(value).getTime();
+  if (!Number.isFinite(ts)) return '-';
+  const diff = ts - Date.now();
+  if (diff <= 0) return 'đang chờ lượt chạy';
+  const minutes = Math.ceil(diff / 60000);
+  return minutes < 60 ? `còn ${minutes} phút` : new Date(value).toLocaleString('vi', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+}
+
 export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   void orgId;
   const { workspaces, refresh } = useWorkspaces();
   const [accountId, setAccountId] = useState<number | ''>('');
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [crawlIntents, setCrawlIntents] = useState<CrawlIntent[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [loadingIntents, setLoadingIntents] = useState(true);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const activeAccounts = useMemo(() => workspaces.filter(w => w.running || w.loggedIn), [workspaces]);
   const selectedAccount = activeAccounts.find(w => w.accountId === accountId);
+  const enabledIntents = crawlIntents.filter(i => i.enabled);
+
+  const loadCrawlIntents = useCallback(async () => {
+    setLoadingIntents(true);
+    try {
+      setCrawlIntents(await getCrawlIntents());
+    } catch {
+      setCrawlIntents([]);
+    } finally {
+      setLoadingIntents(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (accountId !== '' || activeAccounts.length === 0) return;
@@ -59,6 +84,10 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   }, []);
 
   useEffect(() => {
+    void loadCrawlIntents();
+  }, [loadCrawlIntents]);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
 
@@ -73,6 +102,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
       const response = await sendAgentPrompt(text, accountId === '' ? undefined : accountId);
       setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: response, time: nowLabel(), ok: true }]);
       void refresh();
+      void loadCrawlIntents();
     } catch (e) {
       setMessages(prev => [...prev, {
         id: `e-${Date.now()}`,
@@ -161,7 +191,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                 void handleSend();
               }
             }}
-            placeholder="Nhập lệnh scraper..."
+            placeholder="Nhập prompt cho Agent..."
             rows={3}
             style={{ flex: 1, resize: 'none', background: theme.border, border: '1px solid #374151', borderRadius: 9, color: '#fff', outline: 'none', padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}
           />
@@ -220,6 +250,36 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             <CheckCircle size={14} color={activeAccounts.length > 0 ? '#4ade80' : theme.textMuted} />
             <span>{activeAccounts.length} browser workspace</span>
           </div>
+        </div>
+
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12 }}>
+          <p style={{ color: theme.text, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Automation 24/7</p>
+          {loadingIntents && (
+            <div style={{ color: theme.textMuted, fontSize: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
+              <RefreshCw size={13} className="spin" /> Đang tải lịch crawl
+            </div>
+          )}
+          {!loadingIntents && enabledIntents.length === 0 && (
+            <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.5 }}>
+              Chưa có lịch tự động. Prompt crawl đầu tiên sẽ dạy hệ thống nguồn và tệp khách cần theo dõi.
+            </p>
+          )}
+          {!loadingIntents && enabledIntents.slice(0, 4).map(intent => (
+            <div key={intent.id} style={{ borderTop: `1px solid ${theme.border}`, paddingTop: 9, marginTop: 9 }}>
+              <p style={{ color: theme.text, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {intent.name || intent.source_type}
+              </p>
+              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {intent.source_url}
+              </p>
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: theme.textMuted, fontSize: 11 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Clock size={12} /> mỗi {intent.interval_minutes} phút
+                </span>
+                <span style={{ color: intent.last_error ? '#fca5a5' : '#86efac' }}>{intent.last_error ? 'có lỗi' : scheduleLabel(intent.next_run_at)}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

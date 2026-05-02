@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties } from 'react';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
-import { theme, cardStyle, primaryBtn, secondaryBtn } from '../constants/styles';
+import { theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
 import { useStaff } from '../hooks/useStaff';
 import { changePassword } from '../services/authService';
 import {
@@ -39,17 +39,7 @@ interface SettingsPageProps { org: Organization; orgId: string; isAdmin: boolean
 
 type SettingsTab = 'brand' | 'security' | 'staff' | 'agents' | 'billing';
 
-const inputStyle: CSSProperties = {
-  background: '#2a2f45',
-  border: '1px solid #374151',
-  borderRadius: 9,
-  padding: '10px 14px',
-  color: '#fff',
-  fontSize: 13,
-  outline: 'none',
-  width: '100%',
-  boxSizing: 'border-box',
-};
+const inputStyle: CSSProperties = baseInputStyle;
 
 const Label = ({ text }: { text: string }) => (
   <p style={{ color: theme.textFaint, fontSize: 12, marginBottom: 5 }}>{text}</p>

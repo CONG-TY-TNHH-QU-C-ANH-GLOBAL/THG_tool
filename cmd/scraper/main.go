@@ -34,7 +34,7 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logstream.Install() // capture all log.Printf output for the Logs dashboard page
-	log.Println("🕷️  THG Agentic Scraper v2 — Starting...")
+	log.Println("THG AutoFlow Agent Workspace — Starting...")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -196,12 +196,17 @@ func main() {
 	}
 
 	// Initialize AI Agent (OpenAI Function Calling) — v2
+	var telegramNotify func(string)
 	var agent *ai.Agent
 	var msgGen *ai.MessageGenerator
 	if cfg.OpenAIAPIKey != "" {
 		msgGen = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
 		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
-		agent.ActionHandler = makeAgentActionHandler(db, jobStore, msgGen)
+		agent.ActionHandler = makeAgentActionHandler(db, jobStore, msgGen, func(msg string) {
+			if telegramNotify != nil {
+				telegramNotify(msg)
+			}
+		})
 		log.Printf("✅ AI Agent initialized (model: %s)", cfg.OpenAICommentModel)
 	} else {
 		log.Println("⚠️  OPENAI_API_KEY not set, AI Agent disabled")
@@ -217,6 +222,7 @@ func main() {
 		if err != nil {
 			log.Printf("⚠️  Telegram bot init failed: %v", err)
 		} else {
+			telegramNotify = bot.Notify
 			log.Println("✅ Telegram bot initialized")
 		}
 	} else {
@@ -228,6 +234,9 @@ func main() {
 		go bot.Start()
 		defer bot.Stop()
 	}
+
+	go runCrawlIntentScheduler(ctx, db, jobStore, time.Minute)
+	log.Println("✅ Recurring crawl intent scheduler started (org plans → 30m+ automation)")
 
 	// Start web server (non-blocking)
 	srv := server.New(db, jobStore, agent, workspaceMgr, server.Config{
@@ -255,6 +264,11 @@ func main() {
 			InsecureSkipVerify: cfg.SMTPSkipVerify,
 			Timeout:            10 * time.Second,
 		},
+		Notifier: func(msg string) {
+			if telegramNotify != nil {
+				telegramNotify(msg)
+			}
+		},
 	})
 
 	srv.SetSessionRegistry(sessionReg)
@@ -279,7 +293,7 @@ func main() {
 	cancel() // stop health checker and other ctx-bound goroutines
 }
 
-func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.MessageGenerator) func(string, map[string]any) (string, error) {
+func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.MessageGenerator, notify func(string)) func(string, map[string]any) (string, error) {
 	return func(action string, args map[string]any) (string, error) {
 		switch action {
 		case "set_context":
@@ -353,8 +367,6 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 				return "", fmt.Errorf("scrape_comments requires post_url")
 			}
 			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_post", URL: u, Label: "prompt_post"}}, args)
-		case "scrape_all":
-			return "", fmt.Errorf("scrape_all fixed configured groups is disabled in production; ask for a target URL or search query")
 		case "classify_leads":
 			return "classification runs inline during every crawler job using the current business context", nil
 		case "search_groups":
@@ -365,11 +377,11 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			searchURL := "https://www.facebook.com/search/groups/?q=" + url.QueryEscape(query)
 			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_search", URL: searchURL, Label: "group_search"}}, args)
 		case "auto_comment", "comment_all_leads":
-			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args)
+			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args, notify)
 		case "auto_inbox", "inbox_all_leads":
-			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args)
+			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args, notify)
 		case "create_job_post":
-			return queueGroupPost(context.Background(), db, msgGen, args)
+			return queueGroupPost(context.Background(), db, msgGen, args, notify)
 		default:
 			return "", fmt.Errorf("agent action %q is not wired to a production handler yet", action)
 		}
@@ -418,6 +430,9 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 		ExecutionMode:       "async",
 		OutputSchema:        "open_crawler_v1",
 		OutputSchemaVersion: "1",
+	}
+	if db != nil && !argBool(args, "_recurring_run") {
+		rememberRecurringCrawlIntents(ctx, db, task, args)
 	}
 	payload, err := json.Marshal(task)
 	if err != nil {
@@ -493,10 +508,134 @@ func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Ta
 	if sess != nil && sess.CDPPort > 0 && (sess.Status == "idle" || sess.Status == "ready" || sess.Status == "active") {
 		return "", false, nil
 	}
-	return "", true, fmt.Errorf("Facebook account #%d đã lưu session nhưng chưa có THG Local Runtime stream online để chạy crawl thật. Mở Browser, chạy lại THG Local Kit và chờ trạng thái Facebook local ready rồi gửi lại lệnh", task.AccountID)
+	return "", true, fmt.Errorf("Facebook account #%d is saved, but THG Local Runtime is not online for this account yet. Open Browser, run THG Local Kit, wait for Facebook local ready, then send the prompt again", task.AccountID)
 }
 
-func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any) (string, error) {
+func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *jobs.Task, args map[string]any) {
+	if db == nil || task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
+		return
+	}
+	prompt := argString(args, "user_prompt")
+	intervalMinutes := int(argInt64(args, "interval_minutes"))
+	maxItems := task.CrawlPlan.MaxItems
+	for _, src := range task.CrawlPlan.Sources {
+		if !isRecurringCrawlSource(src) {
+			continue
+		}
+		intent, err := db.UpsertCrawlIntent(ctx, store.CrawlIntent{
+			OrgID:           task.OrgID,
+			AccountID:       task.AccountID,
+			Name:            firstNonEmpty(argString(args, "name"), argString(args, "query")),
+			Prompt:          prompt,
+			Intent:          task.Intent,
+			SourceType:      src.Type,
+			SourceURL:       src.URL,
+			SourceLabel:     src.Label,
+			Keywords:        task.Keywords,
+			IntervalMinutes: intervalMinutes,
+			MaxItems:        maxItems,
+		})
+		if err != nil {
+			log.Printf("[CrawlIntent] remember failed org=%d account=%d source=%s: %v", task.OrgID, task.AccountID, src.URL, err)
+			continue
+		}
+		log.Printf("[CrawlIntent] remembered org=%d account=%d intent=%d interval=%dm source=%s", intent.OrgID, intent.AccountID, intent.ID, intent.IntervalMinutes, intent.SourceURL)
+	}
+}
+
+func isRecurringCrawlSource(src jobs.Source) bool {
+	switch strings.ToLower(strings.TrimSpace(src.Type)) {
+	case "facebook_group", "facebook_search", "web_url":
+		return strings.TrimSpace(src.URL) != ""
+	default:
+		return false
+	}
+}
+
+func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *jobs.Store, tickEvery time.Duration) {
+	if db == nil || jobStore == nil {
+		return
+	}
+	if tickEvery <= 0 {
+		tickEvery = time.Minute
+	}
+	run := func() {
+		if err := scheduleDueCrawlIntents(ctx, db, jobStore); err != nil {
+			log.Printf("[CrawlIntent] scheduler error: %v", err)
+		}
+	}
+	run()
+	ticker := time.NewTicker(tickEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *jobs.Store) error {
+	now := time.Now().UTC()
+	intents, err := db.ClaimDueCrawlIntents(ctx, now, 10)
+	if err != nil {
+		return err
+	}
+	for _, intent := range intents {
+		accountID := intent.AccountID
+		if accountID <= 0 {
+			if picked, pickErr := pickReadyFacebookAccountIDForCrawl(db, intent.OrgID); pickErr == nil {
+				accountID = picked
+			}
+		}
+		taskID := recurringCrawlTaskID(intent.ID, now, intent.IntervalMinutes)
+		if accountID <= 0 {
+			errMsg := "no ready Facebook account for recurring crawl"
+			_ = db.MarkCrawlIntentRunResult(ctx, intent.ID, taskID, errMsg)
+			log.Printf("[CrawlIntent] skipped intent=%d org=%d: %s", intent.ID, intent.OrgID, errMsg)
+			continue
+		}
+		args := map[string]any{
+			"org_id":         intent.OrgID,
+			"account_id":     accountID,
+			"keywords":       strings.Join(intent.Keywords, ", "),
+			"max_items":      intent.MaxItems,
+			"user_prompt":    intent.Prompt,
+			"_recurring_run": true,
+			"_task_id":       taskID,
+		}
+		source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: firstNonEmpty(intent.SourceLabel, "recurring_intent")}
+		result, submitErr := submitOpenCrawl(ctx, db, jobStore, intent.Intent, []jobs.Source{source}, args)
+		errMsg := ""
+		if submitErr != nil {
+			errMsg = submitErr.Error()
+		}
+		if err := db.MarkCrawlIntentRunResult(ctx, intent.ID, taskID, errMsg); err != nil {
+			log.Printf("[CrawlIntent] mark result failed intent=%d: %v", intent.ID, err)
+		}
+		if submitErr != nil {
+			log.Printf("[CrawlIntent] run failed intent=%d task=%s: %v", intent.ID, taskID, submitErr)
+			continue
+		}
+		log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s", intent.ID, taskID, result)
+	}
+	return nil
+}
+
+func recurringCrawlTaskID(intentID int64, now time.Time, intervalMinutes int) string {
+	if intervalMinutes <= 0 {
+		intervalMinutes = 30
+	}
+	bucketSeconds := int64(intervalMinutes * 60)
+	if bucketSeconds <= 0 {
+		bucketSeconds = 1800
+	}
+	return fmt.Sprintf("autocrawl-%d-%d", intentID, now.UTC().Unix()/bucketSeconds)
+}
+
+func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
 	orgID := argInt64(args, "org_id")
 	if orgID <= 0 {
 		return "", fmt.Errorf("org_id is required for outbound automation")
@@ -606,6 +745,9 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if status == models.OutboundApproved {
 		mode = "approved_auto"
 	}
+	if notify != nil && queued > 0 {
+		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
+	}
 	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v", msgType, queued, skipped, mode, skipReasons), nil
 }
 
@@ -645,7 +787,7 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 	return db.GetAutomationLeadsForOrg(orgID, score, limit)
 }
 
-func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any) (string, error) {
+func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
 	orgID := argInt64(args, "org_id")
 	if orgID <= 0 {
 		return "", fmt.Errorf("org_id is required for group posting")
@@ -731,10 +873,37 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 		}
 		queued++
 	}
+	if notify != nil && queued > 0 {
+		mode := "draft"
+		if status == models.OutboundApproved {
+			mode = "approved_auto"
+		}
+		notify(formatOutboundNotification(orgID, accountID, "group_post", queued, skipped, mode))
+	}
 	return fmt.Sprintf("queued_group_posts=%d skipped=%d status=%s", queued, skipped, status), nil
 }
 
+func formatOutboundNotification(orgID, accountID int64, msgType string, queued, skipped int, mode string) string {
+	label := "outbound"
+	switch msgType {
+	case "comment":
+		label = "Facebook comments"
+	case "inbox":
+		label = "Facebook inbox"
+	case "group_post":
+		label = "Facebook posting"
+	}
+	state := "drafts waiting for approval"
+	if mode == "approved_auto" {
+		state = "approved for local runtime execution"
+	}
+	return fmt.Sprintf("[THG Agent] %s queued: %d (%s). Org #%d, account #%d, skipped %d by guardrails.", label, queued, state, orgID, accountID, skipped)
+}
+
 func openCrawlTaskID(intent string, sources []jobs.Source, args map[string]any) string {
+	if taskID := argString(args, "_task_id"); strings.HasPrefix(taskID, "autocrawl-") {
+		return taskID
+	}
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|day=%s|", intent, time.Now().UTC().Format("2006-01-02"))
 	for _, src := range sources {

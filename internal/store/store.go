@@ -604,6 +604,35 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE data_sources ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`)
 	s.db.Exec(`ALTER TABLE data_sources ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`)
 
+	// AutoFlow: org-scoped recurring crawl intents. The first prompt teaches the
+	// segment/source; scheduled runs reuse this deterministic plan without
+	// calling the AI again.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS org_crawl_intents (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL,
+		account_id INTEGER NOT NULL DEFAULT 0,
+		name TEXT NOT NULL DEFAULT '',
+		prompt TEXT NOT NULL DEFAULT '',
+		intent TEXT NOT NULL DEFAULT 'facebook_crawl',
+		source_type TEXT NOT NULL,
+		source_url TEXT NOT NULL,
+		source_label TEXT NOT NULL DEFAULT '',
+		keywords_json TEXT NOT NULL DEFAULT '[]',
+		interval_minutes INTEGER NOT NULL DEFAULT 30,
+		max_items INTEGER NOT NULL DEFAULT 50,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		dedup_hash TEXT NOT NULL,
+		next_run_at DATETIME NOT NULL,
+		last_run_at DATETIME,
+		last_task_id TEXT NOT NULL DEFAULT '',
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(org_id, dedup_hash)
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_due ON org_crawl_intents(enabled, next_run_at)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_org ON org_crawl_intents(org_id, enabled)`)
+
 	// AutoFlow: extend conversation_threads with org scoping and unread tracking
 	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)

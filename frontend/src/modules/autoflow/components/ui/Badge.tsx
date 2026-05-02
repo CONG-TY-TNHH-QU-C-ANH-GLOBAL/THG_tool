@@ -7,8 +7,9 @@ export const Badge = React.memo(({ label }: BadgeProps) => {
   const c = statusColor(label);
   return (
     <span style={{
-      background: c + '22', color: c, border: `1px solid ${c}44`,
-      fontSize: 11, fontWeight: 500, padding: '2px 9px', borderRadius: 99,
+      background: c + '24', color: c, border: `1px solid ${c}55`,
+      fontSize: 11, fontWeight: 750, padding: '2px 9px', borderRadius: 99,
+      boxShadow: `0 0 18px ${c}18`,
     }}>
       {label}
     </span>

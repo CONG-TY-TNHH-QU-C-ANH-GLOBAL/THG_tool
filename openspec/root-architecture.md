@@ -18,6 +18,9 @@ System rules:
 - Broad "scan all" requests must ask for a target instead of scanning every saved group.
 - Workers attach to the selected account's visible workspace Chrome session.
 - Classification against current business context runs before candidates become leads.
+- If a workspace has no business calibration yet, Dashboard Chat and Telegram
+  must ask for the organization's identity, offer, target role, positive
+  signals, and reject signals before creating Facebook crawl jobs.
 - Mock frontend data, embedded legacy HTML, hidden browser pools, and duplicate API services are prohibited in production.
 
 ---

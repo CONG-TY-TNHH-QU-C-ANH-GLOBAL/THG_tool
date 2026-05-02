@@ -358,29 +358,131 @@ func orgContextKey(orgID int64, name string) string {
 
 func (s *Server) getBusinessContext(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	profile, _ := s.db.GetContext(orgContextKey(orgID, "business_profile"))
 	files, _ := s.db.GetContext(orgContextKey(orgID, "private_files_summary"))
 	sources, _ := s.db.GetContext(orgContextKey(orgID, "data_sources_summary"))
-	return c.JSON(fiber.Map{
-		"business_profile": profile,
-		"private_files":    files,
-		"data_sources":     sources,
-	})
+	resp := fiber.Map{
+		"private_files": files,
+		"data_sources":  sources,
+	}
+	for _, key := range businessCalibrationKeys() {
+		value, _ := s.db.GetContext(orgContextKey(orgID, key))
+		resp[key] = value
+	}
+	return c.JSON(resp)
 }
 
 func (s *Server) updateBusinessContext(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
 	var body struct {
-		BusinessProfile string `json:"business_profile"`
+		BusinessProfile  string `json:"business_profile"`
+		BusinessName     string `json:"business_name"`
+		BusinessIndustry string `json:"business_industry"`
+		Services         string `json:"services"`
+		TargetCustomers  string `json:"target_customers"`
+		TargetAuthorRole string `json:"target_author_role"`
+		TargetSignals    string `json:"target_signals"`
+		NegativeSignals  string `json:"negative_signals"`
+		BusinessLocation string `json:"business_location"`
+		Markets          string `json:"markets"`
+		BusinessUSP      string `json:"business_usp"`
+		Tone             string `json:"tone"`
+		ApprovalPolicy   string `json:"approval_policy"`
+		RejectRules      string `json:"reject_rules"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
-	profile := strings.TrimSpace(body.BusinessProfile)
-	if err := s.db.SetContext(orgContextKey(orgID, "business_profile"), profile); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	values := map[string]string{
+		"business_profile":   strings.TrimSpace(body.BusinessProfile),
+		"business_name":      strings.TrimSpace(body.BusinessName),
+		"business_industry":  strings.TrimSpace(body.BusinessIndustry),
+		"services":           strings.TrimSpace(body.Services),
+		"target_customers":   strings.TrimSpace(body.TargetCustomers),
+		"target_author_role": normalizeTargetAuthorRole(body.TargetAuthorRole),
+		"target_signals":     strings.TrimSpace(body.TargetSignals),
+		"negative_signals":   strings.TrimSpace(body.NegativeSignals),
+		"business_location":  strings.TrimSpace(body.BusinessLocation),
+		"markets":            strings.TrimSpace(body.Markets),
+		"business_usp":       strings.TrimSpace(body.BusinessUSP),
+		"tone":               strings.TrimSpace(body.Tone),
+		"approval_policy":    strings.TrimSpace(body.ApprovalPolicy),
+		"reject_rules":       strings.TrimSpace(body.RejectRules),
 	}
-	return c.JSON(fiber.Map{"ok": true, "business_profile": profile})
+	if values["business_profile"] == "" {
+		values["business_profile"] = buildBusinessCalibrationSummary(values)
+	}
+	for _, key := range businessCalibrationKeys() {
+		if err := s.db.SetContext(orgContextKey(orgID, key), values[key]); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
+	return c.JSON(fiber.Map{"ok": true, "business_profile": values["business_profile"]})
+}
+
+func businessCalibrationKeys() []string {
+	return []string{
+		"business_profile",
+		"business_name",
+		"business_industry",
+		"services",
+		"target_customers",
+		"target_author_role",
+		"target_signals",
+		"negative_signals",
+		"business_location",
+		"markets",
+		"business_usp",
+		"tone",
+		"approval_policy",
+		"reject_rules",
+	}
+}
+
+func normalizeTargetAuthorRole(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	switch v {
+	case "supplier", "suppliers":
+		return "suppliers"
+	case "partner", "partners", "reseller", "resellers":
+		return "partners"
+	case "candidate", "candidates":
+		return "candidates"
+	case "provider", "providers", "service_providers":
+		return "providers"
+	default:
+		return "customers"
+	}
+}
+
+func buildBusinessCalibrationSummary(values map[string]string) string {
+	var b strings.Builder
+	for _, item := range []struct {
+		label string
+		key   string
+	}{
+		{"Business", "business_name"},
+		{"Industry", "business_industry"},
+		{"Services", "services"},
+		{"Target customers", "target_customers"},
+		{"Target author role", "target_author_role"},
+		{"Target signals", "target_signals"},
+		{"Negative signals", "negative_signals"},
+		{"Markets", "markets"},
+		{"USP", "business_usp"},
+		{"Tone", "tone"},
+		{"Approval policy", "approval_policy"},
+		{"Reject rules", "reject_rules"},
+	} {
+		if value := strings.TrimSpace(values[item.key]); value != "" {
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(item.label)
+			b.WriteString(": ")
+			b.WriteString(value)
+		}
+	}
+	return b.String()
 }
 
 func (s *Server) billingSummary(c *fiber.Ctx) error {

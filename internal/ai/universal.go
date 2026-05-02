@@ -9,9 +9,9 @@ import (
 
 // UniversalClassifyResult is the structured output of UniversalClassify.
 type UniversalClassifyResult struct {
-	Score    float64 `json:"score"`   // 0.0–1.0
-	Intent   string  `json:"intent"`  // "potential_customer", "not_relevant", "spam", "candidate", "partner"
-	Reason   string  `json:"reason"`  // one sentence
+	Score    float64 `json:"score"`    // 0.0–1.0
+	Intent   string  `json:"intent"`   // "potential_customer", "not_relevant", "spam", "candidate", "partner"
+	Reason   string  `json:"reason"`   // one sentence
 	Priority string  `json:"priority"` // "hot", "warm", "cold", "rejected"
 }
 
@@ -43,10 +43,18 @@ SCORING RULES:
 - Score 0.2–0.4 (cold): Weak signal, worth low-priority outreach
 - Score 0.0–0.1 (rejected): Irrelevant, competitor, spam, or violates IGNORE rules
 
+MARKET SIGNAL RULES:
+- Do not infer customer intent from industry keywords alone.
+- First identify the author's role in this post.
+- If the author is advertising/selling/providing a service, classify as rejected unless the business profile explicitly says partners, suppliers, or resellers are desired.
+- A lead should normally contain a need/request/problem/question such as asking for quotes, suppliers, recommendations, help, buying, hiring, shipping, sourcing, or support.
+- For broad industries, prefer precision over volume. Reject provider ads, generic promotions, spam, and self-promotion even when they contain matching keywords.
+
 INTENT OPTIONS:
 - "potential_customer": wants to buy/use our products/services
 - "candidate": looking for a job (only for recruitment businesses)
 - "partner": could be a business partner/reseller
+- "provider_ad": author is promoting/selling their own service/product
 - "not_relevant": post has nothing to do with our business
 - "spam": MLM, mass recruitment ads, irrelevant promotions
 

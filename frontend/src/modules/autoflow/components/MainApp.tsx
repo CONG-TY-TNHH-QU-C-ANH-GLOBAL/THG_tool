@@ -67,11 +67,11 @@ function makeAbbr(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-const ORG_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const ORG_COLORS = [theme.primary, theme.blue, theme.green, theme.yellow, theme.red, theme.primaryLight];
 
 export default function MainApp({ role, goLanding }: MainAppProps) {
   const [tab, setTab] = useState<Tab>('leads');
-  const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: '#4f46e5' });
+  const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: theme.primary });
   const [inboxBadge, setInboxBadge] = useState(0);
 
   useEffect(() => {
@@ -143,22 +143,22 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
   return (
     <div style={{ ...rootStyle, display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* Sidebar */}
-      <aside style={{ width: 192, background: theme.surfaceAlt, borderRight: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <aside className="af-glass" style={{ width: 214, borderRight: `1px solid ${theme.border}`, borderTop: 0, borderLeft: 0, borderBottom: 0, borderRadius: 0, display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: '12px 0 46px rgba(0,0,0,0.18)' }}>
         {/* Logo */}
-        <div style={{ padding: '16px 14px', borderBottom: `1px solid ${theme.border}` }}>
+        <div style={{ padding: '18px 16px', borderBottom: `1px solid ${theme.borderAlt}` }}>
           <Row style={{ gap: 8 }}>
-            <div style={{ width: 28, height: 28, background: theme.primary, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: 32, height: 32, background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 14px 30px rgba(24, 86, 255, 0.28)' }}>
               <Zap size={14} color="#fff" />
             </div>
-            <span style={{ fontWeight: 800, fontSize: 14, color: '#fff' }}>AutoFlow</span>
+            <span style={{ fontWeight: 850, fontSize: 14, color: theme.textWhite }}>AutoFlow</span>
           </Row>
         </div>
 
         {/* Org switcher */}
         <div style={{ padding: '10px 10px 4px' }}>
-          <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4 }}>TỔ CHỨC</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px' }}>
-            <div style={{ width: 24, height: 24, background: org.color, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{org.abbr}</div>
+          <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4, fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}>TỔ CHỨC</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', border: `1px solid ${theme.borderAlt}`, borderRadius: 8, background: theme.surfaceAlt }}>
+            <div style={{ width: 26, height: 26, background: `linear-gradient(135deg, ${org.color}, ${theme.primaryLight})`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 850, flexShrink: 0 }}>{org.abbr}</div>
             <span style={{ color: theme.text, fontSize: 12, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{org.name}</span>
             <Badge label={org.plan} />
           </div>
@@ -166,26 +166,27 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
 
         {/* Nav */}
         <nav style={{ flex: 1, padding: '8px 10px', overflowY: 'auto' }}>
-          <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4 }}>MENU</p>
+          <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4, fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}>MENU</p>
           {tabs.map(({ id, l, I, badge }) => (
             <button key={id} onClick={() => setTab(id)} style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', marginBottom: 2,
-              background: tab === id ? theme.primary : 'transparent',
+              padding: '9px 10px', borderRadius: 8, border: `1px solid ${tab === id ? 'rgba(255,255,255,0.22)' : 'transparent'}`, cursor: 'pointer', marginBottom: 4,
+              background: tab === id ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryDark})` : 'transparent',
               color: tab === id ? '#fff' : theme.textMuted,
+              boxShadow: tab === id ? '0 14px 30px rgba(24, 86, 255, 0.22)' : 'none',
             }}>
               <I size={14} />
               <span style={{ fontSize: 13, flex: 1, textAlign: 'left' }}>{l}</span>
               {badge != null && badge > 0 && (
-                <span style={{ background: tab === id ? '#ffffff33' : theme.primary, color: '#fff', fontSize: 10, fontWeight: 700, minWidth: 17, height: 17, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{badge}</span>
+                <span style={{ background: tab === id ? '#ffffff33' : theme.primary, color: '#fff', fontSize: 10, fontWeight: 800, minWidth: 17, height: 17, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{badge}</span>
               )}
             </button>
           ))}
         </nav>
 
         {/* Settings + user */}
-        <div style={{ padding: '8px 10px', borderTop: `1px solid ${theme.border}` }}>
-          <button onClick={() => setTab('settings')} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', marginBottom: 8, background: tab === 'settings' ? theme.primary : 'transparent', color: tab === 'settings' ? '#fff' : theme.textMuted }}>
+        <div style={{ padding: '10px', borderTop: `1px solid ${theme.borderAlt}` }}>
+          <button onClick={() => setTab('settings')} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: `1px solid ${tab === 'settings' ? 'rgba(255,255,255,0.22)' : 'transparent'}`, cursor: 'pointer', marginBottom: 8, background: tab === 'settings' ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryDark})` : 'transparent', color: tab === 'settings' ? '#fff' : theme.textMuted }}>
             <Settings size={14} /><span style={{ fontSize: 13 }}>Settings</span>
           </button>
           <Row style={{ gap: 8, padding: '6px 4px' }}>
@@ -201,13 +202,13 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
       {/* Main content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Topbar */}
-        <header style={{ display: 'flex', alignItems: 'center', padding: '11px 20px', borderBottom: `1px solid ${theme.border}`, background: theme.surfaceAlt, flexShrink: 0 }}>
+        <header className="af-glass" style={{ display: 'flex', alignItems: 'center', padding: '13px 20px', borderTop: 0, borderLeft: 0, borderRight: 0, borderBottom: `1px solid ${theme.border}`, borderRadius: 0, flexShrink: 0, boxShadow: '0 12px 40px rgba(0,0,0,0.16)' }}>
           <div>
-            <p style={{ color: theme.text, fontWeight: 600, fontSize: 15 }}>{TAB_LABELS[tab]}</p>
+            <p style={{ color: theme.text, fontWeight: 800, fontSize: 15 }}>{TAB_LABELS[tab]}</p>
             <p style={{ color: theme.textFaint, fontSize: 11 }}>{org.name} · {isAdmin ? 'Admin' : 'Staff'}</p>
           </div>
           <Row style={{ gap: 10, marginLeft: 'auto' }}>
-            <button style={{ background: 'none', border: `1px solid ${theme.border}`, borderRadius: 8, padding: '7px 9px', cursor: 'pointer', position: 'relative' }}>
+            <button style={{ background: theme.surfaceAlt, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '7px 9px', cursor: 'pointer', position: 'relative' }}>
               <Bell size={15} color={theme.textMuted} />
               <span style={{ position: 'absolute', top: 4, right: 4, width: 7, height: 7, background: theme.red, borderRadius: '50%' }} />
             </button>

@@ -143,9 +143,17 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 	scorerCfg := scoringConfig(task.ScoringConfig)
 	sc := scoring.New(scorerCfg)
 	var businessProfile *ai.BusinessProfile
-	if h.ctxStore != nil && h.aiClass != nil && h.aiClass.Available() {
+	var scoreGuidance scoring.Guidance
+	if h.ctxStore != nil {
 		if p := h.loadBusinessProfile(task.OrgID); p != nil && p.IsConfigured() {
-			businessProfile = p
+			scoreGuidance = scoring.Guidance{
+				TargetAuthorRole: p.TargetAuthorRole,
+				TargetSignals:    splitGuidancePhrases(p.TargetSignals),
+				RejectPhrases:    splitGuidancePhrases(strings.Join([]string{p.NegativeSignals, p.RejectRules}, "\n")),
+			}
+			if h.aiClass != nil && h.aiClass.Available() {
+				businessProfile = p
+			}
 		}
 	}
 
@@ -265,7 +273,11 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				// Stage 2: classify/score inline, no post-processing. Prefer the
 				// universal AI classifier when the business profile is configured;
 				// fallback to deterministic scoring only when AI context is missing.
-				sr := sc.Score(item.Content, task.Keywords, item.Reactions, item.Comments, item.AuthorProfileURL)
+				sr := sc.ScoreWithGuidance(item.Content, task.Keywords, item.Reactions, item.Comments, item.AuthorProfileURL, scoreGuidance)
+				if sr.Category == "rejected" {
+					stats.TotalFiltered++
+					continue
+				}
 				if businessProfile != nil {
 					classifyCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 					aiResult, err := h.aiClass.UniversalClassify(classifyCtx, item.Content, item.AuthorName, businessProfile)
@@ -296,7 +308,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				stats.TotalReturned++
 
 				// Persist hot/warm leads to app store immediately.
-				if h.appStore != nil && sr.Category != "cold" {
+				if h.appStore != nil && sr.Category != "cold" && sr.Category != "rejected" {
 					lead := store.TaskLead{
 						TaskID:           job.TaskID,
 						OrgID:            task.OrgID,
@@ -312,7 +324,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 						log.Printf("handler: insert lead: %v", err)
 					}
 				}
-				if h.ctxStore != nil && sr.Category != "cold" {
+				if h.ctxStore != nil && sr.Category != "cold" && sr.Category != "rejected" {
 					leadID, err := h.ctxStore.InsertLead(&models.Lead{
 						OrgID:        task.OrgID,
 						SourceType:   "post",
@@ -395,11 +407,48 @@ func (h *Handler) loadBusinessProfile(orgID int64) *ai.BusinessProfile {
 		return &ai.BusinessProfile{}
 	}
 	if orgID > 0 {
-		if profile, _ := h.ctxStore.GetContext(fmt.Sprintf("org:%d:business_profile", orgID)); strings.TrimSpace(profile) != "" {
-			ctxMap["business_desc"] = strings.TrimSpace(profile)
+		for _, key := range businessContextKeys() {
+			if value, _ := h.ctxStore.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
+				ctxMap[key] = strings.TrimSpace(value)
+				if key == "business_profile" {
+					ctxMap["business_desc"] = strings.TrimSpace(value)
+				}
+			}
 		}
 	}
 	return ai.ProfileFromContext(ctxMap)
+}
+
+func businessContextKeys() []string {
+	return []string{
+		"business_profile",
+		"business_name",
+		"business_industry",
+		"services",
+		"target_customers",
+		"target_author_role",
+		"target_signals",
+		"negative_signals",
+		"business_location",
+		"markets",
+		"business_usp",
+		"tone",
+		"approval_policy",
+		"reject_rules",
+	}
+}
+
+func splitGuidancePhrases(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == ',' || r == ';' || r == '|'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) output.Record {

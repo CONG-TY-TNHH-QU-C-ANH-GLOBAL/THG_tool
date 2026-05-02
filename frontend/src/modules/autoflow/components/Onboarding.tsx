@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { theme } from '../constants/styles';
+import { cardStyle, inputStyle, primaryBtn, rootStyle, theme } from '../constants/styles';
 import { Building2, User, Check, Zap } from 'lucide-react';
 import { getMe, isPlatformRole, refreshToken } from '../services/authService';
 import { useAuthStore } from '../stores/authStore';
@@ -8,13 +8,12 @@ interface OnboardingProps {
   onComplete: (role: 'admin' | 'staff' | 'founder' | 'superadmin') => void;
 }
 
-const D = { background: theme.bg, color: theme.text, fontFamily: 'system-ui, sans-serif' };
-const card = (x: Record<string, unknown> = {}) => ({ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 32, ...x });
-const inp = { background: '#2a2f45', border: '1px solid #374151', borderRadius: 9, padding: '10px 14px', color: '#fff', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' as const };
-const PB = (p: Record<string, unknown> = {}) => ({ padding: '12px 20px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, background: theme.primary, color: '#fff', ...p });
+const D = rootStyle;
+const card = (x: Record<string, unknown> = {}) => cardStyle({ padding: 32, ...x });
+const PB = (p: Record<string, unknown> = {}) => primaryBtn({ padding: '12px 20px', fontSize: 14, ...p });
 
-const Lbl = ({ t }: { t: string }) => <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 5 }}>{t}</p>;
-const Inp = (p: React.InputHTMLAttributes<HTMLInputElement>) => <input style={inp} {...p} />;
+const Lbl = ({ t }: { t: string }) => <p style={{ color: theme.textFaint, fontSize: 12, fontWeight: 700, marginBottom: 5 }}>{t}</p>;
+const Inp = (p: React.InputHTMLAttributes<HTMLInputElement>) => <input style={inputStyle} {...p} />;
 
 const typeOptions = [
   { value: 'team', icon: <Building2 size={28} color={theme.primary} />, label: 'Team / Doanh nghiệp', desc: 'Nhiều thành viên, quản lý tập trung' },

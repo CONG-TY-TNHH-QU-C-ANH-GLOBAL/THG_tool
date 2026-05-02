@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -18,7 +17,7 @@ import (
 	tele "gopkg.in/telebot.v3"
 )
 
-// Bot wraps a Telegram bot with scraper command handling.
+// Bot wraps Telegram as another entry point into the THG Agent command bus.
 type Bot struct {
 	bot      *tele.Bot
 	db       *store.Store
@@ -139,7 +138,6 @@ func (b *Bot) registerHandlers() {
 	b.bot.Handle("/start", b.handleStart)
 	b.bot.Handle("/help", b.handleStart)
 	b.bot.Handle("/scan", b.handleScan)
-	b.bot.Handle("/scan_all", b.handleScanAll)
 	b.bot.Handle("/status", b.handleStatus)
 	b.bot.Handle("/results", b.handleResults)
 	b.bot.Handle("/add", b.handleAddGroup)
@@ -160,65 +158,42 @@ func (b *Bot) registerHandlers() {
 }
 
 func (b *Bot) handleStart(c tele.Context) error {
-	welcome := `🕷️ *THG Agentic Scraper*
+	welcome := `*THG Agent Command Center*
 
-Xin chào! Tôi là bot điều khiển hệ thống cào dữ liệu.
+Dashboard Chat và Telegram dùng cùng một Agent pipeline.
 
-📋 *Lệnh có sẵn:*
-/scan <platform> <url> — Cào 1 group/page
-/scan\_all — Cào tất cả groups đã cấu hình
-/status — Xem trạng thái jobs đang chạy
-/results — Xem leads mới nhất
-/stats — Xem thống kê tổng
-/add <url> — Thêm group mới
-/groups — Xem danh sách groups
-/images — Xem ảnh công ty đã lưu
-/price — Xem bảng giá AI đã học
-/stop — Dừng job đang chạy
+Bạn chỉ cần gửi prompt tự nhiên:
+- "Tìm tệp khách POD/dropship trong group này: <link>"
+- "Comment lên các leads hot theo giọng thương hiệu của tôi"
+- "Đăng bài chăm sóc fanpage tuần này, chờ duyệt trước khi chạy"
 
-🖼️ *Gửi ảnh hoặc link catalog:*
-→ Ảnh bảng giá (caption "bảng giá"): AI đọc và học giá
-→ Ảnh công ty thường: lưu vào DB dùng khi comment
-→ Link website: AI tự crawl toàn bộ ảnh về DB
+Lệnh nhanh:
+/status - trạng thái job nền
+/results - leads mới nhất
+/stats - thống kê workspace
+/images - dữ liệu ảnh đã lưu
+/price - bảng giá AI đã học
 
-💡 *Hoặc gửi văn bản tự do:*
-VD: "học bảng giá: Gói A 100k/tháng, Gói B 200k/tháng"
-VD: "cào facebook group ship hàng mỹ rồi comment luôn"
-→ AI tự phân tích và thực thi!`
+Các lệnh crawl/comment/inbox/posting đều đi qua cùng command bus production, dùng đúng organization, đúng Facebook account đã xác thực và guardrails chống trùng/spam.`
 
 	return c.Send(welcome, tele.ModeMarkdown)
 }
 
 func (b *Bot) handleScan(c tele.Context) error {
 	args := c.Args()
-	if len(args) < 2 {
-		return c.Send("❌ Cú pháp: `/scan <platform> <url>`\nVD: `/scan fb https://facebook.com/groups/xxx`", tele.ModeMarkdown)
+	if len(args) == 0 {
+		return c.Send("Hãy gửi prompt trực tiếp cho Agent, ví dụ: `Tìm tệp khách POD/dropship trong group <link>`", tele.ModeMarkdown)
 	}
-
-	platform := normalizePlatform(args[0])
-	target := args[1]
-
-	task := &jobs.Task{
-		SchemaVersion: "1",
-		TaskID:        fmt.Sprintf("tg-scan-%s-%d", platform, time.Now().UnixMilli()),
-		OrgID:         b.orgID,
-		Intent:        "facebook_crawl",
-		CrawlPlan: jobs.CrawlPlan{
-			Sources:  []jobs.Source{{Type: string(platform) + "_group", URL: target}},
-			MaxItems: 50,
-		},
+	prompt := strings.Join(args, " ")
+	if len(args) >= 2 && isLegacyPlatformToken(args[0]) {
+		prompt = strings.TrimSpace(strings.Join(args[2:], " "))
+		if prompt != "" {
+			prompt = fmt.Sprintf("Tìm và phân loại leads từ source %s. Yêu cầu: %s", args[1], prompt)
+		} else {
+			prompt = fmt.Sprintf("Tìm và phân loại leads từ source %s", args[1])
+		}
 	}
-	payload, _ := json.Marshal(task)
-	j, err := b.jobStore.Submit(context.Background(), task, string(payload))
-	if err != nil {
-		return c.Send(fmt.Sprintf("❌ Lỗi tạo job: %v", err))
-	}
-
-	return c.Send(fmt.Sprintf("✅ Job #%d đã được tạo!\n🎯 Platform: %s\n🔗 Target: %s\n⏳ Đang xử lý...", j.ID, platform, target))
-}
-
-func (b *Bot) handleScanAll(c tele.Context) error {
-	return c.Send("`/scan_all` da duoc tat trong production. Hay gui prompt cu the kem URL hoac yeu cau tim nhom de Agent tao crawler job dung ngu canh.", tele.ModeMarkdown)
+	return b.runAgentPrompt(c, prompt, 45*time.Second)
 }
 
 func (b *Bot) handleStatus(c tele.Context) error {
@@ -245,7 +220,7 @@ func (b *Bot) handleStatus(c tele.Context) error {
 }
 
 func (b *Bot) handleResults(c tele.Context) error {
-	leads, err := b.db.GetLeads("", 10, 0)
+	leads, err := b.db.GetLeadsFiltered("", "", 10, 0, b.orgID)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}
@@ -284,6 +259,7 @@ func (b *Bot) handleAddGroup(c tele.Context) error {
 
 	platform := detectPlatform(url)
 	group := &models.Group{
+		OrgID:     b.orgID,
 		Platform:  platform,
 		Name:      name,
 		URL:       url,
@@ -300,7 +276,7 @@ func (b *Bot) handleAddGroup(c tele.Context) error {
 }
 
 func (b *Bot) handleListGroups(c tele.Context) error {
-	groups, err := b.db.GetAllGroups(0)
+	groups, err := b.db.GetAllGroups(b.orgID)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}
@@ -506,6 +482,40 @@ func (b *Bot) handlePriceList(c tele.Context) error {
 	return c.Send(sb.String(), tele.ModeMarkdown)
 }
 
+func (b *Bot) sendToChat(c tele.Context, msg string, opts ...any) error {
+	isChannel := c.Chat() != nil && c.Chat().Type == tele.ChatChannel
+	if isChannel {
+		chatID := c.Chat().ID
+		_, err := b.bot.Send(&tele.Chat{ID: chatID}, msg, opts...)
+		if err != nil {
+			log.Printf("[Telegram] cannot send response to channel %d: %v", chatID, err)
+			if b.adminID != 0 {
+				b.Notify(fmt.Sprintf("[Channel %d response]\n%s", chatID, msg))
+			}
+		}
+		return nil
+	}
+	return c.Send(msg, opts...)
+}
+
+func (b *Bot) runAgentPrompt(c tele.Context, text string, timeout time.Duration) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return b.sendToChat(c, "Prompt rỗng. Hãy gửi yêu cầu cụ thể cho Agent.")
+	}
+	if b.agent == nil || !b.agent.Available() {
+		return b.sendToChat(c, "AI Agent chưa được cấu hình. Production command bus cần OPENAI_API_KEY để hiểu prompt mở và chạy đúng workspace.")
+	}
+	_ = b.sendToChat(c, "Agent đang xử lý qua command bus chung...")
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	response, err := b.agent.ProcessPromptForOrg(ctx, text, "telegram", b.orgID)
+	if err != nil {
+		return b.sendToChat(c, fmt.Sprintf("AI Agent lỗi: %v", err))
+	}
+	return b.sendToChat(c, response)
+}
+
 func (b *Bot) handleFreeText(c tele.Context) error {
 	text := c.Text()
 	sender := "unknown"
@@ -518,53 +528,24 @@ func (b *Bot) handleFreeText(c tele.Context) error {
 	}
 	log.Printf("[Telegram] 📩 Message from %s (chatID=%d): %s", sender, chatID, text)
 
-	// Xác định nơi gửi response: channel → gửi về channel đó, còn lại reply bình thường
-	isChannel := c.Chat() != nil && c.Chat().Type == tele.ChatChannel
-	send := func(msg string, opts ...any) error {
-		if isChannel {
-			// Gửi thẳng về channel (bot phải là admin của channel)
-			_, err := b.bot.Send(&tele.Chat{ID: chatID}, msg, opts...)
-			if err != nil {
-				log.Printf("[Telegram] ⚠️ Không gửi được về channel %d: %v", chatID, err)
-				// Fallback: gửi về admin private chat nếu có
-				if b.adminID != 0 {
-					b.Notify(fmt.Sprintf("[Phản hồi từ channel %d]\n%s", chatID, msg))
-				}
-			}
-			return nil
-		}
-		return c.Send(msg, opts...)
-	}
-
 	// Detect catalog URL — if message contains a URL + image-related keywords, auto-crawl
 	if isCatalogURL(text) {
 		url := extractURL(text)
 		if url != "" && b.agent != nil && b.agent.Available() {
-			_ = send(fmt.Sprintf("🕷️ Phát hiện link catalog!\nĐang crawl ảnh từ: %s\n⏳ Có thể mất 30-60 giây...", url))
+			_ = b.sendToChat(c, fmt.Sprintf("Phát hiện link catalog.\nĐang đưa vào Agent pipeline: %s", url))
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
 			prompt := fmt.Sprintf("crawl ảnh từ catalog url: %s", url)
 			response, err := b.agent.ProcessPromptForOrg(ctx, prompt, "telegram", b.orgID)
 			if err != nil {
-				return send(fmt.Sprintf("❌ Lỗi crawl ảnh: %v", err))
+				return b.sendToChat(c, fmt.Sprintf("Lỗi crawl ảnh: %v", err))
 			}
-			return send(response)
+			return b.sendToChat(c, response)
 		}
 	}
 
 	// v2: Route through AI Agent if available
-	if b.agent != nil && b.agent.Available() {
-		_ = send("🤖 Đang xử lý...")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		response, err := b.agent.ProcessPromptForOrg(ctx, text, "telegram", b.orgID)
-		if err != nil {
-			return send(fmt.Sprintf("❌ AI Agent lỗi: %v", err))
-		}
-		return send(response)
-	}
-
-	return send("AI Agent chua duoc cau hinh. Production crawler can OPENAI_API_KEY de hieu prompt mo va tranh chay sai y nguoi dung.")
+	return b.runAgentPrompt(c, text, 45*time.Second)
 }
 
 // --- Helpers ---
@@ -580,6 +561,15 @@ func normalizePlatform(s string) models.Platform {
 		return models.PlatformZalo
 	default:
 		return models.PlatformFacebook
+	}
+}
+
+func isLegacyPlatformToken(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "fb", "facebook", "tt", "tiktok", "zalo":
+		return true
+	default:
+		return false
 	}
 }
 

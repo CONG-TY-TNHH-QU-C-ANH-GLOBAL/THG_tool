@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFiles } from '../../hooks/useFiles';
 import { useDataSources } from '../../hooks/useDataSources';
-import { getBusinessContext, saveBusinessContext } from '../../services/settingsService';
+import { getBusinessContext, saveBusinessContext, type BusinessContext } from '../../services/settingsService';
 import BusinessMemoryPanel from '../data/BusinessMemoryPanel';
 import ContextSummaryPanel from '../data/ContextSummaryPanel';
 import DataSourcesPanel from '../data/DataSourcesPanel';
@@ -14,7 +14,24 @@ interface DataPrivateViewProps { orgId: string; }
 export default function DataPrivateView({ orgId }: DataPrivateViewProps) {
   const { files, isUploading, upload, remove } = useFiles(orgId);
   const { sources, isLoading, isSyncing, add, sync, remove: removeSource } = useDataSources(orgId);
-  const [businessProfile, setBusinessProfile] = useState('');
+  const [businessContext, setBusinessContext] = useState<BusinessContext>({
+    business_profile: '',
+    business_name: '',
+    business_industry: '',
+    services: '',
+    target_customers: '',
+    target_author_role: 'customers',
+    target_signals: '',
+    negative_signals: '',
+    business_location: '',
+    markets: '',
+    business_usp: '',
+    tone: '',
+    approval_policy: '',
+    reject_rules: '',
+    private_files: '',
+    data_sources: '',
+  });
   const [privateFilesSummary, setPrivateFilesSummary] = useState('');
   const [dataSourcesSummary, setDataSourcesSummary] = useState('');
   const [contextMsg, setContextMsg] = useState('');
@@ -22,7 +39,7 @@ export default function DataPrivateView({ orgId }: DataPrivateViewProps) {
 
   const loadContext = useCallback(async () => {
     const ctx = await getBusinessContext();
-    setBusinessProfile(ctx.business_profile || '');
+    setBusinessContext(prev => ({ ...prev, ...ctx, target_author_role: ctx.target_author_role || 'customers' }));
     setPrivateFilesSummary(ctx.private_files || '');
     setDataSourcesSummary(ctx.data_sources || '');
   }, []);
@@ -32,7 +49,7 @@ export default function DataPrivateView({ orgId }: DataPrivateViewProps) {
     getBusinessContext()
       .then(ctx => {
         if (cancelled) return;
-        setBusinessProfile(ctx.business_profile || '');
+        setBusinessContext(prev => ({ ...prev, ...ctx, target_author_role: ctx.target_author_role || 'customers' }));
         setPrivateFilesSummary(ctx.private_files || '');
         setDataSourcesSummary(ctx.data_sources || '');
       })
@@ -52,10 +69,10 @@ export default function DataPrivateView({ orgId }: DataPrivateViewProps) {
     setSavingContext(true);
     setContextMsg('');
     try {
-      await saveBusinessContext(businessProfile);
-      setContextMsg('Đã lưu business memory.');
+      await saveBusinessContext(businessContext);
+      setContextMsg('Đã lưu định vị doanh nghiệp.');
     } catch (err) {
-      setContextMsg(err instanceof Error ? err.message : 'Không lưu được context.');
+      setContextMsg(err instanceof Error ? err.message : 'Không lưu được định vị doanh nghiệp.');
     } finally {
       setSavingContext(false);
     }
@@ -81,10 +98,10 @@ export default function DataPrivateView({ orgId }: DataPrivateViewProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <DataStatsGrid files={files} sources={sources} />
       <BusinessMemoryPanel
-        value={businessProfile}
+        context={businessContext}
         message={contextMsg}
         isSaving={savingContext}
-        onChange={setBusinessProfile}
+        onChange={patch => setBusinessContext(prev => ({ ...prev, ...patch }))}
         onSave={saveContext}
       />
       <DataSourcesPanel

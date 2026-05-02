@@ -18,8 +18,8 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// Agent is an AI-powered agent that interprets natural language prompts
-// and executes scraper actions using OpenAI Function Calling.
+// Agent is an AI-powered operator that interprets natural language prompts
+// and executes production workspace actions using OpenAI Function Calling.
 // It is fully prompt-driven: no hardcoded industry logic. The user's prompts
 // define what to scrape, what qualifies as a "match", and how to engage.
 type Agent struct {
@@ -73,9 +73,10 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 	// Load dynamic user context (business rules, niche, etc.)
 	userContext := a.loadUserContext()
 	if orgID > 0 {
-		for _, key := range []string{"business_profile", "private_files_summary", "data_sources_summary", "outbound_mode"} {
+		for _, key := range orgContextKeysForPrompt() {
 			if v, err := a.db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); err == nil && strings.TrimSpace(v) != "" {
 				userContext["org_"+key] = strings.TrimSpace(v)
+				userContext[key] = strings.TrimSpace(v)
 			}
 		}
 		if userContext["org_business_profile"] != "" {
@@ -86,6 +87,10 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 	// Load accounts for AI account mapping
 	accounts, _ := a.db.GetAllAccounts(orgID)
 	if requiresFacebookBrowser(prompt) {
+		if ok, msg := businessCalibrationPreflight(userContext, prompt); !ok {
+			a.logPrompt(source, prompt, msg, "business_preflight", "", false)
+			return msg, nil
+		}
 		if ok, msg := facebookBrowserPreflight(accounts, selectedAccountID); !ok {
 			a.logPrompt(source, prompt, msg, "browser_preflight", "", false)
 			return msg, nil
@@ -117,7 +122,7 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 	body := map[string]any{
 		"model":       a.model,
 		"messages":    messages,
-		"tools":       agentTools,
+		"tools":       productionAgentTools(),
 		"tool_choice": "auto",
 		"temperature": 0.05,
 	}
@@ -288,6 +293,28 @@ func requiresFacebookBrowser(prompt string) bool {
 	return false
 }
 
+func orgContextKeysForPrompt() []string {
+	return []string{
+		"business_profile",
+		"business_name",
+		"business_industry",
+		"services",
+		"target_customers",
+		"target_author_role",
+		"target_signals",
+		"negative_signals",
+		"business_location",
+		"markets",
+		"business_usp",
+		"tone",
+		"approval_policy",
+		"reject_rules",
+		"private_files_summary",
+		"data_sources_summary",
+		"outbound_mode",
+	}
+}
+
 func facebookBrowserPreflight(accounts []models.Account, selectedAccountID int64) (bool, string) {
 	if selectedAccountID > 0 {
 		for _, acc := range accounts {
@@ -325,6 +352,43 @@ func pickReadyFacebookAccountID(accounts []models.Account) int64 {
 	return 0
 }
 
+func businessCalibrationPreflight(userCtx map[string]string, prompt string) (bool, string) {
+	profile := ProfileFromContext(userCtx)
+	if profile.IsConfigured() {
+		return true, ""
+	}
+	if isBusinessContextPrompt(prompt) {
+		return true, ""
+	}
+	return false, `Mình chưa chạy crawl ngay vì workspace chưa có định vị doanh nghiệp đủ rõ.
+
+Để Market Signal Gate lọc đúng tệp và không đổ dữ liệu rác vào dashboard, hãy cấu hình trước phần Định vị doanh nghiệp trong Data Private, hoặc trả lời trực tiếp theo 5 ý ngắn:
+
+1. Doanh nghiệp/brand của bạn là ai?
+2. Bạn đang bán sản phẩm, dịch vụ hoặc offer gì?
+3. Tệp cần tìm là ai: khách mua dịch vụ, supplier, partner, ứng viên hay nhóm khác?
+4. Những tín hiệu nào phải giữ lại? Ví dụ: “cần báo giá”, “looking for supplier”, “tìm fulfillment”.
+5. Những tín hiệu nào phải loại bỏ? Ví dụ: bài quảng cáo dịch vụ, tuyển CTV, spam link, đối thủ tự bán.
+
+Sau khi lưu định vị, gửi lại prompt. Lúc đó agent sẽ dùng đúng Facebook session của workspace để crawl, lọc theo ngữ cảnh doanh nghiệp, phân loại hot/warm/cold và chỉ lưu leads đủ điều kiện.`
+}
+
+func isBusinessContextPrompt(prompt string) bool {
+	lower := strings.ToLower(stripDashboardContext(prompt))
+	triggers := []string{
+		"định vị doanh nghiệp", "dinh vi doanh nghiep", "business profile", "business context",
+		"mình là", "minh la", "chúng tôi là", "chung toi la", "công ty", "cong ty",
+		"doanh nghiệp", "doanh nghiep", "brand", "thương hiệu", "thuong hieu",
+		"dịch vụ của tôi", "dich vu cua toi", "chúng tôi bán", "chung toi ban",
+	}
+	for _, trigger := range triggers {
+		if strings.Contains(lower, trigger) {
+			return true
+		}
+	}
+	return false
+}
+
 func browserNotReadyMessage(acc *models.Account) string {
 	target := "Workspace chưa có Facebook session sẵn sàng."
 	if acc != nil {
@@ -332,15 +396,14 @@ func browserNotReadyMessage(acc *models.Account) string {
 	}
 	return target + `
 
-Để bảo toàn dữ liệu và tránh chạy sai tài khoản, THG chỉ bắt đầu crawl khi Browser đã xác nhận Facebook session thật.
+THG chỉ chạy crawl/comment/inbox khi Browser đã xác nhận đúng Facebook session thật của workspace. Cách này tránh chạy nhầm tài khoản và giữ dữ liệu theo đúng organization.
 
-Bạn hãy hoàn tất kết nối trong tab Browser:
-1. Mở tab Browser của workspace.
-2. Chạy THG Local Kit trên thiết bị đã ghép.
-3. Mở đúng Facebook account và đăng nhập nếu hệ thống yêu cầu.
-4. Chờ trạng thái chuyển sang Facebook local ready.
+Vào tab Browser và hoàn tất 3 bước:
+1. Chạy THG Local Kit trên thiết bị đã ghép với workspace.
+2. Đăng nhập Facebook trong Chrome Runtime nếu hệ thống yêu cầu.
+3. Chờ trạng thái chuyển sang Facebook local ready.
 
-Sau khi Browser sẵn sàng, gửi lại lệnh này. Agent sẽ bắt đầu crawl ngay với đúng account và dữ liệu thật.`
+Khi Browser đã sẵn sàng, gửi lại prompt này. Agent sẽ dùng đúng account đã xác thực để thu dữ liệu thật, phân loại leads và lưu kết quả về workspace.`
 }
 
 func argMissing(args map[string]any, key string) bool {
@@ -478,6 +541,7 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 		sb.WriteString(taskID)
 		sb.WriteString("\n")
 	}
+	sb.WriteString("\nAutomation 24/7: hệ thống sẽ ghi nhớ nhu cầu này thành lịch crawl định kỳ 30 phút cho workspace. Các vòng sau dùng scheduler và THG Local Runtime, không gọi AI lại nếu không cần phân tích/ngôn ngữ.")
 	if localCommandID != "" {
 		sb.WriteString("\nRuntime sẽ điều khiển Chrome Facebook thật trên thiết bị đã ghép, thu dữ liệu từ nguồn bạn đưa, lọc tín hiệu theo prompt và lưu leads đủ điều kiện về Leads. Bạn có thể quan sát luồng chạy trong tab Browser.")
 	} else {
@@ -726,56 +790,37 @@ Liên tục điều chỉnh:
 
 `)
 
-	// ── FUNCTION MAPPING ─────────────────────────────────────────────────────
-	sb.WriteString(`## PHÂN CÔNG CHỨC NĂNG (FUNCTION MAPPING)
+	// -- PRODUCTION FUNCTION MAPPING ------------------------------------------------
+	sb.WriteString(`## PRODUCTION ACTION MAP
 
-**FIND_CANDIDATES → run_full_recruitment_pipeline**
-Triggers: "cào nhân sự", "tìm ứng viên", "tìm dev gấp", "recruit người", "chạy pipeline"
-→ GỌI NGAY, không hỏi thêm
+Current production flow uses one command bus for Dashboard Chat and Telegram.
+Only these action families are active:
 
-**POST_CONTENT → post_jds_to_groups**
-Triggers: "đăng bài tuyển dụng", "post JD vào groups", "đăng tin tuyển dụng"
-→ positions cụ thể → truyền vào param | không có → đăng tất cả
+**BUSINESS_CONTEXT**
+- User describes brand, services, target customers, tone, reject rules, data policy -> describe_business or set_context.
 
-**scan_own_jd_posts**: "quét bài đã đăng", "kiểm tra comments bài JD"
+**FIND_CUSTOMERS / FIND_MARKET_SIGNALS**
+- User provides a concrete Facebook group/post URL -> scrape_group or scrape_comments.
+- User describes target customers but gives no URL -> search_groups with a concise query derived from prompt + business context.
+- Never run broad scan-all. Every crawl must be prompt-scoped and org-scoped.
+- A successful crawl/search prompt is also persisted by backend as a 30-minute recurring crawl intent for that org/account. Do not invent a separate scheduler tool; just call the correct crawl/search primitive.
 
-**FIND_CUSTOMERS -> prompt-scoped open crawler**
-Triggers: nếu user có URL group/post Facebook cụ thể thì dùng scrape_group/scrape_comments. Nếu user chỉ mô tả tệp khách/ngách/nhu cầu mà không đưa URL, KHÔNG hỏi lại; dùng search_groups(query=<target/query suy luận từ prompt>) để tìm nguồn phù hợp trước, rồi crawler sẽ lọc/classify theo prompt.
+**OUTREACH**
+- Comment one post -> auto_comment.
+- Comment selected/hot leads -> comment_all_leads.
+- Inbox one lead -> auto_inbox.
+- Inbox selected/hot leads -> inbox_all_leads.
+- Default state is draft/approval-required unless prompt or org context explicitly enables auto.
 
-**scrape_group**: user gửi URL group Facebook cụ thể
+**POSTING / CONTENT DISTRIBUTION**
+- Create a Facebook post/group post/fanpage draft from user context -> create_job_post.
 
-**OUTREACH comment → auto_comment**
-Triggers: URL bài viết + "comment lên", "bình luận vào bài này"
+**READONLY STATUS**
+- Workspace stats -> get_stats.
 
-**OUTREACH batch → comment_all_leads**
-Triggers: "comment leads", "bình luận hết", "comment tất cả" | "kèm ảnh" → with_image=true
-
-**OUTREACH inbox → auto_inbox**: user chỉ rõ 1 người cụ thể
-
-**OUTREACH batch inbox → inbox_all_leads**
-Triggers: "inbox tất cả", "nhắn tin hết", "inbox all"
-
-**list_career_jobs**: "xem jobs", "vị trí đang tuyển" (chỉ xem, không execute)
-
-**crawl_careers**: URL /careers → cào JD
-**crawl_careers_images**: "lấy ảnh JD", "chụp ảnh tuyển dụng"
-**crawl_catalog**: link website + "crawl ảnh"
-**update_price_list**: "học bảng giá", "giá dịch vụ"
-**search_groups**: "tìm group", "tìm nhóm Facebook"
-**score_groups**: "score groups", "đánh giá groups"
-**discover_groups_for_jobs**: "khám phá groups cho jobs"
-**seed_quality_groups**: "seed groups", "khởi tạo groups mặc định"
-
-**UPDATE_BUSINESS_CONTEXT → describe_business**
-Triggers: "mình kinh doanh X", "cập nhật thông tin công ty", "chúng tôi vừa thêm dịch vụ..."
-→ describe_business(description=<nguyên văn>) — KHÔNG tóm tắt, copy nguyên văn
-
-**set_context**: "bật auto comment" → auto_comment_mode=true | "tắt" → false
-
-**check_inbox_replies**: "check reply", "xem ai nhắn lại", "follow up inbox"
+For HR, fanpage care, profile care, recruiting, support, sourcing, and future verticals: use these primitives until a real executor is implemented. Do not invent tool names.
 
 `)
-
 	// ── FINAL BEHAVIOR ───────────────────────────────────────────────────────
 	sb.WriteString(`## HÀNH VI CUỐI CÙNG (FINAL BEHAVIOR)
 
@@ -789,8 +834,8 @@ Với BẤT KỲ input nào:
 Ví dụ thực tế:
 "kiếm khách đi" → FIND_CUSTOMERS → scrape groups phù hợp business profile → filter → outreach
 "quet het roi inbox giup toi" -> ask for target/search first, then crawl/classify before inbox.
-"tìm dev gấp" → FIND_CANDIDATES → run_full_recruitment_pipeline (tech domain)
-"đăng bài tuyển dụng luôn" → POST_CONTENT → post_jds_to_groups`)
+"tìm dev gấp" → FIND_CANDIDATES → search_groups/scrape_group theo nguồn Facebook phù hợp → classify leads
+"đăng bài chăm sóc fanpage" → POST_CONTENT → create_job_post`)
 
 	sb.WriteString(`## PRODUCTION OPEN CRAWLER OVERRIDE
 
@@ -799,6 +844,19 @@ Triggers: broad scan requests should become source discovery jobs, not dead-end 
 - If the user asks to find customers without a target URL/search query but gives a target description, call search_groups with a concise query derived from the target.
 - Ask a follow-up only when there is no business goal, no target description, and no usable source.
 - Open crawler jobs must be prompt-scoped, classified against the business context, and attached to the selected visible workspace account.
+- For broad markets, distinguish the author's role: people asking for a service/quote/recommendation are leads; people advertising/providing that same service are not leads unless the org explicitly asks for partners/suppliers/resellers.
+- Do not treat keyword matches alone as customer intent.
+
+## ACTIVE PRODUCTION TOOLSET
+
+Only use tools that are actually wired in production:
+- describe_business / set_context / get_stats / add_group
+- search_groups / scrape_group / scrape_comments / classify_leads
+- comment_all_leads / inbox_all_leads / auto_comment / auto_inbox
+- create_job_post
+
+Do not call retired broad-scanning flows or blueprint-only tools that do not have production executors yet.
+For HR, fanpage care, profile care, sourcing, recruiting, sales, support, or any future workflow, express the plan through the current primitives above unless a dedicated executor is added later.
 
 `)
 
@@ -961,17 +1019,44 @@ type openAIResponse struct {
 // --- Function Definitions for OpenAI ---
 // Tools: prompt-scoped crawl, manage, query, engage, and configure.
 
+func productionAgentTools() []map[string]any {
+	allowed := map[string]bool{
+		"set_context":       true,
+		"describe_business": true,
+		"get_stats":         true,
+		"add_group":         true,
+		"scrape_group":      true,
+		"scrape_comments":   true,
+		"classify_leads":    true,
+		"search_groups":     true,
+		"auto_comment":      true,
+		"comment_all_leads": true,
+		"auto_inbox":        true,
+		"inbox_all_leads":   true,
+		"create_job_post":   true,
+	}
+	out := make([]map[string]any, 0, len(allowed))
+	for _, tool := range agentTools {
+		fn, _ := tool["function"].(map[string]any)
+		name, _ := fn["name"].(string)
+		if allowed[name] {
+			out = append(out, tool)
+		}
+	}
+	return out
+}
+
 var agentTools = []map[string]any{
 	{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "scrape_group",
-			"description": "Cào bài viết từ 1 Facebook group cụ thể",
+			"description": "Crawl a concrete Facebook group or post URL through the authenticated workspace browser session.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"url":        map[string]string{"type": "string", "description": "Facebook group URL"},
-					"account_id": map[string]string{"type": "integer", "description": "ID account dùng để cào group (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
+					"url":        map[string]string{"type": "string", "description": "Facebook group or post URL"},
+					"account_id": map[string]string{"type": "integer", "description": "Workspace Facebook account ID. Empty means auto-pick a ready account."},
 				},
 				"required": []string{"url"},
 			},
@@ -981,11 +1066,12 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "scrape_comments",
-			"description": "Cào/đọc các comments ĐÃ CÓ SẴN từ 1 bài viết để phân tích. KHÔNG dùng khi user muốn ĐĂNG comment mới lên bài.",
+			"description": "Read existing comments from one Facebook post for lead analysis. Do not use this to publish a new comment.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"post_url": map[string]string{"type": "string", "description": "URL bài viết"},
+					"post_url":   map[string]string{"type": "string", "description": "Facebook post URL"},
+					"account_id": map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
 				},
 				"required": []string{"post_url"},
 			},
@@ -994,53 +1080,15 @@ var agentTools = []map[string]any{
 	{
 		"type": "function",
 		"function": map[string]any{
-			"name":        "check_inbox",
-			"description": "Kiểm tra inbox Messenger",
+			"name":        "search_groups",
+			"description": "Discover suitable Facebook sources when the user describes a target audience but does not provide a source URL.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"account_id": map[string]string{"type": "integer", "description": "ID account"},
+					"query":      map[string]string{"type": "string", "description": "Search query derived from prompt and business context"},
+					"account_id": map[string]string{"type": "integer", "description": "Workspace Facebook account ID. Empty means auto-pick a ready account."},
 				},
-				"required": []string{"account_id"},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "add_group",
-			"description": "Thêm group mới vào danh sách theo dõi",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"url":  map[string]string{"type": "string", "description": "URL group"},
-					"name": map[string]string{"type": "string", "description": "Tên group"},
-				},
-				"required": []string{"url", "name"},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "get_stats",
-			"description": "Xem thống kê hệ thống",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "classify_leads",
-			"description": "Phân loại bài viết thành leads (hot/warm/cold) theo tiêu chí user đã cấu hình",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"count": map[string]string{"type": "integer", "description": "Số bài cần classify (mặc định 20)"},
-				},
+				"required": []string{"query"},
 			},
 		},
 	},
@@ -1048,14 +1096,14 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "auto_comment",
-			"description": "ĐĂNG comment mới lên 1 bài viết cụ thể theo URL. Dùng khi user gửi link bài viết + nói 'comment lên đây', 'bình luận lên post này', 'comment bài này cho tôi', 'comment vào link này'. AI soạn nội dung phù hợp.",
+			"description": "Queue a comment for one concrete Facebook post. Default is draft unless auto mode is explicit.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"post_url":    map[string]string{"type": "string", "description": "URL bài viết cần comment"},
-					"account_id":  map[string]string{"type": "integer", "description": "ID account dùng để comment"},
-					"context":     map[string]string{"type": "string", "description": "Nội dung bài viết gốc"},
-					"target_name": map[string]string{"type": "string", "description": "Tên tác giả bài viết"},
+					"post_url":    map[string]string{"type": "string", "description": "Target post URL"},
+					"account_id":  map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"context":     map[string]string{"type": "string", "description": "Post context if available"},
+					"target_name": map[string]string{"type": "string", "description": "Author name if available"},
 				},
 				"required": []string{"post_url"},
 			},
@@ -1065,14 +1113,13 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "comment_all_leads",
-			"description": "Comment tất cả leads hiện tại. AI soạn comment riêng cho từng lead, hoặc dùng template user cung cấp. Nếu auto_comment_mode=true thì comment ngay không cần duyệt. Dùng khi user nói 'comment tất cả leads', 'bình luận hết', 'comment all', 'comment leads kèm ảnh'. Nếu user chỉ định account, truyền account_id.",
+			"description": "Queue comments for qualified leads with dedup, cooldown, and approval guardrails.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"template":     map[string]string{"type": "string", "description": "Mẫu comment (nếu có). Để trống = AI tự soạn phù hợp từng lead"},
-					"score_filter": map[string]string{"type": "string", "description": "Lọc theo score: hot, warm, cold, hoặc all (mặc định: all)"},
-					"with_image":   map[string]string{"type": "boolean", "description": "Kèm ảnh thực tế từ database khi comment. true/false"},
-					"account_id":   map[string]string{"type": "integer", "description": "ID account dùng để comment (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
+					"template":     map[string]string{"type": "string", "description": "Optional user-provided comment template"},
+					"score_filter": map[string]string{"type": "string", "description": "hot, warm, cold, or all"},
+					"account_id":   map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
 				},
 			},
 		},
@@ -1081,14 +1128,14 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "auto_inbox",
-			"description": "Tạo draft tin nhắn inbox cho 1 lead cụ thể. AI soạn nội dung tư vấn. Cần duyệt trước khi gửi.",
+			"description": "Queue an inbox message for one concrete lead. Default is draft unless auto mode is explicit.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"target_url":  map[string]string{"type": "string", "description": "URL profile hoặc Messenger"},
-					"account_id":  map[string]string{"type": "integer", "description": "ID account dùng để gửi"},
-					"context":     map[string]string{"type": "string", "description": "Nội dung bài viết/comment của lead"},
-					"target_name": map[string]string{"type": "string", "description": "Tên người nhận"},
+					"target_url":  map[string]string{"type": "string", "description": "Profile or Messenger target URL"},
+					"account_id":  map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"context":     map[string]string{"type": "string", "description": "Lead context"},
+					"target_name": map[string]string{"type": "string", "description": "Lead name if available"},
 				},
 				"required": []string{"target_url"},
 			},
@@ -1098,49 +1145,12 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "inbox_all_leads",
-			"description": "Inbox tất cả leads hiện tại. AI soạn tin nhắn riêng cho từng lead và gửi luôn qua Messenger. Dùng khi user nói 'inbox tất cả leads', 'nhắn tin hết leads', 'inbox all', 'gửi tin nhắn tất cả'. Nếu user chỉ định account, truyền account_id.",
+			"description": "Queue inbox outreach for qualified leads with conversation, dedup, cooldown, and approval guardrails.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"score_filter": map[string]string{"type": "string", "description": "Lọc theo score: hot, warm, cold, hoặc all (mặc định: hot)"},
-					"skip_sent":    map[string]string{"type": "boolean", "description": "Bỏ qua leads đã inbox rồi. true/false (mặc định: true)"},
-					"account_id":   map[string]string{"type": "integer", "description": "ID account dùng để inbox (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
-				},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "recruit_from_database",
-			"description": "TỰ ĐỘNG cào nhân sự dựa trên các vị trí tuyển dụng đã lưu trong database. Tool này làm TẤT CẢ trong 1 bước: đọc danh sách jobs → set niche tuyển dụng → tự sinh keywords → tìm groups Facebook → tự động cào. Dùng khi user nói 'cào nhân sự liên quan đến vị trí trong database', 'tìm ứng viên cho jobs đã cào', 'cào tuyển dụng theo database'.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "list_career_jobs",
-			"description": "Xem danh sách tất cả vị trí tuyển dụng đang mở đã lưu trong database. Dùng khi user hỏi 'xem jobs đã cào', 'vị trí trong database', 'danh sách tuyển dụng', hoặc muốn cào nhân sự theo vị trí đã lưu. Trả về tiêu đề + mô tả ngắn của từng job.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "recruit_all_candidates",
-			"description": "Comment outreach tất cả ứng viên (candidates) đang tìm việc. AI soạn comment cá nhân hóa dựa trên JD đang có, gửi đến từng bài của ứng viên. Dùng khi user nói 'comment ứng viên', 'outreach candidates', 'tiếp cận ứng viên', 'comment tất cả ứng viên'. Nếu user chỉ định account, truyền account_id.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"score_filter": map[string]string{"type": "string", "description": "Lọc theo score: hot, warm, cold, hoặc all (mặc định: hot)"},
-					"account_id":   map[string]string{"type": "integer", "description": "ID account dùng để comment (từ ACCOUNT MAPPING). Bỏ trống = tự chọn account"},
+					"score_filter": map[string]string{"type": "string", "description": "hot, warm, cold, or all"},
+					"account_id":   map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
 				},
 			},
 		},
@@ -1149,58 +1159,30 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "create_job_post",
-			"description": "Tạo bài đăng tuyển dụng chuyên nghiệp cho Facebook. AI soạn nội dung hấp dẫn thu hút ứng viên. Dùng khi user muốn 'đăng tuyển dụng', 'tạo bài tuyển dụng', 'tạo JD', 'viết job post'.",
+			"description": "Queue a Facebook post/group post draft from the user request and business context.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"title":        map[string]string{"type": "string", "description": "Tên vị trí tuyển dụng (vd: Nhân viên Kho, Sales Executive)"},
-					"description":  map[string]string{"type": "string", "description": "Mô tả công việc ngắn gọn"},
-					"requirements": map[string]string{"type": "string", "description": "Yêu cầu ứng viên (kinh nghiệm, kỹ năng)"},
-					"benefits":     map[string]string{"type": "string", "description": "Quyền lợi (lương, thưởng, môi trường làm việc)"},
-					"salary":       map[string]string{"type": "string", "description": "Mức lương (vd: 12-15 triệu, thỏa thuận)"},
-					"email":        map[string]string{"type": "string", "description": "Email nhận CV (mặc định: career@thgfulfill.com)"},
+					"title":       map[string]string{"type": "string", "description": "Post title or topic"},
+					"description": map[string]string{"type": "string", "description": "Post brief"},
+					"content":     map[string]string{"type": "string", "description": "Full content if provided"},
+					"group_url":   map[string]string{"type": "string", "description": "Target group URL if specified"},
+					"account_id":  map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
 				},
-				"required": []string{"title"},
 			},
 		},
 	},
 	{
 		"type": "function",
 		"function": map[string]any{
-			"name":        "check_inbox_replies",
-			"description": "Kiểm tra tất cả conversations đang mở xem có khách hàng reply chưa. Nếu có → AI tự soạn và gửi follow-up ngay dựa trên toàn bộ lịch sử hội thoại. Dùng khi user nói 'check reply', 'xem ai nhắn lại chưa', 'follow up inbox', 'kiểm tra tin nhắn mới'.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "crawl_catalog",
-			"description": "Tự động vào website catalog/sản phẩm và tải tất cả ảnh về database để dùng cho auto-comment. Dùng khi user gửi link website và muốn AI lấy ảnh từ đó. Trigger: 'crawl ảnh', 'lấy ảnh từ web', 'import ảnh', link website catalog.",
+			"name":        "describe_business",
+			"description": "Store org-scoped business context: brand, services, target customers, tone, reject rules, and approval policy.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"url": map[string]string{"type": "string", "description": "URL trang catalog/website cần crawl ảnh"},
+					"description": map[string]string{"type": "string", "description": "Free-form business/workspace description"},
 				},
-				"required": []string{"url"},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "update_price_list",
-			"description": "Học bảng giá dịch vụ/sản phẩm từ text. AI sẽ trích xuất và lưu để tư vấn đúng giá khi comment/inbox khách. Trigger: 'học bảng giá', 'bảng giá:', 'giá dịch vụ là', 'update giá', user paste danh sách giá.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"text":    map[string]string{"type": "string", "description": "Nội dung bảng giá dạng text cần học"},
-					"replace": map[string]string{"type": "boolean", "description": "true = xóa bảng giá cũ và thay mới, false = thêm vào (mặc định false)"},
-				},
-				"required": []string{"text"},
+				"required": []string{"description"},
 			},
 		},
 	},
@@ -1208,12 +1190,12 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "set_context",
-			"description": "Lưu thông tin cấu hình kinh doanh và chế độ hoạt động. Dùng khi user mô tả lĩnh vực, dịch vụ, khách hàng mục tiêu, quy tắc lọc bài, hoặc chuyển lĩnh vực.",
+			"description": "Store org-scoped configuration such as business_profile, private_files_summary, data_sources_summary, or outbound_mode.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"key":   map[string]string{"type": "string", "description": "Loại thông tin cần lưu: business_name, business_industry, business_desc, services, target_customers, business_location, business_usp, reject_rules, last_search_intent, auto_comment_mode (true/false)"},
-					"value": map[string]string{"type": "string", "description": "Giá trị cần lưu"},
+					"key":   map[string]string{"type": "string", "description": "business_profile, private_files_summary, data_sources_summary, outbound_mode"},
+					"value": map[string]string{"type": "string", "description": "Value to store"},
 				},
 				"required": []string{"key", "value"},
 			},
@@ -1222,93 +1204,8 @@ var agentTools = []map[string]any{
 	{
 		"type": "function",
 		"function": map[string]any{
-			"name":        "search_groups",
-			"description": "Tìm kiếm nhóm Facebook theo keywords. AI tự sinh keywords từ prompt của user. Tool tự add groups vào danh sách theo dõi và tự submit cào ngay. Nếu user chỉ định account, truyền account_id để tìm kiếm bằng session của account đó.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query":      map[string]string{"type": "string", "description": "Keywords để tìm FB groups (VD: 'tuyển dụng kho vận', 'việc làm logistics')"},
-					"niche":      map[string]string{"type": "string", "description": "Lĩnh vực đang làm (VD: 'tuyen_dung', 'logistics'). Tool này sẽ auto set_context active_niche luôn."},
-					"account_id": map[string]string{"type": "integer", "description": "ID account dùng để tìm kiếm (từ ACCOUNT MAPPING). Bỏ trống = dùng session mặc định."},
-				},
-				"required": []string{"query"},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "crawl_careers",
-			"description": "Tự động truy cập trang tuyển dụng (careers page) của công ty và trích xuất mọi tin tuyển dụng đang mở. Lưu danh sách vào CSDL để dùng cho việc comment HR. Trigger: khi user gửi URL có /careers hoặc nhắc nhở cào trang tuyển dụng.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"url": map[string]string{"type": "string", "description": "Đường link trang careers (vd: https://www.thgfulfill.com/careers)"},
-				},
-				"required": []string{"url"},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "crawl_careers_images",
-			"description": "Chụp ảnh screenshot từng thẻ JD (job card modal) trên trang careers và lưu vào DB dưới dạng ảnh có category=career_job. Sau đó HR Agent sẽ tự đính kèm đúng ảnh JD khi comment reply ứng viên. Trigger: khi user gửi link careers kèm yêu cầu 'chụp ảnh JD' / 'lấy ảnh JD' / 'attach ảnh vào comment'. Nên gọi SAU crawl_careers() để đảm bảo danh sách jobs đã có.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"url": map[string]string{"type": "string", "description": "Đường link trang careers để chụp ảnh JD (vd: https://www.thgfulfill.com/careers)"},
-				},
-				"required": []string{"url"},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "run_full_recruitment_pipeline",
-			"description": "Chạy toàn bộ pipeline tuyển dụng end-to-end: load tất cả jobs theo priority → extract keywords → tìm/cào groups → scrape comments ứng viên → AI score + domain-match → dedup → queue comment_reply + inbox DM → tạo bài đăng JD draft. TRIGGERS (gọi ngay khi user nói bất kỳ): 'cào nhân sự liên quan đến', 'cào ứng viên', 'tìm ứng viên cho jobs', 'tìm nhân sự theo database', 'crawl candidates', 'chạy pipeline tuyển dụng', 'recruit từ database'. Yêu cầu: DB phải có career jobs (chạy crawl_careers trước). Trả về báo cáo đầy đủ.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-				"required":   []string{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "post_jds_to_groups",
-			"description": "Tạo bài viết tuyển dụng chuyên nghiệp cho các vị trí trong database và đăng trực tiếp vào Facebook groups phù hợp. AI sẽ: (1) load jobs từ DB, (2) filter theo positions nếu user chỉ định, (3) tìm groups theo domain, (4) soạn bài chuyên nghiệp, (5) đăng vào groups. QUAN TRỌNG: Nếu user liệt kê CỤ THỂ vị trí, bạn PHẢI truyền vào positions.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"positions": map[string]any{
-						"type":        "string",
-						"description": "Danh sách vị trí cần đăng, phân cách bởi dấu phẩy. Ví dụ: 'Accountant, Sales Executive, E-Commerce Operations'. Để trống nếu đăng tất cả vị trí trong DB.",
-					},
-				},
-				"required": []string{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "scan_own_jd_posts",
-			"description": "Quét các bài JD đã đăng lên Facebook groups để tìm ứng viên comments. Khi có người comment lên bài, họ sẽ trở thành leads trong tab Tuyển dụng và HR Agent sẽ tự động @reply. TRIGGERS: 'quét bài đã đăng', 'kiểm tra comments', 'tìm ứng viên từ bài JD', 'scan bài tuyển dụng', 'xem ai comment bài tuyển dụng'.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-				"required":   []string{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "score_groups",
-			"description": "Chạy NLP scoring tất cả groups chưa được đánh giá: relevance, professionalism, content quality, spam penalty → final_score → decision (use/monitor/reject). Dùng khi user nói 'đánh giá groups', 'score groups', 'chất lượng groups', 'lọc groups xấu', 'tìm groups tốt'.",
+			"name":        "get_stats",
+			"description": "Read workspace stats.",
 			"parameters": map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
@@ -1318,36 +1215,26 @@ var agentTools = []map[string]any{
 	{
 		"type": "function",
 		"function": map[string]any{
-			"name":        "discover_groups_for_jobs",
-			"description": "AI tự sinh search queries theo từng job domain → tìm groups Facebook phù hợp → score chất lượng → lưu vào DB. Dùng khi user nói 'tìm groups cho jobs', 'khám phá groups tuyển dụng', 'discover groups', 'tìm thêm groups chất lượng'.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "seed_quality_groups",
-			"description": "Nạp danh sách groups chất lượng cao đã được tuyển chọn (tech, sales, ops, finance) vào hệ thống và tự động score chúng. Dùng lần đầu hoặc khi muốn khởi tạo lại bộ groups chuẩn. Trigger: 'seed groups', 'khởi tạo groups', 'nạp groups mặc định', 'bootstrap groups'.",
-			"parameters": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "describe_business",
-			"description": "Lưu thông tin doanh nghiệp từ mô tả tự do của user. AI sẽ tự trích xuất: tên, ngành, dịch vụ, khách hàng mục tiêu, địa điểm, USP, quy tắc lọc bài. Không cần format cứng — user chỉ cần mô tả bằng lời thường. Trigger: khi user giới thiệu về doanh nghiệp, thay đổi lĩnh vực kinh doanh, bổ sung dịch vụ mới, hoặc nói 'cấu hình lại', 'cập nhật thông tin công ty', 'mình kinh doanh X'.",
+			"name":        "add_group",
+			"description": "Register a Facebook source for the current organization.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"description": map[string]string{"type": "string", "description": "Mô tả tự do về doanh nghiệp của user (copy nguyên văn, không tóm tắt)"},
+					"url":  map[string]string{"type": "string", "description": "Facebook source URL"},
+					"name": map[string]string{"type": "string", "description": "Source name"},
 				},
-				"required": []string{"description"},
+				"required": []string{"url", "name"},
+			},
+		},
+	},
+	{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "classify_leads",
+			"description": "Confirm that classification is handled inline by prompt-scoped crawl results and current business context.",
+			"parameters": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
 			},
 		},
 	},

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -157,6 +158,7 @@ func (s *Server) agentOutboxSent(c *fiber.Ctx) error {
 			_ = s.db.AddThreadMessage(threadID, "outbound", msg.Content, true)
 		}
 	}
+	s.notifyOutboundStatus(orgID, id, models.OutboundSent)
 	return c.JSON(fiber.Map{"status": "sent"})
 }
 
@@ -171,6 +173,7 @@ func (s *Server) agentOutboxFailed(c *fiber.Ctx) error {
 	if err := s.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundFailed); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
 	}
+	s.notifyOutboundStatus(orgID, id, models.OutboundFailed)
 	return c.JSON(fiber.Map{"status": "failed"})
 }
 
@@ -475,7 +478,8 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "failed", "error": errMsg})
 	}
 
-	keywords := normalizeCrawlKeywords(body.Keywords)
+	guidance := orgScoringGuidance(s.db, orgID)
+	keywords := normalizeCrawlKeywords(append(body.Keywords, orgIntelligenceKeywords(s.db, orgID)...))
 	inserted := 0
 	fetched := 0
 	for _, item := range body.Items {
@@ -484,8 +488,8 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 			continue
 		}
 		fetched++
-		score, category, signals := scoreConnectorCrawlItem(content, keywords, item.Reactions, item.Comments, item.Shares)
-		if category == "cold" {
+		score, category, signals := scoreConnectorCrawlItem(content, keywords, item.Reactions, item.Comments, item.Shares, guidance)
+		if category == "cold" || category == "rejected" {
 			continue
 		}
 		sourceURL := strings.TrimSpace(item.SourceURL)
@@ -549,53 +553,84 @@ func normalizeCrawlKeywords(values []string) []string {
 	return out
 }
 
-func scoreConnectorCrawlItem(content string, keywords []string, reactions, comments, shares int) (float64, string, []string) {
-	lower := strings.ToLower(content)
-	signals := []string{"local_runtime_crawl"}
-	matches := 0
-	for _, kw := range keywords {
-		if kw != "" && strings.Contains(lower, kw) {
-			matches++
-			if matches <= 5 {
-				signals = append(signals, "keyword:"+kw)
-			}
+func orgIntelligenceKeywords(db *store.Store, orgID int64) []string {
+	if db == nil || orgID <= 0 {
+		return nil
+	}
+	var combined strings.Builder
+	for _, key := range []string{"business_profile", "business_industry", "services", "target_customers", "target_signals", "markets", "private_files_summary", "data_sources_summary"} {
+		value, err := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
+		if err == nil && strings.TrimSpace(value) != "" {
+			combined.WriteByte(' ')
+			combined.WriteString(value)
 		}
 	}
-	score := float64(matches * 22)
-	if matches == 0 && len(keywords) == 0 {
-		score = 35
+	text := strings.ToLower(combined.String())
+	if text == "" {
+		return nil
 	}
-	if reactions > 0 {
-		score += minFloat(15, float64(reactions)/4)
-		signals = append(signals, "engagement:reactions")
+	stop := map[string]bool{
+		"the": true, "and": true, "for": true, "with": true, "from": true, "that": true,
+		"this": true, "you": true, "your": true, "are": true, "can": true, "will": true,
+		"toi": true, "tôi": true, "cua": true, "của": true, "cho": true, "voi": true,
+		"với": true, "cac": true, "các": true, "nhung": true, "những": true, "khach": true,
+		"khách": true, "hang": true, "hàng": true,
 	}
-	if comments > 0 {
-		score += minFloat(15, float64(comments)*2)
-		signals = append(signals, "engagement:comments")
+	seen := map[string]bool{}
+	out := make([]string, 0, 24)
+	for _, token := range strings.FieldsFunc(text, func(r rune) bool {
+		return !(r == '_' || r == '-' || r == '+' || r == '#' || r == '@' || r == '.' || r == '/' || r == ':' || r == '%' || r == '&' || r == '=' || r == '?' || r == '\'' || r == '"' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || r >= 128)
+	}) {
+		token = strings.Trim(token, "._-+/:%&=?'\"")
+		if len([]rune(token)) < 3 || stop[token] || seen[token] {
+			continue
+		}
+		seen[token] = true
+		out = append(out, token)
+		if len(out) >= 24 {
+			break
+		}
 	}
-	if shares > 0 {
-		score += minFloat(8, float64(shares)*2)
-	}
-	if len([]rune(content)) > 120 {
-		score += 10
-	}
-	if score > 100 {
-		score = 100
-	}
-	category := "cold"
-	if score >= 70 {
-		category = "hot"
-	} else if score >= 40 {
-		category = "warm"
-	}
-	return score, category, signals
+	return out
 }
 
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
+func orgScoringGuidance(db *store.Store, orgID int64) scoring.Guidance {
+	if db == nil || orgID <= 0 {
+		return scoring.Guidance{}
 	}
-	return b
+	get := func(key string) string {
+		value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
+		return strings.TrimSpace(value)
+	}
+	return scoring.Guidance{
+		TargetAuthorRole: get("target_author_role"),
+		TargetSignals:    splitSignalPhrases(get("target_signals")),
+		RejectPhrases:    splitSignalPhrases(strings.Join([]string{get("negative_signals"), get("reject_rules")}, "\n")),
+	}
+}
+
+func splitSignalPhrases(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == ',' || r == ';' || r == '|'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func scoreConnectorCrawlItem(content string, keywords []string, reactions, comments, shares int, guidance scoring.Guidance) (float64, string, []string) {
+	result := scoring.New(scoring.DefaultConfig()).ScoreWithGuidance(content, keywords, reactions, comments, "", guidance)
+	score := result.Score
+	category := result.Category
+	signals := append([]string{"local_runtime_crawl"}, result.Signals...)
+	if shares > 0 {
+		signals = append(signals, "engagement:shares")
+	}
+	return score, category, signals
 }
 
 // agentScreenshot stores the latest observable frame from the user's real Chrome.

@@ -13,14 +13,20 @@ import (
 // It replaces all hardcoded "logistics" / "tuyen_dung" logic.
 // Stored as individual keys in user_context so legacy set_context calls still work.
 type BusinessProfile struct {
-	Name        string `json:"name"`         // e.g., "Tiệm Bánh ABC"
-	Industry    string `json:"industry"`     // e.g., "food & beverage", "real estate", "recruitment"
-	Description string `json:"description"`  // what they do, free-form
-	Services    string `json:"services"`     // what they sell/offer
-	Targets     string `json:"targets"`      // who they're looking for / ideal customer
-	Location    string `json:"location"`     // where they operate
-	USP         string `json:"usp"`          // unique selling point
-	RejectRules string `json:"reject_rules"` // what posts to ignore
+	Name             string `json:"name"`        // e.g., "Tiệm Bánh ABC"
+	Industry         string `json:"industry"`    // e.g., "food & beverage", "real estate", "recruitment"
+	Description      string `json:"description"` // what they do, free-form
+	Services         string `json:"services"`    // what they sell/offer
+	Targets          string `json:"targets"`     // who they're looking for / ideal customer
+	TargetAuthorRole string `json:"target_author_role"`
+	TargetSignals    string `json:"target_signals"`
+	NegativeSignals  string `json:"negative_signals"`
+	Location         string `json:"location"` // where they operate
+	Markets          string `json:"markets"`
+	USP              string `json:"usp"` // unique selling point
+	Tone             string `json:"tone"`
+	ApprovalPolicy   string `json:"approval_policy"`
+	RejectRules      string `json:"reject_rules"` // what posts to ignore
 }
 
 // IsConfigured returns true if the profile has enough info for AI operations.
@@ -50,11 +56,29 @@ func (p *BusinessProfile) ToPromptBlock() string {
 	if p.Targets != "" {
 		fmt.Fprintf(&sb, "IDEAL CUSTOMER: %s\n", p.Targets)
 	}
+	if p.TargetAuthorRole != "" {
+		fmt.Fprintf(&sb, "TARGET AUTHOR ROLE: %s\n", p.TargetAuthorRole)
+	}
+	if p.TargetSignals != "" {
+		fmt.Fprintf(&sb, "PREFER POSTS WITH THESE SIGNALS: %s\n", p.TargetSignals)
+	}
+	if p.NegativeSignals != "" {
+		fmt.Fprintf(&sb, "REJECT POSTS WITH THESE SIGNALS: %s\n", p.NegativeSignals)
+	}
 	if p.Location != "" {
 		fmt.Fprintf(&sb, "LOCATION: %s\n", p.Location)
 	}
+	if p.Markets != "" {
+		fmt.Fprintf(&sb, "TARGET MARKETS: %s\n", p.Markets)
+	}
 	if p.USP != "" {
 		fmt.Fprintf(&sb, "WHY CHOOSE US: %s\n", p.USP)
+	}
+	if p.Tone != "" {
+		fmt.Fprintf(&sb, "TONE: %s\n", p.Tone)
+	}
+	if p.ApprovalPolicy != "" {
+		fmt.Fprintf(&sb, "APPROVAL POLICY: %s\n", p.ApprovalPolicy)
 	}
 	if p.RejectRules != "" {
 		fmt.Fprintf(&sb, "IGNORE THESE POSTS: %s\n", p.RejectRules)
@@ -75,28 +99,40 @@ func LoadProfile(db *store.Store) *BusinessProfile {
 // ProfileFromContext builds a BusinessProfile from a context map (works without DB).
 func ProfileFromContext(ctx map[string]string) *BusinessProfile {
 	return &BusinessProfile{
-		Name:        ctx["business_name"],
-		Industry:    orFallback(ctx["business_industry"], ctx["active_niche"]),
-		Description: ctx["business_desc"],
-		Services:    ctx["services"],
-		Targets:     ctx["target_customers"],
-		Location:    ctx["business_location"],
-		USP:         ctx["business_usp"],
-		RejectRules: ctx["reject_rules"],
+		Name:             ctx["business_name"],
+		Industry:         orFallback(ctx["business_industry"], ctx["active_niche"]),
+		Description:      orFallback(ctx["business_desc"], ctx["business_profile"]),
+		Services:         ctx["services"],
+		Targets:          ctx["target_customers"],
+		TargetAuthorRole: strings.ToLower(strings.TrimSpace(ctx["target_author_role"])),
+		TargetSignals:    ctx["target_signals"],
+		NegativeSignals:  ctx["negative_signals"],
+		Location:         ctx["business_location"],
+		Markets:          ctx["markets"],
+		USP:              ctx["business_usp"],
+		Tone:             ctx["tone"],
+		ApprovalPolicy:   ctx["approval_policy"],
+		RejectRules:      ctx["reject_rules"],
 	}
 }
 
 // Save persists the profile to user_context as individual keys.
 func (p *BusinessProfile) Save(db *store.Store) error {
 	fields := map[string]string{
-		"business_name":     p.Name,
-		"business_industry": p.Industry,
-		"business_desc":     p.Description,
-		"services":          p.Services,
-		"target_customers":  p.Targets,
-		"business_location": p.Location,
-		"business_usp":      p.USP,
-		"reject_rules":      p.RejectRules,
+		"business_name":      p.Name,
+		"business_industry":  p.Industry,
+		"business_desc":      p.Description,
+		"services":           p.Services,
+		"target_customers":   p.Targets,
+		"target_author_role": p.TargetAuthorRole,
+		"target_signals":     p.TargetSignals,
+		"negative_signals":   p.NegativeSignals,
+		"business_location":  p.Location,
+		"markets":            p.Markets,
+		"business_usp":       p.USP,
+		"tone":               p.Tone,
+		"approval_policy":    p.ApprovalPolicy,
+		"reject_rules":       p.RejectRules,
 	}
 	for k, v := range fields {
 		if v == "" {
@@ -124,8 +160,14 @@ Respond with ONLY valid JSON (no markdown, no explanation):
   "description": "what the business does (1-2 sentences, keep user's language)",
   "services": "products/services offered (comma-separated, keep user's language)",
   "targets": "ideal customer profile (who they want to reach, keep user's language)",
+  "target_author_role": "customers|suppliers|partners|candidates|providers",
+  "target_signals": "phrases or situations that indicate a useful lead",
+  "negative_signals": "phrases or situations that indicate a non-lead",
   "location": "city/region if mentioned, else empty",
+  "markets": "target markets/regions if mentioned, else empty",
   "usp": "unique selling point if mentioned, else empty",
+  "tone": "preferred sales/customer-service tone if mentioned, else empty",
+  "approval_policy": "draft/approval/auto policy if mentioned, else empty",
   "reject_rules": "types of posts to ignore based on their business, else empty"
 }`, userDescription)
 

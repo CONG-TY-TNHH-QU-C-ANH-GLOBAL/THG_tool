@@ -45,6 +45,9 @@ type Config struct {
 	GoogleRedirectURI  string
 
 	Mailer mailer.Config
+
+	// Notifier is an optional production notification hook, normally Telegram.
+	Notifier func(string)
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -85,8 +88,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:                 "THG Agentic Scraper",
-		ServerHeader:            "THG-Scraper",
+		AppName:                 "THG AutoFlow",
+		ServerHeader:            "THG-AutoFlow",
 		BodyLimit:               8 * 1024 * 1024, // local Chrome screenshots can be a few MB
 		ReadTimeout:             30 * time.Second,
 		WriteTimeout:            0, // no timeout — WebSocket (noVNC/agent) connections are long-lived
@@ -297,6 +300,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Get("/jobs", s.getJobs)
 	r.Post("/jobs", s.createJob)
 	r.Delete("/jobs/:id", adminOnly, s.cancelJob)
+	r.Get("/crawl-intents", s.getCrawlIntents)
+	r.Put("/crawl-intents/:id/enabled", adminOnly, s.setCrawlIntentEnabled)
 
 	// Groups — sales can view; admin manages
 	r.Get("/groups", s.getGroups)
@@ -491,11 +496,11 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	app.Get("/ws/agent", fiberws.New(s.wsHub.wsHandler(db)))
 
 	// The production frontend is the Next.js app on port 3000 behind nginx.
-	// Keep scraper as an API/WebSocket service only, so stale embedded UI can
+	// Keep THG AutoFlow as an API/WebSocket service only, so stale embedded UI can
 	// never appear as a fallback in production.
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"service":  "thg-scraper-api",
+			"service":  "thg-autoflow-api",
 			"status":   "ok",
 			"frontend": "nextjs",
 		})
@@ -1042,6 +1047,7 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 	if status == models.OutboundApproved && s.wsHub != nil {
 		s.wsHub.NotifyOutboxReady(1)
 	}
+	s.notifyOutboundQueued(orgID, req.AccountID, id, req.Type, status)
 	return c.Status(201).JSON(fiber.Map{"message_id": id, "status": status})
 }
 
@@ -1057,6 +1063,7 @@ func (s *Server) approveOutbound(c *fiber.Ctx) error {
 	if s.wsHub != nil {
 		s.wsHub.NotifyOutboxReady(1)
 	}
+	s.notifyOutboundStatus(orgID, id, models.OutboundApproved)
 	return c.JSON(fiber.Map{"status": "approved", "message": "Đã duyệt! Tin nhắn sẽ được gửi tự động."})
 }
 

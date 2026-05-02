@@ -151,6 +151,24 @@ Every organization must provide a business context before meaningful automation:
 - Approval policy: what the AI may draft, what requires human approval, what is
   forbidden
 
+The product UX should make this feel like calibration, not a technical form. A
+workspace admin should be guided to define:
+
+- who the organization is
+- what products/services it offers
+- which author role it wants to find: customers, suppliers, partners,
+  candidates, or providers
+- which buying/request signals indicate useful data
+- which promotion/spam/provider signals should be rejected
+- target markets and language/tone
+- approval and automation boundaries
+
+This preserves the open-source/open-domain architecture while giving the
+classifier a precise business lens. The platform should not assume that a
+matching keyword is a lead. For one organization, a provider post is a
+competitor ad; for another, the same provider post may be the supplier segment
+they explicitly asked to find.
+
 Existing hook: `internal/ai/business.go` already has `BusinessProfile`.
 Do not hardcode THG, logistics, recruitment, POD, or any single vertical into
 the crawler. Store the business profile per org and make all classifiers consume
@@ -230,7 +248,88 @@ Existing hooks:
 - `internal/server/screen_proxy.go`
 - `frontend/src/modules/autoflow/components/views/BrowserView.tsx`
 
-### 2.3 Source Discovery
+### 2.3 Recurring Crawl Intelligence
+
+The first successful crawl prompt is both an action and a learning event. When an
+organization asks for a market segment, source, group, search query, or campaign
+context, the backend should persist that need as an org-scoped crawl intent.
+
+Current implementation direction:
+
+- Store learned needs in `org_crawl_intents`.
+- Default interval is 30 minutes and never lower than 30 minutes without an
+  explicit product decision.
+- The scheduled loop reuses the stored source, keywords, selected account, and
+  max item cap. It does not call the AI again just to decide what to crawl.
+- AI is used for tasks that need judgment: interpreting the first prompt,
+  extracting segment keywords, classifying ambiguous leads, drafting outreach,
+  and learning strategy.
+- Traditional automation handles cheap repeated work: scheduler ticks, queue
+  idempotency, Local Runtime commands, Playwright/Chrome crawling, dedup,
+  cooldowns, and retries.
+- If no logged-in local Facebook runtime is ready, the intent records the error
+  and waits for the next interval instead of spinning or creating fake data.
+- Admins can inspect and disable crawl intents via API; dashboard controls can
+  be layered on top.
+
+This is the cost model for scale: prompts teach the system once, then the
+service runs deterministic automation 24/7 and spends AI only where analysis or
+language generation creates real value.
+
+### 2.3.1 Market Signal Gate
+
+Open crawling must distinguish the role of the author in each Facebook post.
+Broad industries such as logistics, ecommerce, sourcing, HR, or real estate
+will always contain two opposite populations in the same groups:
+
+- people asking for a service, supplier, quote, recommendation, hiring help, or
+  buying/sourcing support
+- people advertising that they provide that same service
+
+The crawler must not treat both as leads just because keywords match. The first
+gate is deterministic and low-cost:
+
+- `buyer_demand`: explicit request/problem/question/buying intent
+- `provider_promotion`: author is selling/advertising their own service
+- `spam_or_low_trust`: mass promotion, low-trust links, unrelated offers
+- `keyword_only`: content mentions the topic but has no customer intent
+
+Only `buyer_demand` or strong request/question signals should become hot/warm
+leads by default. Provider promotions and keyword-only content should be
+rejected or kept cold unless the organization explicitly defines suppliers,
+partners, resellers, or candidates as its target segment.
+
+This gate protects trust: the system should prefer fewer accurate leads over a
+large list polluted by competitors and ads. AI classifiers can still resolve
+ambiguous posts, but the cheap deterministic gate must run first for recurring
+jobs and Local Runtime results.
+
+### 2.3.2 Business Calibration UX
+
+Market Signal Gate is personalized by organization context, not by hardcoded
+vertical rules. Before a workspace runs meaningful crawl automation, admins
+should define the business in a Claude-style calibration flow:
+
+- who the organization is and what it sells
+- which author role is the target: customers, suppliers, partners, candidates,
+  or providers
+- ideal customer/segment description
+- positive signals that should be kept
+- negative signals and reject rules that should be filtered out
+- markets, location, tone, USP, and approval policy
+
+Dashboard Chat and Telegram share the same preflight. If a Facebook crawl prompt
+arrives before this context exists, the system must not create a crawler job.
+It should ask for the business calibration first, then reuse the saved
+org-scoped context for future prompts, recurring crawl intents, Local Runtime
+results, AI classification, comments, inbox, and posting.
+
+This lets the same Facebook post be treated differently per workspace. A post
+from a supplier is rejected for an organization seeking end customers, but can
+become a valid warm lead for an organization explicitly sourcing suppliers or
+partners.
+
+### 2.4 Source Discovery
 
 The system needs source discovery, not only manual group URLs.
 
