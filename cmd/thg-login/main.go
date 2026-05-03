@@ -378,18 +378,26 @@ func startChromeBridgeForTarget(target browserTarget, port int) *chromeBridge {
 		},
 	}
 	installFacebookLoginNetworkCapture(ctx, bridge)
-	if err := chromedp.Run(ctx,
+	startupCtx, startupCancel := context.WithTimeout(ctx, chromeStartupTimeout())
+	err = chromedp.Run(startupCtx,
 		cdpnetwork.Enable(),
 		installFacebookLoginCaptureOnNewDocument(),
-		chromedp.Navigate("https://www.facebook.com"),
+		navigatePageNoWait("https://www.facebook.com"),
 		chromedp.Sleep(2*time.Second),
 		installFacebookLoginCapture(),
-	); err != nil {
-		cancel()
-		allocCancel()
-		return &chromeBridge{accountID: target.AccountID, accountName: target.AccountName, port: port, err: err}
+	)
+	startupCancel()
+	if err != nil {
+		fmt.Printf("[Chrome] %s startup handshake is slow; keeping Chrome bridge alive for dashboard stream: %v\n", target.AccountName, err)
 	}
 	return bridge
+}
+
+func navigatePageNoWait(rawURL string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		_, _, _, _, err := cdppage.Navigate(rawURL).Do(ctx)
+		return err
+	})
 }
 
 func installFacebookLoginNetworkCapture(ctx context.Context, bridge *chromeBridge) {
@@ -744,7 +752,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		bridge.lastLoginRecovery = time.Now()
 		fmt.Printf("[Chrome] %s has Facebook cookies but still shows login form. Reloading Facebook feed for dashboard stream.\n", bridge.accountName)
 		_ = chromedp.Run(snapshotCtx,
-			chromedp.Navigate("https://www.facebook.com/"),
+			navigatePageNoWait("https://www.facebook.com/"),
 			chromedp.Sleep(2*time.Second),
 			readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible),
 		)
@@ -1052,6 +1060,20 @@ func facebookSessionURLLooksUsable(rawURL string) bool {
 
 func chromeSnapshotTimeout() time.Duration {
 	seconds, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_SNAPSHOT_TIMEOUT_SECONDS")))
+	if seconds <= 0 {
+		seconds = 8
+	}
+	if seconds < 3 {
+		seconds = 3
+	}
+	if seconds > 30 {
+		seconds = 30
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func chromeStartupTimeout() time.Duration {
+	seconds, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_CHROME_STARTUP_TIMEOUT_SECONDS")))
 	if seconds <= 0 {
 		seconds = 8
 	}
