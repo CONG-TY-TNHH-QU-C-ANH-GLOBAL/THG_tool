@@ -202,6 +202,10 @@ func main() {
 	if cfg.OpenAIAPIKey != "" {
 		msgGen = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
 		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
+		if cfg.AgentBrainURL != "" {
+			agent.SetBrainClient(ai.NewBrainClient(cfg.AgentBrainURL, time.Duration(cfg.AgentBrainTimeout)*time.Millisecond))
+			log.Printf("✅ Agent Brain sidecar enabled: %s", cfg.AgentBrainURL)
+		}
 		agent.ActionHandler = makeAgentActionHandler(db, jobStore, msgGen, func(msg string) {
 			if telegramNotify != nil {
 				telegramNotify(msg)
@@ -394,6 +398,12 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	}
 	maxItems := int(argInt64(args, "max_items"))
 	if maxItems <= 0 {
+		maxItems = int(argInt64(args, "limit"))
+	}
+	if maxItems <= 0 {
+		maxItems = maxItemsFromPrompt(argString(args, "user_prompt"))
+	}
+	if maxItems <= 0 {
 		maxItems = 50
 	}
 	keywords := splitKeywords(argString(args, "keywords"))
@@ -486,18 +496,14 @@ func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Ta
 		return "", true, err
 	}
 	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") && time.Since(screen.UpdatedAt) <= 5*time.Minute {
-		appStore, err := store.NewAppStore(db)
-		if err != nil {
-			return "", true, err
-		}
-		_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
-		_ = appStore.StartTask(ctx, task.TaskID)
-		cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, screen.AgentID, 0, "crawl", payload)
-		if err != nil {
-			_ = appStore.FailTask(ctx, task.TaskID, err.Error())
-			return "", true, err
-		}
-		return fmt.Sprintf("da tao local crawler command #%d task=%s intent=%s mode=local_runtime", cmdID, task.TaskID, task.Intent), true, nil
+		result, err := enqueueLocalRuntimeCrawlCommand(ctx, db, task, payload, screen.AgentID)
+		return result, true, err
+	}
+	if agentID, reason := pickOnlineRuntimeAgentForCrawl(db, task); agentID > 0 {
+		result, err := enqueueLocalRuntimeCrawlCommand(ctx, db, task, payload, agentID)
+		return result, true, err
+	} else if reason != "" {
+		log.Printf("[LocalCrawl] no heartbeat-routable runtime org=%d account=%d: %s", task.OrgID, task.AccountID, reason)
 	}
 
 	appStore, err := store.NewAppStore(db)
@@ -509,6 +515,61 @@ func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Ta
 		return "", false, nil
 	}
 	return "", true, fmt.Errorf("Facebook account #%d is saved, but THG Local Runtime is not online for this account yet. Open Browser, run THG Local Kit, wait for Facebook local ready, then send the prompt again", task.AccountID)
+}
+
+func enqueueLocalRuntimeCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, payload string, agentID int64) (string, error) {
+	if agentID <= 0 {
+		return "", fmt.Errorf("local runtime agent id is required")
+	}
+	appStore, err := store.NewAppStore(db)
+	if err != nil {
+		return "", err
+	}
+	_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
+	_ = appStore.StartTask(ctx, task.TaskID)
+	cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", payload)
+	if err != nil {
+		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
+		return "", err
+	}
+	return fmt.Sprintf("da tao local crawler command #%d task=%s intent=%s mode=local_runtime", cmdID, task.TaskID, task.Intent), nil
+}
+
+func pickOnlineRuntimeAgentForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
+	connectors, err := db.ListLocalConnectors(task.OrgID)
+	if err != nil {
+		return 0, err.Error()
+	}
+	if len(connectors) == 0 {
+		return 0, "no local connector paired"
+	}
+	acc, _ := db.GetAccount(task.AccountID)
+	var reasons []string
+	for _, conn := range connectors {
+		if !conn.Online {
+			reasons = append(reasons, fmt.Sprintf("connector #%d offline", conn.ID))
+			continue
+		}
+		if conn.AssignedAccountID > 0 && conn.AssignedAccountID != task.AccountID {
+			reasons = append(reasons, fmt.Sprintf("connector #%d assigned to account #%d", conn.ID, conn.AssignedAccountID))
+			continue
+		}
+		status := strings.TrimSpace(conn.StreamStatus)
+		if !strings.EqualFold(status, "facebook_logged_in") {
+			reasons = append(reasons, fmt.Sprintf("connector #%d status=%s", conn.ID, firstNonEmpty(status, "unknown")))
+			continue
+		}
+		if strings.TrimSpace(conn.FBUserID) == "" {
+			reasons = append(reasons, fmt.Sprintf("connector #%d missing fb_user_id", conn.ID))
+			continue
+		}
+		if acc != nil && strings.TrimSpace(acc.FBUserID) != "" && strings.TrimSpace(conn.FBUserID) != strings.TrimSpace(acc.FBUserID) {
+			reasons = append(reasons, fmt.Sprintf("connector #%d fb_user_id mismatch", conn.ID))
+			continue
+		}
+		return conn.ID, ""
+	}
+	return 0, strings.Join(reasons, "; ")
 }
 
 func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *jobs.Task, args map[string]any) {
@@ -969,6 +1030,31 @@ func argInt64(args map[string]any, key string) int64 {
 	default:
 		return 0
 	}
+}
+
+func maxItemsFromPrompt(prompt string) int {
+	prompt = strings.ToLower(strings.TrimSpace(prompt))
+	if prompt == "" {
+		return 0
+	}
+	for _, re := range []*regexp.Regexp{
+		regexp.MustCompile(`(\d{1,3})\s*(?:bai|bài|post|posts)`),
+		regexp.MustCompile(`(?:lay|lấy|cao|cào|crawl)\s*(\d{1,3})`),
+	} {
+		m := re.FindStringSubmatch(prompt)
+		if len(m) != 2 {
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		if n <= 0 {
+			continue
+		}
+		if n > 200 {
+			n = 200
+		}
+		return n
+	}
+	return 0
 }
 
 func firstNonEmpty(values ...string) string {

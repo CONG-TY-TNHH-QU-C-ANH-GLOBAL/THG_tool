@@ -59,7 +59,7 @@ tmp/
 .claude/
 
 # AI experiments / internal strategy (not for public repo)
-ai/
+/ai/
 out.txt
 
 # TypeScript config (only needed if TS tooling is published)

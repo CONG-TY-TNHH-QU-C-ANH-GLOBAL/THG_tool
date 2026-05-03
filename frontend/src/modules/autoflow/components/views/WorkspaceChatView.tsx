@@ -124,9 +124,9 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             <Bot size={16} color="#fff" />
           </div>
           <div style={{ minWidth: 0 }}>
-            <p style={{ color: theme.text, fontSize: 14, fontWeight: 700 }}>Agent Chat</p>
+            <p style={{ color: theme.text, fontSize: 14, fontWeight: 700 }}>Facebook Copilot</p>
             <p style={{ color: theme.textFaint, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {selectedAccount ? selectedAccount.accountName : 'Workspace'}
+              {selectedAccount ? `${selectedAccount.accountName} · Facebook-only AI chat` : 'Facebook-only AI chat'}
             </p>
           </div>
           <button
@@ -145,7 +145,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
           )}
           {!loadingHistory && messages.length === 0 && (
             <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: theme.textMuted, fontSize: 13 }}>
-              Chưa có lệnh nào
+              Bắt đầu bằng một nhu cầu Facebook: tìm tệp khách, phân tích group, chăm sóc fanpage, soạn comment hoặc inbox.
             </div>
           )}
           {messages.map(m => {
@@ -166,7 +166,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, color: isUser ? '#c7d2fe' : theme.textFaint, fontSize: 11 }}>
                     {isUser ? <UserRound size={12} /> : <Bot size={12} />}
-                    <span>{isUser ? 'Bạn' : isSystem ? 'System' : 'Agent'}</span>
+                    <span>{isUser ? 'Bạn' : isSystem ? 'System' : 'Facebook Copilot'}</span>
                     <span style={{ marginLeft: 'auto' }}>{m.time}</span>
                   </div>
                   {m.text}
@@ -176,7 +176,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
           })}
           {sending && (
             <div style={{ color: theme.textMuted, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <RefreshCw size={13} className="spin" /> Agent đang xử lý
+              <RefreshCw size={13} className="spin" /> Copilot đang xử lý trong phạm vi Facebook
             </div>
           )}
         </div>
@@ -191,7 +191,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                 void handleSend();
               }
             }}
-            placeholder="Nhập prompt cho Agent..."
+            placeholder="Hỏi hoặc ra lệnh về Facebook: tìm leads, phân tích group/fanpage, soạn comment, inbox, posting..."
             rows={3}
             style={{ flex: 1, resize: 'none', background: theme.border, border: '1px solid #374151', borderRadius: 9, color: '#fff', outline: 'none', padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}
           />

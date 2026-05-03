@@ -185,6 +185,19 @@ export interface LocalConnectorScreen {
   fbUserId: string;
   streamStatus: string;
   updatedAt: string;
+  actions?: LocalConnectorAction[];
+}
+
+export interface LocalConnectorAction {
+  id: number;
+  accountId: number;
+  agentId: number;
+  type: string;
+  status: string;
+  errorMsg: string;
+  createdAt: string;
+  claimedAt?: string;
+  completedAt?: string;
 }
 
 export interface WorkspaceSessionSnapshot {

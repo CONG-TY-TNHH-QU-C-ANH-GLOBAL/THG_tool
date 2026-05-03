@@ -195,6 +195,9 @@ type Account struct {
 	AssignedUserName string        `json:"assigned_user_name"` // resolved from users JOIN
 	BrowserLoggedIn  bool          `json:"browser_logged_in" db:"browser_logged_in"`
 	FBUserID         string        `json:"fb_user_id" db:"fb_user_id"`
+	FBDisplayName    string        `json:"fb_display_name" db:"fb_display_name"`
+	FBUsername       string        `json:"fb_username" db:"fb_username"`
+	FBProfileURL     string        `json:"fb_profile_url" db:"fb_profile_url"`
 }
 
 // PromptLog records every AI prompt interaction for learning.

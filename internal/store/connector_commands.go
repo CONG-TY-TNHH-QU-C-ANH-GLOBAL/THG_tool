@@ -7,16 +7,18 @@ import (
 )
 
 type ConnectorCommand struct {
-	ID          int64     `json:"id"`
-	OrgID       int64     `json:"org_id"`
-	AccountID   int64     `json:"account_id"`
-	AgentID     int64     `json:"agent_id"`
-	Type        string    `json:"type"`
-	PayloadJSON string    `json:"payload_json"`
-	Status      string    `json:"status"`
-	ErrorMsg    string    `json:"error_msg"`
-	CreatedBy   int64     `json:"created_by"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int64      `json:"id"`
+	OrgID       int64      `json:"org_id"`
+	AccountID   int64      `json:"account_id"`
+	AgentID     int64      `json:"agent_id"`
+	Type        string     `json:"type"`
+	PayloadJSON string     `json:"payload_json"`
+	Status      string     `json:"status"`
+	ErrorMsg    string     `json:"error_msg"`
+	CreatedBy   int64      `json:"created_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ClaimedAt   *time.Time `json:"claimed_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 func (s *Store) CreateConnectorCommand(orgID, accountID, agentID, createdBy int64, typ, payloadJSON string) (int64, error) {
@@ -115,4 +117,66 @@ func (s *Store) CompleteConnectorCommand(id, agentID int64, errorMsg string) err
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (s *Store) RecentConnectorCommands(orgID, accountID int64, limit int) ([]ConnectorCommand, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	query := `SELECT id, org_id, account_id, agent_id, type, payload_json, status, COALESCE(error_msg,''), created_by, created_at, claimed_at, completed_at
+		FROM connector_commands
+		WHERE org_id = ?`
+	args := []any{orgID}
+	if accountID > 0 {
+		query += ` AND account_id = ?`
+		args = append(args, accountID)
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var commands []ConnectorCommand
+	for rows.Next() {
+		var cmd ConnectorCommand
+		var createdAt string
+		var claimedAt, completedAt sql.NullString
+		if err := rows.Scan(&cmd.ID, &cmd.OrgID, &cmd.AccountID, &cmd.AgentID, &cmd.Type, &cmd.PayloadJSON, &cmd.Status, &cmd.ErrorMsg, &cmd.CreatedBy, &createdAt, &claimedAt, &completedAt); err != nil {
+			return nil, err
+		}
+		cmd.CreatedAt = parseConnectorCommandTime(createdAt)
+		if claimedAt.Valid {
+			if t := parseConnectorCommandTime(claimedAt.String); !t.IsZero() {
+				cmd.ClaimedAt = &t
+			}
+		}
+		if completedAt.Valid {
+			if t := parseConnectorCommandTime(completedAt.String); !t.IsZero() {
+				cmd.CompletedAt = &t
+			}
+		}
+		commands = append(commands, cmd)
+	}
+	return commands, rows.Err()
+}
+
+func parseConnectorCommandTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed
+	}
+	if parsed, err := time.Parse("2006-01-02 15:04:05", value); err == nil {
+		return parsed
+	}
+	return time.Time{}
 }

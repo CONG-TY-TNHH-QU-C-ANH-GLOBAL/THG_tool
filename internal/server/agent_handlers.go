@@ -455,7 +455,18 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	if screen == nil || screen.AgentID != agentID {
+	ownsStream := screen != nil && screen.AgentID == agentID
+	if !ownsStream {
+		if connectors, listErr := s.db.ListLocalConnectors(orgID); listErr == nil {
+			for _, conn := range connectors {
+				if conn.ID == agentID && conn.Online && (conn.AssignedAccountID == body.AccountID || conn.AssignedAccountID == 0) {
+					ownsStream = true
+					break
+				}
+			}
+		}
+	}
+	if !ownsStream {
 		return c.Status(403).JSON(fiber.Map{"error": "connector does not own this account stream"})
 	}
 

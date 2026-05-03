@@ -5,7 +5,7 @@ import { useConnectors } from '../../hooks/useConnectors';
 import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen, sendConnectorInput } from '../../services/connectorsService';
-import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
+import type { LocalConnector, LocalConnectorAction, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
 import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff, Mail } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
@@ -113,6 +113,42 @@ function connectorStatusLabel(status?: string): string {
     default:
       return status || 'Đang chờ lệnh';
   }
+}
+
+function actionTypeLabel(type?: string): string {
+  switch ((type || '').toLowerCase()) {
+    case 'crawl':
+      return 'Crawl Facebook';
+    case 'click':
+      return 'Click';
+    case 'scroll':
+      return 'Scroll';
+    case 'text':
+      return 'Nhập text';
+    case 'key':
+      return 'Phím';
+    default:
+      return type || 'Action';
+  }
+}
+
+function actionStatusTone(status?: string) {
+  switch ((status || '').toLowerCase()) {
+    case 'pending':
+      return { label: 'đang chờ Runtime', color: '#fde68a', border: '#f59e0b55', bg: '#78350f33' };
+    case 'claimed':
+      return { label: 'Runtime đang chạy', color: '#67e8f9', border: '#06b6d455', bg: '#164e6333' };
+    case 'done':
+      return { label: 'xong', color: '#86efac', border: '#22c55e55', bg: '#14532d33' };
+    case 'failed':
+      return { label: 'lỗi', color: '#fca5a5', border: '#ef444455', bg: '#7f1d1d33' };
+    default:
+      return { label: status || 'đang xử lý', color: '#cbd5e1', border: '#47556966', bg: '#0f172a66' };
+  }
+}
+
+function actionTime(action: LocalConnectorAction): string {
+  return action.completedAt || action.claimedAt || action.createdAt;
 }
 
 function isRemoteControlKey(key: string): boolean {
@@ -506,6 +542,36 @@ function LocalChromeViewer({
           <RefreshCw size={12} className={loading ? 'spin' : ''} /> Làm mới
         </button>
       </div>
+      {screen?.actions && screen.actions.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', overflowX: 'auto', padding: '8px 12px', background: '#020617', borderBottom: `1px solid ${theme.border}` }}>
+          <span style={{ color: theme.textMuted, fontSize: 11, whiteSpace: 'nowrap' }}>Automation:</span>
+          {screen.actions.slice(0, 5).map(action => {
+            const tone = actionStatusTone(action.status);
+            return (
+              <span
+                key={action.id}
+                title={action.errorMsg || `${actionTypeLabel(action.type)} #${action.id}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  border: `1px solid ${tone.border}`,
+                  background: tone.bg,
+                  color: tone.color,
+                  borderRadius: 7,
+                  padding: '4px 8px',
+                  fontSize: 11,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                #{action.id} {actionTypeLabel(action.type)}
+                <span style={{ color: tone.color, opacity: 0.9 }}>{tone.label}</span>
+                <span style={{ color: theme.textFaint }}>{formatLastSeen(actionTime(action))}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div
         ref={surfaceRef}
         tabIndex={0}

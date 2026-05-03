@@ -1,6 +1,26 @@
 version: '3.8'
 
 services:
+  agent-brain:
+    build:
+      context: ./services/agent-brain
+    image: thg-agent-brain:latest
+    container_name: thg-agent-brain
+    restart: unless-stopped
+    environment:
+      AGENT_BRAIN_PORT: 8091
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/healthz', timeout=2).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
   app:
     build:
       context: .
@@ -12,6 +32,12 @@ services:
 
     # Secrets come from .env — NEVER baked into the image
     env_file: .env
+    environment:
+      AGENT_BRAIN_URL: ${AGENT_BRAIN_URL:-http://agent-brain:8091}
+      AGENT_BRAIN_TIMEOUT_MS: ${AGENT_BRAIN_TIMEOUT_MS:-1500}
+    depends_on:
+      agent-brain:
+        condition: service_healthy
 
     ports:
       # Only bind to localhost — Nginx handles public traffic

@@ -44,7 +44,11 @@ func (s *Server) getLocalConnectorScreen(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"screen": screen})
+	actions, err := s.db.RecentConnectorCommands(orgID, accountID, 8)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"screen": screen, "actions": actions})
 }
 
 // createConnectorInputCommand queues a dashboard mouse/keyboard command for THG Local Runtime.

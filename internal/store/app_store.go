@@ -205,6 +205,9 @@ func (a *AppStore) migrate() error {
 	a.db.Exec(`ALTER TABLE selector_cache ADD COLUMN dom_hash   TEXT    NOT NULL DEFAULT ''`)
 	// Checkpoint fields on accounts
 	a.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_user_id        TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_display_name   TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_username       TEXT    NOT NULL DEFAULT ''`)
+	a.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_profile_url    TEXT    NOT NULL DEFAULT ''`)
 	a.db.Exec(`ALTER TABLE accounts ADD COLUMN checkpoint_count  INTEGER NOT NULL DEFAULT 0`)
 
 	return nil

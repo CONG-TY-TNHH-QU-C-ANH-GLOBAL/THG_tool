@@ -1,5 +1,5 @@
 import { get, post, put, del } from './api';
-import type { LocalConnector, LocalConnectorScreen } from '../types';
+import type { LocalConnector, LocalConnectorAction, LocalConnectorScreen } from '../types';
 
 function mapConnector(item: any): LocalConnector {
   return {
@@ -34,6 +34,21 @@ function mapScreen(item: any): LocalConnectorScreen {
     fbUserId: item.fb_user_id,
     streamStatus: item.stream_status,
     updatedAt: item.updated_at,
+    actions: (item.actions ?? []).map(mapAction),
+  };
+}
+
+function mapAction(item: any): LocalConnectorAction {
+  return {
+    id: item.id,
+    accountId: item.account_id,
+    agentId: item.agent_id,
+    type: item.type,
+    status: item.status,
+    errorMsg: item.error_msg,
+    createdAt: item.created_at,
+    claimedAt: item.claimed_at,
+    completedAt: item.completed_at,
   };
 }
 
@@ -44,8 +59,9 @@ export async function getLocalConnectors(): Promise<LocalConnector[]> {
 
 export async function getLocalConnectorScreen(accountId?: number): Promise<LocalConnectorScreen | null> {
   const qs = accountId ? `?account_id=${accountId}` : '';
-  const res = await get<{ screen: any | null }>(`/connectors/screen${qs}`);
-  return res.screen ? mapScreen(res.screen) : null;
+  const res = await get<{ screen: any | null; actions?: any[] }>(`/connectors/screen${qs}`);
+  if (!res.screen) return null;
+  return mapScreen({ ...res.screen, actions: res.actions ?? [] });
 }
 
 export async function createLocalConnectorPairingCode(name: string, accountId?: number): Promise<{ id: number; code: string; expires_at: string; ttl_seconds: number }> {

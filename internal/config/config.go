@@ -18,6 +18,8 @@ type Config struct {
 	OpenAIAPIKey       string
 	OpenAIModel        string // scraping + classification: gpt-4o-mini (cheap, fast)
 	OpenAICommentModel string // comments + inbox generation: gpt-4o (high quality)
+	AgentBrainURL      string // optional Python sidecar planner endpoint base URL
+	AgentBrainTimeout  int    // milliseconds
 
 	// Security
 	APISecret      string // DEPRECATED: legacy API key; replaced by JWT auth
@@ -84,6 +86,8 @@ func Load() *Config {
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", ""),
 		OpenAIModel:        getEnv("OPENAI_MODEL", "gpt-4o-mini"),
 		OpenAICommentModel: getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
+		AgentBrainURL:      getEnv("AGENT_BRAIN_URL", ""),
+		AgentBrainTimeout:  getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
 		APISecret:          getEnv("API_SECRET", ""),
 		JWTSecret:          getEnv("JWT_SECRET", ""),
 		EncryptionKey:      getEnv("ENCRYPTION_KEY", ""),
