@@ -65,6 +65,9 @@ type chromeBridge struct {
 	loginMu           sync.Mutex
 	loginIdentifier   string
 	loginCaptureLog   string
+	snapMu            sync.Mutex
+	lastSnap          chromeSnapshot
+	lastSnapAt        time.Time
 	windowHidden      bool
 	windowWarned      bool
 	lastWindowPosture time.Time
@@ -719,16 +722,18 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	if bridge.err != nil || bridge.ctx == nil {
 		return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: "chrome_not_connected"}
 	}
+	snapshotCtx, cancel := context.WithTimeout(bridge.ctx, chromeSnapshotTimeout())
+	defer cancel()
 	var href string
 	var fbUserID string
 	var loginIdentifier string
 	var loginFormVisible bool
 	var screenshot []byte
-	err := chromedp.Run(bridge.ctx,
+	err := chromedp.Run(snapshotCtx,
 		readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible),
 	)
 	if err != nil {
-		return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: "chrome_not_connected"}
+		return fallbackChromeSnapshot(bridge, "chrome_not_connected")
 	}
 	if loginIdentifier != "" {
 		setBridgeLoginIdentifier(bridge, loginIdentifier)
@@ -738,7 +743,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	if fbUserID != "" && loginFormVisible && !humanRequired && time.Since(bridge.lastLoginRecovery) > 5*time.Second {
 		bridge.lastLoginRecovery = time.Now()
 		fmt.Printf("[Chrome] %s has Facebook cookies but still shows login form. Reloading Facebook feed for dashboard stream.\n", bridge.accountName)
-		_ = chromedp.Run(bridge.ctx,
+		_ = chromedp.Run(snapshotCtx,
 			chromedp.Navigate("https://www.facebook.com/"),
 			chromedp.Sleep(2*time.Second),
 			readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible),
@@ -749,7 +754,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		lowerURL = strings.ToLower(href)
 		humanRequired = isFacebookHumanRequiredURL(lowerURL)
 	}
-	err = chromedp.Run(bridge.ctx,
+	err = chromedp.Run(snapshotCtx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			data, err := cdppage.CaptureScreenshot().
 				WithFormat(cdppage.CaptureScreenshotFormatJpeg).
@@ -762,13 +767,13 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		}),
 	)
 	if err != nil {
-		return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: "chrome_not_connected"}
+		return fallbackChromeSnapshot(bridge, "chrome_not_connected")
 	}
 	status := "facebook_login_required"
 	if humanRequired {
 		status = "facebook_human_required"
 	}
-	if fbUserID != "" && !loginFormVisible && !humanRequired {
+	if fbUserID != "" && !humanRequired && (!loginFormVisible || facebookSessionURLLooksUsable(href)) {
 		status = "facebook_logged_in"
 	}
 	updateChromeWindowPosture(bridge, status)
@@ -780,7 +785,33 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	if len(screenshot) > 0 {
 		out.ScreenshotData = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
+	rememberChromeSnapshot(bridge, out)
 	return out
+}
+
+func rememberChromeSnapshot(bridge *chromeBridge, snap chromeSnapshot) {
+	if bridge == nil || snap.Status == "" || snap.Status == "chrome_not_connected" {
+		return
+	}
+	bridge.snapMu.Lock()
+	bridge.lastSnap = snap
+	bridge.lastSnapAt = time.Now()
+	bridge.snapMu.Unlock()
+}
+
+func fallbackChromeSnapshot(bridge *chromeBridge, fallbackStatus string) chromeSnapshot {
+	if bridge == nil {
+		return chromeSnapshot{Status: fallbackStatus}
+	}
+	bridge.snapMu.Lock()
+	last := bridge.lastSnap
+	lastAt := bridge.lastSnapAt
+	bridge.snapMu.Unlock()
+	if !lastAt.IsZero() && time.Since(lastAt) <= 45*time.Second && last.Status != "" {
+		last.ScreenshotData = ""
+		return last
+	}
+	return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: fallbackStatus}
 }
 
 func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVisible *bool) chromedp.Action {
@@ -999,16 +1030,52 @@ func isFacebookHumanRequiredURL(rawURL string) bool {
 		strings.Contains(path, "/two_step_verification")
 }
 
+func facebookSessionURLLooksUsable(rawURL string) bool {
+	rawURL = strings.TrimSpace(strings.ToLower(rawURL))
+	if rawURL == "" {
+		return false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return !strings.Contains(rawURL, "/login") && !strings.Contains(rawURL, "login.php")
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "facebook.com" && !strings.HasSuffix(host, ".facebook.com") {
+		return false
+	}
+	path := strings.ToLower(parsed.EscapedPath())
+	if strings.Contains(path, "/login") || strings.Contains(path, "login.php") {
+		return false
+	}
+	return true
+}
+
+func chromeSnapshotTimeout() time.Duration {
+	seconds, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_SNAPSHOT_TIMEOUT_SECONDS")))
+	if seconds <= 0 {
+		seconds = 8
+	}
+	if seconds < 3 {
+		seconds = 3
+	}
+	if seconds > 30 {
+		seconds = 30
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func updateChromeWindowPosture(bridge *chromeBridge, status string) {
 	if bridge == nil || bridge.ctx == nil || keepLocalChromeVisibleAfterLogin() {
 		return
 	}
+	postureCtx, cancel := context.WithTimeout(bridge.ctx, 3*time.Second)
+	defer cancel()
 	if status == "facebook_logged_in" {
 		if bridge.windowHidden && time.Since(bridge.lastWindowPosture) < 5*time.Second {
 			return
 		}
 		bridge.lastWindowPosture = time.Now()
-		if err := hideChromeWindowAfterLogin(bridge.ctx, bridge.pid); err != nil {
+		if err := hideChromeWindowAfterLogin(postureCtx, bridge.pid); err != nil {
 			if !bridge.windowWarned {
 				fmt.Printf("[Chrome] Could not move %s to dashboard-only mode: %v\n", bridge.accountName, err)
 				bridge.windowWarned = true
@@ -1024,7 +1091,7 @@ func updateChromeWindowPosture(bridge *chromeBridge, status string) {
 		return
 	}
 	bridge.lastWindowPosture = time.Now()
-	if err := showChromeWindowForLogin(bridge.ctx, bridge.pid); err != nil {
+	if err := showChromeWindowForLogin(postureCtx, bridge.pid); err != nil {
 		if !bridge.windowWarned {
 			fmt.Printf("[Chrome] Could not show %s for local login/checkpoint: %v\n", bridge.accountName, err)
 			bridge.windowWarned = true
@@ -1052,7 +1119,7 @@ func sendHeartbeat(serverURL, token string, snap chromeSnapshot) error {
 		"current_url":       snap.CurrentURL,
 		"fb_user_id":        snap.FBUserID,
 		"login_email":       snap.LoginEmail,
-		"stream_status":     defaultString(snap.Status, "connector_online"),
+		"stream_status":     strings.TrimSpace(snap.Status),
 	})
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/heartbeat", bytes.NewReader(body))
 	if err != nil {
@@ -2156,6 +2223,26 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 				if !executePendingCommands(serverURL, token, copyBridges()) {
 					requestStop()
 					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := sendHeartbeat(serverURL, token, chromeSnapshot{}); err != nil {
+					if isDeviceTokenRejected(err) {
+						fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+						requestStop()
+						return
+					}
 				}
 			case <-done:
 				return
