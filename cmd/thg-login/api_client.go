@@ -97,7 +97,7 @@ func completeConnectorCommand(serverURL, token string, id int64, errorText strin
 
 func fetchApprovedOutbox(serverURL, token string) ([]outboundMessage, error) {
 	var out outboxResponse
-	if err := getAgentJSON(serverURL+"/api/agent/outbox?limit=5", token, 10*time.Second, &out); err != nil {
+	if err := getAgentJSON(serverURL+"/api/connectors/outbox?limit=5", token, 10*time.Second, &out); err != nil {
 		return nil, err
 	}
 	return out.Messages, nil
@@ -109,7 +109,7 @@ func completeOutboxMessage(serverURL, token string, id int64, success bool, erro
 		path = "sent"
 	}
 	body := map[string]any{"error": strings.TrimSpace(errorText)}
-	return postAgentJSON(fmt.Sprintf("%s/api/agent/outbox/%d/%s", serverURL, id, path), token, body, 10*time.Second, nil)
+	return postAgentJSON(fmt.Sprintf("%s/api/connectors/outbox/%d/%s", serverURL, id, path), token, body, 10*time.Second, nil)
 }
 
 func getAgentJSON(rawURL, token string, timeout time.Duration, out any) error {

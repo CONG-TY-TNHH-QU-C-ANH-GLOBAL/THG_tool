@@ -269,7 +269,7 @@ func (s *Server) agentCreateToken(c *fiber.Ctx) error {
 	return c.Status(201).JSON(fiber.Map{
 		"id":    id,
 		"name":  req.Name,
-		"token": plain, // shown once â€” client must copy immediately
+		"token": plain, // shown once; client must copy immediately
 	})
 }
 
@@ -443,7 +443,7 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 // GET /api/agent/browser-targets
 //
 // When the result is empty we attach a `hint` so the connector console can
-// tell the operator exactly what is missing â€” without this the connector
+// tell the operator exactly what is missing; without this the connector
 // just prints "0 Chrome profile(s)" forever and the operator does not know
 // whether the dashboard is broken or whether they forgot a step.
 func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
@@ -480,21 +480,12 @@ func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
 	return c.JSON(resp)
 }
 
-// browserTargetsHint inspects the org's account state to figure out why
-// no targets came back, and returns a short machine code plus a
-// human-readable Vietnamese explanation. Reflects three real scenarios:
-//
-//   - the connector is paired but the org has no Facebook account yet
-//   - the org has an account but no operator clicked "Má»Ÿ Chrome local"
-//     on the dashboard yet (no `local_*` browser_session row exists)
-//   - the connector is bound to a specific account that hasn't been
-//     started, while other accounts in the org are running for other devices
-//
-// The connector console maps `hint_code` to a fixed message; `hint` is
-// the fallback prose when a connector version is older than the code map.
+// browserTargetsHint inspects the org's account state to explain why the
+// connector has no runnable browser target yet. The short code is stable for
+// Runtime clients; the prose is a fallback for older clients.
 func browserTargetsHint(s *Server, orgID, assignedAccountID int64) (string, string) {
 	if orgID <= 0 {
-		return "no_org", "Connector chưa được gắn vào workspace nào. Hãy pair lại bằng mã mới từ Browser dashboard."
+		return "no_org", "Connector chưa được gắn vào workspace nào. Pair lại bằng mã mới từ Browser dashboard."
 	}
 	accounts, _ := s.db.GetAllAccounts(orgID)
 	hasFacebook := false
@@ -509,15 +500,15 @@ func browserTargetsHint(s *Server, orgID, assignedAccountID int64) (string, stri
 	}
 	if !hasFacebook {
 		return "no_account_in_org",
-			"Workspace chưa có Facebook account. Vào Browser dashboard, tạo phiên Facebook mới rồi pair lại thiết bị."
+			"Workspace chưa có Facebook account. Tạo phiên Facebook mới trong Browser dashboard; Runtime đang chạy sẽ tự nhận target khi account được tạo."
 	}
 	if assignedAccountID > 0 {
 		if !assignedExists {
 			return "assigned_account_missing",
-				"Thiết bị đang gắn với một Facebook account không còn tồn tại trong workspace. Hãy disconnect thiết bị và tạo mã kết nối mới."
+				"Thiết bị đang gắn với một Facebook account không còn tồn tại trong workspace. Disconnect thiết bị và tạo mã kết nối mới."
 		}
 		return "assigned_account_not_started",
-			"Facebook account đã gắn với thiết bị nhưng chưa có phiên Browser local. Runtime sẽ tự khởi động lại target; nếu vẫn lặp lại, bấm Mở Chrome local trên account đó."
+			"Facebook account đã gắn với thiết bị nhưng chưa có phiên Browser local. Runtime sẽ tự mở Chrome khi target sẵn sàng."
 	}
 	return "no_local_session_yet",
 		"Connector đã online nhưng chưa được gắn với Facebook account cụ thể. Vào Browser dashboard, chọn account và tạo mã kết nối riêng cho thiết bị này."
@@ -716,9 +707,9 @@ func orgIntelligenceKeywords(db *store.Store, orgID int64) []string {
 	stop := map[string]bool{
 		"the": true, "and": true, "for": true, "with": true, "from": true, "that": true,
 		"this": true, "you": true, "your": true, "are": true, "can": true, "will": true,
-		"toi": true, "tÃ´i": true, "cua": true, "cá»§a": true, "cho": true, "voi": true,
-		"vá»›i": true, "cac": true, "cÃ¡c": true, "nhung": true, "nhá»¯ng": true, "khach": true,
-		"khÃ¡ch": true, "hang": true, "hÃ ng": true,
+		"toi": true, "tôi": true, "cua": true, "của": true, "cho": true, "voi": true,
+		"với": true, "cac": true, "các": true, "nhung": true, "những": true, "khach": true,
+		"khách": true, "hang": true, "hàng": true,
 	}
 	seen := map[string]bool{}
 	out := make([]string, 0, 24)

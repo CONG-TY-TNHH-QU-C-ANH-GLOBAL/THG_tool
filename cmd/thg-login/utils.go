@@ -16,7 +16,7 @@ func defaultString(value, fallback string) string {
 func browserTargetsConsoleHint(resp browserTargetsResponse) string {
 	switch strings.TrimSpace(resp.HintCode) {
 	case "no_account_in_org":
-		return "Workspace chưa có Facebook account nào để Runtime mở. Tạo phiên Facebook trong Browser dashboard rồi pair lại thiết bị."
+		return "Workspace chưa có Facebook account nào để Runtime mở. Tạo phiên Facebook trong Browser dashboard; nếu cửa sổ Runtime này vẫn chạy, thiết bị sẽ tự nhận target mới."
 	case "assigned_account_missing":
 		return "Thiết bị đang gắn với một Facebook account đã bị xóa hoặc không còn thuộc workspace. Disconnect thiết bị và tạo mã kết nối mới."
 	case "assigned_account_not_started":
@@ -40,8 +40,8 @@ func printDeviceTokenRejected(err error) {
 	if err != nil && strings.TrimSpace(err.Error()) != "" {
 		fmt.Println("[Connector] Server detail:", err)
 	}
-	fmt.Println("[Connector] This usually means an admin disconnected this device, the workspace assigned a new connector token, or this app is using an old saved config.")
-	fmt.Println("[Connector] Open Browser dashboard, create a new pairing code, then run THG Local Runtime with --reset if you want to connect this device again.")
+	fmt.Println("[Connector] This can mean an admin disconnected this device, the saved config is old, or a connector-auth endpoint rejected the request.")
+	fmt.Println("[Connector] If you did not disconnect it, update THG Local Kit, open Browser dashboard, create a new pairing code, then run Runtime with --reset.")
 }
 
 func exitWithError(message string, err error) {

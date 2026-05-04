@@ -226,6 +226,30 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	api.Post("/connectors/crawl-result", s.agentAuth, s.agentConnectorCrawlResult)
 	api.Get("/connectors/commands", s.agentAuth, s.agentConnectorCommands)
 	api.Post("/connectors/commands/:id/done", s.agentAuth, s.agentConnectorCommandDone)
+	api.Get("/connectors/outbox", s.agentAuth, s.agentGetOutbox)
+	api.Post("/connectors/outbox/:id/sent", s.agentAuth, s.agentOutboxSent)
+	api.Post("/connectors/outbox/:id/failed", s.agentAuth, s.agentOutboxFailed)
+
+	// Agent API — authenticated with X-Agent-Token header (no JWT needed).
+	// Keep this before the catch-all protected API group below; otherwise
+	// /api/agent/* can be intercepted by JWT auth and desktop runtimes see
+	// {"error":"authentication required"} even with a valid device token.
+	agentGrp := api.Group("/agent", s.agentAuth)
+	agentGrp.Post("/heartbeat", s.agentHeartbeat)
+	agentGrp.Post("/chrome-status", s.agentChromeStatus)
+	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
+	agentGrp.Post("/screenshot", s.agentScreenshot)
+	agentGrp.Post("/crawl-result", s.agentConnectorCrawlResult)
+	agentGrp.Get("/commands", s.agentConnectorCommands)
+	agentGrp.Post("/commands/:id/done", s.agentConnectorCommandDone)
+	agentGrp.Get("/jobs/next", s.agentGetNextJob)
+	agentGrp.Post("/jobs/:id/claim", s.agentClaimJob)
+	agentGrp.Post("/jobs/:id/done", s.agentJobDone)
+	agentGrp.Post("/jobs/:id/fail", s.agentJobFail)
+	agentGrp.Get("/outbox", s.agentGetOutbox)
+	agentGrp.Post("/outbox/:id/sent", s.agentOutboxSent)
+	agentGrp.Post("/outbox/:id/failed", s.agentOutboxFailed)
+	agentGrp.Get("/images", s.agentServeImage)
 
 	authGroup := api.Group("/auth")
 	authGroup.Post("/login", authLimiter, s.login)
@@ -334,24 +358,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Put("/outbox/:id/reject", s.rejectOutbound)
 	r.Put("/outbox/:id/content", s.editOutbound)
 	r.Delete("/outbox/:id", s.deleteOutbound)
-
-	// Agent API — authenticated with X-Agent-Token header (no JWT needed)
-	agentGrp := api.Group("/agent", s.agentAuth)
-	agentGrp.Post("/heartbeat", s.agentHeartbeat)
-	agentGrp.Post("/chrome-status", s.agentChromeStatus)
-	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
-	agentGrp.Post("/screenshot", s.agentScreenshot)
-	agentGrp.Post("/crawl-result", s.agentConnectorCrawlResult)
-	agentGrp.Get("/commands", s.agentConnectorCommands)
-	agentGrp.Post("/commands/:id/done", s.agentConnectorCommandDone)
-	agentGrp.Get("/jobs/next", s.agentGetNextJob)
-	agentGrp.Post("/jobs/:id/claim", s.agentClaimJob)
-	agentGrp.Post("/jobs/:id/done", s.agentJobDone)
-	agentGrp.Post("/jobs/:id/fail", s.agentJobFail)
-	agentGrp.Get("/outbox", s.agentGetOutbox)
-	agentGrp.Post("/outbox/:id/sent", s.agentOutboxSent)
-	agentGrp.Post("/outbox/:id/failed", s.agentOutboxFailed)
-	agentGrp.Get("/images", s.agentServeImage)
 
 	// Onboarding — new users with org_id=0 must complete this before accessing org features
 
