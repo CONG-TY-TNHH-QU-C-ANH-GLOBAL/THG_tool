@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -25,7 +26,34 @@ func (s *Store) AddAccount(a *models.Account) (int64, error) {
 	return res.LastInsertId()
 }
 
+// GetAccountForOrg returns an account by ID only when the row's org_id matches
+// orgID. Pass orgID=0 to bypass the check (superadmin / internal worker code).
+// Returns (nil, sql.ErrNoRows) when the account exists in another org so handlers
+// cannot leak the existence of a foreign account.
+//
+// All tenant-facing handlers MUST use this helper instead of GetAccount(id) so
+// the org_id boundary check happens at the data layer once, not at every call
+// site.
+func (s *Store) GetAccountForOrg(id, orgID int64) (*models.Account, error) {
+	acc, err := s.GetAccount(id)
+	if err != nil {
+		return nil, err
+	}
+	if acc == nil {
+		return nil, nil
+	}
+	if orgID > 0 && acc.OrgID != orgID {
+		return nil, sql.ErrNoRows
+	}
+	return acc, nil
+}
+
 // GetAccount returns an account by ID, decrypting cookies_json.
+//
+// Prefer GetAccountForOrg in tenant-facing code paths. GetAccount remains
+// available for internal/worker contexts that already proved org ownership
+// elsewhere (e.g. token-bound agent handlers) or that operate outside any
+// tenant scope.
 func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	var a models.Account
 	var lastUsed string
@@ -62,6 +90,18 @@ func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool, fbUserID ...s
 	if !loggedIn {
 		_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ?, fb_user_id = '' WHERE id = ?`, v, accountID)
 		return err
+	}
+	_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
+	return err
+}
+
+// SetBrowserLoggedInState updates browser_logged_in without clearing the
+// remembered Facebook identity. Local Runtime can temporarily lose a Chrome
+// target while the account slot identity must remain auditable.
+func (s *Store) SetBrowserLoggedInState(accountID int64, loggedIn bool) error {
+	v := 0
+	if loggedIn {
+		v = 1
 	}
 	_, err := s.db.Exec(`UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
 	return err

@@ -24,6 +24,12 @@ type Instance struct {
 	CDPPort     int    // host-side port mapped from container's CDP :9222
 	VNCPort     int    // host-side port mapped from container's VNC :5900
 	StartedAt   time.Time
+
+	// profileLock is the host-side exclusive claim on ProfileDir.
+	// Acquired in Start before docker run, released in Stop. nil for
+	// re-attached containers (we trust the running container is the
+	// rightful owner) and for instances created by Reconcile / probes.
+	profileLock *ProfileLock
 }
 
 // IsRunning reports whether the instance is tracked as active.
@@ -156,6 +162,22 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 	// Remove any leftover container from a previous crash or stop
 	exec.Command("docker", "rm", "-f", containerName).Run() //nolint:errcheck
 
+	// Cross-process exclusive lock on the profile dir before mounting it
+	// into Docker. Two API processes (e.g. blue/green deploy overlap) or
+	// a racing watchdog cannot both bind the same --user-data-dir, which
+	// would corrupt the Chrome profile and silently log out the Facebook
+	// session. The lock is released on Stop or after a failed Start.
+	lock, err := AcquireProfileLock(profileDir)
+	if err != nil {
+		return nil, fmt.Errorf("acquire profile lock: %w", err)
+	}
+	releaseLockOnError := lock
+	defer func() {
+		if releaseLockOnError != nil {
+			releaseLockOnError.Release()
+		}
+	}()
+
 	// Determine ports: use PortRegistry if wired, otherwise let Docker assign randomly.
 	var cdpPort, vncPort int
 	if m.portRegistry != nil {
@@ -237,8 +259,10 @@ func (m *Manager) Start(accountID int64, accountName string) (*Instance, error) 
 		CDPPort:     cdpPort,
 		VNCPort:     vncPort,
 		StartedAt:   time.Now(),
+		profileLock: lock,
 	}
 	m.instances[accountID] = inst
+	releaseLockOnError = nil // ownership transferred to instance
 
 	log.Printf("[Workspace] Container started for account %d (%s) — id=%s vnc=127.0.0.1:%d",
 		accountID, accountName, shortID, vncPort)
@@ -252,6 +276,9 @@ func (m *Manager) Stop(accountID int64) {
 	containerName := fmt.Sprintf("%s%d", containerPrefix, accountID)
 	exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
 	exec.Command("docker", "rm", containerName).Run()              //nolint:errcheck
+	if inst, ok := m.instances[accountID]; ok && inst.profileLock != nil {
+		inst.profileLock.Release()
+	}
 	delete(m.instances, accountID)
 	if m.portRegistry != nil {
 		m.portRegistry.Release(accountID)
@@ -263,10 +290,13 @@ func (m *Manager) Stop(accountID int64) {
 func (m *Manager) StopAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for id := range m.instances {
+	for id, inst := range m.instances {
 		containerName := fmt.Sprintf("%s%d", containerPrefix, id)
 		exec.Command("docker", "stop", "-t", "5", containerName).Run() //nolint:errcheck
 		exec.Command("docker", "rm", containerName).Run()              //nolint:errcheck
+		if inst != nil && inst.profileLock != nil {
+			inst.profileLock.Release()
+		}
 		delete(m.instances, id)
 	}
 	log.Println("[Workspace] All browser containers stopped")

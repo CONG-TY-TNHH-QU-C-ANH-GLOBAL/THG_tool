@@ -50,32 +50,67 @@ func agentTokenFingerprint(plain string) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// agentGetNextJob returns the oldest pending local job, or 204 if none.
+// clampPresenceFields enforces upper bounds on every connector-supplied field
+// so a misbehaving runtime cannot bloat the agent_tokens or browser_sessions
+// rows with unbounded strings. Called before UpdateAgentPresence /
+// UpsertConnectorScreenshot.
+func clampPresenceFields(p *store.AgentPresence) {
+	p.Hostname = truncateRune(p.Hostname, limConnectorHostname)
+	p.OS = truncateRune(p.OS, limConnectorOS)
+	p.Version = truncateRune(p.Version, limConnectorVersion)
+	p.Kind = truncateRune(p.Kind, limConnectorKind)
+	p.Transport = truncateRune(p.Transport, limConnectorTransport)
+	p.CapabilitiesJSON = truncateRune(p.CapabilitiesJSON, limConnectorCapabilitiesLen)
+	p.CurrentURL = truncateRune(p.CurrentURL, limConnectorURL)
+	p.FBUserID = truncateRune(p.FBUserID, limConnectorFBUserID)
+	p.FBDisplayName = truncateRune(p.FBDisplayName, limConnectorFBName)
+	p.FBUsername = truncateRune(p.FBUsername, limConnectorFBUsername)
+	p.FBProfileURL = truncateRune(p.FBProfileURL, limConnectorFBProfileURL)
+	p.StreamStatus = truncateRune(p.StreamStatus, limConnectorStreamStatus)
+	p.ChromeError = truncateRune(p.ChromeError, limConnectorChromeError)
+}
+
+// agentGetNextJob atomically claims the oldest pending local job for this
+// agent, transitioning it to running in a single SQL statement so two
+// agents calling this endpoint concurrently can't both run the same job.
+// Returns 204 when the queue is empty.
+//
 // GET /api/agent/jobs/next
 func (s *Server) agentGetNextJob(c *fiber.Ctx) error {
-	job, err := s.db.GetNextLocalJob()
+	workerID, _ := c.Locals("agent_token_fp").(string)
+	if workerID == "" {
+		// agentAuth always sets this; if it's missing, fall back to a
+		// stable string so the row's claimed_by isn't blank.
+		if id, ok := c.Locals("agent_id").(int64); ok && id > 0 {
+			workerID = fmt.Sprintf("agent:%d", id)
+		} else {
+			workerID = "unknown"
+		}
+	}
+	job, err := s.db.ClaimNextLocalJob(workerID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	if job == nil {
 		return c.SendStatus(204)
 	}
+	agentName, _ := c.Locals("agent_name").(string)
+	log.Printf("[Agent] Job %d claimed by agent %q (atomic)", job.ID, agentName)
 	return c.JSON(job)
 }
 
-// agentClaimJob marks a local job as running so no other agent picks it up.
+// agentClaimJob is retained for backwards compatibility with older
+// runtimes that still issue a separate claim call after fetching the job.
+// The atomic claim already happened in agentGetNextJob, so this endpoint
+// is now a no-op idempotent acknowledgement.
+//
 // POST /api/agent/jobs/:id/claim
 func (s *Server) agentClaimJob(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := s.db.UpdateJobStatus(id, models.JobRunning, "", ""); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	agentName, _ := c.Locals("agent_name").(string)
-	log.Printf("[Agent] Job %d claimed by agent %q", id, agentName)
-	return c.JSON(fiber.Map{"status": "claimed"})
+	return c.JSON(fiber.Map{"status": "claimed", "id": id, "note": "claim is atomic at /jobs/next; this endpoint is now a no-op"})
 }
 
 // agentJobDone processes results submitted by the local agent.
@@ -134,9 +169,47 @@ func (s *Server) agentJobFail(c *fiber.Ctx) error {
 // GET /api/agent/outbox
 func (s *Server) agentGetOutbox(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("agent_org_id").(int64)
-	msgs, err := s.db.GetOutboundByStatusForOrg(orgID, "approved", 5)
+	agentID, _ := c.Locals("agent_id").(int64)
+	assignedAccountID, _ := c.Locals("agent_assigned_account_id").(int64)
+	workerID, _ := c.Locals("agent_token_fp").(string)
+	if orgID <= 0 || agentID <= 0 {
+		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
+	}
+	limit := c.QueryInt("limit", 5)
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 20 {
+		limit = 20
+	}
+	_ = s.db.ResetStaleSendingOutboundForOrg(orgID, 10*time.Minute)
+	candidates, err := s.db.GetOutboundByStatusForOrg(orgID, string(models.OutboundApproved), limit*4)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	msgs := make([]models.OutboundMessage, 0, limit)
+	for _, msg := range candidates {
+		if len(msgs) >= limit {
+			break
+		}
+		if msg.AccountID <= 0 {
+			continue
+		}
+		if assignedAccountID > 0 && msg.AccountID != assignedAccountID {
+			continue
+		}
+		ownsStream, err := s.db.ConnectorOwnsAccountStream(orgID, agentID, msg.AccountID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		if !ownsStream {
+			continue
+		}
+		if err := s.db.ClaimApprovedOutboundForOrg(orgID, msg.ID, workerID); err != nil {
+			continue
+		}
+		msg.Status = models.OutboundSending
+		msgs = append(msgs, msg)
 	}
 	return c.JSON(fiber.Map{"messages": msgs, "count": len(msgs)})
 }
@@ -254,8 +327,12 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 		CapabilitiesJSON string `json:"capabilities_json"`
 		CurrentURL       string `json:"current_url"`
 		FBUserID         string `json:"fb_user_id"`
+		FBDisplayName    string `json:"fb_display_name"`
+		FBUsername       string `json:"fb_username"`
+		FBProfileURL     string `json:"fb_profile_url"`
 		LoginEmail       string `json:"login_email"`
 		StreamStatus     string `json:"stream_status"`
+		ChromeError      string `json:"chrome_error"`
 	}
 	_ = c.BodyParser(&body)
 	if body.Hostname == "" {
@@ -267,7 +344,7 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 	if body.Version == "" {
 		body.Version = c.Get("X-Agent-Version")
 	}
-	_ = s.db.UpdateAgentPresence(agentID, store.AgentPresence{
+	presence := store.AgentPresence{
 		Hostname:          body.Hostname,
 		OS:                body.OS,
 		Version:           body.Version,
@@ -277,8 +354,14 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 		CapabilitiesJSON:  body.CapabilitiesJSON,
 		CurrentURL:        body.CurrentURL,
 		FBUserID:          body.FBUserID,
+		FBDisplayName:     body.FBDisplayName,
+		FBUsername:        body.FBUsername,
+		FBProfileURL:      body.FBProfileURL,
 		StreamStatus:      body.StreamStatus,
-	})
+		ChromeError:       body.ChromeError,
+	}
+	clampPresenceFields(&presence)
+	_ = s.db.UpdateAgentPresence(agentID, presence)
 	return c.JSON(fiber.Map{
 		"status":       "ok",
 		"connector_id": agentID,
@@ -295,11 +378,15 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	var body struct {
-		AccountID    int64  `json:"account_id"`
-		CurrentURL   string `json:"current_url"`
-		FBUserID     string `json:"fb_user_id"`
-		LoginEmail   string `json:"login_email"`
-		StreamStatus string `json:"stream_status"`
+		AccountID     int64  `json:"account_id"`
+		CurrentURL    string `json:"current_url"`
+		FBUserID      string `json:"fb_user_id"`
+		FBDisplayName string `json:"fb_display_name"`
+		FBUsername    string `json:"fb_username"`
+		FBProfileURL  string `json:"fb_profile_url"`
+		LoginEmail    string `json:"login_email"`
+		StreamStatus  string `json:"stream_status"`
+		ChromeError   string `json:"chrome_error"`
 	}
 	_ = c.BodyParser(&body)
 
@@ -307,48 +394,42 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 	if status == "" {
 		status = "chrome_not_connected"
 	}
-	_ = s.db.UpdateAgentPresence(agentID, store.AgentPresence{
+	presence := store.AgentPresence{
 		AssignedAccountID: body.AccountID,
 		CurrentURL:        body.CurrentURL,
 		FBUserID:          body.FBUserID,
+		FBDisplayName:     body.FBDisplayName,
+		FBUsername:        body.FBUsername,
+		FBProfileURL:      body.FBProfileURL,
 		StreamStatus:      status,
-	})
-	loggedIn := strings.EqualFold(status, "facebook_logged_in") && strings.TrimSpace(body.FBUserID) != ""
+		ChromeError:       body.ChromeError,
+	}
+	clampPresenceFields(&presence)
+	_ = s.db.UpdateAgentPresence(agentID, presence)
 	if body.AccountID > 0 && orgID > 0 {
-		acc, err := s.db.GetAccount(body.AccountID)
-		if err != nil || acc == nil || acc.OrgID != orgID {
+		acc, err := s.db.GetAccountForOrg(body.AccountID, orgID)
+		if err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
-		if loggedIn && body.FBUserID != "" && acc.FBUserID != "" && acc.FBUserID != body.FBUserID {
-			if appStore, err := store.NewAppStore(s.db); err == nil {
-				_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
-					AccountID:    body.AccountID,
-					OrgID:        orgID,
-					Status:       "local_error",
-					StartedAt:    time.Now().UTC(),
-					LastActiveAt: time.Now().UTC(),
-					ErrorMsg:     "Facebook profile mismatch; create a separate account slot for this Facebook user",
-				})
-			}
-			return c.Status(409).JSON(fiber.Map{"error": "facebook profile mismatch for this account slot"})
-		}
-		if appStore, err := store.NewAppStore(s.db); err == nil {
-			_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
-				AccountID:    body.AccountID,
-				OrgID:        orgID,
-				Status:       localSessionStatusFromStream(status),
-				StartedAt:    time.Now().UTC(),
-				LastActiveAt: time.Now().UTC(),
-			})
-		}
+		loggedIn := strings.EqualFold(status, "facebook_logged_in") && strings.TrimSpace(body.FBUserID) != ""
 		if loggedIn {
-			email := normalizeFacebookLoginEmail(body.LoginEmail)
-			if err := s.db.SetAccountFacebookIdentity(body.AccountID, body.FBUserID, email); err != nil {
-				return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+			if errResp := s.rejectIfFacebookProfileMismatch(c, c.Context(), acc, body.FBUserID, orgID); errResp != nil {
+				return errResp
 			}
-			_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
-		} else if localFacebookNotReady(status) {
-			_ = s.db.SetBrowserLoggedIn(body.AccountID, false)
+		}
+		if err := s.applyConnectorIdentity(c.Context(), connectorIdentitySnapshot{
+			AccountID:     body.AccountID,
+			OrgID:         orgID,
+			StreamStatus:  status,
+			CurrentURL:    body.CurrentURL,
+			FBUserID:      body.FBUserID,
+			FBDisplayName: body.FBDisplayName,
+			FBUsername:    body.FBUsername,
+			FBProfileURL:  body.FBProfileURL,
+			LoginEmail:    body.LoginEmail,
+			ChromeError:   body.ChromeError,
+		}); err != nil {
+			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
 	return c.JSON(fiber.Map{
@@ -447,24 +528,12 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	if body.TaskID == "" || body.AccountID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "task_id and account_id are required"})
 	}
-	acc, err := s.db.GetAccount(body.AccountID)
-	if err != nil || acc == nil || acc.OrgID != orgID {
+	if acc, err := s.db.GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}
-	screen, err := s.db.GetLatestConnectorScreenshot(orgID, body.AccountID)
+	ownsStream, err := s.db.ConnectorOwnsAccountStream(orgID, agentID, body.AccountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	ownsStream := screen != nil && screen.AgentID == agentID
-	if !ownsStream {
-		if connectors, listErr := s.db.ListLocalConnectors(orgID); listErr == nil {
-			for _, conn := range connectors {
-				if conn.ID == agentID && conn.Online && (conn.AssignedAccountID == body.AccountID || conn.AssignedAccountID == 0) {
-					ownsStream = true
-					break
-				}
-			}
-		}
 	}
 	if !ownsStream {
 		return c.Status(403).JSON(fiber.Map{"error": "connector does not own this account stream"})
@@ -654,12 +723,16 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 	}
 
 	var body struct {
-		AccountID    int64  `json:"account_id"`
-		ImageData    string `json:"image_data"`
-		CurrentURL   string `json:"current_url"`
-		FBUserID     string `json:"fb_user_id"`
-		LoginEmail   string `json:"login_email"`
-		StreamStatus string `json:"stream_status"`
+		AccountID     int64  `json:"account_id"`
+		ImageData     string `json:"image_data"`
+		CurrentURL    string `json:"current_url"`
+		FBUserID      string `json:"fb_user_id"`
+		FBDisplayName string `json:"fb_display_name"`
+		FBUsername    string `json:"fb_username"`
+		FBProfileURL  string `json:"fb_profile_url"`
+		LoginEmail    string `json:"login_email"`
+		StreamStatus  string `json:"stream_status"`
+		ChromeError   string `json:"chrome_error"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
@@ -675,57 +748,46 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 		return c.Status(413).JSON(fiber.Map{"error": "screenshot is too large"})
 	}
 
-	acc, err := s.db.GetAccount(body.AccountID)
-	if err != nil || acc == nil || acc.OrgID != orgID {
+	acc, err := s.db.GetAccountForOrg(body.AccountID, orgID)
+	if err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}
-	if body.FBUserID != "" && acc.FBUserID != "" && acc.FBUserID != body.FBUserID {
-		if appStore, err := store.NewAppStore(s.db); err == nil {
-			_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
-				AccountID:    body.AccountID,
-				OrgID:        orgID,
-				Status:       "local_error",
-				StartedAt:    time.Now().UTC(),
-				LastActiveAt: time.Now().UTC(),
-				ErrorMsg:     "Facebook profile mismatch; create a separate account slot for this Facebook user",
-			})
-		}
-		return c.Status(409).JSON(fiber.Map{"error": "facebook profile mismatch for this account slot"})
+	if errResp := s.rejectIfFacebookProfileMismatch(c, c.Context(), acc, body.FBUserID, orgID); errResp != nil {
+		return errResp
 	}
 
 	streamStatus := strings.TrimSpace(body.StreamStatus)
 	if streamStatus == "" {
 		streamStatus = "connector_online"
 	}
-	loggedIn := strings.EqualFold(streamStatus, "facebook_logged_in") && strings.TrimSpace(body.FBUserID) != ""
-	if err := s.db.UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, streamStatus); err != nil {
+	if err := s.db.UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, body.FBDisplayName, body.FBUsername, body.FBProfileURL, streamStatus, body.ChromeError); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	_ = s.db.UpdateAgentPresence(agentID, store.AgentPresence{
-		CurrentURL:   body.CurrentURL,
-		FBUserID:     body.FBUserID,
-		StreamStatus: streamStatus,
-	})
-
-	localStatus := localSessionStatusFromStream(streamStatus)
-	if appStore, err := store.NewAppStore(s.db); err == nil {
-		_ = appStore.UpsertSession(c.Context(), store.BrowserSession{
-			AccountID:    body.AccountID,
-			OrgID:        orgID,
-			Status:       localStatus,
-			StartedAt:    time.Now().UTC(),
-			LastActiveAt: time.Now().UTC(),
-			ErrorMsg:     "",
-		})
+	presence := store.AgentPresence{
+		CurrentURL:    body.CurrentURL,
+		FBUserID:      body.FBUserID,
+		FBDisplayName: body.FBDisplayName,
+		FBUsername:    body.FBUsername,
+		FBProfileURL:  body.FBProfileURL,
+		StreamStatus:  streamStatus,
+		ChromeError:   body.ChromeError,
 	}
-	if loggedIn {
-		email := normalizeFacebookLoginEmail(body.LoginEmail)
-		if err := s.db.SetAccountFacebookIdentity(body.AccountID, body.FBUserID, email); err != nil {
-			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
-		}
-		_ = s.db.UpdateAccountStatus(body.AccountID, models.AccountActive)
-	} else if localFacebookNotReady(streamStatus) {
-		_ = s.db.SetBrowserLoggedIn(body.AccountID, false)
+	clampPresenceFields(&presence)
+	_ = s.db.UpdateAgentPresence(agentID, presence)
+
+	if err := s.applyConnectorIdentity(c.Context(), connectorIdentitySnapshot{
+		AccountID:     body.AccountID,
+		OrgID:         orgID,
+		StreamStatus:  streamStatus,
+		CurrentURL:    body.CurrentURL,
+		FBUserID:      body.FBUserID,
+		FBDisplayName: body.FBDisplayName,
+		FBUsername:    body.FBUsername,
+		FBProfileURL:  body.FBProfileURL,
+		LoginEmail:    body.LoginEmail,
+		ChromeError:   body.ChromeError,
+	}); err != nil {
+		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})
@@ -740,28 +802,4 @@ func normalizeFacebookLoginEmail(value string) string {
 		return ""
 	}
 	return value
-}
-
-func localFacebookNotReady(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "facebook_login_required", "facebook_human_required", "chrome_not_connected":
-		return true
-	default:
-		return false
-	}
-}
-
-func localSessionStatusFromStream(status string) string {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "facebook_logged_in":
-		return "local_ready"
-	case "facebook_human_required":
-		return "local_human_required"
-	case "facebook_login_required":
-		return "local_login_required"
-	case "chrome_not_connected":
-		return "local_error"
-	default:
-		return "local_active"
-	}
 }

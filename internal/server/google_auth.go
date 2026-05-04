@@ -150,17 +150,29 @@ func (s *Server) googleCallback(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		Secure:   true,
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
 
-	// Pass access token via a short-lived readable cookie so the SPA can bootstrap.
+	// Phase 4b: also set the HttpOnly access-token cookie so the SPA
+	// has authenticated session immediately on Google OAuth callback.
+	setAuthCookies(c, jwtToken, time.Now().Add(authpkg.AccessTokenTTL))
+
+	// Pass the JWT to the SPA's bootstrap exchange via a short-lived
+	// HttpOnly cookie. The /api/auth/google/token handler reads the
+	// cookie server-side, so the SPA never sees the JWT — earlier
+	// versions set HttpOnly:false because the SPA was supposed to
+	// read the value, but Phase 4b hands the SPA a real session via
+	// setAuthCookies() above; g_at is now an internal handoff and
+	// must stay invisible to JS to keep the "JWT never reaches
+	// document.cookie" guarantee.
 	c.Cookie(&fiber.Cookie{
 		Name:     "g_at",
 		Value:    jwtToken,
-		MaxAge:   60, // 60s — frontend reads and clears it immediately
-		HTTPOnly: false,
-		Secure:   true,
-		SameSite: "Lax",
+		Path:     cookiePath, // /api/auth — only sent to the exchange endpoint
+		MaxAge:   60,         // 60s — server reads and clears it immediately
+		HTTPOnly: true,
+		Secure:   secureCookie(c),
+		SameSite: "Strict",
 	})
 
 	action := "google_login"
@@ -258,8 +270,18 @@ func (s *Server) googleToken(c *fiber.Ctx) error {
 	if token == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "no pending Google auth"})
 	}
-	// Clear the cookie
-	c.Cookie(&fiber.Cookie{Name: "g_at", MaxAge: -1, HTTPOnly: false})
+	// Clear the cookie — match Path/HTTPOnly/SameSite so the browser
+	// actually overwrites the entry. A bare clear without these
+	// attributes would leave the original cookie alive.
+	c.Cookie(&fiber.Cookie{
+		Name:     "g_at",
+		Value:    "",
+		Path:     cookiePath,
+		MaxAge:   -1,
+		HTTPOnly: true,
+		Secure:   secureCookie(c),
+		SameSite: "Strict",
+	})
 
 	// Validate the token and return user info
 	claims, err := authpkg.ValidateAccessToken(token, s.cfg.JWTSecret)
@@ -280,6 +302,9 @@ func (s *Server) googleToken(c *fiber.Ctx) error {
 			return c.Status(500).JSON(fiber.Map{"error": "token generation failed"})
 		}
 	}
+
+	// Phase 4b: SPA-friendly auth cookies for the OAuth token-exchange path.
+	setAuthCookies(c, token, time.Now().Add(authpkg.AccessTokenTTL))
 
 	return c.JSON(fiber.Map{
 		"access_token":     token,

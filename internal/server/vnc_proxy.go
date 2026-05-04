@@ -8,7 +8,6 @@ import (
 	"time"
 
 	fiberws "github.com/gofiber/websocket/v2"
-	"github.com/thg/scraper/internal/models"
 )
 
 // perAccountVNCProxyHandler handles GET /ws/vnc/:id.
@@ -26,14 +25,10 @@ func (s *Server) perAccountVNCProxyHandler() func(*fiberws.Conn) {
 			return
 		}
 
-		acc, err := s.db.GetAccount(accountID)
-		if err != nil || acc == nil {
-			_ = ws.WriteMessage(fiberws.TextMessage, []byte("account not found"))
-			return
-		}
 		orgID, _ := ws.Locals("org_id").(int64)
 		role, _ := ws.Locals("user_role").(string)
-		if !models.IsPlatformUser(orgID, models.UserRole(role)) && acc.OrgID != orgID {
+		acc, ok := s.requireAccountForOrgWS(orgID, role, accountID)
+		if !ok {
 			_ = ws.WriteMessage(fiberws.TextMessage, []byte("access denied"))
 			return
 		}

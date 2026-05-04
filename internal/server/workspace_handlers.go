@@ -34,18 +34,21 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	}
 
 	type entry struct {
-		AccountID    int64      `json:"account_id"`
-		AccountName  string     `json:"account_name"`
-		Email        string     `json:"email,omitempty"`
-		Status       string     `json:"account_status"`
-		LoggedIn     bool       `json:"logged_in"`
-		FBUserID     string     `json:"fb_user_id,omitempty"`
-		Running      bool       `json:"running"`
-		CDPPort      int        `json:"cdp_port,omitempty"`
-		VNCPort      int        `json:"vnc_port,omitempty"`
-		StartedAt    *time.Time `json:"started_at,omitempty"`
-		BrowserState string     `json:"browser_state,omitempty"`
-		ErrorMsg     string     `json:"error_msg,omitempty"`
+		AccountID     int64      `json:"account_id"`
+		AccountName   string     `json:"account_name"`
+		Email         string     `json:"email,omitempty"`
+		Status        string     `json:"account_status"`
+		LoggedIn      bool       `json:"logged_in"`
+		FBUserID      string     `json:"fb_user_id,omitempty"`
+		FBDisplayName string     `json:"fb_display_name,omitempty"`
+		FBUsername    string     `json:"fb_username,omitempty"`
+		FBProfileURL  string     `json:"fb_profile_url,omitempty"`
+		Running       bool       `json:"running"`
+		CDPPort       int        `json:"cdp_port,omitempty"`
+		VNCPort       int        `json:"vnc_port,omitempty"`
+		StartedAt     *time.Time `json:"started_at,omitempty"`
+		BrowserState  string     `json:"browser_state,omitempty"`
+		ErrorMsg      string     `json:"error_msg,omitempty"`
 	}
 
 	appStore, _ := store.NewAppStore(s.db)
@@ -53,12 +56,15 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 	result := make([]entry, 0, len(accounts))
 	for _, acc := range accounts {
 		e := entry{
-			AccountID:   acc.ID,
-			AccountName: acc.Name,
-			Email:       acc.Email,
-			Status:      string(acc.Status),
-			LoggedIn:    acc.BrowserLoggedIn,
-			FBUserID:    acc.FBUserID,
+			AccountID:     acc.ID,
+			AccountName:   acc.Name,
+			Email:         acc.Email,
+			Status:        string(acc.Status),
+			LoggedIn:      acc.BrowserLoggedIn,
+			FBUserID:      acc.FBUserID,
+			FBDisplayName: acc.FBDisplayName,
+			FBUsername:    acc.FBUsername,
+			FBProfileURL:  acc.FBProfileURL,
 		}
 		if s.workspace != nil {
 			if inst := s.workspaceInstanceForAccount(acc.ID, acc.Name); inst != nil {
@@ -98,19 +104,16 @@ func (s *Server) workspaceList(c *fiber.Ctx) error {
 // POST /api/browser/workspaces/:id/start
 func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	acc, err := s.db.GetAccount(id)
+	orgID, _ := c.Locals("org_id").(int64)
+	acc, err := s.db.GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
-	orgID, _ := c.Locals("org_id").(int64)
-	if orgID != 0 && acc.OrgID != orgID {
-		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
 	userID, _ := c.Locals("user_id").(int64)
 	hasOrgLocalConnector, _ := s.localConnectorAvailability(orgID)
 	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailabilityForUser(orgID, userID, id)
 	if hasOnlineLocalConnector {
-		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
+		if err := s.recordLocalBrowserSession(id, orgID, store.SessionStarting, ""); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		_ = s.db.UpdateAccountStatus(id, models.AccountActive)
@@ -164,9 +167,9 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 // POST /api/browser/workspaces/:id/stop
 func (s *Server) workspaceStop(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	if acc, err := s.db.GetAccount(id); err == nil && acc != nil {
-		orgID, _ := c.Locals("org_id").(int64)
-		if orgID != 0 && acc.OrgID != orgID {
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 {
+		if acc, err := s.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 		}
 	}
@@ -223,20 +226,14 @@ func isDashboardStreamConnector(conn store.AgentToken) bool {
 	return false
 }
 
-func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status, errorMsg string) error {
+// recordLocalBrowserSession is kept as a thin wrapper around AppStore.RecordLocalSession
+// so legacy call sites continue to compile. New code should call AppStore directly.
+func (s *Server) recordLocalBrowserSession(accountID, orgID int64, status store.LocalSessionStatus, errorMsg string) error {
 	appStore, err := store.NewAppStore(s.db)
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	return appStore.UpsertSession(context.Background(), store.BrowserSession{
-		AccountID:    accountID,
-		OrgID:        orgID,
-		Status:       status,
-		StartedAt:    now,
-		LastActiveAt: now,
-		ErrorMsg:     errorMsg,
-	})
+	return appStore.RecordLocalSession(context.Background(), accountID, orgID, status, errorMsg)
 }
 
 // workspaceNew creates a fresh Facebook account and starts its browser.
@@ -273,7 +270,7 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "create account: " + err.Error()})
 	}
 	if hasOnlineLocalConnector {
-		if err := s.recordLocalBrowserSession(id, orgID, "local_starting", ""); err != nil {
+		if err := s.recordLocalBrowserSession(id, orgID, store.SessionStarting, ""); err != nil {
 			_ = s.db.DeleteAccount(id)
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -493,7 +490,7 @@ func (s *Server) watchWorkspaceLogin(accountID, orgID int64, inst *workspace.Ins
 			if current == nil || current.ContainerID != inst.ContainerID {
 				return
 			}
-			acc, err := s.db.GetAccount(accountID)
+			acc, err := s.db.GetAccountForOrg(accountID, orgID)
 			if err != nil || acc == nil {
 				return
 			}
@@ -600,13 +597,10 @@ type facebookSessionSnapshot struct {
 // POST /api/browser/workspaces/:id/sync-session
 func (s *Server) workspaceSyncSession(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	acc, err := s.db.GetAccount(id)
+	orgID, _ := c.Locals("org_id").(int64)
+	acc, err := s.db.GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
-	orgID, _ := c.Locals("org_id").(int64)
-	if orgID != 0 && acc.OrgID != orgID {
-		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
 	if s.workspace == nil {
 		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
@@ -673,10 +667,6 @@ func facebookSessionSnapshotFromInstance(inst *workspace.Instance) (*facebookSes
 		return lastSnap, nil
 	}
 	return nil, fmt.Errorf("no CDP endpoint succeeded: %s", strings.Join(errors, "; "))
-}
-
-func facebookSessionSnapshotFromCDP(cdpPort int) (*facebookSessionSnapshot, error) {
-	return facebookSessionSnapshotFromCDPEndpoint(cdpEndpointFromPort(cdpPort))
 }
 
 func facebookSessionSnapshotFromCDPEndpoint(ep cdpEndpoint) (*facebookSessionSnapshot, error) {
@@ -866,13 +856,10 @@ func dockerContainerIP(inst *workspace.Instance) string {
 // POST /api/browser/workspaces/:id/set-logged-in
 func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	acc, err := s.db.GetAccount(id)
+	orgID, _ := c.Locals("org_id").(int64)
+	acc, err := s.db.GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
-	orgID, _ := c.Locals("org_id").(int64)
-	if orgID != 0 && acc.OrgID != orgID {
-		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
 	var body struct {
 		LoggedIn bool `json:"logged_in"`
@@ -922,15 +909,6 @@ func (s *Server) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn, "fb_user_id": fbUserID})
-}
-
-func facebookUserIDFromCDP(cdpPort int) (string, error) {
-	fbUserID, _, _, err := facebookCookiesFromCDP(cdpPort)
-	return fbUserID, err
-}
-
-func facebookCookiesFromCDP(cdpPort int) (string, string, int, error) {
-	return facebookCookiesFromCDPEndpoint(cdpEndpointFromPort(cdpPort))
 }
 
 func facebookCookiesFromInstance(inst *workspace.Instance) (string, string, int, error) {
@@ -1052,12 +1030,69 @@ func isMissingFacebookUserCookie(err error) bool {
 // POST /api/browser/workspaces/:id/resolve-checkpoint
 func (s *Server) resolveCheckpoint(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID != 0 {
+		if acc, err := s.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
+			return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+		}
+	}
 	sm := session.NewStateMachine(s.db.DB())
 	cm := session.NewCheckpointManager(s.db.DB(), sm, nil)
+	cm.SetVerifier(s.checkpointVerifier())
 	if err := cm.ResolveCheckpoint(c.Context(), id); err != nil {
+		// 409 when the browser still reports a verification page so the
+		// frontend can keep the operator on the VNC view instead of
+		// silently flipping back to the dashboard list.
+		if _, still := err.(*session.ErrCheckpointStillActive); still {
+			return c.Status(409).JSON(fiber.Map{
+				"error": err.Error(),
+				"code":  "CHECKPOINT_STILL_ACTIVE",
+			})
+		}
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true, "account_id": id, "status": "ready"})
+}
+
+// checkpointVerifier returns a session.CheckpointVerifier backed by the
+// workspace manager's CDP probe. It returns nil when the workspace is
+// not initialised so the operator-trust fallback path stays usable.
+func (s *Server) checkpointVerifier() session.CheckpointVerifier {
+	if s.workspace == nil {
+		return nil
+	}
+	return &workspaceCheckpointVerifier{server: s}
+}
+
+type workspaceCheckpointVerifier struct {
+	server *Server
+}
+
+// StillAtCheckpoint runs the same Facebook human-challenge detector
+// that workspaceSyncSession uses, against the live CDP target. If the
+// browser is no longer running we return (false, "", nil) so the
+// resolve flow falls through to the state machine — the session row
+// will be cleared regardless of whether Chrome is still up.
+func (v *workspaceCheckpointVerifier) StillAtCheckpoint(ctx context.Context, accountID int64) (bool, string, error) {
+	if v == nil || v.server == nil || v.server.workspace == nil {
+		return false, "", nil
+	}
+	inst := v.server.workspace.Get(accountID)
+	if inst == nil || inst.CDPPort == 0 {
+		return false, "", nil
+	}
+	snap, err := facebookSessionSnapshotFromInstance(inst)
+	if err != nil || snap == nil {
+		return false, "", err
+	}
+	if snap.Checkpoint || snap.HumanRequired {
+		reason := snap.HumanReason
+		if reason == "" && snap.CurrentURL != "" {
+			reason = snap.CurrentURL
+		}
+		return true, reason, nil
+	}
+	return false, "", nil
 }
 
 // listCheckpoints returns all sessions currently awaiting human intervention.

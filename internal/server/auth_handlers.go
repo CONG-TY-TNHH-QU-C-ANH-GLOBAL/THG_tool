@@ -14,7 +14,81 @@ import (
 const (
 	refreshCookie = "refresh_token"
 	cookiePath    = "/api/auth"
+
+	// accessCookie holds the short-lived JWT access token. Phase 4b moves
+	// the access token out of the localStorage-backed Authorization header
+	// (XSS-readable) into an HttpOnly cookie. The middleware
+	// (auth.RequireAuth → extractToken) already prefers Authorization but
+	// falls through to this cookie, so legacy clients keep working until
+	// they migrate. Path "/" so the cookie is sent on /api and /ws/* —
+	// WebSocket upgrades carry cookies, which is also how the VNC /
+	// screen proxies authenticate after Phase 4c.
+	accessCookie = "access_token"
+
+	// authPresentCookie is a non-HttpOnly companion flag the SPA reads to
+	// know "I am logged in" without ever seeing the JWT. It carries no
+	// secret, only a presence bit; the real auth is the HttpOnly cookie
+	// above. The SPA expires its in-memory user when this flag flips off.
+	authPresentCookie = "autoflow_session"
 )
+
+// setAuthCookies writes the access-token + presence cookies after a
+// successful login or refresh.
+//
+// The access-token cookie expires with the access-token TTL (short,
+// because the JWT is a bearer secret). The presence cookie expires
+// with the refresh-token TTL (long) — it carries no secret, only a
+// "session might be valid, try refresh" signal. Aligning the presence
+// cookie to access TTL caused early logout: after the access cookie
+// expired, the SPA on a fresh page load saw no presence cookie and
+// short-circuited to login even though the refresh cookie was still
+// alive. Now restoreSession() runs, /auth/me returns 401 because the
+// access cookie is gone, apiFetch silently refreshes via the refresh
+// cookie, retries /auth/me, and the user stays signed in.
+func setAuthCookies(c *fiber.Ctx, accessToken string, accessExpiresAt time.Time) {
+	c.Cookie(&fiber.Cookie{
+		Name:     accessCookie,
+		Value:    accessToken,
+		Path:     "/",
+		Expires:  accessExpiresAt,
+		HTTPOnly: true,
+		Secure:   secureCookie(c),
+		SameSite: "Strict",
+	})
+	c.Cookie(&fiber.Cookie{
+		Name:     authPresentCookie,
+		Value:    "1",
+		Path:     "/",
+		Expires:  time.Now().Add(auth.RefreshTokenTTL),
+		HTTPOnly: false, // SPA reads this to detect logged-in state
+		Secure:   secureCookie(c),
+		SameSite: "Strict",
+	})
+}
+
+// clearAuthCookies expires the access-token + presence cookies on
+// logout. Refresh cookie is cleared separately because its Path is
+// scoped to /api/auth.
+func clearAuthCookies(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     accessCookie,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HTTPOnly: true,
+		Secure:   secureCookie(c),
+		SameSite: "Strict",
+	})
+	c.Cookie(&fiber.Cookie{
+		Name:     authPresentCookie,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HTTPOnly: false,
+		Secure:   secureCookie(c),
+		SameSite: "Strict",
+	})
+}
 
 // login handles POST /api/auth/login — email + password → access + refresh tokens.
 func (s *Server) login(c *fiber.Ctx) error {
@@ -93,8 +167,15 @@ func (s *Server) login(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		Secure:   secureCookie(c),
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
+
+	// Phase 4b: also issue the access token as an HttpOnly cookie so the
+	// SPA never has to read the JWT in JavaScript. The body still carries
+	// access_token for backward compatibility with any existing client
+	// that sets Authorization: Bearer manually — once all clients migrate
+	// the response field can be removed.
+	setAuthCookies(c, accessToken, time.Now().Add(auth.AccessTokenTTL))
 
 	s.db.InsertAuditLog(user.ID, "login_success", ip, `{}`)
 	log.Printf("[Auth] Login: %s (role=%s) from %s", user.Email, user.Role, ip)
@@ -162,8 +243,12 @@ func (s *Server) refresh(c *fiber.Ctx) error {
 		Expires:  expiresAt,
 		HTTPOnly: true,
 		Secure:   secureCookie(c),
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
+
+	// Phase 4b: refresh the access-token cookie alongside the rotated
+	// refresh-token cookie so the SPA never needs to handle the JWT.
+	setAuthCookies(c, accessToken, time.Now().Add(auth.AccessTokenTTL))
 
 	return c.JSON(fiber.Map{
 		"access_token": accessToken,
@@ -187,8 +272,9 @@ func (s *Server) logout(c *fiber.Ctx) error {
 		Expires:  time.Unix(0, 0),
 		HTTPOnly: true,
 		Secure:   secureCookie(c),
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
+	clearAuthCookies(c)
 	userID, _ := c.Locals("user_id").(int64)
 	s.db.InsertAuditLog(userID, "logout", c.IP(), `{}`)
 	return c.JSON(fiber.Map{"status": "logged out"})

@@ -6,7 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import { disconnectLocalConnector, getLocalConnectorScreen, sendConnectorInput } from '../../services/connectorsService';
 import type { LocalConnector, LocalConnectorAction, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff, Mail } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Cpu, Monitor, StopCircle, LogIn, RefreshCw, CheckCircle, Plus, ShieldCheck, Laptop, Radio, Copy, KeyRound, Shield, Unplug, Eye, EyeOff, Mail, Workflow } from 'lucide-react';
 import VncCanvas from '../VncCanvas';
 import '../../autoflow.css';
 
@@ -115,6 +115,24 @@ function connectorStatusLabel(status?: string): string {
   }
 }
 
+function facebookIdentityLabel(identity: {
+  displayName?: string;
+  username?: string;
+  email?: string;
+  fbUserId?: string;
+  fallback?: string;
+}): string {
+  const displayName = (identity.displayName || '').trim();
+  if (displayName) return displayName;
+  const username = (identity.username || '').trim().replace(/^@+/, '');
+  if (username) return `@${username}`;
+  const email = (identity.email || '').trim();
+  if (email) return email;
+  const fbUserId = (identity.fbUserId || '').trim();
+  if (fbUserId) return `FB ${fbUserId}`;
+  return (identity.fallback || '').trim();
+}
+
 function actionTypeLabel(type?: string): string {
   switch ((type || '').toLowerCase()) {
     case 'crawl':
@@ -157,6 +175,70 @@ function isRemoteControlKey(key: string): boolean {
     'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
     'Home', 'End', 'PageUp', 'PageDown',
   ].includes(key);
+}
+
+function AutomationCommandCenter({
+  workspaces,
+  connectors,
+  actions,
+  running,
+  loading,
+  onRefresh,
+  onNewSession,
+}: {
+  workspaces: Array<{ loggedIn: boolean; running: boolean; fbUserId?: string; browserState?: string }>;
+  connectors: LocalConnector[];
+  actions: LocalConnectorAction[];
+  running: number;
+  loading: boolean;
+  onRefresh: () => void;
+  onNewSession: () => void;
+}) {
+  const runtimeOnline = connectors.filter(c => c.online && isDashboardStreamConnector(c)).length;
+  const facebookReady = workspaces.filter(w => w.loggedIn || Boolean(w.fbUserId) || w.browserState === 'local_ready').length;
+  const doneActions = actions.filter(a => a.status === 'done').length;
+  const failedActions = actions.filter(a => a.status === 'failed').length;
+  const pipeline = [
+    { label: 'Leads thật', active: running > 0 || facebookReady > 0 },
+    { label: 'Market Signal Gate', active: facebookReady > 0 },
+    { label: 'Sales Voice Memory', active: true },
+    { label: 'Conversation State', active: actions.length > 0 },
+    { label: 'Auto Action', active: doneActions > 0 || actions.some(a => a.status === 'claimed' || a.status === 'pending') },
+    { label: 'Telegram / Dashboard log', active: doneActions > 0 || failedActions > 0 },
+  ];
+
+  return (
+    <section className="af-command-center">
+      <div className="af-command-copy">
+        <span className="af-command-kicker"><Workflow size={14} /> Production Automation Flow</span>
+        <h2>Trung tâm điều phối Facebook Sales Intelligence</h2>
+        <p>Leads thật → Market Signal Gate → Sales Voice Memory → Conversation State → Auto Action → Telegram/Dashboard log.</p>
+      </div>
+      <div className="af-command-metrics">
+        <div><span>{workspaces.length}</span><small>Tài khoản Facebook</small></div>
+        <div><span>{facebookReady}</span><small>Session sẵn sàng</small></div>
+        <div><span>{runtimeOnline}</span><small>Runtime online</small></div>
+        <div><span>{doneActions}/{actions.length}</span><small>Action gần đây</small></div>
+      </div>
+      <div className="af-command-actions">
+        <button type="button" className="af-btn af-btn-ghost" onClick={onRefresh}>
+          <RefreshCw size={14} /> Làm mới
+        </button>
+        <button type="button" className="af-btn af-btn-primary" onClick={onNewSession} disabled={loading}>
+          {loading ? <RefreshCw size={14} className="spin" /> : <Plus size={14} />}
+          {loading ? 'Đang mở' : 'Phiên Facebook mới'}
+        </button>
+      </div>
+      <div className="af-pipeline-rail">
+        {pipeline.map((step, index) => (
+          <div key={step.label} className={`af-pipeline-step ${step.active ? 'is-active' : ''}`}>
+            <span>{index + 1}</span>
+            <p>{step.label}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function LocalConnectorPanel({
@@ -217,7 +299,7 @@ function LocalConnectorPanel({
   }, []);
 
   return (
-    <div style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
+    <div className="af-runtime-panel" style={{ background: theme.surface, border: `1px solid ${online ? '#10b98166' : '#334155'}`, borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderBottom: `1px solid ${theme.border}` }}>
         <div style={{ width: 34, height: 34, borderRadius: 9, background: '#0f766e22', border: '1px solid #2dd4bf55', display: 'grid', placeItems: 'center' }}>
           <Laptop size={17} color="#5eead4" />
@@ -354,7 +436,13 @@ function LocalConnectorPanel({
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
-          {connectors.map(c => (
+          {connectors.map(c => {
+            const identityLabel = facebookIdentityLabel({
+              displayName: c.fbDisplayName,
+              username: c.fbUsername,
+              fbUserId: c.fbUserId,
+            });
+            return (
             <div key={c.id} style={{ border: `1px solid ${c.online ? '#22c55e55' : theme.border}`, borderRadius: 8, background: theme.surfaceAlt, padding: 11 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.online ? '#4ade80' : theme.textFaint }} />
@@ -368,7 +456,8 @@ function LocalConnectorPanel({
                 {c.assignedAccountId ? ` · gắn account #${c.assignedAccountId}` : ''}
               </p>
               {c.currentUrl && <p style={{ color: '#93c5fd', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.currentUrl}</p>}
-              {c.streamStatus === 'facebook_logged_in' && c.fbUserId && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>FB {c.fbUserId}</p>}
+              {c.streamStatus === 'facebook_logged_in' && identityLabel && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>{identityLabel}</p>}
+              {c.chromeError && <p style={{ color: '#fca5a5', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.chromeError}</p>}
               {(c.createdBy === currentUserId || currentUserRole === 'admin' || currentUserRole === 'founder' || currentUserRole === 'superadmin') && (
                 <button
                   type="button"
@@ -381,7 +470,7 @@ function LocalConnectorPanel({
                 </button>
               )}
             </div>
-          ))}
+          );})}
         </div>
       )}
     </div>
@@ -412,6 +501,12 @@ function LocalChromeViewer({
   const [inputActive, setInputActive] = useState(false);
   const age = screen?.updatedAt ? Math.max(0, Math.round((Date.now() - new Date(screen.updatedAt).getTime()) / 1000)) : null;
   const remoteInputEnabled = Boolean(screen?.imageData && screen.fbUserId && screen.streamStatus === 'facebook_logged_in');
+  const screenIdentityLabel = facebookIdentityLabel({
+    displayName: screen?.fbDisplayName,
+    username: screen?.fbUsername,
+    email: accountEmail,
+    fbUserId: screen?.fbUserId,
+  });
 
   const queueInput = useCallback((type: 'click' | 'key' | 'text' | 'scroll', payload: Record<string, unknown>) => {
     if (!screen?.imageData || !remoteInputEnabled) return;
@@ -522,7 +617,7 @@ function LocalChromeViewer({
   };
 
   return (
-    <div style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+    <div className="af-live-browser-frame" style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: screen?.imageData ? '#4ade80' : theme.textFaint }} />
         <Monitor size={14} color="#5eead4" />
@@ -534,8 +629,8 @@ function LocalChromeViewer({
         </div>
         {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome local</span>}
         {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>remote fallback</span>}
-        {accountEmail && <span title={accountEmail} style={{ color: '#bfdbfe', border: '1px solid #3b82f644', background: '#1e3a8a33', borderRadius: 6, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Mail size={11} />{accountEmail}</span>}
-        {screen?.streamStatus === 'facebook_logged_in' && screen?.fbUserId && <span style={{ color: '#c4b5fd', border: '1px solid #6366f144', background: '#312e8133', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>FB {screen.fbUserId}</span>}
+        {screenIdentityLabel && <span title={screenIdentityLabel} style={{ color: '#bfdbfe', border: '1px solid #3b82f644', background: '#1e3a8a33', borderRadius: 6, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Mail size={11} />{screenIdentityLabel}</span>}
+        {screen?.chromeError && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{screen.chromeError}</span>}
         {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
         {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
         <button onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>
@@ -667,7 +762,6 @@ function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading:
 }
 
 export default function BrowserView({ orgId }: BrowserViewProps) {
-  void orgId;
   const currentUser = useAuthStore(s => s.user);
   const { workspaces, actionLoading, refresh, start, startNew, stop, syncSession } = useWorkspaces();
   const { connectors, creating: connectorCreating, refresh: refreshConnectors, createPairingCode } = useConnectors();
@@ -685,6 +779,20 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
   const [connectorNotice, setConnectorNotice] = useState<string | null>(null);
   const [browserNotice, setBrowserNotice] = useState<string | null>(null);
+
+  // Cross-org safety: when the active workspace changes, drop the selected
+  // browser session immediately so the embedded VncCanvas / live screen
+  // unmounts. Without this the operator could keep watching the previous
+  // org's Chrome stream while the dashboard switches over to org B —
+  // server-side org_id checks still hold, but the visual leak alone is a
+  // tenant-isolation regression we don't want to ship.
+  useEffect(() => {
+    setSelectedId(null);
+    setSessionInfo(null);
+    setLocalScreen(null);
+    setSyncError(null);
+    setBrowserNotice(null);
+  }, [orgId]);
 
   const selectedWs = workspaces.find(w => w.accountId === selectedId);
   const selectedIsLocal = Boolean(selectedWs?.browserState?.startsWith('local_'));
@@ -791,6 +899,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const running = workspaces.filter(w => w.running).length;
   const currentUserId = currentUser?.id ?? 0;
+  const recentActions = localScreen?.actions ?? [];
 
   const handleNewSession = async () => {
     const ownConnectors = connectors.filter(c => c.createdBy === currentUserId);
@@ -855,8 +964,18 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
+    <div className="af-browser-shell" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <AutomationCommandCenter
+        workspaces={workspaces}
+        connectors={connectors}
+        actions={recentActions}
+        running={running}
+        loading={newLoading}
+        onRefresh={() => { void refresh(); void refreshConnectors(); }}
+        onNewSession={() => void handleNewSession()}
+      />
+
+      <div className="af-browser-legacy-summary" style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Local: <strong style={{ color: connectors.some(c => c.online) ? '#4ade80' : theme.textFaint }}>{connectors.filter(c => c.online).length}</strong></span>
@@ -897,7 +1016,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="af-browser-account-list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {workspaces.length === 0 && (
           <CyberEmptyState onCreate={() => void handleNewSession()} loading={newLoading} />
         )}
@@ -905,6 +1024,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         {workspaces.map(w => {
           const tone = stateTone(w.browserState);
           const rowHasOnlineConnector = connectors.some(c => isUsableConnectorForAccount(c, currentUserId, w.accountId));
+          const identityLabel = facebookIdentityLabel({
+            displayName: w.fbDisplayName,
+            username: w.fbUsername,
+            email: w.email,
+            fbUserId: w.fbUserId,
+            fallback: w.accountName,
+          });
           return (
             <div
               key={w.accountId}
@@ -918,13 +1044,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: w.running ? '#4ade80' : theme.textFaint }} />
               <Monitor size={14} color={theme.textMuted} />
-              <span style={{ flex: 1, color: theme.text, fontWeight: 500, fontSize: 13 }}>{w.accountName}</span>
+              <span style={{ flex: 1, color: theme.text, fontWeight: 500, fontSize: 13 }}>{identityLabel || w.accountName}</span>
               {w.loggedIn && (
                 <span style={{ fontSize: 11, color: '#60a5fa', background: '#1e3a5f33', border: '1px solid #3b82f644', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                   <CheckCircle size={10} />Đã đăng nhập
                 </span>
               )}
-              {w.fbUserId && (
+              {w.fbUserId && !w.fbDisplayName && !w.fbUsername && !w.email && (
                 <span style={{ fontSize: 11, color: '#c4b5fd', background: '#312e8133', border: '1px solid #6366f144', padding: '2px 8px', borderRadius: 6 }}>
                   FB {w.fbUserId}
                 </span>
@@ -979,7 +1105,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         <LocalChromeViewer
           screen={localScreen}
           accountId={selectedId}
-          accountName={selectedWs.accountName}
+          accountName={facebookIdentityLabel({
+            displayName: selectedWs.fbDisplayName || localScreen?.fbDisplayName,
+            username: selectedWs.fbUsername || localScreen?.fbUsername,
+            email: selectedWs.email,
+            fbUserId: selectedWs.fbUserId || localScreen?.fbUserId,
+            fallback: selectedWs.accountName,
+          })}
           accountEmail={selectedWs.email}
           loading={localScreenLoading}
           onRefresh={() => void refreshLocalScreen(selectedId)}

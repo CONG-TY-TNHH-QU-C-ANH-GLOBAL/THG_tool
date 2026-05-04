@@ -10,6 +10,11 @@ import (
 )
 
 // InsertOutboundMessage creates a new outbound message in the queue.
+//
+// Direct callers (admin manual draft, dashboard "approve & send") may use
+// this. Agent / AI / Telegram code paths MUST go through
+// QueueOutboundForOrg instead so the dedup guard, cooldown and
+// store-layer approval policy run atomically.
 func (s *Store) InsertOutboundMessage(msg *models.OutboundMessage) (int64, error) {
 	result, err := s.db.Exec(
 		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, status, ai_model)
@@ -20,6 +25,170 @@ func (s *Store) InsertOutboundMessage(msg *models.OutboundMessage) (int64, error
 		return 0, err
 	}
 	return result.LastInsertId()
+}
+
+// IsAutoOutboundEnabledForOrg reports whether the organization has opted
+// into immediate-execution outbound. The flag lives in user_context under
+// the org-scoped key `org:{id}:outbound_mode` and is admin-controlled —
+// LLM tools must NOT be able to flip it. Any value other than the literal
+// "auto" (case-insensitive) leaves the org in the safe default
+// (approval-required).
+//
+// This helper is the single source of truth — never inline the lookup.
+func (s *Store) IsAutoOutboundEnabledForOrg(orgID int64) bool {
+	if orgID <= 0 {
+		return false
+	}
+	value, err := s.GetContext(fmt.Sprintf("org:%d:outbound_mode", orgID))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(value), "auto")
+}
+
+// OutboundQueueResult carries the queue-level outcome back to the caller
+// alongside the new row ID.
+type OutboundQueueResult struct {
+	ID       int64
+	Status   models.OutboundStatus
+	Decision OutboundGuardDecision
+}
+
+// QueueOutboundForOrg is the canonical write path for AI / agent /
+// Telegram code that produces outbound messages. It performs all three
+// production guards atomically inside a single transaction:
+//
+//  1. CanQueueOutboundForOrg — dedup, cooldown, conversation thread state.
+//  2. Store-layer approval policy — the caller's requestedAuto is honoured
+//     ONLY if the org's outbound_mode flag is actually "auto". This blocks
+//     prompt-injection attacks where an LLM tool call sets auto=true even
+//     though the org is supposed to be approval-required.
+//  3. The partial UNIQUE index on (org_id, type, target_url) for active
+//     statuses — the final fail-safe if two transactions race past the
+//     application-level guard.
+//
+// Returns OutboundQueueResult.Decision.Allowed=false (with ID=0) when the
+// guard blocked the write. The caller should propagate Reason to the user
+// (e.g. "duplicate_outbound_target") instead of treating it as an error.
+//
+// Returns a non-nil error only on unexpected DB failures or constraint
+// violations (which indicate a race we should learn from — log + retry
+// the guard once).
+func (s *Store) QueueOutboundForOrg(msg *models.OutboundMessage, requestedAuto bool, cooldown time.Duration) (OutboundQueueResult, error) {
+	if msg == nil || msg.OrgID <= 0 {
+		return OutboundQueueResult{}, fmt.Errorf("org_id is required")
+	}
+	if strings.TrimSpace(msg.TargetURL) == "" {
+		return OutboundQueueResult{}, fmt.Errorf("target_url is required")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return OutboundQueueResult{}, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	guard, err := s.canQueueOutboundTx(tx, msg.OrgID, string(msg.Type), msg.TargetURL, msg.TargetURL, cooldown)
+	if err != nil {
+		return OutboundQueueResult{}, err
+	}
+	if !guard.Allowed {
+		return OutboundQueueResult{Decision: guard}, nil
+	}
+
+	// Store-layer approval enforcement. Even if the caller asks for auto,
+	// we downgrade to draft when the org has not opted in.
+	autoAllowed := requestedAuto && s.IsAutoOutboundEnabledForOrg(msg.OrgID)
+	status := models.OutboundDraft
+	if autoAllowed {
+		status = models.OutboundApproved
+	}
+	msg.Status = status
+
+	res, err := tx.Exec(
+		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, status, ai_model)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.Status, msg.AIModel,
+	)
+	if err != nil {
+		// Likely UNIQUE collision under concurrency — surface as a guard
+		// reason rather than an opaque DB error.
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return OutboundQueueResult{Decision: OutboundGuardDecision{
+				Allowed: false, Reason: "duplicate_outbound_target_race",
+			}}, nil
+		}
+		return OutboundQueueResult{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return OutboundQueueResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return OutboundQueueResult{}, err
+	}
+	return OutboundQueueResult{
+		ID:       id,
+		Status:   status,
+		Decision: OutboundGuardDecision{Allowed: true, Reason: "ok"},
+	}, nil
+}
+
+// canQueueOutboundTx is the transactional twin of CanQueueOutboundForOrg.
+// Inlines the same logic but reads through the open transaction so the
+// SELECT and the subsequent INSERT see the same snapshot under SQLite WAL.
+func (s *Store) canQueueOutboundTx(tx *sql.Tx, orgID int64, msgType, targetURL, profileURL string, cooldown time.Duration) (OutboundGuardDecision, error) {
+	msgType = strings.TrimSpace(strings.ToLower(msgType))
+	targetURL = strings.TrimSpace(targetURL)
+	profileURL = strings.TrimSpace(profileURL)
+	if cooldown <= 0 {
+		cooldown = 24 * time.Hour
+	}
+
+	var existingID int64
+	var status string
+	var createdAt string
+	err := tx.QueryRow(
+		`SELECT id, status, COALESCE(sent_at, created_at)
+		 FROM outbound_messages
+		 WHERE org_id = ? AND type = ? AND target_url = ?
+		   AND status NOT IN ('failed','rejected')
+		 ORDER BY created_at DESC LIMIT 1`,
+		orgID, msgType, targetURL,
+	).Scan(&existingID, &status, &createdAt)
+	if err != nil && err != sql.ErrNoRows {
+		return OutboundGuardDecision{}, err
+	}
+	if err == nil {
+		lastAt := parseSQLiteTime(createdAt)
+		if msgType == "comment" || status == string(models.OutboundDraft) || status == string(models.OutboundApproved) {
+			return OutboundGuardDecision{Allowed: false, Reason: "duplicate_outbound_target", ExistingID: existingID, LastOutboundAt: lastAt}, nil
+		}
+		if time.Since(lastAt) < cooldown {
+			return OutboundGuardDecision{Allowed: false, Reason: "outbound_cooldown_active", ExistingID: existingID, LastOutboundAt: lastAt}, nil
+		}
+	}
+
+	if msgType == "inbox" {
+		if profileURL == "" {
+			profileURL = targetURL
+		}
+		if thread, err := s.GetThreadByProfileForOrg(orgID, profileURL); err == nil && thread != nil {
+			if thread.Status == "closed" || thread.Status == "converted" {
+				return OutboundGuardDecision{Allowed: false, Reason: "conversation_closed", LastOutboundAt: thread.LastOutboundAt, LastInboundAt: thread.LastInboundAt}, nil
+			}
+			if !thread.LastInboundAt.IsZero() && thread.LastInboundAt.After(thread.LastOutboundAt) {
+				return OutboundGuardDecision{Allowed: true, Reason: "lead_replied", LastOutboundAt: thread.LastOutboundAt, LastInboundAt: thread.LastInboundAt}, nil
+			}
+			if !thread.LastOutboundAt.IsZero() && time.Since(thread.LastOutboundAt) < cooldown {
+				return OutboundGuardDecision{Allowed: false, Reason: "awaiting_reply_cooldown", LastOutboundAt: thread.LastOutboundAt, LastInboundAt: thread.LastInboundAt}, nil
+			}
+		} else if err != nil && err != sql.ErrNoRows {
+			return OutboundGuardDecision{}, err
+		}
+	}
+
+	return OutboundGuardDecision{Allowed: true, Reason: "ok"}, nil
 }
 
 // OutboundGuardDecision is the queue-level safety check result for automated
@@ -260,11 +429,56 @@ func (s *Store) GetOutboundForOrg(orgID, id int64) (*models.OutboundMessage, err
 	return msg, nil
 }
 
+// ClaimApprovedOutboundForOrg atomically moves one approved message into the
+// internal sending state so a local runtime can execute it exactly once.
+func (s *Store) ClaimApprovedOutboundForOrg(orgID, id int64, workerID string) error {
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		workerID = "local-runtime"
+	}
+	res, err := s.db.Exec(
+		`UPDATE outbound_messages
+		 SET status = ?, claimed_by = ?, claimed_at = CURRENT_TIMESTAMP
+		 WHERE id = ? AND org_id = ? AND status = ?`,
+		models.OutboundSending, workerID, id, orgID, models.OutboundApproved,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// ResetStaleSendingOutboundForOrg returns abandoned sending rows to approved.
+// This protects production from a desktop runtime crashing after claiming work
+// but before reporting sent/failed.
+func (s *Store) ResetStaleSendingOutboundForOrg(orgID int64, staleAfter time.Duration) error {
+	if orgID <= 0 {
+		return nil
+	}
+	if staleAfter <= 0 {
+		staleAfter = 10 * time.Minute
+	}
+	_, err := s.db.Exec(
+		`UPDATE outbound_messages
+		 SET status = ?, claimed_by = '', claimed_at = NULL
+		 WHERE org_id = ?
+		   AND status = ?
+		   AND claimed_at IS NOT NULL
+		   AND claimed_at <= datetime('now', ?)`,
+		models.OutboundApproved, orgID, models.OutboundSending, fmt.Sprintf("-%d seconds", int(staleAfter.Seconds())),
+	)
+	return err
+}
+
 // UpdateOutboundStatus updates the status of an outbound message.
 func (s *Store) UpdateOutboundStatus(id int64, status models.OutboundStatus) error {
-	query := `UPDATE outbound_messages SET status = ? WHERE id = ?`
+	query := `UPDATE outbound_messages SET status = ?, claimed_by = '', claimed_at = NULL WHERE id = ?`
 	if status == models.OutboundSent {
-		query = `UPDATE outbound_messages SET status = ?, sent_at = CURRENT_TIMESTAMP WHERE id = ?`
+		query = `UPDATE outbound_messages SET status = ?, sent_at = CURRENT_TIMESTAMP, claimed_by = '', claimed_at = NULL WHERE id = ?`
 	}
 	_, err := s.db.Exec(query, status, id)
 	return err
@@ -272,9 +486,9 @@ func (s *Store) UpdateOutboundStatus(id int64, status models.OutboundStatus) err
 
 // UpdateOutboundStatusForOrg updates status only when the message belongs to the tenant.
 func (s *Store) UpdateOutboundStatusForOrg(orgID, id int64, status models.OutboundStatus) error {
-	query := `UPDATE outbound_messages SET status = ? WHERE id = ? AND org_id = ?`
+	query := `UPDATE outbound_messages SET status = ?, claimed_by = '', claimed_at = NULL WHERE id = ? AND org_id = ?`
 	if status == models.OutboundSent {
-		query = `UPDATE outbound_messages SET status = ?, sent_at = CURRENT_TIMESTAMP WHERE id = ? AND org_id = ?`
+		query = `UPDATE outbound_messages SET status = ?, sent_at = CURRENT_TIMESTAMP, claimed_by = '', claimed_at = NULL WHERE id = ? AND org_id = ?`
 	}
 	res, err := s.db.Exec(query, status, id, orgID)
 	if err != nil {

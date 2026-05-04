@@ -16,7 +16,6 @@ import (
 
 	fiberws "github.com/gofiber/websocket/v2"
 	gorillaWS "github.com/gorilla/websocket"
-	"github.com/thg/scraper/internal/models"
 )
 
 type screenFrame struct {
@@ -67,15 +66,10 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 			return
 		}
 
-		// Org-scope guard: superadmin (orgID=0) bypasses check.
-		acc, err := s.db.GetAccount(id)
-		if err != nil || acc == nil {
-			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "account not found"})
-			return
-		}
+		// Org-scope guard via shared helper. Superadmin (orgID=0) bypasses check.
 		orgID, _ := ws.Locals("org_id").(int64)
 		role, _ := ws.Locals("user_role").(string)
-		if !models.IsPlatformUser(orgID, models.UserRole(role)) && acc.OrgID != orgID {
+		if _, ok := s.requireAccountForOrgWS(orgID, role, id); !ok {
 			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "access denied"})
 			return
 		}
@@ -195,6 +189,15 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 		}()
 
 		// Browser → CDP: forward input events.
+		//
+		// Phase 4a defence: the FE never speaks raw CDP — every message is
+		// a typed inputEvent and we project it onto a small whitelist of
+		// CDP methods (Input.dispatchMouseEvent / Input.dispatchKeyEvent
+		// only). The `inp.Type` switch + `allowed{Mouse,Key}Action`
+		// allowlists block prompts like Action="Runtime.evaluate" or
+		// Action="Debugger.enable" from being smuggled through the
+		// message envelope. Anything outside the allowlist is dropped
+		// silently, the operator does not get a partial-execute footgun.
 		go func() {
 			defer cancel()
 			for {
@@ -213,8 +216,11 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 				}
 				switch inp.Type {
 				case "mouse":
+					if !allowedMouseAction(inp.Action) {
+						continue
+					}
 					button := inp.Button
-					if button == "" {
+					if !allowedMouseButton(button) {
 						button = "none"
 					}
 					clickCount := 0
@@ -240,6 +246,9 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 						"modifiers": inp.Modifiers,
 					})
 				case "key":
+					if !allowedKeyAction(inp.Action) {
+						continue
+					}
 					txt := ""
 					if inp.Action == "char" {
 						txt = inp.Key
@@ -251,12 +260,51 @@ func (s *Server) screenProxyHandler() func(*fiberws.Conn) {
 						"modifiers": inp.Modifiers,
 						"text":      txt,
 					})
+				default:
+					// drop unknown envelope types (e.g. attempt to inject
+					// raw CDP method names through inp.Type)
+					continue
 				}
 			}
 		}()
 
 		<-ctx.Done()
 		log.Printf("[Screen] account %d session closed", id)
+	}
+}
+
+// allowedMouseAction returns true when the FE-supplied mouse Action
+// maps to a documented CDP Input.dispatchMouseEvent type. Unknown
+// values (including malicious ones like "Runtime.evaluate") are
+// rejected before reaching Chrome.
+func allowedMouseAction(a string) bool {
+	switch a {
+	case "mousePressed", "mouseReleased", "mouseMoved":
+		return true
+	default:
+		return false
+	}
+}
+
+// allowedMouseButton restricts FE input to the CDP-documented values.
+// "none" is the safe fallback for hover-style mouseMoved events.
+func allowedMouseButton(b string) bool {
+	switch b {
+	case "none", "left", "middle", "right", "back", "forward":
+		return true
+	default:
+		return false
+	}
+}
+
+// allowedKeyAction validates the FE-supplied key event type against
+// the four CDP Input.dispatchKeyEvent values.
+func allowedKeyAction(a string) bool {
+	switch a {
+	case "keyDown", "keyUp", "rawKeyDown", "char":
+		return true
+	default:
+		return false
 	}
 }
 

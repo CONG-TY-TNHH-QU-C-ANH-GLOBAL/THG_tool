@@ -323,6 +323,18 @@ func validateBrainAction(action BrainAction) error {
 		if strings.TrimSpace(firstNonEmptyBrain(argStringFromMap(action.Args, "content"), argStringFromMap(action.Args, "description"), argStringFromMap(action.Args, "title"))) == "" {
 			return errors.New("create_job_post requires title, description, or content")
 		}
+	case "scan_fanpage_inbox":
+		if !isFacebookURL(argStringFromMap(action.Args, "page_url")) {
+			return errors.New("scan_fanpage_inbox requires a concrete Facebook page_url")
+		}
+	case "care_fanpage":
+		if !isFacebookURL(argStringFromMap(action.Args, "page_url")) || strings.TrimSpace(argStringFromMap(action.Args, "action")) == "" {
+			return errors.New("care_fanpage requires page_url and action")
+		}
+	case "post_to_profile":
+		if strings.TrimSpace(argStringFromMap(action.Args, "content")) == "" {
+			return errors.New("post_to_profile requires content")
+		}
 	case "set_context":
 		if strings.TrimSpace(argStringFromMap(action.Args, "key")) == "" || strings.TrimSpace(argStringFromMap(action.Args, "value")) == "" {
 			return errors.New("set_context requires key and value")
@@ -403,19 +415,22 @@ func brainToolCapabilities() []string {
 
 func brainAllowedTools() map[string]bool {
 	return map[string]bool{
-		"set_context":       true,
-		"describe_business": true,
-		"get_stats":         true,
-		"add_group":         true,
-		"scrape_group":      true,
-		"scrape_comments":   true,
-		"classify_leads":    true,
-		"search_groups":     true,
-		"auto_comment":      true,
-		"comment_all_leads": true,
-		"auto_inbox":        true,
-		"inbox_all_leads":   true,
-		"create_job_post":   true,
+		"set_context":        true,
+		"describe_business":  true,
+		"get_stats":          true,
+		"add_group":          true,
+		"scrape_group":       true,
+		"scrape_comments":    true,
+		"classify_leads":     true,
+		"search_groups":      true,
+		"auto_comment":       true,
+		"comment_all_leads":  true,
+		"auto_inbox":         true,
+		"inbox_all_leads":    true,
+		"create_job_post":    true,
+		"scan_fanpage_inbox": true,
+		"care_fanpage":       true,
+		"post_to_profile":    true,
 	}
 }
 
@@ -433,6 +448,9 @@ func brainBrowserTools() []string {
 		"auto_inbox",
 		"inbox_all_leads",
 		"create_job_post",
+		"scan_fanpage_inbox",
+		"care_fanpage",
+		"post_to_profile",
 	}
 }
 
@@ -456,7 +474,7 @@ func actionPlanNeedsProfile(plan *BrainPlanResponse) bool {
 
 func brainToolNeedsBrowser(tool string) bool {
 	switch tool {
-	case "scrape_group", "scrape_comments", "search_groups", "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post":
+	case "scrape_group", "scrape_comments", "search_groups", "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post", "scan_fanpage_inbox", "care_fanpage", "post_to_profile":
 		return true
 	default:
 		return false
@@ -465,7 +483,7 @@ func brainToolNeedsBrowser(tool string) bool {
 
 func brainToolNeedsProfile(tool string) bool {
 	switch tool {
-	case "scrape_group", "scrape_comments", "search_groups", "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post":
+	case "scrape_group", "scrape_comments", "search_groups", "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post", "scan_fanpage_inbox", "care_fanpage", "post_to_profile":
 		return true
 	default:
 		return false
@@ -478,7 +496,7 @@ func brainToolNeedsAccount(tool string) bool {
 
 func brainToolIsOutbound(tool string) bool {
 	switch tool {
-	case "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post":
+	case "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post", "care_fanpage", "post_to_profile":
 		return true
 	default:
 		return false

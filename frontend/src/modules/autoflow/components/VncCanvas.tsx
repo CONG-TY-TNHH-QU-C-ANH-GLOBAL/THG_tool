@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { theme } from '../constants/styles';
 import { refreshToken } from '../services/authService';
-import { useAuthStore } from '../stores/authStore';
 
 type VncStatus = 'connecting' | 'handshake' | 'ready' | 'closed' | 'error';
 
@@ -351,12 +350,22 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
       setHasFrame(false);
       setMessage(attempts === 1 ? 'Đang mở VNC desktop...' : `Đang kết nối lại VNC (${attempts})...`);
 
-      const currentToken = useAuthStore.getState().token ?? '';
-      const token = await refreshToken().catch(() => currentToken);
+      // Phase 4c: the WS upgrade carries the access_token HttpOnly
+      // cookie so the URL no longer leaks the JWT into access logs.
+      // We still call refreshToken() before connecting so a stale
+      // cookie doesn't 401 the upgrade — the response sets a fresh
+      // cookie and the WebSocket goes through clean.
+      try {
+        await refreshToken();
+      } catch {
+        // continue with whatever cookie is on the document; if it's
+        // invalid the upgrade will fail and the reconnect loop kicks
+        // in after the user re-authenticates.
+      }
       if (cancelled) return;
 
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${proto}//${window.location.host}/ws/vnc/${accountId}?token=${encodeURIComponent(token || currentToken)}`);
+      const ws = new WebSocket(`${proto}//${window.location.host}/ws/vnc/${accountId}`);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 

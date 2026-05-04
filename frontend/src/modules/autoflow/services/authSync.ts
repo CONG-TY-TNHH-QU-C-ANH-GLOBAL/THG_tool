@@ -72,7 +72,10 @@ function reconnectAllSockets(token: string): void {
 export function initAuthSync(): void {
   let prevToken = useAuthStore.getState().token;
 
-  // Schedule refresh for the token already in store (restored from localStorage).
+  // Phase 4b: there is no localStorage token to seed from anymore.
+  // The store's `token` is null on boot until /auth/refresh fires
+  // (or login completes) and writes a fresh JWT into memory. The
+  // HttpOnly cookie keeps the request authenticated in the meantime.
   if (prevToken) scheduleRefresh(prevToken);
 
   useAuthStore.subscribe((state) => {

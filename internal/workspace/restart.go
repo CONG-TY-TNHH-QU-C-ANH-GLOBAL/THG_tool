@@ -180,20 +180,70 @@ func (cb *CircuitBreaker) persistState(scope, state string, opensUntil time.Time
 
 // RestartController watches for unhealthy sessions and applies the restart policy
 // with circuit breaker protection.
+//
+// Concurrency model: every OnUnhealthy call serialises through restarting,
+// a per-account boolean. The HealthChecker is single-threaded today but
+// other components (the optional watchdog, manual /restart endpoint,
+// external observability hooks) can also signal "restart this account".
+// Without the guard, a slow Docker stop/start that takes longer than the
+// 15 s health tick would let the next tick re-enter and start a second
+// stop/start while the first is still mid-flight.
 type RestartController struct {
 	mgr        ManagerIface
 	cb         *CircuitBreaker
 	maxRetries int
+
+	mu         sync.Mutex
+	restarting map[int64]time.Time // accountID → time we started restarting
 }
 
 // NewRestartController creates a controller with a max of 3 restart attempts per account.
 func NewRestartController(mgr ManagerIface, cb *CircuitBreaker) *RestartController {
-	return &RestartController{mgr: mgr, cb: cb, maxRetries: 3}
+	return &RestartController{
+		mgr:        mgr,
+		cb:         cb,
+		maxRetries: 3,
+		restarting: make(map[int64]time.Time),
+	}
+}
+
+// markRestarting reserves the per-account restart slot. Returns false when
+// another goroutine is already restarting this account (or recently did).
+// The caller must call clearRestarting in a defer when it returns true.
+func (rc *RestartController) markRestarting(accountID int64) bool {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	// Second-level guard: even if a goroutine cleared the flag but the
+	// account is in restart cooldown, refuse to restart again immediately.
+	const cooldown = 30 * time.Second
+	if last, ok := rc.restarting[accountID]; ok {
+		if last.IsZero() {
+			return false // currently in flight
+		}
+		if time.Since(last) < cooldown {
+			return false // recent finish, debounce
+		}
+	}
+	rc.restarting[accountID] = time.Time{} // zero = in flight
+	return true
+}
+
+func (rc *RestartController) clearRestarting(accountID int64) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rc.restarting[accountID] = time.Now()
 }
 
 // OnUnhealthy is called by HealthChecker when a container fails a health check.
 // It checks the circuit breaker then attempts a container restart with backoff.
 func (rc *RestartController) OnUnhealthy(ctx context.Context, accountID int64) {
+	if !rc.markRestarting(accountID) {
+		slog.DebugContext(ctx, "restart already in flight or cooling down",
+			"account_id", accountID)
+		return
+	}
+	defer rc.clearRestarting(accountID)
+
 	if !rc.cb.AllowRestart(accountID) {
 		slog.WarnContext(ctx, "circuit breaker blocking restart", "account_id", accountID)
 		return

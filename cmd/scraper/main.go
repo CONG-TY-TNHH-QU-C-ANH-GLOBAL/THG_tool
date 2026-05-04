@@ -26,6 +26,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/server"
 	session_pkg "github.com/thg/scraper/internal/session"
+	"github.com/thg/scraper/internal/skills"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram"
 	"github.com/thg/scraper/internal/workspace"
@@ -49,12 +50,17 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
-	// Warn on missing production secrets
+	// Production refuses to boot when JWT/encryption secrets are missing —
+	// otherwise we silently store Facebook cookies unencrypted or run with
+	// API auth disabled. Set APP_ENV=production to enable the strict check.
+	if err := cfg.MustValidateProductionSecrets(); err != nil {
+		log.Fatalf("❌ %v", err)
+	}
 	if cfg.JWTSecret == "" {
-		log.Println("⚠️  JWT_SECRET not set — API authentication is DISABLED. Set it in production!")
+		log.Println("⚠️  JWT_SECRET not set — API authentication is DISABLED. Set it in production (APP_ENV=production blocks startup).")
 	}
 	if cfg.EncryptionKey == "" {
-		log.Println("⚠️  ENCRYPTION_KEY not set — Facebook cookies stored unencrypted. Set it in production!")
+		log.Println("⚠️  ENCRYPTION_KEY not set — Facebook cookies stored unencrypted. Set it in production (APP_ENV=production blocks startup).")
 	}
 
 	// Initialize database
@@ -109,6 +115,30 @@ func main() {
 	if err := db.ResetOrphanedOutbounds(); err != nil {
 		log.Printf("⚠️ Failed to reset orphaned outbounds: %v", err)
 	}
+
+	// Recover local-runtime jobs that an agent claimed but never finished
+	// before the API restarted. Without this, those rows stay 'running'
+	// forever and never become eligible for re-claim. 10 min is long
+	// enough that genuine slow scrapes aren't preempted.
+	if recovered, err := db.RecoverStaleLocalJobs(10 * time.Minute); err != nil {
+		log.Printf("⚠️ Failed to recover stale local jobs: %v", err)
+	} else if recovered > 0 {
+		log.Printf("✅ Recovered %d stale local jobs from prior runtime claims", recovered)
+	}
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := db.RecoverStaleLocalJobs(10 * time.Minute); err != nil {
+					log.Printf("⚠️ stale local-job recovery: %v", err)
+				}
+			}
+		}
+	}()
 
 	// Initialize job store (scheduler_jobs table — idempotent, replaces chan-based queue)
 	jobStore, err := jobs.NewStore(cfg.DBPath)
@@ -199,6 +229,7 @@ func main() {
 	var telegramNotify func(string)
 	var agent *ai.Agent
 	var msgGen *ai.MessageGenerator
+	skillRegistry := skills.NewRegistry()
 	if cfg.OpenAIAPIKey != "" {
 		msgGen = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
 		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
@@ -206,12 +237,29 @@ func main() {
 			agent.SetBrainClient(ai.NewBrainClient(cfg.AgentBrainURL, time.Duration(cfg.AgentBrainTimeout)*time.Millisecond))
 			log.Printf("✅ Agent Brain sidecar enabled: %s", cfg.AgentBrainURL)
 		}
-		agent.ActionHandler = makeAgentActionHandler(db, jobStore, msgGen, func(msg string) {
+		actionHandler := makeAgentActionHandler(db, jobStore, msgGen, func(msg string) {
 			if telegramNotify != nil {
 				telegramNotify(msg)
 			}
 		})
-		log.Printf("✅ AI Agent initialized (model: %s)", cfg.OpenAICommentModel)
+		agent.ActionHandler = actionHandler
+
+		// Phase 6: register the open-prompt skill catalog. Each skill
+		// captures the action handler so its Run closure can re-route
+		// into the existing production logic without duplicating it.
+		registerBuiltinSkills(skillRegistry, builtinSkillDeps{
+			db:       db,
+			jobStore: jobStore,
+			msgGen:   msgGen,
+			notify: func(msg string) {
+				if telegramNotify != nil {
+					telegramNotify(msg)
+				}
+			},
+			handler: actionHandler,
+		})
+		agent.SetSkillRegistry(skillRegistry)
+		log.Printf("✅ AI Agent initialized (model: %s, skills=%d)", cfg.OpenAICommentModel, len(skillRegistry.All()))
 	} else {
 		log.Println("⚠️  OPENAI_API_KEY not set, AI Agent disabled")
 	}
@@ -305,15 +353,19 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			if key == "" || value == "" {
 				return "", fmt.Errorf("set_context requires key and value")
 			}
+			// Approval policy keys (outbound_mode, auto_comment_mode) are
+			// admin-controlled. AI tools must NOT be able to flip the org
+			// into auto-execute via prompt — that is exactly the
+			// prompt-injection vector flagged in the 2026-05-03 audit.
+			// Operators set outbound_mode via the dashboard / admin API.
+			switch key {
+			case "outbound_mode", "auto_comment_mode", "org:outbound_mode":
+				return "", fmt.Errorf("outbound_mode is admin-controlled; ask the workspace owner to change it in Dashboard › Settings, not via AI prompt")
+			}
 			if orgID := argInt64(args, "org_id"); orgID > 0 {
 				switch key {
-				case "business_profile", "private_files_summary", "data_sources_summary", "outbound_mode":
+				case "business_profile", "private_files_summary", "data_sources_summary":
 					key = fmt.Sprintf("org:%d:%s", orgID, key)
-				case "auto_comment_mode":
-					key = fmt.Sprintf("org:%d:outbound_mode", orgID)
-					if value == "true" || value == "1" {
-						value = "auto"
-					}
 				}
 			}
 			if err := db.SetContext(key, value); err != nil {
@@ -543,7 +595,7 @@ func pickOnlineRuntimeAgentForCrawl(db *store.Store, task *jobs.Task) (int64, st
 	if len(connectors) == 0 {
 		return 0, "no local connector paired"
 	}
-	acc, _ := db.GetAccount(task.AccountID)
+	acc, _ := db.GetAccountForOrg(task.AccountID, task.OrgID)
 	var reasons []string
 	for _, conn := range connectors {
 		if !conn.Online {
@@ -721,11 +773,10 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		return "", fmt.Errorf("no Facebook account available for org %d", orgID)
 	}
 
-	auto := argBool(args, "auto") || strings.EqualFold(orgContext(db, orgID, "outbound_mode"), "auto")
-	status := models.OutboundDraft
-	if auto {
-		status = models.OutboundApproved
-	}
+	// requestedAuto carries the AI/agent's preference. The store layer
+	// (QueueOutboundForOrg → IsAutoOutboundEnabledForOrg) is the final
+	// gatekeeper — it will downgrade to draft if the org hasn't opted in.
+	requestedAuto := argBool(args, "auto")
 
 	leads, err := leadsFromActionArgs(db, orgID, msgType, args)
 	if err != nil {
@@ -738,6 +789,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	businessContext := businessContextForOrg(db, orgID)
 	template := argString(args, "template")
 	queued, skipped := 0, 0
+	approvedCount := 0
 	skipReasons := map[string]int{}
 	for _, lead := range leads {
 		targetURL := strings.TrimSpace(lead.SourceURL)
@@ -750,28 +802,20 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			skipReasons["missing_target"]++
 			continue
 		}
-		guard, err := db.CanQueueOutboundForOrg(orgID, msgType, targetURL, profileURL, 24*time.Hour)
-		if err != nil {
-			return "", err
-		}
-		if !guard.Allowed {
-			skipped++
-			skipReasons[guard.Reason]++
-			continue
-		}
 
 		content := template
 		if msgGen != nil && msgGen.Available() {
 			genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+			var genErr error
 			if template != "" && msgType == "comment" {
-				content, err = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
+				content, genErr = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
 			} else if msgType == "comment" {
-				content, err = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, businessContext, lead.ServiceMatch, "")
+				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, businessContext, lead.ServiceMatch, "")
 			} else {
-				content, err = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, businessContext, "")
+				content, genErr = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, businessContext, "")
 			}
 			cancel()
-			if err != nil {
+			if genErr != nil {
 				skipped++
 				skipReasons["generation_failed"]++
 				continue
@@ -784,7 +828,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			continue
 		}
 
-		_, err = db.InsertOutboundMessage(&models.OutboundMessage{
+		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 			OrgID:      orgID,
 			Type:       msgType,
 			Platform:   models.PlatformFacebook,
@@ -793,18 +837,32 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			TargetName: lead.Author,
 			Content:    content,
 			Context:    lead.Content,
-			Status:     status,
 			AIModel:    "agent",
-		})
+		}, requestedAuto, 24*time.Hour)
 		if err != nil {
 			return "", err
 		}
+		if !result.Decision.Allowed {
+			skipped++
+			skipReasons[result.Decision.Reason]++
+			continue
+		}
 		queued++
+		if result.Status == models.OutboundApproved {
+			approvedCount++
+		}
 	}
 
 	mode := "draft"
-	if status == models.OutboundApproved {
+	switch {
+	case approvedCount > 0 && approvedCount == queued:
 		mode = "approved_auto"
+	case approvedCount > 0:
+		mode = "mixed"
+	case requestedAuto:
+		// Caller asked for auto but the org isn't opted in — make this
+		// visible in the response so the operator knows why it queued as draft.
+		mode = "draft_org_not_auto"
 	}
 	if notify != nil && queued > 0 {
 		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
@@ -906,42 +964,44 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 		return "khong co group target de queue group_post", nil
 	}
 
-	status := models.OutboundDraft
-	if argBool(args, "auto") || strings.EqualFold(orgContext(db, orgID, "outbound_mode"), "auto") {
-		status = models.OutboundApproved
-	}
+	requestedAuto := argBool(args, "auto")
 	queued, skipped := 0, 0
+	approvedCount := 0
 	for _, target := range targets {
-		guard, err := db.CanQueueOutboundForOrg(orgID, "group_post", target, "", 24*time.Hour)
-		if err != nil {
-			return "", err
-		}
-		if !guard.Allowed {
-			skipped++
-			continue
-		}
-		if _, err := db.InsertOutboundMessage(&models.OutboundMessage{
+		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 			OrgID:     orgID,
 			Type:      "group_post",
 			Platform:  models.PlatformFacebook,
 			AccountID: accountID,
 			TargetURL: target,
 			Content:   strings.TrimSpace(content),
-			Status:    status,
 			AIModel:   "agent",
-		}); err != nil {
+		}, requestedAuto, 24*time.Hour)
+		if err != nil {
 			return "", err
 		}
+		if !result.Decision.Allowed {
+			skipped++
+			continue
+		}
 		queued++
+		if result.Status == models.OutboundApproved {
+			approvedCount++
+		}
+	}
+	mode := "draft"
+	switch {
+	case approvedCount > 0 && approvedCount == queued:
+		mode = "approved_auto"
+	case approvedCount > 0:
+		mode = "mixed"
+	case requestedAuto:
+		mode = "draft_org_not_auto"
 	}
 	if notify != nil && queued > 0 {
-		mode := "draft"
-		if status == models.OutboundApproved {
-			mode = "approved_auto"
-		}
 		notify(formatOutboundNotification(orgID, accountID, "group_post", queued, skipped, mode))
 	}
-	return fmt.Sprintf("queued_group_posts=%d skipped=%d status=%s", queued, skipped, status), nil
+	return fmt.Sprintf("queued_group_posts=%d skipped=%d mode=%s", queued, skipped, mode), nil
 }
 
 func formatOutboundNotification(orgID, accountID int64, msgType string, queued, skipped int, mode string) string {
@@ -1078,6 +1138,17 @@ func businessContextForOrg(db *store.Store, orgID int64) string {
 		key   string
 	}{
 		{"Business profile", "business_profile"},
+		{"Sales voice", "sales_voice"},
+		{"Sales voice memory", "sales_voice_summary"},
+		{"Comment style rules", "comment_style_rules"},
+		{"Inbox style rules", "inbox_style_rules"},
+		{"CTA rules", "cta_rules"},
+		{"Forbidden phrases", "forbidden_phrases"},
+		{"Pricing summary", "pricing_summary"},
+		{"Sales examples", "sales_examples_summary"},
+		{"Target customers", "target_customers"},
+		{"Target signals", "target_signals"},
+		{"Reject rules", "reject_rules"},
 		{"Private files", "private_files_summary"},
 		{"Connected data sources", "data_sources_summary"},
 	} {

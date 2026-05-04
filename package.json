@@ -6,6 +6,7 @@
   },
   "dependencies": {
     "dotenv": "^17.4.2",
+    "gitnexus": "^1.6.3",
     "glob": "^10.3.10",
     "openai": "^6.34.0",
     "ws": "^8.20.0"

@@ -29,7 +29,11 @@ type AgentToken struct {
 	CapabilitiesJSON  string     `json:"capabilities_json"`
 	CurrentURL        string     `json:"current_url"`
 	FBUserID          string     `json:"fb_user_id"`
+	FBDisplayName     string     `json:"fb_display_name"`
+	FBUsername        string     `json:"fb_username"`
+	FBProfileURL      string     `json:"fb_profile_url"`
 	StreamStatus      string     `json:"stream_status"`
+	ChromeError       string     `json:"chrome_error"`
 	LastSeen          *time.Time `json:"last_seen"`
 	Online            bool       `json:"online"`
 	Active            bool       `json:"active"`
@@ -46,7 +50,11 @@ type AgentPresence struct {
 	CapabilitiesJSON  string
 	CurrentURL        string
 	FBUserID          string
+	FBDisplayName     string
+	FBUsername        string
+	FBProfileURL      string
 	StreamStatus      string
+	ChromeError       string
 }
 
 type ConnectorPairingCode struct {
@@ -61,14 +69,18 @@ type ConnectorPairingCode struct {
 }
 
 type ConnectorScreenshot struct {
-	AccountID    int64     `json:"account_id"`
-	OrgID        int64     `json:"org_id"`
-	AgentID      int64     `json:"agent_id"`
-	ImageData    string    `json:"image_data"`
-	CurrentURL   string    `json:"current_url"`
-	FBUserID     string    `json:"fb_user_id"`
-	StreamStatus string    `json:"stream_status"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	AccountID     int64     `json:"account_id"`
+	OrgID         int64     `json:"org_id"`
+	AgentID       int64     `json:"agent_id"`
+	ImageData     string    `json:"image_data"`
+	CurrentURL    string    `json:"current_url"`
+	FBUserID      string    `json:"fb_user_id"`
+	FBDisplayName string    `json:"fb_display_name"`
+	FBUsername    string    `json:"fb_username"`
+	FBProfileURL  string    `json:"fb_profile_url"`
+	StreamStatus  string    `json:"stream_status"`
+	ChromeError   string    `json:"chrome_error"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type LocalBrowserTarget struct {
@@ -291,7 +303,9 @@ func (s *Store) ValidateAgentToken(plain string) (*AgentToken, error) {
 		`SELECT id, COALESCE(org_id,0), name, created_by,
 		        COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''),
 		        COALESCE(kind,'worker'), COALESCE(transport,'poll'), COALESCE(assigned_account_id,0),
-		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''), COALESCE(stream_status,'idle'),
+		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''),
+		        COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
+		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens WHERE token_hash = ? AND active = 1`,
 		hash,
@@ -299,7 +313,8 @@ func (s *Store) ValidateAgentToken(plain string) (*AgentToken, error) {
 	var t AgentToken
 	var lastSeen sql.NullTime
 	err := row.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version,
-		&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID, &t.StreamStatus,
+		&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
+		&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
 		&lastSeen, &t.Active, &t.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -331,7 +346,11 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 			capabilities_json = CASE WHEN ? != '' THEN ? ELSE capabilities_json END,
 			current_url = CASE WHEN ? != '' THEN ? ELSE current_url END,
 			fb_user_id = CASE WHEN ? != '' THEN ? ELSE fb_user_id END,
+			fb_display_name = CASE WHEN ? != '' THEN ? ELSE fb_display_name END,
+			fb_username = CASE WHEN ? != '' THEN ? ELSE fb_username END,
+			fb_profile_url = CASE WHEN ? != '' THEN ? ELSE fb_profile_url END,
 			stream_status = CASE WHEN ? != '' THEN ? ELSE stream_status END,
+			chrome_error = ?,
 			last_seen = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
 		p.Hostname, p.Hostname,
@@ -343,7 +362,11 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 		p.CapabilitiesJSON, p.CapabilitiesJSON,
 		p.CurrentURL, p.CurrentURL,
 		p.FBUserID, p.FBUserID,
+		p.FBDisplayName, p.FBDisplayName,
+		p.FBUsername, p.FBUsername,
+		p.FBProfileURL, p.FBProfileURL,
 		p.StreamStatus, p.StreamStatus,
+		p.ChromeError,
 		id,
 	)
 	return err
@@ -355,7 +378,9 @@ func (s *Store) ListAgentTokens(orgID int64) ([]AgentToken, error) {
 		`SELECT id, COALESCE(org_id,0), name, created_by,
 		        COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''),
 		        COALESCE(kind,'worker'), COALESCE(transport,'poll'), COALESCE(assigned_account_id,0),
-		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''), COALESCE(stream_status,'idle'),
+		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''),
+		        COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
+		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens WHERE org_id = ? ORDER BY created_at DESC`,
 		orgID,
@@ -370,7 +395,8 @@ func (s *Store) ListAgentTokens(orgID int64) ([]AgentToken, error) {
 		var t AgentToken
 		var lastSeen sql.NullTime
 		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version,
-			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID, &t.StreamStatus,
+			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
+			&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
 			&lastSeen, &t.Active, &t.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -388,7 +414,9 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		`SELECT id, COALESCE(org_id,0), name, created_by,
 		        COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''),
 		        COALESCE(kind,'worker'), COALESCE(transport,'poll'), COALESCE(assigned_account_id,0),
-		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''), COALESCE(stream_status,'idle'),
+		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''),
+		        COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
+		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens
 		 WHERE org_id = ? AND kind IN ('desktop_connector', 'extension_connector')
@@ -406,7 +434,8 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		var t AgentToken
 		var lastSeen sql.NullTime
 		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version,
-			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID, &t.StreamStatus,
+			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
+			&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
 			&lastSeen, &t.Active, &t.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -434,28 +463,34 @@ func (s *Store) AssignAgentAccount(id, orgID, accountID int64) error {
 	return nil
 }
 
-func (s *Store) UpsertConnectorScreenshot(agentID, orgID, accountID int64, imageData, currentURL, fbUserID, streamStatus string) error {
+func (s *Store) UpsertConnectorScreenshot(agentID, orgID, accountID int64, imageData, currentURL, fbUserID, fbDisplayName, fbUsername, fbProfileURL, streamStatus, chromeError string) error {
 	if accountID <= 0 {
 		accountID = 0
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO connector_screenshots
-			(account_id, org_id, agent_id, image_data, current_url, fb_user_id, stream_status, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			(account_id, org_id, agent_id, image_data, current_url, fb_user_id, fb_display_name, fb_username, fb_profile_url, stream_status, chrome_error, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT(org_id, account_id) DO UPDATE SET
 			agent_id = excluded.agent_id,
 			image_data = excluded.image_data,
 			current_url = excluded.current_url,
 			fb_user_id = excluded.fb_user_id,
+			fb_display_name = CASE WHEN excluded.fb_display_name != '' THEN excluded.fb_display_name ELSE connector_screenshots.fb_display_name END,
+			fb_username = CASE WHEN excluded.fb_username != '' THEN excluded.fb_username ELSE connector_screenshots.fb_username END,
+			fb_profile_url = CASE WHEN excluded.fb_profile_url != '' THEN excluded.fb_profile_url ELSE connector_screenshots.fb_profile_url END,
 			stream_status = excluded.stream_status,
+			chrome_error = excluded.chrome_error,
 			updated_at = CURRENT_TIMESTAMP`,
-		accountID, orgID, agentID, imageData, currentURL, fbUserID, streamStatus,
+		accountID, orgID, agentID, imageData, currentURL, fbUserID, fbDisplayName, fbUsername, fbProfileURL, streamStatus, chromeError,
 	)
 	return err
 }
 
 func (s *Store) GetLatestConnectorScreenshot(orgID, accountID int64) (*ConnectorScreenshot, error) {
-	query := `SELECT account_id, org_id, agent_id, image_data, current_url, fb_user_id, stream_status, updated_at
+	query := `SELECT account_id, org_id, agent_id, image_data, current_url, fb_user_id,
+		COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
+		stream_status, COALESCE(chrome_error,''), updated_at
 		FROM connector_screenshots WHERE org_id = ?`
 	args := []any{orgID}
 	if accountID > 0 {
@@ -467,7 +502,8 @@ func (s *Store) GetLatestConnectorScreenshot(orgID, accountID int64) (*Connector
 	var out ConnectorScreenshot
 	var updatedAt string
 	err := s.db.QueryRow(query, args...).Scan(
-		&out.AccountID, &out.OrgID, &out.AgentID, &out.ImageData, &out.CurrentURL, &out.FBUserID, &out.StreamStatus, &updatedAt,
+		&out.AccountID, &out.OrgID, &out.AgentID, &out.ImageData, &out.CurrentURL, &out.FBUserID,
+		&out.FBDisplayName, &out.FBUsername, &out.FBProfileURL, &out.StreamStatus, &out.ChromeError, &updatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

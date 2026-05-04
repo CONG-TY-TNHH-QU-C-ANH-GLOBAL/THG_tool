@@ -360,10 +360,27 @@ func (s *Store) migrate() error {
 	// Auto-migrate: add image_path to outbound_messages if missing
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN claimed_at DATETIME`)
 	s.db.Exec(`UPDATE outbound_messages
 		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_org_status ON outbound_messages(org_id, status, type)`)
+	// Phase 2.3: jobs (legacy local-runtime queue) needs an atomic claim
+	// path so two desktop runtimes calling /api/agent/jobs/next can't both
+	// claim the same row. claimed_by stores the worker fingerprint and
+	// claimed_at lets the recovery loop reset stale claims.
+	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_at DATETIME`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_jobs_local_pending ON jobs(execution_mode, status, created_at)`)
+	// Phase 2.1: partial UNIQUE index is the last-line guard against two
+	// workers concurrently passing CanQueueOutboundForOrg and double-queuing
+	// the same comment / inbox / group_post. Sent / failed / rejected rows
+	// are excluded so historical sends don't block legitimate retries.
+	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_active_target`)
+	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_active_target
+		ON outbound_messages(org_id, type, target_url)
+		WHERE status IN ('draft','approved','sending')`)
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_score ON leads(org_id, score)`)
 	// Auto-migrate: add niche to leads if missing
@@ -426,7 +443,11 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '{}'`)
 	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN current_url TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN stream_status TEXT NOT NULL DEFAULT 'idle'`)
+	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN chrome_error TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`UPDATE agent_tokens
 		SET org_id = COALESCE((SELECT org_id FROM users WHERE users.id = agent_tokens.created_by), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND created_by > 0`)
@@ -456,10 +477,18 @@ func (s *Store) migrate() error {
 		image_data TEXT NOT NULL,
 		current_url TEXT NOT NULL DEFAULT '',
 		fb_user_id TEXT NOT NULL DEFAULT '',
+		fb_display_name TEXT NOT NULL DEFAULT '',
+		fb_username TEXT NOT NULL DEFAULT '',
+		fb_profile_url TEXT NOT NULL DEFAULT '',
 		stream_status TEXT NOT NULL DEFAULT '',
+		chrome_error TEXT NOT NULL DEFAULT '',
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (org_id, account_id)
 	)`)
+	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN chrome_error TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_org ON connector_screenshots(org_id, updated_at)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_agent ON connector_screenshots(agent_id, updated_at)`)
 
@@ -642,6 +671,12 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE organizations ADD COLUMN color TEXT NOT NULL DEFAULT '#4f46e5'`)
 	s.db.Exec(`ALTER TABLE organizations ADD COLUMN logo_path TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE organizations ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''`)
+
+	// Phase 6: open-prompt agent — org_skills (per-org enablement) and
+	// skill_executions (audit trail). Idempotent.
+	if err := s.migrateSkills(); err != nil {
+		return err
+	}
 
 	return nil
 }

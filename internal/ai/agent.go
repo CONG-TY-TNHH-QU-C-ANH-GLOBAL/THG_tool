@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/skills"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -24,8 +25,17 @@ type Agent struct {
 	db     *store.Store
 	client *http.Client
 	brain  *BrainClient
-	// ActionHandler is set by the orchestrator to execute actions
+	// ActionHandler is the legacy execution path. Kept for backwards
+	// compatibility — the Phase 6 skill registry, when present, is the
+	// preferred path. The handler is still wired for code paths that
+	// haven't migrated yet (deterministic fast-path, brain plan).
 	ActionHandler func(action string, args map[string]any) (string, error)
+
+	// registry, when set, drives the open-prompt resolver. Tools sent to
+	// the LLM come from registry.EnabledFor(orgID); execution flows
+	// through registry.Execute which handles per-org enablement,
+	// validation, and audit logging.
+	registry *skills.Registry
 }
 
 // NewAgent creates a new AI Agent powered by OpenAI.
@@ -47,6 +57,54 @@ func (a *Agent) Available() bool {
 // proposes a plan; Go still validates tenancy, account routing, and tool safety.
 func (a *Agent) SetBrainClient(brain *BrainClient) {
 	a.brain = brain
+}
+
+// SetSkillRegistry attaches the Phase 6 open-prompt skill catalog. Once
+// set, the agent prefers registry.Execute over the legacy ActionHandler
+// for skills the org has enabled, gaining per-org filtering, typed
+// argument validation, and audit logging in skill_executions.
+//
+// The legacy path stays wired so existing deterministic actions (crawl
+// fast-path, brain plan) keep working unchanged during the migration.
+func (a *Agent) SetSkillRegistry(reg *skills.Registry) {
+	a.registry = reg
+}
+
+// SkillRegistry returns the registered skill catalog or nil. Used by
+// the API server to expose /api/skills without having to thread the
+// registry through every handler.
+func (a *Agent) SkillRegistry() *skills.Registry {
+	return a.registry
+}
+
+// dispatchToolCall is the single execution point for an LLM-issued
+// tool call. When the skill registry is wired, the call routes
+// through registry.Execute (per-org enablement + typed validation +
+// audit logging). When it isn't, or the skill ID is not registered,
+// the call falls back to the legacy ActionHandler so unmigrated tools
+// keep working unchanged. Returns the textual result the agent should
+// surface back to chat / Telegram.
+func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[string]any, orgID, accountID int64, source, prompt string) (string, error) {
+	if a.registry != nil {
+		if skill := a.registry.Get(fnName); skill != nil {
+			env := skills.Env{
+				DB:        a.db,
+				OrgID:     orgID,
+				AccountID: accountID,
+				Source:    source,
+				Prompt:    prompt,
+			}
+			_, res, err := a.registry.Execute(ctx, env, fnName, args)
+			if err != nil {
+				return "", err
+			}
+			return res.Summary, nil
+		}
+	}
+	if a.ActionHandler == nil {
+		return "", fmt.Errorf("no executor available for %q", fnName)
+	}
+	return a.ActionHandler(fnName, args)
 }
 
 // ProcessPrompt takes a user prompt, sends it to OpenAI with function definitions,
@@ -147,11 +205,25 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 	}
 	messages = append(messages, map[string]string{"role": "user", "content": prompt})
 
+	// Build tool list. Phase 6: when the open-prompt skill registry is
+	// wired, the LLM only sees skills the org has enabled — this is the
+	// per-tenant catalog filter that prevents an HR-only org from
+	// seeing POD-only tooling, etc. When the registry is absent (legacy
+	// boot path / tests) we fall back to the static tool list so
+	// behaviour is unchanged.
+	var tools []map[string]any
+	if a.registry != nil {
+		tools = skills.OpenAITools(a.registry.EnabledFor(ctx, a.db, orgID))
+	}
+	if len(tools) == 0 {
+		tools = productionAgentTools()
+	}
+
 	// Call OpenAI with function definitions
 	body := map[string]any{
 		"model":       a.model,
 		"messages":    messages,
-		"tools":       productionAgentTools(),
+		"tools":       tools,
 		"tool_choice": "auto",
 		"temperature": 0.05,
 	}
@@ -219,16 +291,17 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 				args["auto"] = true
 			}
 
-			if a.ActionHandler != nil {
-				fnResult, err := a.ActionHandler(fnName, args)
-				if err != nil {
-					allResults = append(allResults, fmt.Sprintf("❌ Lỗi %s: %v", fnName, err))
-				} else {
-					allResults = append(allResults, fmt.Sprintf("✅ `%s` → %s", fnName, fnResult))
-					success = true
-				}
+			// Execute through the skill registry when wired (Phase 6)
+			// — the registry handles per-org enablement, typed
+			// validation, and audit logging in skill_executions. Fall
+			// back to the legacy ActionHandler for skills that have
+			// not been registered yet (e.g. tests, partial boot).
+			fnResult, err := a.dispatchToolCall(ctx, fnName, args, orgID, selectedAccountID, source, prompt)
+			if err != nil {
+				allResults = append(allResults, fmt.Sprintf("❌ Lỗi %s: %v", fnName, err))
 			} else {
-				allResults = append(allResults, "⚠️ Action handler chưa được cấu hình")
+				allResults = append(allResults, fmt.Sprintf("✅ `%s` → %s", fnName, fnResult))
+				success = true
 			}
 
 			// Track first action for logging

@@ -384,6 +384,15 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	adminGrp.Post("/agent-tokens", s.agentCreateToken)
 	adminGrp.Get("/agent-tokens", s.agentListTokens)
 	adminGrp.Delete("/agent-tokens/:id", s.agentRevokeToken)
+	adminGrp.Get("/skills", s.skillsAll)
+
+	// Phase 6: open-prompt skill catalog. Read-only for any tenant
+	// member (so the dashboard chat box can hint capabilities); enable
+	// / disable requires admin role; audit feed is org-scoped.
+	r.Get("/skills", s.skillsList)
+	r.Get("/skills/executions", s.skillExecutions)
+	r.Put("/skills/:id/enable", adminOnly, s.skillEnable)
+	r.Put("/skills/:id/disable", adminOnly, s.skillDisable)
 
 	// Browser workspace — per-account Chrome management
 	// Local Chrome connectors are the production path for trusted user devices.
@@ -447,9 +456,34 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// AutoFlow: Facebook Session summary
 	r.Get("/facebook/status", s.autoflowFacebookStatus)
 
-	// Logs SSE — uses ?token= query param (EventSource cannot set Authorization header)
+	// WS_AUTH_ALLOW_QUERY_TOKEN gates the legacy ?token=... query
+	// fallback for WS / SSE auth. Default is "1" today so legacy
+	// runtimes / Telegram clients keep working; once telemetry shows
+	// no upgrades are arriving with a query token, set it to "0" in
+	// production to remove the leak surface entirely. Reading the env
+	// once at boot avoids per-request env lookups.
+	wsAllowQueryToken := os.Getenv("WS_AUTH_ALLOW_QUERY_TOKEN") != "0"
+	if !wsAllowQueryToken {
+		log.Println("[Auth] WS query-token fallback DISABLED (WS_AUTH_ALLOW_QUERY_TOKEN=0)")
+	}
+
+	// Logs SSE — Phase 4b/4c: same precedence as wsJWTAuth so the SPA,
+	// programmatic clients, and the (browser) EventSource API can all
+	// authenticate consistently.
+	//
+	//   1. access_token HttpOnly cookie
+	//   2. Authorization: Bearer …      (server-to-server callers)
+	//   3. ?token=… query                (legacy / EventSource fallback)
 	app.Get("/api/logs/stream", func(c *fiber.Ctx) error {
-		token := c.Query("token")
+		token := c.Cookies("access_token")
+		if token == "" {
+			if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+				token = strings.TrimPrefix(h, "Bearer ")
+			}
+		}
+		if token == "" && wsAllowQueryToken {
+			token = c.Query("token")
+		}
 		if token == "" {
 			return c.Status(401).JSON(fiber.Map{"error": "token required"})
 		}
@@ -459,12 +493,30 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 		return s.streamLogs(c)
 	})
 
-	// WebSocket auth helper — validates JWT from ?token= query param
+	// WebSocket auth helper — validates the JWT in this order so the
+	// SPA can stop putting the access token in the URL (Phase 4b/4c):
+	//
+	//   1. access_token HttpOnly cookie  (set by Phase 4b login/refresh)
+	//   2. Authorization: Bearer header  (server-to-server clients)
+	//   3. ?token=... query param        (legacy fallback, gated by env)
+	//
+	// The query-param path stays so older runtimes / Telegram bots that
+	// haven't migrated keep working, but the SPA should rely on the
+	// cookie alone — browsers send cookies on the WS upgrade request, so
+	// the access token never has to land in URL access logs.
 	wsJWTAuth := func(c *fiber.Ctx) error {
 		if !fiberws.IsWebSocketUpgrade(c) {
 			return fiber.ErrUpgradeRequired
 		}
-		token := c.Query("token")
+		token := c.Cookies("access_token")
+		if token == "" {
+			if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+				token = strings.TrimPrefix(h, "Bearer ")
+			}
+		}
+		if token == "" && wsAllowQueryToken {
+			token = c.Query("token")
+		}
 		if token == "" {
 			return c.Status(401).JSON(fiber.Map{"error": "token required"})
 		}
@@ -866,13 +918,10 @@ func (s *Server) updateAccountStatus(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
-	acc, err := s.db.GetAccount(id)
+	orgID, _ := c.Locals("org_id").(int64)
+	acc, err := s.db.GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
-	orgID, _ := c.Locals("org_id").(int64)
-	if orgID != 0 && acc.OrgID != orgID {
-		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
 	}
 
 	if err := s.db.UpdateAccountStatus(id, models.AccountStatus(req.Status)); err != nil {
@@ -895,13 +944,9 @@ func (s *Server) updateAccountCookies(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
-	acc, err := s.db.GetAccount(id)
-	if err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
 	orgID, _ := c.Locals("org_id").(int64)
-	if orgID != 0 && acc.OrgID != orgID {
-		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	if acc, err := s.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
 
 	if err := s.db.UpdateAccountCookies(id, req.CookiesJSON); err != nil {
@@ -917,13 +962,9 @@ func (s *Server) deleteAccount(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
 
-	acc, err := s.db.GetAccount(id)
-	if err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
 	orgID, _ := c.Locals("org_id").(int64)
-	if orgID != 0 && acc.OrgID != orgID {
-		return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+	if acc, err := s.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
 
 	if err := s.db.DeleteAccount(id); err != nil {
@@ -1006,8 +1047,7 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 	if req.AccountID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "account_id is required"})
 	}
-	acct, err := s.db.GetAccount(req.AccountID)
-	if err != nil || acct == nil || acct.OrgID != orgID {
+	if acct, err := s.db.GetAccountForOrg(req.AccountID, orgID); err != nil || acct == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}
 

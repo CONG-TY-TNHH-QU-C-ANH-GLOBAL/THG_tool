@@ -79,9 +79,19 @@ type chromeSnapshot struct {
 	AccountName    string
 	CurrentURL     string
 	FBUserID       string
+	FBDisplayName  string
+	FBUsername     string
+	FBProfileURL   string
 	LoginEmail     string
 	Status         string
+	ChromeError    string
 	ScreenshotData string
+}
+
+type facebookIdentity struct {
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+	ProfileURL  string `json:"profile_url"`
 }
 
 type browserTarget struct {
@@ -104,6 +114,23 @@ type connectorCommand struct {
 
 type connectorCommandsResponse struct {
 	Commands []connectorCommand `json:"commands"`
+}
+
+type outboundMessage struct {
+	ID         int64  `json:"id"`
+	OrgID      int64  `json:"org_id"`
+	Type       string `json:"type"`
+	AccountID  int64  `json:"account_id"`
+	TargetURL  string `json:"target_url"`
+	TargetName string `json:"target_name"`
+	Content    string `json:"content"`
+	Context    string `json:"context"`
+	Status     string `json:"status"`
+}
+
+type outboxResponse struct {
+	Messages []outboundMessage `json:"messages"`
+	Count    int               `json:"count"`
 }
 
 type localCrawlTask struct {
@@ -555,6 +582,8 @@ func launchChrome(port int, userDataDir string) (int, error) {
 		"--remote-debugging-address=127.0.0.1",
 		"--no-first-run",
 		"--no-default-browser-check",
+		"--disable-save-password-bubble",
+		"--disable-features=PasswordManagerOnboarding,PasswordManagerEnableSaving,PasswordLeakDetection",
 		"--force-device-scale-factor=1",
 		"--high-dpi-support=1",
 		"--window-size=1365,900",
@@ -566,6 +595,9 @@ func launchChrome(port int, userDataDir string) (int, error) {
 	if userDataDir != "" {
 		if err := os.MkdirAll(userDataDir, 0700); err != nil {
 			return 0, err
+		}
+		if err := configureChromeProfile(userDataDir); err != nil {
+			fmt.Printf("[warn] could not write Chrome profile preferences: %v\n", err)
 		}
 		args = append([]string{fmt.Sprintf("--user-data-dir=%s", userDataDir)}, args...)
 	}
@@ -579,6 +611,30 @@ func launchChrome(port int, userDataDir string) (int, error) {
 		return 0, nil
 	}
 	return cmd.Process.Pid, nil
+}
+
+func configureChromeProfile(userDataDir string) error {
+	defaultDir := filepath.Join(userDataDir, "Default")
+	if err := os.MkdirAll(defaultDir, 0700); err != nil {
+		return err
+	}
+	prefsPath := filepath.Join(defaultDir, "Preferences")
+	prefs := map[string]any{}
+	if data, err := os.ReadFile(prefsPath); err == nil && len(bytes.TrimSpace(data)) > 0 {
+		_ = json.Unmarshal(data, &prefs)
+	}
+	prefs["credentials_enable_service"] = false
+	profile, _ := prefs["profile"].(map[string]any)
+	if profile == nil {
+		profile = map[string]any{}
+	}
+	profile["password_manager_enabled"] = false
+	prefs["profile"] = profile
+	data, err := json.MarshalIndent(prefs, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(prefsPath, data, 0600)
 }
 
 func shouldHideChromeWindow() bool {
@@ -728,7 +784,11 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		return chromeSnapshot{Status: "connector_online"}
 	}
 	if bridge.err != nil || bridge.ctx == nil {
-		return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: "chrome_not_connected"}
+		errMsg := ""
+		if bridge.err != nil {
+			errMsg = bridge.err.Error()
+		}
+		return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: "chrome_not_connected", ChromeError: errMsg}
 	}
 	snapshotCtx, cancel := context.WithTimeout(bridge.ctx, chromeSnapshotTimeout())
 	defer cancel()
@@ -736,12 +796,13 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	var fbUserID string
 	var loginIdentifier string
 	var loginFormVisible bool
+	var identity facebookIdentity
 	var screenshot []byte
 	err := chromedp.Run(snapshotCtx,
-		readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible),
+		readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity),
 	)
 	if err != nil {
-		return fallbackChromeSnapshot(bridge, "chrome_not_connected")
+		return fallbackChromeSnapshot(bridge, "chrome_not_connected", err.Error())
 	}
 	if loginIdentifier != "" {
 		setBridgeLoginIdentifier(bridge, loginIdentifier)
@@ -754,7 +815,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		_ = chromedp.Run(snapshotCtx,
 			navigatePageNoWait("https://www.facebook.com/"),
 			chromedp.Sleep(2*time.Second),
-			readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible),
+			readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity),
 		)
 		if loginIdentifier != "" {
 			setBridgeLoginIdentifier(bridge, loginIdentifier)
@@ -775,7 +836,7 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		}),
 	)
 	if err != nil {
-		return fallbackChromeSnapshot(bridge, "chrome_not_connected")
+		return fallbackChromeSnapshot(bridge, "chrome_not_connected", err.Error())
 	}
 	status := "facebook_login_required"
 	if humanRequired {
@@ -789,7 +850,17 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 	if status == "facebook_logged_in" {
 		loginEmail = normalizeEmailCandidate(bridgeLoginIdentifier(bridge))
 	}
-	out := chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, CurrentURL: href, FBUserID: fbUserID, LoginEmail: loginEmail, Status: status}
+	out := chromeSnapshot{
+		AccountID:     bridge.accountID,
+		AccountName:   bridge.accountName,
+		CurrentURL:    href,
+		FBUserID:      fbUserID,
+		FBDisplayName: identity.DisplayName,
+		FBUsername:    identity.Username,
+		FBProfileURL:  identity.ProfileURL,
+		LoginEmail:    loginEmail,
+		Status:        status,
+	}
 	if len(screenshot) > 0 {
 		out.ScreenshotData = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
@@ -807,9 +878,9 @@ func rememberChromeSnapshot(bridge *chromeBridge, snap chromeSnapshot) {
 	bridge.snapMu.Unlock()
 }
 
-func fallbackChromeSnapshot(bridge *chromeBridge, fallbackStatus string) chromeSnapshot {
+func fallbackChromeSnapshot(bridge *chromeBridge, fallbackStatus, chromeError string) chromeSnapshot {
 	if bridge == nil {
-		return chromeSnapshot{Status: fallbackStatus}
+		return chromeSnapshot{Status: fallbackStatus, ChromeError: chromeError}
 	}
 	bridge.snapMu.Lock()
 	last := bridge.lastSnap
@@ -817,12 +888,13 @@ func fallbackChromeSnapshot(bridge *chromeBridge, fallbackStatus string) chromeS
 	bridge.snapMu.Unlock()
 	if !lastAt.IsZero() && time.Since(lastAt) <= 45*time.Second && last.Status != "" {
 		last.ScreenshotData = ""
+		last.ChromeError = chromeError
 		return last
 	}
-	return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: fallbackStatus}
+	return chromeSnapshot{AccountID: bridge.accountID, AccountName: bridge.accountName, Status: fallbackStatus, ChromeError: chromeError}
 }
 
-func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVisible *bool) chromedp.Action {
+func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVisible *bool, identity *facebookIdentity) chromedp.Action {
 	return chromedp.Tasks{
 		chromedp.Location(href),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -851,6 +923,7 @@ func readFacebookPageState(href, fbUserID, loginIdentifier *string, loginFormVis
 			return Boolean((email && pass) || (loginForm && loginButton));
 		})()`, loginFormVisible),
 		chromedp.Evaluate(facebookLoginIdentifierScript(), loginIdentifier),
+		chromedp.Evaluate(facebookIdentityScript(), identity),
 	}
 }
 
@@ -959,6 +1032,74 @@ func facebookLoginIdentifierScript() string {
 			return value.slice(0, 320);
 		} catch (_) {
 			return "";
+		}
+	})()`
+}
+
+func facebookIdentityScript() string {
+	return `(() => {
+		try {
+			const out = {display_name: "", username: "", profile_url: ""};
+			const cleanText = (value) => String(value || "")
+				.replace(/\s+/g, " ")
+				.replace(/^(profile|your profile|trang cá nhân|xem trang cá nhân)\s*/i, "")
+				.trim()
+				.slice(0, 120);
+			const badPath = new Set([
+				"groups", "friends", "watch", "marketplace", "messages", "notifications",
+				"settings", "help", "privacy", "gaming", "reel", "reels", "stories",
+				"pages", "events", "memories", "saved", "bookmarks", "ads", "business"
+			]);
+			const normalizeURL = (href) => {
+				try {
+					const u = new URL(href, location.href);
+					if (!/(^|\.)facebook\.com$/i.test(u.hostname)) return "";
+					u.hash = "";
+					return u.toString();
+				} catch (_) {
+					return "";
+				}
+			};
+			const cUser = (() => {
+				const m = String(document.cookie || "").match(/(?:^|;\s*)c_user=([^;]+)/);
+				return m ? decodeURIComponent(m[1]) : "";
+			})();
+			const anchors = Array.from(document.querySelectorAll("a[href]"));
+			const candidates = [];
+			for (const a of anchors) {
+				const href = normalizeURL(a.getAttribute("href") || a.href || "");
+				if (!href) continue;
+				const u = new URL(href);
+				const path = u.pathname.replace(/^\/+|\/+$/g, "");
+				const first = path.split("/")[0] || "";
+				const text = cleanText(a.innerText || a.getAttribute("aria-label") || a.getAttribute("title") || "");
+				let score = 0;
+				if (cUser && u.searchParams.get("id") === cUser) score += 120;
+				if (cUser && href.includes("profile.php") && href.includes(cUser)) score += 110;
+				if (text && !badPath.has(first.toLowerCase())) score += 20;
+				if (first && !badPath.has(first.toLowerCase()) && !first.includes(".php")) score += 15;
+				if (/profile/i.test(a.getAttribute("aria-label") || "")) score += 10;
+				if (score > 0) candidates.push({href, text, first, score});
+			}
+			candidates.sort((a, b) => b.score - a.score);
+			const best = candidates[0];
+			if (best) {
+				out.profile_url = best.href;
+				out.display_name = best.text;
+				if (best.first && !best.first.includes(".php") && !badPath.has(best.first.toLowerCase())) {
+					out.username = best.first.replace(/^@+/, "").slice(0, 80);
+				}
+			}
+			if (!out.display_name) {
+				const rawLabel = Array.from(document.querySelectorAll('[aria-label]'))
+					.map(el => String(el.getAttribute("aria-label") || ""))
+					.find(text => /profile|trang cá nhân|trang ca nhan/i.test(text));
+				const label = cleanText(rawLabel || "");
+				if (label && !/^(profile|your profile|trang cá nhân|xem trang cá nhân)$/i.test(label)) out.display_name = label;
+			}
+			return out;
+		} catch (_) {
+			return {display_name: "", username: "", profile_url: ""};
 		}
 	})()`
 }
@@ -1140,8 +1281,12 @@ func sendHeartbeat(serverURL, token string, snap chromeSnapshot) error {
 		"capabilities_json": capabilitiesJSON,
 		"current_url":       snap.CurrentURL,
 		"fb_user_id":        snap.FBUserID,
+		"fb_display_name":   snap.FBDisplayName,
+		"fb_username":       snap.FBUsername,
+		"fb_profile_url":    snap.FBProfileURL,
 		"login_email":       snap.LoginEmail,
 		"stream_status":     strings.TrimSpace(snap.Status),
+		"chrome_error":      snap.ChromeError,
 	})
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/heartbeat", bytes.NewReader(body))
 	if err != nil {
@@ -1174,11 +1319,15 @@ func sendChromeStatus(serverURL, token string, snap chromeSnapshot) error {
 		return fmt.Errorf("missing saved device token")
 	}
 	body, _ := json.Marshal(map[string]any{
-		"account_id":    snap.AccountID,
-		"current_url":   snap.CurrentURL,
-		"fb_user_id":    snap.FBUserID,
-		"login_email":   snap.LoginEmail,
-		"stream_status": defaultString(snap.Status, "chrome_not_connected"),
+		"account_id":      snap.AccountID,
+		"current_url":     snap.CurrentURL,
+		"fb_user_id":      snap.FBUserID,
+		"fb_display_name": snap.FBDisplayName,
+		"fb_username":     snap.FBUsername,
+		"fb_profile_url":  snap.FBProfileURL,
+		"login_email":     snap.LoginEmail,
+		"stream_status":   defaultString(snap.Status, "chrome_not_connected"),
+		"chrome_error":    snap.ChromeError,
 	})
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/chrome-status", bytes.NewReader(body))
 	if err != nil {
@@ -1215,12 +1364,16 @@ func sendScreenshot(serverURL, token string, snap chromeSnapshot) error {
 		return nil
 	}
 	body, _ := json.Marshal(map[string]any{
-		"account_id":    snap.AccountID,
-		"image_data":    snap.ScreenshotData,
-		"current_url":   snap.CurrentURL,
-		"fb_user_id":    snap.FBUserID,
-		"login_email":   snap.LoginEmail,
-		"stream_status": defaultString(snap.Status, "connector_online"),
+		"account_id":      snap.AccountID,
+		"image_data":      snap.ScreenshotData,
+		"current_url":     snap.CurrentURL,
+		"fb_user_id":      snap.FBUserID,
+		"fb_display_name": snap.FBDisplayName,
+		"fb_username":     snap.FBUsername,
+		"fb_profile_url":  snap.FBProfileURL,
+		"login_email":     snap.LoginEmail,
+		"stream_status":   defaultString(snap.Status, "connector_online"),
+		"chrome_error":    snap.ChromeError,
 	})
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/connectors/screenshot", bytes.NewReader(body))
 	if err != nil {
@@ -1340,6 +1493,70 @@ func completeConnectorCommand(serverURL, token string, id int64, errorText strin
 	return nil
 }
 
+func fetchApprovedOutbox(serverURL, token string) ([]outboundMessage, error) {
+	req, err := http.NewRequest(http.MethodGet, serverURL+"/api/agent/outbox?limit=5", nil)
+	if err != nil {
+		return nil, err
+	}
+	hostname, _ := os.Hostname()
+	req.Header.Set("X-Agent-Token", token)
+	req.Header.Set("X-Agent-Hostname", hostname)
+	req.Header.Set("X-Agent-OS", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Agent-Version", version)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("device token was rejected; run with --reset and pair again")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var out outboxResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Messages, nil
+}
+
+func completeOutboxMessage(serverURL, token string, id int64, success bool, errorText string) error {
+	path := "failed"
+	if success {
+		path = "sent"
+	}
+	body, _ := json.Marshal(map[string]any{"error": strings.TrimSpace(errorText)})
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/agent/outbox/%d/%s", serverURL, id, path), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	hostname, _ := os.Hostname()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-Token", token)
+	req.Header.Set("X-Agent-Hostname", hostname)
+	req.Header.Set("X-Agent-OS", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Agent-Version", version)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("device token was rejected; run with --reset and pair again")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
 func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBridge) bool {
 	commands, err := fetchConnectorCommands(serverURL, token)
 	if err != nil {
@@ -1371,6 +1588,162 @@ func executePendingCommands(serverURL, token string, bridges map[int64]*chromeBr
 		}
 	}
 	return true
+}
+
+func executeApprovedOutbox(serverURL, token string, bridges map[int64]*chromeBridge) bool {
+	messages, err := fetchApprovedOutbox(serverURL, token)
+	if err != nil {
+		if isDeviceTokenRejected(err) {
+			fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+			return false
+		}
+		fmt.Println("[warn] outbox sync failed:", err)
+		return true
+	}
+	if len(messages) > 0 {
+		fmt.Printf("[Outbox] received %d approved automation action(s)\n", len(messages))
+	}
+	for _, msg := range messages {
+		bridge := bridges[msg.AccountID]
+		errText := ""
+		result, err := executeOutboundMessage(msg, bridge)
+		if err != nil {
+			errText = err.Error()
+			fmt.Printf("[warn] outbox %d (%s) failed: %s\n", msg.ID, msg.Type, errText)
+		} else {
+			fmt.Printf("[Outbox] action %d (%s) sent with account %d -> %s\n", msg.ID, msg.Type, msg.AccountID, result)
+		}
+		if err := completeOutboxMessage(serverURL, token, msg.ID, err == nil, errText); err != nil {
+			if isDeviceTokenRejected(err) {
+				fmt.Println("[Connector] Device was disconnected from the dashboard. Stop the app or pair again with a new code.")
+				return false
+			}
+			fmt.Printf("[warn] outbox %d completion failed: %v\n", msg.ID, err)
+		}
+	}
+	return true
+}
+
+func executeOutboundMessage(msg outboundMessage, bridge *chromeBridge) (string, error) {
+	if bridge == nil || bridge.ctx == nil || bridge.err != nil {
+		return "", fmt.Errorf("Chrome profile for account %d is not ready", msg.AccountID)
+	}
+	content := strings.TrimSpace(msg.Content)
+	if content == "" {
+		return "", fmt.Errorf("outbox content is empty")
+	}
+	if len([]rune(content)) > 3000 {
+		return "", fmt.Errorf("outbox content is too long")
+	}
+	ctx, cancel := context.WithTimeout(bridge.ctx, outboundActionTimeout())
+	defer cancel()
+	switch strings.ToLower(strings.TrimSpace(msg.Type)) {
+	case "comment":
+		return executeFacebookCommentAction(ctx, msg.TargetURL, content)
+	case "inbox":
+		return executeFacebookInboxAction(ctx, msg.TargetURL, content)
+	case "group_post":
+		return executeFacebookPostAction(ctx, msg.TargetURL, content)
+	default:
+		return "", fmt.Errorf("unsupported outbox type %q", msg.Type)
+	}
+}
+
+func executeFacebookCommentAction(ctx context.Context, targetURL, content string) (string, error) {
+	targetURL = strings.TrimSpace(targetURL)
+	if targetURL == "" {
+		return "", fmt.Errorf("comment target URL is empty")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(targetURL),
+		chromedp.WaitReady(`body`, chromedp.ByQuery),
+		chromedp.Sleep(2500*time.Millisecond),
+		chromedp.Evaluate(dismissFacebookBlockingOverlaysJS(), nil),
+		chromedp.Sleep(800*time.Millisecond),
+	); err != nil {
+		return "", fmt.Errorf("open comment target: %w", err)
+	}
+	if err := ensureFacebookSessionReady(ctx); err != nil {
+		return "", err
+	}
+	var result string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(facebookCommentActionJS(content), &result)); err != nil {
+		return "", fmt.Errorf("comment action failed: %w", err)
+	}
+	if !strings.HasPrefix(result, "sent_") {
+		return "", fmt.Errorf("comment not sent: %s", result)
+	}
+	return result, nil
+}
+
+func executeFacebookInboxAction(ctx context.Context, targetURL, content string) (string, error) {
+	targetURL = strings.TrimSpace(targetURL)
+	if targetURL == "" {
+		return "", fmt.Errorf("inbox target URL is empty")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(targetURL),
+		chromedp.WaitReady(`body`, chromedp.ByQuery),
+		chromedp.Sleep(2500*time.Millisecond),
+		chromedp.Evaluate(dismissFacebookBlockingOverlaysJS(), nil),
+		chromedp.Sleep(800*time.Millisecond),
+	); err != nil {
+		return "", fmt.Errorf("open inbox target: %w", err)
+	}
+	if err := ensureFacebookSessionReady(ctx); err != nil {
+		return "", err
+	}
+	var result string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(facebookInboxActionJS(content), &result)); err != nil {
+		return "", fmt.Errorf("inbox action failed: %w", err)
+	}
+	if !strings.HasPrefix(result, "sent_") {
+		return "", fmt.Errorf("inbox not sent: %s", result)
+	}
+	return result, nil
+}
+
+func executeFacebookPostAction(ctx context.Context, targetURL, content string) (string, error) {
+	targetURL = strings.TrimSpace(targetURL)
+	if targetURL == "" {
+		return "", fmt.Errorf("post target URL is empty")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(targetURL),
+		chromedp.WaitReady(`body`, chromedp.ByQuery),
+		chromedp.Sleep(3*time.Second),
+		chromedp.Evaluate(dismissFacebookBlockingOverlaysJS(), nil),
+		chromedp.Sleep(800*time.Millisecond),
+	); err != nil {
+		return "", fmt.Errorf("open post target: %w", err)
+	}
+	if err := ensureFacebookSessionReady(ctx); err != nil {
+		return "", err
+	}
+	var result string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(facebookPostActionJS(content), &result)); err != nil {
+		return "", fmt.Errorf("post action failed: %w", err)
+	}
+	if !strings.HasPrefix(result, "sent_") {
+		return "", fmt.Errorf("post not sent: %s", result)
+	}
+	return result, nil
+}
+
+func ensureFacebookSessionReady(ctx context.Context) error {
+	var href, fbUserID, loginIdentifier string
+	var loginFormVisible bool
+	var identity facebookIdentity
+	if err := chromedp.Run(ctx, readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity)); err != nil {
+		return fmt.Errorf("read Facebook session: %w", err)
+	}
+	if isFacebookHumanRequiredURL(href) {
+		return fmt.Errorf("human verification required in Facebook")
+	}
+	if loginFormVisible || fbUserID == "" {
+		return fmt.Errorf("Facebook session is not logged in")
+	}
+	return nil
 }
 
 func executeConnectorCommand(serverURL, token string, cmd connectorCommand, bridges map[int64]*chromeBridge) (string, error) {
@@ -1514,7 +1887,8 @@ func executeLocalCrawlCommand(serverURL, token string, cmd connectorCommand, bri
 
 	var href, fbUserID, loginIdentifier string
 	var loginFormVisible bool
-	if err := chromedp.Run(ctx, readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible)); err != nil {
+	var identity facebookIdentity
+	if err := chromedp.Run(ctx, readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity)); err != nil {
 		_ = sendCrawlResult(serverURL, token, localCrawlResult{TaskID: task.TaskID, Intent: task.Intent, AccountID: task.AccountID, Status: "failed", Error: err.Error(), Keywords: task.Keywords})
 		return "", err
 	}
@@ -1685,6 +2059,165 @@ func dismissFacebookBlockingOverlaysJS() string {
   }
   return "none";
 })()`
+}
+
+func facebookCommentActionJS(content string) string {
+	return fmt.Sprintf(`(async () => {
+  const text = %s;
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const visible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return r.width > 8 && r.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  const labelOf = (el) => norm(el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.title);
+  const hasAny = (value, keys) => keys.some(k => value.includes(k));
+  const commentKeys = ['comment', 'write a comment', 'b\u00ecnh lu\u1eadn', 'vi\u1ebft b\u00ecnh lu\u1eadn'];
+  const submitKeys = ['comment', 'post', 'send', 'b\u00ecnh lu\u1eadn', '\u0111\u0103ng', 'g\u1eedi'];
+  const clickLikeUser = (el) => {
+    if (!el) return false;
+    try { el.scrollIntoView({block:'center', inline:'center'}); } catch (_) {}
+    try { el.click(); return true; } catch (_) { return false; }
+  };
+  const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+  const commentButton = buttons.find(el => {
+    const label = labelOf(el);
+    return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
+  });
+  if (commentButton) {
+    clickLikeUser(commentButton);
+    await wait(900);
+  }
+  const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea, input[type="text"]')).filter(visible);
+  let editor = editors.find(el => hasAny(labelOf(el), commentKeys));
+  if (!editor) editor = editors.find(el => (el.getAttribute('role') || '').toLowerCase() === 'textbox');
+  if (!editor) editor = editors[0];
+  if (!editor) return 'comment_box_not_found';
+  try { editor.focus({preventScroll:true}); } catch (_) { try { editor.focus(); } catch (_) {} }
+  if (editor.isContentEditable) {
+    document.execCommand('insertText', false, text);
+  } else if ('value' in editor) {
+    const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+    if (setter) setter.call(editor, text); else editor.value = text;
+  }
+  try { editor.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text})); } catch (_) { editor.dispatchEvent(new Event('input', {bubbles:true})); }
+  await wait(700);
+  const scope = editor.closest('[role="dialog"], form, [role="article"]') || document;
+  const submit = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).find(el => {
+    const label = labelOf(el);
+    if (!hasAny(label, submitKeys)) return false;
+    if (label.includes('share') || label.includes('like') || label.includes('cancel')) return false;
+    return el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
+  });
+  if (submit && clickLikeUser(submit)) {
+    await wait(1000);
+    return 'sent_comment_button';
+  }
+  return 'comment_submit_not_found';
+})()`, jsString(content))
+}
+
+func facebookInboxActionJS(content string) string {
+	return fmt.Sprintf(`(async () => {
+  const text = %s;
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const visible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return r.width > 8 && r.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  const labelOf = (el) => norm(el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.title);
+  const hasAny = (value, keys) => keys.some(k => value.includes(k));
+  const messageKeys = ['message', 'messenger', 'send message', 'nh\u1eafn tin'];
+  const sendKeys = ['send', 'press enter to send', 'g\u1eedi'];
+  const clickLikeUser = (el) => {
+    if (!el) return false;
+    try { el.scrollIntoView({block:'center', inline:'center'}); } catch (_) {}
+    try { el.click(); return true; } catch (_) { return false; }
+  };
+  let editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
+  if (!editors.length) {
+    const messageButton = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"]')).filter(visible).find(el => hasAny(labelOf(el), messageKeys));
+    if (!messageButton || !clickLikeUser(messageButton)) return 'message_button_not_found';
+    await wait(1800);
+    editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
+  }
+  let editor = editors.find(el => hasAny(labelOf(el), messageKeys) || (el.getAttribute('role') || '').toLowerCase() === 'textbox');
+  if (!editor) editor = editors[editors.length - 1];
+  if (!editor) return 'message_box_not_found';
+  try { editor.focus({preventScroll:true}); } catch (_) { try { editor.focus(); } catch (_) {} }
+  if (editor.isContentEditable) {
+    document.execCommand('insertText', false, text);
+  } else if ('value' in editor) {
+    const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+    if (setter) setter.call(editor, text); else editor.value = text;
+  }
+  try { editor.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text})); } catch (_) { editor.dispatchEvent(new Event('input', {bubbles:true})); }
+  await wait(700);
+  const scope = editor.closest('[role="dialog"], form, div[aria-label]') || document;
+  const send = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).find(el => {
+    const label = labelOf(el);
+    return hasAny(label, sendKeys) && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
+  });
+  if (send && clickLikeUser(send)) {
+    await wait(1000);
+    return 'sent_inbox_button';
+  }
+  return 'inbox_submit_not_found';
+})()`, jsString(content))
+}
+
+func facebookPostActionJS(content string) string {
+	return fmt.Sprintf(`(async () => {
+  const text = %s;
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const visible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return r.width > 8 && r.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  const labelOf = (el) => norm(el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.title);
+  const hasAny = (value, keys) => keys.some(k => value.includes(k));
+  const composerKeys = ["what's on your mind", 'write something', 'create a public post', 'b\u1ea1n \u0111ang ngh\u0129 g\u00ec', 'vi\u1ebft g\u00ec \u0111\u00f3'];
+  const postKeys = ['post', '\u0111\u0103ng'];
+  const clickLikeUser = (el) => {
+    if (!el) return false;
+    try { el.scrollIntoView({block:'center', inline:'center'}); } catch (_) {}
+    try { el.click(); return true; } catch (_) { return false; }
+  };
+  const composer = Array.from(document.querySelectorAll('div[role="button"], button, textarea, [contenteditable="true"], [aria-label]')).filter(visible).find(el => hasAny(labelOf(el), composerKeys));
+  if (!composer || !clickLikeUser(composer)) return 'post_composer_not_found';
+  await wait(1500);
+  const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
+  let editor = editors.find(el => (el.getAttribute('role') || '').toLowerCase() === 'textbox') || editors[editors.length - 1];
+  if (!editor) return 'post_editor_not_found';
+  try { editor.focus({preventScroll:true}); } catch (_) { try { editor.focus(); } catch (_) {} }
+  if (editor.isContentEditable) {
+    document.execCommand('insertText', false, text);
+  } else if ('value' in editor) {
+    const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value') && Object.getOwnPropertyDescriptor(proto, 'value').set;
+    if (setter) setter.call(editor, text); else editor.value = text;
+  }
+  try { editor.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text})); } catch (_) { editor.dispatchEvent(new Event('input', {bubbles:true})); }
+  await wait(900);
+  const scope = editor.closest('[role="dialog"], form') || document;
+  const postButton = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).reverse().find(el => {
+    const label = labelOf(el);
+    return hasAny(label, postKeys) && !label.includes('comment') && !label.includes('cancel') && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
+  });
+  if (!postButton || !clickLikeUser(postButton)) return 'post_submit_not_found';
+  await wait(1500);
+  return 'sent_group_post';
+})()`, jsString(content))
 }
 
 func firstNonEmptyStringSlice(values ...[]string) []string {
@@ -2254,6 +2787,23 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		ticker := time.NewTicker(outboxPollInterval())
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if !executeApprovedOutbox(serverURL, token, copyBridges()) {
+					requestStop()
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -2341,6 +2891,34 @@ func inputPollInterval() time.Duration {
 		ms = 2000
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+func outboxPollInterval() time.Duration {
+	seconds, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_OUTBOX_POLL_SECONDS")))
+	if seconds <= 0 {
+		seconds = 5
+	}
+	if seconds < 2 {
+		seconds = 2
+	}
+	if seconds > 60 {
+		seconds = 60
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func outboundActionTimeout() time.Duration {
+	seconds, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("THG_OUTBOUND_ACTION_TIMEOUT_SECONDS")))
+	if seconds <= 0 {
+		seconds = 90
+	}
+	if seconds < 20 {
+		seconds = 20
+	}
+	if seconds > 300 {
+		seconds = 300
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func runHeartbeatLoop(serverURL, token string, bridge *chromeBridge) {

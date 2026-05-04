@@ -21,14 +21,36 @@ import (
 //   - Attempt any automated CAPTCHA bypass (invariant NO_AUTOMATED_CAPTCHA_BYPASS).
 //
 // Operator resolves via VNC → calls ResolveCheckpoint() → session returns to ready.
+// CheckpointVerifier returns true when the live browser confirms the
+// account is no longer at a Meta verification page. Implementations
+// query CDP for document.URL / body text and look for the same patterns
+// applied by applyFacebookHumanChallengeDetection.
+//
+// A nil verifier opts the workspace into the legacy "trust operator"
+// flow — used in tests and for environments where CDP is not available.
+type CheckpointVerifier interface {
+	StillAtCheckpoint(ctx context.Context, accountID int64) (still bool, reason string, err error)
+}
+
 type CheckpointManager struct {
-	db      *sql.DB
-	sm      *StateMachine
-	alertFn func(msg string) // Telegram / webhook hook; nil = silent
+	db       *sql.DB
+	sm       *StateMachine
+	alertFn  func(msg string) // Telegram / webhook hook; nil = silent
+	verifier CheckpointVerifier
 }
 
 func NewCheckpointManager(db *sql.DB, sm *StateMachine, alertFn func(string)) *CheckpointManager {
 	return &CheckpointManager{db: db, sm: sm, alertFn: alertFn}
+}
+
+// SetVerifier attaches a browser-side probe that can confirm a checkpoint
+// has actually been resolved before the state machine transitions back
+// to ready. Without it, an operator could mark the session ready while
+// Chrome is still parked on facebook.com/checkpoint, causing the very
+// next worker pickup to bounce straight back into checkpoint state and
+// thrash the restart loop.
+func (m *CheckpointManager) SetVerifier(v CheckpointVerifier) {
+	m.verifier = v
 }
 
 // Handle transitions the session to checkpoint state and notifies the operator.
@@ -83,10 +105,42 @@ func (m *CheckpointManager) Handle(
 	return nil
 }
 
+// ErrCheckpointStillActive is returned by ResolveCheckpoint when the
+// browser still reports a verification page even though the operator
+// asked to mark the session ready.
+type ErrCheckpointStillActive struct {
+	Reason string
+}
+
+func (e *ErrCheckpointStillActive) Error() string {
+	if e.Reason == "" {
+		return "checkpoint still active in browser"
+	}
+	return "checkpoint still active in browser: " + e.Reason
+}
+
 // ResolveCheckpoint transitions the session from checkpoint → ready after an
 // operator has manually passed the verification in the VNC viewer.
 // Re-enabling the session allows the scheduler to assign new jobs to it.
+//
+// When a verifier is wired (production), the live CDP page is checked
+// before the transition. If the URL / body still matches a Facebook
+// verification gate, the call returns *ErrCheckpointStillActive without
+// touching the state machine. Handlers should map this to HTTP 409 so
+// the operator knows to actually finish the verification.
 func (m *CheckpointManager) ResolveCheckpoint(ctx context.Context, accountID int64) error {
+	if m.verifier != nil {
+		still, reason, err := m.verifier.StillAtCheckpoint(ctx, accountID)
+		if err != nil {
+			slog.WarnContext(ctx, "checkpoint verifier error — falling back to operator trust",
+				"account_id", accountID, "error", err)
+		} else if still {
+			slog.WarnContext(ctx, "checkpoint resolve refused — browser still on verification page",
+				"account_id", accountID, "reason", reason)
+			return &ErrCheckpointStillActive{Reason: reason}
+		}
+	}
+
 	if err := m.sm.TransitionStatus(ctx, accountID,
 		StatusCheckpoint, StatusReady,
 		"operator", "human resolved checkpoint",

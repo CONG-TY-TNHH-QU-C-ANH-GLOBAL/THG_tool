@@ -1,33 +1,23 @@
 import { useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useRoleStore } from '../stores/roleStore';
-import { getMe, refreshToken } from '../services/authService';
 
+// Phase 4b: the access token is in an HttpOnly cookie. On mount we
+// trigger authStore.hydrate() which checks the non-HttpOnly presence
+// cookie and, if it's set, asks /auth/me who we are. Failure modes:
+//  - no presence cookie  → hydrate sets user=null, screen=auth
+//  - presence cookie but cookie expired → /auth/me 401s → apiFetch
+//    triggers /auth/refresh; if that also fails the user is logged
+//    out and we land on the auth screen
 export function useAuth() {
-  const { user, token, isLoading, login, logout, setUser } = useAuthStore();
+  const { user, token, isLoading, hydrated, login, logout, hydrate } = useAuthStore();
   const { setRole } = useRoleStore();
 
   useEffect(() => {
-    if (token && !user) {
-      // apiFetch inside getMe() handles 401 → refresh → retry automatically.
-      // If it still throws after refresh, the session is dead → force re-login.
-      getMe()
-        .then(async u => {
-          if (u.org_id !== 0) {
-            try {
-              const next = await refreshToken();
-              useAuthStore.getState().setToken(next);
-            } catch {
-              // Keep the current short-lived token; apiFetch will retry refresh
-              // on the next 401 if the refresh cookie is unavailable here.
-            }
-          }
-          setUser(u);
-          setRole(u.role);
-        })
-        .catch(() => setUser(null));
+    if (!hydrated) {
+      void hydrate();
     }
-  }, [token]);
+  }, [hydrated, hydrate]);
 
   useEffect(() => {
     if (user) setRole(user.role);
@@ -39,5 +29,5 @@ export function useAuth() {
     if (u) setRole(u.role);
   }
 
-  return { user, token, isLoading, login: handleLogin, logout };
+  return { user, token, isLoading, hydrated, login: handleLogin, logout };
 }

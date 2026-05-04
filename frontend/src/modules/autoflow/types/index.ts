@@ -147,6 +147,9 @@ export interface Workspace {
   accountStatus: string;
   loggedIn: boolean;
   fbUserId?: string;
+  fbDisplayName?: string;
+  fbUsername?: string;
+  fbProfileUrl?: string;
   running: boolean;
   browserState?: 'initializing' | 'display_ready' | 'ready' | 'idle' | 'active' | 'checkpoint' | 'human_required' | 'error' | 'terminated' | string;
   errorMsg?: string;
@@ -169,7 +172,11 @@ export interface LocalConnector {
   capabilitiesJson: string;
   currentUrl: string;
   fbUserId: string;
+  fbDisplayName: string;
+  fbUsername: string;
+  fbProfileUrl: string;
   streamStatus: string;
+  chromeError: string;
   lastSeen?: string;
   online: boolean;
   active: boolean;
@@ -183,7 +190,11 @@ export interface LocalConnectorScreen {
   imageData: string;
   currentUrl: string;
   fbUserId: string;
+  fbDisplayName: string;
+  fbUsername: string;
+  fbProfileUrl: string;
   streamStatus: string;
+  chromeError: string;
   updatedAt: string;
   actions?: LocalConnectorAction[];
 }

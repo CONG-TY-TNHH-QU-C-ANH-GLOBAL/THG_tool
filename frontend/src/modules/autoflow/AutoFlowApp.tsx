@@ -38,7 +38,7 @@ export default function AutoFlowApp() {
   useEffect(() => {
     if (!googleAuthPending) return;
     history.replaceState(null, '', window.location.pathname);
-    fetch('/api/auth/google/token', { method: 'POST' })
+    fetch('/api/auth/google/token', { method: 'POST', credentials: 'include' })
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(async (data) => {
         const { useAuthStore } = await import('./stores/authStore');

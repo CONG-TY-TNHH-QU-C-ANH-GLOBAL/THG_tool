@@ -83,6 +83,7 @@ func (s *Server) registerOrg(c *fiber.Ctx) error {
 	expiresAt := time.Now().Add(authpkg.RefreshTokenTTL)
 	_ = s.db.SaveRefreshToken(userID, refreshToken, expiresAt)
 	setRefreshCookie(c, refreshToken)
+	setAuthCookies(c, accessToken, time.Now().Add(authpkg.AccessTokenTTL))
 
 	s.db.InsertAuditLog(userID, "org_registered", c.IP(), `{}`)
 	log.Printf("[Register] New org: %q (id=%d) admin=%s", req.OrgName, orgID, req.AdminEmail)

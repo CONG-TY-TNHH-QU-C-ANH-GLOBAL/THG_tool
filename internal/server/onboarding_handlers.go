@@ -75,6 +75,7 @@ func (s *Server) signupUser(c *fiber.Ctx) error {
 	expiresAt := time.Now().Add(authpkg.RefreshTokenTTL)
 	_ = s.db.SaveRefreshToken(userID, refreshToken, expiresAt)
 	setRefreshCookie(c, refreshToken)
+	setAuthCookies(c, accessToken, time.Now().Add(authpkg.AccessTokenTTL))
 	s.db.InsertAuditLog(userID, "signup", c.IP(), `{}`)
 
 	return c.Status(201).JSON(fiber.Map{
@@ -109,6 +110,7 @@ func (s *Server) onboardingSetup(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "workspace assignment failed"})
 	} else if claimed {
 		newToken, _ := authpkg.GenerateAccessToken(userID, user.OrgID, user.Email, string(user.Role), s.cfg.JWTSecret)
+		setAuthCookies(c, newToken, time.Now().Add(authpkg.AccessTokenTTL))
 		return c.JSON(fiber.Map{
 			"access_token": newToken,
 			"org_id":       user.OrgID,
@@ -156,6 +158,7 @@ func (s *Server) onboardingSetup(c *fiber.Ctx) error {
 
 	// Issue a new token with the correct org_id
 	newToken, _ := authpkg.GenerateAccessToken(userID, orgID, user.Email, string(models.RoleAdmin), s.cfg.JWTSecret)
+	setAuthCookies(c, newToken, time.Now().Add(authpkg.AccessTokenTTL))
 
 	s.db.InsertAuditLog(userID, "onboarding_complete", c.IP(), `{}`)
 	log.Printf("[Onboarding] Org created: %q (id=%d) by user=%d", req.OrgName, orgID, userID)
@@ -399,6 +402,7 @@ func (s *Server) acceptInvite(c *fiber.Ctx) error {
 
 	user, _ = s.db.GetUserByID(userID)
 	newToken, _ := authpkg.GenerateAccessToken(userID, orgID, user.Email, string(targetRole), s.cfg.JWTSecret)
+	setAuthCookies(c, newToken, time.Now().Add(authpkg.AccessTokenTTL))
 
 	s.db.InsertAuditLog(userID, "invite_accepted", c.IP(),
 		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d}`, orgID, targetRole, inviteID))

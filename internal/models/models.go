@@ -250,6 +250,7 @@ type OutboundStatus string
 const (
 	OutboundDraft    OutboundStatus = "draft"    // AI drafted, awaiting approval
 	OutboundApproved OutboundStatus = "approved" // Approved, ready to send
+	OutboundSending  OutboundStatus = "sending"  // Claimed by a local runtime, currently executing
 	OutboundSent     OutboundStatus = "sent"     // Successfully sent
 	OutboundRejected OutboundStatus = "rejected" // Rejected by user
 	OutboundFailed   OutboundStatus = "failed"   // Send failed

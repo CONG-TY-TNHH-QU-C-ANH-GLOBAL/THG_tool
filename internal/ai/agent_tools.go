@@ -190,11 +190,11 @@ var agentTools = []map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        "set_context",
-			"description": "Store org-scoped configuration such as business_profile, private_files_summary, data_sources_summary, or outbound_mode.",
+			"description": "Store org-scoped configuration such as business_profile, private_files_summary, or data_sources_summary. NOT for approval / outbound policy — outbound_mode and auto_comment_mode are admin-only and the server will reject this call for those keys.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"key":   map[string]string{"type": "string", "description": "business_profile, private_files_summary, data_sources_summary, outbound_mode"},
+					"key":   map[string]string{"type": "string", "description": "business_profile, private_files_summary, data_sources_summary"},
 					"value": map[string]string{"type": "string", "description": "Value to store"},
 				},
 				"required": []string{"key", "value"},

@@ -58,11 +58,9 @@ func findFreePort() (int, error) {
 	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
-// chromeBrowserWS returns the browser-level WebSocket URL from Chrome's debug endpoint.
-func chromeBrowserWS(port int) (string, error) {
-	return chromeBrowserWSFromEndpoint(cdpEndpointFromPort(port))
-}
-
+// chromeBrowserWSFromEndpoint resolves the browser-level WebSocket URL from
+// Chrome's /json/version debug endpoint. Used by remote allocators when an
+// existing CDP target ID is already known.
 func chromeBrowserWSFromEndpoint(ep cdpEndpoint) (string, error) {
 	if ep.BaseURL == "" {
 		return "", fmt.Errorf("chrome CDP endpoint is empty")

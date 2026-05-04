@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -132,6 +133,45 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+// IsProduction reports whether the runtime should refuse to boot with
+// missing/insecure secrets. The check is conservative: any explicit
+// APP_ENV/ENV value of "prod" or "production" enables strict mode.
+//
+// Localhost development still runs fine because the env vars are unset.
+func (c *Config) IsProduction() bool {
+	for _, key := range []string{"APP_ENV", "ENV", "GO_ENV"} {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+		case "prod", "production":
+			return true
+		}
+	}
+	return false
+}
+
+// MustValidateProductionSecrets returns an error when production-critical
+// secrets are missing. Callers should log.Fatal on the returned error so
+// the server never starts with cookies stored in plaintext or JWT auth
+// disabled.
+//
+// The intent is fail-fast at boot, not surprise plaintext storage three
+// weeks into operation. Pair with APP_ENV=production in deployment.
+func (c *Config) MustValidateProductionSecrets() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	var missing []string
+	if strings.TrimSpace(c.JWTSecret) == "" {
+		missing = append(missing, "JWT_SECRET")
+	}
+	if strings.TrimSpace(c.EncryptionKey) == "" {
+		missing = append(missing, "ENCRYPTION_KEY")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("production startup blocked: missing required secrets: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // detectHeadless returns true when forced via HEADLESS=true env var, or when

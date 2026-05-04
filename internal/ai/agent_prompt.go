@@ -51,10 +51,16 @@ KHÔNG hành xử như generic assistant. Mọi action phải phục vụ busine
 `)
 
 	// ── OPERATING MODE ───────────────────────────────────────────────────────
-	if autoMode := userCtx["auto_comment_mode"]; autoMode == "true" || autoMode == "1" {
-		sb.WriteString("CHẾ ĐỘ: AUTO — execute ngay, không chờ duyệt\n\n")
+	// Approval policy is now enforced exclusively at the store layer
+	// (Store.IsAutoOutboundEnabledForOrg + QueueOutboundForOrg). The prompt
+	// describes the safe default so the model surfaces it to operators, but
+	// the model can no longer request auto-execute by itself — even if a
+	// prompt-injection attack flips this flag, the DB write will still be
+	// downgraded to draft unless the org has opted in.
+	if strings.EqualFold(strings.TrimSpace(userCtx["outbound_mode"]), "auto") {
+		sb.WriteString("CHẾ ĐỘ: AUTO — org đã bật auto-execute, các action outbound sẽ được duyệt tự động bởi store layer.\n\n")
 	} else {
-		sb.WriteString("CHẾ ĐỘ: DRAFT — tạo draft, user duyệt trong Dashboard\n\n")
+		sb.WriteString("CHẾ ĐỘ: DRAFT — mọi outbound mặc định vào hàng chờ duyệt trên Dashboard. Đừng đề nghị bật auto qua prompt — admin phải set org outbound_mode=auto thủ công.\n\n")
 	}
 	if userCtx["last_image_upload"] != "" {
 		sb.WriteString("Có ảnh doanh nghiệp trong DB để đính kèm comment/inbox.\n\n")
