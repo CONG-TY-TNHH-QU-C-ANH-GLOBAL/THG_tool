@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle, LogIn, Mail, Monitor, Plus, RefreshCw, ShieldCheck, StopCircle } from 'lucide-react';
 import { theme } from '../../constants/styles';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
@@ -38,7 +38,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   // Cross-org safety: when the active workspace changes, drop the selected
   // browser session immediately so the embedded VncCanvas / live screen
   // unmounts. Without this the operator could keep watching the previous
-  // org's Chrome stream while the dashboard switches over to org B â€”
+  // org's Chrome stream while the dashboard switches over to org B —
   // server-side org_id checks still hold, but the visual leak alone is a
   // tenant-isolation regression we don't want to ship.
   useEffect(() => {
@@ -136,7 +136,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         }
       } catch (e) {
         if (!cancelled) {
-          setSyncError(e instanceof Error ? e.message : 'KhÃ´ng Ä‘á»“ng bá»™ Ä‘Æ°á»£c session');
+          setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
           setAutoSyncPaused(true);
         }
       } finally {
@@ -159,11 +159,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const handleNewSession = async () => {
     const ownConnectors = connectors.filter(c => c.createdBy === currentUserId);
     if (!ownConnectors.some(c => c.online)) {
-      setBrowserNotice('Thiáº¿t bá»‹ cá»§a báº¡n chÆ°a online. Má»—i nhÃ¢n viÃªn cáº§n tá»± táº¡o mÃ£ káº¿t ná»‘i riÃªng, cháº¡y THG Local Runtime trÃªn mÃ¡y cá»§a mÃ¬nh, rá»“i má»›i táº¡o phiÃªn Facebook.');
+      setBrowserNotice('Thiết bị của bạn chưa online. Mỗi nhân viên cần tự tạo mã kết nối riêng, chạy THG Local Runtime trên máy của mình, rồi mới tạo phiên Facebook.');
       return;
     }
     if (!ownConnectors.some(c => c.online && isDashboardStreamConnector(c))) {
-      setBrowserNotice('Thiáº¿t bá»‹ cá»§a báº¡n chÆ°a cÃ³ THG Local Runtime sáºµn sÃ ng. Táº£i Local Kit Ä‘Ãºng há»‡ Ä‘iá»u hÃ nh, cháº¡y Runtime, nháº­p mÃ£ káº¿t ná»‘i má»›i, rá»“i báº¥m Má»Ÿ Chrome local.');
+      setBrowserNotice('Thiết bị của bạn chưa có THG Local Runtime sẵn sàng. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Mở Chrome local.');
       return;
     }
     setNewLoading(true);
@@ -171,9 +171,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
-      setBrowserNotice('ÄÃ£ táº¡o phiÃªn Facebook local. THG Local Runtime sáº½ má»Ÿ Chrome trÃªn mÃ¡y nhÃ¢n viÃªn Ä‘á»ƒ user Ä‘Äƒng nháº­p trá»±c tiáº¿p; sau khi vÃ o Facebook, Chrome local tá»± áº©n vÃ  Browser dashboard nháº­n stream automation.');
+      setBrowserNotice('Đã tạo phiên Facebook local. THG Local Runtime sẽ mở Chrome trên máy nhân viên để user đăng nhập trực tiếp; sau khi vào Facebook, Chrome local tự ẩn và Browser dashboard nhận stream automation.');
     } catch (e) {
-      setBrowserNotice(e instanceof Error ? e.message : 'KhÃ´ng táº¡o Ä‘Æ°á»£c phiÃªn má»›i');
+      setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
       setNewLoading(false);
     }
@@ -188,7 +188,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       setSyncError(null);
       setAutoSyncPaused(!snap.loggedIn || snap.humanRequired || snap.checkpoint || Boolean(snap.cookieError));
     } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'KhÃ´ng Ä‘á»“ng bá»™ Ä‘Æ°á»£c session');
+      setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
       setAutoSyncPaused(true);
     } finally {
       setSyncLoading(false);
@@ -210,9 +210,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       await disconnectLocalConnector(connector.id);
       setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
-      setConnectorNotice(`ÄÃ£ disconnect ${connector.hostname || connector.name}. Náº¿u Runtime cÃ²n má»Ÿ, token sáº½ bá»‹ tá»« chá»‘i á»Ÿ heartbeat káº¿ tiáº¿p.`);
+      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu Runtime còn mở, token sẽ bị từ chối ở heartbeat kế tiếp.`);
     } catch (e) {
-      setConnectorNotice(e instanceof Error ? e.message : 'KhÃ´ng disconnect Ä‘Æ°á»£c thiáº¿t bá»‹');
+      setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được thiết bị');
     } finally {
       setDisconnectingId(null);
     }
@@ -231,11 +231,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       />
 
       <div className="af-browser-legacy-summary" style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
-        <span style={{ color: theme.textMuted, fontSize: 12 }}>TÃ i khoáº£n: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
-        <span style={{ color: theme.textMuted, fontSize: 12 }}>Äang cháº¡y: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
+        <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
+        <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Local: <strong style={{ color: connectors.some(c => c.online) ? '#4ade80' : theme.textFaint }}>{connectors.filter(c => c.online).length}</strong></span>
         <button onClick={() => { void refresh(); void refreshConnectors(); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-          <RefreshCw size={12} /> LÃ m má»›i
+          <RefreshCw size={12} /> Làm mới
         </button>
         <button
           onClick={() => void handleNewSession()}
@@ -243,7 +243,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: newLoading ? 'wait' : 'pointer', opacity: newLoading ? 0.6 : 1 }}
         >
           {newLoading ? <RefreshCw size={12} className="spin" /> : <Plus size={12} />}
-          {newLoading ? 'Äang khá»Ÿi Ä‘á»™ng...' : 'PhiÃªn má»›i'}
+          {newLoading ? 'Đang khởi động...' : 'Phiên mới'}
         </button>
       </div>
 
@@ -261,7 +261,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       />
 
       {connectorNotice && (
-        <div style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${connectorNotice.includes('KhÃ´ng') ? '#ef444466' : '#22c55e66'}`, background: connectorNotice.includes('KhÃ´ng') ? '#7f1d1d33' : '#064e3b33', color: connectorNotice.includes('KhÃ´ng') ? '#fecaca' : '#bbf7d0', fontSize: 12 }}>
+        <div style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${connectorNotice.includes('Không') ? '#ef444466' : '#22c55e66'}`, background: connectorNotice.includes('Không') ? '#7f1d1d33' : '#064e3b33', color: connectorNotice.includes('Không') ? '#fecaca' : '#bbf7d0', fontSize: 12 }}>
           {connectorNotice}
         </div>
       )}
@@ -302,7 +302,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               <span style={{ flex: 1, color: theme.text, fontWeight: 500, fontSize: 13 }}>{identityLabel || w.accountName}</span>
               {w.loggedIn && (
                 <span style={{ fontSize: 11, color: '#60a5fa', background: '#1e3a5f33', border: '1px solid #3b82f644', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <CheckCircle size={10} />ÄÃ£ Ä‘Äƒng nháº­p
+                  <CheckCircle size={10} />Đã đăng nhập
                 </span>
               )}
               {w.fbUserId && !w.fbDisplayName && !w.fbUsername && !w.email && (
@@ -326,29 +326,29 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                     e.stopPropagation();
                     setBrowserNotice(null);
                     if (!rowHasOnlineConnector) {
-                      setBrowserNotice('Facebook account nÃ y cáº§n thiáº¿t bá»‹ cá»§a báº¡n hoáº·c thiáº¿t bá»‹ Ä‘Ã£ Ä‘Æ°á»£c gáº¯n riÃªng vá»›i account. Táº¡o mÃ£ káº¿t ná»‘i riÃªng trÃªn dashboard nÃ y rá»“i cháº¡y THG Local Runtime.');
+                      setBrowserNotice('Facebook account này cần thiết bị của bạn hoặc thiết bị đã được gắn riêng với account. Tạo mã kết nối riêng trên dashboard này rồi chạy THG Local Runtime.');
                       return;
                     }
                     void start(w.accountId)
                       .then(() => {
                         setSelectedId(w.accountId);
-                        setBrowserNotice('Äang má»Ÿ Chrome local trÃªn mÃ¡y nhÃ¢n viÃªn. HÃ£y Ä‘Äƒng nháº­p Facebook trong cá»­a sá»• Ä‘Ã³; khi vÃ o Facebook, Chrome local tá»± áº©n Ä‘á»ƒ má»i quan sÃ¡t táº­p trung vá» Browser dashboard.');
+                        setBrowserNotice('Đang mở Chrome local trên máy nhân viên. Hãy đăng nhập Facebook trong cửa sổ đó; khi vào Facebook, Chrome local tự ẩn để mọi quan sát tập trung về Browser dashboard.');
                         void refreshLocalScreen(w.accountId);
                       })
-                      .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c tab Facebook'));
+                      .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
                   }}
                   disabled={actionLoading.has(w.accountId)}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rowHasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: rowHasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? (rowHasOnlineConnector ? 'Äang má»Ÿ Chrome...' : 'Äang kiá»ƒm tra...') : (rowHasOnlineConnector ? 'Má»Ÿ Chrome local' : 'ChÆ°a sáºµn sÃ ng')}
+                  {actionLoading.has(w.accountId) ? (rowHasOnlineConnector ? 'Đang mở Chrome...' : 'Đang kiểm tra...') : (rowHasOnlineConnector ? 'Mở Chrome local' : 'Chưa sẵn sàng')}
                 </button>
               ) : (
                 <button
                   onClick={e => { e.stopPropagation(); void stop(w.accountId).then(() => { if (selectedId === w.accountId) setSelectedId(null); }); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7f1d1d', border: 'none', borderRadius: 7, color: '#fca5a5', fontSize: 12, cursor: 'pointer' }}
                 >
-                  <StopCircle size={12} /> Dá»«ng
+                  <StopCircle size={12} /> Dừng
                 </button>
               )}
             </div>
@@ -380,7 +380,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>Session</p>
               <p style={{ color: humanRequired ? '#fcd34d' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? '#4ade80' : theme.textMuted), fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
                 {humanRequired ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
-                {humanRequired ? 'Cáº§n xÃ¡c minh' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'ÄÃ£ lÆ°u' : 'ChÆ°a xÃ¡c thá»±c')}
+                {humanRequired ? 'Cần xác minh' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'Đã lưu' : 'Chưa xác thực')}
               </p>
             </div>
             <div>
@@ -394,7 +394,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             <div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>CDP</p>
               <p style={{ color: syncError || sessionInfo?.cookieError ? '#fca5a5' : theme.textMuted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {humanRequired ? (sessionInfo?.humanReason || 'human_required') : (syncError || sessionInfo?.cookieError || (syncLoading ? 'Ä‘ang Ä‘á»“ng bá»™' : 'sáºµn sÃ ng'))}
+                {humanRequired ? (sessionInfo?.humanReason || 'human_required') : (syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng'))}
               </p>
             </div>
             <button
@@ -402,7 +402,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
               disabled={syncLoading}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: manualCaptureMode ? '#78350f44' : 'transparent', border: `1px solid ${manualCaptureMode ? '#f59e0b66' : theme.border}`, borderRadius: 8, color: manualCaptureMode ? '#fcd34d' : theme.textMuted, fontSize: 12, cursor: syncLoading ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
             >
-              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} /> {manualCaptureMode ? 'ÄÃ£ vÃ o Facebook - Ä‘á»“ng bá»™' : 'Äá»“ng bá»™'}
+              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} /> {manualCaptureMode ? 'Đã vào Facebook - đồng bộ' : 'Đồng bộ'}
             </button>
           </div>
           <VncCanvas
@@ -416,15 +416,15 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
             {manualCaptureMode ? (
               <span style={{ color: '#fcd34d', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <AlertTriangle size={13} /> Auto-sync táº¡m dá»«ng trong lÃºc Ä‘Äƒng nháº­p, vÃ o News Feed rá»“i báº¥m Ä‘á»“ng bá»™
+                <AlertTriangle size={13} /> Auto-sync tạm dừng trong lúc đăng nhập, vào News Feed rồi bấm đồng bộ
               </span>
             ) : selectedWs.loggedIn ? (
               <span style={{ color: '#4ade80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <CheckCircle size={13} /> Session Ä‘Ã£ Ä‘Æ°á»£c lÆ°u
+                <CheckCircle size={13} /> Session đã được lưu
               </span>
             ) : (
               <span style={{ color: theme.textMuted, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <RefreshCw size={13} className={syncLoading ? 'spin' : ''} /> Äang tá»± xÃ¡c thá»±c session
+                <RefreshCw size={13} className={syncLoading ? 'spin' : ''} /> Đang tự xác thực session
               </span>
             )}
           </div>
