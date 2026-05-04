@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -207,6 +208,24 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 	_ = s.db.InsertAuditLog(tok.CreatedBy, "local_connector_pairing_claimed", c.IP(),
 		fmt.Sprintf(`{"connector_id":%d,"org_id":%d,"kind":%q,"transport":%q,"account_id":%d}`,
 			tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID))
+
+	// Auto-bootstrap a local_starting browser_session row when the pair
+	// already names a Facebook account. Without this the connector
+	// heartbeats forever with "0 Chrome profile(s)" because
+	// /api/agent/browser-targets requires a `local_*` session row to
+	// surface a target. Forcing the operator to also click
+	// "Mở Chrome local" on the dashboard right after pair is a UX dead
+	// end — the intent of pair-with-account is "use this device for
+	// that account, now". When pair has no account, we leave the
+	// session row absent and the connector message tells the operator
+	// to assign one from the dashboard.
+	if tok.OrgID > 0 && tok.AssignedAccountID > 0 {
+		if err := s.ensureAssignedLocalBrowserTarget(c.Context(), tok.OrgID, tok.AssignedAccountID); err != nil {
+			log.Printf("[ConnectorPair] auto-bootstrap session failed connector_id=%d account_id=%d: %v",
+				tok.ID, tok.AssignedAccountID, err)
+		}
+	}
+
 	return c.Status(201).JSON(fiber.Map{
 		"device_token": deviceToken,
 		"connector":    tok,
@@ -236,6 +255,12 @@ func (s *Server) assignLocalConnectorAccount(c *fiber.Ctx) error {
 	}
 	if err := s.db.AssignAgentAccount(int64(id), orgID, req.AccountID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
+	}
+	if req.AccountID > 0 {
+		if err := s.ensureAssignedLocalBrowserTarget(c.Context(), orgID, req.AccountID); err != nil {
+			log.Printf("[ConnectorAssign] auto-bootstrap session failed connector_id=%d account_id=%d: %v",
+				id, req.AccountID, err)
+		}
 	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
@@ -291,6 +316,33 @@ func (s *Server) disconnectLocalConnectorPost(c *fiber.Ctx) error {
 // DELETE /api/connectors/:id
 func (s *Server) revokeLocalConnector(c *fiber.Ctx) error {
 	return s.disconnectLocalConnector(c)
+}
+
+func (s *Server) ensureAssignedLocalBrowserTarget(ctx context.Context, orgID, accountID int64) error {
+	if orgID <= 0 || accountID <= 0 {
+		return nil
+	}
+	acc, err := s.db.GetAccountForOrg(accountID, orgID)
+	if err != nil {
+		return err
+	}
+	if acc == nil {
+		return fmt.Errorf("account %d does not belong to organization %d", accountID, orgID)
+	}
+	if acc.Platform != models.PlatformFacebook {
+		return fmt.Errorf("account %d is not a Facebook account", accountID)
+	}
+	appStore, err := store.NewAppStore(s.db)
+	if err != nil {
+		return err
+	}
+	if sess, err := appStore.GetSession(ctx, accountID); err == nil && sess != nil {
+		status := strings.ToLower(strings.TrimSpace(sess.Status))
+		if strings.HasPrefix(status, "local_") && status != "local_stopped" && status != "local_terminated" && status != "terminated" {
+			return nil
+		}
+	}
+	return appStore.RecordLocalSession(ctx, accountID, orgID, store.SessionStarting, "")
 }
 
 func pairingCodeFingerprint(code string) string {

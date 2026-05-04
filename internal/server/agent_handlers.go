@@ -269,7 +269,7 @@ func (s *Server) agentCreateToken(c *fiber.Ctx) error {
 	return c.Status(201).JSON(fiber.Map{
 		"id":    id,
 		"name":  req.Name,
-		"token": plain, // shown once — client must copy immediately
+		"token": plain, // shown once â€” client must copy immediately
 	})
 }
 
@@ -441,6 +441,11 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 
 // agentBrowserTargets returns the org account slots that should run on local Chrome.
 // GET /api/agent/browser-targets
+//
+// When the result is empty we attach a `hint` so the connector console can
+// tell the operator exactly what is missing â€” without this the connector
+// just prints "0 Chrome profile(s)" forever and the operator does not know
+// whether the dashboard is broken or whether they forgot a step.
 func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	agentID, _ := c.Locals("agent_id").(int64)
@@ -456,7 +461,66 @@ func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"targets": targets, "count": len(targets)})
+	if len(targets) == 0 && assignedAccountID > 0 {
+		if err := s.ensureAssignedLocalBrowserTarget(c.Context(), orgID, assignedAccountID); err != nil {
+			log.Printf("[AgentTargets] auto-bootstrap failed org_id=%d agent_id=%d account_id=%d: %v",
+				orgID, agentID, assignedAccountID, err)
+		} else if refreshed, err := s.db.ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID); err == nil {
+			targets = refreshed
+		}
+	}
+	resp := fiber.Map{
+		"targets":             targets,
+		"count":               len(targets),
+		"assigned_account_id": assignedAccountID,
+	}
+	if len(targets) == 0 {
+		resp["hint_code"], resp["hint"] = browserTargetsHint(s, orgID, assignedAccountID)
+	}
+	return c.JSON(resp)
+}
+
+// browserTargetsHint inspects the org's account state to figure out why
+// no targets came back, and returns a short machine code plus a
+// human-readable Vietnamese explanation. Reflects three real scenarios:
+//
+//   - the connector is paired but the org has no Facebook account yet
+//   - the org has an account but no operator clicked "Má»Ÿ Chrome local"
+//     on the dashboard yet (no `local_*` browser_session row exists)
+//   - the connector is bound to a specific account that hasn't been
+//     started, while other accounts in the org are running for other devices
+//
+// The connector console maps `hint_code` to a fixed message; `hint` is
+// the fallback prose when a connector version is older than the code map.
+func browserTargetsHint(s *Server, orgID, assignedAccountID int64) (string, string) {
+	if orgID <= 0 {
+		return "no_org", "Connector chưa được gắn vào workspace nào. Hãy pair lại bằng mã mới từ Browser dashboard."
+	}
+	accounts, _ := s.db.GetAllAccounts(orgID)
+	hasFacebook := false
+	assignedExists := assignedAccountID <= 0
+	for _, a := range accounts {
+		if a.Platform == models.PlatformFacebook {
+			hasFacebook = true
+			if assignedAccountID > 0 && a.ID == assignedAccountID {
+				assignedExists = true
+			}
+		}
+	}
+	if !hasFacebook {
+		return "no_account_in_org",
+			"Workspace chưa có Facebook account. Vào Browser dashboard, tạo phiên Facebook mới rồi pair lại thiết bị."
+	}
+	if assignedAccountID > 0 {
+		if !assignedExists {
+			return "assigned_account_missing",
+				"Thiết bị đang gắn với một Facebook account không còn tồn tại trong workspace. Hãy disconnect thiết bị và tạo mã kết nối mới."
+		}
+		return "assigned_account_not_started",
+			"Facebook account đã gắn với thiết bị nhưng chưa có phiên Browser local. Runtime sẽ tự khởi động lại target; nếu vẫn lặp lại, bấm Mở Chrome local trên account đó."
+	}
+	return "no_local_session_yet",
+		"Connector đã online nhưng chưa được gắn với Facebook account cụ thể. Vào Browser dashboard, chọn account và tạo mã kết nối riêng cho thiết bị này."
 }
 
 // agentConnectorCommands returns pending dashboard input commands for this local runtime.
@@ -652,9 +716,9 @@ func orgIntelligenceKeywords(db *store.Store, orgID int64) []string {
 	stop := map[string]bool{
 		"the": true, "and": true, "for": true, "with": true, "from": true, "that": true,
 		"this": true, "you": true, "your": true, "are": true, "can": true, "will": true,
-		"toi": true, "tôi": true, "cua": true, "của": true, "cho": true, "voi": true,
-		"với": true, "cac": true, "các": true, "nhung": true, "những": true, "khach": true,
-		"khách": true, "hang": true, "hàng": true,
+		"toi": true, "tÃ´i": true, "cua": true, "cá»§a": true, "cho": true, "voi": true,
+		"vá»›i": true, "cac": true, "cÃ¡c": true, "nhung": true, "nhá»¯ng": true, "khach": true,
+		"khÃ¡ch": true, "hang": true, "hÃ ng": true,
 	}
 	seen := map[string]bool{}
 	out := make([]string, 0, 24)
