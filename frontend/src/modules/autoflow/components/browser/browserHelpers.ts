@@ -1,18 +1,19 @@
-﻿import type { SystemInfo } from '../../services/systemService';
+import type { SystemInfo } from '../../services/systemService';
 import type { LocalConnector, LocalConnectorAction } from '../../types';
+
 export function stateLabel(state?: string): string {
   switch (state) {
-    case 'initializing': return 'Ä‘ang khá»Ÿi Ä‘á»™ng';
+    case 'initializing': return 'đang khởi động';
     case 'display_ready': return 'desktop ready';
     case 'ready': return 'ready';
     case 'idle': return 'idle';
     case 'active': return 'active';
     case 'checkpoint': return 'human required';
     case 'human_required': return 'human required';
-    case 'local_starting': return 'Ä‘ang chá» Runtime';
-    case 'local_active': return 'Chrome tháº­t Ä‘ang cháº¡y';
-    case 'local_login_required': return 'cáº§n Ä‘Äƒng nháº­p Facebook';
-    case 'local_human_required': return 'Facebook cáº§n xÃ¡c minh';
+    case 'local_starting': return 'đang chờ Runtime';
+    case 'local_active': return 'Chrome thật đang chạy';
+    case 'local_login_required': return 'cần đăng nhập Facebook';
+    case 'local_human_required': return 'Facebook cần xác minh';
     case 'local_ready': return 'Facebook local ready';
     case 'local_error': return 'local error';
     case 'error': return 'error';
@@ -31,7 +32,7 @@ export function stateTone(state?: string) {
 }
 
 export function formatLastSeen(value?: string) {
-  if (!value) return 'not connected';
+  if (!value) return 'chưa kết nối';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -78,28 +79,28 @@ export function isUsableConnectorForAccount(connector: LocalConnector, userId: n
 export function connectorStatusLabel(status?: string): string {
   switch ((status || '').toLowerCase()) {
     case 'pairing':
-      return 'ÄÃ£ ghÃ©p thiáº¿t bá»‹';
+      return 'Đã ghép thiết bị';
     case 'online':
     case 'connector_online':
-      return 'Sáºµn sÃ ng';
+      return 'Sẵn sàng';
     case 'chrome_not_connected':
-      return 'ChÆ°a káº¿t ná»‘i Chrome';
+      return 'Chưa kết nối Chrome';
     case 'chrome_connected':
-      return 'ÄÃ£ tháº¥y Chrome local';
+      return 'Đã thấy Chrome local';
     case 'facebook_login_required':
-      return 'ChÆ°a Ä‘Äƒng nháº­p Facebook';
+      return 'Chưa đăng nhập Facebook';
     case 'facebook_human_required':
-      return 'Facebook cáº§n xÃ¡c minh';
+      return 'Facebook cần xác minh';
     case 'facebook_logged_in':
-      return 'ÄÃ£ káº¿t ná»‘i Facebook';
+      return 'Đã kết nối Facebook';
     case 'idle':
-      return 'Äang chá» lá»‡nh';
+      return 'Đang chờ lệnh';
     case 'running':
-      return 'Äang cháº¡y';
+      return 'Đang chạy';
     case 'error':
-      return 'Cáº§n kiá»ƒm tra';
+      return 'Cần kiểm tra';
     default:
-      return status || 'Äang chá» lá»‡nh';
+      return status || 'Đang chờ lệnh';
   }
 }
 
@@ -130,9 +131,9 @@ export function actionTypeLabel(type?: string): string {
     case 'scroll':
       return 'Scroll';
     case 'text':
-      return 'Nháº­p text';
+      return 'Nhập text';
     case 'key':
-      return 'PhÃ­m';
+      return 'Phím';
     default:
       return type || 'Action';
   }
@@ -141,15 +142,15 @@ export function actionTypeLabel(type?: string): string {
 export function actionStatusTone(status?: string) {
   switch ((status || '').toLowerCase()) {
     case 'pending':
-      return { label: 'Ä‘ang chá» Runtime', color: '#fde68a', border: '#f59e0b55', bg: '#78350f33' };
+      return { label: 'đang chờ Runtime', color: '#fde68a', border: '#f59e0b55', bg: '#78350f33' };
     case 'claimed':
-      return { label: 'Runtime Ä‘ang cháº¡y', color: '#67e8f9', border: '#06b6d455', bg: '#164e6333' };
+      return { label: 'Runtime đang chạy', color: '#67e8f9', border: '#06b6d455', bg: '#164e6333' };
     case 'done':
       return { label: 'xong', color: '#86efac', border: '#22c55e55', bg: '#14532d33' };
     case 'failed':
-      return { label: 'lá»—i', color: '#fca5a5', border: '#ef444455', bg: '#7f1d1d33' };
+      return { label: 'lỗi', color: '#fca5a5', border: '#ef444455', bg: '#7f1d1d33' };
     default:
-      return { label: status || 'Ä‘ang xá»­ lÃ½', color: '#cbd5e1', border: '#47556966', bg: '#0f172a66' };
+      return { label: status || 'đang xử lý', color: '#cbd5e1', border: '#47556966', bg: '#0f172a66' };
   }
 }
 
@@ -164,4 +165,3 @@ export function isRemoteControlKey(key: string): boolean {
     'Home', 'End', 'PageUp', 'PageDown',
   ].includes(key);
 }
-

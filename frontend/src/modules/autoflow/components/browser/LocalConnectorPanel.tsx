@@ -1,9 +1,10 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle, Copy, Eye, EyeOff, KeyRound, Laptop, Radio, RefreshCw, Shield, Unplug } from 'lucide-react';
 import { theme } from '../../constants/styles';
 import type { SystemInfo } from '../../services/systemService';
 import type { LocalConnector } from '../../types';
 import { connectorStatusLabel, facebookIdentityLabel, formatCountdown, formatLastSeen, isDashboardStreamConnector, RUNTIME_DOWNLOADS } from './browserHelpers';
+
 export function LocalConnectorPanel({
   connectors,
   creating,
@@ -68,15 +69,15 @@ export function LocalConnectorPanel({
           <Laptop size={17} color="#5eead4" />
         </div>
         <div style={{ minWidth: 0 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome local Ä‘Äƒng nháº­p trÆ°á»›c, dashboard quan sÃ¡t sau</p>
-          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chÃ­nh: user Ä‘Äƒng nháº­p Facebook trong Chrome local trÃªn device/IP tháº­t, THG tá»± Ä‘á»“ng bá»™ tráº¡ng thÃ¡i rá»“i stream automation vá» Browser.</p>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome local đăng nhập trước, dashboard quan sát sau</p>
+          <p style={{ color: theme.textMuted, fontSize: 11 }}>Flow production chính: user đăng nhập Facebook trong Chrome local trên device/IP thật, THG tự đồng bộ trạng thái rồi stream automation về Browser.</p>
         </div>
         <span style={{ marginLeft: 'auto', color: online ? '#4ade80' : theme.textMuted, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Radio size={12} /> {runtimeOnline}/{connectors.length} runtime ready
         </span>
         <button onClick={() => setSetupOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px solid #2dd4bf66', background: '#0f766e33', color: '#ccfbf1', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <Laptop size={13} />
-          HÆ°á»›ng dáº«n káº¿t ná»‘i
+          Hướng dẫn kết nối
         </button>
       </div>
 
@@ -84,9 +85,9 @@ export function LocalConnectorPanel({
         <div style={{ padding: 12, borderBottom: `1px solid ${theme.border}`, background: '#07131f' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. CÃ i THG Local Kit</p>
+              <p style={{ color: '#93c5fd', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>1. Cài THG Local Kit</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Má»™t gÃ³i theo há»‡ Ä‘iá»u hÃ nh, bÃªn trong cÃ³ THG Local Runtime Ä‘á»ƒ má»Ÿ Chrome local, giá»¯ session Facebook trÃªn mÃ¡y ngÆ°á»i dÃ¹ng vÃ  stream vá» dashboard.
+                Một gói theo hệ điều hành, bên trong có THG Local Runtime để mở Chrome local, giữ session Facebook trên máy người dùng và stream về dashboard.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {RUNTIME_DOWNLOADS.map(item => (
@@ -95,19 +96,19 @@ export function LocalConnectorPanel({
                     href={item.href}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700, opacity: systemInfo?.agent_builds?.[item.key] === false ? 0.5 : 1 }}
                   >
-                    <Laptop size={13} /> Táº£i Kit {item.label}
+                    <Laptop size={13} /> Tải Kit {item.label}
                   </a>
                 ))}
               </div>
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Sau khi giáº£i nÃ©n, cháº¡y file Start trong kit. Windows dÃ¹ng Start-THG-Local-Runtime.cmd Ä‘á»ƒ cá»­a sá»• luÃ´n má»Ÿ cho báº¡n nháº­p mÃ£ káº¿t ná»‘i vÃ  xem tráº¡ng thÃ¡i.
+                Sau khi giải nén, chạy file Start trong kit. Windows dùng Start-THG-Local-Runtime.cmd để cửa sổ luôn mở cho bạn nhập mã kết nối và xem trạng thái.
               </p>
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. GhÃ©p thiáº¿t bá»‹ vá»›i workspace</p>
+              <p style={{ color: '#bbf7d0', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>2. Ghép thiết bị với workspace</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                MÃ£ nÃ y chá»‰ dÃ nh cho thiáº¿t bá»‹ cá»§a báº¡n. Má»—i nhÃ¢n viÃªn Ä‘Äƒng nháº­p THG vÃ  tá»± táº¡o mÃ£ riÃªng; khÃ´ng dÃ¹ng chung mÃ£ trong workspace.
+                Mã này chỉ dành cho thiết bị của bạn. Mỗi nhân viên đăng nhập THG và tự tạo mã riêng; không dùng chung mã trong workspace.
               </p>
               {dashboardServer && (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 9 }}>
@@ -116,19 +117,19 @@ export function LocalConnectorPanel({
                     type="button"
                     onClick={() => navigator.clipboard?.writeText(dashboardServer)}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, border: '1px solid #38bdf866', background: '#07598533', color: '#e0f2fe', cursor: 'pointer', fontSize: 10, fontWeight: 700 }}
-                    title="Copy THG server Ä‘á»ƒ dÃ¡n vÃ o Runtime"
+                    title="Copy THG server để dán vào Runtime"
                   >
                     <Copy size={11} /> Copy server
                   </button>
                 </div>
               )}
               <p style={{ color: '#fef3c7', fontSize: 10, lineHeight: 1.45, marginBottom: 8 }}>
-                THG server trong Runtime pháº£i trÃ¹ng domain dashboard Ä‘ang táº¡o mÃ£. MÃ£ chá»‰ dÃ¹ng má»™t láº§n, gáº¯n vá»›i user táº¡o mÃ£ vÃ  háº¿t háº¡n sau 10 phÃºt.
+                THG server trong Runtime phải trùng domain dashboard đang tạo mã. Mã chỉ dùng một lần, gắn với user tạo mã và hết hạn sau 10 phút.
               </p>
               {pairingCode ? (
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
                   <code style={{ color: '#dcfce7', fontSize: 18, fontWeight: 900, flex: '1 1 130px', letterSpacing: pairingCodeVisible ? 0 : 2 }}>
-                    {pairingCodeVisible ? pairingCode : 'â€¢â€¢â€¢â€¢-â€¢â€¢â€¢â€¢'}
+                    {pairingCodeVisible ? pairingCode : '••••-••••'}
                   </code>
                   <button
                     type="button"
@@ -137,7 +138,7 @@ export function LocalConnectorPanel({
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${pairingCodeVisible ? '#f59e0b66' : theme.border}`, background: pairingCodeVisible ? '#78350f33' : theme.surfaceAlt, color: pairingExpired ? theme.textFaint : (pairingCodeVisible ? '#fcd34d' : theme.textMuted), cursor: pairingExpired ? 'not-allowed' : 'pointer', opacity: pairingExpired ? 0.6 : 1, fontSize: 11, fontWeight: 700 }}
                   >
                     {pairingCodeVisible ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {pairingCodeVisible ? 'áº¨n mÃ£' : 'Hiá»‡n mÃ£'}
+                    {pairingCodeVisible ? 'Ẩn mã' : 'Hiện mã'}
                   </button>
                   <button
                     type="button"
@@ -146,7 +147,7 @@ export function LocalConnectorPanel({
                       if (pairingCodeVisible && !pairingExpired) navigator.clipboard?.writeText(pairingCode);
                     }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: pairingCodeVisible && !pairingExpired ? theme.textMuted : theme.textFaint, cursor: pairingCodeVisible && !pairingExpired ? 'pointer' : 'not-allowed', opacity: pairingCodeVisible && !pairingExpired ? 1 : 0.55, fontSize: 11 }}
-                    title={pairingExpired ? 'MÃ£ Ä‘Ã£ háº¿t háº¡n, hÃ£y táº¡o mÃ£ má»›i' : (pairingCodeVisible ? 'Copy mÃ£ káº¿t ná»‘i' : 'Hiá»‡n mÃ£ trÆ°á»›c khi copy')}
+                    title={pairingExpired ? 'Mã đã hết hạn, hãy tạo mã mới' : (pairingCodeVisible ? 'Copy mã kết nối' : 'Hiện mã trước khi copy')}
                   >
                     <Copy size={12} /> Copy
                   </button>
@@ -157,36 +158,36 @@ export function LocalConnectorPanel({
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 7, border: '1px solid #22c55e66', background: '#16653433', color: '#dcfce7', cursor: creating ? 'wait' : 'pointer', opacity: creating ? 0.65 : 1, fontSize: 11, fontWeight: 700 }}
                   >
                     {creating ? <RefreshCw size={12} className="spin" /> : <KeyRound size={12} />}
-                    Táº¡o mÃ£ má»›i
+                    Tạo mã mới
                   </button>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 999, border: `1px solid ${pairingExpired ? '#ef444466' : '#22c55e66'}`, background: pairingExpired ? '#7f1d1d33' : '#064e3b33', color: pairingExpired ? '#fecaca' : '#bbf7d0', fontSize: 11, fontWeight: 700 }}>
-                    {pairingExpired ? 'ÄÃ£ háº¿t háº¡n' : `CÃ²n ${formatCountdown(pairingRemainingMs ?? 0)}`}
+                    {pairingExpired ? 'Đã hết hạn' : `Còn ${formatCountdown(pairingRemainingMs ?? 0)}`}
                   </span>
                 </div>
               ) : (
                 <button onClick={onCreate} disabled={creating} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #22c55e66', background: '#16653433', color: '#dcfce7', cursor: creating ? 'wait' : 'pointer', opacity: creating ? 0.65 : 1, fontSize: 12, fontWeight: 700 }}>
                   {creating ? <RefreshCw size={13} className="spin" /> : <KeyRound size={13} />}
-                  Táº¡o mÃ£ káº¿t ná»‘i
+                  Tạo mã kết nối
                 </button>
               )}
-              {pairingExpiresAt && <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Háº¿t háº¡n: {formatLastSeen(pairingExpiresAt)}</p>}
+              {pairingExpiresAt && <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7 }}>Hết hạn: {formatLastSeen(pairingExpiresAt)}</p>}
             </div>
 
             <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. ÄÄƒng nháº­p trÃªn Chrome local</p>
+              <p style={{ color: '#fcd34d', fontSize: 11, fontWeight: 800, marginBottom: 7 }}>3. Đăng nhập trên Chrome local</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Báº¥m Má»Ÿ Chrome local trÃªn account. Runtime sáº½ má»Ÿ cá»­a sá»• Chrome trÃªn mÃ¡y nhÃ¢n viÃªn; hÃ£y Ä‘Äƒng nháº­p Facebook, 2FA hoáº·c checkpoint trá»±c tiáº¿p trong cá»­a sá»• Ä‘Ã³.
+                Bấm Mở Chrome local trên account. Runtime sẽ mở cửa sổ Chrome trên máy nhân viên; hãy đăng nhập Facebook, 2FA hoặc checkpoint trực tiếp trong cửa sổ đó.
               </p>
-              <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> KhÃ´ng nháº­p máº­t kháº©u Facebook vÃ o THG</span>
+              <span style={{ color: '#fef3c7', fontSize: 11, display: 'inline-flex', gap: 5, alignItems: 'center' }}><Shield size={12} /> Không nhập mật khẩu Facebook vào THG</span>
             </div>
 
             <div style={{ border: `1px solid ${runtimeOnline ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
-              <p style={{ color: runtimeOnline ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard tá»± nháº­n session</p>
+              <p style={{ color: runtimeOnline ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard tự nhận session</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 50 }}>
-                Khi Chrome Ä‘Ã£ vÃ o Facebook, Runtime tá»± Ä‘Æ°a cá»­a sá»• local ra ná»n, dashboard lÆ°u tráº¡ng thÃ¡i/Facebook ID vÃ  Browser tab trá»Ÿ thÃ nh nÆ¡i quan sÃ¡t automation táº­p trung.
+                Khi Chrome đã vào Facebook, Runtime tự đưa cửa sổ local ra nền, dashboard lưu trạng thái/Facebook ID và Browser tab trở thành nơi quan sát automation tập trung.
               </p>
               <span style={{ color: runtimeOnline ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
-                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime Ä‘Ã£ sáºµn sÃ ng Ä‘á»“ng bá»™' : online ? 'ÄÃ£ cÃ³ thiáº¿t bá»‹ online, Ä‘ang chá» Chrome local' : 'Äang chá» mÃ¡y káº¿t ná»‘i'}
+                {runtimeOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {runtimeOnline ? 'Runtime đã sẵn sàng đồng bộ' : online ? 'Đã có thiết bị online, đang chờ Chrome local' : 'Đang chờ máy kết nối'}
               </span>
             </div>
           </div>
@@ -195,7 +196,7 @@ export function LocalConnectorPanel({
 
       {connectors.length === 0 ? (
         <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>
-          ChÆ°a cÃ³ thiáº¿t bá»‹ nÃ o káº¿t ná»‘i. CÃ i THG Local Runtime, táº¡o mÃ£ káº¿t ná»‘i, rá»“i nháº­p mÃ£ trong app Ä‘á»ƒ má»Ÿ Chrome local vÃ  Ä‘á»“ng bá»™ session Facebook.
+          Chưa có thiết bị nào kết nối. Cài THG Local Runtime, tạo mã kết nối, rồi nhập mã trong app để mở Chrome local và đồng bộ session Facebook.
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>
@@ -206,37 +207,37 @@ export function LocalConnectorPanel({
               fbUserId: c.fbUserId,
             });
             return (
-            <div key={c.id} style={{ border: `1px solid ${c.online ? '#22c55e55' : theme.border}`, borderRadius: 8, background: theme.surfaceAlt, padding: 11 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.online ? '#4ade80' : theme.textFaint }} />
-                <p style={{ color: theme.text, fontSize: 13, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
-                <span style={{ color: c.online ? '#4ade80' : theme.textFaint, fontSize: 10 }}>{c.online ? 'online' : 'offline'}</span>
+              <div key={c.id} style={{ border: `1px solid ${c.online ? '#22c55e55' : theme.border}`, borderRadius: 8, background: theme.surfaceAlt, padding: 11 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.online ? '#4ade80' : theme.textFaint }} />
+                  <p style={{ color: theme.text, fontSize: 13, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
+                  <span style={{ color: c.online ? '#4ade80' : theme.textFaint, fontSize: 10 }}>{c.online ? 'online' : 'offline'}</span>
+                </div>
+                <p style={{ color: theme.textMuted, fontSize: 11 }}>{c.hostname || 'unknown host'} · {c.os || 'unknown os'} · {c.version || 'no version'}</p>
+                <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 5 }}>Lần cuối {formatLastSeen(c.lastSeen)} · {connectorStatusLabel(c.streamStatus)}</p>
+                <p style={{ color: c.createdBy === currentUserId ? '#86efac' : theme.textFaint, fontSize: 11, marginTop: 5 }}>
+                  {c.createdBy === currentUserId ? 'Thiết bị của bạn' : `Thiết bị thành viên #${c.createdBy}`}
+                  {c.assignedAccountId ? ` · gắn account #${c.assignedAccountId}` : ''}
+                </p>
+                {c.currentUrl && <p style={{ color: '#93c5fd', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.currentUrl}</p>}
+                {c.streamStatus === 'facebook_logged_in' && identityLabel && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>{identityLabel}</p>}
+                {c.chromeError && <p style={{ color: '#fca5a5', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.chromeError}</p>}
+                {(c.createdBy === currentUserId || currentUserRole === 'admin' || currentUserRole === 'founder' || currentUserRole === 'superadmin') && (
+                  <button
+                    type="button"
+                    onClick={() => onDisconnect(c)}
+                    disabled={disconnectingId === c.id}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, padding: '6px 9px', borderRadius: 7, border: '1px solid #ef444455', background: '#7f1d1d33', color: '#fecaca', cursor: disconnectingId === c.id ? 'wait' : 'pointer', opacity: disconnectingId === c.id ? 0.65 : 1, fontSize: 11, fontWeight: 700 }}
+                  >
+                    {disconnectingId === c.id ? <RefreshCw size={12} className="spin" /> : <Unplug size={12} />}
+                    {disconnectingId === c.id ? 'Đang ngắt' : 'Disconnect máy này'}
+                  </button>
+                )}
               </div>
-              <p style={{ color: theme.textMuted, fontSize: 11 }}>{c.hostname || 'unknown host'} Â· {c.os || 'unknown os'} Â· {c.version || 'no version'}</p>
-              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 5 }}>Láº§n cuá»‘i {formatLastSeen(c.lastSeen)} Â· {connectorStatusLabel(c.streamStatus)}</p>
-              <p style={{ color: c.createdBy === currentUserId ? '#86efac' : theme.textFaint, fontSize: 11, marginTop: 5 }}>
-                {c.createdBy === currentUserId ? 'Thiáº¿t bá»‹ cá»§a báº¡n' : `Thiáº¿t bá»‹ thÃ nh viÃªn #${c.createdBy}`}
-                {c.assignedAccountId ? ` Â· gáº¯n account #${c.assignedAccountId}` : ''}
-              </p>
-              {c.currentUrl && <p style={{ color: '#93c5fd', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.currentUrl}</p>}
-              {c.streamStatus === 'facebook_logged_in' && identityLabel && <p style={{ color: '#c4b5fd', fontSize: 11, marginTop: 5 }}>{identityLabel}</p>}
-              {c.chromeError && <p style={{ color: '#fca5a5', fontSize: 11, marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.chromeError}</p>}
-              {(c.createdBy === currentUserId || currentUserRole === 'admin' || currentUserRole === 'founder' || currentUserRole === 'superadmin') && (
-                <button
-                  type="button"
-                  onClick={() => onDisconnect(c)}
-                  disabled={disconnectingId === c.id}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10, padding: '6px 9px', borderRadius: 7, border: '1px solid #ef444455', background: '#7f1d1d33', color: '#fecaca', cursor: disconnectingId === c.id ? 'wait' : 'pointer', opacity: disconnectingId === c.id ? 0.65 : 1, fontSize: 11, fontWeight: 700 }}
-                >
-                  {disconnectingId === c.id ? <RefreshCw size={12} className="spin" /> : <Unplug size={12} />}
-                  {disconnectingId === c.id ? 'Äang ngáº¯t' : 'Disconnect mÃ¡y nÃ y'}
-                </button>
-              )}
-            </div>
-          );})}
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
-

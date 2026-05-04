@@ -1,9 +1,10 @@
-﻿import { useCallback, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import { useCallback, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { Laptop, Mail, Monitor, RefreshCw } from 'lucide-react';
 import { theme } from '../../constants/styles';
 import { sendConnectorInput } from '../../services/connectorsService';
 import type { LocalConnectorAction, LocalConnectorScreen } from '../../types';
 import { actionStatusTone, actionTime, actionTypeLabel, facebookIdentityLabel, formatLastSeen, isRemoteControlKey } from './browserHelpers';
+
 export function LocalChromeViewer({
   screen,
   accountId,
@@ -42,9 +43,9 @@ export function LocalChromeViewer({
       .then(async () => {
         try {
           const res = await sendConnectorInput(accountId, type, payload);
-          setInputStatus(`ÄÃ£ gá»­i thao tÃ¡c dá»± phÃ²ng #${res.id}`);
+          setInputStatus(`Đã gửi thao tác dự phòng #${res.id}`);
         } catch (err) {
-          setInputStatus(err instanceof Error ? err.message : 'KhÃ´ng gá»­i Ä‘Æ°á»£c thao tÃ¡c Ä‘áº¿n THG Local Runtime');
+          setInputStatus(err instanceof Error ? err.message : 'Không gửi được thao tác đến THG Local Runtime');
         }
       });
   }, [accountId, remoteInputEnabled, screen?.imageData]);
@@ -73,7 +74,7 @@ export function LocalChromeViewer({
   const handlePointerDown = (e: MouseEvent<HTMLImageElement>) => {
     if (!screen?.imageData) return;
     if (!remoteInputEnabled) {
-      setInputStatus('HÃ£y Ä‘Äƒng nháº­p trá»±c tiáº¿p trong cá»­a sá»• Chrome local trÃªn mÃ¡y nhÃ¢n viÃªn');
+      setInputStatus('Hãy đăng nhập trực tiếp trong cửa sổ Chrome local trên máy nhân viên');
       return;
     }
     setInputActive(true);
@@ -149,25 +150,25 @@ export function LocalChromeViewer({
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: screen?.imageData ? '#4ade80' : theme.textFaint }} />
         <Monitor size={14} color="#5eead4" />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome tháº­t {accountName ? `- ${accountName}` : ''}</p>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật {accountName ? `- ${accountName}` : ''}</p>
           <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {screen?.currentUrl || 'Äang chá» Chrome local má»Ÿ Facebook trÃªn mÃ¡y nhÃ¢n viÃªn'}
+            {screen?.currentUrl || 'Đang chờ Chrome local mở Facebook trên máy nhân viên'}
           </p>
         </div>
-        {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trÃªn Chrome local</span>}
+        {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome local</span>}
         {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>remote fallback</span>}
         {screenIdentityLabel && <span title={screenIdentityLabel} style={{ color: '#bfdbfe', border: '1px solid #3b82f644', background: '#1e3a8a33', borderRadius: 6, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Mail size={11} />{screenIdentityLabel}</span>}
         {screen?.chromeError && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{screen.chromeError}</span>}
         {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
-        {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trÆ°á»›c</span>}
+        {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
         <button onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>
-          <RefreshCw size={12} className={loading ? 'spin' : ''} /> LÃ m má»›i
+          <RefreshCw size={12} className={loading ? 'spin' : ''} /> Làm mới
         </button>
       </div>
       {screen?.actions && screen.actions.length > 0 && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', overflowX: 'auto', padding: '8px 12px', background: '#020617', borderBottom: `1px solid ${theme.border}` }}>
           <span style={{ color: theme.textMuted, fontSize: 11, whiteSpace: 'nowrap' }}>Automation:</span>
-          {screen.actions.slice(0, 5).map(action => {
+          {screen.actions.slice(0, 5).map((action: LocalConnectorAction) => {
             const tone = actionStatusTone(action.status);
             return (
               <span
@@ -237,9 +238,9 @@ export function LocalChromeViewer({
         ) : (
           <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
-            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Äang chá» Chrome local trÃªn mÃ¡y nhÃ¢n viÃªn</p>
+            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome local trên máy nhân viên</p>
             <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              Báº¥m Má»Ÿ Chrome local, Ä‘Äƒng nháº­p Facebook trong cá»­a sá»• Chrome vá»«a má»Ÿ trÃªn mÃ¡y Ä‘Ã³. Sau khi Facebook sáºµn sÃ ng, Chrome local sáº½ tá»± áº©n vÃ  dashboard nháº­n stream vá» Ä‘Ã¢y.
+              Bấm Mở Chrome local, đăng nhập Facebook trong cửa sổ Chrome vừa mở trên máy đó. Sau khi Facebook sẵn sàng, Chrome local sẽ tự ẩn và dashboard nhận stream về đây.
             </p>
           </div>
         )}
@@ -247,4 +248,3 @@ export function LocalChromeViewer({
     </div>
   );
 }
-
