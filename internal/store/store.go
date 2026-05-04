@@ -23,7 +23,12 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)")
+	// busy_timeout=15000ms gives concurrent writers ~15s to wait for a
+	// held write lock before SQLITE_BUSY surfaces. CI machines under
+	// load still flaked at 5s when 8+ goroutines raced
+	// QueueOutboundForOrg; combined with retryOnBusy in helpers.go this
+	// is the belt-and-braces fix.
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(15000)&_pragma=foreign_keys(on)")
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}

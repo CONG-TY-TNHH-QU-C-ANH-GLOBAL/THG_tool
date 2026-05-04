@@ -82,6 +82,22 @@ func (s *Store) QueueOutboundForOrg(msg *models.OutboundMessage, requestedAuto b
 		return OutboundQueueResult{}, fmt.Errorf("target_url is required")
 	}
 
+	// Retry the whole transaction on SQLite busy errors. A single attempt
+	// is enough for the application-level guard, but under concurrent
+	// writers SQLite can return SQLITE_BUSY when a deferred transaction
+	// upgrades to a writer after another writer just committed —
+	// busy_timeout alone does not cover that snapshot conflict. retryOnBusy
+	// short-circuits immediately for any non-busy error.
+	var result OutboundQueueResult
+	err := retryOnBusy(7, func() error {
+		var attemptErr error
+		result, attemptErr = s.queueOutboundForOrgOnce(msg, requestedAuto, cooldown)
+		return attemptErr
+	})
+	return result, err
+}
+
+func (s *Store) queueOutboundForOrgOnce(msg *models.OutboundMessage, requestedAuto bool, cooldown time.Duration) (OutboundQueueResult, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return OutboundQueueResult{}, err
@@ -112,7 +128,10 @@ func (s *Store) QueueOutboundForOrg(msg *models.OutboundMessage, requestedAuto b
 	)
 	if err != nil {
 		// Likely UNIQUE collision under concurrency — surface as a guard
-		// reason rather than an opaque DB error.
+		// reason rather than an opaque DB error. Detect this BEFORE the
+		// busy-error path so a deterministic UNIQUE collision doesn't get
+		// misread as a transient lock and retried (which would pointlessly
+		// rewalk the guard 7 times).
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return OutboundQueueResult{Decision: OutboundGuardDecision{
 				Allowed: false, Reason: "duplicate_outbound_target_race",
