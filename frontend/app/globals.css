@@ -1,23 +1,22 @@
+/* Design system tokens + components — single source of truth.
+ * Copied from /design-system/{tokens,components}.css; do not edit
+ * those files in place — update the source under design-system/ and
+ * re-copy so the Next.js build picks them up.
+ */
+@import './design-system/tokens.css';
+@import './design-system/components.css';
+@import './design-system/auth-extras.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html,
-body {
-  min-height: 100%;
-  background: #07111f;
-  color: #f7fbff;
-  font-family: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
+/* Tailwind base sets default font on body; the design-system tokens.css
+ * already gives us Geist + dark palette, so this is a no-op safety net
+ * for any element that escapes a layout. */
+html, body { background: var(--bg); color: var(--text); }
 
-* {
-  box-sizing: border-box;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 7px; height: 7px; }
-::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.04); }
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-}
+/* Density override hooks — toggled by the topbar widget via
+ * `document.documentElement.dataset.density`. tokens.css owns the
+ * actual variable values for compact / balanced / airy. */
+html { color-scheme: dark; }

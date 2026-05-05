@@ -1,7 +1,10 @@
+'use client';
 import { useState, type ReactNode } from 'react';
-import { ArrowLeft, Building2, Check, LockKeyhole, Mail, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Mail } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { isPlatformRole, type AuthUser } from '../services/authService';
+import { LangSwitch } from './ds/LangSwitch';
+import { useLang } from '../i18n/useLang';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'success';
 type AuthSuccessRole = 'admin' | 'staff' | 'founder' | 'superadmin';
@@ -19,8 +22,8 @@ function routeRoleFor(user?: Partial<AuthUser> | null): AuthSuccessRole {
   return user?.role === 'admin' ? 'admin' : 'staff';
 }
 
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+const GoogleGlyph = () => (
+  <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true">
     <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
     <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" />
     <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
@@ -28,20 +31,41 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const Field = ({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) => (
-  <label className="auth-field">
-    <span>{label}</span>
-    {children}
-  </label>
-);
+function AuthShell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' }) {
+  return (
+    <main className="auth-shell">
+      <aside className="auth-side">
+        <div className="brand">
+          <div className="brand-mark">A</div>
+          <span className="brand-name">AutoFlow<span className="dim">.thg</span></span>
+        </div>
+        <div>
+          <div className="eyebrow"><span className="dot" />WORKSPACE</div>
+          <h2 style={{ marginTop: 16, fontSize: 36, maxWidth: 380 }}>
+            {lang === 'vi' ? (
+              <>Một workspace, <span className="title-mono">năm lớp intelligence.</span></>
+            ) : (
+              <>One workspace, <span className="title-mono">five layers of intelligence.</span></>
+            )}
+          </h2>
+          <p style={{ marginTop: 16, maxWidth: 360, fontSize: 14 }}>
+            {lang === 'vi'
+              ? 'Đăng nhập để vào dashboard sales intelligence cho team Facebook của bạn.'
+              : 'Sign in to your Facebook sales intelligence dashboard.'}
+          </p>
+        </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.04em' }}>
+          <span className="pulse" style={{ verticalAlign: 'middle', marginRight: 8 }} />
+          {lang === 'vi' ? 'LIVE · 482 workspace đang chạy' : 'LIVE · 482 workspaces online'}
+        </div>
+      </aside>
+      <div className="auth-form-wrap">{children}</div>
+    </main>
+  );
+}
 
 export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBack }: AuthProps) {
+  const { lang, t } = useLang();
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,34 +81,32 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
   async function handleSignup() {
     setRegError('');
     if (!regName || !regEmail || !regPassword) {
-      setRegError('Vui lòng điền đầy đủ thông tin');
+      setRegError(lang === 'vi' ? 'Vui lòng điền đầy đủ thông tin' : 'Please fill in every field');
       return;
     }
     if (regPassword !== regConfirm) {
-      setRegError('Mật khẩu không khớp');
+      setRegError(lang === 'vi' ? 'Mật khẩu không khớp' : 'Passwords do not match');
       return;
     }
     setRegLoading(true);
     try {
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: regName, email: regEmail, password: regPassword }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setRegError(data.error || 'Đăng ký thất bại');
+        setRegError(data.error || (lang === 'vi' ? 'Đăng ký thất bại' : 'Signup failed'));
         return;
       }
       const { useAuthStore } = await import('../stores/authStore');
       useAuthStore.getState().setAuth(data.access_token, data.user);
-      if (data.needs_onboarding && onNeedsOnboarding) {
-        onNeedsOnboarding();
-      } else {
-        onSuccess(routeRoleFor(data.user));
-      }
+      if (data.needs_onboarding && onNeedsOnboarding) onNeedsOnboarding();
+      else onSuccess(routeRoleFor(data.user));
     } catch {
-      setRegError('Lỗi kết nối, thử lại sau');
+      setRegError(lang === 'vi' ? 'Lỗi kết nối, thử lại sau' : 'Connection error, try again');
     } finally {
       setRegLoading(false);
     }
@@ -96,39 +118,29 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
       await login(email, password);
       const { useAuthStore } = await import('../stores/authStore');
       const user = useAuthStore.getState().user;
-      if (isPlatformRole(user?.role)) {
-        onSuccess(routeRoleFor(user));
-        return;
-      }
-      if (user?.org_id === 0 && onNeedsOnboarding) {
-        onNeedsOnboarding();
-        return;
-      }
+      if (isPlatformRole(user?.role)) { onSuccess(routeRoleFor(user)); return; }
+      if (user?.org_id === 0 && onNeedsOnboarding) { onNeedsOnboarding(); return; }
       onSuccess(routeRoleFor(user));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Đăng nhập thất bại');
+      setError(e instanceof Error ? e.message : (lang === 'vi' ? 'Đăng nhập thất bại' : 'Login failed'));
     }
   }
 
-  const resetToLogin = () => {
-    setSent(false);
-    setMode('login');
-  };
-
-  const goGoogle = () => {
-    window.location.href = '/api/auth/google';
-  };
+  const goGoogle = () => { window.location.href = '/api/auth/google'; };
+  const resetToLogin = () => { setSent(false); setMode('login'); };
 
   if (mode === 'success') {
     return (
-      <AuthShell compact>
-        <div className="auth-card auth-card-centered">
-          <div className="auth-success-icon">
-            <Check size={30} />
-          </div>
-          <h1>Tổ chức đã được tạo</h1>
-          <p>Workspace của bạn đã sẵn sàng sử dụng.</p>
-          <button className="auth-primary-btn" onClick={() => onSuccess('admin')}>Vào workspace</button>
+      <AuthShell lang={lang}>
+        <div className="auth-form" style={{ textAlign: 'center' }}>
+          <div className="auth-success-icon"><Check size={28} /></div>
+          <h1>{lang === 'vi' ? 'Tổ chức đã được tạo' : 'Workspace created'}</h1>
+          <p className="sub">
+            {lang === 'vi' ? 'Workspace của bạn đã sẵn sàng sử dụng.' : 'Your workspace is ready to go.'}
+          </p>
+          <button className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }} onClick={() => onSuccess('admin')}>
+            {lang === 'vi' ? 'Vào workspace' : 'Enter workspace'} <ArrowRight size={14} />
+          </button>
         </div>
       </AuthShell>
     );
@@ -136,188 +148,161 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
 
   if (mode === 'forgot') {
     return (
-      <AuthShell compact>
-        <div className="auth-card">
-          <button className="auth-back-btn" onClick={resetToLogin}>
-            <ArrowLeft size={14} />
-            Quay lại đăng nhập
+      <AuthShell lang={lang}>
+        <form className="auth-form" onSubmit={e => e.preventDefault()}>
+          <button type="button" className="auth-back" onClick={resetToLogin}>
+            <ArrowLeft size={13} /> {lang === 'vi' ? 'Quay lại đăng nhập' : 'Back to sign in'}
           </button>
-
           {!sent ? (
             <>
-              <AuthHeader icon={<Mail size={22} />} title="Quên mật khẩu?" subtitle="Nhập email tài khoản để nhận link đặt lại mật khẩu." />
-              <Field label="Email tài khoản">
-                <input className="auth-input" type="email" placeholder="you@company.com" />
-              </Field>
-              <button className="auth-primary-btn" onClick={() => setSent(true)}>Gửi link đặt lại</button>
+              <h1>{lang === 'vi' ? 'Quên mật khẩu?' : 'Forgot password?'}</h1>
+              <p className="sub">
+                {lang === 'vi' ? 'Nhập email tài khoản để nhận link đặt lại mật khẩu.' : 'Enter your account email to receive a reset link.'}
+              </p>
+              <div className="auth-fields">
+                <label className="field">
+                  <span className="field-label">EMAIL</span>
+                  <input className="input" type="email" placeholder="ban@congty.vn" />
+                </label>
+              </div>
+              <button type="button" className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setSent(true)}>
+                {lang === 'vi' ? 'Gửi link đặt lại' : 'Send reset link'} <ArrowRight size={14} />
+              </button>
             </>
           ) : (
-            <div className="auth-card-centered">
-              <div className="auth-success-icon">
-                <Check size={26} />
-              </div>
-              <h1>Email đã được gửi</h1>
-              <p>Kiểm tra hộp thư và nhấn link để đặt lại mật khẩu.</p>
-              <button className="auth-secondary-btn" onClick={() => setMode('login')}>Quay lại đăng nhập</button>
+            <div style={{ textAlign: 'center' }}>
+              <div className="auth-success-icon"><Mail size={26} /></div>
+              <h1>{lang === 'vi' ? 'Đã gửi email' : 'Email sent'}</h1>
+              <p className="sub">
+                {lang === 'vi' ? 'Kiểm tra hộp thư và nhấn link để đặt lại mật khẩu.' : 'Check your inbox and click the link to reset your password.'}
+              </p>
+              <button type="button" className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setMode('login')}>
+                {lang === 'vi' ? 'Quay lại đăng nhập' : 'Back to sign in'}
+              </button>
             </div>
           )}
-        </div>
+        </form>
       </AuthShell>
     );
   }
 
   if (mode === 'login') {
     return (
-      <AuthShell>
-        <div className="auth-card">
-          <button className="auth-back-btn" onClick={goBack}>
-            <ArrowLeft size={14} />
-            Trang chủ
-          </button>
+      <AuthShell lang={lang}>
+        <form className="auth-form" onSubmit={e => e.preventDefault()}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            <button type="button" className="auth-back" onClick={goBack}>
+              <ArrowLeft size={13} /> {lang === 'vi' ? 'Trang chủ' : 'Home'}
+            </button>
+            <LangSwitch />
+          </div>
+          <h1>{lang === 'vi' ? 'Chào mừng trở lại.' : 'Welcome back.'}</h1>
+          <p className="sub">{t.auth.loginSubtitle}</p>
 
-          <AuthHeader icon={<LockKeyhole size={22} />} title="Đăng nhập AutoFlow" subtitle="Truy cập workspace automation của tổ chức." />
-
-          <div className="auth-form">
-            <Field label="Email">
+          <div className="auth-fields">
+            <label className="field">
+              <span className="field-label">EMAIL</span>
               <input
-                className="auth-input"
+                className="input"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="you@company.com"
+                placeholder="ban@congty.vn"
                 autoComplete="email"
               />
-            </Field>
-
-            <Field label="Mật khẩu">
+            </label>
+            <label className="field">
+              <span className="field-label">{lang === 'vi' ? 'MẬT KHẨU' : 'PASSWORD'}</span>
               <input
-                className="auth-input"
+                className="input"
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
                 autoComplete="current-password"
+                placeholder="••••••••"
               />
-            </Field>
+              <span className="field-help" style={{ textAlign: 'right' }}>
+                <button type="button" className="auth-back" style={{ marginBottom: 0 }} onClick={() => setMode('forgot')}>
+                  {t.auth.forgot}
+                </button>
+              </span>
+            </label>
           </div>
 
-          <div className="auth-inline-row">
-            <span />
-            <button className="auth-link-btn" onClick={() => setMode('forgot')}>Quên mật khẩu?</button>
+          {error && <div className="auth-error">{error}</div>}
+
+          <button type="button" className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }} onClick={handleLogin} disabled={isLoading}>
+            {isLoading ? (lang === 'vi' ? 'Đang đăng nhập…' : 'Signing in…') : t.auth.loginCta}
+            <ArrowRight size={14} />
+          </button>
+
+          <div className="auth-divider">{lang === 'vi' ? 'HOẶC' : 'OR'}</div>
+
+          <button type="button" className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={goGoogle}>
+            <GoogleGlyph /> {t.auth.googleCta}
+          </button>
+
+          <div className="auth-foot">
+            {t.auth.noAccount}{' '}
+            <button type="button" onClick={() => setMode('register')}>
+              {lang === 'vi' ? 'Tạo workspace miễn phí' : 'Create a free workspace'} →
+            </button>
           </div>
-
-          {error && <p className="auth-error">{error}</p>}
-
-          <button className="auth-primary-btn" onClick={handleLogin} disabled={isLoading}>
-            {isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
-          </button>
-
-          <AuthDivider />
-
-          <button className="auth-google-btn" onClick={goGoogle}>
-            <GoogleIcon />
-            Đăng nhập với Google
-          </button>
-
-          <p className="auth-switch">
-            Chưa có tài khoản?
-            <button onClick={() => setMode('register')}>Tạo tổ chức</button>
-          </p>
-        </div>
+        </form>
       </AuthShell>
     );
   }
 
   return (
-    <AuthShell>
-      <div className="auth-card auth-card-wide">
-        <button className="auth-back-btn" onClick={goBack}>
-          <ArrowLeft size={14} />
-          Trang chủ
-        </button>
+    <AuthShell lang={lang}>
+      <form className="auth-form" onSubmit={e => e.preventDefault()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <button type="button" className="auth-back" onClick={goBack}>
+            <ArrowLeft size={13} /> {lang === 'vi' ? 'Trang chủ' : 'Home'}
+          </button>
+          <LangSwitch />
+        </div>
+        <h1>{t.auth.registerTitle}</h1>
+        <p className="sub">{t.auth.registerSubtitle}</p>
 
-        <AuthHeader icon={<Building2 size={22} />} title="Tạo tài khoản" subtitle="Khởi tạo tài khoản quản trị cho workspace." />
-
-        <div className="auth-register-grid">
-          <Field label="Họ và tên">
-            <input className="auth-input" placeholder="Nguyễn Văn A" value={regName} onChange={e => setRegName(e.target.value)} autoComplete="name" />
-          </Field>
-          <Field label="Email">
-            <input className="auth-input" type="email" placeholder="you@company.com" value={regEmail} onChange={e => setRegEmail(e.target.value)} autoComplete="email" />
-          </Field>
-          <Field label="Mật khẩu">
-            <input className="auth-input" type="password" placeholder="Tối thiểu 8 ký tự" value={regPassword} onChange={e => setRegPassword(e.target.value)} autoComplete="new-password" />
-          </Field>
-          <Field label="Xác nhận mật khẩu">
-            <input className="auth-input" type="password" placeholder="Nhập lại mật khẩu" value={regConfirm} onChange={e => setRegConfirm(e.target.value)} autoComplete="new-password" />
-          </Field>
+        <div className="auth-fields">
+          <label className="field">
+            <span className="field-label">{lang === 'vi' ? 'HỌ TÊN' : 'FULL NAME'}</span>
+            <input className="input" placeholder="Nguyễn Văn A" value={regName} onChange={e => setRegName(e.target.value)} autoComplete="name" />
+          </label>
+          <label className="field">
+            <span className="field-label">EMAIL</span>
+            <input className="input" type="email" placeholder="ban@congty.vn" value={regEmail} onChange={e => setRegEmail(e.target.value)} autoComplete="email" />
+          </label>
+          <label className="field">
+            <span className="field-label">{lang === 'vi' ? 'MẬT KHẨU' : 'PASSWORD'}</span>
+            <input className="input" type="password" placeholder={lang === 'vi' ? 'Tối thiểu 8 ký tự' : 'Min. 8 characters'} value={regPassword} onChange={e => setRegPassword(e.target.value)} autoComplete="new-password" />
+          </label>
+          <label className="field">
+            <span className="field-label">{lang === 'vi' ? 'XÁC NHẬN' : 'CONFIRM'}</span>
+            <input className="input" type="password" placeholder={lang === 'vi' ? 'Nhập lại mật khẩu' : 'Re-enter password'} value={regConfirm} onChange={e => setRegConfirm(e.target.value)} autoComplete="new-password" />
+          </label>
         </div>
 
-        {regError && <p className="auth-error">{regError}</p>}
+        {regError && <div className="auth-error">{regError}</div>}
 
-        <button className="auth-primary-btn" onClick={handleSignup} disabled={regLoading}>
-          {regLoading ? 'Đang tạo...' : 'Tạo tài khoản'}
+        <button type="button" className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }} onClick={handleSignup} disabled={regLoading}>
+          {regLoading ? (lang === 'vi' ? 'Đang tạo…' : 'Creating…') : t.auth.registerCta}
+          <ArrowRight size={14} />
         </button>
 
-        <AuthDivider />
+        <div className="auth-divider">{lang === 'vi' ? 'HOẶC' : 'OR'}</div>
 
-        <button className="auth-google-btn" onClick={goGoogle}>
-          <GoogleIcon />
-          Đăng ký với Google
+        <button type="button" className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={goGoogle}>
+          <GoogleGlyph /> {t.auth.googleCta}
         </button>
 
-        <p className="auth-switch">
-          Đã có tài khoản?
-          <button onClick={() => setMode('login')}>Đăng nhập</button>
-        </p>
-      </div>
+        <div className="auth-foot">
+          {t.auth.hasAccount}{' '}
+          <button type="button" onClick={() => setMode('login')}>{t.auth.loginCta} →</button>
+        </div>
+      </form>
     </AuthShell>
-  );
-}
-
-function AuthShell({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
-  return (
-    <main className={`auth-shell ${compact ? 'auth-shell-compact' : ''}`}>
-      <section className="auth-stage">
-        {!compact && (
-          <aside className="auth-brand-panel" aria-hidden="true">
-            <div className="auth-brand-mark">
-              <Zap size={22} />
-            </div>
-            <div>
-              <p className="auth-eyebrow">AutoFlow Workspace</p>
-              <h2>AI Facebook Sales Intelligence</h2>
-              <p className="auth-brand-copy">Quản lý workspace, tài khoản Facebook và automation theo từng tổ chức.</p>
-            </div>
-            <div className="auth-status-list">
-              <div><span /> Browser workspace</div>
-              <div><span /> Lead intelligence</div>
-              <div><span /> Team approval flow</div>
-            </div>
-          </aside>
-        )}
-        <div className="auth-form-panel">{children}</div>
-      </section>
-    </main>
-  );
-}
-
-function AuthHeader({ icon, title, subtitle }: { icon: ReactNode; title: string; subtitle: string }) {
-  return (
-    <div className="auth-header">
-      <div className="auth-header-icon">{icon}</div>
-      <h1>{title}</h1>
-      <p>{subtitle}</p>
-    </div>
-  );
-}
-
-function AuthDivider() {
-  return (
-    <div className="auth-divider">
-      <span />
-      <small>hoặc</small>
-      <span />
-    </div>
   );
 }

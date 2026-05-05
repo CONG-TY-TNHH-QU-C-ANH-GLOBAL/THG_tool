@@ -150,7 +150,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		return "", false
 	}
 	if ok, msg := facebookScopePreflight(prompt); !ok {
-		a.logPrompt(source, prompt, msg, "facebook_scope_guard", "", true)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "facebook_scope_guard", "", true)
 		return msg, true
 	}
 
@@ -181,7 +181,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	}
 	if err := validateBrainPlan(plan); err != nil {
 		msg := "Agent Brain returned an unsafe or invalid plan, so no automation was executed.\n\nDetail: " + err.Error()
-		a.logPrompt(source, prompt, msg, "brain_invalid_plan", mustJSON(plan), false)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_invalid_plan", mustJSON(plan), false)
 		return msg, true
 	}
 
@@ -190,7 +190,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		if msg == "" {
 			msg = facebookScopeGuardMessage()
 		}
-		a.logPrompt(source, prompt, msg, "brain_refuse", mustJSON(plan), true)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_refuse", mustJSON(plan), true)
 		return msg, true
 	}
 
@@ -199,7 +199,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		if msg == "" {
 			msg = facebookActionNotExecutedMessage()
 		}
-		a.logPrompt(source, prompt, msg, "brain_"+strings.ToLower(plan.Decision), mustJSON(plan), true)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_"+strings.ToLower(plan.Decision), mustJSON(plan), true)
 		if strings.EqualFold(plan.Decision, "chat") {
 			a.learnFromPrompt(prompt)
 		}
@@ -208,13 +208,13 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 
 	if actionPlanNeedsProfile(plan) {
 		if ok, msg := businessCalibrationPreflight(userContext, prompt); !ok {
-			a.logPrompt(source, prompt, msg, "brain_business_preflight", mustJSON(plan), false)
+			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_business_preflight", mustJSON(plan), false)
 			return msg, true
 		}
 	}
 	if actionPlanNeedsBrowser(plan) {
 		if ok, msg := facebookBrowserPreflight(accounts, selectedAccountID); !ok {
-			a.logPrompt(source, prompt, msg, "brain_browser_preflight", mustJSON(plan), false)
+			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_browser_preflight", mustJSON(plan), false)
 			return msg, true
 		}
 		if selectedAccountID <= 0 {
@@ -223,7 +223,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	}
 	if a.ActionHandler == nil {
 		msg := "Action handler is not configured; Agent Brain plan was validated but not executed."
-		a.logPrompt(source, prompt, msg, "brain_no_action_handler", mustJSON(plan), false)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_no_action_handler", mustJSON(plan), false)
 		return msg, true
 	}
 
@@ -253,7 +253,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	if !success && strings.TrimSpace(responseText) == "" {
 		responseText = "Agent Brain plan was validated, but no action completed successfully."
 	}
-	a.logPrompt(source, prompt, responseText, "brain_"+firstAction, firstArgs, success)
+	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, "brain_"+firstAction, firstArgs, success)
 	if success && firstAction != "" {
 		a.updateMemory(prompt, firstAction, firstArgs)
 		if isCrawlerTool(firstAction) {

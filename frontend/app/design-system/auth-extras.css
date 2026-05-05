@@ -1,0 +1,141 @@
+/* Auth-specific layout — split-pane shell from /design-system/templates/auth.html.
+ * Loaded after components.css so .input + .btn etc. cascade correctly. */
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.auth-side {
+  background: var(--bg-elev);
+  border-right: 1px solid var(--line);
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-side::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 40px 40px;
+  -webkit-mask-image: radial-gradient(ellipse at top left, #000, transparent 70%);
+          mask-image: radial-gradient(ellipse at top left, #000, transparent 70%);
+}
+
+.auth-side > * { position: relative; }
+
+.auth-form-wrap {
+  display: grid;
+  place-items: center;
+  padding: 48px;
+}
+
+.auth-form {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-form h1 {
+  font-size: 32px;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.auth-form .sub {
+  color: var(--text-mute);
+  margin-bottom: 32px;
+  font-size: 14px;
+}
+
+.auth-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin: 24px 0;
+}
+
+.auth-divider::before, .auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-foot {
+  font-size: 13px;
+  color: var(--text-mute);
+  margin-top: 24px;
+  text-align: center;
+}
+
+.auth-foot a, .auth-foot button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.auth-back {
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 24px;
+}
+
+.auth-back:hover { color: var(--text); }
+
+.auth-error {
+  border: 1px solid var(--hot);
+  background: var(--hot-bg);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.auth-success-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--ok-bg);
+  color: var(--ok);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 24px;
+  border: 1px solid var(--ok);
+}
+
+@media (max-width: 880px) {
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-side { display: none; }
+}

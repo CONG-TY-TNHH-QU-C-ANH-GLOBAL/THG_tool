@@ -121,8 +121,10 @@ func keywordOverlap(a, b []string) float64 {
 	return float64(intersection) / float64(union)
 }
 
-func (a *Agent) logPrompt(source, prompt, response, action, args string, success bool) {
+func (a *Agent) logPrompt(orgID, accountID int64, source, prompt, response, action, args string, success bool) {
 	pl := &models.PromptLog{
+		OrgID:       orgID,
+		AccountID:   accountID,
 		Source:      source,
 		UserPrompt:  prompt,
 		AIResponse:  response,

@@ -511,6 +511,7 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 			errMsg = "Chrome Extension crawl failed"
 		}
 		_ = appStore.FailTask(c.Context(), body.TaskID, errMsg)
+		s.notifyCrawlFailure(orgID, body.AccountID, body.TaskID, errMsg)
 		return c.JSON(fiber.Map{"status": "failed", "error": errMsg})
 	}
 
@@ -518,19 +519,23 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	keywords := normalizeCrawlKeywords(append(body.Keywords, orgIntelligenceKeywords(s.db, orgID)...))
 	inserted := 0
 	fetched := 0
+	primarySourceURL := ""
 	for _, item := range body.Items {
 		content := strings.TrimSpace(item.Content)
 		if content == "" || len([]rune(content)) < 20 {
 			continue
 		}
 		fetched++
-		score, category, signals := scoreConnectorCrawlItem(content, keywords, item.Reactions, item.Comments, item.Shares, guidance)
-		if category == "cold" || category == "rejected" {
-			continue
-		}
 		sourceURL := strings.TrimSpace(item.SourceURL)
 		if sourceURL == "" {
 			sourceURL = strings.TrimSpace(item.ID)
+		}
+		if primarySourceURL == "" && sourceURL != "" {
+			primarySourceURL = sourceURL
+		}
+		score, category, signals := scoreConnectorCrawlItem(content, keywords, item.Reactions, item.Comments, item.Shares, guidance)
+		if category == "cold" || category == "rejected" {
+			continue
 		}
 		lead := store.TaskLead{
 			TaskID:           body.TaskID,
@@ -567,6 +572,7 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		}
 	}
 	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
+	s.notifyCrawlSummary(orgID, body.AccountID, body.TaskID, intent, fetched, inserted, primarySourceURL)
 	return c.JSON(fiber.Map{
 		"status":   "stored",
 		"task_id":  body.TaskID,

@@ -181,6 +181,8 @@ func (s *Store) migrate() error {
 
 	CREATE TABLE IF NOT EXISTS prompt_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL DEFAULT 0,
+		account_id INTEGER NOT NULL DEFAULT 0,
 		source TEXT NOT NULL DEFAULT 'telegram',
 		user_prompt TEXT NOT NULL,
 		ai_response TEXT DEFAULT '',
@@ -371,6 +373,9 @@ func (s *Store) migrate() error {
 		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_org_status ON outbound_messages(org_id, status, type)`)
+	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created ON prompt_logs(org_id, created_at DESC)`)
 	// Legacy jobs table remains for existing SQLite databases and
 	// historical dashboard data. New connector execution uses
 	// connector_commands, scheduler_jobs, app_tasks and outbound_messages.

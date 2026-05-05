@@ -1,4 +1,4 @@
-import { get, post } from './api';
+import { del, get, post } from './api';
 
 export interface AgentChatHistoryItem {
   id: number;
@@ -43,4 +43,12 @@ export async function getAgentHistory(limit = 20): Promise<AgentChatHistoryItem[
 export async function sendAgentPrompt(prompt: string, accountId?: number): Promise<string> {
   const res = await post<{ response: string }>('/ai/prompt', { prompt, account_id: accountId });
   return res.response;
+}
+
+export async function deleteAgentHistoryItem(id: number): Promise<void> {
+  await del(`/ai/history/${id}`);
+}
+
+export async function clearAgentHistory(): Promise<void> {
+  await del('/ai/history');
 }

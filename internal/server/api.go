@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -350,6 +351,8 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// AI Agent — all authenticated users
 	r.Post("/ai/prompt", s.aiPrompt)
 	r.Get("/ai/history", s.aiHistory)
+	r.Delete("/ai/history", s.aiDeleteHistory)
+	r.Delete("/ai/history/:id", s.aiDeleteHistoryItem)
 
 	// Outbound messages — sales handles approve/reject; admin bulk-deletes
 	r.Get("/outbox", s.getOutbox)
@@ -604,7 +607,19 @@ func (s *Server) getLeads(c *fiber.Ctx) error {
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 	orgID, _ := c.Locals("org_id").(int64)
 
-	leads, err := s.db.GetLeadsFiltered(score, niche, limit, offset, orgID)
+	var (
+		leads []models.Lead
+		err   error
+	)
+	// The Chrome Extension crawl path stores into task_leads first, then best-effort
+	// mirrors into legacy leads. Merge both tables for the main dashboard view so
+	// production users immediately see extension-crawled results even when the
+	// legacy mirror is empty or delayed.
+	if niche == "" && offset == 0 {
+		leads, err = s.db.GetAutomationLeadsForOrg(orgID, score, limit)
+	} else {
+		leads, err = s.db.GetLeadsFiltered(score, niche, limit, offset, orgID)
+	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -1008,11 +1023,39 @@ func (s *Server) aiPrompt(c *fiber.Ctx) error {
 
 func (s *Server) aiHistory(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
-	history, err := s.db.GetPromptHistory(limit)
+	if limit <= 0 {
+		limit = 20
+	}
+	orgID, _ := c.Locals("org_id").(int64)
+	history, err := s.db.GetPromptHistoryForOrg(orgID, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"history": history, "count": len(history)})
+}
+
+func (s *Server) aiDeleteHistoryItem(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("org_id").(int64)
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid history id"})
+	}
+	if err := s.db.DeletePromptLogForOrg(orgID, id); err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(404).JSON(fiber.Map{"error": "history item not found"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "deleted_id": id})
+}
+
+func (s *Server) aiDeleteHistory(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("org_id").(int64)
+	deleted, err := s.db.DeleteAllPromptLogsForOrg(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "deleted": deleted})
 }
 
 // --- v3: Outbound Message Handlers ---

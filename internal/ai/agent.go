@@ -151,16 +151,16 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 		return response, nil
 	}
 	if ok, msg := facebookScopePreflight(prompt); !ok {
-		a.logPrompt(source, prompt, msg, "facebook_scope_guard", "", true)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "facebook_scope_guard", "", true)
 		return msg, nil
 	}
 	if requiresFacebookBrowser(prompt) {
 		if ok, msg := businessCalibrationPreflight(userContext, prompt); !ok {
-			a.logPrompt(source, prompt, msg, "business_preflight", "", false)
+			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "business_preflight", "", false)
 			return msg, nil
 		}
 		if ok, msg := facebookBrowserPreflight(accounts, selectedAccountID); !ok {
-			a.logPrompt(source, prompt, msg, "browser_preflight", "", false)
+			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "browser_preflight", "", false)
 			return msg, nil
 		}
 		if selectedAccountID <= 0 {
@@ -177,7 +177,7 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 		}
 		responseText := polishActionResponse(action, raw, prompt)
 		actionArgs := mustJSON(args)
-		a.logPrompt(source, prompt, responseText, action, actionArgs, success)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, action, actionArgs, success)
 		if success {
 			a.updateMemory(prompt, action, actionArgs)
 			if action == "scrape_group" {
@@ -336,7 +336,7 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 	}
 
 	// Log prompt for learning
-	a.logPrompt(source, prompt, responseText, actionTaken, actionArgs, success)
+	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, actionTaken, actionArgs, success)
 
 	// Update memory for learning
 	if success && actionTaken != "chat" {

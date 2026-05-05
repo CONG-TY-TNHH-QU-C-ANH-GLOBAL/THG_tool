@@ -1,127 +1,131 @@
 import type { CSSProperties } from 'react';
 
+/**
+ * Compatibility shim. Historical components used inline styles via the
+ * `theme` object below; the new design system (see /design-system/)
+ * exposes the canonical palette via CSS variables on :root. This file
+ * re-points every legacy key at a CSS var() so anything still referencing
+ * `theme.bg` etc renders with the new tokens until that component is
+ * rewritten to use semantic class names from components.css.
+ *
+ * Do NOT add new entries here. New code should reach for class names
+ * (`.btn .btn-primary`, `.card`, `.tag-hot`, …) or `var(--…)` directly.
+ */
 export const theme = {
-  bg:         '#07111f',
-  bgSoft:     '#0b1730',
-  surface:    'rgba(255, 255, 255, 0.078)',
-  surfaceAlt: 'rgba(255, 255, 255, 0.052)',
-  surfaceHot: 'rgba(255, 255, 255, 0.12)',
-  border:     'rgba(255, 255, 255, 0.16)',
-  borderAlt:  'rgba(255, 255, 255, 0.09)',
-  text:       '#f7fbff',
-  textMuted:  '#b8c6dc',
-  textFaint:  '#8190aa',
-  textWhite:  '#ffffff',
-  primary:    '#1856FF',
-  primaryDark:'#0f3bc4',
-  primaryLight:'#7da4ff',
-  primaryPale: '#d7e4ff',
-  green:      '#07CA6B',
-  greenDark:  '#079a55',
-  red:        '#EA2143',
-  yellow:     '#E89558',
-  blue:       '#38bdf8',
-  info:       '#38bdf8',
-  secondary:  '#3A344E',
-  facebook:   '#1877f2',
-  focus:      'rgba(24, 86, 255, 0.34)',
-  shadow:     '0 24px 80px rgba(0, 0, 0, 0.34)',
-  glow:       '0 0 0 1px rgba(255,255,255,0.08) inset, 0 22px 70px rgba(24, 86, 255, 0.14)',
+  bg:           'var(--bg)',
+  bgSoft:       'var(--bg-elev)',
+  surface:      'var(--bg-elev-2)',
+  surfaceAlt:   'var(--bg-elev)',
+  surfaceHot:   'rgba(255,255,255,0.06)',
+  border:       'var(--line-strong)',
+  borderAlt:    'var(--line)',
+  text:         'var(--text)',
+  textMuted:    'var(--text-mute)',
+  textFaint:    'var(--text-faint)',
+  textWhite:    'var(--text)',
+  primary:      'var(--accent)',
+  primaryDark:  'var(--accent)',
+  primaryLight: 'var(--accent)',
+  primaryPale:  'var(--accent-soft)',
+  green:        'var(--ok)',
+  greenDark:    'var(--ok)',
+  red:          'var(--hot)',
+  yellow:       'var(--warn)',
+  blue:         'var(--info)',
+  info:         'var(--info)',
+  secondary:    'var(--text-faint)',
+  facebook:     'var(--info)',
+  focus:        'var(--accent-soft)',
+  shadow:       '0 24px 80px rgba(0,0,0,0.34)',
+  glow:         'none',
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  Hot:        theme.red,
-  Warm:       theme.yellow,
-  Cold:       theme.blue,
-  Active:     theme.green,
-  Converted:  theme.primaryLight,
-  Pending:    theme.textFaint,
-  pending:    theme.textFaint,
-  synced:     theme.green,
-  error:      theme.red,
-  needs_auth: theme.yellow,
-  Live:       theme.green,
-  Ended:      theme.textFaint,
-  Suspended:  theme.red,
-  Enterprise: theme.yellow,
-  Pro:        theme.primaryLight,
-  Starter:    theme.textMuted,
+  Hot:        'var(--hot)',
+  Warm:       'var(--warn)',
+  Cold:       'var(--info)',
+  Active:     'var(--ok)',
+  Converted:  'var(--accent)',
+  Pending:    'var(--text-faint)',
+  pending:    'var(--text-faint)',
+  synced:     'var(--ok)',
+  error:      'var(--hot)',
+  needs_auth: 'var(--warn)',
+  Live:       'var(--ok)',
+  Ended:      'var(--text-faint)',
+  Suspended:  'var(--hot)',
+  Enterprise: 'var(--warn)',
+  Pro:        'var(--accent)',
+  Starter:    'var(--text-mute)',
 };
 
-export const statusColor = (s: string): string => STATUS_COLORS[s] ?? theme.textFaint;
+export const statusColor = (s: string): string => STATUS_COLORS[s] ?? 'var(--text-faint)';
 
 export const rootStyle: CSSProperties = {
-  background: `radial-gradient(circle at 12% 8%, rgba(24, 86, 255, 0.24), transparent 34%), radial-gradient(circle at 88% 18%, rgba(7, 202, 107, 0.16), transparent 30%), linear-gradient(135deg, ${theme.bg} 0%, ${theme.bgSoft} 52%, #050812 100%)`,
-  color: theme.text,
-  fontFamily: '"Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  background: 'var(--bg)',
+  color: 'var(--text)',
+  fontFamily: 'var(--font-sans)',
 };
 
 export const cardStyle = (overrides: CSSProperties = {}): CSSProperties => ({
-  background: theme.surface,
-  border: `1px solid ${theme.border}`,
-  borderRadius: 8,
-  padding: 20,
-  boxShadow: theme.glow,
-  backdropFilter: 'blur(18px) saturate(142%)',
-  WebkitBackdropFilter: 'blur(18px) saturate(142%)',
+  background: 'var(--bg-elev)',
+  border: '1px solid var(--line)',
+  borderRadius: 'var(--radius-lg)',
+  padding: 24,
   ...overrides,
 });
 
 export const inputStyle: CSSProperties = {
-  background: 'rgba(255, 255, 255, 0.075)',
-  border: `1px solid ${theme.border}`,
-  borderRadius: 8,
+  background: 'var(--bg-elev-2)',
+  border: '1px solid var(--line)',
+  borderRadius: 'var(--radius-md)',
   padding: '10px 14px',
-  color: theme.textWhite,
-  fontSize: 13,
+  color: 'var(--text)',
+  fontSize: 14,
   outline: 'none',
   width: '100%',
   boxSizing: 'border-box',
-  boxShadow: '0 1px 0 rgba(255,255,255,0.08) inset',
 };
 
 export const primaryBtn = (overrides: CSSProperties = {}): CSSProperties => ({
-  padding: '10px 20px',
-  minHeight: 40,
+  padding: '11px 18px',
+  minHeight: 38,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   gap: 8,
-  borderRadius: 8,
-  border: `1px solid rgba(255,255,255,0.18)`,
+  borderRadius: 'var(--radius-pill)',
+  border: '1px solid var(--accent)',
   cursor: 'pointer',
   fontSize: 14,
-  fontWeight: 750,
+  fontWeight: 600,
   lineHeight: 1.1,
   textAlign: 'center',
   whiteSpace: 'nowrap',
-  background: `linear-gradient(135deg, ${theme.primary} 0%, #3b82ff 100%)`,
-  color: theme.textWhite,
-  boxShadow: '0 14px 34px rgba(24, 86, 255, 0.28)',
-  transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
+  background: 'var(--accent)',
+  color: 'var(--accent-ink)',
+  transition: 'transform 0.15s ease, box-shadow 0.25s ease',
   ...overrides,
 });
 
 export const secondaryBtn = (overrides: CSSProperties = {}): CSSProperties => ({
-  padding: '10px 20px',
-  minHeight: 40,
+  padding: '11px 18px',
+  minHeight: 38,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   gap: 8,
-  borderRadius: 8,
-  border: `1px solid ${theme.border}`,
+  borderRadius: 'var(--radius-pill)',
+  border: '1px solid var(--line-strong)',
   cursor: 'pointer',
-  fontSize: 13,
-  fontWeight: 750,
+  fontSize: 14,
+  fontWeight: 500,
   lineHeight: 1.1,
   textAlign: 'center',
   whiteSpace: 'nowrap',
-  background: 'rgba(255, 255, 255, 0.055)',
-  color: theme.textMuted,
-  backdropFilter: 'blur(12px) saturate(130%)',
-  WebkitBackdropFilter: 'blur(12px) saturate(130%)',
-  transition: 'transform 160ms ease, border-color 160ms ease, background 160ms ease',
+  background: 'transparent',
+  color: 'var(--text)',
+  transition: 'transform 0.15s ease, border-color 0.25s ease, background 0.25s ease',
   ...overrides,
 });
 
@@ -131,13 +135,16 @@ export const rowStyle: CSSProperties = {
 };
 
 export const tableHeaderCell: CSSProperties = {
-  padding: '9px 14px',
+  padding: '12px 14px',
   textAlign: 'left',
-  color: theme.textFaint,
-  fontWeight: 500,
+  color: 'var(--text-faint)',
+  fontWeight: 400,
   fontSize: 11,
+  fontFamily: 'var(--font-mono)',
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
 };
 
 export const tableCell: CSSProperties = {
-  padding: '9px 14px',
+  padding: '12px 14px',
 };

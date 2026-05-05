@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, CheckCircle, Clock, Cpu, RefreshCw, Send, UserRound } from 'lucide-react';
-import { theme } from '../../constants/styles';
-import { useWorkspaces } from '../../hooks/useWorkspaces';
-import { getAgentHistory, sendAgentPrompt } from '../../services/agentChatService';
-import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
+'use client';
 
-interface WorkspaceChatViewProps { orgId: string; }
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, CheckCircle, Clock, Cpu, RefreshCw, Send, Trash2, UserRound } from 'lucide-react';
+import { useWorkspaces } from '../../hooks/useWorkspaces';
+import {
+  clearAgentHistory,
+  deleteAgentHistoryItem,
+  getAgentHistory,
+  sendAgentPrompt,
+  type AgentChatHistoryItem,
+} from '../../services/agentChatService';
+import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
+import { useLang } from '../../i18n/useLang';
+
+interface WorkspaceChatViewProps {
+  orgId: string;
+}
 
 type ChatRole = 'user' | 'assistant' | 'system';
 
@@ -15,24 +25,78 @@ interface ChatMessage {
   text: string;
   time: string;
   ok?: boolean;
+  historyId?: number;
 }
 
 function nowLabel() {
-  return new Date().toLocaleTimeString('vi', { hour: '2-digit', minute: '2-digit' });
+  return new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
-function scheduleLabel(value: string | undefined) {
+function historyTimeLabel(value: string) {
+  const ts = new Date(value);
+  if (Number.isNaN(ts.getTime())) return nowLabel();
+  return ts.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function scheduleLabel(value: string | undefined, lang: 'vi' | 'en') {
   if (!value) return '-';
-  const ts = new Date(value).getTime();
-  if (!Number.isFinite(ts)) return '-';
-  const diff = ts - Date.now();
-  if (diff <= 0) return 'đang chờ lượt chạy';
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return '-';
+  const diff = timestamp - Date.now();
+  if (diff <= 0) return lang === 'vi' ? 'dang cho' : 'pending';
   const minutes = Math.ceil(diff / 60000);
-  return minutes < 60 ? `còn ${minutes} phút` : new Date(value).toLocaleString('vi', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  if (minutes < 60) {
+    return lang === 'vi' ? `con ${minutes} phut` : `in ${minutes} min`;
+  }
+  return new Date(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function flattenHistory(items: AgentChatHistoryItem[]): ChatMessage[] {
+  const next: ChatMessage[] = [];
+  for (const item of items) {
+    const time = historyTimeLabel(item.createdAt);
+    next.push({
+      id: `${item.id}-u`,
+      historyId: item.id,
+      role: 'user',
+      text: item.userPrompt,
+      time,
+      ok: item.success,
+    });
+    next.push({
+      id: `${item.id}-a`,
+      historyId: item.id,
+      role: 'assistant',
+      text: item.aiResponse,
+      time,
+      ok: item.success,
+    });
+  }
+  return next;
+}
+
+function workspaceIdentityLabel(workspace: {
+  fbDisplayName?: string;
+  fbUsername?: string;
+  email?: string;
+  fbUserId?: string;
+  accountName: string;
+}) {
+  return workspace.fbDisplayName
+    || workspace.fbUsername
+    || workspace.email
+    || workspace.fbUserId
+    || workspace.accountName;
 }
 
 export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   void orgId;
+  const { lang, t } = useLang();
   const { workspaces, refresh } = useWorkspaces();
   const [accountId, setAccountId] = useState<number | ''>('');
   const [draft, setDraft] = useState('');
@@ -41,11 +105,17 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingIntents, setLoadingIntents] = useState(true);
   const [sending, setSending] = useState(false);
+  const [deletingHistoryId, setDeletingHistoryId] = useState<number | null>(null);
+  const [clearingHistory, setClearingHistory] = useState(false);
+  const [compact, setCompact] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const activeAccounts = useMemo(() => workspaces.filter(w => w.running || w.loggedIn), [workspaces]);
-  const selectedAccount = activeAccounts.find(w => w.accountId === accountId);
-  const enabledIntents = crawlIntents.filter(i => i.enabled);
+  const activeAccounts = useMemo(
+    () => workspaces.filter(workspace => workspace.running || workspace.loggedIn),
+    [workspaces],
+  );
+  const selectedAccount = activeAccounts.find(workspace => workspace.accountId === accountId);
+  const enabledIntents = crawlIntents.filter(intent => intent.enabled);
 
   const loadCrawlIntents = useCallback(async () => {
     setLoadingIntents(true);
@@ -58,228 +128,355 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
     }
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      setMessages(flattenHistory(await getAgentHistory(18)));
+    } catch {
+      setMessages([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (accountId !== '' || activeAccounts.length === 0) return;
-    const loggedIn = activeAccounts.find(w => w.loggedIn);
+    const loggedIn = activeAccounts.find(workspace => workspace.loggedIn);
     setAccountId((loggedIn ?? activeAccounts[0]).accountId);
   }, [accountId, activeAccounts]);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoadingHistory(true);
-    getAgentHistory(18)
-      .then(items => {
-        if (cancelled) return;
-        const next: ChatMessage[] = [];
-        for (const item of items) {
-          const time = new Date(item.createdAt).toLocaleTimeString('vi', { hour: '2-digit', minute: '2-digit' });
-          next.push({ id: `${item.id}-u`, role: 'user', text: item.userPrompt, time, ok: item.success });
-          next.push({ id: `${item.id}-a`, role: 'assistant', text: item.aiResponse, time, ok: item.success });
-        }
-        setMessages(next);
-      })
-      .catch(() => setMessages([]))
-      .finally(() => { if (!cancelled) setLoadingHistory(false); });
-    return () => { cancelled = true; };
-  }, []);
+    void loadHistory();
+  }, [loadHistory]);
 
   useEffect(() => {
     void loadCrawlIntents();
   }, [loadCrawlIntents]);
 
   useEffect(() => {
+    const updateCompact = () => setCompact(window.innerWidth < 1180);
+    updateCompact();
+    window.addEventListener('resize', updateCompact);
+    return () => window.removeEventListener('resize', updateCompact);
+  }, []);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
+
+  const appendSystemMessage = (text: string) => {
+    setMessages(prev => [
+      ...prev,
+      { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(), ok: false },
+    ]);
+  };
 
   const handleSend = async () => {
     const text = draft.trim();
     if (!text || sending) return;
     setDraft('');
-    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', text, time: nowLabel(), ok: true };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [
+      ...prev,
+      { id: `pending-user-${Date.now()}`, role: 'user', text, time: nowLabel(), ok: true },
+    ]);
     setSending(true);
     try {
-      const response = await sendAgentPrompt(text, accountId === '' ? undefined : accountId);
-      setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', text: response, time: nowLabel(), ok: true }]);
+      await sendAgentPrompt(text, accountId === '' ? undefined : accountId);
+      await loadHistory();
       void refresh();
       void loadCrawlIntents();
-    } catch (e) {
-      setMessages(prev => [...prev, {
-        id: `e-${Date.now()}`,
-        role: 'system',
-        text: e instanceof Error ? e.message : 'Agent chưa phản hồi',
-        time: nowLabel(),
-        ok: false,
-      }]);
+    } catch (error) {
+      appendSystemMessage(
+        error instanceof Error ? error.message : (lang === 'vi' ? 'Copilot chua phan hoi.' : 'Copilot did not reply.'),
+      );
     } finally {
       setSending(false);
     }
   };
 
+  const handleDeleteHistoryItem = async (historyId: number) => {
+    if (deletingHistoryId === historyId || sending) return;
+    if (!window.confirm(lang === 'vi' ? 'Xoa luot chat nay?' : 'Delete this turn?')) return;
+    setDeletingHistoryId(historyId);
+    try {
+      await deleteAgentHistoryItem(historyId);
+      setMessages(prev => prev.filter(message => message.historyId !== historyId));
+    } catch (error) {
+      appendSystemMessage(
+        error instanceof Error ? error.message : (lang === 'vi' ? 'Khong the xoa.' : 'Could not delete.'),
+      );
+    } finally {
+      setDeletingHistoryId(null);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (clearingHistory || sending) return;
+    if (!window.confirm(lang === 'vi' ? 'Xoa toan bo lich su Copilot?' : 'Clear entire Copilot history?')) return;
+    setClearingHistory(true);
+    try {
+      await clearAgentHistory();
+      setMessages([]);
+    } catch (error) {
+      appendSystemMessage(
+        error instanceof Error ? error.message : (lang === 'vi' ? 'Khong xoa duoc.' : 'Could not clear.'),
+      );
+    } finally {
+      setClearingHistory(false);
+    }
+  };
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 14, minHeight: 'calc(100vh - 126px)' }}>
-      <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', minHeight: 520 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: `1px solid ${theme.border}` }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: theme.primary, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-            <Bot size={16} color="#fff" />
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ color: theme.text, fontSize: 14, fontWeight: 700 }}>Facebook Copilot</p>
-            <p style={{ color: theme.textFaint, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {selectedAccount ? `${selectedAccount.accountName} · Facebook-only AI chat` : 'Facebook-only AI chat'}
-            </p>
-          </div>
-          <button
-            onClick={() => void refresh()}
-            style={{ marginLeft: 'auto', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, padding: '7px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
-          >
-            <RefreshCw size={12} /> Refresh
-          </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 56px - 48px)' }}>
+      <div>
+        <div className="eyebrow">
+          <span className="dot" />
+          COPILOT
         </div>
-
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {loadingHistory && (
-            <div style={{ color: theme.textMuted, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <RefreshCw size={13} className="spin" /> Đang tải lịch sử
-            </div>
-          )}
-          {!loadingHistory && messages.length === 0 && (
-            <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: theme.textMuted, fontSize: 13 }}>
-              Bắt đầu bằng một nhu cầu Facebook: tìm tệp khách, phân tích group, chăm sóc fanpage, soạn comment hoặc inbox.
-            </div>
-          )}
-          {messages.map(m => {
-            const isUser = m.role === 'user';
-            const isSystem = m.role === 'system';
-            return (
-              <div key={m.id} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-                <div style={{
-                  maxWidth: '76%',
-                  background: isUser ? theme.primary : isSystem ? '#7f1d1d55' : theme.border,
-                  border: `1px solid ${isSystem ? '#ef444466' : isUser ? '#6366f1' : '#374151'}`,
-                  color: '#fff',
-                  borderRadius: 12,
-                  padding: '10px 12px',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: 1.5,
-                  fontSize: 13,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, color: isUser ? '#c7d2fe' : theme.textFaint, fontSize: 11 }}>
-                    {isUser ? <UserRound size={12} /> : <Bot size={12} />}
-                    <span>{isUser ? 'Bạn' : isSystem ? 'System' : 'Facebook Copilot'}</span>
-                    <span style={{ marginLeft: 'auto' }}>{m.time}</span>
-                  </div>
-                  {m.text}
-                </div>
-              </div>
-            );
-          })}
-          {sending && (
-            <div style={{ color: theme.textMuted, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <RefreshCw size={13} className="spin" /> Copilot đang xử lý trong phạm vi Facebook
-            </div>
-          )}
-        </div>
-
-        <div style={{ padding: 12, borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-          <textarea
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder="Hỏi hoặc ra lệnh về Facebook: tìm leads, phân tích group/fanpage, soạn comment, inbox, posting..."
-            rows={3}
-            style={{ flex: 1, resize: 'none', background: theme.border, border: '1px solid #374151', borderRadius: 9, color: '#fff', outline: 'none', padding: '10px 12px', fontSize: 13, lineHeight: 1.5 }}
-          />
-          <button
-            onClick={() => void handleSend()}
-            disabled={sending || !draft.trim()}
-            style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', background: theme.primary, border: 'none', borderRadius: 9, cursor: sending || !draft.trim() ? 'not-allowed' : 'pointer', opacity: sending || !draft.trim() ? 0.55 : 1 }}
-          >
-            <Send size={16} color="#fff" />
-          </button>
-        </div>
+        <h2 style={{ fontSize: 24, marginTop: 6 }}>
+          {lang === 'vi'
+            ? <>Mot prompt - <span className="title-mono">agent dieu phoi tat ca.</span></>
+            : <>One prompt - <span className="title-mono">the agent runs everything.</span></>}
+        </h2>
+        <p style={{ color: 'var(--text-mute)', fontSize: 13 }}>{t.views.chatSub}</p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12 }}>
-          <p style={{ color: theme.text, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Account</p>
-          <select
-            value={accountId}
-            onChange={e => setAccountId(e.target.value ? Number(e.target.value) : '')}
-            style={{ width: '100%', background: theme.border, border: '1px solid #374151', color: '#fff', borderRadius: 8, padding: '9px 10px', outline: 'none', fontSize: 12 }}
-          >
-            <option value="">Tự chọn</option>
-            {activeAccounts.map(w => (
-              <option key={w.accountId} value={w.accountId}>{w.email ? `${w.accountName} · ${w.email}` : w.accountName}</option>
-            ))}
-          </select>
-          {activeAccounts.length === 0 && (
-            <div style={{ marginTop: 10, border: '1px solid #22d3ee44', background: '#08334433', borderRadius: 8, padding: 10 }}>
-              <p style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#67e8f9', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', marginBottom: 5 }}>
-                <Cpu size={13} /> CYBERTECH NOTE
-              </p>
-              <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.5 }}>
-                Chưa có Facebook workspace. Tạo một phiên Browser trước để agent có session thật khi chạy crawler.
-              </p>
+      <div style={{ display: 'grid', gridTemplateColumns: compact ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 300px', gap: 16, flex: 1, minHeight: 480 }}>
+        <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center' }}>
+              <Bot size={16} />
             </div>
-          )}
-          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12 }}>
-              <span>Running</span><span>{selectedAccount?.running ? 'yes' : 'no'}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12 }}>
-              <span>Session</span><span style={{ color: selectedAccount?.loggedIn ? '#4ade80' : theme.textMuted }}>{selectedAccount?.loggedIn ? 'saved' : 'pending'}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12, gap: 8 }}>
-              <span>Email</span><span style={{ color: selectedAccount?.email ? theme.text : theme.textFaint, overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedAccount?.email || 'chưa xác minh'}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: theme.textMuted, fontSize: 12, gap: 8 }}>
-              <span>FB ID</span><span style={{ color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedAccount?.fbUserId ?? '-'}</span>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12 }}>
-          <p style={{ color: theme.text, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Connector</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.textMuted, fontSize: 12 }}>
-            <CheckCircle size={14} color={activeAccounts.length > 0 ? '#4ade80' : theme.textMuted} />
-            <span>{activeAccounts.length} Chrome workspace</span>
-          </div>
-        </div>
-
-        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12 }}>
-          <p style={{ color: theme.text, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Automation 24/7</p>
-          {loadingIntents && (
-            <div style={{ color: theme.textMuted, fontSize: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
-              <RefreshCw size={13} className="spin" /> Đang tải lịch crawl
-            </div>
-          )}
-          {!loadingIntents && enabledIntents.length === 0 && (
-            <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.5 }}>
-              Chưa có lịch tự động. Prompt crawl đầu tiên sẽ dạy hệ thống nguồn và tệp khách cần theo dõi.
-            </p>
-          )}
-          {!loadingIntents && enabledIntents.slice(0, 4).map(intent => (
-            <div key={intent.id} style={{ borderTop: `1px solid ${theme.border}`, paddingTop: 9, marginTop: 9 }}>
-              <p style={{ color: theme.text, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {intent.name || intent.source_type}
-              </p>
-              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {intent.source_url}
-              </p>
-              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: theme.textMuted, fontSize: 11 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Clock size={12} /> mỗi {intent.interval_minutes} phút
-                </span>
-                <span style={{ color: intent.last_error ? '#fca5a5' : '#86efac' }}>{intent.last_error ? 'có lỗi' : scheduleLabel(intent.next_run_at)}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 500, color: 'var(--text)' }}>Facebook Copilot</div>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedAccount
+                  ? `${selectedAccount.accountName} | Facebook-only`
+                  : 'Facebook-only AI chat'}
               </div>
             </div>
-          ))}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void loadHistory()}>
+              <RefreshCw size={12} />
+              {t.common.refresh}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => void handleClearHistory()}
+              disabled={clearingHistory || messages.length === 0}
+              style={{ color: 'var(--hot)', opacity: clearingHistory || messages.length === 0 ? 0.5 : 1 }}
+            >
+              <Trash2 size={12} />
+              {clearingHistory
+                ? (lang === 'vi' ? 'Dang xoa...' : 'Clearing...')
+                : (lang === 'vi' ? 'Xoa lich su' : 'Clear history')}
+            </button>
+          </div>
+
+          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {loadingHistory && (
+              <div style={{ color: 'var(--text-mute)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="skeleton" style={{ width: 220, height: 14 }} />
+              </div>
+            )}
+
+            {!loadingHistory && messages.length === 0 && (
+              <div className="empty" style={{ margin: 'auto' }}>
+                <div className="eyebrow">
+                  <span className="dot" />
+                  PROMPT
+                </div>
+                <h3>{lang === 'vi' ? 'Bat dau bang mot nhu cau Facebook' : 'Start with a Facebook intent'}</h3>
+                <p>
+                  {lang === 'vi'
+                    ? 'Tim tep khach, phan tich group/fanpage, soan comment, inbox, posting - Copilot dieu phoi tat ca.'
+                    : 'Find prospects, analyze groups/pages, draft replies, and publish posts - Copilot orchestrates everything.'}
+                </p>
+              </div>
+            )}
+
+            {messages.map(message => {
+              const isUser = message.role === 'user';
+              const isSystem = message.role === 'system';
+              const canDelete = message.role === 'assistant' && !!message.historyId;
+              const deletingThis = canDelete && deletingHistoryId === message.historyId;
+
+              return (
+                <div key={message.id} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+                  <div
+                    style={{
+                      maxWidth: compact ? '100%' : '76%',
+                      background: isUser ? 'var(--accent)' : isSystem ? 'var(--hot-bg)' : 'var(--bg-elev-2)',
+                      color: isUser ? 'var(--accent-ink)' : 'var(--text)',
+                      border: isSystem ? '1px solid var(--hot)' : isUser ? 'none' : '1px solid var(--line)',
+                      borderRadius: 12,
+                      padding: '10px 14px',
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.5,
+                      fontSize: 13.5,
+                    }}
+                  >
+                    <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 10, opacity: 0.7 }}>
+                      {isUser ? <UserRound size={11} /> : <Bot size={11} />}
+                      <span>{isUser ? (lang === 'vi' ? 'Ban' : 'You') : isSystem ? 'System' : 'Copilot'}</span>
+                      <span style={{ marginLeft: 'auto' }}>{message.time}</span>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteHistoryItem(message.historyId!)}
+                          disabled={!!deletingThis}
+                          aria-label="Delete turn"
+                          style={{
+                            background: 'transparent',
+                            border: 0,
+                            color: 'inherit',
+                            cursor: deletingThis ? 'not-allowed' : 'pointer',
+                            padding: 0,
+                            display: 'grid',
+                            placeItems: 'center',
+                          }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                    {message.text}
+                  </div>
+                </div>
+              );
+            })}
+
+            {sending && (
+              <div className="mono" style={{ color: 'var(--text-mute)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="pulse" />
+                {lang === 'vi' ? 'Copilot dang xu ly...' : 'Copilot is thinking...'}
+              </div>
+            )}
+          </div>
+
+          <div style={{ padding: 12, borderTop: '1px solid var(--line)', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: compact ? 'wrap' : 'nowrap' }}>
+            <textarea
+              value={draft}
+              onChange={event => setDraft(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  void handleSend();
+                }
+              }}
+              placeholder={
+                lang === 'vi'
+                  ? 'Hoi hoac ra lenh: tim leads, phan tich group, soan comment / inbox / post... (Ctrl+Enter)'
+                  : 'Ask or command: find leads, analyse groups, draft comment / inbox / post... (Ctrl+Enter)'
+              }
+              rows={3}
+              className="input"
+              style={{ flex: 1, minWidth: compact ? '100%' : 0, resize: 'none', lineHeight: 1.5 }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary btn-icon"
+              onClick={() => void handleSend()}
+              disabled={sending || !draft.trim()}
+              style={{ width: 42, height: 42, opacity: sending || !draft.trim() ? 0.55 : 1 }}
+              aria-label="Send"
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="card">
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{lang === 'vi' ? 'TAI KHOAN' : 'ACCOUNT'}</div>
+            <select
+              className="input"
+              value={accountId}
+              onChange={event => setAccountId(event.target.value ? Number(event.target.value) : '')}
+            >
+              <option value="">{lang === 'vi' ? 'Tu chon' : 'Auto'}</option>
+              {activeAccounts.map(workspace => (
+                <option key={workspace.accountId} value={workspace.accountId}>
+                  {workspace.accountName} | {workspaceIdentityLabel(workspace)}
+                </option>
+              ))}
+            </select>
+
+            {activeAccounts.length === 0 && (
+              <div className="banner" style={{ marginTop: 12, fontSize: 12 }}>
+                <Cpu size={14} style={{ color: 'var(--info)', flexShrink: 0 }} />
+                <div>
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--text-faint)', marginBottom: 4 }}>
+                    NOTE
+                  </div>
+                  {lang === 'vi'
+                    ? 'Chua co Facebook workspace san sang. Tao phien Browser truoc de Copilot co session that.'
+                    : 'No ready Facebook workspace yet. Open a Browser session first.'}
+                </div>
+              </div>
+            )}
+
+            {selectedAccount && (
+              <dl style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                {[
+                  [lang === 'vi' ? 'Running' : 'Running', selectedAccount.running ? 'yes' : 'no'],
+                  [lang === 'vi' ? 'Session' : 'Session', selectedAccount.loggedIn ? 'saved' : 'pending'],
+                  [lang === 'vi' ? 'Identity' : 'Identity', workspaceIdentityLabel(selectedAccount)],
+                  [lang === 'vi' ? 'FB ID' : 'FB ID', selectedAccount.fbUserId ?? '-'],
+                ].map(([key, value]) => (
+                  <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <dt style={{ color: 'var(--text-faint)' }}>{key}</dt>
+                    <dd className="mono" style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="eyebrow" style={{ marginBottom: 8 }}>CONNECTOR</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-mute)', fontSize: 13 }}>
+              <CheckCircle size={14} style={{ color: activeAccounts.length > 0 ? 'var(--ok)' : 'var(--text-faint)' }} />
+              <span className="mono tabular">{activeAccounts.length}</span>
+              <span>{lang === 'vi' ? 'Chrome workspace' : 'Chrome workspace'}</span>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="eyebrow" style={{ marginBottom: 8 }}>AUTOMATION 24/7</div>
+            {loadingIntents && <div className="skeleton" style={{ height: 14, marginTop: 4 }} />}
+            {!loadingIntents && enabledIntents.length === 0 && (
+              <p style={{ fontSize: 12, lineHeight: 1.5 }}>
+                {lang === 'vi'
+                  ? 'Chua co lich tu dong. Prompt crawl dau tien se day he thong nguon can theo doi.'
+                  : 'No automation schedule yet. The first crawl prompt teaches the system what to watch.'}
+              </p>
+            )}
+
+            {!loadingIntents && enabledIntents.slice(0, 4).map(intent => (
+              <div key={intent.id} style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {intent.name || intent.source_type}
+                </div>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 }}>
+                  {intent.source_url}
+                </div>
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-mute)' }}>
+                    <Clock size={11} />
+                    {lang === 'vi' ? `moi ${intent.interval_minutes} phut` : `every ${intent.interval_minutes} min`}
+                  </span>
+                  <span className="mono" style={{ color: intent.last_error ? 'var(--hot)' : 'var(--ok)' }}>
+                    {intent.last_error
+                      ? (lang === 'vi' ? 'co loi' : 'error')
+                      : scheduleLabel(intent.next_run_at, lang)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -1,19 +1,33 @@
+'use client';
+
 import { useState, useEffect, lazy, Suspense } from 'react';
 import type { Organization } from '../types';
-import { Avatar, Badge, Row } from './ui';
-import { theme, rootStyle } from '../constants/styles';
 import { get } from '../services/api';
 import SettingsPage from './SettingsPage';
+import { LangSwitch } from './ds/LangSwitch';
+import { DensitySwitch } from './ds/DensitySwitch';
+import { useLang } from '../i18n/useLang';
 import {
-  Users, Globe, MessageSquare, FileText, MessageCircle,
-  Trophy, Database, Settings, Zap, Bell, Bot,
+  Bell,
+  Bot,
+  ChevronDown,
+  Database,
+  FileText,
+  Globe,
+  LogOut,
+  MessageCircle,
+  MessageSquare,
+  Search,
+  Settings as SettingsIcon,
+  Trophy,
+  Users,
 } from 'lucide-react';
 
-const LeadsView      = lazy(() => import('./views/LeadsView'));
+const LeadsView = lazy(() => import('./views/LeadsView'));
 const WorkspaceChatView = lazy(() => import('./views/WorkspaceChatView'));
-const BrowserView    = lazy(() => import('./views/BrowserView'));
-const InboxView      = lazy(() => import('./views/InboxView'));
-const PostingView    = lazy(() => import('./views/PostingView'));
+const BrowserView = lazy(() => import('./views/BrowserView'));
+const InboxView = lazy(() => import('./views/InboxView'));
+const PostingView = lazy(() => import('./views/PostingView'));
 const CommentingView = lazy(() => import('./views/CommentingView'));
 const LeaderboardView = lazy(() => import('./views/LeaderboardView'));
 const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
@@ -25,41 +39,36 @@ interface MainAppProps {
   goLanding: () => void;
 }
 
-interface NavItem { id: Tab; l: string; I: React.ComponentType<{ size?: number | string }>; badge?: number; }
+interface NavItem {
+  id: Tab;
+  Icon: React.ComponentType<{ size?: number | string }>;
+  badge?: number;
+}
+
 interface ThreadsBadgeResponse {
   threads?: Array<{ unread_count?: number }>;
   unread_count?: number;
 }
 
 const ADMIN_TABS: NavItem[] = [
-  { id: 'leads',       l: 'Leads',        I: Users },
-  { id: 'chat',        l: 'Chat',         I: Bot },
-  { id: 'browser',     l: 'Browser',      I: Globe },
-  { id: 'inbox',       l: 'Inbox',        I: MessageSquare },
-  { id: 'posting',     l: 'Posting',      I: FileText },
-  { id: 'commenting',  l: 'Commenting',   I: MessageCircle },
-  { id: 'leaderboard', l: 'Leaderboard',  I: Trophy },
-  { id: 'data',        l: 'Data Private', I: Database },
+  { id: 'leads', Icon: Users },
+  { id: 'chat', Icon: Bot },
+  { id: 'browser', Icon: Globe },
+  { id: 'inbox', Icon: MessageSquare },
+  { id: 'posting', Icon: FileText },
+  { id: 'commenting', Icon: MessageCircle },
 ];
 
 const STAFF_TABS: NavItem[] = [
-  { id: 'leads',       l: 'My Leads',     I: Users },
-  { id: 'chat',        l: 'Chat',         I: Bot },
-  { id: 'inbox',       l: 'Inbox',        I: MessageSquare },
-  { id: 'leaderboard', l: 'Leaderboard',  I: Trophy },
-  { id: 'data',        l: 'Data Private', I: Database },
+  { id: 'leads', Icon: Users },
+  { id: 'chat', Icon: Bot },
+  { id: 'inbox', Icon: MessageSquare },
 ];
 
-const TAB_LABELS: Record<Tab, string> = {
-  leads: 'Leads', chat: 'Chat', browser: 'Browser', inbox: 'Inbox', posting: 'Posting',
-  commenting: 'Commenting', leaderboard: 'Leaderboard', data: 'Data Private', settings: 'Settings',
-};
-
-const Spinner = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
-    <div style={{ width: 24, height: 24, border: `3px solid ${theme.border}`, borderTopColor: theme.primary, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-  </div>
-);
+const ANALYTICS_TABS: NavItem[] = [
+  { id: 'leaderboard', Icon: Trophy },
+  { id: 'data', Icon: Database },
+];
 
 function makeAbbr(name: string): string {
   const words = name.trim().split(/\s+/);
@@ -67,30 +76,42 @@ function makeAbbr(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-const ORG_COLORS = [theme.primary, theme.blue, theme.green, theme.yellow, theme.red, theme.primaryLight];
+const Spinner = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
+    <div className="skeleton" style={{ width: 220, height: 14 }} />
+  </div>
+);
 
 export default function MainApp({ role, goLanding }: MainAppProps) {
+  const { t } = useLang();
   const [tab, setTab] = useState<Tab>('leads');
-  const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: theme.primary });
+  const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: '' });
   const [inboxBadge, setInboxBadge] = useState(0);
 
   useEffect(() => {
-    get<{ org: { id: number; name: string; plan_tier: string } }>('/org').then(res => {
-      if (!res.org) return;
-      const { id, name, plan_tier } = res.org;
-      const planMap: Record<string, Organization['plan']> = { free: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
-      setOrg({
-        id,
-        name,
-        abbr: makeAbbr(name),
-        plan: planMap[plan_tier] ?? 'Starter',
-        color: ORG_COLORS[id % ORG_COLORS.length],
-      });
-    }).catch(() => {});
+    get<{ org: { id: number; name: string; plan_tier: string } }>('/org')
+      .then(response => {
+        if (!response.org) return;
+        const { id, name, plan_tier: planTier } = response.org;
+        const planMap: Record<string, Organization['plan']> = {
+          free: 'Starter',
+          pro: 'Pro',
+          enterprise: 'Enterprise',
+        };
+        setOrg({
+          id,
+          name,
+          abbr: makeAbbr(name),
+          plan: planMap[planTier] ?? 'Starter',
+          color: '',
+        });
+      })
+      .catch(() => {});
   }, []);
 
   const isAdmin = role === 'admin';
   const orgId = String(org.id);
+
   useEffect(() => {
     if (org.id <= 0) {
       setInboxBadge(0);
@@ -100,10 +121,10 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
     let cancelled = false;
     const loadInboxBadge = async () => {
       try {
-        const res = await get<ThreadsBadgeResponse>('/threads');
-        const unread = typeof res.unread_count === 'number'
-          ? res.unread_count
-          : (res.threads ?? []).reduce((sum, t) => sum + Math.max(0, Number(t.unread_count ?? 0) || 0), 0);
+        const response = await get<ThreadsBadgeResponse>('/threads');
+        const unread = typeof response.unread_count === 'number'
+          ? response.unread_count
+          : (response.threads ?? []).reduce((sum, thread) => sum + Math.max(0, Number(thread.unread_count ?? 0) || 0), 0);
         if (!cancelled) setInboxBadge(unread);
       } catch {
         if (!cancelled) setInboxBadge(0);
@@ -121,107 +142,133 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
     };
   }, [org.id]);
 
-  const tabs = (isAdmin ? ADMIN_TABS : STAFF_TABS).map(item => (
+  const mainTabs = (isAdmin ? ADMIN_TABS : STAFF_TABS).map(item => (
     item.id === 'inbox' ? { ...item, badge: inboxBadge } : item
   ));
 
+  const navLabel = (id: Tab) => {
+    const map: Record<Tab, string> = {
+      leads: t.nav.leads,
+      chat: t.nav.chat,
+      browser: t.nav.browser,
+      inbox: t.nav.inbox,
+      posting: t.nav.posting,
+      commenting: t.nav.commenting,
+      leaderboard: t.nav.leaderboard,
+      data: t.nav.dataPrivate,
+      settings: t.nav.settings,
+    };
+    return map[id];
+  };
+
   const renderView = () => {
     switch (tab) {
-      case 'leads':       return <LeadsView orgId={orgId} isAdmin={isAdmin} />;
-      case 'chat':        return <WorkspaceChatView orgId={orgId} />;
-      case 'browser':     return <BrowserView orgId={orgId} />;
-      case 'inbox':       return <InboxView orgId={orgId} />;
-      case 'posting':     return <PostingView orgId={orgId} />;
-      case 'commenting':  return <CommentingView orgId={orgId} />;
-      case 'leaderboard': return <LeaderboardView orgId={orgId} isAdmin={isAdmin} />;
-      case 'data':        return <DataPrivateView orgId={orgId} />;
-      case 'settings':    return <SettingsPage org={org} orgId={orgId} isAdmin={isAdmin} />;
-      default:            return null;
+      case 'leads':
+        return <LeadsView orgId={orgId} isAdmin={isAdmin} />;
+      case 'chat':
+        return <WorkspaceChatView orgId={orgId} />;
+      case 'browser':
+        return <BrowserView orgId={orgId} />;
+      case 'inbox':
+        return <InboxView orgId={orgId} />;
+      case 'posting':
+        return <PostingView orgId={orgId} />;
+      case 'commenting':
+        return <CommentingView orgId={orgId} />;
+      case 'leaderboard':
+        return <LeaderboardView orgId={orgId} isAdmin={isAdmin} />;
+      case 'data':
+        return <DataPrivateView orgId={orgId} />;
+      case 'settings':
+        return <SettingsPage org={org} orgId={orgId} isAdmin={isAdmin} />;
+      default:
+        return null;
     }
   };
 
+  const renderNavItem = (item: NavItem) => (
+    <button
+      key={item.id}
+      type="button"
+      className={`nav-item ${tab === item.id ? 'is-active' : ''}`}
+      onClick={() => setTab(item.id)}
+      style={{ width: '100%', background: 'transparent', border: 0, textAlign: 'left' }}
+    >
+      <span className="icon">
+        <item.Icon size={16} />
+      </span>
+      <span>{navLabel(item.id)}</span>
+      {item.badge != null && item.badge > 0 && <span className="badge-num badge">{item.badge}</span>}
+    </button>
+  );
+
   return (
-    <div className="af-app-shell" style={{ ...rootStyle, display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      {/* Sidebar */}
-      <aside className="af-glass af-sidebar" style={{ width: 214, borderRight: `1px solid ${theme.border}`, borderTop: 0, borderLeft: 0, borderBottom: 0, borderRadius: 0, display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: '12px 0 46px rgba(0,0,0,0.18)' }}>
-        {/* Logo */}
-        <div className="af-sidebar-logo" style={{ padding: '18px 16px', borderBottom: `1px solid ${theme.borderAlt}` }}>
-          <Row style={{ gap: 8 }}>
-            <div style={{ width: 32, height: 32, background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 14px 30px rgba(24, 86, 255, 0.28)' }}>
-              <Zap size={14} color="#fff" />
-            </div>
-            <span style={{ fontWeight: 850, fontSize: 14, color: theme.textWhite }}>AutoFlow</span>
-          </Row>
+    <div className="app-shell">
+      <header className="app-topbar">
+        <div className="brand">
+          <div className="brand-mark">A</div>
+          <span className="brand-name">
+            AutoFlow
+            <span className="dim">.thg</span>
+          </span>
         </div>
 
-        {/* Org switcher */}
-        <div className="af-sidebar-org" style={{ padding: '10px 10px 4px' }}>
-          <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4, fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}>TỔ CHỨC</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', border: `1px solid ${theme.borderAlt}`, borderRadius: 8, background: theme.surfaceAlt }}>
-            <div style={{ width: 26, height: 26, background: `linear-gradient(135deg, ${org.color}, ${theme.primaryLight})`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 850, flexShrink: 0 }}>{org.abbr}</div>
-            <span style={{ color: theme.text, fontSize: 12, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{org.name}</span>
-            <Badge label={org.plan} />
-          </div>
+        <button className="btn btn-ghost btn-sm btn-square" style={{ marginLeft: 8 }} type="button">
+          <span className="avatar avatar-sm">{org.abbr}</span>
+          <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {org.name}
+          </span>
+          <ChevronDown size={13} style={{ color: 'var(--text-faint)' }} />
+        </button>
+
+        <div style={{ flex: 1, maxWidth: 480, margin: '0 auto', position: 'relative' }}>
+          <Search
+            size={14}
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-faint)',
+              pointerEvents: 'none',
+            }}
+          />
+          <input
+            className="input"
+            placeholder={`${t.topbar.search}  Ctrl/Cmd + K`}
+            style={{ paddingLeft: 32, background: 'var(--bg-elev-2)' }}
+          />
         </div>
 
-        {/* Nav */}
-        <nav className="af-sidebar-nav" style={{ flex: 1, padding: '8px 10px', overflowY: 'auto' }}>
-          <p style={{ color: theme.textFaint, fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', marginBottom: 6, paddingLeft: 4, fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}>MENU</p>
-          {tabs.map(({ id, l, I, badge }) => (
-            <button key={id} className="af-sidebar-nav-item" onClick={() => setTab(id)} style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-              padding: '9px 10px', borderRadius: 8, border: `1px solid ${tab === id ? 'rgba(255,255,255,0.22)' : 'transparent'}`, cursor: 'pointer', marginBottom: 4,
-              background: tab === id ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryDark})` : 'transparent',
-              color: tab === id ? '#fff' : theme.textMuted,
-              boxShadow: tab === id ? '0 14px 30px rgba(24, 86, 255, 0.22)' : 'none',
-            }}>
-              <I size={14} />
-              <span style={{ fontSize: 13, flex: 1, textAlign: 'left' }}>{l}</span>
-              {badge != null && badge > 0 && (
-                <span style={{ background: tab === id ? '#ffffff33' : theme.primary, color: '#fff', fontSize: 10, fontWeight: 800, minWidth: 17, height: 17, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>{badge}</span>
-              )}
-            </button>
-          ))}
-        </nav>
+        <DensitySwitch />
+        <LangSwitch />
 
-        {/* Settings + user */}
-        <div className="af-sidebar-footer" style={{ padding: '10px', borderTop: `1px solid ${theme.borderAlt}` }}>
-          <button onClick={() => setTab('settings')} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: `1px solid ${tab === 'settings' ? 'rgba(255,255,255,0.22)' : 'transparent'}`, cursor: 'pointer', marginBottom: 8, background: tab === 'settings' ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryDark})` : 'transparent', color: tab === 'settings' ? '#fff' : theme.textMuted }}>
-            <Settings size={14} /><span style={{ fontSize: 13 }}>Settings</span>
-          </button>
-          <Row style={{ gap: 8, padding: '6px 4px' }}>
-            <Avatar text={isAdmin ? 'A' : 'S'} size={26} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ color: theme.text, fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isAdmin ? 'Admin' : 'Staff'}</p>
-              <button onClick={goLanding} style={{ background: 'none', border: 'none', color: theme.textFaint, fontSize: 10, cursor: 'pointer', padding: 0 }}>Đăng xuất</button>
-            </div>
-          </Row>
-        </div>
+        <button className="btn btn-ghost btn-icon" type="button" aria-label="Notifications" style={{ position: 'relative' }}>
+          <Bell size={15} />
+          <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, background: 'var(--hot)', borderRadius: '50%' }} />
+        </button>
+
+        <button className="btn btn-ghost btn-sm" type="button" onClick={goLanding}>
+          <span className="avatar avatar-sm">{isAdmin ? 'A' : 'S'}</span>
+          <span>{isAdmin ? 'Admin' : 'Staff'}</span>
+          <LogOut size={13} style={{ color: 'var(--text-faint)' }} />
+        </button>
+      </header>
+
+      <aside className="app-sidebar">
+        <div className="sidebar-section">{t.nav.main}</div>
+        {mainTabs.map(renderNavItem)}
+
+        <div className="sidebar-section">{t.nav.analytics}</div>
+        {ANALYTICS_TABS.map(renderNavItem)}
+
+        <div className="sidebar-section">{t.nav.system}</div>
+        {renderNavItem({ id: 'settings', Icon: SettingsIcon })}
       </aside>
 
-      {/* Main content */}
-      <div className="af-content-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Topbar */}
-        <header className="af-glass af-topbar" style={{ display: 'flex', alignItems: 'center', padding: '13px 20px', borderTop: 0, borderLeft: 0, borderRight: 0, borderBottom: `1px solid ${theme.border}`, borderRadius: 0, flexShrink: 0, boxShadow: '0 12px 40px rgba(0,0,0,0.16)' }}>
-          <div>
-            <p style={{ color: theme.text, fontWeight: 800, fontSize: 15 }}>{TAB_LABELS[tab]}</p>
-            <p style={{ color: theme.textFaint, fontSize: 11 }}>{org.name} · {isAdmin ? 'Admin' : 'Staff'}</p>
-          </div>
-          <Row style={{ gap: 10, marginLeft: 'auto' }}>
-            <button style={{ background: theme.surfaceAlt, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '7px 9px', cursor: 'pointer', position: 'relative' }}>
-              <Bell size={15} color={theme.textMuted} />
-              <span style={{ position: 'absolute', top: 4, right: 4, width: 7, height: 7, background: theme.red, borderRadius: '50%' }} />
-            </button>
-          </Row>
-        </header>
-
-        {/* View content */}
-        <main className="af-view-main" style={{ flex: 1, overflowY: 'auto', padding: 18 }}>
-          <Suspense fallback={<Spinner />}>
-            {renderView()}
-          </Suspense>
-        </main>
-      </div>
+      <main className="app-content">
+        <Suspense fallback={<Spinner />}>{renderView()}</Suspense>
+      </main>
     </div>
   );
 }

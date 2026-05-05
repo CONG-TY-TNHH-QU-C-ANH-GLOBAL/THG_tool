@@ -203,6 +203,8 @@ type Account struct {
 // PromptLog records every AI prompt interaction for learning.
 type PromptLog struct {
 	ID          int64     `json:"id" db:"id"`
+	OrgID       int64     `json:"org_id" db:"org_id"`
+	AccountID   int64     `json:"account_id" db:"account_id"`
 	Source      string    `json:"source" db:"source"` // telegram, dashboard
 	UserPrompt  string    `json:"user_prompt" db:"user_prompt"`
 	AIResponse  string    `json:"ai_response" db:"ai_response"`

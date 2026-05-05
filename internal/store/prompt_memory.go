@@ -1,6 +1,10 @@
 package store
 
-import "github.com/thg/scraper/internal/models"
+import (
+	"database/sql"
+
+	"github.com/thg/scraper/internal/models"
+)
 
 // InsertScanLog records a scan cycle.
 func (s *Store) InsertScanLog(log *models.ScanLog) error {
@@ -26,8 +30,8 @@ func (s *Store) InsertInboxMessage(m *models.InboxMessage) (int64, error) {
 // InsertPromptLog records an AI prompt interaction.
 func (s *Store) InsertPromptLog(p *models.PromptLog) error {
 	_, err := s.db.Exec(
-		`INSERT INTO prompt_logs (source, user_prompt, ai_response, action_taken, action_args, success) VALUES (?, ?, ?, ?, ?, ?)`,
-		p.Source, p.UserPrompt, p.AIResponse, p.ActionTaken, p.ActionArgs, p.Success,
+		`INSERT INTO prompt_logs (org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.OrgID, p.AccountID, p.Source, p.UserPrompt, p.AIResponse, p.ActionTaken, p.ActionArgs, p.Success,
 	)
 	return err
 }
@@ -35,7 +39,7 @@ func (s *Store) InsertPromptLog(p *models.PromptLog) error {
 // GetPromptHistory returns recent prompt logs.
 func (s *Store) GetPromptHistory(limit int) ([]models.PromptLog, error) {
 	rows, err := s.db.Query(
-		`SELECT id, source, user_prompt, ai_response, action_taken, action_args, success, created_at FROM prompt_logs ORDER BY created_at DESC LIMIT ?`, limit,
+		`SELECT id, org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success, created_at FROM prompt_logs ORDER BY created_at DESC LIMIT ?`, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -45,12 +49,58 @@ func (s *Store) GetPromptHistory(limit int) ([]models.PromptLog, error) {
 	var logs []models.PromptLog
 	for rows.Next() {
 		var p models.PromptLog
-		if err := rows.Scan(&p.ID, &p.Source, &p.UserPrompt, &p.AIResponse, &p.ActionTaken, &p.ActionArgs, &p.Success, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.AccountID, &p.Source, &p.UserPrompt, &p.AIResponse, &p.ActionTaken, &p.ActionArgs, &p.Success, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		logs = append(logs, p)
 	}
 	return logs, nil
+}
+
+// GetPromptHistoryForOrg returns recent prompt logs for one workspace only.
+func (s *Store) GetPromptHistoryForOrg(orgID int64, limit int) ([]models.PromptLog, error) {
+	rows, err := s.db.Query(
+		`SELECT id, org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success, created_at
+		 FROM prompt_logs
+		 WHERE org_id = ?
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		orgID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []models.PromptLog
+	for rows.Next() {
+		var p models.PromptLog
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.AccountID, &p.Source, &p.UserPrompt, &p.AIResponse, &p.ActionTaken, &p.ActionArgs, &p.Success, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, p)
+	}
+	return logs, rows.Err()
+}
+
+func (s *Store) DeletePromptLogForOrg(orgID, id int64) error {
+	res, err := s.db.Exec(`DELETE FROM prompt_logs WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) DeleteAllPromptLogsForOrg(orgID int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM prompt_logs WHERE org_id = ?`, orgID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // InsertMemory stores a new learned pattern.

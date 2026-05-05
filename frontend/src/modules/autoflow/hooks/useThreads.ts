@@ -8,25 +8,52 @@ export function useThreads(orgId: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    getThreads(orgId).then(data => {
-      if (!cancelled) {
-        setThreads(data);
-        if (data.length > 0 && activeId === null) setActiveId(data[0].id);
-      }
+  const fetchThreads = useCallback(async () => {
+    const data = await getThreads(orgId);
+    setThreads(data);
+    setActiveId(current => {
+      if (data.length === 0) return null;
+      if (current !== null && data.some(thread => thread.id === current)) return current;
+      return data[0].id;
     });
-    return () => { cancelled = true; };
-  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+    return data;
+  }, [orgId]);
+
+  const fetchMessages = useCallback(async (threadId: number | null) => {
+    if (threadId === null) {
+      setMessages([]);
+      return [];
+    }
+    const data = await getMessages(orgId, threadId);
+    setMessages(data);
+    window.dispatchEvent(new CustomEvent('autoflow:threads-updated'));
+    return data;
+  }, [orgId]);
 
   useEffect(() => {
-    if (activeId === null) return;
     let cancelled = false;
-    getMessages(orgId, activeId).then(data => {
-      if (!cancelled) {
-        setMessages(data);
-        window.dispatchEvent(new CustomEvent('autoflow:threads-updated'));
-      }
+    void getThreads(orgId).then(data => {
+      if (cancelled) return;
+      setThreads(data);
+      setActiveId(current => {
+        if (data.length === 0) return null;
+        if (current !== null && data.some(thread => thread.id === current)) return current;
+        return data[0].id;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [orgId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (activeId === null) {
+      setMessages([]);
+      return () => { cancelled = true; };
+    }
+    void getMessages(orgId, activeId).then(data => {
+      if (cancelled) return;
+      setMessages(data);
+      window.dispatchEvent(new CustomEvent('autoflow:threads-updated'));
     });
     return () => { cancelled = true; };
   }, [orgId, activeId]);
@@ -37,12 +64,21 @@ export function useThreads(orgId: string) {
     try {
       const msg = await sendMessage(orgId, activeId, content);
       setMessages(prev => [...prev, msg]);
+      window.dispatchEvent(new CustomEvent('autoflow:threads-updated'));
     } finally {
       setIsSending(false);
     }
   }, [orgId, activeId]);
 
-  const activeThread = threads.find(t => t.id === activeId) ?? null;
+  const refetch = useCallback(async () => {
+    const nextThreads = await fetchThreads();
+    const nextActiveId = activeId !== null && nextThreads.some(thread => thread.id === activeId)
+      ? activeId
+      : (nextThreads[0]?.id ?? null);
+    await fetchMessages(nextActiveId);
+  }, [activeId, fetchMessages, fetchThreads]);
 
-  return { threads, activeThread, setActiveId, messages, send, isSending };
+  const activeThread = threads.find(thread => thread.id === activeId) ?? null;
+
+  return { threads, activeThread, setActiveId, messages, send, isSending, refetch };
 }
