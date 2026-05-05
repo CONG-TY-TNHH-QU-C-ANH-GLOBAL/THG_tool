@@ -36,11 +36,6 @@ func (h *WSHub) ConnectedCount() int {
 	return len(h.clients)
 }
 
-// NotifyJobReady broadcasts to all extensions that a local job is waiting.
-func (h *WSHub) NotifyJobReady(jobID int64) {
-	h.broadcast(map[string]any{"type": "job_ready", "job_id": jobID})
-}
-
 // NotifyOutboxReady broadcasts that there are approved messages to send.
 func (h *WSHub) NotifyOutboxReady(count int) {
 	h.broadcast(map[string]any{"type": "outbox_ready", "count": count})

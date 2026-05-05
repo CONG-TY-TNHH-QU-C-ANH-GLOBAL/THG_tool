@@ -371,10 +371,9 @@ func (s *Store) migrate() error {
 		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_org_status ON outbound_messages(org_id, status, type)`)
-	// Phase 2.3: jobs (legacy local-runtime queue) needs an atomic claim
-	// path so two desktop runtimes calling /api/agent/jobs/next can't both
-	// claim the same row. claimed_by stores the worker fingerprint and
-	// claimed_at lets the recovery loop reset stale claims.
+	// Legacy jobs table remains for existing SQLite databases and
+	// historical dashboard data. New connector execution uses
+	// connector_commands, scheduler_jobs, app_tasks and outbound_messages.
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_at DATETIME`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_jobs_local_pending ON jobs(execution_mode, status, created_at)`)
@@ -427,7 +426,7 @@ func (s *Store) migrate() error {
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email, used_at, expires_at)`)
 
-	// Agent tokens: staff download the agent binary and authenticate with these tokens
+	// Connector tokens: Chrome Extension instances authenticate with these tokens.
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS agent_tokens (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id INTEGER NOT NULL DEFAULT 0,

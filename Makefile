@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-agent build-worker run run-worker clean test ci validate
+.PHONY: build build-linux build-extension build-worker run run-worker clean test ci validate
 
 # Build backend API server for the current OS. cmd/scraper owns the Fiber API.
 build:
@@ -10,13 +10,10 @@ build-linux:
 	set GOOS=linux&& set GOARCH=amd64&& go build -ldflags="-s -w" -o dist/scraper ./cmd/scraper
 	set GOOS=linux&& set GOARCH=amd64&& go build -ldflags="-s -w" -o dist/thg-worker ./cmd/worker
 
-# Build THG Login Agent for all platforms (staff download these to their machines).
-build-agent:
-	if not exist data\downloads mkdir data\downloads
-	set GOOS=windows&& set GOARCH=amd64&& go build -ldflags="-s -w" -o data/downloads/thg-login-windows.exe ./cmd/thg-login
-	set GOOS=darwin&& set GOARCH=amd64&& go build -ldflags="-s -w" -o data/downloads/thg-login-mac-intel ./cmd/thg-login
-	set GOOS=darwin&& set GOARCH=arm64&& go build -ldflags="-s -w" -o data/downloads/thg-login-mac-m1 ./cmd/thg-login
-	set GOOS=linux&& set GOARCH=amd64&& go build -ldflags="-s -w" -o data/downloads/thg-login-linux ./cmd/thg-login
+# Package the Chrome Extension for Chrome Web Store upload/validation.
+build-extension:
+	if not exist dist\chrome-web-store mkdir dist\chrome-web-store
+	powershell -ExecutionPolicy Bypass -File scripts\build-chrome-extension.ps1
 
 # Build worker for the current OS.
 build-worker:
@@ -41,7 +38,7 @@ validate:
 	go build ./cmd/scraper/ ./cmd/worker/
 
 # Full local CI pipeline.
-ci: validate test build build-worker
+ci: validate test build build-worker build-extension
 	@echo "CI: ALL CHECKS PASSED"
 
 # Clean build artifacts.

@@ -12,7 +12,7 @@ func (s *Server) notifyOutboundQueued(orgID, accountID, id int64, typ string, st
 	}
 	state := "draft waiting for approval"
 	if status == models.OutboundApproved {
-		state = "approved for local runtime execution"
+		state = "approved for Chrome Extension execution"
 	}
 	label := "Facebook outbound"
 	switch typ {

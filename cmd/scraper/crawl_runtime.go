@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
@@ -71,7 +72,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 		return "", err
 	}
 	if db != nil {
-		if result, routed, err := submitLocalRuntimeCrawl(ctx, db, task, string(payload)); routed {
+		if result, routed, err := submitConnectorCrawl(ctx, db, task, string(payload)); routed {
 			return result, err
 		}
 	}
@@ -90,7 +91,7 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, er
 	if screen != nil &&
 		screen.AccountID > 0 &&
 		screen.AgentID > 0 &&
-		strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") &&
+		strings.EqualFold(strings.TrimSpace(screen.StreamStatus), browsergateway.StreamFacebookLoggedIn) &&
 		time.Since(screen.UpdatedAt) <= 5*time.Minute {
 		return screen.AccountID, nil
 	}
@@ -109,7 +110,7 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, er
 	return 0, nil
 }
 
-func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Task, payload string) (string, bool, error) {
+func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task, payload string) (string, bool, error) {
 	if task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
 		return "", false, nil
 	}
@@ -117,15 +118,15 @@ func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Ta
 	if err != nil {
 		return "", true, err
 	}
-	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), "facebook_logged_in") && time.Since(screen.UpdatedAt) <= 5*time.Minute {
-		result, err := enqueueLocalRuntimeCrawlCommand(ctx, db, task, payload, screen.AgentID)
+	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), browsergateway.StreamFacebookLoggedIn) && time.Since(screen.UpdatedAt) <= 5*time.Minute {
+		result, err := enqueueConnectorCrawlCommand(ctx, db, task, payload, screen.AgentID)
 		return result, true, err
 	}
-	if agentID, reason := pickOnlineRuntimeAgentForCrawl(db, task); agentID > 0 {
-		result, err := enqueueLocalRuntimeCrawlCommand(ctx, db, task, payload, agentID)
+	if agentID, reason := pickOnlineConnectorForCrawl(db, task); agentID > 0 {
+		result, err := enqueueConnectorCrawlCommand(ctx, db, task, payload, agentID)
 		return result, true, err
 	} else if reason != "" {
-		log.Printf("[LocalCrawl] no heartbeat-routable runtime org=%d account=%d: %s", task.OrgID, task.AccountID, reason)
+		log.Printf("[ConnectorCrawl] no heartbeat-routable connector org=%d account=%d: %s", task.OrgID, task.AccountID, reason)
 	}
 
 	appStore, err := store.NewAppStore(db)
@@ -136,12 +137,12 @@ func submitLocalRuntimeCrawl(ctx context.Context, db *store.Store, task *jobs.Ta
 	if sess != nil && sess.CDPPort > 0 && (sess.Status == "idle" || sess.Status == "ready" || sess.Status == "active") {
 		return "", false, nil
 	}
-	return "", true, fmt.Errorf("Facebook account #%d is saved, but THG Local Runtime is not online for this account yet. Open Browser, run THG Local Kit, wait for Facebook local ready, then send the prompt again", task.AccountID)
+	return "", true, fmt.Errorf("Facebook account #%d is saved, but THG Chrome Extension is not online for this account yet. Open Browser, pair the Chrome Extension, keep a logged-in Facebook tab open, then send the prompt again", task.AccountID)
 }
 
-func enqueueLocalRuntimeCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, payload string, agentID int64) (string, error) {
+func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, payload string, agentID int64) (string, error) {
 	if agentID <= 0 {
-		return "", fmt.Errorf("local runtime agent id is required")
+		return "", fmt.Errorf("Chrome Extension connector id is required")
 	}
 	appStore, err := store.NewAppStore(db)
 	if err != nil {
@@ -154,16 +155,16 @@ func enqueueLocalRuntimeCrawlCommand(ctx context.Context, db *store.Store, task 
 		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
 		return "", err
 	}
-	return fmt.Sprintf("da tao local crawler command #%d task=%s intent=%s mode=local_runtime", cmdID, task.TaskID, task.Intent), nil
+	return fmt.Sprintf("da tao Chrome Extension crawler command #%d task=%s intent=%s mode=chrome_extension", cmdID, task.TaskID, task.Intent), nil
 }
 
-func pickOnlineRuntimeAgentForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
+func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
 	connectors, err := db.ListLocalConnectors(task.OrgID)
 	if err != nil {
 		return 0, err.Error()
 	}
 	if len(connectors) == 0 {
-		return 0, "no local connector paired"
+		return 0, "no Chrome Extension connector paired"
 	}
 	acc, _ := db.GetAccountForOrg(task.AccountID, task.OrgID)
 	var reasons []string
@@ -177,7 +178,7 @@ func pickOnlineRuntimeAgentForCrawl(db *store.Store, task *jobs.Task) (int64, st
 			continue
 		}
 		status := strings.TrimSpace(conn.StreamStatus)
-		if !strings.EqualFold(status, "facebook_logged_in") {
+		if !strings.EqualFold(status, browsergateway.StreamFacebookLoggedIn) {
 			reasons = append(reasons, fmt.Sprintf("connector #%d status=%s", conn.ID, firstNonEmpty(status, "unknown")))
 			continue
 		}

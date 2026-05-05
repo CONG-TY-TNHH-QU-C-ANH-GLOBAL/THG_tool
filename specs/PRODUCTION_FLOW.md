@@ -9,6 +9,8 @@
 This file complements (does not replace):
 
 - [`AGENTS.md`](../AGENTS.md) — short operating instructions per topic.
+- [`specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`](BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md)
+  — browser provider direction and Chrome Extension production path.
 - [`specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`](FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md)
   — long-form product / feature direction.
 - [`openspec/root-architecture.md`](../openspec/root-architecture.md)
@@ -62,10 +64,11 @@ Two browser execution modes coexist:
 1. **Workspace mode** — server starts a Docker container with Chrome
    per Facebook account, dashboard streams VNC + sends CDP via
    `/ws/screen/:id`.
-2. **Local Runtime mode** — user installs THG Local Runtime on their
-   laptop, pairs with the dashboard via a one-time pairing code,
-   reports presence + screenshot frames to the API. The dashboard
-   shows the user's own Chrome.
+2. **Chrome Extension connector mode** — user installs THG Chrome
+   Extension in the trusted Chrome profile, pairs with the dashboard
+   via a one-time pairing code, reports presence + screenshot frames
+   to the API, polls prompt-scoped crawl commands, and executes
+   approved outbox actions.
 
 Both modes converge on the same `browser_sessions` table and the same
 identity-sync helper (see §5).
@@ -115,7 +118,7 @@ observability for support.
 
 ## 5. Connector / identity sync pipeline (Phase 1, refactor C)
 
-The same shape arrives at three endpoints from THG Local Runtime:
+The same shape arrives at three endpoints from THG Chrome Extension:
 
 - `POST /api/agent/heartbeat` — presence ping every ~5 s.
 - `POST /api/agent/chrome-status` — explicit handshake.
@@ -238,21 +241,17 @@ Or via the Settings page in the dashboard (admin role required).
 This is an explicit per-org commitment; do not enable it on behalf
 of the user from any LLM-driven path.
 
-## 8. Local-runtime job lease (Phase 2.3 — DONE 2026-05-04)
+## 8. Legacy local-job lease (Retired 2026-05-05)
 
-The legacy `jobs` table backs `/api/agent/jobs/next` for THG Local
-Runtime. The claim is now atomic — `Store.ClaimNextLocalJob(workerID)`
-performs the SELECT + UPDATE in one statement, stamps `claimed_by`
-and `claimed_at`, and returns the row only when the UPDATE actually
-locked it. Two agents cannot both claim the same job.
+The old `/api/agent/jobs/next` connector job queue was removed with the
+previous connector implementation. Prompt-scoped crawl work now goes through
+`connector_commands`; outbound execution goes through
+`/api/connectors/outbox`; recurring crawl intent goes through
+`scheduler_jobs` / `app_tasks`.
 
-A 2-minute background goroutine in `cmd/scraper/main.go` calls
-`RecoverStaleLocalJobs(10 * time.Minute)` so jobs whose worker died
-mid-run flip back to `pending` and become re-claimable.
-
-The `POST /api/agent/jobs/:id/claim` endpoint is now a no-op kept for
-backwards compatibility with older runtimes. The atomic claim
-already happened at `/jobs/next`.
+Do not add new automation to the old `jobs` table. It may remain in
+existing SQLite databases for migration compatibility, but it is no
+longer an execution path.
 
 ## 8b. Browser lifecycle hardening (Phase 3 — DONE 2026-05-04)
 
@@ -451,9 +450,9 @@ No localStorage is touched on the auth path anymore.
 - **Identity sync** — `internal/server/identity_sync.go`.
 - **Browser containers** — `internal/workspace/`,
   `internal/livesession/`.
-- **Local Runtime bridge** — `internal/server/agent_handlers.go`,
+- **Chrome Extension connector bridge** — `internal/server/agent_handlers.go`,
   `internal/server/local_connector_handlers.go`,
-  `internal/store/agent_tokens.go`, `cmd/thg-login/`.
+  `internal/store/agent_tokens.go`, `local-connector-extension/`.
 - **Job/task pipeline** — `internal/jobs/`,
   `internal/store/app_store.go`.
 - **AI** — `internal/ai/business.go` (profile),
@@ -552,7 +551,8 @@ GET /api/skills/executions   recent audit rows for the caller's org
 ```
 
 A daily-ish prune via `Store.PruneSkillExecutions(maxAge)` keeps the
-table from growing unbounded — wire it next to `RecoverStaleLocalJobs`.
+table from growing unbounded — wire it next to the existing scheduler
+maintenance loops.
 
 ### Why dashboard chat & Telegram share one path
 
@@ -566,15 +566,12 @@ protocol everywhere" guarantee.
 
 `scan_fanpage_inbox` and `care_fanpage` ship as **scaffolds** in
 6.3 — they return an audit-only acknowledgement with the requested
-parameters. Live Chrome-driving execution lands in **6.3b**, which
-depends on Phase 4 (CDP method whitelist) so the runtime cannot
-expose `Runtime.evaluate` to the dashboard while we expand the
-Messenger surface area.
+parameters. Live Chrome-driving execution lands after the Chrome
+Extension has dedicated fanpage inbox/care adapters.
 
-`post_to_profile` reuses the existing `create_job_post` pipeline —
-the outbound row's `type` stays `group_post` for queue compatibility,
-the `skill_executions` row records `post_to_profile` so the dashboard
-can split them.
+`post_to_profile` uses the shared outbound queue but writes a distinct
+`profile_post` type, so profile automation can be audited and executed
+without being confused with group posting.
 
 ## 15. When to update this file
 

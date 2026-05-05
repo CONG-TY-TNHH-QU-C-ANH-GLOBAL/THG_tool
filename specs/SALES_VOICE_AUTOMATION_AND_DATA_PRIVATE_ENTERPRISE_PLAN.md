@@ -185,22 +185,22 @@ Target pipeline:
 ```text
 Prompt from Dashboard/Telegram
   -> Agent resolves skill/action
-  -> Crawl command runs in THG Local Runtime
+  -> Crawl command runs in THG Chrome Extension
   -> Results stored as leads
   -> Market Signal Gate accepts high-confidence leads
   -> Sales Voice generator creates comment/inbox/post content
   -> QueueOutboundForOrg applies guardrails
   -> if org outbound_mode=auto and guardrails pass: status=approved
-  -> THG Local Runtime polls approved outbox
-  -> Runtime opens target Facebook post/profile/page
-  -> Runtime performs comment/inbox/post
-  -> Runtime marks sent/failed
+  -> THG Chrome Extension polls approved outbox
+  -> Extension opens target Facebook post/profile/page
+  -> Extension performs comment/inbox/post
+  -> Extension marks sent/failed
   -> Telegram + Dashboard log the exact action and outcome
 ```
 
 ### Runtime Responsibilities
 
-THG Local Runtime should:
+THG Chrome Extension should:
 
 - poll approved outbox for its org/account
 - execute only rows matching an active logged-in Facebook account
@@ -482,7 +482,7 @@ sales_voice_examples (
 
 ### Phase D — Runtime Action Execution
 
-- THG Local Runtime polls approved outbox.
+- THG Chrome Extension polls approved outbox.
 - Execute comment/inbox/group post for its assigned account.
 - Mark sent/failed.
 - Stream action to Browser dashboard.
@@ -544,4 +544,3 @@ The system is ready for this phase when:
 - Do not execute actions without org/account/session ownership checks.
 - Do not store or transmit Facebook passwords.
 - Do not optimize for volume over precision. Precision is the product moat.
-

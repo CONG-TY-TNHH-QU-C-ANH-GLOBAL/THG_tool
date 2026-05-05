@@ -1,17 +1,17 @@
 <!doctype html>
-<html>
+<html lang="vi">
   <head>
     <meta charset="utf-8">
-    <title>THG Helper</title>
+    <title>THG Chrome</title>
     <style>
       :root {
         color-scheme: dark;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       body {
-        width: 320px;
+        width: 334px;
         margin: 0;
-        background: #0b1120;
+        background: #08111f;
         color: #e5eefc;
       }
       main {
@@ -25,13 +25,13 @@
         margin: 0 0 12px;
         color: #9fb0c8;
         font-size: 12px;
-        line-height: 1.45;
+        line-height: 1.5;
       }
       label {
         display: block;
         color: #b8c7dd;
         font-size: 11px;
-        font-weight: 700;
+        font-weight: 800;
         margin: 10px 0 5px;
       }
       input {
@@ -59,6 +59,10 @@
         background: #111827;
         color: #b8c7dd;
       }
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
       .row {
         display: flex;
         gap: 8px;
@@ -76,6 +80,7 @@
         line-height: 1.45;
         min-height: 36px;
         padding: 9px;
+        white-space: pre-wrap;
         word-break: break-word;
       }
       .ok {
@@ -90,8 +95,8 @@
   </head>
   <body>
     <main>
-      <h1>THG Chrome Helper</h1>
-      <p>Kết nối Chrome cá nhân đang đăng nhập Facebook với workspace THG. THG không nhận mật khẩu Facebook của bạn.</p>
+      <h1>THG Chrome Extension</h1>
+      <p>Kết nối tab Facebook đã đăng nhập với workspace THG. THG không nhận mật khẩu Facebook của bạn.</p>
 
       <label for="serverUrl">THG server</label>
       <input id="serverUrl" value="https://sale.thgfulfill.com">

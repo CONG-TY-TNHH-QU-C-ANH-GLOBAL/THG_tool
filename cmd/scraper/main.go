@@ -108,30 +108,6 @@ func main() {
 		log.Printf("⚠️ Failed to reset orphaned outbounds: %v", err)
 	}
 
-	// Recover local-runtime jobs that an agent claimed but never finished
-	// before the API restarted. Without this, those rows stay 'running'
-	// forever and never become eligible for re-claim. 10 min is long
-	// enough that genuine slow scrapes aren't preempted.
-	if recovered, err := db.RecoverStaleLocalJobs(10 * time.Minute); err != nil {
-		log.Printf("⚠️ Failed to recover stale local jobs: %v", err)
-	} else if recovered > 0 {
-		log.Printf("✅ Recovered %d stale local jobs from prior runtime claims", recovered)
-	}
-	go func() {
-		ticker := time.NewTicker(2 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if _, err := db.RecoverStaleLocalJobs(10 * time.Minute); err != nil {
-					log.Printf("⚠️ stale local-job recovery: %v", err)
-				}
-			}
-		}
-	}()
-
 	// Initialize job store (scheduler_jobs table — idempotent, replaces chan-based queue)
 	jobStore, err := jobs.NewStore(cfg.DBPath)
 	if err != nil {

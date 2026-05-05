@@ -733,7 +733,7 @@ select:focus-visible {
   display: none !important;
 }
 
-.af-runtime-panel,
+.af-connector-panel,
 .af-live-browser-frame {
   border-radius: 8px !important;
 }
@@ -1054,11 +1054,11 @@ select:focus-visible {
     min-height: 38px;
   }
 
-  .af-runtime-panel > div:first-child {
+  .af-connector-panel > div:first-child {
     flex-wrap: wrap;
   }
 
-  .af-runtime-panel > div:first-child button {
+  .af-connector-panel > div:first-child button {
     width: 100%;
     justify-content: center;
   }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -52,17 +51,16 @@ type Config struct {
 
 // Server provides the REST API and serves the Web UI.
 type Server struct {
-	app           *fiber.App
-	db            *store.Store
-	jobStore      *jobs.Store
-	agent         *ai.Agent
-	postProcessor PostProcessor      // called after agent submits scraped posts
-	wsHub         *WSHub             // Chrome Extension WebSocket hub
-	workspace     *workspace.Manager // per-account Chrome workspace manager
-	sessionReg    *session.Registry  // optional — nil disables /api/sessions/stats
-	agentHandler  *agentloop.Handler // self-healing agent OS — nil = disabled
-	port          int
-	cfg           Config
+	app          *fiber.App
+	db           *store.Store
+	jobStore     *jobs.Store
+	agent        *ai.Agent
+	wsHub        *WSHub             // Chrome Extension WebSocket hub
+	workspace    *workspace.Manager // per-account Chrome workspace manager
+	sessionReg   *session.Registry  // optional — nil disables /api/sessions/stats
+	agentHandler *agentloop.Handler // self-healing agent OS — nil = disabled
+	port         int
+	cfg          Config
 }
 
 // SetSessionRegistry wires in the in-memory session registry for the stats endpoint.
@@ -74,11 +72,6 @@ func (s *Server) SetSessionRegistry(r *session.Registry) {
 // When set, POST /api/agent/run and GET /api/agent/status are enabled.
 func (s *Server) SetAgentHandler(h *agentloop.Handler) {
 	s.agentHandler = h
-}
-
-// SetPostProcessor wires the AI pipeline callback (called from main.go after orchestrator is ready).
-func (s *Server) SetPostProcessor(fn PostProcessor) {
-	s.postProcessor = fn
 }
 
 // New creates a new API server with JWT auth, RBAC, and rate limiting.
@@ -118,30 +111,13 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Prometheus metrics — no auth, scrape from internal monitoring only
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
-	// System info — tells frontend which login mode and which agent downloads are available
+	// System info tells the frontend where the production Chrome Extension is installed from.
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
-		downloadsDir := filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads")
-		agentBuilds := fiber.Map{
-			"windows":             fileExists(filepath.Join(downloadsDir, "thg-login-windows.exe")),
-			"mac_intel":           fileExists(filepath.Join(downloadsDir, "thg-login-mac-intel")),
-			"mac_m1":              fileExists(filepath.Join(downloadsDir, "thg-login-mac-m1")),
-			"linux":               fileExists(filepath.Join(downloadsDir, "thg-login-linux")),
-			"chrome_extension":    fileExists(filepath.Join(downloadsDir, "thg-chrome-extension.zip")),
-			"local_kit_windows":   fileExists(filepath.Join(downloadsDir, "thg-local-kit-windows.zip")),
-			"local_kit_mac_m1":    fileExists(filepath.Join(downloadsDir, "thg-local-kit-mac-m1.zip")),
-			"local_kit_mac_intel": fileExists(filepath.Join(downloadsDir, "thg-local-kit-mac-intel.zip")),
-			"local_kit_linux":     fileExists(filepath.Join(downloadsDir, "thg-local-kit-linux.zip")),
-		}
 		return c.JSON(fiber.Map{
-			"headless":     cfg.Headless,
-			"agent_builds": agentBuilds,
+			"headless":                   cfg.Headless,
+			"chrome_extension_store_url": strings.TrimSpace(os.Getenv("CHROME_EXTENSION_STORE_URL")),
+			"chrome_extension_id":        strings.TrimSpace(os.Getenv("CHROME_EXTENSION_ID")),
 		})
-	})
-
-	// Serve THG Login Agent binaries for staff download (built via `make build-agent`)
-	app.Static("/downloads", filepath.Join(filepath.Dir(cfg.ProfileDir), "downloads"), fiber.Static{
-		Browse:   false,
-		Download: true,
 	})
 
 	// --- Global Middleware ---
@@ -232,7 +208,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// Agent API — authenticated with X-Agent-Token header (no JWT needed).
 	// Keep this before the catch-all protected API group below; otherwise
-	// /api/agent/* can be intercepted by JWT auth and desktop runtimes see
+	// /api/agent/* can be intercepted by JWT auth and Chrome Extensions see
 	// {"error":"authentication required"} even with a valid device token.
 	agentGrp := api.Group("/agent", s.agentAuth)
 	agentGrp.Post("/heartbeat", s.agentHeartbeat)
@@ -242,10 +218,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	agentGrp.Post("/crawl-result", s.agentConnectorCrawlResult)
 	agentGrp.Get("/commands", s.agentConnectorCommands)
 	agentGrp.Post("/commands/:id/done", s.agentConnectorCommandDone)
-	agentGrp.Get("/jobs/next", s.agentGetNextJob)
-	agentGrp.Post("/jobs/:id/claim", s.agentClaimJob)
-	agentGrp.Post("/jobs/:id/done", s.agentJobDone)
-	agentGrp.Post("/jobs/:id/fail", s.agentJobFail)
 	agentGrp.Get("/outbox", s.agentGetOutbox)
 	agentGrp.Post("/outbox/:id/sent", s.agentOutboxSent)
 	agentGrp.Post("/outbox/:id/failed", s.agentOutboxFailed)
@@ -401,7 +373,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	r.Put("/skills/:id/disable", adminOnly, s.skillDisable)
 
 	// Browser workspace — per-account Chrome management
-	// Local Chrome connectors are the production path for trusted user devices.
+	// Chrome Extension connectors are the production path for trusted user devices.
 	r.Get("/connectors", s.listLocalConnectors)
 	r.Get("/connectors/screen", s.getLocalConnectorScreen)
 	r.Post("/connectors/input", s.createConnectorInputCommand)
@@ -464,7 +436,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// WS_AUTH_ALLOW_QUERY_TOKEN gates the legacy ?token=... query
 	// fallback for WS / SSE auth. Default is "1" today so legacy
-	// runtimes / Telegram clients keep working; once telemetry shows
+	// connector / Telegram clients keep working; once telemetry shows
 	// no upgrades are arriving with a query token, set it to "0" in
 	// production to remove the leak surface entirely. Reading the env
 	// once at boot avoids per-request env lookups.
@@ -506,7 +478,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	//   2. Authorization: Bearer header  (server-to-server clients)
 	//   3. ?token=... query param        (legacy fallback, gated by env)
 	//
-	// The query-param path stays so older runtimes / Telegram bots that
+	// The query-param path stays so older connectors / Telegram bots that
 	// haven't migrated keep working, but the SPA should rely on the
 	// cookie alone — browsers send cookies on the WS upgrade request, so
 	// the access token never has to land in URL access logs.
@@ -1046,7 +1018,7 @@ func (s *Server) draftOutbound(c *fiber.Ctx) error {
 	if req.Type == "" {
 		req.Type = "comment"
 	}
-	if req.Type != "comment" && req.Type != "inbox" && req.Type != "group_post" {
+	if req.Type != "comment" && req.Type != "inbox" && req.Type != "group_post" && req.Type != "profile_post" {
 		return c.Status(400).JSON(fiber.Map{"error": "unsupported outbound type"})
 	}
 	orgID := c.Locals("org_id").(int64)
@@ -1163,9 +1135,4 @@ func (s *Server) deleteAllOutboundComments(c *fiber.Ctx) error {
 	}
 	log.Printf("[API] Reset all outbound comments: %d deleted", count)
 	return c.JSON(fiber.Map{"ok": true, "deleted": count})
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

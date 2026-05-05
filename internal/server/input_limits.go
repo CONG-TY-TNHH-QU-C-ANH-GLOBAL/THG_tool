@@ -3,7 +3,7 @@ package server
 import "strings"
 
 // Connector heartbeat / screenshot / chrome-status payloads come from
-// untrusted desktop processes. Without bounds the dashboard could be DOS'd
+// untrusted browser connectors. Without bounds the dashboard could be DOS'd
 // by a buggy or malicious connector flooding 100KB strings into every
 // presence row, bloating SQLite and slowing the connectors list endpoint.
 //

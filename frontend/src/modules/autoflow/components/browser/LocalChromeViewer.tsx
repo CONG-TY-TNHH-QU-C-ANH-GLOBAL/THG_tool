@@ -43,9 +43,9 @@ export function LocalChromeViewer({
       .then(async () => {
         try {
           const res = await sendConnectorInput(accountId, type, payload);
-          setInputStatus(`Đã gửi thao tác dự phòng #${res.id}`);
+          setInputStatus(`Đã gửi thao tác #${res.id}`);
         } catch (err) {
-          setInputStatus(err instanceof Error ? err.message : 'Không gửi được thao tác đến THG Local Runtime');
+          setInputStatus(err instanceof Error ? err.message : 'Không gửi được thao tác đến THG Chrome Extension');
         }
       });
   }, [accountId, remoteInputEnabled, screen?.imageData]);
@@ -74,7 +74,7 @@ export function LocalChromeViewer({
   const handlePointerDown = (e: MouseEvent<HTMLImageElement>) => {
     if (!screen?.imageData) return;
     if (!remoteInputEnabled) {
-      setInputStatus('Hãy đăng nhập trực tiếp trong cửa sổ Chrome local trên máy nhân viên');
+      setInputStatus('Hãy đăng nhập Facebook trực tiếp trên Chrome đã cài THG Extension');
       return;
     }
     setInputActive(true);
@@ -150,13 +150,13 @@ export function LocalChromeViewer({
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: screen?.imageData ? '#4ade80' : theme.textFaint }} />
         <Monitor size={14} color="#5eead4" />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Chrome thật {accountName ? `- ${accountName}` : ''}</p>
+          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Facebook thật {accountName ? `- ${accountName}` : ''}</p>
           <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {screen?.currentUrl || 'Đang chờ Chrome local mở Facebook trên máy nhân viên'}
+            {screen?.currentUrl || 'Đang chờ THG Chrome Extension gửi stream Facebook'}
           </p>
         </div>
-        {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome local</span>}
-        {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>remote fallback</span>}
+        {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome</span>}
+        {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>control active</span>}
         {screenIdentityLabel && <span title={screenIdentityLabel} style={{ color: '#bfdbfe', border: '1px solid #3b82f644', background: '#1e3a8a33', borderRadius: 6, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Mail size={11} />{screenIdentityLabel}</span>}
         {screen?.chromeError && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{screen.chromeError}</span>}
         {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
@@ -224,7 +224,7 @@ export function LocalChromeViewer({
             <img
               ref={imgRef}
               src={screen.imageData}
-              alt="Local Chrome Facebook"
+              alt="THG Facebook stream"
               style={{ width: '100%', height: 'auto', display: 'block', background: '#000', userSelect: 'none' }}
             />
             <div
@@ -238,9 +238,9 @@ export function LocalChromeViewer({
         ) : (
           <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
             <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
-            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ Chrome local trên máy nhân viên</p>
+            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ THG Chrome Extension</p>
             <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              Bấm Mở Chrome local, đăng nhập Facebook trong cửa sổ Chrome vừa mở trên máy đó. Sau khi Facebook sẵn sàng, Chrome local sẽ tự ẩn và dashboard nhận stream về đây.
+              Mở tab Facebook đã đăng nhập trong Chrome có cài extension. Dashboard sẽ nhận ảnh stream và action log từ tab Facebook thật tại đây.
             </p>
           </div>
         )}

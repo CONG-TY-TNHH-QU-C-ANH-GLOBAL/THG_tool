@@ -104,6 +104,8 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args, notify)
 		case "create_job_post":
 			return queueGroupPost(context.Background(), db, msgGen, args, notify)
+		case "post_to_profile":
+			return queueProfilePost(context.Background(), db, msgGen, args, notify)
 		default:
 			return "", fmt.Errorf("agent action %q is not wired to a production handler yet", action)
 		}

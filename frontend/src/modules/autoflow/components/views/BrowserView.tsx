@@ -16,6 +16,7 @@ import { facebookIdentityLabel, isDashboardStreamConnector, isUsableConnectorFor
 import '../../autoflow.css';
 
 interface BrowserViewProps { orgId: string; }
+
 export default function BrowserView({ orgId }: BrowserViewProps) {
   const currentUser = useAuthStore(s => s.user);
   const { workspaces, actionLoading, refresh, start, startNew, stop, syncSession } = useWorkspaces();
@@ -35,12 +36,6 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const [connectorNotice, setConnectorNotice] = useState<string | null>(null);
   const [browserNotice, setBrowserNotice] = useState<string | null>(null);
 
-  // Cross-org safety: when the active workspace changes, drop the selected
-  // browser session immediately so the embedded VncCanvas / live screen
-  // unmounts. Without this the operator could keep watching the previous
-  // org's Chrome stream while the dashboard switches over to org B —
-  // server-side org_id checks still hold, but the visual leak alone is a
-  // tenant-isolation regression we don't want to ship.
   useEffect(() => {
     setSelectedId(null);
     setSessionInfo(null);
@@ -156,14 +151,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   const currentUserId = currentUser?.id ?? 0;
   const recentActions = localScreen?.actions ?? [];
 
+  const ownStreamingConnectors = connectors.filter(c => c.createdBy === currentUserId && c.online && isDashboardStreamConnector(c));
+
   const handleNewSession = async () => {
-    const ownConnectors = connectors.filter(c => c.createdBy === currentUserId);
-    if (!ownConnectors.some(c => c.online)) {
-      setBrowserNotice('Thiết bị của bạn chưa online. Mỗi nhân viên cần tự tạo mã kết nối riêng, chạy THG Local Runtime trên máy của mình, rồi mới tạo phiên Facebook.');
-      return;
-    }
-    if (!ownConnectors.some(c => c.online && isDashboardStreamConnector(c))) {
-      setBrowserNotice('Thiết bị của bạn chưa có THG Local Runtime sẵn sàng. Tải Local Kit đúng hệ điều hành, chạy Runtime, nhập mã kết nối mới, rồi bấm Mở Chrome local.');
+    if (ownStreamingConnectors.length === 0) {
+      setBrowserNotice('Chrome của bạn chưa kết nối workspace. Cài THG Chrome Extension, tạo mã kết nối, dán mã vào popup extension, rồi mở tab Facebook đã đăng nhập.');
       return;
     }
     setNewLoading(true);
@@ -171,7 +163,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
-      setBrowserNotice('Đã tạo phiên Facebook local. THG Local Runtime sẽ mở Chrome trên máy nhân viên để user đăng nhập trực tiếp; sau khi vào Facebook, Chrome local tự ẩn và Browser dashboard nhận stream automation.');
+      setBrowserNotice('Đã tạo phiên Facebook. THG Chrome Extension sẽ stream tab Facebook thật về Browser dashboard; hãy giữ tab Facebook đã đăng nhập trong Chrome.');
     } catch (e) {
       setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
@@ -197,7 +189,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const handleCreateConnector = async () => {
     setConnectorNotice(null);
-    const name = `Local Chrome ${new Date().toLocaleDateString('vi-VN')}`;
+    const name = `THG Chrome ${new Date().toLocaleDateString('vi-VN')}`;
     const created = await createPairingCode(name, selectedId ?? undefined);
     setPairingCode(created.code);
     setPairingExpiresAt(created.expires_at);
@@ -210,9 +202,9 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       await disconnectLocalConnector(connector.id);
       setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
-      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Nếu Runtime còn mở, token sẽ bị từ chối ở heartbeat kế tiếp.`);
+      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Extension trên Chrome đó sẽ bị từ chối ở lần đồng bộ kế tiếp.`);
     } catch (e) {
-      setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được thiết bị');
+      setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được Chrome');
     } finally {
       setDisconnectingId(null);
     }
@@ -233,7 +225,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       <div className="af-browser-legacy-summary" style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
-        <span style={{ color: theme.textMuted, fontSize: 12 }}>Local: <strong style={{ color: connectors.some(c => c.online) ? '#4ade80' : theme.textFaint }}>{connectors.filter(c => c.online).length}</strong></span>
+        <span style={{ color: theme.textMuted, fontSize: 12 }}>Extension: <strong style={{ color: connectors.some(c => c.online) ? '#4ade80' : theme.textFaint }}>{connectors.filter(c => c.online).length}</strong></span>
         <button onClick={() => { void refresh(); void refreshConnectors(); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
           <RefreshCw size={12} /> Làm mới
         </button>
@@ -326,13 +318,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                     e.stopPropagation();
                     setBrowserNotice(null);
                     if (!rowHasOnlineConnector) {
-                      setBrowserNotice('Facebook account này cần thiết bị của bạn hoặc thiết bị đã được gắn riêng với account. Tạo mã kết nối riêng trên dashboard này rồi chạy THG Local Runtime.');
+                      setBrowserNotice('Account này cần một THG Chrome Extension online. Tạo mã kết nối riêng cho account này, dán vào popup extension, rồi mở tab Facebook đã đăng nhập.');
                       return;
                     }
                     void start(w.accountId)
                       .then(() => {
                         setSelectedId(w.accountId);
-                        setBrowserNotice('Đang mở Chrome local trên máy nhân viên. Hãy đăng nhập Facebook trong cửa sổ đó; khi vào Facebook, Chrome local tự ẩn để mọi quan sát tập trung về Browser dashboard.');
+                        setBrowserNotice('Đang yêu cầu THG Chrome Extension stream tab Facebook thật về dashboard.');
                         void refreshLocalScreen(w.accountId);
                       })
                       .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
@@ -341,7 +333,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                   style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rowHasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: rowHasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? (rowHasOnlineConnector ? 'Đang mở Chrome...' : 'Đang kiểm tra...') : (rowHasOnlineConnector ? 'Mở Chrome local' : 'Chưa sẵn sàng')}
+                  {actionLoading.has(w.accountId) ? (rowHasOnlineConnector ? 'Đang kết nối...' : 'Đang kiểm tra...') : (rowHasOnlineConnector ? 'Bắt đầu stream' : 'Chưa sẵn sàng')}
                 </button>
               ) : (
                 <button

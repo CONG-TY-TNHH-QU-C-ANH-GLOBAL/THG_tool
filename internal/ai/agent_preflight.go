@@ -252,9 +252,9 @@ func browserNotReadyMessage(acc *models.Account) string {
 THG chỉ chạy crawl/comment/inbox khi Browser đã xác nhận đúng Facebook session thật của workspace. Cách này tránh chạy nhầm tài khoản và giữ dữ liệu theo đúng organization.
 
 Vào tab Browser và hoàn tất 3 bước:
-1. Chạy THG Local Kit trên thiết bị đã ghép với workspace.
-2. Đăng nhập Facebook trong Chrome Runtime nếu hệ thống yêu cầu.
-3. Chờ trạng thái chuyển sang Facebook local ready.
+1. Cài và ghép THG Chrome Extension với workspace.
+2. Mở tab Facebook đã đăng nhập trong chính Chrome đó.
+3. Chờ Browser chuyển sang trạng thái Facebook Extension ready.
 
 Khi Browser đã sẵn sàng, gửi lại prompt này. Agent sẽ dùng đúng account đã xác thực để thu dữ liệu thật, phân loại leads và lưu kết quả về workspace.`
 }

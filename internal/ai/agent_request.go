@@ -81,7 +81,7 @@ func isFacebookConversationPrompt(prompt string) bool {
 		"fanpage", "page", "profile", "personal profile", "group", "groups", "messenger",
 		"reels", "story", "post", "posting", "comment", "comments", "inbox", "dm",
 		"lead", "leads", "seller", "sellers", "outreach", "campaign", "content plan",
-		"browser", "workspace", "session", "local kit", "runtime", "chrome", "cookie",
+		"browser", "workspace", "session", "chrome extension", "browser gateway", "chrome", "cookie",
 		"checkpoint", "captcha", "login", "automation", "crawler", "scraper", "crawl",
 		"telegram", "tele", "data private", "market signal", "customer segment",
 		"fanpage", "trang ca nhan", "trang cá nhân", "nhom", "nhóm", "bai viet", "bài viết",

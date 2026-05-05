@@ -265,7 +265,7 @@ Current implementation direction:
   extracting segment keywords, classifying ambiguous leads, drafting outreach,
   and learning strategy.
 - Traditional automation handles cheap repeated work: scheduler ticks, queue
-  idempotency, Local Runtime commands, Playwright/Chrome crawling, dedup,
+  idempotency, Chrome Extension commands, Playwright/Chrome crawling, dedup,
   cooldowns, and retries.
 - If no logged-in local Facebook runtime is ready, the intent records the error
   and waits for the next interval instead of spinning or creating fake data.
@@ -302,7 +302,7 @@ partners, resellers, or candidates as its target segment.
 This gate protects trust: the system should prefer fewer accurate leads over a
 large list polluted by competitors and ads. AI classifiers can still resolve
 ambiguous posts, but the cheap deterministic gate must run first for recurring
-jobs and Local Runtime results.
+jobs and Chrome Extension results.
 
 ### 2.3.2 Business Calibration UX
 
@@ -321,7 +321,7 @@ should define the business in a Claude-style calibration flow:
 Dashboard Chat and Telegram share the same preflight. If a Facebook crawl prompt
 arrives before this context exists, the system must not create a crawler job.
 It should ask for the business calibration first, then reuse the saved
-org-scoped context for future prompts, recurring crawl intents, Local Runtime
+org-scoped context for future prompts, recurring crawl intents, Chrome Extension
 results, AI classification, comments, inbox, and posting.
 
 This lets the same Facebook post be treated differently per workspace. A post

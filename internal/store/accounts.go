@@ -96,7 +96,7 @@ func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool, fbUserID ...s
 }
 
 // SetBrowserLoggedInState updates browser_logged_in without clearing the
-// remembered Facebook identity. Local Runtime can temporarily lose a Chrome
+// remembered Facebook identity. A Chrome Extension can temporarily lose a Chrome
 // target while the account slot identity must remain auditable.
 func (s *Store) SetBrowserLoggedInState(accountID int64, loggedIn bool) error {
 	v := 0
@@ -116,7 +116,7 @@ type FacebookIdentityMeta struct {
 }
 
 // SetAccountFacebookIdentity stores the Facebook identity observed from the
-// local runtime. Email is updated only when the current session's Facebook ID is
+// Chrome Extension. Email is updated only when the current session's Facebook ID is
 // compatible with the account slot, so a different Facebook profile cannot
 // silently overwrite another account's identity.
 func (s *Store) SetAccountFacebookIdentity(accountID int64, fbUserID, email string, meta ...FacebookIdentityMeta) error {

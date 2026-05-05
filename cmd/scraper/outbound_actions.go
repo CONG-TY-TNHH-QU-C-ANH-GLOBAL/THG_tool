@@ -37,8 +37,8 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	}
 
 	// requestedAuto carries the AI/agent's preference. The store layer
-	// (QueueOutboundForOrg → IsAutoOutboundEnabledForOrg) is the final
-	// gatekeeper — it will downgrade to draft if the org hasn't opted in.
+	// (QueueOutboundForOrg -> IsAutoOutboundEnabledForOrg) is the final
+	// gatekeeper: it downgrades to draft if the org has not opted in.
 	requestedAuto := argBool(args, "auto")
 
 	leads, err := leadsFromActionArgs(db, orgID, msgType, args)
@@ -123,7 +123,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	case approvedCount > 0:
 		mode = "mixed"
 	case requestedAuto:
-		// Caller asked for auto but the org isn't opted in — make this
+		// Caller asked for auto but the org is not opted in; make this
 		// visible in the response so the operator knows why it queued as draft.
 		mode = "draft_org_not_auto"
 	}
@@ -170,9 +170,49 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 }
 
 func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
+	targets := []string{}
+	if u := argString(args, "group_url"); u != "" {
+		targets = append(targets, u)
+	} else {
+		orgID := argInt64(args, "org_id")
+		groups, err := db.GetAllGroups(orgID)
+		if err != nil {
+			return "", err
+		}
+		for _, g := range groups {
+			if g.Active && strings.TrimSpace(g.URL) != "" {
+				targets = append(targets, g.URL)
+				if len(targets) >= 3 {
+					break
+				}
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return "khong co group target de queue group_post", nil
+	}
+	return queueFacebookPostTargets(ctx, db, msgGen, args, "group_post", targets, notify)
+}
+
+func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
+	orgID := argInt64(args, "org_id")
+	accountID := argInt64(args, "account_id")
+	target := argString(args, "profile_url")
+	if target == "" && accountID > 0 {
+		if acc, err := db.GetAccountForOrg(accountID, orgID); err == nil && acc != nil {
+			target = firstNonEmpty(acc.FBProfileURL, "https://www.facebook.com/me")
+		}
+	}
+	if target == "" {
+		target = "https://www.facebook.com/me"
+	}
+	return queueFacebookPostTargets(ctx, db, msgGen, args, "profile_post", []string{target}, notify)
+}
+
+func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, msgType string, targets []string, notify func(string)) (string, error) {
 	orgID := argInt64(args, "org_id")
 	if orgID <= 0 {
-		return "", fmt.Errorf("org_id is required for group posting")
+		return "", fmt.Errorf("org_id is required for Facebook posting")
 	}
 	accountID := argInt64(args, "account_id")
 	if accountID <= 0 {
@@ -203,28 +243,7 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 		}
 	}
 	if strings.TrimSpace(content) == "" {
-		return "", fmt.Errorf("group post content is required")
-	}
-
-	targets := []string{}
-	if u := argString(args, "group_url"); u != "" {
-		targets = append(targets, u)
-	} else {
-		groups, err := db.GetAllGroups(orgID)
-		if err != nil {
-			return "", err
-		}
-		for _, g := range groups {
-			if g.Active && strings.TrimSpace(g.URL) != "" {
-				targets = append(targets, g.URL)
-				if len(targets) >= 3 {
-					break
-				}
-			}
-		}
-	}
-	if len(targets) == 0 {
-		return "khong co group target de queue group_post", nil
+		return "", fmt.Errorf("Facebook post content is required")
 	}
 
 	requestedAuto := argBool(args, "auto")
@@ -233,7 +252,7 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 	for _, target := range targets {
 		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 			OrgID:     orgID,
-			Type:      "group_post",
+			Type:      msgType,
 			Platform:  models.PlatformFacebook,
 			AccountID: accountID,
 			TargetURL: target,
@@ -262,9 +281,9 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 		mode = "draft_org_not_auto"
 	}
 	if notify != nil && queued > 0 {
-		notify(formatOutboundNotification(orgID, accountID, "group_post", queued, skipped, mode))
+		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}
-	return fmt.Sprintf("queued_group_posts=%d skipped=%d mode=%s", queued, skipped, mode), nil
+	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s", msgType, queued, skipped, mode), nil
 }
 
 func formatOutboundNotification(orgID, accountID int64, msgType string, queued, skipped int, mode string) string {
@@ -276,10 +295,12 @@ func formatOutboundNotification(orgID, accountID int64, msgType string, queued, 
 		label = "Facebook inbox"
 	case "group_post":
 		label = "Facebook posting"
+	case "profile_post":
+		label = "Facebook profile posting"
 	}
 	state := "drafts waiting for approval"
 	if mode == "approved_auto" {
-		state = "approved for local runtime execution"
+		state = "approved for Chrome Extension execution"
 	}
 	return fmt.Sprintf("[THG Agent] %s queued: %d (%s). Org #%d, account #%d, skipped %d by guardrails.", label, queued, state, orgID, accountID, skipped)
 }

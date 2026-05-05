@@ -19,7 +19,7 @@ export function AutomationCommandCenter({
   onRefresh: () => void;
   onNewSession: () => void;
 }) {
-  const runtimeOnline = connectors.filter(c => c.online && isDashboardStreamConnector(c)).length;
+  const extensionOnline = connectors.filter(c => c.online && isDashboardStreamConnector(c)).length;
   const facebookReady = workspaces.filter(w => w.loggedIn || Boolean(w.fbUserId) || w.browserState === 'local_ready').length;
   const doneActions = actions.filter(a => a.status === 'done').length;
   const failedActions = actions.filter(a => a.status === 'failed').length;
@@ -42,7 +42,7 @@ export function AutomationCommandCenter({
       <div className="af-command-metrics">
         <div><span>{workspaces.length}</span><small>Tài khoản Facebook</small></div>
         <div><span>{facebookReady}</span><small>Session sẵn sàng</small></div>
-        <div><span>{runtimeOnline}</span><small>Runtime online</small></div>
+        <div><span>{extensionOnline}</span><small>Extension online</small></div>
         <div><span>{doneActions}/{actions.length}</span><small>Action gần đây</small></div>
       </div>
       <div className="af-command-actions">

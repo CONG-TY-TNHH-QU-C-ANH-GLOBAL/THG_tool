@@ -245,10 +245,10 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
         </div>
 
         <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 10, padding: 12 }}>
-          <p style={{ color: theme.text, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Runtime</p>
+          <p style={{ color: theme.text, fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Connector</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.textMuted, fontSize: 12 }}>
             <CheckCircle size={14} color={activeAccounts.length > 0 ? '#4ade80' : theme.textMuted} />
-            <span>{activeAccounts.length} browser workspace</span>
+            <span>{activeAccounts.length} Chrome workspace</span>
           </div>
         </div>
 

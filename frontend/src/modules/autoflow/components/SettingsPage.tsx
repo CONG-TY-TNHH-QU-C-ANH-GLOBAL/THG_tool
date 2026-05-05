@@ -475,7 +475,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
           {isAdmin && (
             <div style={cardStyle()}>
               <Row style={{ gap: 10, alignItems: 'end' }}>
-                <div style={{ flex: 1 }}><Label text="Tên agent runtime" /><input style={inputStyle} value={newAgentName} onChange={e => setNewAgentName(e.target.value)} placeholder="VPS HCM 01" /></div>
+                <div style={{ flex: 1 }}><Label text="Tên connector / agent" /><input style={inputStyle} value={newAgentName} onChange={e => setNewAgentName(e.target.value)} placeholder="Chrome Extension HCM 01" /></div>
                 <button onClick={addAgent} style={primaryBtn({ padding: '10px 16px', fontSize: 13 })}>Tạo token</button>
               </Row>
               {newAgentToken && (
@@ -491,7 +491,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
           )}
 
           <div style={cardStyle()}>
-            <p style={{ color: theme.text, fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Agent runtime đã đăng ký</p>
+            <p style={{ color: theme.text, fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Connector / agent đã đăng ký</p>
             {agents.length === 0 ? (
               <p style={{ color: theme.textMuted, fontSize: 13 }}>Chưa có agent token.</p>
             ) : agents.map(a => (

@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 )
 
-// listLocalConnectors returns desktop/extension connector devices for the org.
+// listLocalConnectors returns Chrome Extension connector devices for the org.
 // GET /api/connectors
 func (s *Server) listLocalConnectors(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -52,7 +53,7 @@ func (s *Server) getLocalConnectorScreen(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"screen": screen, "actions": actions})
 }
 
-// createConnectorInputCommand queues a dashboard mouse/keyboard command for THG Local Runtime.
+// createConnectorInputCommand queues a dashboard mouse/keyboard command for THG Chrome Extension.
 // POST /api/connectors/input
 func (s *Server) createConnectorInputCommand(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -107,8 +108,8 @@ func (s *Server) createConnectorInputCommand(c *fiber.Ctx) error {
 	}
 	if !inputRelayReady {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "THG Local Runtime on this device is streaming video but does not support remote input yet",
-			"hint":  "download the latest THG Local Kit, close the old runtime window, then start Start-THG-Local-Runtime again",
+			"error": "THG Chrome Extension on this browser is streaming video but does not support remote input yet",
+			"hint":  "reload the latest THG Chrome Extension package, then open the Facebook tab again",
 		})
 	}
 	id, err := s.db.CreateConnectorCommand(orgID, req.AccountID, screen.AgentID, userID, req.Type, string(req.Payload))
@@ -118,7 +119,7 @@ func (s *Server) createConnectorInputCommand(c *fiber.Ctx) error {
 	return c.Status(202).JSON(fiber.Map{"status": "queued", "id": id})
 }
 
-// createLocalConnectorPairingCode creates a short-lived code for first-time desktop pairing.
+// createLocalConnectorPairingCode creates a short-lived code for first-time Chrome Extension pairing.
 // POST /api/connectors/pairing-code
 func (s *Server) createLocalConnectorPairingCode(c *fiber.Ctx) error {
 	var req struct {
@@ -134,7 +135,7 @@ func (s *Server) createLocalConnectorPairingCode(c *fiber.Ctx) error {
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		name = fmt.Sprintf("Local Chrome #%d", userID)
+		name = fmt.Sprintf("%s #%d", browsergateway.DefaultChromeConnectorName, userID)
 	}
 	if req.AccountID > 0 {
 		if acc, err := s.db.GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
@@ -155,7 +156,7 @@ func (s *Server) createLocalConnectorPairingCode(c *fiber.Ctx) error {
 	})
 }
 
-// claimLocalConnectorPairingCode is called by THG Local Connector without JWT.
+// claimLocalConnectorPairingCode is called by THG Chrome Extension without JWT.
 // POST /api/connectors/pair
 func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 	var req struct {
@@ -168,6 +169,9 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 		CapabilitiesJSON string `json:"capabilities_json"`
 		CurrentURL       string `json:"current_url"`
 		FBUserID         string `json:"fb_user_id"`
+		FBDisplayName    string `json:"fb_display_name"`
+		FBUsername       string `json:"fb_username"`
+		FBProfileURL     string `json:"fb_profile_url"`
 		StreamStatus     string `json:"stream_status"`
 	}
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Code) == "" {
@@ -175,18 +179,14 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 	}
 	kind := strings.TrimSpace(req.Kind)
 	if kind == "" {
-		kind = "desktop_connector"
+		kind = browsergateway.KindExtensionConnector
 	}
-	if kind != "desktop_connector" && kind != "extension_connector" {
+	if kind != browsergateway.KindExtensionConnector {
 		return c.Status(400).JSON(fiber.Map{"error": "unsupported connector kind"})
 	}
 	transport := strings.TrimSpace(req.Transport)
 	if transport == "" {
-		if kind == "extension_connector" {
-			transport = "chrome_extension"
-		} else {
-			transport = "local_chrome"
-		}
+		transport = browsergateway.TransportChromeExtension
 	}
 	tok, deviceToken, err := s.db.ClaimConnectorPairingCode(req.Code, store.AgentPresence{
 		Hostname:         req.Hostname,
@@ -197,6 +197,9 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 		CapabilitiesJSON: req.CapabilitiesJSON,
 		CurrentURL:       req.CurrentURL,
 		FBUserID:         req.FBUserID,
+		FBDisplayName:    req.FBDisplayName,
+		FBUsername:       req.FBUsername,
+		FBProfileURL:     req.FBProfileURL,
 		StreamStatus:     req.StreamStatus,
 	})
 	if err != nil {
@@ -214,7 +217,7 @@ func (s *Server) claimLocalConnectorPairingCode(c *fiber.Ctx) error {
 	// heartbeats forever with "0 Chrome profile(s)" because
 	// /api/agent/browser-targets requires a `local_*` session row to
 	// surface a target. Forcing the operator to also click
-	// "Mở Chrome local" on the dashboard right after pair is a UX dead
+	// "Start stream" on the dashboard right after pair is a UX dead
 	// end — the intent of pair-with-account is "use this device for
 	// that account, now". When pair has no account, we leave the
 	// session row absent and the connector message tells the operator
@@ -364,5 +367,7 @@ func localConnectorSupportsInputRelay(capabilitiesJSON string) bool {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(capabilitiesJSON)), &caps); err != nil {
 		return false
 	}
-	return caps["input_relay"] == true
+	return caps[browsergateway.CapabilityInputRelay] == true ||
+		caps[browsergateway.CapabilityCommandPolling] == true ||
+		caps["extension_bridge"] == "supported"
 }

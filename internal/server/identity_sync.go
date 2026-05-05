@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 )
@@ -49,7 +50,7 @@ func (s *Server) applyConnectorIdentity(ctx context.Context, snap connectorIdent
 	}
 	stream := strings.TrimSpace(snap.StreamStatus)
 	if stream == "" {
-		stream = "connector_online"
+		stream = browsergateway.StreamConnectorOnline
 	}
 	sessionStatus := store.LocalSessionStatusFromStream(stream)
 
@@ -57,7 +58,7 @@ func (s *Server) applyConnectorIdentity(ctx context.Context, snap connectorIdent
 		_ = appStore.RecordLocalSession(ctx, snap.AccountID, snap.OrgID, sessionStatus, strings.TrimSpace(snap.ChromeError))
 	}
 
-	loggedIn := strings.EqualFold(stream, "facebook_logged_in") && strings.TrimSpace(snap.FBUserID) != ""
+	loggedIn := strings.EqualFold(stream, browsergateway.StreamFacebookLoggedIn) && strings.TrimSpace(snap.FBUserID) != ""
 	if loggedIn {
 		meta := store.FacebookIdentityMeta{
 			DisplayName: snap.FBDisplayName,

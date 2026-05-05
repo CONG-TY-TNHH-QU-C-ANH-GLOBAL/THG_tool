@@ -449,11 +449,11 @@ func (s *Store) GetOutboundForOrg(orgID, id int64) (*models.OutboundMessage, err
 }
 
 // ClaimApprovedOutboundForOrg atomically moves one approved message into the
-// internal sending state so a local runtime can execute it exactly once.
+// internal sending state so a Chrome Extension can execute it exactly once.
 func (s *Store) ClaimApprovedOutboundForOrg(orgID, id int64, workerID string) error {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
-		workerID = "local-runtime"
+		workerID = "chrome-extension"
 	}
 	res, err := s.db.Exec(
 		`UPDATE outbound_messages
@@ -472,8 +472,8 @@ func (s *Store) ClaimApprovedOutboundForOrg(orgID, id int64, workerID string) er
 }
 
 // ResetStaleSendingOutboundForOrg returns abandoned sending rows to approved.
-// This protects production from a desktop runtime crashing after claiming work
-// but before reporting sent/failed.
+// This protects production from a Chrome Extension disconnecting after
+// claiming work but before reporting sent/failed.
 func (s *Store) ResetStaleSendingOutboundForOrg(orgID int64, staleAfter time.Duration) error {
 	if orgID <= 0 {
 		return nil

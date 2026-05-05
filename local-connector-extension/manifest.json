@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "THG Local Connector Helper",
-  "description": "Verify a signed-in Facebook session on this Chrome profile for a THG workspace.",
-  "version": "0.1.1",
+  "name": "THG Chrome Extension",
+  "description": "Connect a signed-in Facebook tab to a THG workspace for dashboard streaming and automation.",
+  "version": "0.2.0",
   "action": {
-    "default_title": "THG Helper",
+    "default_title": "THG Chrome",
     "default_popup": "popup.html"
   },
   "background": {
@@ -14,14 +14,13 @@
     "activeTab",
     "alarms",
     "cookies",
+    "scripting",
     "storage",
     "tabs"
   ],
   "host_permissions": [
     "https://sale.thgfulfill.com/*",
     "https://*.thgfulfill.com/*",
-    "http://localhost:*/*",
-    "http://127.0.0.1:*/*",
     "https://facebook.com/*",
     "https://*.facebook.com/*"
   ],
@@ -32,6 +31,12 @@
         "https://*.facebook.com/*"
       ],
       "js": [
+        "content/shared.js",
+        "content/meta.js",
+        "content/commands.js",
+        "content/crawl.js",
+        "content/outbound.js",
+        "content/bridge.js",
         "content.js"
       ],
       "run_at": "document_idle"

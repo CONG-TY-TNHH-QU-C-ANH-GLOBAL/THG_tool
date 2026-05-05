@@ -61,13 +61,13 @@ jobs:
           ls -lh scraper thg-worker
           echo "Go binaries built"
 
-      - name: Build THG Local Connector downloads
+      - name: Build THG Chrome Extension Web Store package
         env:
-          OUT_DIR: thg-login-downloads
+          OUT_DIR: thg-extension-store-package
         run: |
-          bash scripts/build-local-connector.sh "${{ github.sha }}"
-          ls -lh thg-login-downloads
-          file thg-login-downloads/*
+          bash scripts/build-chrome-extension.sh "${{ github.sha }}"
+          ls -lh thg-extension-store-package
+          file thg-extension-store-package/*
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -118,7 +118,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "frontend-standalone.tar.gz,docker/,deploy/,thg-login-downloads/"
+          source: "frontend-standalone.tar.gz,docker/,deploy/"
           target: "/tmp/thg-deploy/"
           overwrite: true
 
@@ -152,17 +152,8 @@ jobs:
             done
             echo "Go binaries installed"
 
-            # Install downloadable THG Local Connector builds served by /downloads.
-            sudo mkdir -p /opt/thg-scraper/data/downloads
-            sudo cp /tmp/thg-deploy/thg-login-downloads/thg-login-* /opt/thg-scraper/data/downloads/
-            sudo cp /tmp/thg-deploy/thg-login-downloads/thg-local-kit-*.zip /opt/thg-scraper/data/downloads/
-            sudo cp /tmp/thg-deploy/thg-login-downloads/thg-chrome-extension.zip /opt/thg-scraper/data/downloads/
-            sudo chown -R thg-scraper:thg-scraper /opt/thg-scraper/data/downloads
-            sudo chmod 750 /opt/thg-scraper/data/downloads
-            sudo chmod 640 /opt/thg-scraper/data/downloads/thg-login-* /opt/thg-scraper/data/downloads/thg-local-kit-*.zip /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
-            test -s /opt/thg-scraper/data/downloads/thg-local-kit-windows.zip
-            test -s /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
-            echo "Local Kit, Connector, and Chrome Extension downloads installed"
+            # Chrome Extension is installed from Chrome Web Store in production.
+            # The CI-built zip is only a validation/upload package and is not served to users.
 
             # Install Node.js if missing.
             if ! command -v node &>/dev/null; then

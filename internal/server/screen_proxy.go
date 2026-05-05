@@ -40,7 +40,7 @@ type inputEvent struct {
 	DeltaY    float64 `json:"deltaY"`
 }
 
-// screenProxyHandler streams Chrome desktop as JPEG frames via CDP Page.startScreencast
+// screenProxyHandler streams a browser session as JPEG frames via CDP Page.startScreencast
 // and forwards mouse/keyboard input events back to CDP Input API.
 // Route: GET /ws/screen/:id  (protected by wsJWTAuth)
 func (s *Server) screenProxyHandler() func(*fiberws.Conn) {

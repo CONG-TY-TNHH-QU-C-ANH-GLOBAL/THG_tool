@@ -23,7 +23,7 @@ The product needs to support:
 - many organizations
 - many users/staff per organization
 - many Facebook accounts per workspace
-- many Local Runtime devices
+- many Chrome Extension connector devices
 - recurring crawl jobs every 30 minutes or faster
 - outbox execution, cooldowns, and conversation state
 - audit trails for every agent decision/action
@@ -34,7 +34,7 @@ SQLite becomes risky because:
 
 - one-file storage is hard to scale horizontally
 - write concurrency is limited even with WAL
-- background worker + API + runtime heartbeat writes can contend
+- background worker + API + connector heartbeat writes can contend
 - online migrations are fragile
 - replication/failover/backups are not production-grade enough for this service
 - multi-tenant query isolation and reporting will grow beyond simple local SQL
@@ -256,8 +256,8 @@ WHERE status IN ('draft', 'approved');
 For auto-execution:
 
 - Go decides status via `QueueOutboundForOrg`.
-- Runtime only executes `approved`.
-- Runtime marks `sent` or `failed`.
+- Chrome Extension only executes `approved`.
+- Chrome Extension marks `sent` or `failed`.
 
 No AI prompt can flip organization auto mode directly.
 
@@ -400,4 +400,3 @@ Production: managed Postgres + object storage + optional Redis
 - Do not split services before the database boundary is stable.
 - Do not migrate every query by hand without tests.
 - Do not allow mixed org data during migration.
-

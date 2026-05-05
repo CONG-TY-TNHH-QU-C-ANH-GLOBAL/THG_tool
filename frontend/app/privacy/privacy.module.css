@@ -1,0 +1,322 @@
+.page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(24, 86, 255, 0.24), transparent 28rem),
+    radial-gradient(circle at 88% 12%, rgba(7, 202, 107, 0.14), transparent 24rem),
+    linear-gradient(160deg, #07111f 0%, #09172b 46%, #050914 100%);
+  color: #f7fbff;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.035), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%);
+  pointer-events: none;
+}
+
+.hero,
+.grid,
+.gridSingle {
+  position: relative;
+  z-index: 1;
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.hero {
+  padding: 28px 0 18px;
+}
+
+.heroNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.backLink,
+.badge,
+.summaryRow a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(150%);
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.backLink:hover,
+.backLink:focus-visible {
+  border-color: rgba(125, 164, 255, 0.6);
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 164, 255, 0.25);
+  background: rgba(24, 86, 255, 0.12);
+  color: #dbe8ff;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.heroCard,
+.panel,
+.dataCard {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 24px 70px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.heroCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+  gap: 22px;
+  border-radius: 24px;
+  padding: 28px;
+}
+
+.heroCopy h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 4vw, 4.2rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  max-width: 12ch;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #91adff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lead {
+  margin: 18px 0 0;
+  max-width: 60ch;
+  color: #b8c6dc;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.summaryPanel {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)),
+    rgba(6, 12, 24, 0.42);
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #b8c6dc;
+  font-size: 0.94rem;
+}
+
+.summaryRow:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.summaryRow strong,
+.summaryRow a {
+  color: #f7fbff;
+  font-weight: 700;
+  text-align: right;
+}
+
+.grid,
+.gridSingle {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 18px;
+}
+
+.grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.gridSingle {
+  grid-template-columns: 1fr;
+  padding-bottom: 40px;
+}
+
+.panel {
+  border-radius: 22px;
+  padding: 22px;
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: #dbe8ff;
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dataCard {
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.iconWrap {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, rgba(24, 86, 255, 0.22), rgba(125, 164, 255, 0.14));
+  color: #dbe8ff;
+}
+
+.dataCard h3 {
+  margin: 0 0 8px;
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.dataCard p,
+.bodyText,
+.list li {
+  margin: 0;
+  color: #b8c6dc;
+  font-size: 0.96rem;
+  line-height: 1.68;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.list li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.68em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #07ca6b;
+  box-shadow: 0 0 0 6px rgba(7, 202, 107, 0.12);
+}
+
+.bodyText a {
+  color: #dbe8ff;
+  font-weight: 700;
+}
+
+.bodyText a:hover,
+.bodyText a:focus-visible,
+.summaryRow a:hover,
+.summaryRow a:focus-visible {
+  color: #91adff;
+}
+
+@media (max-width: 980px) {
+  .heroCard,
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroCopy h1 {
+    max-width: 14ch;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero,
+  .grid,
+  .gridSingle {
+    width: min(100% - 20px, 1180px);
+  }
+
+  .hero {
+    padding-top: 18px;
+  }
+
+  .heroCard,
+  .panel {
+    border-radius: 18px;
+    padding: 18px;
+  }
+
+  .heroCopy h1 {
+    font-size: 1.95rem;
+    max-width: 100%;
+  }
+
+  .lead,
+  .dataCard p,
+  .bodyText,
+  .list li {
+    font-size: 0.92rem;
+  }
+
+  .summaryRow {
+    display: grid;
+    gap: 4px;
+  }
+
+  .summaryRow strong,
+  .summaryRow a {
+    text-align: left;
+  }
+}

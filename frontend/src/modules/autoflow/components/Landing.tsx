@@ -19,7 +19,7 @@ const FEATS = [
   { I: Target, t: 'Market Signal Gate', d: 'Ưu tiên lead có nhu cầu thật, loại quảng cáo dịch vụ và tín hiệu nhiễu trước khi đổ về dashboard.' },
   { I: Trophy, t: 'KPI Leaderboard', d: 'Bảng hiệu suất sales lấy từ dữ liệu thật của workspace, không dùng mock UI.' },
   { I: Database, t: 'Private Data', d: 'Kết nối file, Google Sheet và memory doanh nghiệp để agent hiểu sản phẩm, giá và tone.' },
-  { I: ShieldCheck, t: 'Local Runtime', d: 'Facebook chạy trên session thật của organization, browser automation vẫn quan sát được từ dashboard.' },
+  { I: ShieldCheck, t: 'Chrome Extension', d: 'Facebook chạy trên Chrome thật của organization, browser automation vẫn quan sát được từ dashboard.' },
 ];
 
 const PLANS = [

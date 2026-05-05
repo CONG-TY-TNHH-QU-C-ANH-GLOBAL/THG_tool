@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,14 +10,11 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
 )
-
-// PostProcessor is called after an agent submits scraped posts so the AI pipeline can classify them.
-// Wired to orchestrator.ProcessAgentScrapedPosts in main.go.
-type PostProcessor func(ctx context.Context, groupURL string, posts []models.Post)
 
 // agentAuth middleware validates X-Agent-Token header.
 func (s *Server) agentAuth(c *fiber.Ctx) error {
@@ -68,101 +64,6 @@ func clampPresenceFields(p *store.AgentPresence) {
 	p.FBProfileURL = truncateRune(p.FBProfileURL, limConnectorFBProfileURL)
 	p.StreamStatus = truncateRune(p.StreamStatus, limConnectorStreamStatus)
 	p.ChromeError = truncateRune(p.ChromeError, limConnectorChromeError)
-}
-
-// agentGetNextJob atomically claims the oldest pending local job for this
-// agent, transitioning it to running in a single SQL statement so two
-// agents calling this endpoint concurrently can't both run the same job.
-// Returns 204 when the queue is empty.
-//
-// GET /api/agent/jobs/next
-func (s *Server) agentGetNextJob(c *fiber.Ctx) error {
-	workerID, _ := c.Locals("agent_token_fp").(string)
-	if workerID == "" {
-		// agentAuth always sets this; if it's missing, fall back to a
-		// stable string so the row's claimed_by isn't blank.
-		if id, ok := c.Locals("agent_id").(int64); ok && id > 0 {
-			workerID = fmt.Sprintf("agent:%d", id)
-		} else {
-			workerID = "unknown"
-		}
-	}
-	job, err := s.db.ClaimNextLocalJob(workerID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	if job == nil {
-		return c.SendStatus(204)
-	}
-	agentName, _ := c.Locals("agent_name").(string)
-	log.Printf("[Agent] Job %d claimed by agent %q (atomic)", job.ID, agentName)
-	return c.JSON(job)
-}
-
-// agentClaimJob is retained for backwards compatibility with older
-// runtimes that still issue a separate claim call after fetching the job.
-// The atomic claim already happened in agentGetNextJob, so this endpoint
-// is now a no-op idempotent acknowledgement.
-//
-// POST /api/agent/jobs/:id/claim
-func (s *Server) agentClaimJob(c *fiber.Ctx) error {
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
-	}
-	return c.JSON(fiber.Map{"status": "claimed", "id": id, "note": "claim is atomic at /jobs/next; this endpoint is now a no-op"})
-}
-
-// agentJobDone processes results submitted by the local agent.
-// POST /api/agent/jobs/:id/done
-func (s *Server) agentJobDone(c *fiber.Ctx) error {
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
-	}
-
-	var body struct {
-		GroupURL string        `json:"group_url"`
-		Posts    []models.Post `json:"posts"`
-		Summary  string        `json:"summary"`
-	}
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
-	}
-
-	saved := 0
-	if len(body.Posts) > 0 {
-		saved, _ = s.db.InsertPostsBatch(body.Posts)
-		log.Printf("[Agent] Job %d: received %d posts, saved %d new", id, len(body.Posts), saved)
-
-		// Run AI classification pipeline asynchronously
-		if s.postProcessor != nil {
-			go s.postProcessor(context.Background(), body.GroupURL, body.Posts)
-		}
-	}
-
-	result := body.Summary
-	if result == "" {
-		result = fmt.Sprintf(`{"posts_received":%d,"posts_saved":%d}`, len(body.Posts), saved)
-	}
-	_ = s.db.UpdateJobStatus(id, models.JobDone, result, "")
-	return c.JSON(fiber.Map{"status": "done", "posts_saved": saved})
-}
-
-// agentJobFail records a job failure from the local agent.
-// POST /api/agent/jobs/:id/fail
-func (s *Server) agentJobFail(c *fiber.Ctx) error {
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
-	}
-	var body struct {
-		Error string `json:"error"`
-	}
-	_ = c.BodyParser(&body)
-	_ = s.db.UpdateJobStatus(id, models.JobFailed, "", body.Error)
-	log.Printf("[Agent] Job %d failed: %s", id, body.Error)
-	return c.JSON(fiber.Map{"status": "failed"})
 }
 
 // agentGetOutbox returns approved outbound messages for local execution.
@@ -370,9 +271,9 @@ func (s *Server) agentHeartbeat(c *fiber.Ctx) error {
 	})
 }
 
-// agentChromeStatus is the explicit local Chrome handshake endpoint.
-// The desktop connector calls this even before any workspace target exists, so
-// the dashboard can distinguish "device paired" from "Chrome actually attached".
+// agentChromeStatus is the explicit Chrome Extension handshake endpoint.
+// The extension calls this even before any workspace target exists, so
+// the dashboard can distinguish "device paired" from "Facebook tab ready".
 // POST /api/agent/chrome-status
 func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
@@ -392,7 +293,7 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 
 	status := strings.TrimSpace(body.StreamStatus)
 	if status == "" {
-		status = "chrome_not_connected"
+		status = browsergateway.StreamChromeNotConnected
 	}
 	presence := store.AgentPresence{
 		AssignedAccountID: body.AccountID,
@@ -411,7 +312,7 @@ func (s *Server) agentChromeStatus(c *fiber.Ctx) error {
 		if err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
-		loggedIn := strings.EqualFold(status, "facebook_logged_in") && strings.TrimSpace(body.FBUserID) != ""
+		loggedIn := strings.EqualFold(status, browsergateway.StreamFacebookLoggedIn) && strings.TrimSpace(body.FBUserID) != ""
 		if loggedIn {
 			if errResp := s.rejectIfFacebookProfileMismatch(c, c.Context(), acc, body.FBUserID, orgID); errResp != nil {
 				return errResp
@@ -482,10 +383,10 @@ func (s *Server) agentBrowserTargets(c *fiber.Ctx) error {
 
 // browserTargetsHint inspects the org's account state to explain why the
 // connector has no runnable browser target yet. The short code is stable for
-// Runtime clients; the prose is a fallback for older clients.
+// Chrome Extension clients; the prose is a fallback for older clients.
 func browserTargetsHint(s *Server, orgID, assignedAccountID int64) (string, string) {
 	if orgID <= 0 {
-		return "no_org", "Connector chưa được gắn vào workspace nào. Pair lại bằng mã mới từ Browser dashboard."
+		return "no_org", "Chrome Extension chưa được gắn vào workspace nào. Pair lại bằng mã mới từ Browser dashboard."
 	}
 	accounts, _ := s.db.GetAllAccounts(orgID)
 	hasFacebook := false
@@ -500,21 +401,21 @@ func browserTargetsHint(s *Server, orgID, assignedAccountID int64) (string, stri
 	}
 	if !hasFacebook {
 		return "no_account_in_org",
-			"Workspace chưa có Facebook account. Tạo phiên Facebook mới trong Browser dashboard; Runtime đang chạy sẽ tự nhận target khi account được tạo."
+			"Workspace chưa có Facebook account. Tạo phiên Facebook mới trong Browser dashboard; Chrome Extension sẽ tự nhận target khi account được tạo."
 	}
 	if assignedAccountID > 0 {
 		if !assignedExists {
 			return "assigned_account_missing",
-				"Thiết bị đang gắn với một Facebook account không còn tồn tại trong workspace. Disconnect thiết bị và tạo mã kết nối mới."
+				"Chrome Extension đang gắn với một Facebook account không còn tồn tại trong workspace. Disconnect thiết bị và tạo mã kết nối mới."
 		}
 		return "assigned_account_not_started",
-			"Facebook account đã gắn với thiết bị nhưng chưa có phiên Browser local. Runtime sẽ tự mở Chrome khi target sẵn sàng."
+			"Facebook account đã gắn với Chrome Extension nhưng chưa có Browser stream. Mở tab Facebook đã đăng nhập trong Chrome đó để extension stream về dashboard."
 	}
 	return "no_local_session_yet",
-		"Connector đã online nhưng chưa được gắn với Facebook account cụ thể. Vào Browser dashboard, chọn account và tạo mã kết nối riêng cho thiết bị này."
+		"Chrome Extension đã online nhưng chưa được gắn với Facebook account cụ thể. Vào Browser dashboard, chọn account và tạo mã kết nối riêng cho Chrome này."
 }
 
-// agentConnectorCommands returns pending dashboard input commands for this local runtime.
+// agentConnectorCommands returns pending dashboard input commands for this Chrome Extension.
 // GET /api/connectors/commands
 func (s *Server) agentConnectorCommands(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
@@ -530,7 +431,7 @@ func (s *Server) agentConnectorCommands(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"commands": commands, "count": len(commands)})
 }
 
-// agentConnectorCommandDone marks a dashboard input command as executed by this runtime.
+// agentConnectorCommandDone marks a dashboard input command as executed by this Chrome Extension.
 // POST /api/connectors/commands/:id/done
 func (s *Server) agentConnectorCommandDone(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
@@ -548,9 +449,9 @@ func (s *Server) agentConnectorCommandDone(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
-// agentConnectorCrawlResult stores crawl output produced by THG Local Runtime.
-// The runtime runs on the user's device, so this is the production path for
-// Local Browser sessions that the server cannot attach to by CDP directly.
+// agentConnectorCrawlResult stores crawl output produced by THG Chrome Extension.
+// The extension runs inside the user's signed-in Chrome, so this is the
+// production path for Facebook sessions that the server does not own directly.
 // POST /api/connectors/crawl-result
 func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
@@ -607,7 +508,7 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	if strings.EqualFold(body.Status, "failed") || strings.TrimSpace(body.Error) != "" {
 		errMsg := strings.TrimSpace(body.Error)
 		if errMsg == "" {
-			errMsg = "local runtime crawl failed"
+			errMsg = "Chrome Extension crawl failed"
 		}
 		_ = appStore.FailTask(c.Context(), body.TaskID, errMsg)
 		return c.JSON(fiber.Map{"status": "failed", "error": errMsg})
@@ -656,7 +557,7 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 			Content:      content,
 			Score:        models.LeadScore(category),
 			ServiceMatch: category,
-			AuthorRole:   "Local Runtime classifier",
+			AuthorRole:   string(browsergateway.ProviderChromeExtension) + " classifier",
 			PainPoint:    strings.Join(signals, "; "),
 			AIReasoning:  strings.Join(signals, "; "),
 			Niche:        strings.Join(keywords, ", "),
@@ -761,7 +662,7 @@ func scoreConnectorCrawlItem(content string, keywords []string, reactions, comme
 	result := scoring.New(scoring.DefaultConfig()).ScoreWithGuidance(content, keywords, reactions, comments, "", guidance)
 	score := result.Score
 	category := result.Category
-	signals := append([]string{"local_runtime_crawl"}, result.Signals...)
+	signals := append([]string{"chrome_extension_crawl"}, result.Signals...)
 	if shares > 0 {
 		signals = append(signals, "engagement:shares")
 	}
@@ -813,7 +714,7 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 
 	streamStatus := strings.TrimSpace(body.StreamStatus)
 	if streamStatus == "" {
-		streamStatus = "connector_online"
+		streamStatus = browsergateway.StreamConnectorOnline
 	}
 	if err := s.db.UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, body.FBDisplayName, body.FBUsername, body.FBProfileURL, streamStatus, body.ChromeError); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})

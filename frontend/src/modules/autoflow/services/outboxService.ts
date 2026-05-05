@@ -2,7 +2,7 @@ import { del, get, put } from './api';
 
 export interface OutboundMessage {
   id: number;
-  type: string;           // 'comment' | 'inbox' | 'group_post'
+  type: string;           // 'comment' | 'inbox' | 'group_post' | 'profile_post'
   platform: string;
   account_id: number;
   target_url: string;

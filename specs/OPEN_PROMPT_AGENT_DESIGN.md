@@ -55,13 +55,13 @@ User flow:
             Primitives (Phase 1-3 helpers)
             • QueueOutboundForOrg
             • requireAccountForOrg
-            • ClaimNextLocalJob
+            • connector_commands
             • applyConnectorIdentity
             • ConnectorOwnsAccountStream
             • workspace.AcquireProfileLock
                    │
                    ▼
-            Outbox / Crawl queue / Agent runtime
+            Outbox / Crawl queue / Connector execution
 ```
 
 The architectural shift is **skills, not flat tools**. Today the
@@ -352,7 +352,7 @@ production-grade CDP access.
 | LLM picks the wrong skill on ambiguous prompts | Deterministic regex fast-path covers the unambiguous cases; LLM falls back. Add `confidence` threshold and surface "Bạn muốn X hay Y?" clarifier when low. |
 | Adding `org_skills` blocks first-run UX | If org has zero rows, treat as "default blueprint" and serve the curated default set without requiring admin setup. |
 | New skills (fanpage care) need real Chrome work that depends on Phase 4 | Ship 6.3 as "scaffold + approval-required draft" first; flip to live execution once Phase 4 lands. |
-| Audit log grows unbounded | Add periodic prune (older than 90 days) — same pattern as `RecoverStaleLocalJobs`. |
+| Audit log grows unbounded | Add periodic prune (older than 90 days) — same pattern as the existing scheduler maintenance loops. |
 | Custom config JSON becomes a prompt-injection vector | Treat config the same as user_context: rejected from `set_context`, only writable via admin API. |
 
 ---

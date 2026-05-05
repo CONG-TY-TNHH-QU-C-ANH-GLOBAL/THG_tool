@@ -1,31 +1,28 @@
-import type { SystemInfo } from '../../services/systemService';
 import type { LocalConnector, LocalConnectorAction } from '../../types';
 
 export function stateLabel(state?: string): string {
   switch (state) {
     case 'initializing': return 'đang khởi động';
-    case 'display_ready': return 'desktop ready';
+    case 'display_ready': return 'Extension ready';
     case 'ready': return 'ready';
     case 'idle': return 'idle';
     case 'active': return 'active';
     case 'checkpoint': return 'human required';
     case 'human_required': return 'human required';
-    case 'local_starting': return 'đang chờ Runtime';
-    case 'local_active': return 'Chrome thật đang chạy';
+    case 'local_starting': return 'đang chờ Extension';
+    case 'local_active': return 'Extension đang stream';
     case 'local_login_required': return 'cần đăng nhập Facebook';
     case 'local_human_required': return 'Facebook cần xác minh';
-    case 'local_ready': return 'Facebook local ready';
-    case 'local_error': return 'local error';
+    case 'local_ready': return 'Facebook ready';
+    case 'local_error': return 'cần kiểm tra';
     case 'error': return 'error';
     default: return state || '';
   }
 }
 
 export function stateTone(state?: string) {
-  if (state === 'error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
-  if (state === 'local_error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
-  if (state === 'checkpoint' || state === 'human_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
-  if (state === 'local_human_required' || state === 'local_login_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
+  if (state === 'error' || state === 'local_error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
+  if (state === 'checkpoint' || state === 'human_required' || state === 'local_human_required' || state === 'local_login_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
   if (state === 'initializing') return { color: '#fde68a', bg: '#78350f44', border: '#f59e0b55' };
   if (state === 'local_starting' || state === 'local_active' || state === 'local_ready') return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
   return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
@@ -45,14 +42,6 @@ export function formatCountdown(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-export type DownloadKey = keyof SystemInfo['agent_builds'];
-
-export const RUNTIME_DOWNLOADS: Array<{ key: DownloadKey; label: string; href: string }> = [
-  { key: 'local_kit_windows', label: 'Windows', href: '/downloads/thg-local-kit-windows.zip' },
-  { key: 'local_kit_mac_m1', label: 'macOS', href: '/downloads/thg-local-kit-mac-m1.zip' },
-  { key: 'local_kit_linux', label: 'Linux', href: '/downloads/thg-local-kit-linux.zip' },
-];
-
 export function connectorCapabilities(connector: LocalConnector): Record<string, unknown> {
   try {
     const parsed = JSON.parse(connector.capabilitiesJson || '{}');
@@ -64,10 +53,13 @@ export function connectorCapabilities(connector: LocalConnector): Record<string,
 
 export function isDashboardStreamConnector(connector: LocalConnector): boolean {
   const caps = connectorCapabilities(connector);
-  return connector.kind === 'desktop_connector' ||
-    connector.transport === 'local_chrome' ||
-    caps.native_companion === true ||
-    caps.multi_profile === true;
+  return connector.kind === 'extension_connector' ||
+    connector.transport === 'chrome_extension' ||
+    caps.chrome_extension === true ||
+    caps.extension_bridge === 'supported' ||
+    caps.dashboard_stream === true ||
+    caps.dom_metadata === true ||
+    caps.screen_capture === 'active_facebook_tab_only';
 }
 
 export function isUsableConnectorForAccount(connector: LocalConnector, userId: number, accountId?: number | null): boolean {
@@ -84,11 +76,11 @@ export function connectorStatusLabel(status?: string): string {
     case 'connector_online':
       return 'Sẵn sàng';
     case 'chrome_not_connected':
-      return 'Chưa kết nối Chrome';
+      return 'Chưa thấy tab Facebook';
     case 'chrome_connected':
-      return 'Đã thấy Chrome local';
+      return 'Đã thấy Chrome';
     case 'facebook_login_required':
-      return 'Chưa đăng nhập Facebook';
+      return 'Cần đăng nhập Facebook';
     case 'facebook_human_required':
       return 'Facebook cần xác minh';
     case 'facebook_logged_in':
@@ -142,9 +134,9 @@ export function actionTypeLabel(type?: string): string {
 export function actionStatusTone(status?: string) {
   switch ((status || '').toLowerCase()) {
     case 'pending':
-      return { label: 'đang chờ Runtime', color: '#fde68a', border: '#f59e0b55', bg: '#78350f33' };
+      return { label: 'đang chờ Extension', color: '#fde68a', border: '#f59e0b55', bg: '#78350f33' };
     case 'claimed':
-      return { label: 'Runtime đang chạy', color: '#67e8f9', border: '#06b6d455', bg: '#164e6333' };
+      return { label: 'Extension đang chạy', color: '#67e8f9', border: '#06b6d455', bg: '#164e6333' };
     case 'done':
       return { label: 'xong', color: '#86efac', border: '#22c55e55', bg: '#14532d33' };
     case 'failed':

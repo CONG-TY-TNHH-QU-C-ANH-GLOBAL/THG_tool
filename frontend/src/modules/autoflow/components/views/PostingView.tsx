@@ -27,8 +27,8 @@ export default function PostingView({ orgId }: PostingViewProps) {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await getOutbox({ type: 'group_post', limit: 100 });
-      setMessages(r.messages ?? []);
+      const r = await getOutbox({ limit: 150 });
+      setMessages((r.messages ?? []).filter(m => m.type === 'group_post' || m.type === 'profile_post'));
     } catch (err) {
       setMsg(err instanceof Error ? err.message : 'Không tải được outbox posting.');
     } finally {

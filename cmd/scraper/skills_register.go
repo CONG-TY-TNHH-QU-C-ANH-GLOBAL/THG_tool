@@ -262,10 +262,9 @@ func skillThroughHandler(actionID string, deps builtinSkillDeps) skills.SkillRun
 
 // registerScaffoldSkills installs the three new capabilities the user
 // asked for (Messenger fanpage scanning, fanpage maintenance, posting
-// to one's own profile). The first two are scaffolds — they queue an
-// audit-only acknowledgement until Phase 4 (CDP whitelist) lands the
-// hardened browser surface they need to actually drive Chrome. The
-// third (post_to_profile) reuses the existing group_post primitive.
+// to one's own profile). Fanpage care/inbox remain scaffolds until the
+// Chrome Extension has dedicated page-inbox adapters. post_to_profile
+// already uses the shared outbound queue with a distinct profile_post type.
 func registerScaffoldSkills(reg *skills.Registry, deps builtinSkillDeps) {
 	reg.Register(&skills.Skill{
 		ID:             "scan_fanpage_inbox",
@@ -315,9 +314,8 @@ func registerScaffoldSkills(reg *skills.Registry, deps builtinSkillDeps) {
 }
 
 // scaffoldFanpageInboxRun records an audit row and surfaces a
-// human-readable note that this skill is gated on Phase 4 CDP work.
-// It does NOT yet drive Chrome — that will land in Phase 6.3b once
-// the CDP method whitelist is in place.
+// human-readable note that this skill is gated on a dedicated Chrome
+// Extension fanpage-inbox adapter. It does NOT yet drive Chrome.
 func scaffoldFanpageInboxRun(deps builtinSkillDeps) skills.SkillRun {
 	return func(ctx context.Context, env skills.Env, args map[string]any) (skills.SkillResult, error) {
 		pageURL, _ := args["page_url"].(string)
@@ -336,16 +334,16 @@ func scaffoldFanpageInboxRun(deps builtinSkillDeps) skills.SkillRun {
 				}
 				if ready == 0 {
 					return skills.SkillResult{
-						Summary: fmt.Sprintf("scan_fanpage_inbox: chưa có account Facebook logged-in cho org %d. Login Facebook qua Browser/Local Runtime trước đã.", env.OrgID),
+						Summary: fmt.Sprintf("scan_fanpage_inbox: chưa có account Facebook logged-in cho org %d. Ghép THG Chrome Extension và mở tab Facebook đã đăng nhập trước đã.", env.OrgID),
 					}, nil
 				}
 			}
 		}
 		return skills.SkillResult{
-			Summary: "scan_fanpage_inbox: scaffold ready (Phase 6.3). Live execution sẽ được bật sau khi Phase 4 (CDP whitelist) hoàn tất. Page=" + pageURL,
+			Summary: "scan_fanpage_inbox: scaffold ready. Live execution sẽ được bật sau khi có Chrome Extension fanpage-inbox adapter. Page=" + pageURL,
 			Data: map[string]any{
 				"page_url":      pageURL,
-				"phase_gate":    "phase_4_cdp_whitelist",
+				"phase_gate":    "chrome_extension_fanpage_adapter",
 				"since_minutes": args["since_minutes"],
 			},
 		}, nil
@@ -360,45 +358,36 @@ func scaffoldFanpageCareRun(deps builtinSkillDeps) skills.SkillRun {
 			return skills.SkillResult{}, fmt.Errorf("care_fanpage requires page_url + action")
 		}
 		return skills.SkillResult{
-			Summary: fmt.Sprintf("care_fanpage: scaffold ready (Phase 6.3). action=%s page=%s — live execution sau Phase 4.", action, pageURL),
+			Summary: fmt.Sprintf("care_fanpage: scaffold ready. action=%s page=%s — live execution sau khi có Chrome Extension fanpage-care adapter.", action, pageURL),
 			Data: map[string]any{
 				"page_url":   pageURL,
 				"action":     action,
-				"phase_gate": "phase_4_cdp_whitelist",
+				"phase_gate": "chrome_extension_fanpage_adapter",
 			},
 		}, nil
 	}
 }
 
-// profilePostRun reuses the group_post pipeline because the queue/
-// approval/dedup story is identical — only the target type differs.
-// Naming is preserved for the operator audit trail (Type stays
-// "group_post" in the outbound row but the skill audit row records
-// post_to_profile so dashboards can split them).
+// profilePostRun reuses the shared outbound guardrails, but stores a
+// distinct profile_post type so profile automation can be audited and
+// executed without being confused with group posting.
 func profilePostRun(deps builtinSkillDeps) skills.SkillRun {
 	return func(ctx context.Context, env skills.Env, args map[string]any) (skills.SkillResult, error) {
 		content, _ := args["content"].(string)
 		if strings.TrimSpace(content) == "" {
 			return skills.SkillResult{}, fmt.Errorf("post_to_profile requires content")
 		}
-		// Delegate to create_job_post handler with profile-targeted defaults.
 		args["org_id"] = env.OrgID
 		if env.AccountID > 0 {
 			args["account_id"] = env.AccountID
 		}
-		if args["title"] == nil || args["title"] == "" {
-			args["title"] = "profile_post"
-		}
-		// No group_url → handler will treat it as posting to the
-		// authenticated profile / fallback target. The outbound row
-		// records type=group_post for queue compatibility.
-		summary, err := deps.handler("create_job_post", args)
+		summary, err := deps.handler("post_to_profile", args)
 		return skills.SkillResult{
 			Summary: summary,
 			Data: map[string]any{
-				"action_id":  "create_job_post",
+				"action_id":  "post_to_profile",
 				"as_skill":   "post_to_profile",
-				"phase_note": "Phase 6.3 scaffold: shares the group_post outbound queue.",
+				"phase_note": "Uses the shared outbound queue with type=profile_post.",
 			},
 		}, err
 	}

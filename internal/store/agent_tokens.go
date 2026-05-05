@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
 )
 
@@ -114,8 +115,8 @@ func (s *Store) CreateAgentToken(name string, createdBy, orgID int64) (int64, st
 
 func (s *Store) createAgentToken(name string, createdBy, orgID int64, kind string, accountID int64) (int64, string, error) {
 	transport := "poll"
-	if kind == "desktop_connector" || kind == "extension_connector" {
-		transport = "websocket"
+	if kind == browsergateway.KindExtensionConnector {
+		transport = browsergateway.TransportChromeExtension
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -158,7 +159,7 @@ func (s *Store) CreateConnectorPairingCode(name string, createdBy, orgID, accoun
 		ttl = 10 * time.Minute
 	}
 	if name == "" {
-		name = "Local Chrome"
+		name = browsergateway.DefaultChromeConnectorName
 	}
 	expiresAt := time.Now().Add(ttl).UTC()
 	_, _ = s.db.Exec(
@@ -238,22 +239,18 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 		deviceName = fmt.Sprintf("%s - %s", row.Name, p.Hostname)
 	}
 	if deviceName == "" {
-		deviceName = "Local Chrome"
+		deviceName = browsergateway.DefaultChromeConnectorName
 	}
 	kind := strings.TrimSpace(p.Kind)
 	if kind == "" {
-		kind = "desktop_connector"
+		kind = browsergateway.KindExtensionConnector
 	}
-	if kind != "desktop_connector" && kind != "extension_connector" {
-		kind = "desktop_connector"
+	if kind != browsergateway.KindExtensionConnector {
+		kind = browsergateway.KindExtensionConnector
 	}
 	transport := strings.TrimSpace(p.Transport)
 	if transport == "" {
-		if kind == "extension_connector" {
-			transport = "chrome_extension"
-		} else {
-			transport = "local_chrome"
-		}
+		transport = browsergateway.TransportChromeExtension
 	}
 
 	b := make([]byte, 32)
@@ -266,10 +263,12 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 	res, err := tx.Exec(
 		`INSERT INTO agent_tokens (
 			org_id, name, token_hash, created_by, kind, transport, assigned_account_id,
-			hostname, os, version, capabilities_json, current_url, fb_user_id, stream_status, last_seen
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			hostname, os, version, capabilities_json, current_url, fb_user_id,
+			fb_display_name, fb_username, fb_profile_url, stream_status, last_seen
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		row.OrgID, deviceName, tokenHash, row.CreatedBy, kind, transport, row.AccountID,
-		p.Hostname, p.OS, p.Version, defaultString(p.CapabilitiesJSON, "{}"), p.CurrentURL, p.FBUserID, defaultString(p.StreamStatus, "idle"),
+		p.Hostname, p.OS, p.Version, defaultString(p.CapabilitiesJSON, "{}"), p.CurrentURL, p.FBUserID,
+		p.FBDisplayName, p.FBUsername, p.FBProfileURL, defaultString(p.StreamStatus, "idle"),
 	)
 	if err != nil {
 		return nil, "", err
@@ -419,7 +418,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens
-		 WHERE org_id = ? AND kind IN ('desktop_connector', 'extension_connector')
+		 WHERE org_id = ? AND kind = 'extension_connector'
 		   AND active = 1
 		 ORDER BY last_seen DESC, created_at DESC`,
 		orgID,

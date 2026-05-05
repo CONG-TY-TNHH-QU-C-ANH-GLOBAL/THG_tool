@@ -6,15 +6,16 @@ Facebook Sales Intelligence and Automation workspace.
 Start here before making changes:
 
 1. `specs/PRODUCTION_FLOW.md` — current production wiring + helper layer (read first if you're changing auth, outbound, browser, or AI prompts)
-2. `specs/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md`
-3. `specs/PRODUCTION_DATABASE_MIGRATION_PLAN.md`
-4. `specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`
-5. `openspec/root-architecture.md`
-6. `specs/ROOT_ARCHITECTURE.md`
-7. `frontend/src/modules/autoflow/`
-8. `internal/handlers/facebook_crawl/handler.go`
-9. `internal/ai/business.go`
-10. `internal/ai/universal.go`
+2. `specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`
+3. `specs/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md`
+4. `specs/PRODUCTION_DATABASE_MIGRATION_PLAN.md`
+5. `specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`
+6. `openspec/root-architecture.md`
+7. `specs/ROOT_ARCHITECTURE.md`
+8. `frontend/src/modules/autoflow/`
+9. `internal/handlers/facebook_crawl/handler.go`
+10. `internal/ai/business.go`
+11. `internal/ai/universal.go`
 
 ## Current Product Direction
 
@@ -131,12 +132,6 @@ Use these instead of writing org checks / session writes from scratch:
 - `store.IsAutoOutboundEnabledForOrg(orgID)` — single source of truth
   for whether the org has opted into auto-execute. Backed by
   `org:{id}:outbound_mode` user_context key, admin-only.
-- `store.ClaimNextLocalJob(workerID)` — atomic SELECT + UPDATE for the
-  legacy local-runtime job queue. Two agents calling it concurrently
-  cannot both claim the same row.
-- `store.RecoverStaleLocalJobs(timeout)` — flips abandoned `running`
-  rows back to `pending`. Call from a background loop (the API does
-  this every 2 minutes).
 - `workspace.AcquireProfileLock(profileDir)` — cross-process exclusive
   claim on a Chrome `--user-data-dir`. Held for the lifetime of the
   container; released on Stop / StopAll / failed Start. Don't bypass.

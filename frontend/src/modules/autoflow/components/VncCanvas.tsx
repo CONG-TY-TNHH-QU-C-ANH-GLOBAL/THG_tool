@@ -161,7 +161,7 @@ class RfbClient {
           if (remaining < 4) break main;
           if (readU32(this.buffer, offset) !== 0) throw new Error('VNC authentication failed');
           this.send(new Uint8Array([1]));
-          this.onStatus('Đang khởi tạo desktop...');
+          this.onStatus('Đang khởi tạo browser session...');
           offset += 4;
           this.state = 'server-init';
           continue;
@@ -331,7 +331,7 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
   const buttonMaskRef = useRef(0);
   const remoteSizeRef = useRef({ w: 1280, h: 800 });
   const [status, setStatus] = useState<VncStatus>('connecting');
-  const [message, setMessage] = useState('Đang mở desktop...');
+  const [message, setMessage] = useState('Đang mở browser session...');
   const [error, setError] = useState<string | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
 
@@ -348,7 +348,7 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
       setStatus('connecting');
       setError(null);
       setHasFrame(false);
-      setMessage(attempts === 1 ? 'Đang mở VNC desktop...' : `Đang kết nối lại VNC (${attempts})...`);
+      setMessage(attempts === 1 ? 'Đang mở browser stream...' : `Đang kết nối lại VNC (${attempts})...`);
 
       // Phase 4c: the WS upgrade carries the access_token HttpOnly
       // cookie so the URL no longer leaks the JWT into access logs.
@@ -372,7 +372,7 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
       ws.onopen = () => {
         if (cancelled) return;
         setStatus('handshake');
-        setMessage('Đã nối tới VNC, đang chờ desktop...');
+        setMessage('Đã nối tới VNC, đang chờ browser session...');
         rfbRef.current = new RfbClient(
           ws,
           canvas,
@@ -380,7 +380,7 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
           (w, h) => {
             remoteSizeRef.current = { w, h };
             setStatus('ready');
-            setMessage('Desktop đã sẵn sàng');
+            setMessage('Browser session đã sẵn sàng');
           },
           () => setHasFrame(true),
         );

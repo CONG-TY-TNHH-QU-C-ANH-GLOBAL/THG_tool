@@ -125,13 +125,13 @@ func (s *Server) workspaceStart(c *fiber.Ctx) error {
 	}
 	if hasLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "THG Local Runtime của bạn chưa online. Mở Runtime trên thiết bị của bạn, ghép với workspace này, rồi bấm Mở Chrome local lại.",
+			"error": "THG Chrome Extension của bạn đang offline. Mở Chrome, bật extension đã ghép với workspace này, rồi bấm Bắt đầu stream lại.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
 	if hasOrgLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Workspace đã có thiết bị local, nhưng chưa có thiết bị nào gắn với user của bạn hoặc Facebook account này. Hãy tạo mã kết nối riêng trên dashboard này và ghép thiết bị của bạn.",
+			"error": "Workspace đã có Chrome Extension online, nhưng chưa có extension nào gắn với user hoặc Facebook account này. Hãy tạo mã kết nối riêng trên dashboard này và ghép Chrome của bạn.",
 			"code":  "LOCAL_CONNECTOR_NOT_ASSIGNED",
 		})
 	}
@@ -211,15 +211,21 @@ func (s *Server) localConnectorAvailabilityForUser(orgID, userID, accountID int6
 }
 
 func isDashboardStreamConnector(conn store.AgentToken) bool {
-	if conn.Kind == "desktop_connector" || conn.Transport == "local_chrome" {
+	if conn.Kind == "extension_connector" || conn.Transport == "chrome_extension" {
 		return true
 	}
 	var caps map[string]any
 	if err := json.Unmarshal([]byte(conn.CapabilitiesJSON), &caps); err == nil {
-		if v, ok := caps["native_companion"].(bool); ok && v {
+		if v, ok := caps["chrome_extension"].(bool); ok && v {
 			return true
 		}
-		if v, ok := caps["multi_profile"].(bool); ok && v {
+		if v, ok := caps["dashboard_stream"].(bool); ok && v {
+			return true
+		}
+		if v, ok := caps["dom_metadata"].(bool); ok && v {
+			return true
+		}
+		if v, ok := caps["extension_bridge"].(string); ok && v == "supported" {
 			return true
 		}
 	}
@@ -246,13 +252,13 @@ func (s *Server) workspaceNew(c *fiber.Ctx) error {
 	hasLocalConnector, hasOnlineLocalConnector := s.localConnectorAvailabilityForUser(orgID, userID, 0)
 	if hasLocalConnector && !hasOnlineLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "THG Local Runtime của bạn chưa online. Mở Runtime trên thiết bị của bạn, ghép với workspace này, rồi tạo phiên Facebook lại.",
+			"error": "THG Chrome Extension của bạn đang offline. Mở Chrome, bật extension đã ghép với workspace này, rồi tạo phiên Facebook lại.",
 			"code":  "LOCAL_CONNECTOR_OFFLINE",
 		})
 	}
 	if !hasLocalConnector && hasOrgLocalConnector {
 		return c.Status(409).JSON(fiber.Map{
-			"error": "Workspace đang dùng thiết bị local, nhưng chưa có thiết bị nào gắn với user của bạn. Mỗi nhân viên cần tự tạo mã kết nối và ghép thiết bị riêng trước khi tạo phiên Facebook.",
+			"error": "Workspace đang dùng Chrome Extension, nhưng chưa có extension nào gắn với user của bạn. Mỗi nhân viên cần tự tạo mã kết nối và ghép Chrome riêng trước khi tạo phiên Facebook.",
 			"code":  "LOCAL_CONNECTOR_NOT_ASSIGNED",
 		})
 	}
@@ -540,10 +546,10 @@ func (s *Server) watchWorkspaceReadiness(accountID, orgID int64, inst *workspace
 
 	vncReady := <-vncCh
 	if vncReady {
-		// VNC is the operator-facing live desktop. Mark it separately so the
+		// VNC is the operator-facing live browser session. Mark it separately so the
 		// dashboard can render the browser even while CDP is still warming up.
 		s.recordBrowserSession(accountID, orgID, inst, "display_ready", "")
-		log.Printf("[Workspace] Account %d browser desktop ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
+		log.Printf("[Workspace] Account %d browser display ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
 	} else {
 		cdpReady := <-cdpCh
 		msg := "VNC did not become ready; check x11vnc/Xvfb in docker logs"
@@ -562,7 +568,7 @@ func (s *Server) watchWorkspaceReadiness(accountID, orgID int64, inst *workspace
 		return
 	}
 
-	msg := "Desktop is visible, but Chrome CDP did not become ready; automation/login verification may wait. Check Chromium startup in docker logs"
+	msg := "Browser display is visible, but Chrome CDP did not become ready; automation/login verification may wait. Check Chromium startup in docker logs"
 	s.recordBrowserSession(accountID, orgID, inst, "display_ready", msg)
 	log.Printf("[Workspace] Account %d browser startup warning: %s", accountID, msg)
 }
@@ -797,7 +803,7 @@ func applyFacebookHumanChallengeDetection(snap *facebookSessionSnapshot, bodyTex
 		reason = "facebook_checkpoint"
 	case containsAny(haystack, "captcha", "recaptcha", "not a robot", "i'm not a robot", "robot check", "security check", "are you a robot", "not a bot"):
 		reason = "facebook_captcha"
-	case containsAny(haystack, "confirm your identity", "identity confirmation", "verify your identity", "xác minh", "xác nhận danh tính", "kiểm tra bảo mật"):
+	case containsAny(haystack, "confirm your identity", "identity confirmation", "verify your identity", "xÃ¡c minh", "xÃ¡c nháº­n danh tÃ­nh", "kiá»ƒm tra báº£o máº­t"):
 		reason = "facebook_identity_verification"
 	case containsAny(haystack, "unusual activity", "suspicious activity", "automated behavior", "temporarily blocked"):
 		reason = "facebook_risk_checkpoint"
@@ -1071,7 +1077,7 @@ type workspaceCheckpointVerifier struct {
 // StillAtCheckpoint runs the same Facebook human-challenge detector
 // that workspaceSyncSession uses, against the live CDP target. If the
 // browser is no longer running we return (false, "", nil) so the
-// resolve flow falls through to the state machine — the session row
+// resolve flow falls through to the state machine â€” the session row
 // will be cleared regardless of whether Chrome is still up.
 func (v *workspaceCheckpointVerifier) StillAtCheckpoint(ctx context.Context, accountID int64) (bool, string, error) {
 	if v == nil || v.server == nil || v.server.workspace == nil {

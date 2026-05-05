@@ -19,21 +19,36 @@ function normalizePairingCode(value) {
   return cleaned.length === 8 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}` : cleaned;
 }
 
+function statusLabel(status) {
+  switch (String(status || '').toLowerCase()) {
+    case 'facebook_logged_in':
+      return 'Đã kết nối Facebook';
+    case 'facebook_human_required':
+      return 'Facebook cần xác minh';
+    case 'facebook_login_required':
+      return 'Cần đăng nhập Facebook';
+    case 'chrome_connected':
+      return 'Đã thấy Chrome';
+    default:
+      return status || 'Online';
+  }
+}
+
 async function refreshStatus() {
   const res = await sendMessage({ type: 'status' });
   if (!res?.ok) {
-    setStatus(res?.error || 'Chưa có phiên kết nối hợp lệ. Tạo mã mới trong dashboard rồi kết nối lại.', 'error');
+    setStatus(res?.error || 'Chưa có phiên kết nối hợp lệ. Tạo mã mới trong Browser dashboard rồi kết nối lại.', 'error');
     return;
   }
   const cfg = res.config || {};
   serverUrlInput.value = cfg.serverUrl || 'https://sale.thgfulfill.com';
   if (!cfg.deviceToken) {
-    setStatus('Chưa kết nối. Tạo mã trong Browser dashboard, sau đó dán mã vào đây.');
+    setStatus('Chưa kết nối. Tạo mã trong Browser dashboard, dán mã vào đây, rồi mở tab Facebook đã đăng nhập.');
     return;
   }
   const live = res.live || {};
   const fb = live.fbUserId ? `FB ${live.fbUserId}` : 'Chưa thấy tài khoản Facebook';
-  setStatus(`Đã kết nối: ${cfg.connectorName || 'Chrome Extension'}\n${live.status || cfg.lastStatus || 'online'} - ${fb}`, 'ok');
+  setStatus(`Đã kết nối: ${cfg.connectorName || 'THG Chrome Extension'}\n${statusLabel(live.status || cfg.lastStatus)} - ${fb}`, 'ok');
 }
 
 pairButton.addEventListener('click', async () => {
