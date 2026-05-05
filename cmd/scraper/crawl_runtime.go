@@ -140,7 +140,16 @@ func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task,
 	return "", true, fmt.Errorf("Facebook account #%d is saved, but THG Chrome Extension is not online for this account yet. Open Browser, pair the Chrome Extension, keep a logged-in Facebook tab open, then send the prompt again", task.AccountID)
 }
 
-func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, payload string, agentID int64) (string, error) {
+// connectorCrawlEnvelope wraps the full Task JSON with flat top-level hints so
+// the Chrome Extension can find the navigation target without deep JSON parsing.
+type connectorCrawlEnvelope struct {
+	NavigateTo       string     `json:"navigate_to"`
+	SourceType       string     `json:"source_type"`
+	UseBackgroundTab bool       `json:"use_background_tab"`
+	Task             *jobs.Task `json:"task"`
+}
+
+func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, _ string, agentID int64) (string, error) {
 	if agentID <= 0 {
 		return "", fmt.Errorf("Chrome Extension connector id is required")
 	}
@@ -150,7 +159,18 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 	}
 	_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
 	_ = appStore.StartTask(ctx, task.TaskID)
-	cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", payload)
+
+	// Build envelope so the extension can use navigate_to directly.
+	env := connectorCrawlEnvelope{UseBackgroundTab: true, Task: task}
+	if len(task.CrawlPlan.Sources) > 0 {
+		env.NavigateTo = task.CrawlPlan.Sources[0].URL
+		env.SourceType = task.CrawlPlan.Sources[0].Type
+	}
+	envPayload, envErr := json.Marshal(env)
+	if envErr != nil {
+		return "", fmt.Errorf("marshal connector envelope: %w", envErr)
+	}
+	cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", string(envPayload))
 	if err != nil {
 		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
 		return "", err

@@ -752,6 +752,13 @@ func (s *Server) agentScreenshot(c *fiber.Ctx) error {
 		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Once Facebook login is confirmed, tell the extension to run in background so
+	// the user observes automation via the dashboard BrowserView, not the raw tab.
+	if strings.EqualFold(streamStatus, browsergateway.StreamFacebookLoggedIn) &&
+		!s.db.HasRecentConnectorCommand(orgID, body.AccountID, "window_control", 30*time.Minute) {
+		_, _ = s.db.CreateConnectorCommand(orgID, body.AccountID, agentID, 0, "window_control", `{"action":"minimize"}`)
+	}
+
 	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})
 }
 

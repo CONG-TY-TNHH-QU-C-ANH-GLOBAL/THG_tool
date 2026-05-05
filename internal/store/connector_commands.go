@@ -167,6 +167,23 @@ func (s *Store) RecentConnectorCommands(orgID, accountID int64, limit int) ([]Co
 	return commands, rows.Err()
 }
 
+// HasRecentConnectorCommand returns true if a command of the given type was
+// created for this org+account within the specified window. Used to avoid
+// sending duplicate control commands (e.g. window_control:minimize).
+func (s *Store) HasRecentConnectorCommand(orgID, accountID int64, typ string, within time.Duration) bool {
+	if within <= 0 {
+		within = time.Hour
+	}
+	cutoff := time.Now().UTC().Add(-within).Format("2006-01-02 15:04:05")
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM connector_commands
+		 WHERE org_id = ? AND account_id = ? AND type = ? AND created_at >= ?`,
+		orgID, accountID, strings.TrimSpace(typ), cutoff,
+	).Scan(&count)
+	return err == nil && count > 0
+}
+
 func parseConnectorCommandTime(value string) time.Time {
 	value = strings.TrimSpace(value)
 	if value == "" {
