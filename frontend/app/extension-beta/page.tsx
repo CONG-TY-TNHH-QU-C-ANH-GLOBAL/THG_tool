@@ -28,7 +28,7 @@ const notes = [
 ];
 
 export default function ExtensionBetaPage() {
-  const packageURL = (process.env.CHROME_EXTENSION_BETA_PACKAGE_URL || '').trim();
+  const packageURL = '/api/system/extension-beta-package';
   const extensionID = (process.env.CHROME_EXTENSION_ID || '').trim();
 
   return (
@@ -91,29 +91,25 @@ export default function ExtensionBetaPage() {
             approves the extension, switch back to the normal Chrome Web Store
             install path in the Browser dashboard.
           </p>
-          {packageURL ? (
-            <a
-              className={styles.primaryLink}
-              href={packageURL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Download size={14} />
-              <span>Download THG Extension Beta</span>
-            </a>
-          ) : (
-            <div className={styles.warnBox}>
-              <Lock size={14} />
-              <div>
-                <strong>Beta package URL is not configured yet.</strong>
-                <p>
-                  Set <code>CHROME_EXTENSION_BETA_PACKAGE_URL</code> on the
-                  production server so internal testers can download the beta
-                  package from this page.
-                </p>
-              </div>
+          <a
+            className={styles.primaryLink}
+            href={packageURL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Download size={14} />
+            <span>Download THG Extension Beta</span>
+          </a>
+          <div className={styles.warnBox}>
+            <Lock size={14} />
+            <div>
+              <strong>This button downloads the real beta extension package from the THG server.</strong>
+              <p>
+                If the download fails, set <code>CHROME_EXTENSION_BETA_PACKAGE_PATH</code> on the
+                production server so the API can serve the current beta package.
+              </p>
             </div>
-          )}
+          </div>
         </article>
 
         <article className={styles.panel}>

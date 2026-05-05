@@ -42,8 +42,10 @@ trusted Chrome profile.
   `CHROME_EXTENSION_STORE_URL` can override the generated Web Store link.
 - While Chrome Web Store review is pending, internal testers can enable a
   temporary beta lane with `CHROME_EXTENSION_BETA_ENABLED=true` and point the
-  dashboard to a secure install guide or artifact URL. This lane should be
-  turned off after approval.
+  dashboard to a secure install guide or artifact URL. If the package lives on
+  the VPS, set `CHROME_EXTENSION_BETA_PACKAGE_PATH` and the API will expose it
+  at `/api/system/extension-beta-package`. This lane should be turned off after
+  approval.
 - The zip produced by `scripts/build-chrome-extension.ps1` and
   `scripts/build-chrome-extension.sh` is only for Chrome Web Store upload or
   CI validation. It is not served to users.

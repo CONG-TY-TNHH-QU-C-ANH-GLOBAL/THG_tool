@@ -67,6 +67,9 @@ func chromeExtensionBetaInfo() (string, string) {
 		betaURL = "/extension-beta"
 	}
 	packageURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_URL"))
+	if packageURL == "" && strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_PATH")) != "" {
+		packageURL = "/api/system/extension-beta-package"
+	}
 	return betaURL, packageURL
 }
 
@@ -333,6 +336,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Accounts — all staff can add their own; admin manages all
 	r.Get("/accounts", s.getAccounts)
 	r.Post("/accounts", s.addAccount) // any staff can register their FB account
+	r.Get("/system/extension-beta-package", s.serveExtensionBetaPackage)
 	r.Put("/accounts/:id/status", adminOnly, s.updateAccountStatus)
 	r.Put("/accounts/:id/cookies", adminOnly, s.updateAccountCookies)
 	r.Delete("/accounts/:id", adminOnly, s.deleteAccount)
