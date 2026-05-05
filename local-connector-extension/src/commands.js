@@ -24,10 +24,14 @@ var THGCommands = globalThis.THGCommands || (() => {
     }
   }
 
+  // Supports both new envelope format (navigate_to at top level) and legacy
+  // flat Task JSON (crawl_plan.sources[]).
   function sourceUrlFromCrawlPayload(command) {
     try {
       const payload = JSON.parse(command.payload_json || '{}');
-      const source = payload?.crawl_plan?.sources?.find(s => s?.url);
+      if (payload?.navigate_to) return payload.navigate_to;
+      const sources = payload?.task?.crawl_plan?.sources || payload?.crawl_plan?.sources || [];
+      const source = sources.find(s => s?.url);
       return source?.url || THGShared.FACEBOOK_HOME;
     } catch {
       return THGShared.FACEBOOK_HOME;
@@ -52,6 +56,20 @@ var THGCommands = globalThis.THGCommands || (() => {
     }
   }
 
+  // Minimizes every Chrome window that has a Facebook tab so the user can
+  // observe automation through the dashboard BrowserView instead.
+  async function handleWindowControl(payload) {
+    const action = String(payload?.action || '').toLowerCase();
+    if (action !== 'minimize') return;
+    const fbTabs = await chrome.tabs.query({
+      url: ['https://facebook.com/*', 'https://*.facebook.com/*']
+    });
+    const windowIds = [...new Set(fbTabs.map(t => t.windowId).filter(Boolean))];
+    for (const windowId of windowIds) {
+      await chrome.windows.update(windowId, { state: 'minimized' }).catch(() => {});
+    }
+  }
+
   async function process(target, state) {
     if (!target || !state.fbUserId) return;
     const commands = await fetchCommands();
@@ -59,18 +77,44 @@ var THGCommands = globalThis.THGCommands || (() => {
     let liveState = state;
     for (const command of commands) {
       let error = '';
+      let tempTabId = 0;
       try {
-        if (String(command.type || '').toLowerCase() === 'crawl') {
-          liveState = await THGFacebookState.ensureFacebookTabVisible(sourceUrlFromCrawlPayload(command), { focus: false });
-          await THGShared.delay(2500);
-        } else if (!liveState.tab) {
-          liveState = await THGFacebookState.ensureFacebookTabVisible(undefined, { focus: false });
+        const cmdType = String(command.type || '').toLowerCase();
+        if (cmdType === 'window_control') {
+          const payload = JSON.parse(command.payload_json || '{}');
+          await handleWindowControl(payload);
+        } else if (cmdType === 'crawl') {
+          const envelope = JSON.parse(command.payload_json || '{}');
+          const navigateTo = envelope?.navigate_to || sourceUrlFromCrawlPayload(command);
+          const useBackground = Boolean(envelope?.use_background_tab);
+          if (useBackground) {
+            // Open a background tab so the user's active tab is never touched.
+            const tab = await chrome.tabs.create({ url: navigateTo, active: false });
+            tempTabId = tab.id;
+            await THGFacebookState.waitForTabReady(tab.id);
+            await THGShared.delay(2500);
+            liveState = { ...liveState, tab };
+          } else {
+            liveState = await THGFacebookState.ensureFacebookTabVisible(navigateTo, { focus: false });
+            await THGShared.delay(2500);
+          }
+          const result = await executeInFacebookTab(liveState.tab, command);
+          if (!result?.ok) throw new Error(result?.error || 'command failed');
+          if (result.crawl_result) await sendCrawlResult(command, result);
+        } else {
+          if (!liveState.tab) {
+            liveState = await THGFacebookState.ensureFacebookTabVisible(undefined, { focus: false });
+          }
+          const result = await executeInFacebookTab(liveState.tab, command);
+          if (!result?.ok) throw new Error(result?.error || 'command failed');
+          if (result.crawl_result) await sendCrawlResult(command, result);
         }
-        const result = await executeInFacebookTab(liveState.tab, command);
-        if (!result?.ok) throw new Error(result?.error || 'command failed');
-        if (result.crawl_result) await sendCrawlResult(command, result);
       } catch (err) {
         error = err?.message || String(err);
+      } finally {
+        if (tempTabId) {
+          await chrome.tabs.remove(tempTabId).catch(() => {});
+        }
       }
       await markCommandDone(command.id, error);
     }

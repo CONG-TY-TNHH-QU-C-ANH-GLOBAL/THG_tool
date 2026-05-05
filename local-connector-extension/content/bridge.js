@@ -6,7 +6,10 @@ async function thgExecuteCommand(command) {
   if (basic) return basic;
   const payload = typeof command.payload_json === 'string' ? JSON.parse(command.payload_json || '{}') : (command.payload_json || {});
   if (String(command.type || '').toLowerCase() === 'crawl') {
-    return THGContentCrawl.crawlVisibleFacebookPosts(payload);
+    // Support both old flat-task format and new ConnectorCrawlEnvelope format
+    // where the task lives under payload.task.
+    const task = payload?.task || payload;
+    return THGContentCrawl.crawlVisibleFacebookPosts(task);
   }
   return { ok: false, error: `Unsupported command type: ${command.type}` };
 }
