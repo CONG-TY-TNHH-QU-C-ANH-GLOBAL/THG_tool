@@ -36,6 +36,21 @@ func (s *Store) InsertPromptLog(p *models.PromptLog) error {
 	return err
 }
 
+// InsertSystemPromptLog stores connector and automation updates in the same
+// prompt history table so the dashboard chat can show crawl/outbox events.
+func (s *Store) InsertSystemPromptLog(orgID, accountID int64, message, action, args string, success bool) error {
+	return s.InsertPromptLog(&models.PromptLog{
+		OrgID:       orgID,
+		AccountID:   accountID,
+		Source:      "system",
+		UserPrompt:  "",
+		AIResponse:  message,
+		ActionTaken: action,
+		ActionArgs:  args,
+		Success:     success,
+	})
+}
+
 // GetPromptHistory returns recent prompt logs.
 func (s *Store) GetPromptHistory(limit int) ([]models.PromptLog, error) {
 	rows, err := s.db.Query(

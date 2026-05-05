@@ -44,14 +44,14 @@ export default function InboxView({ orgId }: InboxViewProps) {
 
   const filteredThreads = useMemo(() => {
     if (filter === 'all') return threads;
-    return threads.filter(thread => thread.status === filter);
+    return threads.filter((thread) => thread.status === filter);
   }, [filter, threads]);
 
   const stats = {
     total: threads.length,
-    active: threads.filter(thread => thread.status === 'Active').length,
-    pending: threads.filter(thread => thread.status === 'Pending').length,
-    converted: threads.filter(thread => thread.status === 'Converted').length,
+    active: threads.filter((thread) => thread.status === 'Active').length,
+    pending: threads.filter((thread) => thread.status === 'Pending').length,
+    converted: threads.filter((thread) => thread.status === 'Converted').length,
   };
 
   const filters: ThreadFilter[] = ['all', 'Active', 'Pending', 'Converted'];
@@ -105,8 +105,8 @@ export default function InboxView({ orgId }: InboxViewProps) {
           <div style={{ padding: 16 }}>
             <div className="sidebar-section">{lang === 'vi' ? 'BỘ LỌC' : 'FILTERS'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {filters.map(item => {
-                const count = item === 'all' ? threads.length : threads.filter(thread => thread.status === item).length;
+              {filters.map((item) => {
+                const count = item === 'all' ? threads.length : threads.filter((thread) => thread.status === item).length;
                 return (
                   <button
                     key={item}
@@ -148,7 +148,7 @@ export default function InboxView({ orgId }: InboxViewProps) {
                   </p>
                 </div>
               ) : (
-                filteredThreads.map(thread => (
+                filteredThreads.map((thread) => (
                   <button
                     key={thread.id}
                     type="button"
@@ -248,8 +248,8 @@ export default function InboxView({ orgId }: InboxViewProps) {
                   <input
                     className="input"
                     value={draft}
-                    onChange={event => setDraft(event.target.value)}
-                    onKeyDown={event => event.key === 'Enter' && !event.shiftKey && (event.preventDefault(), void handleSend())}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => event.key === 'Enter' && !event.shiftKey && (event.preventDefault(), void handleSend())}
                     placeholder={lang === 'vi' ? 'Nhập tin nhắn...' : 'Type a message...'}
                     disabled={isSending}
                   />

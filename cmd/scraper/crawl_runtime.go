@@ -64,7 +64,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 		OutputSchema:        "open_crawler_v1",
 		OutputSchemaVersion: "1",
 	}
-	if db != nil && !argBool(args, "_recurring_run") {
+	if db != nil && !argBool(args, "_recurring_run") && argInt64(args, "interval_minutes") > 0 {
 		rememberRecurringCrawlIntents(ctx, db, task, args)
 	}
 	payload, err := json.Marshal(task)

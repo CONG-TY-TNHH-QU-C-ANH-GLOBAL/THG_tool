@@ -51,7 +51,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const filteredLeads = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return leads;
-    return leads.filter(lead => leadSearchValue(lead).includes(normalized));
+    return leads.filter((lead) => leadSearchValue(lead).includes(normalized));
   }, [leads, query]);
 
   useEffect(() => {
@@ -59,16 +59,16 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
       setSelectedId(null);
       return;
     }
-    if (!filteredLeads.some(lead => lead.id === selectedId)) {
+    if (!filteredLeads.some((lead) => lead.id === selectedId)) {
       setSelectedId(filteredLeads[0].id);
     }
   }, [filteredLeads, selectedId]);
 
-  const selectedLead = filteredLeads.find(lead => lead.id === selectedId) ?? null;
+  const selectedLead = filteredLeads.find((lead) => lead.id === selectedId) ?? null;
   const totals = {
     all: leads.length,
-    hot: leads.filter(lead => lead.status === 'Hot').length,
-    warm: leads.filter(lead => lead.status === 'Warm').length,
+    hot: leads.filter((lead) => lead.status === 'Hot').length,
+    warm: leads.filter((lead) => lead.status === 'Warm').length,
     avgScore: leads.length ? Math.round(leads.reduce((sum, lead) => sum + lead.score, 0) / leads.length) : 0,
   };
 
@@ -114,8 +114,8 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
           <div style={{ padding: 16 }}>
             <div className="sidebar-section">{lang === 'vi' ? 'BỘ LỌC' : 'FILTERS'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {FILTERS.map(item => {
-                const count = item === 'All' ? totals.all : leads.filter(lead => lead.status === item).length;
+              {FILTERS.map((item) => {
+                const count = item === 'All' ? totals.all : leads.filter((lead) => lead.status === item).length;
                 return (
                   <button
                     key={item}
@@ -140,7 +140,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                 <input
                   className="input"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={(event) => setQuery(event.target.value)}
                   placeholder={lang === 'vi' ? 'Tên, nhóm, role...' : 'Name, group, role...'}
                   style={{ paddingLeft: 34 }}
                 />
@@ -161,7 +161,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {isLoading ? (
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {[0, 1, 2, 3, 4].map(item => (
+                  {[0, 1, 2, 3, 4].map((item) => (
                     <div key={item} className="skeleton" style={{ height: 56 }} />
                   ))}
                 </div>
@@ -188,7 +188,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                   </p>
                 </div>
               ) : (
-                filteredLeads.map(lead => (
+                filteredLeads.map((lead) => (
                   <button
                     key={lead.id}
                     type="button"

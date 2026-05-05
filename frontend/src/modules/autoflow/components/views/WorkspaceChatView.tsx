@@ -43,10 +43,10 @@ function scheduleLabel(value: string | undefined, lang: 'vi' | 'en') {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) return '-';
   const diff = timestamp - Date.now();
-  if (diff <= 0) return lang === 'vi' ? 'dang cho' : 'pending';
+  if (diff <= 0) return lang === 'vi' ? 'đang chờ' : 'pending';
   const minutes = Math.ceil(diff / 60000);
   if (minutes < 60) {
-    return lang === 'vi' ? `con ${minutes} phut` : `in ${minutes} min`;
+    return lang === 'vi' ? `còn ${minutes} phút` : `in ${minutes} min`;
   }
   return new Date(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', {
     hour: '2-digit',
@@ -60,6 +60,17 @@ function flattenHistory(items: AgentChatHistoryItem[]): ChatMessage[] {
   const next: ChatMessage[] = [];
   for (const item of items) {
     const time = historyTimeLabel(item.createdAt);
+    if (item.source === 'system' || item.actionTaken.startsWith('system_')) {
+      next.push({
+        id: `${item.id}-s`,
+        historyId: item.id,
+        role: 'system',
+        text: item.aiResponse || item.userPrompt,
+        time,
+        ok: item.success,
+      });
+      continue;
+    }
     next.push({
       id: `${item.id}-u`,
       historyId: item.id,
@@ -111,11 +122,11 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const activeAccounts = useMemo(
-    () => workspaces.filter(workspace => workspace.running || workspace.loggedIn),
+    () => workspaces.filter((workspace) => workspace.running || workspace.loggedIn),
     [workspaces],
   );
-  const selectedAccount = activeAccounts.find(workspace => workspace.accountId === accountId);
-  const enabledIntents = crawlIntents.filter(intent => intent.enabled);
+  const selectedAccount = activeAccounts.find((workspace) => workspace.accountId === accountId);
+  const enabledIntents = crawlIntents.filter((intent) => intent.enabled);
 
   const loadCrawlIntents = useCallback(async () => {
     setLoadingIntents(true);
@@ -141,7 +152,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
   useEffect(() => {
     if (accountId !== '' || activeAccounts.length === 0) return;
-    const loggedIn = activeAccounts.find(workspace => workspace.loggedIn);
+    const loggedIn = activeAccounts.find((workspace) => workspace.loggedIn);
     setAccountId((loggedIn ?? activeAccounts[0]).accountId);
   }, [accountId, activeAccounts]);
 
@@ -152,6 +163,14 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   useEffect(() => {
     void loadCrawlIntents();
   }, [loadCrawlIntents]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void loadHistory();
+      void loadCrawlIntents();
+    }, 10000);
+    return () => window.clearInterval(id);
+  }, [loadCrawlIntents, loadHistory]);
 
   useEffect(() => {
     const updateCompact = () => setCompact(window.innerWidth < 1180);
@@ -165,7 +184,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   }, [messages, sending]);
 
   const appendSystemMessage = (text: string) => {
-    setMessages(prev => [
+    setMessages((prev) => [
       ...prev,
       { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(), ok: false },
     ]);
@@ -175,19 +194,20 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
     const text = draft.trim();
     if (!text || sending) return;
     setDraft('');
-    setMessages(prev => [
+    setMessages((prev) => [
       ...prev,
       { id: `pending-user-${Date.now()}`, role: 'user', text, time: nowLabel(), ok: true },
     ]);
     setSending(true);
     try {
       await sendAgentPrompt(text, accountId === '' ? undefined : accountId);
+      sessionStorage.setItem('autoflow:last_crawl_dispatch', String(Date.now()));
       await loadHistory();
       void refresh();
       void loadCrawlIntents();
     } catch (error) {
       appendSystemMessage(
-        error instanceof Error ? error.message : (lang === 'vi' ? 'Copilot chua phan hoi.' : 'Copilot did not reply.'),
+        error instanceof Error ? error.message : (lang === 'vi' ? 'Copilot chưa phản hồi.' : 'Copilot did not reply.'),
       );
     } finally {
       setSending(false);
@@ -196,14 +216,14 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
   const handleDeleteHistoryItem = async (historyId: number) => {
     if (deletingHistoryId === historyId || sending) return;
-    if (!window.confirm(lang === 'vi' ? 'Xoa luot chat nay?' : 'Delete this turn?')) return;
+    if (!window.confirm(lang === 'vi' ? 'Xóa lượt chat này?' : 'Delete this turn?')) return;
     setDeletingHistoryId(historyId);
     try {
       await deleteAgentHistoryItem(historyId);
-      setMessages(prev => prev.filter(message => message.historyId !== historyId));
+      setMessages((prev) => prev.filter((message) => message.historyId !== historyId));
     } catch (error) {
       appendSystemMessage(
-        error instanceof Error ? error.message : (lang === 'vi' ? 'Khong the xoa.' : 'Could not delete.'),
+        error instanceof Error ? error.message : (lang === 'vi' ? 'Không thể xóa.' : 'Could not delete.'),
       );
     } finally {
       setDeletingHistoryId(null);
@@ -212,14 +232,14 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
   const handleClearHistory = async () => {
     if (clearingHistory || sending) return;
-    if (!window.confirm(lang === 'vi' ? 'Xoa toan bo lich su Copilot?' : 'Clear entire Copilot history?')) return;
+    if (!window.confirm(lang === 'vi' ? 'Xóa toàn bộ lịch sử Copilot?' : 'Clear entire Copilot history?')) return;
     setClearingHistory(true);
     try {
       await clearAgentHistory();
       setMessages([]);
     } catch (error) {
       appendSystemMessage(
-        error instanceof Error ? error.message : (lang === 'vi' ? 'Khong xoa duoc.' : 'Could not clear.'),
+        error instanceof Error ? error.message : (lang === 'vi' ? 'Không xóa được.' : 'Could not clear.'),
       );
     } finally {
       setClearingHistory(false);
@@ -235,7 +255,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
         </div>
         <h2 style={{ fontSize: 24, marginTop: 6 }}>
           {lang === 'vi'
-            ? <>Mot prompt - <span className="title-mono">agent dieu phoi tat ca.</span></>
+            ? <>Một prompt - <span className="title-mono">agent điều phối tất cả.</span></>
             : <>One prompt - <span className="title-mono">the agent runs everything.</span></>}
         </h2>
         <p style={{ color: 'var(--text-mute)', fontSize: 13 }}>{t.views.chatSub}</p>
@@ -268,8 +288,8 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             >
               <Trash2 size={12} />
               {clearingHistory
-                ? (lang === 'vi' ? 'Dang xoa...' : 'Clearing...')
-                : (lang === 'vi' ? 'Xoa lich su' : 'Clear history')}
+                ? (lang === 'vi' ? 'Đang xóa...' : 'Clearing...')
+                : (lang === 'vi' ? 'Xóa lịch sử' : 'Clear history')}
             </button>
           </div>
 
@@ -286,16 +306,16 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                   <span className="dot" />
                   PROMPT
                 </div>
-                <h3>{lang === 'vi' ? 'Bat dau bang mot nhu cau Facebook' : 'Start with a Facebook intent'}</h3>
+                <h3>{lang === 'vi' ? 'Bắt đầu bằng một nhu cầu Facebook' : 'Start with a Facebook intent'}</h3>
                 <p>
                   {lang === 'vi'
-                    ? 'Tim tep khach, phan tich group/fanpage, soan comment, inbox, posting - Copilot dieu phoi tat ca.'
-                    : 'Find prospects, analyze groups/pages, draft replies, and publish posts - Copilot orchestrates everything.'}
+                    ? 'Tìm tệp khách, phân tích group hoặc fanpage, soạn comment, inbox, posting - Copilot điều phối tất cả.'
+                    : 'Find prospects, analyze groups or pages, draft replies, and publish posts - Copilot orchestrates everything.'}
                 </p>
               </div>
             )}
 
-            {messages.map(message => {
+            {messages.map((message) => {
               const isUser = message.role === 'user';
               const isSystem = message.role === 'system';
               const canDelete = message.role === 'assistant' && !!message.historyId;
@@ -318,7 +338,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                   >
                     <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 10, opacity: 0.7 }}>
                       {isUser ? <UserRound size={11} /> : <Bot size={11} />}
-                      <span>{isUser ? (lang === 'vi' ? 'Ban' : 'You') : isSystem ? 'System' : 'Copilot'}</span>
+                      <span>{isUser ? (lang === 'vi' ? 'Bạn' : 'You') : isSystem ? 'System' : 'Copilot'}</span>
                       <span style={{ marginLeft: 'auto' }}>{message.time}</span>
                       {canDelete && (
                         <button
@@ -349,7 +369,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             {sending && (
               <div className="mono" style={{ color: 'var(--text-mute)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="pulse" />
-                {lang === 'vi' ? 'Copilot dang xu ly...' : 'Copilot is thinking...'}
+                {lang === 'vi' ? 'Copilot đang xử lý...' : 'Copilot is thinking...'}
               </div>
             )}
           </div>
@@ -357,8 +377,8 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
           <div style={{ padding: 12, borderTop: '1px solid var(--line)', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: compact ? 'wrap' : 'nowrap' }}>
             <textarea
               value={draft}
-              onChange={event => setDraft(event.target.value)}
-              onKeyDown={event => {
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
                 if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                   event.preventDefault();
                   void handleSend();
@@ -366,7 +386,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
               }}
               placeholder={
                 lang === 'vi'
-                  ? 'Hoi hoac ra lenh: tim leads, phan tich group, soan comment / inbox / post... (Ctrl+Enter)'
+                  ? 'Hỏi hoặc ra lệnh: tìm leads, phân tích group, soạn comment / inbox / post... (Ctrl+Enter)'
                   : 'Ask or command: find leads, analyse groups, draft comment / inbox / post... (Ctrl+Enter)'
               }
               rows={3}
@@ -388,14 +408,14 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="card">
-            <div className="eyebrow" style={{ marginBottom: 8 }}>{lang === 'vi' ? 'TAI KHOAN' : 'ACCOUNT'}</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{lang === 'vi' ? 'TÀI KHOẢN' : 'ACCOUNT'}</div>
             <select
               className="input"
               value={accountId}
-              onChange={event => setAccountId(event.target.value ? Number(event.target.value) : '')}
+              onChange={(event) => setAccountId(event.target.value ? Number(event.target.value) : '')}
             >
-              <option value="">{lang === 'vi' ? 'Tu chon' : 'Auto'}</option>
-              {activeAccounts.map(workspace => (
+              <option value="">{lang === 'vi' ? 'Tự chọn' : 'Auto'}</option>
+              {activeAccounts.map((workspace) => (
                 <option key={workspace.accountId} value={workspace.accountId}>
                   {workspace.accountName} | {workspaceIdentityLabel(workspace)}
                 </option>
@@ -410,7 +430,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                     NOTE
                   </div>
                   {lang === 'vi'
-                    ? 'Chua co Facebook workspace san sang. Tao phien Browser truoc de Copilot co session that.'
+                    ? 'Chưa có Facebook workspace sẵn sàng. Tạo phiên Browser trước để Copilot có session thật.'
                     : 'No ready Facebook workspace yet. Open a Browser session first.'}
                 </div>
               </div>
@@ -450,12 +470,12 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             {!loadingIntents && enabledIntents.length === 0 && (
               <p style={{ fontSize: 12, lineHeight: 1.5 }}>
                 {lang === 'vi'
-                  ? 'Chua co lich tu dong. Prompt crawl dau tien se day he thong nguon can theo doi.'
+                  ? 'Chưa có lịch tự động. Prompt crawl đầu tiên sẽ dạy hệ thống nguồn cần theo dõi.'
                   : 'No automation schedule yet. The first crawl prompt teaches the system what to watch.'}
               </p>
             )}
 
-            {!loadingIntents && enabledIntents.slice(0, 4).map(intent => (
+            {!loadingIntents && enabledIntents.slice(0, 4).map((intent) => (
               <div key={intent.id} style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {intent.name || intent.source_type}
@@ -466,11 +486,11 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-mute)' }}>
                     <Clock size={11} />
-                    {lang === 'vi' ? `moi ${intent.interval_minutes} phut` : `every ${intent.interval_minutes} min`}
+                    {lang === 'vi' ? `mỗi ${intent.interval_minutes} phút` : `every ${intent.interval_minutes} min`}
                   </span>
                   <span className="mono" style={{ color: intent.last_error ? 'var(--hot)' : 'var(--ok)' }}>
                     {intent.last_error
-                      ? (lang === 'vi' ? 'co loi' : 'error')
+                      ? (lang === 'vi' ? 'có lỗi' : 'error')
                       : scheduleLabel(intent.next_run_at, lang)}
                   </span>
                 </div>

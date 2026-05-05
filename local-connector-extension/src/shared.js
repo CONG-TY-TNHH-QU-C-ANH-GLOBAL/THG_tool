@@ -2,7 +2,7 @@ var THGShared = globalThis.THGShared || (() => {
   const DEFAULT_SERVER_URL = 'https://sale.thgfulfill.com';
   const HEARTBEAT_ALARM = 'thg-heartbeat';
   const FACEBOOK_HOME = 'https://www.facebook.com/';
-  const AUTO_FOCUS_FACEBOOK_TAB = true;
+  const AUTO_FOCUS_FACEBOOK_TAB = false;
   const CONTENT_FILES = [
     'content/shared.js',
     'content/meta.js',

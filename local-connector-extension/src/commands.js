@@ -61,10 +61,10 @@ var THGCommands = globalThis.THGCommands || (() => {
       let error = '';
       try {
         if (String(command.type || '').toLowerCase() === 'crawl') {
-          liveState = await THGFacebookState.ensureFacebookTabVisible(sourceUrlFromCrawlPayload(command));
+          liveState = await THGFacebookState.ensureFacebookTabVisible(sourceUrlFromCrawlPayload(command), { focus: false });
           await THGShared.delay(2500);
-        } else if (!liveState.tab?.active && THGShared.AUTO_FOCUS_FACEBOOK_TAB) {
-          liveState = await THGFacebookState.ensureFacebookTabVisible();
+        } else if (!liveState.tab) {
+          liveState = await THGFacebookState.ensureFacebookTabVisible(undefined, { focus: false });
         }
         const result = await executeInFacebookTab(liveState.tab, command);
         if (!result?.ok) throw new Error(result?.error || 'command failed');

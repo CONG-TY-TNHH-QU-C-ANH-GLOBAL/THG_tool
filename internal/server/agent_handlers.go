@@ -572,7 +572,7 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		}
 	}
 	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
-	s.notifyCrawlSummary(orgID, body.AccountID, body.TaskID, intent, fetched, inserted, primarySourceURL)
+	s.notifyCrawlSummary(orgID, body.AccountID, body.TaskID, intent, len(body.Items), fetched, inserted, primarySourceURL)
 	return c.JSON(fiber.Map{
 		"status":   "stored",
 		"task_id":  body.TaskID,

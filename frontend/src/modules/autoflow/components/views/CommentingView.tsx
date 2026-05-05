@@ -69,7 +69,7 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(
-    () => (filter === 'all' ? messages : messages.filter(message => message.status === filter)),
+    () => (filter === 'all' ? messages : messages.filter((message) => message.status === filter)),
     [filter, messages],
   );
 
@@ -78,12 +78,12 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
       setSelectedId(null);
       return;
     }
-    if (!filtered.some(message => message.id === selectedId)) {
+    if (!filtered.some((message) => message.id === selectedId)) {
       setSelectedId(filtered[0].id);
     }
   }, [filtered, selectedId]);
 
-  const selectedMessage = filtered.find(message => message.id === selectedId) ?? null;
+  const selectedMessage = filtered.find((message) => message.id === selectedId) ?? null;
 
   const transition = async (id: number, action: 'approve' | 'reject' | 'delete') => {
     setErrorMsg('');
@@ -99,9 +99,9 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
 
   const today = new Date().toISOString().slice(0, 10);
   const stats = [
-    { label: lang === 'vi' ? 'ĐÃ GỬI' : 'SENT', value: messages.filter(message => message.status === 'sent').length },
-    { label: lang === 'vi' ? 'HÔM NAY' : 'TODAY', value: messages.filter(message => message.created_at?.startsWith(today)).length },
-    { label: lang === 'vi' ? 'CHỜ DUYỆT' : 'PENDING', value: messages.filter(message => message.status === 'draft' || message.status === 'approved').length },
+    { label: lang === 'vi' ? 'ĐÃ GỬI' : 'SENT', value: messages.filter((message) => message.status === 'sent').length },
+    { label: lang === 'vi' ? 'HÔM NAY' : 'TODAY', value: messages.filter((message) => message.created_at?.startsWith(today)).length },
+    { label: lang === 'vi' ? 'CHỜ DUYỆT' : 'PENDING', value: messages.filter((message) => message.status === 'draft' || message.status === 'approved').length },
     { label: lang === 'vi' ? 'TỔNG' : 'TOTAL', value: messages.length },
   ];
 
@@ -124,7 +124,7 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
       </div>
 
       <div className="stats-grid">
-        {stats.map(stat => (
+        {stats.map((stat) => (
           <div className="stat" key={stat.label}>
             <div className="stat-label">{stat.label}</div>
             <div className="stat-value tabular">{stat.value}</div>
@@ -139,8 +139,8 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
           <div style={{ padding: 16 }}>
             <div className="sidebar-section">{lang === 'vi' ? 'BỘ LỌC' : 'FILTERS'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {FILTERS.map(item => {
-                const count = item.value === 'all' ? messages.length : messages.filter(message => message.status === item.value).length;
+              {FILTERS.map((item) => {
+                const count = item.value === 'all' ? messages.length : messages.filter((message) => message.status === item.value).length;
                 return (
                   <button
                     key={item.value}
@@ -170,7 +170,7 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {loading ? (
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {[0, 1, 2, 3].map(item => (
+                  {[0, 1, 2, 3].map((item) => (
                     <div key={item} className="skeleton" style={{ height: 54 }} />
                   ))}
                 </div>
@@ -188,7 +188,7 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
                   </p>
                 </div>
               ) : (
-                filtered.map(message => (
+                filtered.map((message) => (
                   <button
                     key={message.id}
                     type="button"

@@ -19,14 +19,15 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
     }
   }
 
-  async function collectFacebookState() {
+  async function collectFacebookState(preferredTabId = 0) {
     const [activeTabs, fbTabs, cookie] = await Promise.all([
       queryTabs({ active: true, currentWindow: true }),
       queryTabs({ url: ['https://facebook.com/*', 'https://*.facebook.com/*'] }),
       chrome.cookies.get({ url: 'https://www.facebook.com', name: 'c_user' }).catch(() => null)
     ]);
     const active = activeTabs.find(t => THGShared.isFacebookUrl(t.url));
-    const firstFb = active || fbTabs[0] || null;
+    const preferred = preferredTabId ? fbTabs.find(t => t.id === preferredTabId) : null;
+    const firstFb = preferred || active || fbTabs[0] || null;
     const currentUrl = firstFb?.url || '';
     const lower = currentUrl.toLowerCase();
     let streamStatus = firstFb ? 'facebook_login_required' : 'chrome_connected';
@@ -59,23 +60,32 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
     }
   }
 
-  async function ensureFacebookTabVisible(url = THGShared.FACEBOOK_HOME) {
+  async function ensureFacebookTabVisible(url = THGShared.FACEBOOK_HOME, options = {}) {
+    const focus = Boolean(options.focus);
     const fbTabs = await queryTabs({ url: ['https://facebook.com/*', 'https://*.facebook.com/*'] });
     let tab = fbTabs.find(t => t.active) || fbTabs[0] || null;
     if (!tab) {
-      await chrome.tabs.create({ url, active: true });
+      tab = await chrome.tabs.create({ url, active: focus });
     } else if (tab.id) {
+      const update = {};
       if (url && !sameFacebookDestination(tab.url, url)) {
-        await chrome.tabs.update(tab.id, { url, active: true }).catch(() => {});
-      } else {
-        await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+        update.url = url;
       }
-      if (tab.windowId) {
+      if (focus) {
+        update.active = true;
+      }
+      if (Object.keys(update).length > 0) {
+        tab = await chrome.tabs.update(tab.id, update).catch(() => tab);
+      }
+      if (focus && tab.windowId) {
         await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
       }
     }
-    await THGShared.delay(1000);
-    return collectFacebookState();
+    if (tab?.id) {
+      tab = await waitForTabReady(tab.id).catch(() => tab);
+    }
+    await THGShared.delay(focus ? 600 : 250);
+    return collectFacebookState(tab?.id || 0);
   }
 
   async function waitForTabReady(tabId, timeoutMs = 15000) {
