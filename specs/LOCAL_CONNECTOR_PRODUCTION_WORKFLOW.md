@@ -38,7 +38,12 @@ trusted Chrome profile.
 - Stream/session state lives in `browser_sessions`.
 - Dashboard input and crawl commands use `connector_commands`.
 - Approved outbound messages are polled via `/api/connectors/outbox`.
-- `CHROME_EXTENSION_STORE_URL` controls the production install button.
+- `CHROME_EXTENSION_ID` is enough to enable the production install button;
+  `CHROME_EXTENSION_STORE_URL` can override the generated Web Store link.
+- While Chrome Web Store review is pending, internal testers can enable a
+  temporary beta lane with `CHROME_EXTENSION_BETA_ENABLED=true` and point the
+  dashboard to a secure install guide or artifact URL. This lane should be
+  turned off after approval.
 - The zip produced by `scripts/build-chrome-extension.ps1` and
   `scripts/build-chrome-extension.sh` is only for Chrome Web Store upload or
   CI validation. It is not served to users.

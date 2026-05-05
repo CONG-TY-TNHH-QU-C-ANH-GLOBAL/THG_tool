@@ -5,6 +5,18 @@ import type { SystemInfo } from '../../services/systemService';
 import type { LocalConnector } from '../../types';
 import { connectorStatusLabel, facebookIdentityLabel, formatCountdown, formatLastSeen, isDashboardStreamConnector } from './browserHelpers';
 
+function resolveExtensionStoreUrl(systemInfo: SystemInfo | null): string {
+  const directUrl = (systemInfo?.chrome_extension_store_url || '').trim();
+  if (directUrl) return directUrl;
+  const extensionId = (systemInfo?.chrome_extension_id || '').trim();
+  if (!extensionId) return '';
+  return `https://chromewebstore.google.com/detail/thg-chrome-extension/${extensionId}`;
+}
+
+function resolveExtensionBetaUrl(systemInfo: SystemInfo | null): string {
+  return (systemInfo?.chrome_extension_beta_url || '').trim();
+}
+
 export function LocalConnectorPanel({
   connectors,
   creating,
@@ -35,8 +47,10 @@ export function LocalConnectorPanel({
   const [pairingRemainingMs, setPairingRemainingMs] = useState<number | null>(null);
   const [dashboardServer, setDashboardServer] = useState('');
   const pairingExpired = pairingCode !== '' && pairingRemainingMs !== null && pairingRemainingMs <= 0;
-  const extensionStoreUrl = (systemInfo?.chrome_extension_store_url || '').trim();
+  const extensionStoreUrl = resolveExtensionStoreUrl(systemInfo);
+  const extensionBetaUrl = resolveExtensionBetaUrl(systemInfo);
   const extensionInstallReady = extensionStoreUrl.length > 0;
+  const extensionBetaReady = extensionBetaUrl.length > 0;
 
   useEffect(() => {
     setPairingCodeVisible(false);
@@ -92,26 +106,51 @@ export function LocalConnectorPanel({
                 Cài extension vào Chrome cá nhân đang dùng Facebook. THG không nhận mật khẩu Facebook của bạn.
               </p>
               {extensionInstallReady ? (
+                <div style={{ display: 'grid', gap: 8, justifyItems: 'start' }}>
+                  <a
+                    href={extensionStoreUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                  >
+                    <ExternalLink size={13} /> Cài từ Chrome Web Store
+                  </a>
+                  {extensionBetaReady && (
+                    <a
+                      href={extensionBetaUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fcd34d', textDecoration: 'none', fontSize: 11, fontWeight: 700 }}
+                    >
+                      <ExternalLink size={12} /> Google đang duyệt? Mở lane beta nội bộ
+                    </a>
+                  )}
+                </div>
+              ) : extensionBetaReady ? (
                 <a
-                  href={extensionStoreUrl}
+                  href={extensionBetaUrl}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #14b8a666', background: '#0f766e33', color: '#ccfbf1', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #f59e0b66', background: '#78350f33', color: '#fde68a', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
                 >
-                  <ExternalLink size={13} /> Cài từ Chrome Web Store
+                  <ExternalLink size={13} /> Cài bản beta nội bộ
                 </a>
               ) : (
                 <button
                   type="button"
                   disabled
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: `1px solid ${theme.border}`, background: theme.surfaceAlt, color: theme.textFaint, fontSize: 12, fontWeight: 700, cursor: 'not-allowed' }}
-                  title="Cấu hình CHROME_EXTENSION_STORE_URL trên production để bật nút cài đặt."
+                  title="Cấu hình CHROME_EXTENSION_ID, CHROME_EXTENSION_STORE_URL hoặc lane beta để bật nút cài đặt."
                 >
-                  <ExternalLink size={13} /> Chưa cấu hình Web Store
+                  <ExternalLink size={13} /> Chưa cấu hình cài đặt
                 </button>
               )}
               <p style={{ color: theme.textFaint, fontSize: 10, marginTop: 7, lineHeight: 1.45 }}>
-                Chrome Web Store sẽ cài và tự cập nhật extension cho Chrome của bạn.
+                {extensionInstallReady
+                  ? 'Chrome Web Store sẽ cài và tự cập nhật extension cho Chrome của bạn.'
+                  : extensionBetaReady
+                    ? 'Bản beta chỉ dùng cho tester nội bộ trong lúc chờ Google duyệt. Khi extension được duyệt, quay về nút cài từ Chrome Web Store.'
+                    : 'Cấu hình lane Chrome Web Store hoặc lane beta để mở bước cài đặt cho người dùng.'}
               </p>
             </div>
 
@@ -191,7 +230,7 @@ export function LocalConnectorPanel({
             <div style={{ border: `1px solid ${extensionOnline ? '#22c55e66' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
               <p style={{ color: extensionOnline ? '#86efac' : theme.textMuted, fontSize: 11, fontWeight: 800, marginBottom: 7 }}>4. Dashboard nhận stream thật</p>
               <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.45, minHeight: 54 }}>
-                Browser tab của THG hiển thị hình ảnh/action log từ tab Facebook thật để user quan sát crawl, comment, inbox và posting tập trung.
+                Browser tab của THG hiển thị hình ảnh và action log từ tab Facebook thật để user quan sát crawl, comment, inbox và posting tập trung.
               </p>
               <span style={{ color: extensionOnline ? '#4ade80' : theme.textFaint, fontSize: 12, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
                 {extensionOnline ? <CheckCircle size={13} /> : <Radio size={13} />} {extensionOnline ? 'Extension đã sẵn sàng stream' : online ? 'Đã có thiết bị online, đang chờ Facebook tab' : 'Đang chờ Chrome kết nối'}
@@ -203,7 +242,9 @@ export function LocalConnectorPanel({
 
       {connectors.length === 0 ? (
         <p style={{ color: theme.textMuted, fontSize: 12, padding: '12px 14px' }}>
-          Chưa có Chrome nào kết nối. Cài extension từ Chrome Web Store, tạo mã kết nối, dán mã vào popup extension, rồi mở tab Facebook đã đăng nhập.
+          {extensionBetaReady && !extensionInstallReady
+            ? 'Chưa có Chrome nào kết nối. Mở lane beta nội bộ để cài extension tạm, rồi tạo mã kết nối, dán mã vào popup extension và mở tab Facebook đã đăng nhập.'
+            : 'Chưa có Chrome nào kết nối. Cài extension từ Chrome Web Store, tạo mã kết nối, dán mã vào popup extension, rồi mở tab Facebook đã đăng nhập.'}
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, padding: 12 }}>

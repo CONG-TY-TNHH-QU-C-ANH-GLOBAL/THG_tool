@@ -49,6 +49,27 @@ type Config struct {
 	Notifier func(string)
 }
 
+func chromeExtensionStoreInfo() (string, string) {
+	extensionID := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_ID"))
+	storeURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_STORE_URL"))
+	if storeURL == "" && extensionID != "" {
+		storeURL = fmt.Sprintf("https://chromewebstore.google.com/detail/thg-chrome-extension/%s", extensionID)
+	}
+	return storeURL, extensionID
+}
+
+func chromeExtensionBetaInfo() (string, string) {
+	if strings.ToLower(strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_ENABLED"))) != "true" {
+		return "", ""
+	}
+	betaURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_URL"))
+	if betaURL == "" {
+		betaURL = "/extension-beta"
+	}
+	packageURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_URL"))
+	return betaURL, packageURL
+}
+
 // Server provides the REST API and serves the Web UI.
 type Server struct {
 	app          *fiber.App
@@ -113,10 +134,14 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 
 	// System info tells the frontend where the production Chrome Extension is installed from.
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
+		storeURL, extensionID := chromeExtensionStoreInfo()
+		betaURL, betaPackageURL := chromeExtensionBetaInfo()
 		return c.JSON(fiber.Map{
-			"headless":                   cfg.Headless,
-			"chrome_extension_store_url": strings.TrimSpace(os.Getenv("CHROME_EXTENSION_STORE_URL")),
-			"chrome_extension_id":        strings.TrimSpace(os.Getenv("CHROME_EXTENSION_ID")),
+			"headless":                          cfg.Headless,
+			"chrome_extension_store_url":        storeURL,
+			"chrome_extension_id":               extensionID,
+			"chrome_extension_beta_url":         betaURL,
+			"chrome_extension_beta_package_url": betaPackageURL,
 		})
 	})
 
