@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'AutoFlow · THG',
-  description: 'Facebook Sales Intelligence Workspace — AI-native automation for sales teams.',
+  title: 'AutoFlow | THG',
+  description: 'Facebook Sales Intelligence Workspace for AI-native sales automation teams.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -11,8 +11,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="vi" data-density="balanced">
       <head>
         {/* Geist + Geist Mono are the sole font families per the design
-            system. JetBrains Mono is kept as a fallback for code blocks
-            that still ship monospace via mature OS metrics. */}
+            system. JetBrains Mono stays as a fallback for code blocks
+            that still benefit from stable OS monospace metrics. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
