@@ -58,16 +58,34 @@ type chromeBridge struct {
 	lastWindowPosture time.Time
 	lastLoginRecovery time.Time
 
+	// identityConfirmed flips to true the first time the server has
+	// successfully accepted a `facebook_logged_in` chrome-status report
+	// (i.e. applyConnectorIdentity bound the FB identity to the
+	// account slot without a 409 profile-mismatch). This is the only
+	// signal updateChromeWindowPosture trusts before minimizing the
+	// window — we never hide off a single client-side cookie reading,
+	// because a stale `c_user` from a prior run can trigger a false
+	// "logged in" snapshot on the very first heartbeat. The window
+	// stays visible until the server says "yes, this account is yours
+	// now"; from that moment all automation runs through the dashboard
+	// Browser tab and the local Chrome only needs to keep the session
+	// warm.
+	identityConfirmed bool
+
 	// Phase: connector resilience.
 	// targetID is the CDP target ID this bridge is attached to. We pin
 	// the chromedp context to a real Facebook page target instead of
 	// letting chromedp auto-create a fresh "about:blank" tab, so the
 	// probe sees the SAME tab the user is logging into. When the user
 	// closes that tab, lastReattemptAt rate-limits the recovery loop
-	// from spinning up a new bridge every heartbeat.
+	// from spinning up a new bridge every heartbeat. probeErrorPrinted
+	// gates the diagnostic line that surfaces the underlying chromedp
+	// error to the operator console — printed exactly once so a long
+	// "Chrome is not connected" loop doesn't spam stderr.
 	targetID         string
 	lastReattemptAt  time.Time
 	reattemptWarned  bool
+	probeErrorPrinted bool
 }
 
 type chromeSnapshot struct {

@@ -38,6 +38,13 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity),
 	)
 	if err != nil {
+		// Diagnostic: surface the underlying chromedp error once per
+		// bridge so the operator can see WHY the probe is failing
+		// instead of just "Chrome is not connected" forever.
+		if !bridge.probeErrorPrinted {
+			fmt.Printf("[Chrome] %s probe error (will retry every heartbeat): %v\n", bridge.accountName, err)
+			bridge.probeErrorPrinted = true
+		}
 		// The chromedp target might have been closed — for example the
 		// user closed the Facebook tab, or Chrome consolidated to a
 		// single window. Try to re-attach to a still-live page target
@@ -483,6 +490,17 @@ func updateChromeWindowPosture(bridge *chromeBridge, status string) {
 	postureCtx, cancel := context.WithTimeout(bridge.ctx, 3*time.Second)
 	defer cancel()
 	if status == streamStatusFacebookLoggedIn {
+		// Spec from operators: Chrome only hides AFTER the server has
+		// accepted the Facebook identity for this account slot
+		// (applyConnectorIdentity bound fb_user_id without a 409
+		// mismatch). Until that confirmation arrives, the window stays
+		// visible — a stale c_user cookie from a prior run can produce
+		// a client-side "logged in" reading on the first heartbeat,
+		// and we MUST NOT minimize the window before the operator has
+		// completed and persisted a real login.
+		if !bridge.identityConfirmed {
+			return
+		}
 		if bridge.windowHidden && time.Since(bridge.lastWindowPosture) < 5*time.Second {
 			return
 		}

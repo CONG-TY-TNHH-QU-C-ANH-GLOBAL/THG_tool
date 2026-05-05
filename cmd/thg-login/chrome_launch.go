@@ -72,10 +72,20 @@ func launchChrome(port int, userDataDir string) (int, error) {
 		"--force-device-scale-factor=1",
 		"--high-dpi-support=1",
 		"--window-size=1365,900",
+		// Force the window to a visible on-screen origin every launch.
+		// Chrome persists the last-seen position to user-data-dir; if a
+		// previous run minimized/offscreened the window via CDP
+		// SetWindowBounds, the next launch restores that hidden state and
+		// the operator never sees the login window. Pinning a visible
+		// position at launch overrides whatever the profile remembers.
+		"--window-position=80,60",
 		"https://www.facebook.com",
 	}
 	if shouldHideChromeWindow() {
-		args = append([]string{"--window-position=-32000,-32000"}, args...)
+		// Operator opted into headless-stream mode via env. Replace the
+		// visible origin with the offscreen position; the operator will
+		// drive everything from the dashboard.
+		args[len(args)-2] = "--window-position=-32000,-32000"
 	}
 	if userDataDir != "" {
 		if err := os.MkdirAll(userDataDir, 0700); err != nil {
@@ -134,6 +144,16 @@ func keepLocalChromeVisibleAfterLogin() bool {
 	return value == "1" || value == "true" || value == "yes" || value == "on"
 }
 
+// hideChromeWindowAfterLogin minimizes the Chrome window after the user
+// finishes Facebook login so the dashboard becomes the only surface the
+// operator interacts with.
+//
+// IMPORTANT: do NOT move the window to an offscreen position
+// (-32000,-32000) here. Chrome persists the last-seen window position
+// to the profile's `Preferences` file; an offscreen position would
+// "stick" across restarts and the next launch would open invisible —
+// the operator would never see the login screen. Stick to native
+// platform minimize + CDP WindowStateMinimized; both are non-persistent.
 func hideChromeWindowAfterLogin(ctx context.Context, pid int) error {
 	var failures []string
 	hidden := false
@@ -143,17 +163,6 @@ func hideChromeWindowAfterLogin(ctx context.Context, pid int) error {
 			hidden = true
 		} else {
 			failures = append(failures, "cdp minimize: "+err.Error())
-		}
-		_ = cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{WindowState: cdpbrowser.WindowStateNormal}).Do(ctx)
-		if err := cdpbrowser.SetWindowBounds(windowID, &cdpbrowser.Bounds{
-			Left:   -32000,
-			Top:    -32000,
-			Width:  1365,
-			Height: 900,
-		}).Do(ctx); err == nil {
-			hidden = true
-		} else {
-			failures = append(failures, "cdp offscreen: "+err.Error())
 		}
 	} else {
 		failures = append(failures, "cdp window: "+err.Error())

@@ -193,12 +193,22 @@ func runConnectorLoop(serverURL, token string, basePort int) {
 			if best.AccountID == 0 || best.Status == streamStatusChromeNotConnected || snap.Status == streamStatusFacebookLoggedIn {
 				best = snap
 			}
-			if err := sendChromeStatus(serverURL, token, snap); err != nil {
-				if isDeviceTokenRejected(err) {
-					printDeviceTokenRejected(err)
+			chromeStatusErr := sendChromeStatus(serverURL, token, snap)
+			if chromeStatusErr != nil {
+				if isDeviceTokenRejected(chromeStatusErr) {
+					printDeviceTokenRejected(chromeStatusErr)
 					return false
 				}
-				fmt.Printf("[warn] chrome status failed for account %d: %v\n", snap.AccountID, err)
+				fmt.Printf("[warn] chrome status failed for account %d: %v\n", snap.AccountID, chromeStatusErr)
+			} else if snap.Status == streamStatusFacebookLoggedIn && !bridge.identityConfirmed {
+				// Server accepted the facebook_logged_in payload — that
+				// means applyConnectorIdentity bound the FB identity to
+				// the account slot without a profile-mismatch 409.
+				// Flip the bridge into "post-login" mode; the next
+				// snapshot's posture update is now allowed to minimize
+				// the local Chrome window.
+				bridge.identityConfirmed = true
+				fmt.Printf("[Chrome] %s identity confirmed by dashboard. Minimizing local Chrome on next probe.\n", bridge.accountName)
 			}
 			if err := sendScreenshot(serverURL, token, snap); err != nil {
 				if isDeviceTokenRejected(err) {
