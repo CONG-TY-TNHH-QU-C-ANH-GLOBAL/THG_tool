@@ -57,6 +57,17 @@ type chromeBridge struct {
 	windowWarned      bool
 	lastWindowPosture time.Time
 	lastLoginRecovery time.Time
+
+	// Phase: connector resilience.
+	// targetID is the CDP target ID this bridge is attached to. We pin
+	// the chromedp context to a real Facebook page target instead of
+	// letting chromedp auto-create a fresh "about:blank" tab, so the
+	// probe sees the SAME tab the user is logging into. When the user
+	// closes that tab, lastReattemptAt rate-limits the recovery loop
+	// from spinning up a new bridge every heartbeat.
+	targetID         string
+	lastReattemptAt  time.Time
+	reattemptWarned  bool
 }
 
 type chromeSnapshot struct {

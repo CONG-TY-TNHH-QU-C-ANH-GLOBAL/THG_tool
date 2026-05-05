@@ -41,9 +41,30 @@ func probeExistingChromeStatus(port int) chromeSnapshot {
 }
 
 type chromeTargetInfo struct {
+	ID    string `json:"id"`
 	Type  string `json:"type"`
 	URL   string `json:"url"`
 	Title string `json:"title"`
+	WS    string `json:"webSocketDebuggerUrl"`
+}
+
+// chromeTargetID returns t.ID, or attempts to derive it from the
+// WebSocket debugger URL when the /json/list payload omitted the id
+// field (some Chrome versions only emit `webSocketDebuggerUrl`).
+func chromeTargetID(devtoolsURL string, t chromeTargetInfo) string {
+	if id := strings.TrimSpace(t.ID); id != "" {
+		return id
+	}
+	// webSocketDebuggerUrl looks like:
+	//   ws://127.0.0.1:9260/devtools/page/<targetID>
+	if t.WS == "" {
+		return ""
+	}
+	idx := strings.LastIndex(t.WS, "/")
+	if idx < 0 || idx == len(t.WS)-1 {
+		return ""
+	}
+	return t.WS[idx+1:]
 }
 
 func chromeTargets(devtoolsURL string) ([]chromeTargetInfo, error) {

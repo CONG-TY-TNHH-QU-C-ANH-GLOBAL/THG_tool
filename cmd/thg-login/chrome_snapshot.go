@@ -38,6 +38,19 @@ func snapshotChrome(bridge *chromeBridge) chromeSnapshot {
 		readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity),
 	)
 	if err != nil {
+		// The chromedp target might have been closed — for example the
+		// user closed the Facebook tab, or Chrome consolidated to a
+		// single window. Try to re-attach to a still-live page target
+		// before falling back to chrome_not_connected.
+		if reattachBridgeToFacebookPage(bridge) {
+			snapshotCtx2, cancel2 := context.WithTimeout(bridge.ctx, chromeSnapshotTimeout())
+			defer cancel2()
+			err = chromedp.Run(snapshotCtx2,
+				readFacebookPageState(&href, &fbUserID, &loginIdentifier, &loginFormVisible, &identity),
+			)
+		}
+	}
+	if err != nil {
 		return fallbackChromeSnapshot(bridge, streamStatusChromeNotConnected, err.Error())
 	}
 	if loginIdentifier != "" {
