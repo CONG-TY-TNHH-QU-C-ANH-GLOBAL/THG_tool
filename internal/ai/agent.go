@@ -282,6 +282,21 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 				args["account_id"] = selectedAccountID
 			}
 			args["user_prompt"] = prompt
+			// LLM tool calls sometimes omit url/post_url even when the user
+			// provided a Facebook URL inline. Without this rescue, the crawl
+			// dispatch failed silently and earlier code paths fell back to
+			// the newsfeed. Inject from the prompt regex so the action
+			// handler receives a concrete target.
+			if fnName == "scrape_group" && argStringFromMap(args, "url") == "" {
+				if u := firstFacebookURL(prompt); u != "" {
+					args["url"] = u
+				}
+			}
+			if fnName == "scrape_comments" && argStringFromMap(args, "post_url") == "" {
+				if u := firstFacebookURL(prompt); u != "" {
+					args["post_url"] = u
+				}
+			}
 			if isCrawlerTool(fnName) && argStringFromMap(args, "keywords") == "" {
 				if kw := promptKeywords(prompt); kw != "" {
 					args["keywords"] = kw

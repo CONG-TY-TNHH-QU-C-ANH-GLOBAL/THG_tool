@@ -47,6 +47,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true });
         return;
       }
+      if (message?.type === 'thg_crawl_progress') {
+        // Best-effort heartbeat relay. Failures are swallowed because the
+        // crawl itself must not depend on observability working.
+        try {
+          await THGApi.agentFetch('/api/connectors/crawl-progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              task_id: message.task_id || '',
+              intent: message.intent || 'facebook_crawl',
+              account_id: Number(message.account_id) || 0,
+              stage: message.stage || 'scraping',
+              fetched: Number(message.fetched) || 0,
+              max: Number(message.max) || 0,
+              source_url: message.source_url || '',
+              done: message.stage === 'finished'
+            })
+          });
+        } catch { /* ignore */ }
+        sendResponse({ ok: true });
+        return;
+      }
       sendResponse({ ok: false, error: 'unknown message' });
     } catch (err) {
       const text = err?.message || String(err);

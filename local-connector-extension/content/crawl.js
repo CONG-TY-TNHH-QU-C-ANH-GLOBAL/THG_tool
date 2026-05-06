@@ -21,10 +21,54 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     return { author_name: '', author_profile_url: '' };
   }
 
-  async function crawlVisibleFacebookPosts(task) {
+  function expectedPathOf(url) {
+    try {
+      return new URL(url).pathname.replace(/\/+$/, '');
+    } catch {
+      return '';
+    }
+  }
+
+  function locationMatchesExpected(expectedUrl) {
+    const want = expectedPathOf(expectedUrl);
+    if (!want) return false;
+    const got = expectedPathOf(location.href);
+    if (!got) return false;
+    return got === want || got.startsWith(want + '/');
+  }
+
+  // Best-effort heartbeat to the background page so users on Telegram can
+  // follow the crawl in real time. Failures are intentionally swallowed —
+  // missing a heartbeat must never block the crawl itself.
+  function emitProgress(task, accountId, stage, fetched, max) {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'thg_crawl_progress',
+        task_id: task?.task_id || '',
+        intent: task?.intent || 'facebook_crawl',
+        account_id: accountId || 0,
+        stage,
+        fetched,
+        max,
+        source_url: location.href
+      }).catch(() => { /* background not listening */ });
+    } catch { /* runtime gone */ }
+  }
+
+  async function crawlVisibleFacebookPosts(task, expectedUrl, accountId) {
+    // Refuse to scrape if Facebook redirected us off the requested page (e.g.
+    // newsfeed). Without this guard the extension silently scraped the wrong
+    // page and shipped irrelevant posts to the classifier.
+    if (expectedUrl && !locationMatchesExpected(expectedUrl)) {
+      return {
+        ok: false,
+        error: `wrong_page: expected ${expectedUrl} but tab is on ${location.href}`
+      };
+    }
     const maxItems = Math.max(1, Math.min(50, Number(task?.crawl_plan?.max_items || 20)));
     const seen = new Set();
     const items = [];
+    emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < 8 && items.length < maxItems; pass++) {
       const articles = Array.from(document.querySelectorAll('[role="article"], div[data-pagelet^="FeedUnit_"]'));
       for (const article of articles) {
@@ -47,10 +91,14 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         });
         if (items.length >= maxItems) break;
       }
+      // After each scroll pass send a heartbeat. Backend rate-limits these so
+      // even an aggressive cadence here won't spam Telegram.
+      emitProgress(task, accountId, 'scraping', items.length, maxItems);
       if (items.length >= maxItems) break;
       window.scrollBy({ top: Math.max(700, window.innerHeight * 0.85), behavior: 'smooth' });
       await new Promise(resolve => setTimeout(resolve, 1400));
     }
+    emitProgress(task, accountId, 'finished', items.length, maxItems);
     return {
       ok: true,
       crawl_result: {

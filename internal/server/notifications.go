@@ -4,9 +4,52 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/thg/scraper/internal/models"
 )
+
+// crawlProgressNotifier rate-limits per-task heartbeat notifications so
+// Telegram doesn't get spammed once-per-item. Picks the larger of "30s
+// elapsed" or "25 new items since last notify" before re-sending.
+type crawlProgressState struct {
+	lastNotify time.Time
+	lastFetch  int
+}
+
+var (
+	crawlProgressMu    sync.Mutex
+	crawlProgressTrack = map[string]*crawlProgressState{}
+)
+
+const (
+	crawlProgressMinInterval = 30 * time.Second
+	crawlProgressMinDelta    = 25
+)
+
+// shouldEmitCrawlProgress returns true when the heartbeat should produce a
+// Telegram message for the given task. The first heartbeat per task always
+// emits so users see "started" feedback immediately.
+func shouldEmitCrawlProgress(taskID string, fetched int, done bool) bool {
+	crawlProgressMu.Lock()
+	defer crawlProgressMu.Unlock()
+	state, ok := crawlProgressTrack[taskID]
+	if !ok {
+		crawlProgressTrack[taskID] = &crawlProgressState{lastNotify: time.Now(), lastFetch: fetched}
+		return true
+	}
+	if done {
+		delete(crawlProgressTrack, taskID)
+		return true
+	}
+	if time.Since(state.lastNotify) >= crawlProgressMinInterval || (fetched-state.lastFetch) >= crawlProgressMinDelta {
+		state.lastNotify = time.Now()
+		state.lastFetch = fetched
+		return true
+	}
+	return false
+}
 
 func (s *Server) recordDashboardAutomationEvent(orgID, accountID int64, message, action, args string, success bool) {
 	if s == nil || s.db == nil || orgID <= 0 {
@@ -81,6 +124,38 @@ func (s *Server) notifyCrawlSummary(orgID, accountID int64, taskID, intent strin
 	text := fmt.Sprintf("[THG Agent] Crawl %s completed. Task %s. Org #%d, account #%d. %s. Source: %s", label, taskID, orgID, accountID, outcome, sourceURL)
 	log.Printf("[ConnectorCrawl] %s", text)
 	s.recordDashboardAutomationEvent(orgID, accountID, text, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL), true)
+	if s == nil || s.cfg.Notifier == nil {
+		return
+	}
+	s.cfg.Notifier(text)
+}
+
+// notifyCrawlProgress emits an in-flight heartbeat to Telegram so users can
+// follow what the extension is doing without waiting for the final summary.
+// The caller is responsible for calling shouldEmitCrawlProgress first to
+// avoid spamming the chat.
+func (s *Server) notifyCrawlProgress(orgID, accountID int64, taskID, intent, stage string, fetched, max int, sourceURL string) {
+	label := strings.TrimSpace(intent)
+	if label == "" {
+		label = "facebook_crawl"
+	}
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		stage = "scraping"
+	}
+	progress := fmt.Sprintf("%d", fetched)
+	if max > 0 {
+		progress = fmt.Sprintf("%d/%d", fetched, max)
+	}
+	source := strings.TrimSpace(sourceURL)
+	if source == "" {
+		source = "(source not reported)"
+	}
+	text := fmt.Sprintf("[THG Agent] Crawl %s in progress. Task %s. Org #%d, account #%d. Stage: %s. Progress: %s posts. Source: %s",
+		label, taskID, orgID, accountID, stage, progress, source)
+	log.Printf("[ConnectorCrawl] %s", text)
+	s.recordDashboardAutomationEvent(orgID, accountID, text, "system_crawl_progress",
+		fmt.Sprintf(`{"task_id":%q,"intent":%q,"stage":%q,"fetched":%d,"max":%d,"source_url":%q}`, taskID, label, stage, fetched, max, source), true)
 	if s == nil || s.cfg.Notifier == nil {
 		return
 	}

@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/browsergateway"
+	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
@@ -460,13 +462,14 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
 	}
 	var body struct {
-		TaskID    string   `json:"task_id"`
-		Intent    string   `json:"intent"`
-		AccountID int64    `json:"account_id"`
-		Status    string   `json:"status"`
-		Error     string   `json:"error"`
-		Keywords  []string `json:"keywords"`
-		Items     []struct {
+		TaskID           string         `json:"task_id"`
+		Intent           string         `json:"intent"`
+		AccountID        int64          `json:"account_id"`
+		Status           string         `json:"status"`
+		Error            string         `json:"error"`
+		Keywords         []string       `json:"keywords"`
+		MarketSignalGate map[string]any `json:"market_signal_gate"`
+		Items            []struct {
 			ID               string `json:"id"`
 			SourceURL        string `json:"source_url"`
 			AuthorProfileURL string `json:"author_profile_url"`
@@ -517,6 +520,20 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 
 	guidance := orgScoringGuidance(s.db, orgID)
 	keywords := normalizeCrawlKeywords(append(body.Keywords, orgIntelligenceKeywords(s.db, orgID)...))
+	businessProfile := s.loadBusinessProfileForOrg(orgID)
+	gate := leadingest.SignalGateFromMap(body.MarketSignalGate)
+	deps := leadingest.Deps{
+		AppStore:        appStore,
+		LegacyDB:        s.db,
+		Scorer:          scoring.New(scoring.DefaultConfig()),
+		Guidance:        guidance,
+		BusinessProfile: businessProfile,
+		AIClass:         s.aiClass,
+		SignalGate:      gate,
+		Keywords:        keywords,
+		ExtraSignals:    []string{"chrome_extension_crawl"},
+	}
+
 	inserted := 0
 	fetched := 0
 	primarySourceURL := ""
@@ -533,42 +550,23 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		if primarySourceURL == "" && sourceURL != "" {
 			primarySourceURL = sourceURL
 		}
-		score, category, signals := scoreConnectorCrawlItem(content, keywords, item.Reactions, item.Comments, item.Shares, guidance)
-		if category == "cold" || category == "rejected" {
-			continue
-		}
-		lead := store.TaskLead{
+		outcome, err := leadingest.IngestPost(c.Context(), deps, leadingest.Input{
 			TaskID:           body.TaskID,
 			OrgID:            orgID,
 			SourceURL:        sourceURL,
-			AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
 			AuthorName:       strings.TrimSpace(item.AuthorName),
+			AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
 			Content:          content,
-			LeadScore:        score,
-			Category:         category,
-			Signals:          signals,
+			Reactions:        item.Reactions,
+			Comments:         item.Comments,
+			Shares:           item.Shares,
+		})
+		if err != nil {
+			log.Printf("[ConnectorCrawl] ingest failed task=%s: %v", body.TaskID, err)
+			continue
 		}
-		if err := appStore.InsertLead(c.Context(), body.TaskID, orgID, lead); err == nil {
+		if outcome.Inserted {
 			inserted++
-		}
-		if _, err := s.db.InsertLead(&models.Lead{
-			OrgID:        orgID,
-			SourceType:   "post",
-			SourceID:     0,
-			SourceURL:    sourceURL,
-			Platform:     models.PlatformFacebook,
-			Author:       lead.AuthorName,
-			AuthorURL:    lead.AuthorProfileURL,
-			Content:      content,
-			Score:        models.LeadScore(category),
-			ServiceMatch: category,
-			AuthorRole:   string(browsergateway.ProviderChromeExtension) + " classifier",
-			PainPoint:    strings.Join(signals, "; "),
-			AIReasoning:  strings.Join(signals, "; "),
-			Niche:        strings.Join(keywords, ", "),
-			ClassifiedAt: time.Now().UTC(),
-		}); err != nil {
-			log.Printf("[ConnectorCrawl] insert legacy lead failed task=%s: %v", body.TaskID, err)
 		}
 	}
 	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
@@ -579,6 +577,73 @@ func (s *Server) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		"fetched":  fetched,
 		"inserted": inserted,
 	})
+}
+
+// agentConnectorCrawlProgress receives in-flight heartbeats from the Chrome
+// Extension during a crawl so users on Telegram can see "X/N posts scraped"
+// updates without waiting for the final summary. Rate-limited internally.
+// POST /api/connectors/crawl-progress
+func (s *Server) agentConnectorCrawlProgress(c *fiber.Ctx) error {
+	orgID, _ := c.Locals("agent_org_id").(int64)
+	if orgID <= 0 {
+		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
+	}
+	var body struct {
+		TaskID    string `json:"task_id"`
+		Intent    string `json:"intent"`
+		AccountID int64  `json:"account_id"`
+		Stage     string `json:"stage"`
+		Fetched   int    `json:"fetched"`
+		Max       int    `json:"max"`
+		SourceURL string `json:"source_url"`
+		Done      bool   `json:"done"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+	body.TaskID = strings.TrimSpace(body.TaskID)
+	if body.TaskID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "task_id is required"})
+	}
+	if body.AccountID > 0 {
+		if acc, err := s.db.GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
+			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+		}
+	}
+	if shouldEmitCrawlProgress(body.TaskID, body.Fetched, body.Done) {
+		s.notifyCrawlProgress(orgID, body.AccountID, body.TaskID, body.Intent, body.Stage, body.Fetched, body.Max, body.SourceURL)
+	}
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// loadBusinessProfileForOrg builds a tenant-scoped BusinessProfile by reading
+// org-prefixed context keys (org:<id>:<key>) and falling back to global keys
+// for backward compatibility. Mirrors the worker handler's loader so both
+// pipelines see the same profile when classifying.
+func (s *Server) loadBusinessProfileForOrg(orgID int64) *ai.BusinessProfile {
+	if s.db == nil {
+		return nil
+	}
+	ctxMap, err := s.db.GetAllContext()
+	if err != nil {
+		return nil
+	}
+	if orgID > 0 {
+		for _, key := range []string{
+			"business_profile", "business_name", "business_industry", "services",
+			"target_customers", "target_author_role", "target_signals",
+			"negative_signals", "business_location", "markets", "business_usp",
+			"tone", "approval_policy", "reject_rules",
+		} {
+			if value, _ := s.db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
+				ctxMap[key] = strings.TrimSpace(value)
+				if key == "business_profile" {
+					ctxMap["business_desc"] = strings.TrimSpace(value)
+				}
+			}
+		}
+	}
+	return ai.ProfileFromContext(ctxMap)
 }
 
 func normalizeCrawlKeywords(values []string) []string {
@@ -662,17 +727,6 @@ func splitSignalPhrases(raw string) []string {
 		}
 	}
 	return out
-}
-
-func scoreConnectorCrawlItem(content string, keywords []string, reactions, comments, shares int, guidance scoring.Guidance) (float64, string, []string) {
-	result := scoring.New(scoring.DefaultConfig()).ScoreWithGuidance(content, keywords, reactions, comments, "", guidance)
-	score := result.Score
-	category := result.Category
-	signals := append([]string{"chrome_extension_crawl"}, result.Signals...)
-	if shares > 0 {
-		signals = append(signals, "engagement:shares")
-	}
-	return score, category, signals
 }
 
 // agentScreenshot stores the latest observable frame from the user's real Chrome.

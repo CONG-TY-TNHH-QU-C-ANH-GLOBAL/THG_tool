@@ -292,6 +292,9 @@ func main() {
 	})
 
 	srv.SetSessionRegistry(sessionReg)
+	if msgGen != nil {
+		srv.SetUniversalClassifier(msgGen)
+	}
 
 	go func() {
 		if err := srv.Start(); err != nil {

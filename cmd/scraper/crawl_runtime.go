@@ -41,6 +41,13 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 			args["account_id"] = pickedAccountID
 		}
 	}
+	extras := map[string]any{}
+	if gate, ok := args["market_signal_gate"]; ok && gate != nil {
+		extras["market_signal_gate"] = gate
+	}
+	if up := strings.TrimSpace(argString(args, "user_prompt")); up != "" {
+		extras["user_prompt"] = up
+	}
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        openCrawlTaskID(intent, sources, args),
@@ -63,6 +70,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 		ExecutionMode:       "async",
 		OutputSchema:        "open_crawler_v1",
 		OutputSchemaVersion: "1",
+		Extras:              extras,
 	}
 	if db != nil && !argBool(args, "_recurring_run") && argInt64(args, "interval_minutes") > 0 {
 		rememberRecurringCrawlIntents(ctx, db, task, args)
@@ -142,16 +150,26 @@ func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task,
 
 // connectorCrawlEnvelope wraps the full Task JSON with flat top-level hints so
 // the Chrome Extension can find the navigation target without deep JSON parsing.
+// MarketSignalGate carries Brain's positive/negative signal hints to the
+// extension and back to the crawl-result endpoint so AI classification can
+// honor org-specific gating without re-reading context.
 type connectorCrawlEnvelope struct {
-	NavigateTo       string     `json:"navigate_to"`
-	SourceType       string     `json:"source_type"`
-	UseBackgroundTab bool       `json:"use_background_tab"`
-	Task             *jobs.Task `json:"task"`
+	NavigateTo       string         `json:"navigate_to"`
+	SourceType       string         `json:"source_type"`
+	UseBackgroundTab bool           `json:"use_background_tab"`
+	MarketSignalGate map[string]any `json:"market_signal_gate,omitempty"`
+	Task             *jobs.Task     `json:"task"`
 }
 
 func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, _ string, agentID int64) (string, error) {
 	if agentID <= 0 {
 		return "", fmt.Errorf("Chrome Extension connector id is required")
+	}
+	// Refuse early when no concrete navigation target exists. Without this,
+	// the extension receives navigate_to="" and silently falls back to the
+	// Facebook newsfeed instead of the intended group/post URL.
+	if len(task.CrawlPlan.Sources) == 0 || strings.TrimSpace(task.CrawlPlan.Sources[0].URL) == "" {
+		return "", fmt.Errorf("crawl task has no concrete source URL; refusing to dispatch (prevents newsfeed fallback)")
 	}
 	appStore, err := store.NewAppStore(db)
 	if err != nil {
@@ -161,15 +179,20 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 	_ = appStore.StartTask(ctx, task.TaskID)
 
 	// Build envelope so the extension can use navigate_to directly.
-	env := connectorCrawlEnvelope{UseBackgroundTab: true, Task: task}
-	if len(task.CrawlPlan.Sources) > 0 {
-		env.NavigateTo = task.CrawlPlan.Sources[0].URL
-		env.SourceType = task.CrawlPlan.Sources[0].Type
+	env := connectorCrawlEnvelope{
+		UseBackgroundTab: true,
+		Task:             task,
+		NavigateTo:       strings.TrimSpace(task.CrawlPlan.Sources[0].URL),
+		SourceType:       task.CrawlPlan.Sources[0].Type,
+	}
+	if gate, ok := task.Extras["market_signal_gate"].(map[string]any); ok && len(gate) > 0 {
+		env.MarketSignalGate = gate
 	}
 	envPayload, envErr := json.Marshal(env)
 	if envErr != nil {
 		return "", fmt.Errorf("marshal connector envelope: %w", envErr)
 	}
+	log.Printf("[ConnectorCrawl] enqueue navigate_to=%s task=%s org=%d account=%d", env.NavigateTo, task.TaskID, task.OrgID, task.AccountID)
 	cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", string(envPayload))
 	if err != nil {
 		_ = appStore.FailTask(ctx, task.TaskID, err.Error())

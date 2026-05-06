@@ -80,10 +80,11 @@ type Server struct {
 	db           *store.Store
 	jobStore     *jobs.Store
 	agent        *ai.Agent
-	wsHub        *WSHub             // Chrome Extension WebSocket hub
-	workspace    *workspace.Manager // per-account Chrome workspace manager
-	sessionReg   *session.Registry  // optional — nil disables /api/sessions/stats
-	agentHandler *agentloop.Handler // self-healing agent OS — nil = disabled
+	aiClass      *ai.MessageGenerator // optional — enables UniversalClassify for connector crawl results
+	wsHub        *WSHub               // Chrome Extension WebSocket hub
+	workspace    *workspace.Manager   // per-account Chrome workspace manager
+	sessionReg   *session.Registry    // optional — nil disables /api/sessions/stats
+	agentHandler *agentloop.Handler   // self-healing agent OS — nil = disabled
 	port         int
 	cfg          Config
 }
@@ -97,6 +98,13 @@ func (s *Server) SetSessionRegistry(r *session.Registry) {
 // When set, POST /api/agent/run and GET /api/agent/status are enabled.
 func (s *Server) SetAgentHandler(h *agentloop.Handler) {
 	s.agentHandler = h
+}
+
+// SetUniversalClassifier wires the AI classifier used by the Chrome Extension
+// crawl-result endpoint. When unset, that endpoint falls back to deterministic
+// scoring (the pre-existing behavior).
+func (s *Server) SetUniversalClassifier(mg *ai.MessageGenerator) {
+	s.aiClass = mg
 }
 
 // New creates a new API server with JWT auth, RBAC, and rate limiting.
@@ -229,6 +237,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	api.Get("/connectors/browser-targets", s.agentAuth, s.agentBrowserTargets)
 	api.Post("/connectors/screenshot", s.agentAuth, s.agentScreenshot)
 	api.Post("/connectors/crawl-result", s.agentAuth, s.agentConnectorCrawlResult)
+	api.Post("/connectors/crawl-progress", s.agentAuth, s.agentConnectorCrawlProgress)
 	api.Get("/connectors/commands", s.agentAuth, s.agentConnectorCommands)
 	api.Post("/connectors/commands/:id/done", s.agentAuth, s.agentConnectorCommandDone)
 	api.Get("/connectors/outbox", s.agentAuth, s.agentGetOutbox)
@@ -245,6 +254,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	agentGrp.Get("/browser-targets", s.agentBrowserTargets)
 	agentGrp.Post("/screenshot", s.agentScreenshot)
 	agentGrp.Post("/crawl-result", s.agentConnectorCrawlResult)
+	agentGrp.Post("/crawl-progress", s.agentConnectorCrawlProgress)
 	agentGrp.Get("/commands", s.agentConnectorCommands)
 	agentGrp.Post("/commands/:id/done", s.agentConnectorCommandDone)
 	agentGrp.Get("/outbox", s.agentGetOutbox)

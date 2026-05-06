@@ -19,6 +19,9 @@ type Task struct {
 	ExecutionMode       string        `json:"execution_mode,omitempty"` // sync | async
 	OutputSchema        string        `json:"output_schema"`
 	OutputSchemaVersion string        `json:"output_schema_version,omitempty"` // e.g. "1"
+	// Extras carries planner hints (e.g. market_signal_gate from Brain)
+	// that downstream stages need but are not part of the strict crawl schema.
+	Extras map[string]any `json:"extras,omitempty"`
 }
 
 // ScoringConfig controls lead scoring thresholds and dimension weights.

@@ -9,7 +9,20 @@ async function thgExecuteCommand(command) {
     // Support both old flat-task format and new ConnectorCrawlEnvelope format
     // where the task lives under payload.task.
     const task = payload?.task || payload;
-    return THGContentCrawl.crawlVisibleFacebookPosts(task);
+    // Forward the expected URL so the content script can refuse to scrape
+    // when Facebook silently redirected the tab (login wall, checkpoint).
+    const expectedUrl = payload?.navigate_to
+      || task?.crawl_plan?.sources?.[0]?.url
+      || '';
+    const gate = payload?.market_signal_gate || task?.extras?.market_signal_gate || null;
+    const accountId = command?.account_id || command?.accountId || 0;
+    const result = await THGContentCrawl.crawlVisibleFacebookPosts(task, expectedUrl, accountId);
+    // Echo gate back to the server so the crawl-result endpoint applies the
+    // same Brain-derived gating without re-reading org context.
+    if (result?.ok && result?.crawl_result && gate) {
+      result.crawl_result.market_signal_gate = gate;
+    }
+    return result;
   }
   return { ok: false, error: `Unsupported command type: ${command.type}` };
 }

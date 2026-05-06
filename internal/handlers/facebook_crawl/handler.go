@@ -14,6 +14,7 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/filter"
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/livesession"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/output"
@@ -156,6 +157,12 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 			}
 		}
 	}
+	var gate leadingest.SignalGate
+	if task.Extras != nil {
+		if raw, ok := task.Extras["market_signal_gate"].(map[string]any); ok {
+			gate = leadingest.SignalGateFromMap(raw)
+		}
+	}
 
 	filterCfg := filter.Config{
 		Keywords:         task.Filters.Keywords,
@@ -270,84 +277,46 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					continue
 				}
 
-				// Stage 2: classify/score inline, no post-processing. Prefer the
-				// universal AI classifier when the business profile is configured;
-				// fallback to deterministic scoring only when AI context is missing.
-				sr := sc.ScoreWithGuidance(item.Content, task.Keywords, item.Reactions, item.Comments, item.AuthorProfileURL, scoreGuidance)
-				if sr.Category == "rejected" {
+				// Stage 2: classify + persist via shared pipeline so worker
+				// and Chrome Extension behave identically (same AI, same
+				// gate, same mirror to legacy leads table).
+				outcome, err := leadingest.IngestPost(ctx, leadingest.Deps{
+					AppStore:        h.appStore,
+					LegacyDB:        h.ctxStore,
+					Scorer:          sc,
+					Guidance:        scoreGuidance,
+					BusinessProfile: businessProfile,
+					AIClass:         h.aiClass,
+					SignalGate:      gate,
+					Keywords:        task.Keywords,
+				}, leadingest.Input{
+					TaskID:           job.TaskID,
+					OrgID:            task.OrgID,
+					SourceURL:        item.SourceURL,
+					AuthorName:       item.AuthorName,
+					AuthorProfileURL: item.AuthorProfileURL,
+					Content:          item.Content,
+					Reactions:        item.Reactions,
+					Comments:         item.Comments,
+					Shares:           item.Shares,
+				})
+				if err != nil {
+					log.Printf("handler: ingest post: %v", err)
+				}
+				if outcome.Skipped == "rejected" || outcome.Skipped == "gate_negative" {
 					stats.TotalFiltered++
 					continue
 				}
-				if businessProfile != nil {
-					classifyCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-					aiResult, err := h.aiClass.UniversalClassify(classifyCtx, item.Content, item.AuthorName, businessProfile)
-					cancel()
-					if err != nil {
-						slog.WarnContext(ctx, "universal classify failed, using deterministic score",
-							"job_id", job.ID, "item_id", item.ID, "error", err)
-					} else {
-						if aiResult.Priority == "rejected" {
-							stats.TotalFiltered++
-							continue
-						}
-						sr.Score = aiResult.Score * 100
-						sr.Category = aiResult.Priority
-						sr.Signals = append(sr.Signals,
-							"ai_intent:"+aiResult.Intent,
-							"ai_reason:"+aiResult.Reason,
-						)
-						if sr.Category == "" {
-							sr.Category = "cold"
-						}
-					}
-				}
 
 				seen[item.ID] = true
+				sr := scoring.Result{
+					Score:    outcome.Score,
+					Category: outcome.Category,
+					Signals:  outcome.Signals,
+				}
 				rec := toRecord(item, fr.Signals, sr)
 				records = append(records, rec)
 				stats.TotalReturned++
-
-				// Persist hot/warm leads to app store immediately.
-				if h.appStore != nil && sr.Category != "cold" && sr.Category != "rejected" {
-					lead := store.TaskLead{
-						TaskID:           job.TaskID,
-						OrgID:            task.OrgID,
-						SourceURL:        item.SourceURL,
-						AuthorProfileURL: item.AuthorProfileURL,
-						AuthorName:       item.AuthorName,
-						Content:          item.Content,
-						LeadScore:        sr.Score,
-						Category:         sr.Category,
-						Signals:          sr.Signals,
-					}
-					if err := h.appStore.InsertLead(ctx, job.TaskID, task.OrgID, lead); err != nil {
-						log.Printf("handler: insert lead: %v", err)
-					}
-				}
-				if h.ctxStore != nil && sr.Category != "cold" && sr.Category != "rejected" {
-					leadID, err := h.ctxStore.InsertLead(&models.Lead{
-						OrgID:        task.OrgID,
-						SourceType:   "post",
-						SourceID:     0,
-						SourceURL:    item.SourceURL,
-						Platform:     models.PlatformFacebook,
-						Author:       item.AuthorName,
-						AuthorURL:    item.AuthorProfileURL,
-						Content:      item.Content,
-						Score:        models.LeadScore(sr.Category),
-						ServiceMatch: sr.Category,
-						AuthorRole:   "AI classifier",
-						PainPoint:    strings.Join(sr.Signals, "; "),
-						AIReasoning:  strings.Join(sr.Signals, "; "),
-						Niche:        strings.Join(task.Keywords, ", "),
-						ClassifiedAt: time.Now().UTC(),
-					})
-					if err != nil {
-						log.Printf("handler: insert legacy lead: %v", err)
-					} else if leadID > 0 {
-						log.Printf("handler: inserted lead #%d for org %d", leadID, task.OrgID)
-					}
-				}
 
 				if stats.TotalReturned >= maxItems {
 					break
