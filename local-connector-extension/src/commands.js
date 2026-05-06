@@ -1,3 +1,4 @@
+
 var THGCommands = globalThis.THGCommands || (() => {
   async function fetchCommands() {
     const res = await THGApi.agentFetch('/api/connectors/commands?limit=10');
@@ -70,6 +71,31 @@ var THGCommands = globalThis.THGCommands || (() => {
     }
   }
 
+  // Opens a background tab for crawling in the Facebook window.
+  // If the Facebook window is minimized, restores it first so Chrome allows
+  // full requestAnimationFrame scheduling — minimized windows throttle rAF
+  // which prevents React/SPA from rendering the feed.
+  // Returns { tab, shouldReminimize, crawlWinId } so the caller can re-minimize after.
+  async function openCrawlTab(navigateTo) {
+    const fbTabs = await chrome.tabs.query({
+      url: ['https://facebook.com/*', 'https://*.facebook.com/*']
+    });
+    const crawlWinId = fbTabs[0]?.windowId || null;
+    let shouldReminimize = false;
+    if (crawlWinId) {
+      const win = await chrome.windows.get(crawlWinId).catch(() => null);
+      if (win?.state === 'minimized') {
+        await chrome.windows.update(crawlWinId, { state: 'normal' }).catch(() => {});
+        shouldReminimize = true;
+        await THGShared.delay(600);
+      }
+    }
+    const tabOpts = { url: navigateTo, active: false };
+    if (crawlWinId) tabOpts.windowId = crawlWinId;
+    const tab = await chrome.tabs.create(tabOpts);
+    return { tab, shouldReminimize, crawlWinId };
+  }
+
   async function process(target, state) {
     if (!target || !state.fbUserId) return;
     const commands = await fetchCommands();
@@ -78,6 +104,8 @@ var THGCommands = globalThis.THGCommands || (() => {
     for (const command of commands) {
       let error = '';
       let tempTabId = 0;
+      let shouldReminimize = false;
+      let crawlWinId = null;
       try {
         const cmdType = String(command.type || '').toLowerCase();
         if (cmdType === 'window_control') {
@@ -88,12 +116,16 @@ var THGCommands = globalThis.THGCommands || (() => {
           const navigateTo = envelope?.navigate_to || sourceUrlFromCrawlPayload(command);
           const useBackground = Boolean(envelope?.use_background_tab);
           if (useBackground) {
-            // Open a background tab so the user's active tab is never touched.
-            const tab = await chrome.tabs.create({ url: navigateTo, active: false });
-            tempTabId = tab.id;
-            await THGFacebookState.waitForTabReady(tab.id);
-            await THGShared.delay(2500);
-            liveState = { ...liveState, tab };
+            // Restore the Facebook window from minimize before opening the crawl tab.
+            // Inactive tabs in a visible window render at full speed; minimized
+            // windows throttle rendering and prevent the feed from loading.
+            const crawlInfo = await openCrawlTab(navigateTo);
+            tempTabId = crawlInfo.tab.id;
+            shouldReminimize = crawlInfo.shouldReminimize;
+            crawlWinId = crawlInfo.crawlWinId;
+            await THGFacebookState.waitForTabReady(crawlInfo.tab.id);
+            await THGShared.delay(5000); // Allow Facebook SPA to fully render feed
+            liveState = { ...liveState, tab: crawlInfo.tab };
           } else {
             liveState = await THGFacebookState.ensureFacebookTabVisible(navigateTo, { focus: false });
             await THGShared.delay(2500);
@@ -114,6 +146,10 @@ var THGCommands = globalThis.THGCommands || (() => {
       } finally {
         if (tempTabId) {
           await chrome.tabs.remove(tempTabId).catch(() => {});
+        }
+        // Re-minimize the Facebook window after crawl if we had restored it.
+        if (shouldReminimize && crawlWinId) {
+          await chrome.windows.update(crawlWinId, { state: 'minimized' }).catch(() => {});
         }
       }
       await markCommandDone(command.id, error);
