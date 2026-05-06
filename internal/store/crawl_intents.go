@@ -167,11 +167,26 @@ func (s *Store) ClaimDueCrawlIntents(ctx context.Context, now time.Time, limit i
 }
 
 func (s *Store) MarkCrawlIntentRunResult(ctx context.Context, id int64, taskID, errMsg string) error {
+	taskID = strings.TrimSpace(taskID)
+	errMsg = strings.TrimSpace(errMsg)
+	if errMsg == "" {
+		_, err := s.db.ExecContext(ctx, `
+			UPDATE org_crawl_intents
+			SET last_task_id = ?, last_error = '', updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?`,
+			taskID, id)
+		return err
+	}
+	// Disable intent after 2 consecutive failures (last_error already set → 2nd failure).
+	// This prevents errored intents from spamming the scheduler indefinitely.
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE org_crawl_intents
-		SET last_task_id = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+		SET last_task_id = ?,
+		    last_error = ?,
+		    enabled = CASE WHEN last_error != '' THEN 0 ELSE enabled END,
+		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
-		strings.TrimSpace(taskID), strings.TrimSpace(errMsg), id)
+		taskID, errMsg, id)
 	return err
 }
 

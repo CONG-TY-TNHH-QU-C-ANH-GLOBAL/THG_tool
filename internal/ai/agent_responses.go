@@ -96,11 +96,11 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 		sb.WriteString(taskID)
 		sb.WriteString("\n")
 	}
-	sb.WriteString("\nAutomation 24/7: he thong ghi nho nhu cau nay thanh lich crawl dinh ky 30 phut cho workspace. Cac vong sau dung scheduler va Chrome Extension, khong goi AI lai neu khong can phan tich/ngon ngu.")
 	if commandID != "" {
 		sb.WriteString("\nTrang thai nay moi xac nhan Chrome Extension da nhan command. Sau khi crawl xong, he thong moi ghi fetched / qualified / filtered ve dashboard va Telegram.")
 	} else {
 		sb.WriteString("\nHe thong da tao job nen. Neu workspace dung Chrome Extension ma khong thay Connector command, can kiem tra account/session routing.")
 	}
+	sb.WriteString("\nDe bat Automation 24/7, them interval vao lenh (vi du: 'crawl group nay moi 30 phut').")
 	return sb.String()
 }
