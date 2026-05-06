@@ -9,7 +9,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/thg/scraper/internal/ai"
-	facebookcrawl "github.com/thg/scraper/internal/handlers/facebook_crawl"
+	facebookcrawl "github.com/thg/scraper/internal/jobhandlers/facebook_crawl"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/livesession"
 	"github.com/thg/scraper/internal/runtime"

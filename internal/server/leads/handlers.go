@@ -1,0 +1,321 @@
+package leads
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
+)
+
+// Deps holds dependencies needed by the leads subpackage handlers.
+type Deps struct {
+	DB       *store.Store
+	JobStore *jobs.Store
+}
+
+// getLeads handles GET /api/leads
+func getLeads(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		score := c.Query("score", "")
+		niche := c.Query("niche", "")
+		limit, _ := strconv.Atoi(c.Query("limit", "50"))
+		offset, _ := strconv.Atoi(c.Query("offset", "0"))
+		orgID, _ := c.Locals("org_id").(int64)
+
+		var (
+			leadList []models.Lead
+			err      error
+		)
+		// The Chrome Extension crawl path stores into task_leads first, then best-effort
+		// mirrors into legacy leads. Merge both tables for the main dashboard view so
+		// production users immediately see extension-crawled results even when the
+		// legacy mirror is empty or delayed.
+		if niche == "" && offset == 0 {
+			leadList, err = deps.DB.GetAutomationLeadsForOrg(orgID, score, limit)
+		} else {
+			leadList, err = deps.DB.GetLeadsFiltered(score, niche, limit, offset, orgID)
+		}
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"leads": leadList, "count": len(leadList)})
+	}
+}
+
+// deleteLead handles DELETE /api/leads/:id
+func deleteLead(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		}
+		if err := deps.DB.DeleteLead(id); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"ok": true})
+	}
+}
+
+// deleteAllLeads handles DELETE /api/leads/all
+func deleteAllLeads(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		niche := c.Query("niche", "")
+		count, err := deps.DB.DeleteLeads(niche)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		scope := "all"
+		if niche != "" {
+			scope = niche
+		}
+		userID, _ := c.Locals("user_id").(int64)
+		deps.DB.InsertAuditLog(userID, "delete_leads", c.IP(), fmt.Sprintf(`{"scope":%q,"count":%d}`, scope, count))
+		log.Printf("[API] Deleted leads (scope=%s): %d removed", scope, count)
+		return c.JSON(fiber.Map{"ok": true, "deleted": count, "scope": scope})
+	}
+}
+
+// getNiches handles GET /api/niches
+func getNiches(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		niches, err := deps.DB.GetNiches()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"niches": niches, "count": len(niches)})
+	}
+}
+
+// addNiche handles POST /api/niches
+func addNiche(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var req struct {
+			Slug  string `json:"slug"`
+			Name  string `json:"name"`
+			Emoji string `json:"emoji"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		if req.Slug == "" || req.Name == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "slug and name required"})
+		}
+		n := &models.Niche{Slug: req.Slug, Name: req.Name, Emoji: req.Emoji}
+		id, err := deps.DB.InsertNiche(n)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(fiber.Map{"id": id, "slug": req.Slug})
+	}
+}
+
+// deleteNiche handles DELETE /api/niches/:slug
+func deleteNiche(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		slug := c.Params("slug")
+		if slug == "logistics" {
+			return c.Status(400).JSON(fiber.Map{"error": "cannot delete default niche"})
+		}
+		if err := deps.DB.DeleteNiche(slug); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "deleted"})
+	}
+}
+
+// getPosts handles GET /api/posts
+func getPosts(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		limit, _ := strconv.Atoi(c.Query("limit", "50"))
+		offset, _ := strconv.Atoi(c.Query("offset", "0"))
+		orgID, _ := c.Locals("org_id").(int64)
+		posts, err := deps.DB.GetRecentPosts(limit, offset, orgID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"posts": posts, "count": len(posts)})
+	}
+}
+
+// deletePost handles DELETE /api/posts/:id
+func deletePost(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		}
+		if err := deps.DB.DeletePost(id); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"ok": true})
+	}
+}
+
+// deleteAllPosts handles DELETE /api/posts/all
+func deleteAllPosts(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		count, err := deps.DB.DeleteAllPosts()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		log.Printf("[API] Deleted all posts: %d removed", count)
+		return c.JSON(fiber.Map{"ok": true, "deleted": count})
+	}
+}
+
+// getGroups handles GET /api/groups
+func getGroups(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		groups, err := deps.DB.GetAllGroups(orgID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"groups": groups, "count": len(groups)})
+	}
+}
+
+// addGroup handles POST /api/groups
+func addGroup(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var req struct {
+			Platform string `json:"platform"`
+			Name     string `json:"name"`
+			URL      string `json:"url"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		groupOrgID, _ := c.Locals("org_id").(int64)
+		group := &models.Group{
+			OrgID:     groupOrgID,
+			Platform:  models.Platform(req.Platform),
+			Name:      req.Name,
+			URL:       req.URL,
+			Active:    true,
+			JoinState: "none",
+		}
+		id, err := deps.DB.AddGroup(group)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(fiber.Map{"group_id": id})
+	}
+}
+
+// toggleGroup handles PUT /api/groups/:id/toggle
+func toggleGroup(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		}
+		var req struct {
+			Active bool `json:"active"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		if err := deps.DB.ToggleGroup(id, req.Active); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "updated"})
+	}
+}
+
+// deleteGroup handles DELETE /api/groups/:id
+func deleteGroup(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		}
+		if err := deps.DB.DeleteGroup(id); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "deleted"})
+	}
+}
+
+// getJobs handles GET /api/jobs
+func getJobs(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		status := c.Query("status", "")
+		limit, _ := strconv.Atoi(c.Query("limit", "50"))
+		list, err := deps.JobStore.List(c.Context(), status, limit)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"jobs": list, "count": len(list)})
+	}
+}
+
+// createJob handles POST /api/jobs
+func createJob(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var req struct {
+			Intent    string `json:"intent"`
+			Platform  string `json:"platform"`
+			Target    string `json:"target"`
+			AccountID int64  `json:"account_id"`
+			Text      string `json:"text"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		if req.Intent == "" {
+			req.Intent = "facebook_crawl"
+		}
+		if req.Target == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "target URL is required for crawler jobs; use /api/ai/prompt for free-form agent prompts"})
+		}
+		if req.Platform == "" {
+			req.Platform = "facebook"
+		}
+		sourceType := req.Platform + "_group"
+		if req.Platform == "web" || req.Platform == "website" {
+			sourceType = "web_url"
+		}
+		task := &jobs.Task{
+			SchemaVersion: "1",
+			TaskID:        fmt.Sprintf("api-%s-%d", req.Intent, time.Now().UnixMilli()),
+			AccountID:     req.AccountID,
+			Intent:        req.Intent,
+			Keywords:      strings.Fields(req.Text),
+			CrawlPlan: jobs.CrawlPlan{
+				Sources:  []jobs.Source{{Type: sourceType, URL: req.Target}},
+				MaxItems: 50,
+			},
+			OutputSchema:        "open_crawler_v1",
+			OutputSchemaVersion: "1",
+		}
+		task.OrgID, _ = c.Locals("org_id").(int64)
+		payload, _ := json.Marshal(task)
+		j, err := deps.JobStore.Submit(c.Context(), task, string(payload))
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(fiber.Map{"job_id": j.ID, "task_id": j.TaskID, "status": "submitted"})
+	}
+}
+
+// cancelJob handles DELETE /api/jobs/:id
+func cancelJob(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid job id"})
+		}
+		if err := deps.JobStore.Cancel(c.Context(), id); err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "canceled"})
+	}
+}

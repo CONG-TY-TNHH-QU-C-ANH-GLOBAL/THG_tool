@@ -35,7 +35,8 @@ function statusTag(status: string): string {
 
 export default function CommentingView({ orgId }: CommentingViewProps) {
   void orgId;
-  const { lang, t } = useLang();
+  const { t } = useLang();
+  const tv = t.commentingView;
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
   const [filter, setFilter] = useState<CommentFilter>('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -43,12 +44,12 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
   const [errorMsg, setErrorMsg] = useState('');
 
   const FILTERS: Array<{ label: string; value: CommentFilter }> = [
-    { label: lang === 'vi' ? 'Tất cả' : 'All', value: 'all' },
-    { label: 'Draft', value: 'draft' },
-    { label: lang === 'vi' ? 'Đã duyệt' : 'Approved', value: 'approved' },
-    { label: lang === 'vi' ? 'Đã gửi' : 'Sent', value: 'sent' },
-    { label: lang === 'vi' ? 'Lỗi' : 'Failed', value: 'failed' },
-    { label: lang === 'vi' ? 'Từ chối' : 'Rejected', value: 'rejected' },
+    { label: tv.filterAll, value: 'all' },
+    { label: tv.filterDraft, value: 'draft' },
+    { label: tv.filterApproved, value: 'approved' },
+    { label: tv.filterSent, value: 'sent' },
+    { label: tv.filterFailed, value: 'failed' },
+    { label: tv.filterRejected, value: 'rejected' },
   ];
 
   const load = async () => {
@@ -58,7 +59,7 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
       const response = await getOutbox({ type: 'comment', limit: 200 });
       setMessages(response.messages ?? []);
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : (lang === 'vi' ? 'Không tải được outbox comment.' : 'Failed to load comment outbox.'));
+      setErrorMsg(error instanceof Error ? error.message : tv.loadError);
     } finally {
       setLoading(false);
     }
@@ -93,26 +94,23 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
       if (action === 'delete') await deleteOutbox(id);
       await load();
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : (lang === 'vi' ? 'Không cập nhật được comment.' : 'Could not update comment.'));
+      setErrorMsg(error instanceof Error ? error.message : tv.updateError);
     }
   };
 
   const today = new Date().toISOString().slice(0, 10);
   const stats = [
-    { label: lang === 'vi' ? 'ĐÃ GỬI' : 'SENT', value: messages.filter((message) => message.status === 'sent').length },
-    { label: lang === 'vi' ? 'HÔM NAY' : 'TODAY', value: messages.filter((message) => message.created_at?.startsWith(today)).length },
-    { label: lang === 'vi' ? 'CHỜ DUYỆT' : 'PENDING', value: messages.filter((message) => message.status === 'draft' || message.status === 'approved').length },
-    { label: lang === 'vi' ? 'TỔNG' : 'TOTAL', value: messages.length },
+    { label: tv.statSent, value: messages.filter((message) => message.status === 'sent').length },
+    { label: tv.statToday, value: messages.filter((message) => message.created_at?.startsWith(today)).length },
+    { label: tv.statPending, value: messages.filter((message) => message.status === 'draft' || message.status === 'approved').length },
+    { label: tv.statTotal, value: messages.length },
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div className="eyebrow">
-            <span className="dot" />
-            OUTBOX
-          </div>
+          <div className="eyebrow"><span className="dot" />{tv.eyebrow}</div>
           <h2 style={{ fontSize: 28, marginTop: 8 }}>{t.views.commentingTitle}</h2>
           <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6 }}>{t.views.commentingSub}</p>
         </div>
@@ -121,7 +119,7 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
           <RefreshCw size={13} />
           {t.common.refresh}
         </button>
-      </div>
+      </header>
 
       <div className="stats-grid">
         {stats.map((stat) => (
@@ -136,8 +134,8 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
 
       <div className="card" style={{ padding: 0, overflow: 'hidden', minHeight: 560 }}>
         <div className="three-pane" style={{ minHeight: 560 }}>
-          <div style={{ padding: 16 }}>
-            <div className="sidebar-section">{lang === 'vi' ? 'BỘ LỌC' : 'FILTERS'}</div>
+          <aside style={{ padding: 16 }}>
+            <div className="sidebar-section">{tv.filtersLabel}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {FILTERS.map((item) => {
                 const count = item.value === 'all' ? messages.length : messages.filter((message) => message.status === item.value).length;
@@ -155,15 +153,13 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
                 );
               })}
             </div>
-          </div>
+          </aside>
 
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <section style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
-              <div className="eyebrow">{lang === 'vi' ? 'HÀNG ĐỢI COMMENT' : 'COMMENT QUEUE'}</div>
+              <div className="eyebrow">{tv.listTitle}</div>
               <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-mute)' }}>
-                {lang === 'vi'
-                  ? `${filtered.length} comment đang được theo dõi`
-                  : `${filtered.length} comments in the current queue`}
+                {tv.listCount(filtered.length)}
               </div>
             </div>
 
@@ -176,16 +172,9 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="empty" style={{ margin: 16 }}>
-                  <div className="eyebrow">
-                    <span className="dot" />
-                    EMPTY
-                  </div>
-                  <h3>{lang === 'vi' ? 'Chưa có comment nào' : 'No comments yet'}</h3>
-                  <p>
-                    {lang === 'vi'
-                      ? 'Khi agent draft comment cho leads, item sẽ vào hàng đợi tại đây.'
-                      : 'Drafted comments from the agent will appear here.'}
-                  </p>
+                  <div className="eyebrow"><span className="dot" />{t.common.empty}</div>
+                  <h3>{tv.emptyTitle}</h3>
+                  <p>{tv.emptyDesc}</p>
                 </div>
               ) : (
                 filtered.map((message) => (
@@ -212,61 +201,61 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
                       <span className={statusTag(message.status)}>{message.status.toUpperCase()}</span>
                     </div>
                     <div style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {message.content || <span style={{ color: 'var(--text-faint)' }}>(empty)</span>}
+                      {message.content || <span style={{ color: 'var(--text-faint)' }}>{tv.emptyValue}</span>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {message.target_name || (lang === 'vi' ? 'Chưa có target' : 'No target')}
+                        {message.target_name || tv.noTarget}
                       </span>
                       <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                        {message.created_at?.slice(5, 16) ?? '-'}
+                        {message.created_at?.slice(5, 16) ?? '—'}
                       </span>
                     </div>
                   </button>
                 ))
               )}
             </div>
-          </div>
+          </section>
 
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <section style={{ display: 'flex', flexDirection: 'column' }}>
             {selectedMessage ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
+                <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 500, color: 'var(--text)' }}>
-                      {selectedMessage.target_name || (lang === 'vi' ? 'Comment target' : 'Comment target')}
+                      {selectedMessage.target_name || tv.targetFallback}
                     </div>
                     <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
                       #{selectedMessage.account_id}
                     </div>
                   </div>
                   <span className={statusTag(selectedMessage.status)}>{selectedMessage.status.toUpperCase()}</span>
-                </div>
+                </header>
 
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div className="card" style={{ padding: 16 }}>
-                    <div className="eyebrow" style={{ marginBottom: 10 }}>{lang === 'vi' ? 'NỘI DUNG COMMENT' : 'COMMENT CONTENT'}</div>
+                    <div className="eyebrow" style={{ marginBottom: 10 }}>{tv.contentTitle}</div>
                     <div style={{ color: 'var(--text)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                      {selectedMessage.content || <span style={{ color: 'var(--text-faint)' }}>(empty)</span>}
+                      {selectedMessage.content || <span style={{ color: 'var(--text-faint)' }}>{tv.emptyValue}</span>}
                     </div>
                   </div>
 
                   <div className="card" style={{ padding: 16 }}>
-                    <div className="eyebrow" style={{ marginBottom: 10 }}>{lang === 'vi' ? 'NGỮ CẢNH GỬI' : 'DELIVERY CONTEXT'}</div>
+                    <div className="eyebrow" style={{ marginBottom: 10 }}>{tv.contextTitle}</div>
                     <dl style={{ display: 'grid', gap: 10 }}>
                       <div style={{ display: 'grid', gap: 4 }}>
-                        <dt className="field-label">{lang === 'vi' ? 'Target' : 'Target'}</dt>
-                        <dd style={{ margin: 0 }}>{selectedMessage.target_name || '-'}</dd>
+                        <dt className="field-label">{tv.fieldTarget}</dt>
+                        <dd style={{ margin: 0 }}>{selectedMessage.target_name || '—'}</dd>
                       </div>
                       <div style={{ display: 'grid', gap: 4 }}>
-                        <dt className="field-label">{lang === 'vi' ? 'Context' : 'Context'}</dt>
+                        <dt className="field-label">{tv.fieldContext}</dt>
                         <dd style={{ margin: 0, color: 'var(--text-mute)', lineHeight: 1.5 }}>
-                          {selectedMessage.context || (lang === 'vi' ? 'Chưa có context mở rộng cho comment này.' : 'No extra context stored for this comment yet.')}
+                          {selectedMessage.context || tv.contextEmpty}
                         </dd>
                       </div>
                       <div style={{ display: 'grid', gap: 4 }}>
-                        <dt className="field-label">{lang === 'vi' ? 'Ảnh media' : 'Media'}</dt>
-                        <dd style={{ margin: 0 }}>{selectedMessage.image_path || '-'}</dd>
+                        <dt className="field-label">{tv.fieldMedia}</dt>
+                        <dd style={{ margin: 0 }}>{selectedMessage.image_path || '—'}</dd>
                       </div>
                     </dl>
                   </div>
@@ -276,42 +265,39 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
                       <>
                         <button type="button" className="btn btn-primary btn-sm" onClick={() => void transition(selectedMessage.id, 'approve')}>
                           <Check size={13} />
-                          {lang === 'vi' ? 'Duyệt gửi' : 'Approve'}
+                          {tv.actionApprove}
                         </button>
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void transition(selectedMessage.id, 'reject')}>
                           <X size={13} />
-                          {lang === 'vi' ? 'Từ chối' : 'Reject'}
+                          {tv.actionReject}
                         </button>
                       </>
                     )}
                     {selectedMessage.target_url && (
                       <a className="btn btn-ghost btn-sm" href={selectedMessage.target_url} target="_blank" rel="noopener noreferrer">
                         <ExternalLink size={13} />
-                        {lang === 'vi' ? 'Mở target' : 'Open target'}
+                        {tv.actionOpenTarget}
                       </a>
                     )}
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => void transition(selectedMessage.id, 'delete')} style={{ color: 'var(--hot)' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => void transition(selectedMessage.id, 'delete')}
+                      style={{ color: 'var(--hot)' }}
+                    >
                       <Trash2 size={13} />
-                      {lang === 'vi' ? 'Xóa item' : 'Delete item'}
+                      {tv.actionDelete}
                     </button>
                   </div>
                 </div>
               </>
             ) : (
               <div className="empty" style={{ margin: 16 }}>
-                <div className="eyebrow">
-                  <span className="dot" />
-                  SELECT
-                </div>
-                <h3>{lang === 'vi' ? 'Chọn một comment' : 'Select a comment'}</h3>
-                <p>
-                  {lang === 'vi'
-                    ? 'Chọn item bên trái để duyệt, từ chối hoặc mở target thật.'
-                    : 'Pick a queue item to approve, reject, or open the real target.'}
-                </p>
+                <h3>{tv.selectTitle}</h3>
+                <p>{tv.selectDesc}</p>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
     </div>

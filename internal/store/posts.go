@@ -1,6 +1,11 @@
 package store
 
-import "github.com/thg/scraper/internal/models"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+
+	"github.com/thg/scraper/internal/models"
+)
 
 // InsertPost inserts a post if it does not already exist by dedup_hash.
 func (s *Store) InsertPost(p *models.Post) (int64, error) {
@@ -71,4 +76,26 @@ func (s *Store) InsertComment(c *models.Comment) (int64, error) {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// InsertPostsBatch inserts a slice of posts from an agent result, skipping duplicates.
+func (s *Store) InsertPostsBatch(posts []models.Post) (int, error) {
+	saved := 0
+	for i := range posts {
+		p := &posts[i]
+		if p.DedupHash == "" {
+			h := sha256.Sum256([]byte(p.Content + p.AuthorURL))
+			p.DedupHash = hex.EncodeToString(h[:])
+		}
+		_, err := s.db.Exec(
+			`INSERT OR IGNORE INTO posts (platform, group_id, group_name, url, author, author_url, content, images, reactions, comments, posted_at, scraped_at, dedup_hash)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+			p.Platform, p.GroupID, p.GroupName, p.URL, p.Author, p.AuthorURL,
+			p.Content, p.Images, p.Reactions, p.Comments, p.PostedAt, p.DedupHash,
+		)
+		if err == nil {
+			saved++
+		}
+	}
+	return saved, nil
 }

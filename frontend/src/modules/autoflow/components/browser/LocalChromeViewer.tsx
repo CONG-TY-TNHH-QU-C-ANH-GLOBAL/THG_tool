@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { Laptop, Mail, Monitor, RefreshCw } from 'lucide-react';
-import { theme } from '../../constants/styles';
 import { sendConnectorInput } from '../../services/connectorsService';
 import type { LocalConnectorAction, LocalConnectorScreen } from '../../types';
 import { actionStatusTone, actionTime, actionTypeLabel, facebookIdentityLabel, formatLastSeen, isRemoteControlKey } from './browserHelpers';
@@ -45,7 +44,7 @@ export function LocalChromeViewer({
           const res = await sendConnectorInput(accountId, type, payload);
           setInputStatus(`Đã gửi thao tác #${res.id}`);
         } catch (err) {
-          setInputStatus(err instanceof Error ? err.message : 'Không gửi được thao tác đến THG Chrome Extension');
+          setInputStatus(err instanceof Error ? err.message : 'Không gửi được thao tác đến Chrome Extension');
         }
       });
   }, [accountId, remoteInputEnabled, screen?.imageData]);
@@ -74,7 +73,7 @@ export function LocalChromeViewer({
   const handlePointerDown = (e: MouseEvent<HTMLImageElement>) => {
     if (!screen?.imageData) return;
     if (!remoteInputEnabled) {
-      setInputStatus('Hãy đăng nhập Facebook trực tiếp trên Chrome đã cài THG Extension');
+      setInputStatus('Hãy đăng nhập Facebook trực tiếp trên Chrome đã cài extension.');
       return;
     }
     setInputActive(true);
@@ -145,35 +144,127 @@ export function LocalChromeViewer({
   };
 
   return (
-    <div className="af-live-browser-frame" style={{ background: '#020617', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: screen?.imageData ? '#4ade80' : theme.textFaint }} />
-        <Monitor size={14} color="#5eead4" />
+    <div className="card" style={{ padding: 0, overflow: 'hidden', background: '#000' }}>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--s-3)',
+          padding: 'var(--s-3) var(--s-4)',
+          background: 'var(--bg-elev-2)',
+          borderBottom: '1px solid var(--line)',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: screen?.imageData ? 'var(--ok)' : 'var(--text-faint)',
+            flexShrink: 0,
+          }}
+        />
+        <Monitor size={14} color="var(--accent)" />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ color: theme.text, fontSize: 13, fontWeight: 800 }}>Facebook thật {accountName ? `- ${accountName}` : ''}</p>
-          <p style={{ color: theme.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {screen?.currentUrl || 'Đang chờ THG Chrome Extension gửi stream Facebook'}
+          <p style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 600 }}>
+            Facebook thật{accountName ? ` · ${accountName}` : ''}
+          </p>
+          <p
+            className="mono"
+            style={{
+              margin: 0,
+              color: 'var(--text-mute)',
+              fontSize: 11,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {screen?.currentUrl || 'Đang chờ Chrome Extension gửi stream Facebook...'}
           </p>
         </div>
-        {!remoteInputEnabled && screen?.imageData && <span style={{ color: '#fcd34d', border: '1px solid #f59e0b55', background: '#78350f33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>login trên Chrome</span>}
-        {remoteInputEnabled && inputActive && <span style={{ color: '#5eead4', border: '1px solid #14b8a644', background: '#134e4a33', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}>control active</span>}
-        {screenIdentityLabel && <span title={screenIdentityLabel} style={{ color: '#bfdbfe', border: '1px solid #3b82f644', background: '#1e3a8a33', borderRadius: 6, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Mail size={11} />{screenIdentityLabel}</span>}
-        {screen?.chromeError && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{screen.chromeError}</span>}
-        {inputStatus && <span style={{ color: '#fca5a5', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inputStatus}</span>}
-        {age !== null && <span style={{ color: age < 30 ? '#86efac' : '#fcd34d', fontSize: 11 }}>{age}s trước</span>}
-        <button onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>
-          <RefreshCw size={12} className={loading ? 'spin' : ''} /> Làm mới
+        {!remoteInputEnabled && screen?.imageData && (
+          <span className="tag tag-warm">Cần đăng nhập trên Chrome</span>
+        )}
+        {remoteInputEnabled && inputActive && <span className="tag tag-ok">Đang điều khiển</span>}
+        {screenIdentityLabel && (
+          <span
+            title={screenIdentityLabel}
+            className="tag tag-cold"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              maxWidth: 240,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Mail size={11} />
+            {screenIdentityLabel}
+          </span>
+        )}
+        {screen?.chromeError && (
+          <span
+            style={{
+              color: 'var(--hot)',
+              fontSize: 11,
+              maxWidth: 240,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {screen.chromeError}
+          </span>
+        )}
+        {inputStatus && (
+          <span
+            style={{
+              color: 'var(--hot)',
+              fontSize: 11,
+              maxWidth: 280,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {inputStatus}
+          </span>
+        )}
+        {age !== null && (
+          <span style={{ color: age < 30 ? 'var(--ok)' : 'var(--warn)', fontSize: 11 }}>
+            {age}s trước
+          </span>
+        )}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onRefresh}>
+          <RefreshCw size={12} className={loading ? 'spin' : ''} />
+          Làm mới
         </button>
-      </div>
+      </header>
+
       {screen?.actions && screen.actions.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', overflowX: 'auto', padding: '8px 12px', background: '#020617', borderBottom: `1px solid ${theme.border}` }}>
-          <span style={{ color: theme.textMuted, fontSize: 11, whiteSpace: 'nowrap' }}>Automation:</span>
+        <div
+          style={{
+            display: 'flex',
+            gap: 'var(--s-2)',
+            alignItems: 'center',
+            overflowX: 'auto',
+            padding: 'var(--s-2) var(--s-4)',
+            background: '#000',
+            borderBottom: '1px solid var(--line)',
+          }}
+        >
+          <span className="field-label" style={{ whiteSpace: 'nowrap' }}>Automation</span>
           {screen.actions.slice(0, 5).map((action: LocalConnectorAction) => {
             const tone = actionStatusTone(action.status);
             return (
               <span
                 key={action.id}
                 title={action.errorMsg || `${actionTypeLabel(action.type)} #${action.id}`}
+                className="tag"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -181,20 +272,18 @@ export function LocalChromeViewer({
                   border: `1px solid ${tone.border}`,
                   background: tone.bg,
                   color: tone.color,
-                  borderRadius: 7,
-                  padding: '4px 8px',
-                  fontSize: 11,
                   whiteSpace: 'nowrap',
                 }}
               >
                 #{action.id} {actionTypeLabel(action.type)}
-                <span style={{ color: tone.color, opacity: 0.9 }}>{tone.label}</span>
-                <span style={{ color: theme.textFaint }}>{formatLastSeen(actionTime(action))}</span>
+                <span style={{ opacity: 0.85 }}>{tone.label}</span>
+                <span style={{ color: 'var(--text-faint)' }}>{formatLastSeen(actionTime(action))}</span>
               </span>
             );
           })}
         </div>
       )}
+
       <div
         ref={surfaceRef}
         tabIndex={0}
@@ -202,7 +291,7 @@ export function LocalChromeViewer({
       >
         <textarea
           ref={keyboardRef}
-          aria-label="THG remote browser keyboard"
+          aria-label="Remote browser keyboard"
           autoCapitalize="off"
           autoComplete="off"
           autoCorrect="off"
@@ -224,23 +313,25 @@ export function LocalChromeViewer({
             <img
               ref={imgRef}
               src={screen.imageData}
-              alt="THG Facebook stream"
+              alt="Facebook stream"
               style={{ width: '100%', height: 'auto', display: 'block', background: '#000', userSelect: 'none' }}
             />
             <div
-              aria-label="THG remote browser control surface"
+              aria-label="Remote browser control surface"
               onMouseDown={handlePointerDown}
               onWheel={handleWheel}
-              onContextMenu={e => e.preventDefault()}
+              onContextMenu={(e) => e.preventDefault()}
               style={{ position: 'absolute', inset: 0, cursor: remoteInputEnabled ? 'crosshair' : 'default', background: 'transparent' }}
             />
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: 28, maxWidth: 520 }}>
-            <Laptop size={34} color="#5eead4" style={{ marginBottom: 12 }} />
-            <p style={{ color: theme.text, fontSize: 14, fontWeight: 800, marginBottom: 6 }}>Đang chờ THG Chrome Extension</p>
-            <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.6 }}>
-              Mở tab Facebook đã đăng nhập trong Chrome có cài extension. Dashboard sẽ nhận ảnh stream và action log từ tab Facebook thật tại đây.
+          <div style={{ textAlign: 'center', padding: 'var(--s-8)', maxWidth: 520 }}>
+            <Laptop size={34} color="var(--accent)" style={{ marginBottom: 'var(--s-3)' }} />
+            <p style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontWeight: 600 }}>
+              Đang chờ Chrome Extension
+            </p>
+            <p style={{ margin: '6px 0 0', color: 'var(--text-mute)', fontSize: 12.5, lineHeight: 1.55 }}>
+              Mở tab Facebook đã đăng nhập trong Chrome có cài extension. Dashboard sẽ nhận ảnh stream và action log từ tab Facebook thật ngay tại đây.
             </p>
           </div>
         )}

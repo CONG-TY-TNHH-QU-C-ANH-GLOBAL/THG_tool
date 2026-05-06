@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, CheckCircle, Clock, Cpu, RefreshCw, Send, Trash2, UserRound } from 'lucide-react';
+import { Bot, CheckCircle2, Clock, Cpu, RefreshCw, Send, Trash2, UserRound } from 'lucide-react';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import {
   clearAgentHistory,
@@ -12,6 +12,7 @@ import {
 } from '../../services/agentChatService';
 import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
 import { useLang } from '../../i18n/useLang';
+import type { DashboardStrings } from '../../i18n/strings';
 
 interface WorkspaceChatViewProps {
   orgId: string;
@@ -28,27 +29,25 @@ interface ChatMessage {
   historyId?: number;
 }
 
-function nowLabel() {
-  return new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+function nowLabel(locale: string) {
+  return new Date().toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
-function historyTimeLabel(value: string) {
+function historyTimeLabel(value: string, locale: string) {
   const ts = new Date(value);
-  if (Number.isNaN(ts.getTime())) return nowLabel();
-  return ts.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  if (Number.isNaN(ts.getTime())) return nowLabel(locale);
+  return ts.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
-function scheduleLabel(value: string | undefined, lang: 'vi' | 'en') {
-  if (!value) return '-';
+function scheduleLabel(value: string | undefined, tv: DashboardStrings['chatView'], locale: string) {
+  if (!value) return '—';
   const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return '-';
+  if (!Number.isFinite(timestamp)) return '—';
   const diff = timestamp - Date.now();
-  if (diff <= 0) return lang === 'vi' ? 'đang chờ' : 'pending';
+  if (diff <= 0) return tv.schedulePending;
   const minutes = Math.ceil(diff / 60000);
-  if (minutes < 60) {
-    return lang === 'vi' ? `còn ${minutes} phút` : `in ${minutes} min`;
-  }
-  return new Date(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', {
+  if (minutes < 60) return tv.scheduleInMinutes(minutes);
+  return new Date(value).toLocaleString(locale, {
     hour: '2-digit',
     minute: '2-digit',
     day: '2-digit',
@@ -56,10 +55,10 @@ function scheduleLabel(value: string | undefined, lang: 'vi' | 'en') {
   });
 }
 
-function flattenHistory(items: AgentChatHistoryItem[]): ChatMessage[] {
+function flattenHistory(items: AgentChatHistoryItem[], locale: string): ChatMessage[] {
   const next: ChatMessage[] = [];
   for (const item of items) {
-    const time = historyTimeLabel(item.createdAt);
+    const time = historyTimeLabel(item.createdAt, locale);
     if (item.source === 'system' || item.actionTaken.startsWith('system_')) {
       next.push({
         id: `${item.id}-s`,
@@ -108,6 +107,8 @@ function workspaceIdentityLabel(workspace: {
 export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   void orgId;
   const { lang, t } = useLang();
+  const tv = t.chatView;
+  const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const { workspaces, refresh } = useWorkspaces();
   const [accountId, setAccountId] = useState<number | ''>('');
   const [draft, setDraft] = useState('');
@@ -142,13 +143,13 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
     try {
-      setMessages(flattenHistory(await getAgentHistory(18)));
+      setMessages(flattenHistory(await getAgentHistory(18), locale));
     } catch {
       setMessages([]);
     } finally {
       setLoadingHistory(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     if (accountId !== '' || activeAccounts.length === 0) return;
@@ -186,7 +187,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   const appendSystemMessage = (text: string) => {
     setMessages((prev) => [
       ...prev,
-      { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(), ok: false },
+      { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: false },
     ]);
   };
 
@@ -196,7 +197,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
     setDraft('');
     setMessages((prev) => [
       ...prev,
-      { id: `pending-user-${Date.now()}`, role: 'user', text, time: nowLabel(), ok: true },
+      { id: `pending-user-${Date.now()}`, role: 'user', text, time: nowLabel(locale), ok: true },
     ]);
     setSending(true);
     try {
@@ -206,9 +207,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
       void refresh();
       void loadCrawlIntents();
     } catch (error) {
-      appendSystemMessage(
-        error instanceof Error ? error.message : (lang === 'vi' ? 'Copilot chưa phản hồi.' : 'Copilot did not reply.'),
-      );
+      appendSystemMessage(error instanceof Error ? error.message : tv.copilotErrorFallback);
     } finally {
       setSending(false);
     }
@@ -216,15 +215,13 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
   const handleDeleteHistoryItem = async (historyId: number) => {
     if (deletingHistoryId === historyId || sending) return;
-    if (!window.confirm(lang === 'vi' ? 'Xóa lượt chat này?' : 'Delete this turn?')) return;
+    if (!window.confirm(tv.confirmDeleteTurn)) return;
     setDeletingHistoryId(historyId);
     try {
       await deleteAgentHistoryItem(historyId);
       setMessages((prev) => prev.filter((message) => message.historyId !== historyId));
     } catch (error) {
-      appendSystemMessage(
-        error instanceof Error ? error.message : (lang === 'vi' ? 'Không thể xóa.' : 'Could not delete.'),
-      );
+      appendSystemMessage(error instanceof Error ? error.message : tv.deleteError);
     } finally {
       setDeletingHistoryId(null);
     }
@@ -232,15 +229,13 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
   const handleClearHistory = async () => {
     if (clearingHistory || sending) return;
-    if (!window.confirm(lang === 'vi' ? 'Xóa toàn bộ lịch sử Copilot?' : 'Clear entire Copilot history?')) return;
+    if (!window.confirm(tv.confirmClearAll)) return;
     setClearingHistory(true);
     try {
       await clearAgentHistory();
       setMessages([]);
     } catch (error) {
-      appendSystemMessage(
-        error instanceof Error ? error.message : (lang === 'vi' ? 'Không xóa được.' : 'Could not clear.'),
-      );
+      appendSystemMessage(error instanceof Error ? error.message : tv.clearError);
     } finally {
       setClearingHistory(false);
     }
@@ -248,31 +243,25 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 56px - 48px)' }}>
-      <div>
-        <div className="eyebrow">
-          <span className="dot" />
-          COPILOT
-        </div>
+      <header>
+        <div className="eyebrow"><span className="dot" />{tv.eyebrow}</div>
         <h2 style={{ fontSize: 24, marginTop: 6 }}>
-          {lang === 'vi'
-            ? <>Một prompt - <span className="title-mono">agent điều phối tất cả.</span></>
-            : <>One prompt - <span className="title-mono">the agent runs everything.</span></>}
+          {tv.titlePrefix}
+          <span className="title-mono">{tv.titleHighlight}</span>
         </h2>
         <p style={{ color: 'var(--text-mute)', fontSize: 13 }}>{t.views.chatSub}</p>
-      </div>
+      </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: compact ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 300px', gap: 16, flex: 1, minHeight: 480 }}>
         <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center' }}>
+          <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 'var(--radius-md)', background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center' }}>
               <Bot size={16} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 500, color: 'var(--text)' }}>Facebook Copilot</div>
+              <div style={{ fontWeight: 500, color: 'var(--text)' }}>{tv.copilotName}</div>
               <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {selectedAccount
-                  ? `${selectedAccount.accountName} | Facebook-only`
-                  : 'Facebook-only AI chat'}
+                {selectedAccount ? tv.copilotSubtitleWith(selectedAccount.accountName) : tv.copilotSubtitleNoAccount}
               </div>
             </div>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void loadHistory()}>
@@ -287,11 +276,9 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
               style={{ color: 'var(--hot)', opacity: clearingHistory || messages.length === 0 ? 0.5 : 1 }}
             >
               <Trash2 size={12} />
-              {clearingHistory
-                ? (lang === 'vi' ? 'Đang xóa...' : 'Clearing...')
-                : (lang === 'vi' ? 'Xóa lịch sử' : 'Clear history')}
+              {clearingHistory ? tv.clearingHistoryLabel : tv.clearHistoryLabel}
             </button>
-          </div>
+          </header>
 
           <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
             {loadingHistory && (
@@ -302,16 +289,9 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
 
             {!loadingHistory && messages.length === 0 && (
               <div className="empty" style={{ margin: 'auto' }}>
-                <div className="eyebrow">
-                  <span className="dot" />
-                  PROMPT
-                </div>
-                <h3>{lang === 'vi' ? 'Bắt đầu bằng một nhu cầu Facebook' : 'Start with a Facebook intent'}</h3>
-                <p>
-                  {lang === 'vi'
-                    ? 'Tìm tệp khách, phân tích group hoặc fanpage, soạn comment, inbox, posting - Copilot điều phối tất cả.'
-                    : 'Find prospects, analyze groups or pages, draft replies, and publish posts - Copilot orchestrates everything.'}
-                </p>
+                <div className="eyebrow"><span className="dot" />{tv.emptyEyebrow}</div>
+                <h3>{tv.emptyTitle}</h3>
+                <p>{tv.emptyDesc}</p>
               </div>
             )}
 
@@ -320,6 +300,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
               const isSystem = message.role === 'system';
               const canDelete = message.role === 'assistant' && !!message.historyId;
               const deletingThis = canDelete && deletingHistoryId === message.historyId;
+              const senderLabel = isUser ? tv.senderYou : isSystem ? tv.senderSystem : tv.senderCopilot;
 
               return (
                 <div key={message.id} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
@@ -329,7 +310,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                       background: isUser ? 'var(--accent)' : isSystem ? 'var(--hot-bg)' : 'var(--bg-elev-2)',
                       color: isUser ? 'var(--accent-ink)' : 'var(--text)',
                       border: isSystem ? '1px solid var(--hot)' : isUser ? 'none' : '1px solid var(--line)',
-                      borderRadius: 12,
+                      borderRadius: 'var(--radius-md)',
                       padding: '10px 14px',
                       whiteSpace: 'pre-wrap',
                       lineHeight: 1.5,
@@ -338,14 +319,14 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                   >
                     <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 10, opacity: 0.7 }}>
                       {isUser ? <UserRound size={11} /> : <Bot size={11} />}
-                      <span>{isUser ? (lang === 'vi' ? 'Bạn' : 'You') : isSystem ? 'System' : 'Copilot'}</span>
+                      <span>{senderLabel}</span>
                       <span style={{ marginLeft: 'auto' }}>{message.time}</span>
                       {canDelete && (
                         <button
                           type="button"
                           onClick={() => void handleDeleteHistoryItem(message.historyId!)}
                           disabled={!!deletingThis}
-                          aria-label="Delete turn"
+                          aria-label={tv.deleteAria}
                           style={{
                             background: 'transparent',
                             border: 0,
@@ -369,7 +350,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             {sending && (
               <div className="mono" style={{ color: 'var(--text-mute)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="pulse" />
-                {lang === 'vi' ? 'Copilot đang xử lý...' : 'Copilot is thinking...'}
+                {tv.thinking}
               </div>
             )}
           </div>
@@ -384,11 +365,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                   void handleSend();
                 }
               }}
-              placeholder={
-                lang === 'vi'
-                  ? 'Hỏi hoặc ra lệnh: tìm leads, phân tích group, soạn comment / inbox / post... (Ctrl+Enter)'
-                  : 'Ask or command: find leads, analyse groups, draft comment / inbox / post... (Ctrl+Enter)'
-              }
+              placeholder={tv.placeholderInput}
               rows={3}
               className="input"
               style={{ flex: 1, minWidth: compact ? '100%' : 0, resize: 'none', lineHeight: 1.5 }}
@@ -399,22 +376,22 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
               onClick={() => void handleSend()}
               disabled={sending || !draft.trim()}
               style={{ width: 42, height: 42, opacity: sending || !draft.trim() ? 0.55 : 1 }}
-              aria-label="Send"
+              aria-label={tv.sendAria}
             >
               <Send size={16} />
             </button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <aside style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="card">
-            <div className="eyebrow" style={{ marginBottom: 8 }}>{lang === 'vi' ? 'TÀI KHOẢN' : 'ACCOUNT'}</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{tv.accountLabel}</div>
             <select
               className="input"
               value={accountId}
               onChange={(event) => setAccountId(event.target.value ? Number(event.target.value) : '')}
             >
-              <option value="">{lang === 'vi' ? 'Tự chọn' : 'Auto'}</option>
+              <option value="">{tv.accountAuto}</option>
               {activeAccounts.map((workspace) => (
                 <option key={workspace.accountId} value={workspace.accountId}>
                   {workspace.accountName} | {workspaceIdentityLabel(workspace)}
@@ -427,11 +404,9 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                 <Cpu size={14} style={{ color: 'var(--info)', flexShrink: 0 }} />
                 <div>
                   <div className="mono" style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--text-faint)', marginBottom: 4 }}>
-                    NOTE
+                    {tv.noteEyebrow}
                   </div>
-                  {lang === 'vi'
-                    ? 'Chưa có Facebook workspace sẵn sàng. Tạo phiên Browser trước để Copilot có session thật.'
-                    : 'No ready Facebook workspace yet. Open a Browser session first.'}
+                  {tv.noAccountWarning}
                 </div>
               </div>
             )}
@@ -439,10 +414,10 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             {selectedAccount && (
               <dl style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                 {[
-                  [lang === 'vi' ? 'Running' : 'Running', selectedAccount.running ? 'yes' : 'no'],
-                  [lang === 'vi' ? 'Session' : 'Session', selectedAccount.loggedIn ? 'saved' : 'pending'],
-                  [lang === 'vi' ? 'Identity' : 'Identity', workspaceIdentityLabel(selectedAccount)],
-                  [lang === 'vi' ? 'FB ID' : 'FB ID', selectedAccount.fbUserId ?? '-'],
+                  [tv.fieldRunning, selectedAccount.running ? tv.valYes : tv.valNo],
+                  [tv.fieldSession, selectedAccount.loggedIn ? tv.valSaved : tv.valPending],
+                  [tv.fieldIdentity, workspaceIdentityLabel(selectedAccount)],
+                  [tv.fieldFbId, selectedAccount.fbUserId ?? '—'],
                 ].map(([key, value]) => (
                   <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                     <dt style={{ color: 'var(--text-faint)' }}>{key}</dt>
@@ -456,23 +431,19 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
           </div>
 
           <div className="card">
-            <div className="eyebrow" style={{ marginBottom: 8 }}>CONNECTOR</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{tv.connectorLabel}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-mute)', fontSize: 13 }}>
-              <CheckCircle size={14} style={{ color: activeAccounts.length > 0 ? 'var(--ok)' : 'var(--text-faint)' }} />
+              <CheckCircle2 size={14} style={{ color: activeAccounts.length > 0 ? 'var(--ok)' : 'var(--text-faint)' }} />
               <span className="mono tabular">{activeAccounts.length}</span>
-              <span>{lang === 'vi' ? 'Chrome workspace' : 'Chrome workspace'}</span>
+              <span>{tv.connectorSuffix}</span>
             </div>
           </div>
 
           <div className="card">
-            <div className="eyebrow" style={{ marginBottom: 8 }}>AUTOMATION 24/7</div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>{tv.automationLabel}</div>
             {loadingIntents && <div className="skeleton" style={{ height: 14, marginTop: 4 }} />}
             {!loadingIntents && enabledIntents.length === 0 && (
-              <p style={{ fontSize: 12, lineHeight: 1.5 }}>
-                {lang === 'vi'
-                  ? 'Chưa có lịch tự động. Prompt crawl đầu tiên sẽ dạy hệ thống nguồn cần theo dõi.'
-                  : 'No automation schedule yet. The first crawl prompt teaches the system what to watch.'}
-              </p>
+              <p style={{ fontSize: 12, lineHeight: 1.5 }}>{tv.automationEmpty}</p>
             )}
 
             {!loadingIntents && enabledIntents.slice(0, 4).map((intent) => (
@@ -486,18 +457,16 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-mute)' }}>
                     <Clock size={11} />
-                    {lang === 'vi' ? `mỗi ${intent.interval_minutes} phút` : `every ${intent.interval_minutes} min`}
+                    {tv.automationEvery(intent.interval_minutes)}
                   </span>
                   <span className="mono" style={{ color: intent.last_error ? 'var(--hot)' : 'var(--ok)' }}>
-                    {intent.last_error
-                      ? (lang === 'vi' ? 'có lỗi' : 'error')
-                      : scheduleLabel(intent.next_run_at, lang)}
+                    {intent.last_error ? tv.automationError : scheduleLabel(intent.next_run_at, tv, locale)}
                   </span>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

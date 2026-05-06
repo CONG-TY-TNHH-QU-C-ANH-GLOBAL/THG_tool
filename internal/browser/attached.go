@@ -2,13 +2,11 @@ package browser
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/thg/scraper/internal/cdpclient"
 )
 
 // AttachedPool implements Browser by reusing a running Chrome via its CDP debug port.
@@ -23,7 +21,7 @@ type AttachedPool struct {
 // NewAttachedPool connects to a running Chrome on cdpPort.
 // Returns an error if Chrome is not reachable.
 func NewAttachedPool(cdpPort int) (*AttachedPool, error) {
-	wsURL, err := chromeBrowserWSPort(cdpPort)
+	wsURL, err := cdpclient.BrowserWSFromPort(cdpPort)
 	if err != nil {
 		return nil, fmt.Errorf("chrome not reachable on port %d: %w", cdpPort, err)
 	}
@@ -62,22 +60,4 @@ func (p *AttachedPool) Shutdown() {
 // ParentCtx returns the allocator context (lifetime of the CDP connection).
 func (p *AttachedPool) ParentCtx() context.Context {
 	return p.allocCtx
-}
-
-// chromeBrowserWSPort fetches the CDP WebSocket URL from a running Chrome's debug endpoint.
-func chromeBrowserWSPort(port int) (string, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var info struct {
-		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	}
-	if err := json.Unmarshal(body, &info); err != nil || info.WebSocketDebuggerURL == "" {
-		return "", fmt.Errorf("cannot read Chrome CDP endpoint on port %d", port)
-	}
-	return info.WebSocketDebuggerURL, nil
 }

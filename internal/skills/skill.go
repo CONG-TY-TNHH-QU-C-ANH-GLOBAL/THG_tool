@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/prompt"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -77,7 +78,7 @@ type SkillRun func(ctx context.Context, env Env, params map[string]any) (SkillRe
 // arguments before the Run closure is invoked.
 type SkillParam struct {
 	Name        string
-	Type        string   // "string", "int", "bool", "url", "enum"
+	Type        string // "string", "int", "bool", "url", "enum"
 	Description string
 	Required    bool
 	Enum        []string // when Type == "enum"
@@ -89,13 +90,13 @@ type SkillParam struct {
 // registry, registered at boot, and serialised straight into the
 // catalog API.
 type Skill struct {
-	ID             string        // snake_case, stable across versions
-	Title          string        // human-readable label (Vietnamese OK)
-	Description    string        // LLM-facing description
+	ID             string // snake_case, stable across versions
+	Title          string // human-readable label (Vietnamese OK)
+	Description    string // LLM-facing description
 	Category       SkillCategory
-	Outbound       bool          // true → must use store.QueueOutboundForOrg
-	NeedsAccount   bool          // true → resolver must pass AccountID
-	DefaultEnabled bool          // true → enabled out-of-the-box for new orgs
+	Outbound       bool // true → must use store.QueueOutboundForOrg
+	NeedsAccount   bool // true → resolver must pass AccountID
+	DefaultEnabled bool // true → enabled out-of-the-box for new orgs
 	Parameters     []SkillParam
 	Run            SkillRun
 }
@@ -175,7 +176,7 @@ func (s *Skill) Validate(in map[string]any) (map[string]any, error) {
 			}
 			out[p.Name] = str
 		default: // string, url
-			str := sanitizeText(fmt.Sprint(raw), p.MaxLen)
+			str := prompt.SanitizeText(fmt.Sprint(raw), p.MaxLen)
 			out[p.Name] = str
 		}
 	}
@@ -222,32 +223,4 @@ func containsString(set []string, value string) bool {
 		}
 	}
 	return false
-}
-
-// sanitizeText is the local copy of ai.sanitizeForPrompt — duplicated
-// to avoid an internal/ai import cycle. Any change here must be
-// mirrored in classifier.go's sanitizeForPrompt.
-func sanitizeText(value string, maxRunes int) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	var b strings.Builder
-	count := 0
-	for _, r := range value {
-		if maxRunes > 0 && count >= maxRunes {
-			b.WriteString("…")
-			break
-		}
-		switch {
-		case r == '\n', r == '\t':
-			b.WriteRune(' ')
-		case r < 0x20 || r == 0x7f:
-			b.WriteRune(' ')
-		default:
-			b.WriteRune(r)
-		}
-		count++
-	}
-	return b.String()
 }

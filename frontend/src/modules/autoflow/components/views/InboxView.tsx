@@ -31,13 +31,9 @@ function statusTag(status: string): string {
   }
 }
 
-function threadFilterLabel(filter: ThreadFilter, lang: 'vi' | 'en') {
-  if (filter === 'all') return lang === 'vi' ? 'Tất cả' : 'All';
-  return filter;
-}
-
 export default function InboxView({ orgId }: InboxViewProps) {
-  const { lang, t } = useLang();
+  const { t } = useLang();
+  const tv = t.inboxView;
   const { threads, activeThread, setActiveId, messages, send, isSending, refetch } = useThreads(orgId);
   const [draft, setDraft] = useState('');
   const [filter, setFilter] = useState<ThreadFilter>('all');
@@ -65,12 +61,9 @@ export default function InboxView({ orgId }: InboxViewProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 56px - 48px)' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div className="eyebrow">
-            <span className="dot" />
-            MESSENGER
-          </div>
+          <div className="eyebrow"><span className="dot" />{tv.eyebrow}</div>
           <h2 style={{ fontSize: 24, marginTop: 6 }}>{t.views.inboxTitle}</h2>
           <p style={{ color: 'var(--text-mute)', fontSize: 13 }}>{t.views.inboxSub}</p>
         </div>
@@ -79,34 +72,35 @@ export default function InboxView({ orgId }: InboxViewProps) {
           <RefreshCw size={13} />
           {t.common.refresh}
         </button>
-      </div>
+      </header>
 
       <div className="stats-grid">
         <div className="stat">
-          <div className="stat-label">{lang === 'vi' ? 'TỔNG THREAD' : 'TOTAL THREADS'}</div>
+          <div className="stat-label">{tv.statTotal}</div>
           <div className="stat-value tabular">{stats.total}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">ACTIVE</div>
+          <div className="stat-label">{tv.statActive}</div>
           <div className="stat-value tabular" style={{ color: 'var(--ok)' }}>{stats.active}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">PENDING</div>
+          <div className="stat-label">{tv.statPending}</div>
           <div className="stat-value tabular" style={{ color: 'var(--warn)' }}>{stats.pending}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">CONVERTED</div>
+          <div className="stat-label">{tv.statConverted}</div>
           <div className="stat-value tabular" style={{ color: 'var(--info)' }}>{stats.converted}</div>
         </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, minHeight: 520 }}>
         <div className="three-pane" style={{ height: '100%' }}>
-          <div style={{ padding: 16 }}>
-            <div className="sidebar-section">{lang === 'vi' ? 'BỘ LỌC' : 'FILTERS'}</div>
+          <aside style={{ padding: 16 }}>
+            <div className="sidebar-section">{tv.filtersLabel}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {filters.map((item) => {
                 const count = item === 'all' ? threads.length : threads.filter((thread) => thread.status === item).length;
+                const label = item === 'all' ? tv.filterAll : item;
                 return (
                   <button
                     key={item}
@@ -115,37 +109,28 @@ export default function InboxView({ orgId }: InboxViewProps) {
                     style={{ background: 'transparent', border: 0, textAlign: 'left' }}
                     onClick={() => setFilter(item)}
                   >
-                    <span>{threadFilterLabel(item, lang)}</span>
+                    <span>{label}</span>
                     <span className="badge-num badge">{count}</span>
                   </button>
                 );
               })}
             </div>
-          </div>
+          </aside>
 
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <section style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
-              <div className="eyebrow">{lang === 'vi' ? 'DANH SÁCH THREAD' : 'THREAD LIST'}</div>
+              <div className="eyebrow">{tv.listTitle}</div>
               <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-mute)' }}>
-                {lang === 'vi'
-                  ? `${filteredThreads.length} hội thoại đang được quan sát`
-                  : `${filteredThreads.length} conversations in view`}
+                {tv.listCount(filteredThreads.length)}
               </div>
             </div>
 
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {filteredThreads.length === 0 ? (
                 <div className="empty" style={{ margin: 16 }}>
-                  <div className="eyebrow">
-                    <span className="dot" />
-                    EMPTY
-                  </div>
-                  <h3>{lang === 'vi' ? 'Chưa có thread' : 'No threads yet'}</h3>
-                  <p style={{ fontSize: 12 }}>
-                    {lang === 'vi'
-                      ? 'Khi agent inbox lead, conversation sẽ xuất hiện ở đây.'
-                      : 'Threads will appear once the agent starts an outreach.'}
-                  </p>
+                  <div className="eyebrow"><span className="dot" />{tv.emptyEyebrow}</div>
+                  <h3>{tv.emptyTitle}</h3>
+                  <p style={{ fontSize: 12 }}>{tv.emptyDesc}</p>
                 </div>
               ) : (
                 filteredThreads.map((thread) => (
@@ -175,7 +160,7 @@ export default function InboxView({ orgId }: InboxViewProps) {
                       {thread.unread > 0 && <span className="badge-num badge">{thread.unread}</span>}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 30 }}>
-                      {thread.last || (lang === 'vi' ? 'Chưa có tin nhắn gần đây' : 'No recent message')}
+                      {thread.last || tv.noRecentMessage}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 30 }}>
                       <span className={statusTag(thread.status)}>{thread.status}</span>
@@ -185,37 +170,30 @@ export default function InboxView({ orgId }: InboxViewProps) {
                 ))
               )}
             </div>
-          </div>
+          </section>
 
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <section style={{ display: 'flex', flexDirection: 'column' }}>
             {activeThread ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
+                <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
                   <span className="avatar">{(activeThread.lead[0] || 'L').toUpperCase()}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {activeThread.lead}
                     </div>
                     <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                      {activeThread.agent ? `via ${activeThread.agent}` : (lang === 'vi' ? 'Facebook thread' : 'Facebook thread')}
+                      {activeThread.agent ? `via ${activeThread.agent}` : tv.threadKind}
                     </div>
                   </div>
                   <span className={statusTag(activeThread.status)}>{activeThread.status}</span>
-                </div>
+                </header>
 
                 <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {messages.length === 0 ? (
                     <div className="empty" style={{ margin: 'auto 0' }}>
-                      <div className="eyebrow">
-                        <span className="dot" />
-                        THREAD
-                      </div>
-                      <h3>{lang === 'vi' ? 'Chưa có tin nhắn' : 'No messages yet'}</h3>
-                      <p>
-                        {lang === 'vi'
-                          ? 'Khi lead phản hồi hoặc agent bắt đầu hội thoại, transcript sẽ xuất hiện tại đây.'
-                          : 'The transcript will appear here once the lead or agent starts the conversation.'}
-                      </p>
+                      <div className="eyebrow"><span className="dot" />{tv.conversationEyebrow}</div>
+                      <h3>{tv.conversationEmptyTitle}</h3>
+                      <p>{tv.conversationEmptyDesc}</p>
                     </div>
                   ) : (
                     messages.map((message, index) => (
@@ -224,7 +202,7 @@ export default function InboxView({ orgId }: InboxViewProps) {
                           style={{
                             maxWidth: '72%',
                             padding: '10px 14px',
-                            borderRadius: 12,
+                            borderRadius: 'var(--radius-md)',
                             background: message.from === 'agent' ? 'var(--accent)' : 'var(--bg-elev-2)',
                             color: message.from === 'agent' ? 'var(--accent-ink)' : 'var(--text)',
                             border: message.from === 'agent' ? 'none' : '1px solid var(--line)',
@@ -250,25 +228,28 @@ export default function InboxView({ orgId }: InboxViewProps) {
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={(event) => event.key === 'Enter' && !event.shiftKey && (event.preventDefault(), void handleSend())}
-                    placeholder={lang === 'vi' ? 'Nhập tin nhắn...' : 'Type a message...'}
+                    placeholder={tv.placeholderInput}
                     disabled={isSending}
                   />
-                  <button type="button" className="btn btn-primary btn-icon" onClick={() => void handleSend()} aria-label="Send" disabled={isSending || !draft.trim()}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-icon"
+                    onClick={() => void handleSend()}
+                    aria-label={tv.placeholderInput}
+                    disabled={isSending || !draft.trim()}
+                  >
                     <Send size={14} />
                   </button>
                 </div>
               </>
             ) : (
               <div className="empty" style={{ margin: 24 }}>
-                <div className="eyebrow">
-                  <span className="dot" />
-                  SELECT
-                </div>
-                <h3>{lang === 'vi' ? 'Chọn hội thoại' : 'Select a thread'}</h3>
-                <p>{lang === 'vi' ? 'Chọn một thread bên trái để bắt đầu.' : 'Pick a thread on the left to start.'}</p>
+                <div className="eyebrow"><span className="dot" />{tv.selectEyebrow}</div>
+                <h3>{tv.selectTitle}</h3>
+                <p>{tv.selectDesc}</p>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
     </div>

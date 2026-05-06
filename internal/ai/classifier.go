@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/prompt"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -306,27 +307,5 @@ func buildClassificationPrompt(posts []models.Post, _ string) string {
 // envelope. Non-printable chars (other than space, tab, regular newline) are
 // replaced with spaces.
 func sanitizeForPrompt(value string, maxRunes int) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	var b strings.Builder
-	count := 0
-	for _, r := range value {
-		if count >= maxRunes {
-			b.WriteString("…")
-			break
-		}
-		switch {
-		case r == '\n', r == '\t':
-			b.WriteRune(' ')
-		case r < 0x20 || r == 0x7f:
-			// drop other control chars (incl. zero-width joiner abuse below 0x20)
-			b.WriteRune(' ')
-		default:
-			b.WriteRune(r)
-		}
-		count++
-	}
-	return b.String()
+	return prompt.SanitizeText(value, maxRunes)
 }

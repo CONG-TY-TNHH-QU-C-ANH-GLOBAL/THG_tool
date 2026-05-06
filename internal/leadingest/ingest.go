@@ -1,6 +1,6 @@
 // Package leadingest centralizes the post-crawl classify + persist pipeline so
-// the worker handler (internal/handlers/facebook_crawl) and the Chrome
-// Extension crawl-result endpoint (internal/server/agent_handlers.go) share
+// the worker handler (internal/jobhandlers/facebook_crawl) and the Chrome
+// Extension crawl-result endpoint (internal/server/agent/crawl.go) share
 // one implementation. Before this package, the connector path only ran
 // deterministic scoring; the worker path also ran AI UniversalClassify. That
 // drift caused leads from the extension to be silently undersorted.

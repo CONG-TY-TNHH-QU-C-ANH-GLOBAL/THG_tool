@@ -361,20 +361,10 @@ jobs:
                 exit 1
               fi
 
-              INSTALLED_BETA_VERSION=$(sudo python3 - <<PY
-import json, zipfile
-with zipfile.ZipFile('$BETA_VERIFY_PATH') as z:
-    print(json.loads(z.read('manifest.json'))['version'])
-PY
-)
+              INSTALLED_BETA_VERSION=$(sudo python3 -c "import json, zipfile; print(json.loads(zipfile.ZipFile('$BETA_VERIFY_PATH').read('manifest.json'))['version'])")
 
               curl -fsSL "http://localhost:8080/api/system/extension-beta-package?ts=$(date +%s)" -o /tmp/live-beta.zip
-              LIVE_BETA_VERSION=$(python3 - <<'PY'
-import json, zipfile
-with zipfile.ZipFile('/tmp/live-beta.zip') as z:
-    print(json.loads(z.read('manifest.json'))['version'])
-PY
-)
+              LIVE_BETA_VERSION=$(python3 -c "import json, zipfile; print(json.loads(zipfile.ZipFile('/tmp/live-beta.zip').read('manifest.json'))['version'])")
               if [ "$INSTALLED_BETA_VERSION" != "$LIVE_BETA_VERSION" ]; then
                 echo "beta route version mismatch: installed=$INSTALLED_BETA_VERSION live=$LIVE_BETA_VERSION"
                 exit 1

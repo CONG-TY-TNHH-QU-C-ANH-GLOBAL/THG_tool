@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle, LogIn, Mail, Monitor, Plus, RefreshCw, ShieldCheck, StopCircle } from 'lucide-react';
-import { theme } from '../../constants/styles';
+import { AlertTriangle, CheckCircle2, LogIn, Mail, Monitor, Plus, RefreshCw, ShieldCheck, StopCircle } from 'lucide-react';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
 import { useAuthStore } from '../../stores/authStore';
@@ -16,6 +15,10 @@ import { facebookIdentityLabel, isDashboardStreamConnector, isUsableConnectorFor
 import '../../autoflow.css';
 
 interface BrowserViewProps { orgId: string; }
+
+function isErrorNotice(message: string): boolean {
+  return /không|fail|error|lỗi/i.test(message);
+}
 
 export default function BrowserView({ orgId }: BrowserViewProps) {
   const currentUser = useAuthStore(s => s.user);
@@ -155,7 +158,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const handleNewSession = async () => {
     if (ownStreamingConnectors.length === 0) {
-      setBrowserNotice('Chrome của bạn chưa kết nối workspace. Cài THG Chrome Extension, tạo mã kết nối, dán mã vào popup extension, rồi mở tab Facebook đã đăng nhập.');
+      setBrowserNotice('Chrome của bạn chưa kết nối workspace. Cài Chrome Extension, tạo mã ghép nối, dán mã vào popup extension, rồi mở tab Facebook đã đăng nhập.');
       return;
     }
     setNewLoading(true);
@@ -163,7 +166,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
-      setBrowserNotice('Đã tạo phiên Facebook. THG Chrome Extension sẽ stream tab Facebook thật về Browser dashboard; hãy giữ tab Facebook đã đăng nhập trong Chrome.');
+      setBrowserNotice('Đã tạo phiên Facebook. Chrome Extension sẽ stream tab Facebook thật về dashboard — hãy giữ tab Facebook đã đăng nhập trong Chrome.');
     } catch (e) {
       setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
@@ -189,7 +192,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 
   const handleCreateConnector = async () => {
     setConnectorNotice(null);
-    const name = `THG Chrome ${new Date().toLocaleDateString('vi-VN')}`;
+    const name = `Chrome ${new Date().toLocaleDateString('vi-VN')}`;
     const created = await createPairingCode(name, selectedId ?? undefined);
     setPairingCode(created.code);
     setPairingExpiresAt(created.expires_at);
@@ -202,16 +205,16 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       await disconnectLocalConnector(connector.id);
       setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
-      setConnectorNotice(`Đã disconnect ${connector.hostname || connector.name}. Extension trên Chrome đó sẽ bị từ chối ở lần đồng bộ kế tiếp.`);
+      setConnectorNotice(`Đã ngắt kết nối ${connector.hostname || connector.name}. Extension trên Chrome đó sẽ bị từ chối ở lần đồng bộ kế tiếp.`);
     } catch (e) {
-      setConnectorNotice(e instanceof Error ? e.message : 'Không disconnect được Chrome');
+      setConnectorNotice(e instanceof Error ? e.message : 'Không ngắt được kết nối Chrome');
     } finally {
       setDisconnectingId(null);
     }
   };
 
   return (
-    <div className="af-browser-shell" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="af-browser-shell" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
       <AutomationCommandCenter
         workspaces={workspaces}
         connectors={connectors}
@@ -222,19 +225,32 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
         onNewSession={() => void handleNewSession()}
       />
 
-      <div className="af-browser-legacy-summary" style={{ display: 'flex', gap: 16, padding: '8px 14px', background: theme.surface, borderRadius: 10, border: `1px solid ${theme.border}`, alignItems: 'center' }}>
-        <span style={{ color: theme.textMuted, fontSize: 12 }}>Tài khoản: <strong style={{ color: theme.text }}>{workspaces.length}</strong></span>
-        <span style={{ color: theme.textMuted, fontSize: 12 }}>Đang chạy: <strong style={{ color: running > 0 ? '#4ade80' : theme.textFaint }}>{running}</strong></span>
-        <span style={{ color: theme.textMuted, fontSize: 12 }}>Extension: <strong style={{ color: connectors.some(c => c.online) ? '#4ade80' : theme.textFaint }}>{connectors.filter(c => c.online).length}</strong></span>
-        <button onClick={() => { void refresh(); void refreshConnectors(); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: theme.textFaint, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-          <RefreshCw size={12} /> Làm mới
+      <div
+        className="card"
+        style={{
+          display: 'flex',
+          gap: 'var(--s-5)',
+          padding: 'var(--s-3) var(--s-5)',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span style={{ color: 'var(--text-mute)', fontSize: 12 }}>
+          Tài khoản: <strong className="tabular" style={{ color: 'var(--text)' }}>{workspaces.length}</strong>
+        </span>
+        <span style={{ color: 'var(--text-mute)', fontSize: 12 }}>
+          Đang chạy: <strong className="tabular" style={{ color: running > 0 ? 'var(--ok)' : 'var(--text-faint)' }}>{running}</strong>
+        </span>
+        <span style={{ color: 'var(--text-mute)', fontSize: 12 }}>
+          Extension online: <strong className="tabular" style={{ color: connectors.some(c => c.online) ? 'var(--ok)' : 'var(--text-faint)' }}>
+            {connectors.filter(c => c.online).length}
+          </strong>
+        </span>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => { void refresh(); void refreshConnectors(); }} style={{ marginLeft: 'auto' }}>
+          <RefreshCw size={13} /> Làm mới
         </button>
-        <button
-          onClick={() => void handleNewSession()}
-          disabled={newLoading}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#16a34a', border: 'none', borderRadius: 7, color: '#fff', fontSize: 12, cursor: newLoading ? 'wait' : 'pointer', opacity: newLoading ? 0.6 : 1 }}
-        >
-          {newLoading ? <RefreshCw size={12} className="spin" /> : <Plus size={12} />}
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleNewSession()} disabled={newLoading}>
+          {newLoading ? <RefreshCw size={13} className="spin" /> : <Plus size={13} />}
           {newLoading ? 'Đang khởi động...' : 'Phiên mới'}
         </button>
       </div>
@@ -253,23 +269,20 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       />
 
       {connectorNotice && (
-        <div style={{ padding: '9px 12px', borderRadius: 8, border: `1px solid ${connectorNotice.includes('Không') ? '#ef444466' : '#22c55e66'}`, background: connectorNotice.includes('Không') ? '#7f1d1d33' : '#064e3b33', color: connectorNotice.includes('Không') ? '#fecaca' : '#bbf7d0', fontSize: 12 }}>
-          {connectorNotice}
-        </div>
+        <Notice tone={isErrorNotice(connectorNotice) ? 'hot' : 'ok'}>{connectorNotice}</Notice>
       )}
       {browserNotice && (
-        <div style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #f59e0b66', background: '#78350f33', color: '#fef3c7', fontSize: 12 }}>
-          {browserNotice}
-        </div>
+        <Notice tone="warn">{browserNotice}</Notice>
       )}
 
-      <div className="af-browser-account-list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="af-browser-account-list" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
         {workspaces.length === 0 && (
           <CyberEmptyState onCreate={() => void handleNewSession()} loading={newLoading} />
         )}
 
         {workspaces.map(w => {
           const tone = stateTone(w.browserState);
+          const isSelected = selectedId === w.accountId;
           const rowHasOnlineConnector = connectors.some(c => isUsableConnectorForAccount(c, currentUserId, w.accountId));
           const identityLabel = facebookIdentityLabel({
             displayName: w.fbDisplayName,
@@ -282,63 +295,104 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             <div
               key={w.accountId}
               onClick={() => w.running && setSelectedId(w.accountId)}
+              className="card"
               style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                background: selectedId === w.accountId ? '#1a2a1a' : theme.surface,
-                border: `1px solid ${selectedId === w.accountId ? '#16a34a' : theme.border}`,
-                borderRadius: 10, cursor: w.running ? 'pointer' : 'default',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--s-3)',
+                padding: 'var(--s-3) var(--s-4)',
+                background: isSelected ? 'var(--accent-soft)' : 'var(--bg-elev-2)',
+                borderColor: isSelected ? 'var(--accent-glow)' : 'var(--line)',
+                cursor: w.running ? 'pointer' : 'default',
               }}
             >
-              <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: w.running ? '#4ade80' : theme.textFaint }} />
-              <Monitor size={14} color={theme.textMuted} />
-              <span style={{ flex: 1, color: theme.text, fontWeight: 500, fontSize: 13 }}>{identityLabel || w.accountName}</span>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: w.running ? 'var(--ok)' : 'var(--text-faint)',
+                }}
+              />
+              <Monitor size={14} color="var(--text-mute)" />
+              <span style={{ flex: 1, color: 'var(--text)', fontWeight: 500, fontSize: 13 }}>
+                {identityLabel || w.accountName}
+              </span>
               {w.loggedIn && (
-                <span style={{ fontSize: 11, color: '#60a5fa', background: '#1e3a5f33', border: '1px solid #3b82f644', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <CheckCircle size={10} />Đã đăng nhập
+                <span className="tag tag-cold" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={11} />Đã đăng nhập
                 </span>
               )}
               {w.fbUserId && !w.fbDisplayName && !w.fbUsername && !w.email && (
-                <span style={{ fontSize: 11, color: '#c4b5fd', background: '#312e8133', border: '1px solid #6366f144', padding: '2px 8px', borderRadius: 6 }}>
-                  FB {w.fbUserId}
-                </span>
+                <span className="tag tag-mute mono">FB {w.fbUserId}</span>
               )}
               {w.email && (
-                <span title={w.email} style={{ fontSize: 11, color: '#bfdbfe', background: '#1e3a8a33', border: '1px solid #3b82f644', padding: '2px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <Mail size={10} /> {w.email}
+                <span
+                  title={w.email}
+                  className="tag tag-cold"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    maxWidth: 220,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Mail size={11} /> {w.email}
                 </span>
               )}
               {w.browserState && (
-                <span style={{ fontSize: 11, color: tone.color, background: tone.bg, border: `1px solid ${tone.border}`, padding: '2px 8px', borderRadius: 6 }}>
+                <span
+                  className="tag"
+                  style={{
+                    background: tone.bg,
+                    color: tone.color,
+                    border: `1px solid ${tone.border}`,
+                  }}
+                >
                   {stateLabel(w.browserState)}
                 </span>
               )}
               {!w.running ? (
                 <button
+                  type="button"
                   onClick={e => {
                     e.stopPropagation();
                     setBrowserNotice(null);
                     if (!rowHasOnlineConnector) {
-                      setBrowserNotice('Account này cần một THG Chrome Extension online. Tạo mã kết nối riêng cho account này, dán vào popup extension, rồi mở tab Facebook đã đăng nhập.');
+                      setBrowserNotice('Account này cần một Chrome Extension online. Tạo mã ghép nối riêng cho account này, dán vào popup extension, rồi mở tab Facebook đã đăng nhập.');
                       return;
                     }
                     void start(w.accountId)
                       .then(() => {
                         setSelectedId(w.accountId);
-                        setBrowserNotice('Đang yêu cầu THG Chrome Extension stream tab Facebook thật về dashboard.');
+                        setBrowserNotice('Đang yêu cầu Chrome Extension stream tab Facebook thật về dashboard.');
                         void refreshLocalScreen(w.accountId);
                       })
                       .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
                   }}
                   disabled={actionLoading.has(w.accountId)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: rowHasOnlineConnector ? '#16a34a' : '#78350f', border: 'none', borderRadius: 7, color: rowHasOnlineConnector ? '#fff' : '#fcd34d', fontSize: 12, cursor: actionLoading.has(w.accountId) ? 'wait' : 'pointer', opacity: actionLoading.has(w.accountId) ? 0.6 : 1 }}
+                  className={`btn btn-sm ${rowHasOnlineConnector ? 'btn-primary' : 'btn-ghost'}`}
                 >
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
-                  {actionLoading.has(w.accountId) ? (rowHasOnlineConnector ? 'Đang kết nối...' : 'Đang kiểm tra...') : (rowHasOnlineConnector ? 'Bắt đầu stream' : 'Chưa sẵn sàng')}
+                  {actionLoading.has(w.accountId)
+                    ? rowHasOnlineConnector ? 'Đang kết nối...' : 'Đang kiểm tra...'
+                    : rowHasOnlineConnector ? 'Bắt đầu stream' : 'Chưa sẵn sàng'}
                 </button>
               ) : (
                 <button
-                  onClick={e => { e.stopPropagation(); void stop(w.accountId).then(() => { if (selectedId === w.accountId) setSelectedId(null); }); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7f1d1d', border: 'none', borderRadius: 7, color: '#fca5a5', fontSize: 12, cursor: 'pointer' }}
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: 'var(--hot)' }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    void stop(w.accountId).then(() => {
+                      if (selectedId === w.accountId) setSelectedId(null);
+                    });
+                  }}
                 >
                   <StopCircle size={12} /> Dừng
                 </button>
@@ -366,37 +420,45 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       )}
 
       {selectedId !== null && selectedWs?.running && !selectedIsLocal && (
-        <div style={{ background: '#000', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto', gap: 10, alignItems: 'center', padding: '10px 12px', background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
-            <div>
-              <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>Session</p>
-              <p style={{ color: humanRequired ? '#fcd34d' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? '#4ade80' : theme.textMuted), fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {humanRequired ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
-                {humanRequired ? 'Cần xác minh' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'Đã lưu' : 'Chưa xác thực')}
-              </p>
-            </div>
-            <div>
-              <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>Facebook ID</p>
-              <p style={{ color: theme.text, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sessionInfo?.fbUserId || selectedWs.fbUserId || '-'}</p>
-            </div>
-            <div>
-              <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>URL</p>
-              <p style={{ color: theme.textMuted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sessionInfo?.currentUrl || '-'}</p>
-            </div>
-            <div>
-              <p style={{ color: theme.textFaint, fontSize: 10, marginBottom: 3 }}>CDP</p>
-              <p style={{ color: syncError || sessionInfo?.cookieError ? '#fca5a5' : theme.textMuted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {humanRequired ? (sessionInfo?.humanReason || 'human_required') : (syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng'))}
-              </p>
-            </div>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', background: '#000' }}>
+          <header
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto',
+              gap: 'var(--s-3)',
+              alignItems: 'center',
+              padding: 'var(--s-3) var(--s-4)',
+              background: 'var(--bg-elev-2)',
+              borderBottom: '1px solid var(--line)',
+            }}
+          >
+            <SessionStat label="Session" tone={humanRequired ? 'warn' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'ok' : 'mute')}>
+              {humanRequired ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
+              {humanRequired ? 'Cần xác minh' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'Đã lưu' : 'Chưa xác thực')}
+            </SessionStat>
+            <SessionStat label="Facebook ID">
+              <span className="mono">{sessionInfo?.fbUserId || selectedWs.fbUserId || '—'}</span>
+            </SessionStat>
+            <SessionStat label="URL" muted>
+              {sessionInfo?.currentUrl || '—'}
+            </SessionStat>
+            <SessionStat label="CDP" tone={syncError || sessionInfo?.cookieError ? 'hot' : 'mute'}>
+              {humanRequired
+                ? sessionInfo?.humanReason || 'human_required'
+                : syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng')}
+            </SessionStat>
             <button
+              type="button"
+              className={`btn btn-sm ${manualCaptureMode ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => void handleManualSync()}
               disabled={syncLoading}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: manualCaptureMode ? '#78350f44' : 'transparent', border: `1px solid ${manualCaptureMode ? '#f59e0b66' : theme.border}`, borderRadius: 8, color: manualCaptureMode ? '#fcd34d' : theme.textMuted, fontSize: 12, cursor: syncLoading ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
+              style={{ whiteSpace: 'nowrap' }}
             >
-              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} /> {manualCaptureMode ? 'Đã vào Facebook - đồng bộ' : 'Đồng bộ'}
+              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} />
+              {manualCaptureMode ? 'Đã đăng nhập — đồng bộ' : 'Đồng bộ'}
             </button>
-          </div>
+          </header>
+
           <VncCanvas
             accountId={selectedId}
             accountName={selectedWs.accountName}
@@ -405,23 +467,99 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             errorMsg={selectedWs.errorMsg}
           />
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: theme.surfaceAlt, borderTop: `1px solid ${theme.border}` }}>
+          <footer
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--s-3)',
+              padding: 'var(--s-2) var(--s-4)',
+              background: 'var(--bg-elev)',
+              borderTop: '1px solid var(--line)',
+              fontSize: 12,
+            }}
+          >
             {manualCaptureMode ? (
-              <span style={{ color: '#fcd34d', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <AlertTriangle size={13} /> Auto-sync tạm dừng trong lúc đăng nhập, vào News Feed rồi bấm đồng bộ
+              <span style={{ color: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={13} /> Auto-sync tạm dừng — đăng nhập, vào News Feed rồi bấm đồng bộ.
               </span>
             ) : selectedWs.loggedIn ? (
-              <span style={{ color: '#4ade80', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <CheckCircle size={13} /> Session đã được lưu
+              <span style={{ color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CheckCircle2 size={13} /> Session đã được lưu.
               </span>
             ) : (
-              <span style={{ color: theme.textMuted, fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <RefreshCw size={13} className={syncLoading ? 'spin' : ''} /> Đang tự xác thực session
+              <span style={{ color: 'var(--text-mute)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <RefreshCw size={13} className={syncLoading ? 'spin' : ''} /> Đang tự xác thực session.
               </span>
             )}
-          </div>
+          </footer>
         </div>
       )}
+    </div>
+  );
+}
+
+function Notice({ tone, children }: { tone: 'ok' | 'hot' | 'warn'; children: React.ReactNode }) {
+  const palette: Record<typeof tone, { bg: string; color: string; border: string }> = {
+    ok: { bg: 'var(--ok-bg)', color: 'var(--ok)', border: 'var(--ok)' },
+    hot: { bg: 'var(--hot-bg)', color: 'var(--hot)', border: 'var(--hot)' },
+    warn: { bg: 'var(--warn-bg)', color: 'var(--warn)', border: 'var(--warn)' },
+  };
+  const c = palette[tone];
+  return (
+    <div
+      role="status"
+      style={{
+        padding: 'var(--s-3) var(--s-4)',
+        borderRadius: 'var(--radius-md)',
+        border: `1px solid ${c.border}`,
+        background: c.bg,
+        color: c.color,
+        fontSize: 12.5,
+        lineHeight: 1.55,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SessionStat({
+  label,
+  tone,
+  muted,
+  children,
+}: {
+  label: string;
+  tone?: 'ok' | 'warn' | 'hot' | 'mute';
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  const colorByTone: Record<NonNullable<typeof tone>, string> = {
+    ok: 'var(--ok)',
+    warn: 'var(--warn)',
+    hot: 'var(--hot)',
+    mute: 'var(--text-mute)',
+  };
+  const valueColor = tone ? colorByTone[tone] : muted ? 'var(--text-mute)' : 'var(--text)';
+  return (
+    <div style={{ minWidth: 0 }}>
+      <p className="field-label" style={{ marginBottom: 4 }}>{label}</p>
+      <p
+        style={{
+          margin: 0,
+          color: valueColor,
+          fontSize: 12,
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {children}
+      </p>
     </div>
   );
 }
