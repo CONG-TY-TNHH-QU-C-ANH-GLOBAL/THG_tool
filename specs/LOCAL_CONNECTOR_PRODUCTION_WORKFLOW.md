@@ -1,8 +1,8 @@
 # Chrome Extension Connector Production Workflow
 
 This document replaces the previous connector flow. Production should use
-one connector path only: THG Chrome Extension installed inside the user's
-trusted Chrome profile.
+the official Chrome Web Store item as the primary install path for THG Chrome
+Extension inside the user's trusted Chrome profile.
 
 ## User Flow
 
@@ -41,8 +41,14 @@ trusted Chrome profile.
 - `CHROME_EXTENSION_ID` is enough to enable the production install button;
   `CHROME_EXTENSION_STORE_URL` can override the generated Web Store link. The
   official THG Chrome Extension ID is `nhalaldgpkoopgddccelckhaiegdbmfb`.
-- Production now uses the official Chrome Web Store item only. The old internal
-  temporary install lane and package endpoint have been removed.
+- While Google reviews a newer official version, ops may temporarily enable
+  the env-gated internal beta fallback:
+  - `CHROME_EXTENSION_BETA_ENABLED=true`
+  - `CHROME_EXTENSION_BETA_PACKAGE_PATH=/opt/thg-scraper/data/downloads/thg-chrome-extension.zip`
+  - optional overrides: `CHROME_EXTENSION_BETA_URL`,
+    `CHROME_EXTENSION_BETA_PACKAGE_URL`
+- The beta lane must serve the same CI-built package that was just produced
+  from `local-connector-extension/`; do not hand-maintain a stale zip on VPS.
 - The zip produced by `scripts/build-chrome-extension.ps1` and
   `scripts/build-chrome-extension.sh` is the Chrome Web Store upload package.
   Upload that zip in the Chrome Web Store Developer Dashboard when publishing a
