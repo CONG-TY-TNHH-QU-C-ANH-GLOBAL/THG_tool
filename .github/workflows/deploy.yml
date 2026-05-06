@@ -118,7 +118,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "frontend-standalone.tar.gz,docker/,deploy/"
+          source: "frontend-standalone.tar.gz,docker/,deploy/,thg-extension-store-package/thg-chrome-extension.zip"
           target: "/tmp/thg-deploy/"
           overwrite: true
 
@@ -153,7 +153,26 @@ jobs:
             echo "Go binaries installed"
 
             # Chrome Extension is installed from Chrome Web Store in production.
-            # The CI-built zip is the Web Store upload/update package.
+            # Keep the CI-built zip on the server as an env-gated beta fallback
+            # while a new Web Store version is under Google review.
+            if [ -f /tmp/thg-deploy/thg-extension-store-package/thg-chrome-extension.zip ]; then
+              sudo mkdir -p /opt/thg-scraper/data/downloads
+              sudo cp /tmp/thg-deploy/thg-extension-store-package/thg-chrome-extension.zip /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
+              sudo chown thg-scraper:thg-scraper /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
+              sudo chmod 640 /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
+
+              BETA_PATH=""
+              if [ -f /etc/thg-scraper/env ]; then
+                BETA_PATH=$(grep -E '^CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
+              fi
+              if [ -n "$BETA_PATH" ] && [ "$BETA_PATH" != "/opt/thg-scraper/data/downloads/thg-chrome-extension.zip" ]; then
+                sudo mkdir -p "$(dirname "$BETA_PATH")"
+                sudo cp /opt/thg-scraper/data/downloads/thg-chrome-extension.zip "$BETA_PATH"
+                sudo chown thg-scraper:thg-scraper "$BETA_PATH"
+                sudo chmod 640 "$BETA_PATH"
+              fi
+              echo "Chrome Extension beta package installed"
+            fi
 
             # Install Node.js if missing.
             if ! command -v node &>/dev/null; then

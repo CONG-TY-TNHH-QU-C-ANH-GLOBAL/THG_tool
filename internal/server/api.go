@@ -28,6 +28,20 @@ import (
 	"github.com/thg/scraper/internal/workspace"
 )
 
+const (
+	defaultChromeExtensionID              = "nhalaldgpkoopgddccelckhaiegdbmfb"
+	defaultChromeExtensionBetaPackagePath = "data/downloads/thg-chrome-extension.zip"
+)
+
+func envFlagEnabled(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 // Config holds security-sensitive configuration for the API server.
 type Config struct {
 	Port           int
@@ -53,13 +67,36 @@ type Config struct {
 func chromeExtensionStoreInfo() (string, string) {
 	extensionID := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_ID"))
 	if extensionID == "" {
-		extensionID = "nhalaldgpkoopgddccelckhaiegdbmfb"
+		extensionID = defaultChromeExtensionID
 	}
 	storeURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_STORE_URL"))
 	if storeURL == "" && extensionID != "" {
 		storeURL = fmt.Sprintf("https://chromewebstore.google.com/detail/thg-chrome-extension/%s", extensionID)
 	}
 	return storeURL, extensionID
+}
+
+func chromeExtensionBetaInfo() (string, string) {
+	if !envFlagEnabled("CHROME_EXTENSION_BETA_ENABLED") {
+		return "", ""
+	}
+	betaURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_URL"))
+	if betaURL == "" {
+		betaURL = "/extension-beta"
+	}
+	packageURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_URL"))
+	if packageURL == "" {
+		packageURL = "/api/system/extension-beta-package"
+	}
+	return betaURL, packageURL
+}
+
+func chromeExtensionBetaPackagePath() string {
+	path := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_PATH"))
+	if path == "" {
+		path = defaultChromeExtensionBetaPackagePath
+	}
+	return path
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -135,12 +172,18 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// System info tells the frontend where the production Chrome Extension is installed from.
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
 		storeURL, extensionID := chromeExtensionStoreInfo()
-		return c.JSON(fiber.Map{
+		resp := fiber.Map{
 			"headless":                   cfg.Headless,
 			"chrome_extension_store_url": storeURL,
 			"chrome_extension_id":        extensionID,
-		})
+		}
+		if betaURL, betaPackageURL := chromeExtensionBetaInfo(); betaURL != "" || betaPackageURL != "" {
+			resp["chrome_extension_beta_url"] = betaURL
+			resp["chrome_extension_beta_package_url"] = betaPackageURL
+		}
+		return c.JSON(resp)
 	})
+	app.Get("/api/system/extension-beta-package", s.serveExtensionBetaPackage)
 
 	// --- Global Middleware ---
 

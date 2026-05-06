@@ -159,17 +159,44 @@ type connectorCrawlEnvelope struct {
 	UseBackgroundTab bool           `json:"use_background_tab"`
 	MarketSignalGate map[string]any `json:"market_signal_gate,omitempty"`
 	Task             *jobs.Task     `json:"task"`
+	TaskID           string         `json:"task_id,omitempty"`
+	Intent           string         `json:"intent,omitempty"`
+	Keywords         []string       `json:"keywords,omitempty"`
+	CrawlPlan        jobs.CrawlPlan `json:"crawl_plan"`
+	Filters          jobs.Filters   `json:"filters,omitempty"`
 }
 
-func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, _ string, agentID int64) (string, error) {
-	if agentID <= 0 {
-		return "", fmt.Errorf("Chrome Extension connector id is required")
+func connectorCrawlEnvelopeForTask(task *jobs.Task) (connectorCrawlEnvelope, error) {
+	if task == nil {
+		return connectorCrawlEnvelope{}, fmt.Errorf("crawl task is required")
 	}
 	// Refuse early when no concrete navigation target exists. Without this,
 	// the extension receives navigate_to="" and silently falls back to the
 	// Facebook newsfeed instead of the intended group/post URL.
 	if len(task.CrawlPlan.Sources) == 0 || strings.TrimSpace(task.CrawlPlan.Sources[0].URL) == "" {
-		return "", fmt.Errorf("crawl task has no concrete source URL; refusing to dispatch (prevents newsfeed fallback)")
+		return connectorCrawlEnvelope{}, fmt.Errorf("crawl task has no concrete source URL; refusing to dispatch (prevents newsfeed fallback)")
+	}
+
+	env := connectorCrawlEnvelope{
+		UseBackgroundTab: true,
+		Task:             task,
+		NavigateTo:       strings.TrimSpace(task.CrawlPlan.Sources[0].URL),
+		SourceType:       task.CrawlPlan.Sources[0].Type,
+		TaskID:           task.TaskID,
+		Intent:           task.Intent,
+		Keywords:         task.Keywords,
+		CrawlPlan:        task.CrawlPlan,
+		Filters:          task.Filters,
+	}
+	if gate, ok := task.Extras["market_signal_gate"].(map[string]any); ok && len(gate) > 0 {
+		env.MarketSignalGate = gate
+	}
+	return env, nil
+}
+
+func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, _ string, agentID int64) (string, error) {
+	if agentID <= 0 {
+		return "", fmt.Errorf("Chrome Extension connector id is required")
 	}
 	appStore, err := store.NewAppStore(db)
 	if err != nil {
@@ -178,15 +205,10 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 	_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
 	_ = appStore.StartTask(ctx, task.TaskID)
 
-	// Build envelope so the extension can use navigate_to directly.
-	env := connectorCrawlEnvelope{
-		UseBackgroundTab: true,
-		Task:             task,
-		NavigateTo:       strings.TrimSpace(task.CrawlPlan.Sources[0].URL),
-		SourceType:       task.CrawlPlan.Sources[0].Type,
-	}
-	if gate, ok := task.Extras["market_signal_gate"].(map[string]any); ok && len(gate) > 0 {
-		env.MarketSignalGate = gate
+	env, err := connectorCrawlEnvelopeForTask(task)
+	if err != nil {
+		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
+		return "", err
 	}
 	envPayload, envErr := json.Marshal(env)
 	if envErr != nil {

@@ -13,6 +13,12 @@ function resolveExtensionStoreUrl(systemInfo: SystemInfo | null): string {
   return `https://chromewebstore.google.com/detail/thg-chrome-extension/${extensionId}`;
 }
 
+function resolveExtensionBetaUrl(systemInfo: SystemInfo | null): string {
+  const betaUrl = (systemInfo?.chrome_extension_beta_url || '').trim();
+  if (betaUrl) return betaUrl;
+  return (systemInfo?.chrome_extension_beta_package_url || '').trim();
+}
+
 export function LocalConnectorPanel({
   connectors,
   creating,
@@ -44,6 +50,8 @@ export function LocalConnectorPanel({
   const [dashboardServer, setDashboardServer] = useState('');
   const pairingExpired = pairingCode !== '' && pairingRemainingMs !== null && pairingRemainingMs <= 0;
   const extensionStoreUrl = resolveExtensionStoreUrl(systemInfo);
+  const extensionBetaUrl = resolveExtensionBetaUrl(systemInfo);
+  const extensionBetaReady = extensionBetaUrl.length > 0;
   const extensionInstallReady = extensionStoreUrl.length > 0;
 
   useEffect(() => {
@@ -109,6 +117,16 @@ export function LocalConnectorPanel({
                   >
                     <ExternalLink size={13} /> Cài từ Chrome Web Store
                   </a>
+                  {extensionBetaReady && (
+                    <a
+                      href={extensionBetaUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, border: '1px solid #f59e0b66', background: '#78350f33', color: '#fef3c7', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}
+                    >
+                      <ExternalLink size={13} /> Cài bản beta nội bộ
+                    </a>
+                  )}
                 </div>
               ) : (
                 <button
@@ -125,6 +143,11 @@ export function LocalConnectorPanel({
                   ? 'Chrome Web Store sẽ cài và tự cập nhật extension cho Chrome của bạn.'
                   : 'Cấu hình Chrome Web Store extension để mở bước cài đặt cho người dùng.'}
               </p>
+              {extensionBetaReady && (
+                <p style={{ color: '#fbbf24', fontSize: 10, marginTop: 5, lineHeight: 1.45 }}>
+                  Beta tạm thời đang bật trong lúc Google xét duyệt bản mới.
+                </p>
+              )}
             </div>
 
             <div style={{ border: `1px solid ${pairingCode ? '#22c55e55' : theme.border}`, borderRadius: 8, padding: 11, background: theme.surface }}>
