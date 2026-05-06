@@ -36,9 +36,12 @@ Thumbs.db
 # Build
 dist/
 .gocache/
+.gocache-ci/
+.gomodcache-ci/
 .local-bin/
 data/downloads/
 thg-login-downloads/
+trim.txt
 
 # Frontend dependencies (never commit node_modules)
 frontend/node_modules/

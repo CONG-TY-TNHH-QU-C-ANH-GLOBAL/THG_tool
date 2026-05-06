@@ -168,7 +168,7 @@ jobs:
 
               BETA_PATH="$DEFAULT_BETA_PATH"
               if [ -f /etc/thg-scraper/env ]; then
-                BETA_PATH_OVERRIDE=$(grep -E '^CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
+                BETA_PATH_OVERRIDE=$(grep -E '^[[:space:]]*CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
                 if [ -n "$BETA_PATH_OVERRIDE" ]; then
                   BETA_PATH="$BETA_PATH_OVERRIDE"
                 fi
@@ -325,9 +325,9 @@ jobs:
               sudo ss -tlnp | grep -E ':3000|:8080' || true
             fi
 
-            if grep -Eq '^CHROME_EXTENSION_BETA_ENABLED=true' /etc/thg-scraper/env 2>/dev/null; then
+            if grep -Eq '^[[:space:]]*CHROME_EXTENSION_BETA_ENABLED=true' /etc/thg-scraper/env 2>/dev/null; then
               BETA_VERIFY_PATH="/opt/thg-scraper/releases/thg-chrome-extension.zip"
-              BETA_PATH_OVERRIDE=$(grep -E '^CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
+              BETA_PATH_OVERRIDE=$(grep -E '^[[:space:]]*CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
               if [ -n "$BETA_PATH_OVERRIDE" ]; then
                 BETA_VERIFY_PATH="$BETA_PATH_OVERRIDE"
               fi
