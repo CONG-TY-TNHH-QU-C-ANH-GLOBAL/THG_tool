@@ -44,11 +44,15 @@ Extension inside the user's trusted Chrome profile.
 - While Google reviews a newer official version, ops may temporarily enable
   the env-gated internal beta fallback:
   - `CHROME_EXTENSION_BETA_ENABLED=true`
-  - `CHROME_EXTENSION_BETA_PACKAGE_PATH=/opt/thg-scraper/data/downloads/thg-chrome-extension.zip`
+  - `CHROME_EXTENSION_BETA_PACKAGE_PATH=/opt/thg-scraper/releases/thg-chrome-extension.zip`
   - optional overrides: `CHROME_EXTENSION_BETA_URL`,
     `CHROME_EXTENSION_BETA_PACKAGE_URL`
 - The beta lane must serve the same CI-built package that was just produced
   from `local-connector-extension/`; do not hand-maintain a stale zip on VPS.
+- Deploy now installs the beta package into both `/opt/thg-scraper/releases/`
+  and `/opt/thg-scraper/data/downloads/`, then verifies that
+  `/api/system/extension-beta-package` returns the same manifest version as the
+  configured on-disk beta package. If they differ, deploy fails.
 - The zip produced by `scripts/build-chrome-extension.ps1` and
   `scripts/build-chrome-extension.sh` is the Chrome Web Store upload package.
   Upload that zip in the Chrome Web Store Developer Dashboard when publishing a

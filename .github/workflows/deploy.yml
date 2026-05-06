@@ -156,22 +156,30 @@ jobs:
             # Keep the CI-built zip on the server as an env-gated beta fallback
             # while a new Web Store version is under Google review.
             if [ -f /tmp/thg-deploy/thg-extension-store-package/thg-chrome-extension.zip ]; then
+              DEFAULT_BETA_PATH="/opt/thg-scraper/releases/thg-chrome-extension.zip"
               sudo mkdir -p /opt/thg-scraper/data/downloads
+              sudo mkdir -p /opt/thg-scraper/releases
               sudo cp /tmp/thg-deploy/thg-extension-store-package/thg-chrome-extension.zip /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
               sudo chown thg-scraper:thg-scraper /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
               sudo chmod 640 /opt/thg-scraper/data/downloads/thg-chrome-extension.zip
+              sudo cp /tmp/thg-deploy/thg-extension-store-package/thg-chrome-extension.zip "$DEFAULT_BETA_PATH"
+              sudo chown thg-scraper:thg-scraper "$DEFAULT_BETA_PATH"
+              sudo chmod 640 "$DEFAULT_BETA_PATH"
 
-              BETA_PATH=""
+              BETA_PATH="$DEFAULT_BETA_PATH"
               if [ -f /etc/thg-scraper/env ]; then
-                BETA_PATH=$(grep -E '^CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
+                BETA_PATH_OVERRIDE=$(grep -E '^CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
+                if [ -n "$BETA_PATH_OVERRIDE" ]; then
+                  BETA_PATH="$BETA_PATH_OVERRIDE"
+                fi
               fi
-              if [ -n "$BETA_PATH" ] && [ "$BETA_PATH" != "/opt/thg-scraper/data/downloads/thg-chrome-extension.zip" ]; then
+              if [ -n "$BETA_PATH" ] && [ "$BETA_PATH" != "/opt/thg-scraper/data/downloads/thg-chrome-extension.zip" ] && [ "$BETA_PATH" != "$DEFAULT_BETA_PATH" ]; then
                 sudo mkdir -p "$(dirname "$BETA_PATH")"
                 sudo cp /opt/thg-scraper/data/downloads/thg-chrome-extension.zip "$BETA_PATH"
                 sudo chown thg-scraper:thg-scraper "$BETA_PATH"
                 sudo chmod 640 "$BETA_PATH"
               fi
-              echo "Chrome Extension beta package installed"
+              echo "Chrome Extension beta package installed at $DEFAULT_BETA_PATH"
             fi
 
             # Install Node.js if missing.
@@ -315,6 +323,40 @@ jobs:
               sudo tail -n 5 /var/log/nginx/thg-scraper.access.log 2>/dev/null || true
               echo "--- upstream port status ---"
               sudo ss -tlnp | grep -E ':3000|:8080' || true
+            fi
+
+            if grep -Eq '^CHROME_EXTENSION_BETA_ENABLED=true' /etc/thg-scraper/env 2>/dev/null; then
+              BETA_VERIFY_PATH="/opt/thg-scraper/releases/thg-chrome-extension.zip"
+              BETA_PATH_OVERRIDE=$(grep -E '^CHROME_EXTENSION_BETA_PACKAGE_PATH=' /etc/thg-scraper/env | tail -n 1 | cut -d= -f2- || true)
+              if [ -n "$BETA_PATH_OVERRIDE" ]; then
+                BETA_VERIFY_PATH="$BETA_PATH_OVERRIDE"
+              fi
+
+              echo "Verifying beta package at $BETA_VERIFY_PATH"
+              if ! sudo test -f "$BETA_VERIFY_PATH"; then
+                echo "beta package missing at $BETA_VERIFY_PATH"
+                exit 1
+              fi
+
+              INSTALLED_BETA_VERSION=$(sudo python3 - <<PY
+import json, zipfile
+with zipfile.ZipFile('$BETA_VERIFY_PATH') as z:
+    print(json.loads(z.read('manifest.json'))['version'])
+PY
+)
+
+              curl -fsSL "http://localhost:8080/api/system/extension-beta-package?ts=$(date +%s)" -o /tmp/live-beta.zip
+              LIVE_BETA_VERSION=$(python3 - <<'PY'
+import json, zipfile
+with zipfile.ZipFile('/tmp/live-beta.zip') as z:
+    print(json.loads(z.read('manifest.json'))['version'])
+PY
+)
+              if [ "$INSTALLED_BETA_VERSION" != "$LIVE_BETA_VERSION" ]; then
+                echo "beta route version mismatch: installed=$INSTALLED_BETA_VERSION live=$LIVE_BETA_VERSION"
+                exit 1
+              fi
+              echo "Beta route verified: version $LIVE_BETA_VERSION"
             fi
 
             echo "Deployment complete: scraper ok, worker restarted, frontend $([ $FRONTEND_OK -eq 1 ] && echo ok || echo warning)"
