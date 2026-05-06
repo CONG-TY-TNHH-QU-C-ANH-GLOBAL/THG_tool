@@ -23,12 +23,34 @@ jobs:
        github.event.workflow_run.head_branch == 'main')
     timeout-minutes: 25
 
-    env:
-      TARGET_ARCH: ${{ github.event.inputs.arch || vars.SERVER_ARCH || 'amd64' }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Resolve deploy config
+        id: cfg
+        shell: bash
+        env:
+          INPUT_ARCH: ${{ github.event.inputs.arch }}
+          VAR_ARCH: ${{ vars.SERVER_ARCH }}
+          SECRET_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          target_arch="$INPUT_ARCH"
+          if [ -z "$target_arch" ]; then
+            target_arch="$VAR_ARCH"
+          fi
+          if [ -z "$target_arch" ]; then
+            target_arch="amd64"
+          fi
+
+          ssh_port="$SECRET_PORT"
+          if [ -z "$ssh_port" ]; then
+            ssh_port="22"
+          fi
+
+          echo "target_arch=$target_arch" >> "$GITHUB_OUTPUT"
+          echo "ssh_port=$ssh_port" >> "$GITHUB_OUTPUT"
+          echo "Resolved target_arch=$target_arch ssh_port=$ssh_port"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -43,6 +65,7 @@ jobs:
         env:
           GOOS: linux
           CGO_ENABLED: "0"
+          TARGET_ARCH: ${{ steps.cfg.outputs.target_arch }}
         run: |
           echo "Building for linux/$TARGET_ARCH"
           GOARCH=$TARGET_ARCH go build -ldflags="-s -w -X main.version=${{ github.sha }}" -o scraper ./cmd/scraper
@@ -106,7 +129,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
+          port: ${{ steps.cfg.outputs.ssh_port }}
           source: "scraper,thg-worker"
           target: "/tmp/"
           overwrite: true
@@ -117,7 +140,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
+          port: ${{ steps.cfg.outputs.ssh_port }}
           source: "frontend-standalone.tar.gz,docker/,deploy/,thg-extension-store-package/thg-chrome-extension.zip"
           target: "/tmp/thg-deploy/"
           overwrite: true
@@ -128,7 +151,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
+          port: ${{ steps.cfg.outputs.ssh_port }}
           script: |
             set -euo pipefail
 
