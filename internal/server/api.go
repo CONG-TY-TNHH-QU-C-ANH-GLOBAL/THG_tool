@@ -52,26 +52,14 @@ type Config struct {
 
 func chromeExtensionStoreInfo() (string, string) {
 	extensionID := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_ID"))
+	if extensionID == "" {
+		extensionID = "nhalaldgpkoopgddccelckhaiegdbmfb"
+	}
 	storeURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_STORE_URL"))
 	if storeURL == "" && extensionID != "" {
 		storeURL = fmt.Sprintf("https://chromewebstore.google.com/detail/thg-chrome-extension/%s", extensionID)
 	}
 	return storeURL, extensionID
-}
-
-func chromeExtensionBetaInfo() (string, string) {
-	if strings.ToLower(strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_ENABLED"))) != "true" {
-		return "", ""
-	}
-	betaURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_URL"))
-	if betaURL == "" {
-		betaURL = "/extension-beta"
-	}
-	packageURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_URL"))
-	if packageURL == "" && strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_PATH")) != "" {
-		packageURL = "/api/system/extension-beta-package"
-	}
-	return betaURL, packageURL
 }
 
 // Server provides the REST API and serves the Web UI.
@@ -147,13 +135,10 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// System info tells the frontend where the production Chrome Extension is installed from.
 	app.Get("/api/system/info", func(c *fiber.Ctx) error {
 		storeURL, extensionID := chromeExtensionStoreInfo()
-		betaURL, betaPackageURL := chromeExtensionBetaInfo()
 		return c.JSON(fiber.Map{
-			"headless":                          cfg.Headless,
-			"chrome_extension_store_url":        storeURL,
-			"chrome_extension_id":               extensionID,
-			"chrome_extension_beta_url":         betaURL,
-			"chrome_extension_beta_package_url": betaPackageURL,
+			"headless":                   cfg.Headless,
+			"chrome_extension_store_url": storeURL,
+			"chrome_extension_id":        extensionID,
 		})
 	})
 
@@ -347,7 +332,6 @@ func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.M
 	// Accounts — all staff can add their own; admin manages all
 	r.Get("/accounts", s.getAccounts)
 	r.Post("/accounts", s.addAccount) // any staff can register their FB account
-	r.Get("/system/extension-beta-package", s.serveExtensionBetaPackage)
 	r.Put("/accounts/:id/status", adminOnly, s.updateAccountStatus)
 	r.Put("/accounts/:id/cookies", adminOnly, s.updateAccountCookies)
 	r.Delete("/accounts/:id", adminOnly, s.deleteAccount)
