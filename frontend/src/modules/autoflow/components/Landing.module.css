@@ -7,6 +7,8 @@
     radial-gradient(circle at 82% 8%, rgba(255, 255, 255, 0.05), transparent 20rem),
     linear-gradient(180deg, #08080a 0%, #0b0c0f 54%, #07080b 100%);
   color: var(--text);
+  font-family: var(--font-sans, "Plus Jakarta Sans", Inter, sans-serif);
+  letter-spacing: 0;
 }
 
 .backdrop {
@@ -131,8 +133,12 @@
 }
 
 .heroTitle {
-  max-width: 24ch;
+  max-width: 760px;
   margin-top: 14px;
+  font-size: clamp(34px, 5vw, 48px);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .heroBody,
@@ -387,6 +393,10 @@
 
 .sectionIntro h2 {
   margin-top: 14px;
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .sectionIntro p {
@@ -449,6 +459,10 @@
 
 .securityCopy h2 {
   margin-top: 14px;
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .securityCopy p {
@@ -491,8 +505,12 @@
 }
 
 .finalBand h2 {
-  max-width: 14ch;
+  max-width: 600px;
   margin-top: 14px;
+  font-size: clamp(28px, 4.5vw, 40px);
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
 }
 
 .finalBand p {

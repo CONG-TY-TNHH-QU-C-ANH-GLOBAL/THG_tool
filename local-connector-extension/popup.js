@@ -1,93 +1,146 @@
 const serverUrlInput = document.getElementById('serverUrl');
 const pairingCodeInput = document.getElementById('pairingCode');
-const pairButton = document.getElementById('pairButton');
-const syncButton = document.getElementById('syncButton');
-const forgetButton = document.getElementById('forgetButton');
-const statusBox = document.getElementById('status');
+const errorMsg = document.getElementById('errorMsg');
+
+const btnStartPair = document.getElementById('btn-start-pair');
+const btnToggleAdv = document.getElementById('btn-toggle-advanced');
+const advPanel = document.getElementById('adv-panel');
+
+const btnVerifyPair = document.getElementById('btn-verify-pair');
+const btnCancelPair = document.getElementById('btn-cancel-pair');
+
+const btnSync = document.getElementById('btn-sync');
+const btnForget = document.getElementById('btn-forget');
+
+const steadyDevice = document.getElementById('steady-device');
+const steadySession = document.getElementById('steady-session');
+
+function setScreen(id) {
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  document.getElementById(`screen-${id}`).classList.add('active');
+}
 
 function sendMessage(message) {
   return chrome.runtime.sendMessage(message);
 }
 
-function setStatus(text, tone = '') {
-  statusBox.textContent = text;
-  statusBox.className = `status ${tone}`.trim();
-}
-
 function normalizePairingCode(value) {
   const cleaned = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return cleaned.length === 8 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}` : cleaned;
+  return cleaned.length > 4 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4, 8)}` : cleaned;
 }
 
-function statusLabel(status) {
-  switch (String(status || '').toLowerCase()) {
-    case 'facebook_logged_in':
-      return 'Đã kết nối Facebook';
-    case 'facebook_human_required':
-      return 'Facebook cần xác minh';
-    case 'facebook_login_required':
-      return 'Cần đăng nhập Facebook';
-    case 'chrome_connected':
-      return 'Đã thấy Chrome';
-    default:
-      return status || 'Online';
-  }
-}
+pairingCodeInput.addEventListener('input', (e) => {
+  e.target.value = normalizePairingCode(e.target.value);
+  e.target.classList.remove('error');
+  errorMsg.style.display = 'none';
+});
+
+btnToggleAdv.addEventListener('click', () => {
+  advPanel.classList.toggle('open');
+});
+
+btnStartPair.addEventListener('click', () => {
+  setScreen('entering');
+  pairingCodeInput.focus();
+});
+
+btnCancelPair.addEventListener('click', () => {
+  setScreen('idle');
+  pairingCodeInput.value = '';
+  pairingCodeInput.classList.remove('error');
+  errorMsg.style.display = 'none';
+});
 
 async function refreshStatus() {
-  const res = await sendMessage({ type: 'status' });
-  if (!res?.ok) {
-    setStatus(res?.error || 'Chưa có phiên kết nối hợp lệ. Tạo mã mới trong Browser dashboard rồi kết nối lại.', 'error');
-    return;
+  try {
+    const res = await sendMessage({ type: 'status' });
+    if (!res || !res.ok) {
+      setScreen('idle');
+      return;
+    }
+    const cfg = res.config || {};
+    serverUrlInput.value = cfg.serverUrl || 'https://sale.thgfulfill.com';
+    
+    if (!cfg.deviceToken) {
+      setScreen('idle');
+      return;
+    }
+
+    const live = res.live || {};
+    let fbInfo = 'Không tìm thấy FB';
+    if (live.fbDisplayName) {
+      fbInfo = live.fbDisplayName;
+    } else if (live.fbUserId) {
+      fbInfo = `FB ${live.fbUserId}`;
+    }
+
+    steadyDevice.textContent = cfg.connectorName || 'THG Chrome Extension';
+    steadySession.textContent = fbInfo;
+    steadySession.style.color = live.fbUserId ? 'var(--success)' : 'var(--text-muted)';
+
+    setScreen('steady');
+  } catch (err) {
+    setScreen('idle');
   }
-  const cfg = res.config || {};
-  serverUrlInput.value = cfg.serverUrl || 'https://sale.thgfulfill.com';
-  if (!cfg.deviceToken) {
-    setStatus('Chưa kết nối. Tạo mã trong Browser dashboard, dán mã vào đây, rồi mở tab Facebook đã đăng nhập.');
-    return;
-  }
-  const live = res.live || {};
-  const fb = live.fbUserId ? `FB ${live.fbUserId}` : 'Chưa thấy tài khoản Facebook';
-  setStatus(`Đã kết nối: ${cfg.connectorName || 'THG Chrome Extension'}\n${statusLabel(live.status || cfg.lastStatus)} - ${fb}`, 'ok');
 }
 
-pairButton.addEventListener('click', async () => {
-  pairButton.disabled = true;
-  setStatus('Đang kết nối...');
+btnVerifyPair.addEventListener('click', async () => {
+  const code = pairingCodeInput.value.replace(/[^A-Z0-9]/g, '');
+  if (code.length !== 8) {
+    pairingCodeInput.classList.add('error');
+    errorMsg.textContent = 'Code must be 8 characters.';
+    errorMsg.style.display = 'block';
+    return;
+  }
+
+  btnVerifyPair.disabled = true;
+  btnVerifyPair.textContent = 'Verifying...';
+  
   try {
-    pairingCodeInput.value = normalizePairingCode(pairingCodeInput.value);
     const res = await sendMessage({
       type: 'pair',
       serverUrl: serverUrlInput.value,
       code: pairingCodeInput.value
     });
-    if (!res?.ok) throw new Error(res?.error || 'Kết nối thất bại');
+    
+    if (!res || !res.ok) {
+      throw new Error(res?.error || 'Pairing failed');
+    }
+    
     pairingCodeInput.value = '';
     await refreshStatus();
   } catch (err) {
-    setStatus(err?.message || String(err), 'error');
+    pairingCodeInput.classList.add('error');
+    errorMsg.textContent = err?.message || String(err);
+    errorMsg.style.display = 'block';
   } finally {
-    pairButton.disabled = false;
+    btnVerifyPair.disabled = false;
+    btnVerifyPair.textContent = 'Verify & Pair';
   }
 });
 
-syncButton.addEventListener('click', async () => {
-  syncButton.disabled = true;
+btnSync.addEventListener('click', async () => {
+  btnSync.disabled = true;
+  btnSync.textContent = 'Syncing...';
   try {
     await refreshStatus();
   } finally {
-    syncButton.disabled = false;
+    btnSync.disabled = false;
+    btnSync.textContent = 'Sync Now';
   }
 });
 
-forgetButton.addEventListener('click', async () => {
-  forgetButton.disabled = true;
+btnForget.addEventListener('click', async () => {
+  if (!confirm('Are you sure you want to forget this workspace connection?')) return;
+  
+  btnForget.disabled = true;
   try {
     await sendMessage({ type: 'forget' });
-    setStatus('Đã xóa token trên extension. Vào THG dashboard để disconnect thiết bị trên server.');
+    await refreshStatus();
   } finally {
-    forgetButton.disabled = false;
+    btnForget.disabled = false;
   }
 });
 
-refreshStatus().catch(err => setStatus(err?.message || String(err), 'error'));
+// Init
+refreshStatus();

@@ -189,110 +189,107 @@ export function LocalConnectorPanel({
               flexDirection: 'column',
               gap: 'var(--s-3)',
               borderColor: pairingCode && !pairingExpired ? 'var(--accent-glow)' : 'var(--line-strong)',
+              background: pairingCode && !pairingExpired ? 'linear-gradient(135deg, rgba(24, 86, 255, 0.05), rgba(255, 255, 255, 0.01))' : 'var(--surface)',
             }}
           >
-            <div className="eyebrow"><span className="dot" />02</div>
-            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{tc.stepPairTitle}</h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div className="eyebrow"><span className="dot" />02</div>
+                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{tc.stepPairTitle}</h4>
+              </div>
+            </div>
+            
             <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-mute)', lineHeight: 1.55 }}>{tc.stepPairBody}</p>
 
-            {dashboardServer && (
-              <div style={{ display: 'grid', gap: 4 }}>
-                <span className="field-label">{tc.stepPairServerHint}</span>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <code
-                    className="mono"
-                    style={{
-                      flex: 1,
-                      fontSize: 12,
-                      color: 'var(--text-mute)',
-                      padding: '6px 10px',
-                      background: 'var(--bg-elev-2)',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--line)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {dashboardServer}
-                  </code>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm btn-icon"
-                    onClick={() => navigator.clipboard?.writeText(dashboardServer)}
-                    title={tc.stepPairCopyServer}
-                  >
-                    <Copy size={12} />
-                  </button>
+            {pairingCode && !pairingExpired ? (
+              <div style={{
+                marginTop: '12px',
+                padding: '24px 20px',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid var(--accent-glow)',
+                borderRadius: '12px',
+                textAlign: 'center',
+                position: 'relative'
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', marginBottom: 12 }}>
+                  Pairing Code
                 </div>
-              </div>
-            )}
-
-            {pairingCode ? (
-              <>
-                <div
-                  className="mono tabular"
-                  style={{
-                    fontSize: 28,
-                    fontWeight: 600,
-                    letterSpacing: pairingCodeVisible ? '0.04em' : '0.4em',
-                    color: pairingExpired ? 'var(--text-faint)' : 'var(--accent)',
-                    background: 'var(--accent-soft)',
-                    border: `1px solid ${pairingExpired ? 'var(--line-strong)' : 'var(--accent-glow)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--s-4) var(--s-5)',
-                    textAlign: 'center',
-                    opacity: pairingExpired ? 0.55 : 1,
-                  }}
-                >
-                  {pairingCodeVisible ? pairingCode : tc.stepPairHidden}
+                
+                <div className="mono" style={{
+                  fontSize: 36,
+                  fontWeight: 800,
+                  letterSpacing: '0.15em',
+                  color: 'var(--text)',
+                  marginBottom: 16
+                }}>
+                  {pairingCode}
                 </div>
 
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    onClick={() => setPairingCodeVisible((v) => !v)}
-                    disabled={pairingExpired}
-                  >
-                    {pairingCodeVisible ? <EyeOff size={13} /> : <Eye size={13} />}
-                    {pairingCodeVisible ? tc.stepPairHide : tc.stepPairShow}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={!pairingCodeVisible || pairingExpired}
-                    onClick={() => {
-                      if (pairingCodeVisible && !pairingExpired) navigator.clipboard?.writeText(pairingCode);
-                    }}
+                    onClick={() => navigator.clipboard?.writeText(pairingCode)}
                   >
                     <Copy size={13} />
-                    {tc.stepPairCopy}
+                    Copy Code
                   </button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={onCreate} disabled={creating}>
-                    {creating ? <RefreshCw size={13} className="spin" /> : <KeyRound size={13} />}
-                    {tc.stepPairRefresh}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => navigator.clipboard?.writeText(dashboardServer)}
+                    title="Copy Server URL"
+                  >
+                    <ExternalLink size={13} />
+                    Copy URL
                   </button>
                 </div>
 
-                <span
-                  className={`tag ${pairingExpired ? 'tag-hot' : 'tag-ok'}`}
-                  style={{ alignSelf: 'flex-start' }}
-                >
-                  {pairingExpired ? tc.stepPairExpired : tc.stepPairRemaining(formatCountdown(pairingRemainingMs ?? 0))}
-                </span>
-                {pairingExpiresAt && (
-                  <p style={{ margin: 0, fontSize: 11.5, color: 'var(--text-faint)' }}>
-                    {tc.stepPairExpiresAt(formatLastSeen(pairingExpiresAt))}
-                  </p>
-                )}
-              </>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  fontSize: 12,
+                  color: 'var(--text-mute)'
+                }}>
+                  <span style={{
+                    width: 6,
+                    height: 6,
+                    background: 'var(--accent)',
+                    borderRadius: '50%',
+                    boxShadow: '0 0 0 0 rgba(24, 86, 255, 0.4)',
+                    animation: 'pulse 1.5s infinite'
+                  }} />
+                  Waiting for extension... ({formatCountdown(pairingRemainingMs ?? 0)})
+                </div>
+              </div>
             ) : (
-              <button type="button" className="btn btn-primary btn-sm" onClick={onCreate} disabled={creating} style={{ alignSelf: 'flex-start' }}>
-                {creating ? <RefreshCw size={13} className="spin" /> : <KeyRound size={13} />}
-                {tc.stepPairCreate}
-              </button>
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {dashboardServer && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'var(--bg-elev-2)', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                    <code className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--text-mute)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {dashboardServer}
+                    </code>
+                    <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => navigator.clipboard?.writeText(dashboardServer)}>
+                      <Copy size={12} />
+                    </button>
+                  </div>
+                )}
+                <button type="button" className="btn btn-primary" onClick={onCreate} disabled={creating} style={{ padding: '12px', fontSize: 13, fontWeight: 600 }}>
+                  {creating ? <RefreshCw size={14} className="spin" /> : <KeyRound size={14} />}
+                  {pairingExpired ? 'Generate New Code' : tc.stepPairCreate}
+                </button>
+              </div>
             )}
+            
+            <style>{`
+              @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(24, 86, 255, 0.4); }
+                70% { box-shadow: 0 0 0 6px rgba(24, 86, 255, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(24, 86, 255, 0); }
+              }
+            `}</style>
           </article>
 
           <article className="card" style={{ padding: 'var(--s-5)', display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
