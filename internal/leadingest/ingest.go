@@ -128,6 +128,13 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			TargetRole:      deps.SignalGate.TargetRole,
 			PositiveSignals: deps.SignalGate.PositiveSignals,
 		}
+		// Brain sidecar (Python) is responsible for filling SignalGate.TargetRole,
+		// but it can be offline or produce no inference. Fall back to a Go-side
+		// keyword inference so the classifier still gets a scope hint instead of
+		// treating every adjacent post as a generic match.
+		if intent.TargetRole == "" {
+			intent.TargetRole = ai.InferTargetRoleFromPrompt(deps.UserPrompt)
+		}
 		aiResult, err := deps.AIClass.UniversalClassify(classifyCtx, content, in.AuthorName, deps.BusinessProfile, intent)
 		cancel()
 		if err != nil {

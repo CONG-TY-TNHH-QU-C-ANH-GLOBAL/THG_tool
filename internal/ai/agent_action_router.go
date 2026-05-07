@@ -171,11 +171,35 @@ func promptKeywords(prompt string) string {
 		return r == ',' || r == ';' || r == '|' || r == '/'
 	})
 	stop := map[string]bool{
-		"cào": true, "cao": true, "crawl": true, "scrape": true, "tôi": true, "toi": true,
-		"cần": true, "can": true, "tìm": true, "tim": true, "tệp": true, "tep": true,
-		"khách": true, "khach": true, "có": true, "co": true, "nhu": true, "cầu": true,
-		"cau": true, "hoặc": true, "hoac": true, "từ": true, "tu": true, "đi": true,
-		"di": true, "và": true, "va": true, "the": true, "a": true, "an": true,
+		// Crawl-action verbs (already filtered upstream but kept for safety).
+		"cào": true, "cao": true, "crawl": true, "scrape": true, "quét": true, "quet": true,
+		"lấy": true, "lay": true, "fetch": true, "get": true,
+		// First-person + intent verbs.
+		"tôi": true, "toi": true, "mình": true, "minh": true, "tao": true,
+		"cần": true, "can": true, "tìm": true, "tim": true, "muốn": true, "muon": true,
+		"giúp": true, "giup": true,
+		// Lead-domain words that ARE the goal, not the keywords.
+		"tệp": true, "tep": true, "khách": true, "khach": true,
+		"hàng": true, "hang": true, "lead": true, "leads": true,
+		"bài": true, "post": true, "posts": true, "bai": true, "bài viết": true,
+		// Source / location nouns.
+		"nhóm": true, "nhom": true, "group": true, "groups": true,
+		"page": true, "fanpage": true, "trang": true, "facebook": true, "fb": true,
+		"profile": true, "url": true, "link": true,
+		// Vietnamese function words.
+		"có": true, "co": true, "không": true, "khong": true,
+		"nhu": true, "cầu": true, "cau": true,
+		"hoặc": true, "hoac": true, "từ": true, "tu": true, "đi": true,
+		"di": true, "và": true, "va": true, "với": true, "voi": true,
+		"cho": true, "tại": true, "tai": true, "ở": true, "trong": true, "ngoài": true, "ngoai": true,
+		"của": true, "cua": true, "là": true, "la": true, "được": true, "duoc": true,
+		"này": true, "nay": true, "đó": true, "do": true, "kia": true, "đây": true, "day": true,
+		"cũng": true, "cung": true, "thì": true, "thi": true, "rằng": true, "rang": true,
+		// Numbers spelled out / qty modifiers commonly typed in prompts.
+		"số": true, "so": true, "lượng": true, "luong": true,
+		// English filler.
+		"the": true, "a": true, "an": true, "of": true, "to": true, "from": true,
+		"for": true, "in": true, "on": true, "at": true, "with": true, "and": true, "or": true,
 	}
 	out := make([]string, 0, 8)
 	seen := map[string]bool{}
