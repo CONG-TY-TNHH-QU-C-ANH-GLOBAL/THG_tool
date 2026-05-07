@@ -214,7 +214,13 @@ export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) 
       <header className={styles.navWrap}>
         <div className={styles.nav}>
           <div className={styles.brand}>
-            <img src="/assets/thg-automation-mark.svg" alt="THG AutoFlow" style={{ height: 28 }} />
+            <div className={styles.brandMark}>
+              <img src="/assets/thg-pegasus.png" alt="THG" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+            </div>
+            <div>
+              <strong>THG AutoFlow</strong>
+              <span>Workspace</span>
+            </div>
           </div>
 
           <nav className={styles.navLinks} aria-label="Landing navigation">
@@ -416,7 +422,9 @@ export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) 
 
       <footer className={styles.footer}>
         <div className={styles.footerBrand}>
-          <img src="/assets/thg-monogram.svg" alt="THG" style={{ height: 20 }} />
+          <div className={styles.brandMark} style={{ width: 32, height: 32, borderRadius: 10 }}>
+            <img src="/assets/thg-pegasus.png" alt="THG" style={{ width: 20, height: 20, objectFit: 'contain' }} />
+          </div>
           <div>
             <strong>{copy.footer}</strong>
             <span>{copy.footerCopy}</span>
