@@ -169,6 +169,45 @@ func (s *Store) ListUsers(orgID int64) ([]models.User, error) {
 	return users, rows.Err()
 }
 
+// SearchUsersForInvite returns up to `limit` users whose email or name matches
+// the query prefix. Used by the workspace invite UI's autocomplete so admins
+// can invite users that are already registered (whether in another workspace
+// or with org_id=0). Platform/founder users are excluded — they manage all
+// workspaces and should never be invited as members.
+func (s *Store) SearchUsersForInvite(query string, limit int) ([]models.User, error) {
+	q := strings.TrimSpace(strings.ToLower(query))
+	if q == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 25 {
+		limit = 8
+	}
+	pattern := q + "%"
+	rows, err := s.db.Query(`
+		SELECT id, COALESCE(org_id,0), email, name, password_hash, role, active,
+		       failed_logins, locked_until, created_at, updated_at
+		FROM users
+		WHERE active = 1
+		  AND role NOT IN ('founder', 'super_admin')
+		  AND (lower(email) LIKE ? OR lower(name) LIKE ?)
+		ORDER BY email ASC
+		LIMIT ?`, pattern, pattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []models.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		u.PasswordHash = ""
+		users = append(users, *u)
+	}
+	return users, rows.Err()
+}
+
 // EnsureAdminUser creates a superadmin if the users table is empty (bootstrap only).
 func (s *Store) EnsureAdminUser(email, passwordHash, name string) error {
 	email = normalizeEmail(email)

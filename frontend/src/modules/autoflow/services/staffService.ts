@@ -109,3 +109,17 @@ export async function deleteStaff(orgId: string, staffId: number): Promise<void>
   void orgId;
   await api.del(`/auth/users/${staffId}`);
 }
+
+export interface InviteCandidate {
+  id: number;
+  email: string;
+  name: string;
+  org_id: number;
+  role: string;
+}
+
+export async function searchInviteCandidates(query: string): Promise<InviteCandidate[]> {
+  if (query.trim().length < 2) return [];
+  const res = await api.get<{ users: InviteCandidate[]; count: number }>(`/org/invites/search?q=${encodeURIComponent(query.trim())}`);
+  return res.users ?? [];
+}

@@ -5,6 +5,7 @@ import { Avatar, Badge, Row } from './ui';
 import { theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
 import { useStaff } from '../hooks/useStaff';
 import { changePassword } from '../services/authService';
+import { searchInviteCandidates, type InviteCandidate } from '../services/staffService';
 import {
   AgentToken,
   AuditLog,
@@ -71,6 +72,9 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
   const [showAdd, setShowAdd] = useState(false);
   const [newStaff, setNewStaff] = useState({ email: '', role: 'sales' });
   const [staffMsg, setStaffMsg] = useState('');
+  const [inviteCandidates, setInviteCandidates] = useState<InviteCandidate[]>([]);
+  const [showCandidates, setShowCandidates] = useState(false);
+  const inviteSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [brandName, setBrandName] = useState(org.name || '');
   const [brandDomain, setBrandDomain] = useState('');
@@ -172,6 +176,32 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
     } catch (err) {
       setPwMsg(err instanceof Error ? err.message : 'Không đổi được mật khẩu.');
     }
+  };
+
+  const handleInviteEmailChange = (value: string) => {
+    setNewStaff(p => ({ ...p, email: value }));
+    if (inviteSearchTimer.current) clearTimeout(inviteSearchTimer.current);
+    if (value.trim().length < 2) {
+      setInviteCandidates([]);
+      setShowCandidates(false);
+      return;
+    }
+    inviteSearchTimer.current = setTimeout(async () => {
+      try {
+        const results = await searchInviteCandidates(value);
+        setInviteCandidates(results);
+        setShowCandidates(results.length > 0);
+      } catch {
+        setInviteCandidates([]);
+        setShowCandidates(false);
+      }
+    }, 200);
+  };
+
+  const pickInviteCandidate = (candidate: InviteCandidate) => {
+    setNewStaff({ email: candidate.email, role: candidate.role === 'admin' ? 'admin' : 'sales' });
+    setShowCandidates(false);
+    setInviteCandidates([]);
   };
 
   const handleInviteStaff = async () => {
@@ -374,11 +404,44 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             <div style={{ ...cardStyle(), border: `1px solid ${theme.primary}44` }}>
               <p style={{ color: theme.primaryPale, fontWeight: 500, fontSize: 13, marginBottom: 14 }}>Invite nhân viên vào workspace</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 130px auto', gap: 10, alignItems: 'end' }}>
-                <div><Label text="Email" /><input style={inputStyle} value={newStaff.email} onChange={e => setNewStaff(p => ({ ...p, email: e.target.value }))} /></div>
+                <div style={{ position: 'relative' }}>
+                  <Label text="Email" />
+                  <input
+                    style={inputStyle}
+                    value={newStaff.email}
+                    placeholder="user@email.com"
+                    autoComplete="off"
+                    onChange={e => handleInviteEmailChange(e.target.value)}
+                    onFocus={() => { if (inviteCandidates.length > 0) setShowCandidates(true); }}
+                    onBlur={() => setTimeout(() => setShowCandidates(false), 150)}
+                  />
+                  {showCandidates && inviteCandidates.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
+                      {inviteCandidates.map(cand => {
+                        const inOtherOrg = cand.org_id > 0 && String(cand.org_id) !== orgId;
+                        return (
+                          <button
+                            key={cand.id}
+                            type="button"
+                            onMouseDown={e => { e.preventDefault(); pickInviteCandidate(cand); }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'transparent', cursor: 'pointer', borderBottom: `1px solid ${theme.borderAlt}`, color: theme.text }}
+                          >
+                            <div style={{ fontSize: 12.5, fontWeight: 600 }}>{cand.email}</div>
+                            <div style={{ fontSize: 11, color: theme.textFaint, marginTop: 2 }}>
+                              {cand.name || '—'} · {cand.role}
+                              {inOtherOrg && <span style={{ color: theme.yellow, marginLeft: 6 }}>· đang ở workspace #{cand.org_id}, mời sẽ chuyển họ qua đây</span>}
+                              {cand.org_id === 0 && <span style={{ color: '#4ade80', marginLeft: 6 }}>· chưa thuộc workspace nào</span>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 <div><Label text="Vai trò" /><select style={inputStyle} value={newStaff.role} onChange={e => setNewStaff(p => ({ ...p, role: e.target.value }))}><option value="sales">Sales</option><option value="admin">Admin</option></select></div>
                 <button onClick={handleInviteStaff} style={primaryBtn({ padding: '10px 14px' })}>Gửi invite</button>
               </div>
-              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 10 }}>Admin chỉ tạo lời mời. Nhân viên tự tạo hoặc đăng nhập tài khoản bằng đúng email được mời, sau đó mới thành member thật có user ID, role, session và audit log riêng.</p>
+              <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 10 }}>Gõ ≥ 2 ký tự để tự gợi ý user đã đăng ký. Có thể mời cả người đang ở workspace khác — khi họ chấp nhận, họ sẽ chuyển sang workspace này.</p>
             </div>
           )}
 

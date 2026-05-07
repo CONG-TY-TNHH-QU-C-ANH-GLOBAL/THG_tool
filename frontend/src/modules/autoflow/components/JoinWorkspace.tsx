@@ -131,11 +131,9 @@ export default function JoinWorkspace({ token, onJoined, goBack }: JoinWorkspace
     setLoading(true);
     try {
       await login(email, password);
-      const loggedInUser = useAuthStore.getState().user;
-      if (loggedInUser?.org_id && loggedInUser.email.toLowerCase() === invite.email.toLowerCase()) {
-        onJoined(routeRoleFor(loggedInUser));
-        return;
-      }
+      // Always accept the invite after login, even if the user already has an
+      // org_id set. The backend permits cross-workspace transfers and returns
+      // a fresh JWT bound to the invite's workspace + role.
       await acceptInvite();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : (lang === 'vi' ? 'Đăng nhập thất bại.' : 'Login failed.'));

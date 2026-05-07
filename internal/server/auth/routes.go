@@ -60,6 +60,7 @@ func InviteRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	h := &Handler{deps: deps}
 	group.Post("/org/invites", adminOnly, h.createInvite)
 	group.Get("/org/invites", adminOnly, h.listInvites)
+	group.Get("/org/invites/search", adminOnly, h.searchInviteCandidates)
 	group.Post("/org/invites/:id/resend", adminOnly, h.resendInvite)
 	group.Delete("/org/invites/:id", adminOnly, h.revokeInvite)
 }

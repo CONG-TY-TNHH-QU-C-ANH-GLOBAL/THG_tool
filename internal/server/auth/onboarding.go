@@ -180,6 +180,34 @@ func (h *Handler) onboardingSetup(c *fiber.Ctx) error {
 	})
 }
 
+// searchInviteCandidates handles GET /api/org/invites/search?q=... (admin only).
+// Powers the autocomplete on the invite form so admins can see whether the
+// email already maps to a registered user, and (if so) which workspace they're
+// currently in. Returns small projection (id, email, name, current org_id) —
+// no password hashes or sensitive fields.
+func (h *Handler) searchInviteCandidates(c *fiber.Ctx) error {
+	q := strings.TrimSpace(c.Query("q", ""))
+	if len([]rune(q)) < 2 {
+		return c.JSON(fiber.Map{"users": []any{}, "count": 0})
+	}
+	users, err := h.deps.DB.SearchUsersForInvite(q, 8)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	type row struct {
+		ID    int64  `json:"id"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+		OrgID int64  `json:"org_id"`
+		Role  string `json:"role"`
+	}
+	out := make([]row, 0, len(users))
+	for _, u := range users {
+		out = append(out, row{ID: u.ID, Email: u.Email, Name: u.Name, OrgID: u.OrgID, Role: string(u.Role)})
+	}
+	return c.JSON(fiber.Map{"users": out, "count": len(out)})
+}
+
 // createInvite handles POST /api/org/invites (admin only).
 func (h *Handler) createInvite(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -205,12 +233,15 @@ func (h *Handler) createInvite(c *fiber.Ctx) error {
 	if req.Role != string(models.RoleAdmin) && req.Role != string(models.RoleSales) {
 		return c.Status(400).JSON(fiber.Map{"error": "role must be admin or sales"})
 	}
+	// We allow inviting users who are already a member of a different workspace.
+	// On accept, the invitee is moved to this workspace (single-org membership model).
+	// Only block re-inviting an existing member of THIS workspace, or platform users.
 	if existing, _ := h.deps.DB.GetUserByEmail(req.Email); existing != nil {
 		if existing.OrgID == orgID {
 			return c.Status(409).JSON(fiber.Map{"error": "email is already a workspace member"})
 		}
-		if existing.OrgID != 0 {
-			return c.Status(409).JSON(fiber.Map{"error": "email already belongs to another workspace"})
+		if models.IsPlatformRole(existing.Role) {
+			return c.Status(409).JSON(fiber.Map{"error": "platform/founder accounts cannot join workspaces"})
 		}
 	}
 	var pendingID int64
@@ -384,14 +415,13 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 	if !strings.EqualFold(strings.TrimSpace(user.Email), strings.TrimSpace(email)) {
 		return c.Status(403).JSON(fiber.Map{"error": "invite email does not match current account"})
 	}
-	if user.OrgID != 0 && user.OrgID != orgID {
-		return c.Status(409).JSON(fiber.Map{"error": "account already belongs to another workspace"})
-	}
+	previousOrgID := user.OrgID
 	targetRole := models.RoleSales
 	if role == string(models.RoleAdmin) {
 		targetRole = models.RoleAdmin
 	}
-
+	// Single-org membership: accepting an invite from a different workspace
+	// transfers the user out of their previous org. Audit log records the move.
 	if err := h.deps.DB.UpdateUserOrg(userID, orgID, targetRole); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "could not join org"})
 	}
@@ -405,7 +435,7 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 	setAuthCookies(c, newToken, time.Now().Add(authpkg.AccessTokenTTL))
 
 	h.deps.DB.InsertAuditLog(userID, "invite_accepted", c.IP(),
-		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d}`, orgID, targetRole, inviteID))
+		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d,"previous_org_id":%d}`, orgID, targetRole, inviteID, previousOrgID))
 
 	return c.JSON(fiber.Map{
 		"access_token": newToken,
