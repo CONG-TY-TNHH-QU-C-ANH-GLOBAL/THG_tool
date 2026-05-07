@@ -114,3 +114,17 @@ export async function getBusinessContext(): Promise<BusinessContext> {
 export async function saveBusinessContext(context: Partial<BusinessContext>): Promise<void> {
   await api.put('/context/business', context);
 }
+
+export type OutboundMode = 'auto' | 'draft';
+
+export interface OrgPolicy {
+  outbound_mode: OutboundMode;
+}
+
+export async function getOrgPolicy(): Promise<OrgPolicy> {
+  return api.get('/org/policy');
+}
+
+export async function updateOrgPolicy(body: OrgPolicy): Promise<OrgPolicy> {
+  return api.put('/org/policy', body);
+}

@@ -145,6 +145,12 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 		}
 		a.captureBusinessCalibrationFromPrompt(orgID, userContext, prompt)
 	}
+	// Derive ephemeral crawl targeting (target_role / signals) from this prompt
+	// so brain.py builds a SignalGate from the user's actual ask, not just the
+	// stored profile. Empty inferred values do not overwrite existing profile data.
+	if requiresFacebookBrowser(prompt) {
+		mergeEphemeralCrawlTargeting(userContext, prompt)
+	}
 	// Load accounts for AI account mapping
 	accounts, _ := a.db.GetAllAccounts(orgID)
 	if response, handled := a.processBrainPlan(ctx, prompt, source, orgID, selectedAccountID, userContext, accounts); handled {

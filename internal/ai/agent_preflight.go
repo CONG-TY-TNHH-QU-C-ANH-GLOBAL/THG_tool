@@ -69,25 +69,132 @@ func pickReadyFacebookAccountID(accounts []models.Account) int64 {
 	return 0
 }
 
-func businessCalibrationPreflight(userCtx map[string]string, prompt string) (bool, string) {
-	profile := ProfileFromContext(userCtx)
-	if profile.IsConfigured() {
-		return true, ""
+// businessCalibrationPreflight is a no-op kept for the two legacy call sites.
+// Crawl is no longer blocked by missing profile — instead, mergeEphemeralCrawlTargeting
+// derives target_author_role, target_signals, and negative_signals from the user's
+// prompt and feeds them into the in-memory userContext for the request scope only.
+func businessCalibrationPreflight(_ map[string]string, _ string) (bool, string) {
+	return true, ""
+}
+
+// mergeEphemeralCrawlTargeting fills userCtx with prompt-derived crawl targeting
+// (target_author_role, target_signals, negative_signals) when the user's prompt
+// contains crawl intent. The merged values are scoped to the current request only —
+// they are NOT persisted to the database. Empty inferred values do not overwrite
+// existing profile values, so a configured profile still falls through.
+func mergeEphemeralCrawlTargeting(userCtx map[string]string, prompt string) {
+	if userCtx == nil {
+		return
 	}
-	if isBusinessContextPrompt(prompt) {
-		return true, ""
+	inferred := inferCrawlTargetingFromPrompt(prompt)
+	for key, value := range inferred {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		userCtx[key] = value
+		userCtx["org_"+key] = value
 	}
-	return false, `Mình chưa chạy crawl ngay vì workspace chưa có định vị doanh nghiệp đủ rõ.
+}
 
-Để Market Signal Gate lọc đúng tệp và không đổ dữ liệu rác vào dashboard, hãy cấu hình trước phần Định vị doanh nghiệp trong Data Private, hoặc trả lời trực tiếp theo 5 ý ngắn:
+// inferCrawlTargetingFromPrompt extracts a minimal Market Signal Gate from the
+// user's current prompt: target audience role plus a handful of positive and
+// negative phrases. Returns an empty map when the prompt is empty.
+func inferCrawlTargetingFromPrompt(prompt string) map[string]string {
+	out := map[string]string{}
+	clean := strings.TrimSpace(regexp.MustCompile(`https?://\S+`).ReplaceAllString(stripDashboardContext(prompt), ""))
+	if clean == "" {
+		return out
+	}
+	folded := foldVietnameseForMatch(clean)
 
-1. Doanh nghiệp/brand của bạn là ai?
-2. Bạn đang bán sản phẩm, dịch vụ hoặc offer gì?
-3. Tệp cần tìm là ai: khách mua dịch vụ, supplier, partner, ứng viên hay nhóm khác?
-4. Những tín hiệu nào phải giữ lại? Ví dụ: “cần báo giá”, “looking for supplier”, “tìm fulfillment”.
-5. Những tín hiệu nào phải loại bỏ? Ví dụ: bài quảng cáo dịch vụ, tuyển CTV, spam link, đối thủ tự bán.
+	role := "customers"
+	switch {
+	case containsAnyFolded(folded, []string{"tuyen ", "tuyen dung", "nhan su", "ung vien", "tim viec", "can viec", "san sang lam"}):
+		role = "candidates"
+	case containsAnyFolded(folded, []string{"supplier", "nha cung cap", "nguon hang", "factory"}) && !containsAnyFolded(folded, []string{"tim khach", "khach mua", "tim buyer"}):
+		role = "suppliers"
+	case containsAnyFolded(folded, []string{"doi tac", "partner", "reseller", "agency hop tac"}):
+		role = "partners"
+	}
+	out["target_author_role"] = role
 
-Sau khi lưu định vị, gửi lại prompt. Lúc đó agent sẽ dùng đúng Facebook session của workspace để crawl, lọc theo ngữ cảnh doanh nghiệp, phân loại hot/warm/cold và chỉ lưu leads đủ điều kiện.`
+	if positives := extractCrawlPositiveSignals(folded, role); len(positives) > 0 {
+		out["target_signals"] = strings.Join(positives, ", ")
+	}
+
+	if negatives := defaultCrawlNegativeSignals(role); len(negatives) > 0 {
+		out["negative_signals"] = strings.Join(negatives, ", ")
+	}
+
+	return out
+}
+
+// extractCrawlPositiveSignals returns folded phrases the prompt mentions that
+// buyer/candidate/supplier posts would also use. Output is intentionally small —
+// the LLM classifier (UniversalClassify) does the heavy lifting; we only nudge
+// the SignalGate toward the right intent.
+func extractCrawlPositiveSignals(folded, role string) []string {
+	var pool []string
+	switch role {
+	case "candidates":
+		pool = []string{
+			"tim viec", "can viec", "ung vien", "ho so", "cv",
+			"remote ok", "san sang lam", "co kinh nghiem", "freelance",
+		}
+	case "suppliers":
+		pool = []string{
+			"nhan in pod", "nhan order", "nhan lam", "studio", "factory",
+			"san xuat", "in theo yeu cau", "fulfillment", "warehouse",
+		}
+	case "partners":
+		pool = []string{
+			"hop tac", "doi tac", "reseller", "agency", "share doanh thu",
+		}
+	default:
+		pool = []string{
+			"tim supplier", "can supplier", "tim nha cung cap", "tim nguon hang",
+			"tim hang", "can bao gia", "looking for supplier", "need supplier",
+			"can tu van", "can tim", "ai co", "ai biet",
+			"pod", "dropship", "fulfillment",
+			"ship my", "ship usa", "ship eu", "ship sang my",
+			"vn sang my", "tq sang my", "viet nam sang my", "trung quoc sang my",
+		}
+	}
+	seen := map[string]bool{}
+	var result []string
+	for _, kw := range pool {
+		if seen[kw] {
+			continue
+		}
+		if strings.Contains(folded, kw) {
+			seen[kw] = true
+			result = append(result, kw)
+		}
+	}
+	return result
+}
+
+// defaultCrawlNegativeSignals returns a baseline list of phrases to reject when
+// targeting buyers/candidates — these are the most common provider/spam markers.
+func defaultCrawlNegativeSignals(role string) []string {
+	switch role {
+	case "candidates":
+		return []string{
+			"tuyen ctv mlm", "lam giau nhanh", "lam viec tai nha 0 von",
+			"co hoi kiem tien khong gioi han", "spam link",
+		}
+	case "suppliers":
+		return nil
+	case "partners":
+		return nil
+	default:
+		return []string{
+			"nhan lam pod", "nhan order pod", "shop pod nhan",
+			"studio nhan in", "agency nhan", "fulfillment service offered",
+			"chuyen nhan in pod", "xuong in pod nhan",
+		}
+	}
 }
 
 func isBusinessContextPrompt(prompt string) bool {

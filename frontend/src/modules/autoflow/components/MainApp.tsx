@@ -178,7 +178,7 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
       case 'leaderboard':
         return <LeaderboardView orgId={orgId} isAdmin={isAdmin} />;
       case 'data':
-        return <DataPrivateView orgId={orgId} />;
+        return <DataPrivateView orgId={orgId} isAdmin={isAdmin} />;
       case 'settings':
         return <SettingsPage org={org} orgId={orgId} isAdmin={isAdmin} />;
       default:

@@ -30,7 +30,8 @@ function toLead(b: BackendLead): Lead {
     last: new Date(b.created_at).toLocaleDateString('vi'),
     score: numericScore(status),
     phone: b.pain_point || '',
-    facebookUrl: b.author_url || b.source_url,
+    facebookUrl: b.author_url || undefined,
+    postUrl: b.source_url || undefined,
   };
 }
 
@@ -49,4 +50,9 @@ export async function createLead(orgId: string, data: Pick<Lead, 'name' | 'phone
   void orgId;
   void data;
   throw new Error('manual lead creation is not wired to production API');
+}
+
+export async function deleteLead(orgId: string, leadId: number): Promise<void> {
+  void orgId;
+  await api.del(`/leads/${leadId}`);
 }

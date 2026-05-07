@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, RefreshCw, Search } from 'lucide-react';
+import { ExternalLink, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { Lead, LeadStatus } from '../../types';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
@@ -30,7 +30,7 @@ function statusTagClass(status: string): string {
 }
 
 function leadSearchValue(lead: Lead) {
-  return [lead.name, lead.group, lead.agent, lead.phone, lead.facebookUrl ?? '']
+  return [lead.name, lead.group, lead.agent, lead.phone, lead.facebookUrl ?? '', lead.postUrl ?? '']
     .join(' ')
     .toLowerCase();
 }
@@ -43,7 +43,26 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const [filter, setFilter] = useState<LeadStatus | 'All'>('All');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const { leads, isLoading, error, refetch } = useLeads(orgId, filter);
+  const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (lead: Lead) => {
+    if (deletingId !== null) return;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(`Xoá lead này?\n\n${lead.name}`);
+      if (!ok) return;
+    }
+    setDeletingId(lead.id);
+    try {
+      await remove(lead.id);
+    } catch (err) {
+      if (typeof window !== 'undefined') {
+        window.alert(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filteredLeads = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -229,15 +248,31 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                 </dl>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 24, flexWrap: 'wrap' }}>
-                  {selectedLead.facebookUrl && (
-                    <a className="btn btn-primary btn-sm" href={selectedLead.facebookUrl} target="_blank" rel="noopener noreferrer">
+                  {selectedLead.postUrl && (
+                    <a className="btn btn-primary btn-sm" href={selectedLead.postUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink size={13} style={{ marginRight: 6 }} />
-                      Mở Facebook
+                      Mở bài viết
+                    </a>
+                  )}
+                  {selectedLead.facebookUrl && (
+                    <a className="btn btn-ghost btn-sm" href={selectedLead.facebookUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink size={13} style={{ marginRight: 6 }} />
+                      Mở profile
                     </a>
                   )}
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refetch()}>
                     <RefreshCw size={13} style={{ marginRight: 6 }} />
                     Đồng bộ
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ marginLeft: 'auto', color: 'var(--danger, #c0392b)' }}
+                    disabled={deletingId === selectedLead.id}
+                    onClick={() => void handleDelete(selectedLead)}
+                  >
+                    <Trash2 size={13} style={{ marginRight: 6 }} />
+                    {deletingId === selectedLead.id ? 'Đang xoá…' : 'Xoá lead'}
                   </button>
                 </div>
               </div>

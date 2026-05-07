@@ -40,5 +40,7 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Get("/facebook/status", h.autoflowFacebookStatus)
 	group.Get("/context/business", h.getBusinessContext)
 	group.Put("/context/business", h.updateBusinessContext)
+	group.Get("/org/policy", h.getOrgPolicy)
+	group.Put("/org/policy", adminOnly, h.updateOrgPolicy)
 	group.Get("/billing/summary", h.billingSummary)
 }

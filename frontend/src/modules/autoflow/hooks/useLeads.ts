@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Lead, LeadStatus } from '../types';
-import { getLeads } from '../services/leadsService';
+import { getLeads, deleteLead as deleteLeadService } from '../services/leadsService';
 
 const CRAWL_DISPATCH_KEY = 'autoflow:last_crawl_dispatch';
 const POLL_INTERVAL_MS = 15_000;
@@ -41,5 +41,10 @@ export function useLeads(orgId: string, statusFilter: LeadStatus | 'All' = 'All'
     return () => { clearInterval(timer); clearTimeout(expiry); };
   }, [orgId]);
 
-  return { leads, isLoading, error, refetch: fetch };
+  const remove = useCallback(async (leadId: number) => {
+    await deleteLeadService(orgId, leadId);
+    setLeads(prev => prev.filter(l => l.id !== leadId));
+  }, [orgId]);
+
+  return { leads, isLoading, error, refetch: fetch, remove };
 }
