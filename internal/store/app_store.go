@@ -215,62 +215,6 @@ func (a *AppStore) migrate() error {
 
 // ── Facebook account helpers (for browser workspace page) ─────────────────────
 
-// FacebookAccount is a minimal account view for the browser workspace page.
-type FacebookAccount struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name"`
-	Status          string `json:"status"`
-	BrowserLoggedIn bool   `json:"browser_logged_in"`
-}
-
-// GetFacebookAccounts returns all facebook accounts (orgID=0 → all orgs).
-func (a *AppStore) GetFacebookAccounts(ctx context.Context, orgID int64) ([]FacebookAccount, error) {
-	q := `SELECT id, name, status, COALESCE(browser_logged_in, 0)
-	      FROM accounts WHERE platform = 'facebook'`
-	args := []any{}
-	if orgID > 0 {
-		q += " AND org_id = ?"
-		args = append(args, orgID)
-	}
-	q += " ORDER BY name ASC"
-
-	rows, err := a.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []FacebookAccount
-	for rows.Next() {
-		var acc FacebookAccount
-		var loggedIn int
-		if err := rows.Scan(&acc.ID, &acc.Name, &acc.Status, &loggedIn); err != nil {
-			return nil, err
-		}
-		acc.BrowserLoggedIn = loggedIn != 0
-		out = append(out, acc)
-	}
-	return out, rows.Err()
-}
-
-// SetFacebookAccountLoggedIn updates the browser_logged_in flag for an account.
-func (a *AppStore) SetFacebookAccountLoggedIn(ctx context.Context, accountID int64, loggedIn bool, fbUserID ...string) error {
-	v := 0
-	if loggedIn {
-		v = 1
-	}
-	if loggedIn && len(fbUserID) > 0 && fbUserID[0] != "" {
-		_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ?, fb_user_id = ? WHERE id = ?`, v, fbUserID[0], accountID)
-		return err
-	}
-	if !loggedIn {
-		_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ?, fb_user_id = '' WHERE id = ?`, v, accountID)
-		return err
-	}
-	_, err := a.db.ExecContext(ctx, `UPDATE accounts SET browser_logged_in = ? WHERE id = ?`, v, accountID)
-	return err
-}
-
 // ── AppTask CRUD ───────────────────────────────────────────────────────────────
 
 func (a *AppStore) CreateTask(ctx context.Context, taskID string, orgID int64, intent string) error {
@@ -440,27 +384,3 @@ func (a *AppStore) GetLeadCounts(ctx context.Context, orgID int64) (LeadCounts, 
 	return c, rows.Err()
 }
 
-// ListLeadsSince fetches leads with id > lastID ordered by id ASC (for SSE polling).
-func (a *AppStore) ListLeadsSince(ctx context.Context, lastID int64, limit int) ([]TaskLead, error) {
-	rows, err := a.db.QueryContext(ctx,
-		`SELECT id, task_id, org_id, source_url, author_profile_url, author_name, content,
-		        lead_score, category, signals_json, created_at
-		 FROM task_leads WHERE id > ? ORDER BY id ASC LIMIT ?`, lastID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []TaskLead
-	for rows.Next() {
-		var l TaskLead
-		var sigJSON string
-		if err := rows.Scan(&l.ID, &l.TaskID, &l.OrgID, &l.SourceURL, &l.AuthorProfileURL,
-			&l.AuthorName, &l.Content, &l.LeadScore, &l.Category, &sigJSON, &l.CreatedAt); err != nil {
-			return nil, err
-		}
-		_ = json.Unmarshal([]byte(sigJSON), &l.Signals)
-		out = append(out, l)
-	}
-	return out, rows.Err()
-}

@@ -82,7 +82,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 
 	guidance := orgScoringGuidance(h.db, orgID)
 	keywords := normalizeCrawlKeywords(append(body.Keywords, orgIntelligenceKeywords(h.db, orgID)...))
-	businessProfile := h.loadBusinessProfileForOrg(orgID)
+	businessProfile := ai.LoadProfileForOrg(h.db, orgID)
 	gate := leadingest.SignalGateFromMap(body.MarketSignalGate)
 	deps := leadingest.Deps{
 		AppStore:        appStore,
@@ -178,35 +178,6 @@ func (h *Handler) agentConnectorCrawlProgress(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
-// loadBusinessProfileForOrg builds a tenant-scoped BusinessProfile by reading
-// org-prefixed context keys (org:<id>:<key>) and falling back to global keys
-// for backward compatibility. Mirrors the worker handler's loader so both
-// pipelines see the same profile when classifying.
-func (h *Handler) loadBusinessProfileForOrg(orgID int64) *ai.BusinessProfile {
-	if h.db == nil {
-		return nil
-	}
-	ctxMap, err := h.db.GetAllContext()
-	if err != nil {
-		return nil
-	}
-	if orgID > 0 {
-		for _, key := range []string{
-			"business_profile", "business_name", "business_industry", "services",
-			"target_customers", "target_author_role", "target_signals",
-			"negative_signals", "business_location", "markets", "business_usp",
-			"tone", "approval_policy", "reject_rules",
-		} {
-			if value, _ := h.db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
-				ctxMap[key] = strings.TrimSpace(value)
-				if key == "business_profile" {
-					ctxMap["business_desc"] = strings.TrimSpace(value)
-				}
-			}
-		}
-	}
-	return ai.ProfileFromContext(ctxMap)
-}
 
 func normalizeCrawlKeywords(values []string) []string {
 	out := make([]string, 0, len(values))
@@ -273,20 +244,8 @@ func orgScoringGuidance(db *store.Store, orgID int64) scoring.Guidance {
 	}
 	return scoring.Guidance{
 		TargetAuthorRole: get("target_author_role"),
-		TargetSignals:    splitSignalPhrases(get("target_signals")),
-		RejectPhrases:    splitSignalPhrases(strings.Join([]string{get("negative_signals"), get("reject_rules")}, "\n")),
+		TargetSignals:    ai.SplitSignalPhrases(get("target_signals")),
+		RejectPhrases:    ai.SplitSignalPhrases(strings.Join([]string{get("negative_signals"), get("reject_rules")}, "\n")),
 	}
 }
 
-func splitSignalPhrases(raw string) []string {
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == '\n' || r == ',' || r == ';' || r == '|'
-	})
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}

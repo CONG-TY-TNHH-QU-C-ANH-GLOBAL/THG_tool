@@ -7,6 +7,7 @@ import (
 
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 // BehaviorConfig controls human-like scroll and interaction simulation.
@@ -134,27 +135,14 @@ func checkBanSignals(ctx context.Context) error {
 		return nil // can't check — don't block
 	}
 
-	if containsAny(url, "checkpoint", "login?next", "recover") {
+	if textutil.ContainsAny(url, "checkpoint", "login?next", "recover") {
 		return CDPError{Code: ErrFacebookCheckpoint, Message: "checkpoint page detected: " + url}
 	}
-	if containsAny(url, "/login") {
+	if textutil.ContainsAny(url, "/login") {
 		return CDPError{Code: ErrFacebookLogout, Message: "redirected to login: " + url}
 	}
-	if containsAny(title, "you've been temporarily blocked", "tạm thời bị chặn") {
+	if textutil.ContainsAny(title, "you've been temporarily blocked", "tạm thời bị chặn") {
 		return CDPError{Code: ErrFacebookBanned, Message: "ban page detected: " + title}
 	}
 	return nil
-}
-
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if len(s) >= len(sub) {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

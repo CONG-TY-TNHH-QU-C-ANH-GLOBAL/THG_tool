@@ -8,6 +8,11 @@ import (
 
 // MockRuntime returns deterministic fake items for MVP testing.
 // Each call simulates a page of results; returns empty when offset >= totalItems.
+//
+// DEV-ONLY: production must never instantiate this. cmd/worker only constructs
+// it when the env var ALLOW_MOCK_RUNTIME=true is set; cmd/scraper never does.
+// If you find this in a code path that runs against real tenants, that's a
+// bug — fail loudly instead of falling back to fake leads.
 type MockRuntime struct {
 	TotalItems int
 	Delay      time.Duration

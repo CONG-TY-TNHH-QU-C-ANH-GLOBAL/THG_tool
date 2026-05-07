@@ -94,15 +94,6 @@ func maxItemsFromPrompt(prompt string) int {
 	return 0
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
-}
-
 func orgContext(db *store.Store, orgID int64, key string) string {
 	value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
 	return strings.TrimSpace(value)

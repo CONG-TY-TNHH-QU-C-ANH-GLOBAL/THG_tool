@@ -265,6 +265,13 @@ func skillThroughHandler(actionID string, deps builtinSkillDeps) skills.SkillRun
 // to one's own profile). Fanpage care/inbox remain scaffolds until the
 // Chrome Extension has dedicated page-inbox adapters. post_to_profile
 // already uses the shared outbound queue with a distinct profile_post type.
+//
+// SCAFFOLD STATUS: scan_fanpage_inbox + care_fanpage are non-functional
+// until the Chrome Extension ships fanpage-inbox / fanpage-care adapters
+// (phase_gate = chrome_extension_fanpage_adapter). They register so the
+// dashboard / Telegram skill catalog shows them, but Run() returns a
+// "scaffold ready" summary instead of driving Chrome. post_to_profile is
+// LIVE — it routes through the shared outbound queue.
 func registerScaffoldSkills(reg *skills.Registry, deps builtinSkillDeps) {
 	reg.Register(&skills.Skill{
 		ID:             "scan_fanpage_inbox",

@@ -22,6 +22,7 @@ import (
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 // Handler implements jobs.Handler for all crawl-based intents.
@@ -146,11 +147,11 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 	var businessProfile *ai.BusinessProfile
 	var scoreGuidance scoring.Guidance
 	if h.ctxStore != nil {
-		if p := h.loadBusinessProfile(task.OrgID); p != nil && p.IsConfigured() {
+		if p := ai.LoadProfileForOrg(h.ctxStore, task.OrgID); p != nil && p.IsConfigured() {
 			scoreGuidance = scoring.Guidance{
 				TargetAuthorRole: p.TargetAuthorRole,
-				TargetSignals:    splitGuidancePhrases(p.TargetSignals),
-				RejectPhrases:    splitGuidancePhrases(strings.Join([]string{p.NegativeSignals, p.RejectRules}, "\n")),
+				TargetSignals:    ai.SplitSignalPhrases(p.TargetSignals),
+				RejectPhrases:    ai.SplitSignalPhrases(strings.Join([]string{p.NegativeSignals, p.RejectRules}, "\n")),
 			}
 			if h.aiClass != nil && h.aiClass.Available() {
 				businessProfile = p
@@ -243,7 +244,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 						_, _ = h.ctxStore.AddGroup(&models.Group{
 							OrgID:     task.OrgID,
 							Platform:  models.PlatformFacebook,
-							Name:      firstNonEmpty(item.AuthorName, item.SourceURL),
+							Name:      textutil.FirstNonEmpty(item.AuthorName, item.SourceURL),
 							URL:       item.SourceURL,
 							Active:    true,
 							JoinState: "none",
@@ -367,58 +368,6 @@ func buildResult(records []output.Record, stats output.Stats) (string, error) {
 	return string(b), nil
 }
 
-func (h *Handler) loadBusinessProfile(orgID int64) *ai.BusinessProfile {
-	if h.ctxStore == nil {
-		return &ai.BusinessProfile{}
-	}
-	ctxMap, err := h.ctxStore.GetAllContext()
-	if err != nil {
-		return &ai.BusinessProfile{}
-	}
-	if orgID > 0 {
-		for _, key := range businessContextKeys() {
-			if value, _ := h.ctxStore.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
-				ctxMap[key] = strings.TrimSpace(value)
-				if key == "business_profile" {
-					ctxMap["business_desc"] = strings.TrimSpace(value)
-				}
-			}
-		}
-	}
-	return ai.ProfileFromContext(ctxMap)
-}
-
-func businessContextKeys() []string {
-	return []string{
-		"business_profile",
-		"business_name",
-		"business_industry",
-		"services",
-		"target_customers",
-		"target_author_role",
-		"target_signals",
-		"negative_signals",
-		"business_location",
-		"markets",
-		"business_usp",
-		"tone",
-		"approval_policy",
-		"reject_rules",
-	}
-}
-
-func splitGuidancePhrases(raw string) []string {
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == '\n' || r == ',' || r == ';' || r == '|'
-	})
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}
 
 func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) output.Record {
 	allSignals := make([]string, 0, len(filterSignals)+len(sr.Signals))
@@ -440,15 +389,6 @@ func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) o
 		Signals:          allSignals,
 		FilterSignals:    filterSignals,
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }
 
 func scoringConfig(cfg jobs.ScoringConfig) scoring.Config {

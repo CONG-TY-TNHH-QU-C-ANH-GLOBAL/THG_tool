@@ -1,6 +1,10 @@
 package recovery
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/thg/scraper/internal/textutil"
+)
 
 // BanSignal classifies what kind of account impairment was detected.
 type BanSignal int
@@ -65,19 +69,19 @@ func (d *Detector) Analyze(title, url, content string) BanSignal {
 	}
 
 	// Checkpoint / identity confirmation
-	if containsAny(u, "checkpoint", "identity", "xác minh") ||
+	if textutil.ContainsAny(u, "checkpoint", "identity", "xác minh") ||
 		matchAny(srcs, "confirm your identity", "xác nhận danh tính", "security check") {
 		return SignalCheckpoint
 	}
 
 	// CAPTCHA
-	if containsAny(u, "captcha") ||
+	if textutil.ContainsAny(u, "captcha") ||
 		matchAny(srcs, "captcha", "i'm not a robot", "tôi không phải robot", "robot check") {
 		return SignalCaptcha
 	}
 
 	// Login / session expired
-	if containsAny(u, "login", "loginfb", "?next=") ||
+	if textutil.ContainsAny(u, "login", "loginfb", "?next=") ||
 		matchAny(srcs,
 			"log in to facebook", "đăng nhập vào facebook",
 			"you must log in", "session expired",
@@ -112,12 +116,3 @@ func matchAny(sources []string, patterns ...string) bool {
 	return false
 }
 
-// containsAny reports whether s contains any of the substrings.
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
-}

@@ -13,6 +13,7 @@ import (
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
@@ -244,7 +245,7 @@ func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, strin
 		}
 		status := strings.TrimSpace(conn.StreamStatus)
 		if !strings.EqualFold(status, browsergateway.StreamFacebookLoggedIn) {
-			reasons = append(reasons, fmt.Sprintf("connector #%d status=%s", conn.ID, firstNonEmpty(status, "unknown")))
+			reasons = append(reasons, fmt.Sprintf("connector #%d status=%s", conn.ID, textutil.FirstNonEmpty(status, "unknown")))
 			continue
 		}
 		if strings.TrimSpace(conn.FBUserID) == "" {

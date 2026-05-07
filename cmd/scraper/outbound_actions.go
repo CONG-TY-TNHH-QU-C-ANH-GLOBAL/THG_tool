@@ -9,6 +9,7 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
@@ -135,7 +136,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 
 func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {
 	if msgType == "comment" {
-		if target := firstNonEmpty(argString(args, "post_url"), argString(args, "target_url")); target != "" {
+		if target := textutil.FirstNonEmpty(argString(args, "post_url"), argString(args, "target_url")); target != "" {
 			return []models.Lead{{
 				OrgID:      orgID,
 				SourceURL:  target,
@@ -200,7 +201,7 @@ func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGe
 	target := argString(args, "profile_url")
 	if target == "" && accountID > 0 {
 		if acc, err := db.GetAccountForOrg(accountID, orgID); err == nil && acc != nil {
-			target = firstNonEmpty(acc.FBProfileURL, "https://www.facebook.com/me")
+			target = textutil.FirstNonEmpty(acc.FBProfileURL, "https://www.facebook.com/me")
 		}
 	}
 	if target == "" {
@@ -226,7 +227,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 		accountID = accounts[0].ID
 	}
 
-	content := firstNonEmpty(argString(args, "content"), argString(args, "description"), argString(args, "title"))
+	content := textutil.FirstNonEmpty(argString(args, "content"), argString(args, "description"), argString(args, "title"))
 	if msgGen != nil && msgGen.Available() && argString(args, "title") != "" {
 		genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		generated, err := msgGen.GenerateJobPost(genCtx,

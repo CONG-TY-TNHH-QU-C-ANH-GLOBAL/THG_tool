@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 const (
@@ -163,12 +163,12 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		SelectedAccountID: selectedAccountID,
 		Accounts:          brainAccounts(accounts),
 		DataSummaries: BrainDataSummaries{
-			PrivateFilesSummary: firstNonEmptyBrain(userContext["org_private_files_summary"], userContext["private_files_summary"]),
-			DataSourcesSummary:  firstNonEmptyBrain(userContext["org_data_sources_summary"], userContext["data_sources_summary"]),
+			PrivateFilesSummary: textutil.FirstNonEmpty(userContext["org_private_files_summary"], userContext["private_files_summary"]),
+			DataSourcesSummary:  textutil.FirstNonEmpty(userContext["org_data_sources_summary"], userContext["data_sources_summary"]),
 		},
 		ToolCapabilities: brainToolCapabilities(),
 		Policy: BrainPolicy{
-			DefaultOutboundMode: firstNonEmptyBrain(userContext["org_outbound_mode"], userContext["outbound_mode"], "draft"),
+			DefaultOutboundMode: textutil.FirstNonEmpty(userContext["org_outbound_mode"], userContext["outbound_mode"], "draft"),
 			MaxItemsCap:         brainDefaultCap,
 			BrowserRequiredFor:  brainBrowserTools(),
 		},
@@ -320,7 +320,7 @@ func validateBrainAction(action BrainAction) error {
 			return errors.New("auto_inbox requires a Facebook target_url")
 		}
 	case "create_job_post":
-		if strings.TrimSpace(firstNonEmptyBrain(argStringFromMap(action.Args, "content"), argStringFromMap(action.Args, "description"), argStringFromMap(action.Args, "title"))) == "" {
+		if strings.TrimSpace(textutil.FirstNonEmpty(argStringFromMap(action.Args, "content"), argStringFromMap(action.Args, "description"), argStringFromMap(action.Args, "title"))) == "" {
 			return errors.New("create_job_post requires title, description, or content")
 		}
 	case "scan_fanpage_inbox":
@@ -558,11 +558,3 @@ func brainInt64(v any) int64 {
 	}
 }
 
-func firstNonEmptyBrain(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}

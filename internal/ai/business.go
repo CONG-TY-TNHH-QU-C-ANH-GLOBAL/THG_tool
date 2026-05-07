@@ -96,6 +96,70 @@ func LoadProfile(db *store.Store) *BusinessProfile {
 	return ProfileFromContext(ctx)
 }
 
+// businessProfileKeys lists the user_context fields that make up an org's
+// BusinessProfile. Both LoadProfileForOrg and any callers that want to know
+// which keys are tenant-private pull from this single list.
+func businessProfileKeys() []string {
+	return []string{
+		"business_profile",
+		"business_name",
+		"business_industry",
+		"services",
+		"target_customers",
+		"target_author_role",
+		"target_signals",
+		"negative_signals",
+		"business_location",
+		"markets",
+		"business_usp",
+		"tone",
+		"approval_policy",
+		"reject_rules",
+	}
+}
+
+// LoadProfileForOrg builds a BusinessProfile that prefers `org:{id}:{key}`
+// values from user_context, falling back to legacy global keys when an org
+// hasn't set its own. Both the worker crawl handler and the Chrome Extension
+// crawl-result endpoint share this loader so both paths see the same profile.
+func LoadProfileForOrg(db *store.Store, orgID int64) *BusinessProfile {
+	if db == nil {
+		return &BusinessProfile{}
+	}
+	ctx, err := db.GetAllContext()
+	if err != nil {
+		ctx = map[string]string{}
+	}
+	if orgID > 0 {
+		for _, key := range businessProfileKeys() {
+			if value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
+				ctx[key] = strings.TrimSpace(value)
+				if key == "business_profile" {
+					ctx["business_desc"] = strings.TrimSpace(value)
+				}
+			}
+		}
+	}
+	return ProfileFromContext(ctx)
+}
+
+// SplitSignalPhrases splits a target_signals / negative_signals / reject_rules
+// string into trimmed phrases. Accepts newline, comma, semicolon, or pipe
+// separators. Replaces the splitGuidancePhrases / splitSignalPhrases copies
+// that used to live in handler and route layers.
+func SplitSignalPhrases(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == ',' || r == ';' || r == '|'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // ProfileFromContext builds a BusinessProfile from a context map (works without DB).
 func ProfileFromContext(ctx map[string]string) *BusinessProfile {
 	return &BusinessProfile{

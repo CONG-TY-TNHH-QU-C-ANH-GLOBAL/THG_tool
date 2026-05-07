@@ -20,6 +20,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/textutil"
 	browserworkspace "github.com/thg/scraper/internal/workspace"
 )
 
@@ -451,13 +452,13 @@ func applyFacebookHumanChallengeDetection(snap *facebookSessionSnapshot, bodyTex
 
 	reason := ""
 	switch {
-	case containsAny(haystack, "checkpoint", "/checkpoint/", "checkpoint_src", "/sorry/"):
+	case textutil.ContainsAny(haystack, "checkpoint", "/checkpoint/", "checkpoint_src", "/sorry/"):
 		reason = "facebook_checkpoint"
-	case containsAny(haystack, "captcha", "recaptcha", "not a robot", "i'm not a robot", "robot check", "security check", "are you a robot", "not a bot"):
+	case textutil.ContainsAny(haystack, "captcha", "recaptcha", "not a robot", "i'm not a robot", "robot check", "security check", "are you a robot", "not a bot"):
 		reason = "facebook_captcha"
-	case containsAny(haystack, "confirm your identity", "identity confirmation", "verify your identity", "xÃ¡c minh", "xÃ¡c nháº­n danh tÃ­nh", "kiá»ƒm tra báº£o máº­t"):
+	case textutil.ContainsAny(haystack, "confirm your identity", "identity confirmation", "verify your identity", "xÃ¡c minh", "xÃ¡c nháº­n danh tÃ­nh", "kiá»ƒm tra báº£o máº­t"):
 		reason = "facebook_identity_verification"
-	case containsAny(haystack, "unusual activity", "suspicious activity", "automated behavior", "temporarily blocked"):
+	case textutil.ContainsAny(haystack, "unusual activity", "suspicious activity", "automated behavior", "temporarily blocked"):
 		reason = "facebook_risk_checkpoint"
 	}
 	if reason == "" {
@@ -471,14 +472,6 @@ func applyFacebookHumanChallengeDetection(snap *facebookSessionSnapshot, bodyTex
 	}
 }
 
-func containsAny(s string, needles ...string) bool {
-	for _, needle := range needles {
-		if strings.Contains(s, needle) {
-			return true
-		}
-	}
-	return false
-}
 
 func cdpEndpointsForInstance(inst *browserworkspace.Instance) []cdpEndpoint {
 	if inst == nil {

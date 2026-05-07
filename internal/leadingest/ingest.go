@@ -16,6 +16,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 // Deps captures the per-run dependencies that the ingest function needs.
@@ -181,7 +182,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			ServiceMatch: out.Category,
 			AuthorRole:   "AI classifier",
 			PainPoint:    strings.Join(out.Signals, "; "),
-			AIReasoning:  firstNonEmpty(out.AIReason, strings.Join(out.Signals, "; ")),
+			AIReasoning:  textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, "; ")),
 			Niche:        strings.Join(deps.Keywords, ", "),
 			ClassifiedAt: time.Now().UTC(),
 		}
@@ -208,15 +209,6 @@ func matchAny(content string, phrases []string) string {
 		}
 		if strings.Contains(lower, p) {
 			return p
-		}
-	}
-	return ""
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
 		}
 	}
 	return ""

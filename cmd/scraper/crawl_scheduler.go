@@ -9,6 +9,7 @@ import (
 
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/textutil"
 )
 
 func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *jobs.Task, args map[string]any) {
@@ -25,7 +26,7 @@ func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *j
 		intent, err := db.UpsertCrawlIntent(ctx, store.CrawlIntent{
 			OrgID:           task.OrgID,
 			AccountID:       task.AccountID,
-			Name:            firstNonEmpty(argString(args, "name"), argString(args, "query")),
+			Name:            textutil.FirstNonEmpty(argString(args, "name"), argString(args, "query")),
 			Prompt:          prompt,
 			Intent:          task.Intent,
 			SourceType:      src.Type,
@@ -106,7 +107,7 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 			"_recurring_run": true,
 			"_task_id":       taskID,
 		}
-		source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: firstNonEmpty(intent.SourceLabel, "recurring_intent")}
+		source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: textutil.FirstNonEmpty(intent.SourceLabel, "recurring_intent")}
 		result, submitErr := submitOpenCrawl(ctx, db, jobStore, intent.Intent, []jobs.Source{source}, args)
 		errMsg := ""
 		if submitErr != nil {
