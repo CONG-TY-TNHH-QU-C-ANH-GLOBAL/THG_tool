@@ -54,7 +54,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
     }
     setDeletingId(lead.id);
     try {
-      await remove(lead.id);
+      await remove(lead.id, lead.sourceType);
     } catch (err) {
       if (typeof window !== 'undefined') {
         window.alert(err instanceof Error ? err.message : String(err));

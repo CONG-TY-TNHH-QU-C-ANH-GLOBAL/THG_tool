@@ -41,8 +41,8 @@ export function useLeads(orgId: string, statusFilter: LeadStatus | 'All' = 'All'
     return () => { clearInterval(timer); clearTimeout(expiry); };
   }, [orgId]);
 
-  const remove = useCallback(async (leadId: number) => {
-    await deleteLeadService(orgId, leadId);
+  const remove = useCallback(async (leadId: number, sourceType?: string) => {
+    await deleteLeadService(orgId, leadId, sourceType);
     setLeads(prev => prev.filter(l => l.id !== leadId));
   }, [orgId]);
 

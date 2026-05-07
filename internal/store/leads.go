@@ -176,10 +176,47 @@ func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) 
 	return leads, rows.Err()
 }
 
-// DeleteLead removes a lead by ID.
+// DeleteLead removes a lead by ID from the legacy leads table AND any matching
+// task_leads row (by source_url + org_id) so the dashboard does not re-render
+// it on refresh. The ingest pipeline mirrors task_leads → leads, so deleting
+// only one side leaves a ghost copy that re-appears on the next list call.
 func (s *Store) DeleteLead(leadID int64) error {
-	_, err := s.db.Exec(`DELETE FROM leads WHERE id = ?`, leadID)
-	return err
+	var (
+		orgID     int64
+		sourceURL string
+	)
+	row := s.db.QueryRow(`SELECT org_id, COALESCE(source_url, '') FROM leads WHERE id = ?`, leadID)
+	switch err := row.Scan(&orgID, &sourceURL); err {
+	case nil:
+		// Best effort: delete the corresponding task_leads row too.
+		if strings.TrimSpace(sourceURL) != "" && orgID > 0 {
+			_, _ = s.db.Exec(`DELETE FROM task_leads WHERE org_id = ? AND source_url = ?`, orgID, sourceURL)
+		}
+	case sql.ErrNoRows:
+		// Not in legacy leads — fall through and try task_leads by id.
+	default:
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM leads WHERE id = ?`, leadID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteTaskLead removes a task_leads row by id (scoped to org for safety) and
+// best-effort deletes the legacy leads mirror by matching source_url.
+func (s *Store) DeleteTaskLead(orgID, leadID int64) error {
+	var sourceURL string
+	row := s.db.QueryRow(`SELECT COALESCE(source_url, '') FROM task_leads WHERE id = ? AND org_id = ?`, leadID, orgID)
+	if err := row.Scan(&sourceURL); err == nil && strings.TrimSpace(sourceURL) != "" {
+		_, _ = s.db.Exec(`DELETE FROM leads WHERE org_id = ? AND source_url = ?`, orgID, sourceURL)
+	} else if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM task_leads WHERE id = ? AND org_id = ?`, leadID, orgID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DeleteLeads removes leads scoped by niche. Empty niche deletes all leads.

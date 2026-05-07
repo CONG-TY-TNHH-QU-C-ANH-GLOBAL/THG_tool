@@ -5,7 +5,8 @@ interface LeadsResponse { leads: BackendLead[]; count: number; }
 interface BackendLead {
   id: number; author: string; author_url: string; content: string;
   score: string; service_match: string; author_role: string; pain_point: string;
-  niche: string; source_url: string; classified_at: string; created_at: string;
+  niche: string; source_url: string; source_type?: string;
+  classified_at: string; created_at: string;
 }
 
 function normalizeScore(s: string): LeadStatus {
@@ -32,6 +33,7 @@ function toLead(b: BackendLead): Lead {
     phone: b.pain_point || '',
     facebookUrl: b.author_url || undefined,
     postUrl: b.source_url || undefined,
+    sourceType: b.source_type || undefined,
   };
 }
 
@@ -52,7 +54,8 @@ export async function createLead(orgId: string, data: Pick<Lead, 'name' | 'phone
   throw new Error('manual lead creation is not wired to production API');
 }
 
-export async function deleteLead(orgId: string, leadId: number): Promise<void> {
+export async function deleteLead(orgId: string, leadId: number, sourceType?: string): Promise<void> {
   void orgId;
-  await api.del(`/leads/${leadId}`);
+  const qs = sourceType ? `?source=${encodeURIComponent(sourceType)}` : '';
+  await api.del(`/leads/${leadId}${qs}`);
 }

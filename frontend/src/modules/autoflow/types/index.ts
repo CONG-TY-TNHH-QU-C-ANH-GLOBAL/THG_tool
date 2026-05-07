@@ -26,6 +26,7 @@ export interface Lead {
   phone: string;
   facebookUrl?: string;
   postUrl?: string;
+  sourceType?: string;
 }
 
 export interface Thread {

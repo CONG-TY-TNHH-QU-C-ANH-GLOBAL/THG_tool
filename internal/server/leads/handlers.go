@@ -49,12 +49,26 @@ func getLeads(deps Deps) fiber.Handler {
 	}
 }
 
-// deleteLead handles DELETE /api/leads/:id
+// deleteLead handles DELETE /api/leads/:id?source=...
+// `source` distinguishes which table the lead row lives in:
+//   - "task_lead" → delete from task_leads (Chrome Extension crawl path)
+//   - anything else (default) → delete from legacy leads
+//
+// Both paths also remove the mirror copy in the other table by source_url so
+// the lead does not re-appear on the next dashboard refresh.
 func deleteLead(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		}
+		source := strings.ToLower(strings.TrimSpace(c.Query("source", "")))
+		orgID, _ := c.Locals("org_id").(int64)
+		if source == "task_lead" {
+			if err := deps.DB.DeleteTaskLead(orgID, id); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			}
+			return c.JSON(fiber.Map{"ok": true})
 		}
 		if err := deps.DB.DeleteLead(id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
