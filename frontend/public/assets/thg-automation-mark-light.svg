@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" role="img" aria-label="THG Automation">
+  <defs>
+    
+  </defs>
+  <image href="thg-pegasus.png" x="14" y="10" width="200" height="200" preserveAspectRatio="xMidYMid meet"></image>
+  <text x="240" y="118" class="thg-word" font-size="86">THG</text>
+  <circle cx="240" cy="155" r="4.5" class="thg-dot"></circle>
+  <text x="256" y="160" class="thg-sub" font-size="18">AUTOMATION</text>
+</svg>

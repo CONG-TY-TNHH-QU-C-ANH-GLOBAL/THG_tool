@@ -214,7 +214,16 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   };
 
   return (
-    <div className="af-browser-shell" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
+    <div className="af-browser-shell" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-4)', padding: 'var(--s-4)' }}>
+      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+        <div>
+          <div className="eyebrow"><span className="dot" />PHIÊN FACEBOOK</div>
+          <h2 style={{ fontSize: 28, marginTop: 8 }}>Browser</h2>
+          <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6 }}>
+            Phiên trình duyệt thật, có cookie. Mọi hành động được ghi log.
+          </p>
+        </div>
+      </header>
       <AutomationCommandCenter
         workspaces={workspaces}
         connectors={connectors}
@@ -499,26 +508,22 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
 }
 
 function Notice({ tone, children }: { tone: 'ok' | 'hot' | 'warn'; children: React.ReactNode }) {
-  const palette: Record<typeof tone, { bg: string; color: string; border: string }> = {
-    ok: { bg: 'var(--ok-bg)', color: 'var(--ok)', border: 'var(--ok)' },
-    hot: { bg: 'var(--hot-bg)', color: 'var(--hot)', border: 'var(--hot)' },
-    warn: { bg: 'var(--warn-bg)', color: 'var(--warn)', border: 'var(--warn)' },
+  const iconMap = {
+    ok: <CheckCircle2 size={16} color="var(--ok)" />,
+    hot: <AlertTriangle size={16} color="var(--hot)" />,
+    warn: <AlertTriangle size={16} color="var(--warn)" />,
   };
-  const c = palette[tone];
   return (
-    <div
-      role="status"
-      style={{
-        padding: 'var(--s-3) var(--s-4)',
-        borderRadius: 'var(--radius-md)',
-        border: `1px solid ${c.border}`,
-        background: c.bg,
-        color: c.color,
-        fontSize: 12.5,
-        lineHeight: 1.55,
-      }}
-    >
-      {children}
+    <div className={`banner banner-${tone}`}>
+      {iconMap[tone]}
+      <div>
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>
+          Thông báo
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-mute)' }}>
+          {children}
+        </div>
+      </div>
     </div>
   );
 }

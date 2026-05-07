@@ -74,121 +74,60 @@ export default function InboxView({ orgId }: InboxViewProps) {
         </button>
       </header>
 
-      <div className="stats-grid">
-        <div className="stat">
-          <div className="stat-label">{tv.statTotal}</div>
-          <div className="stat-value tabular">{stats.total}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">{tv.statActive}</div>
-          <div className="stat-value tabular" style={{ color: 'var(--ok)' }}>{stats.active}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">{tv.statPending}</div>
-          <div className="stat-value tabular" style={{ color: 'var(--warn)' }}>{stats.pending}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">{tv.statConverted}</div>
-          <div className="stat-value tabular" style={{ color: 'var(--info)' }}>{stats.converted}</div>
-        </div>
-      </div>
-
       <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, minHeight: 520 }}>
-        <div className="three-pane" style={{ height: '100%' }}>
-          <aside style={{ padding: 16 }}>
-            <div className="sidebar-section">{tv.filtersLabel}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {filters.map((item) => {
-                const count = item === 'all' ? threads.length : threads.filter((thread) => thread.status === item).length;
-                const label = item === 'all' ? tv.filterAll : item;
-                return (
-                  <button
-                    key={item}
-                    type="button"
-                    className={`nav-item ${filter === item ? 'is-active' : ''}`}
-                    style={{ background: 'transparent', border: 0, textAlign: 'left' }}
-                    onClick={() => setFilter(item)}
-                  >
-                    <span>{label}</span>
-                    <span className="badge-num badge">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-
-          <section style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: 16, borderBottom: '1px solid var(--line)' }}>
-              <div className="eyebrow">{tv.listTitle}</div>
-              <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-mute)' }}>
-                {tv.listCount(filteredThreads.length)}
-              </div>
-            </div>
-
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              {filteredThreads.length === 0 ? (
-                <div className="empty" style={{ margin: 16 }}>
-                  <div className="eyebrow"><span className="dot" />{tv.emptyEyebrow}</div>
-                  <h3>{tv.emptyTitle}</h3>
-                  <p style={{ fontSize: 12 }}>{tv.emptyDesc}</p>
-                </div>
-              ) : (
-                filteredThreads.map((thread) => (
-                  <button
-                    key={thread.id}
-                    type="button"
-                    onClick={() => setActiveId(thread.id)}
-                    className={`nav-item ${activeThread?.id === thread.id ? 'is-active' : ''}`}
-                    style={{
-                      width: '100%',
-                      flexDirection: 'column',
-                      alignItems: 'stretch',
-                      gap: 6,
-                      padding: 14,
-                      background: 'transparent',
-                      border: 0,
-                      borderBottom: '1px solid var(--line)',
-                      borderRadius: 0,
-                      textAlign: 'left',
-                    }}
-                  >
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', height: '100%' }}>
+          <div style={{ borderRight: '1px solid var(--line)', overflowY: 'auto' }}>
+            {threads.map((thread) => (
+              <div
+                key={thread.id}
+                onClick={() => setActiveId(thread.id)}
+                className={`table-row ${activeThread?.id === thread.id ? 'is-active' : ''}`}
+                style={{ gridTemplateColumns: '1fr', cursor: 'pointer', padding: '14px 16px', borderTop: '1px solid var(--line)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="avatar">{(thread.lead[0] || 'L').toUpperCase()}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="avatar avatar-sm">{(thread.lead[0] || 'L').toUpperCase()}</span>
-                      <span style={{ flex: 1, fontWeight: 500, color: 'var(--text)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 13.5, color: 'var(--text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {thread.lead}
                       </span>
-                      {thread.unread > 0 && <span className="badge-num badge">{thread.unread}</span>}
+                      <span className={statusTag(thread.status)}>{thread.status.toUpperCase()}</span>
+                      <span style={{ flex: 1 }} />
+                      <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>{thread.time}</span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 30 }}>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-mute)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {thread.last || tv.noRecentMessage}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 30 }}>
-                      <span className={statusTag(thread.status)}>{thread.status}</span>
-                      <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{thread.time}</span>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
+                  </div>
+                  {thread.unread > 0 && <span className="badge-num">{thread.unread}</span>}
+                </div>
+              </div>
+            ))}
+            {threads.length === 0 && (
+              <div className="empty" style={{ margin: 16 }}>
+                <div className="eyebrow"><span className="dot" />{tv.emptyEyebrow}</div>
+                <h3>{tv.emptyTitle}</h3>
+                <p style={{ fontSize: 12 }}>{tv.emptyDesc}</p>
+              </div>
+            )}
+          </div>
 
-          <section style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
             {activeThread ? (
               <>
-                <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
-                  <span className="avatar">{(activeThread.lead[0] || 'L').toUpperCase()}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {activeThread.lead}
-                    </div>
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span className="avatar avatar-lg">{(activeThread.lead[0] || 'L').toUpperCase()}</span>
+                  <div>
+                    <div style={{ fontSize: 15, color: 'var(--text)', fontWeight: 500 }}>{activeThread.lead}</div>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>
                       {activeThread.agent ? `via ${activeThread.agent}` : tv.threadKind}
                     </div>
                   </div>
-                  <span className={statusTag(activeThread.status)}>{activeThread.status}</span>
-                </header>
+                  <div style={{ flex: 1 }} />
+                  <span className={statusTag(activeThread.status)}>{activeThread.status.toUpperCase()}</span>
+                </div>
 
-                <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
                   {messages.length === 0 ? (
                     <div className="empty" style={{ margin: 'auto 0' }}>
                       <div className="eyebrow"><span className="dot" />{tv.conversationEyebrow}</div>
@@ -196,33 +135,34 @@ export default function InboxView({ orgId }: InboxViewProps) {
                       <p>{tv.conversationEmptyDesc}</p>
                     </div>
                   ) : (
-                    messages.map((message, index) => (
-                      <div key={`${message.time}-${index}`} style={{ display: 'flex', justifyContent: message.from === 'agent' ? 'flex-end' : 'flex-start' }}>
-                        <div
-                          style={{
-                            maxWidth: '72%',
-                            padding: '10px 14px',
-                            borderRadius: 'var(--radius-md)',
-                            background: message.from === 'agent' ? 'var(--accent)' : 'var(--bg-elev-2)',
-                            color: message.from === 'agent' ? 'var(--accent-ink)' : 'var(--text)',
-                            border: message.from === 'agent' ? 'none' : '1px solid var(--line)',
-                            fontSize: 13.5,
-                          }}
-                        >
-                          {message.from === 'agent' && (
-                            <div className="mono" style={{ fontSize: 10, marginBottom: 4, opacity: 0.7 }}>
-                              {activeThread.agent || 'Agent'}
+                    messages.map((message, index) => {
+                      const mine = message.from !== 'lead';
+                      return (
+                        <div key={`${message.time}-${index}`} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                          <div
+                            style={{
+                              maxWidth: '70%',
+                              padding: '10px 14px',
+                              borderRadius: 12,
+                              fontSize: 13.5,
+                              lineHeight: 1.5,
+                              background: 'var(--bg-elev-2)',
+                              border: '1px solid var(--line)',
+                              color: 'var(--text)',
+                            }}
+                          >
+                            <div className="mono" style={{ fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.08em', marginBottom: 4 }}>
+                              {message.from === 'agent' ? 'AGENT' : 'YOU'} · {message.time}
                             </div>
-                          )}
-                          <div>{message.text}</div>
-                          <div className="mono" style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: 'right' }}>{message.time}</div>
+                            {message.text}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 
-                <div style={{ display: 'flex', gap: 8, padding: 16, borderTop: '1px solid var(--line)' }}>
+                <div style={{ borderTop: '1px solid var(--line)', padding: 14, display: 'flex', gap: 10 }}>
                   <input
                     className="input"
                     value={draft}
@@ -233,12 +173,11 @@ export default function InboxView({ orgId }: InboxViewProps) {
                   />
                   <button
                     type="button"
-                    className="btn btn-primary btn-icon"
+                    className="btn btn-primary btn-sm"
                     onClick={() => void handleSend()}
-                    aria-label={tv.placeholderInput}
                     disabled={isSending || !draft.trim()}
                   >
-                    <Send size={14} />
+                    Phê duyệt & gửi
                   </button>
                 </div>
               </>
@@ -249,7 +188,7 @@ export default function InboxView({ orgId }: InboxViewProps) {
                 <p>{tv.selectDesc}</p>
               </div>
             )}
-          </section>
+          </div>
         </div>
       </div>
     </div>

@@ -143,12 +143,12 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
                   <button
                     key={item.value}
                     type="button"
-                    className={`nav-item ${filter === item.value ? 'is-active' : ''}`}
-                    style={{ width: '100%', background: 'transparent', border: 0, textAlign: 'left' }}
+                    className={`filter-pill ${filter === item.value ? 'is-active' : ''}`}
+                    style={{ justifyContent: 'space-between', display: 'flex', textAlign: 'left' }}
                     onClick={() => setFilter(item.value)}
                   >
                     <span>{item.label}</span>
-                    <span className="badge-num badge">{count}</span>
+                    <span style={{ opacity: 0.7 }}>{count}</span>
                   </button>
                 );
               })}

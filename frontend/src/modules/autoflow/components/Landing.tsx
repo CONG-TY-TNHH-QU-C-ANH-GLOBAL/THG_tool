@@ -214,13 +214,7 @@ export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) 
       <header className={styles.navWrap}>
         <div className={styles.nav}>
           <div className={styles.brand}>
-            <div className={styles.brandMark}>
-              <Zap size={16} />
-            </div>
-            <div>
-              <strong>{copy.footer}</strong>
-              <span>Facebook sales intelligence workspace</span>
-            </div>
+            <img src="/assets/thg-automation-mark.svg" alt="THG AutoFlow" style={{ height: 28 }} />
           </div>
 
           <nav className={styles.navLinks} aria-label="Landing navigation">
@@ -422,7 +416,7 @@ export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) 
 
       <footer className={styles.footer}>
         <div className={styles.footerBrand}>
-          <Bot size={14} />
+          <img src="/assets/thg-monogram.svg" alt="THG" style={{ height: 20 }} />
           <div>
             <strong>{copy.footer}</strong>
             <span>{copy.footerCopy}</span>

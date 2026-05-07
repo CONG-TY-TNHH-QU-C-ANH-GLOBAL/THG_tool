@@ -1,50 +1,71 @@
 /* THG AutoFlow — Design Tokens
- * Single source of truth. Import this in every page.
- * Generated 2026.05.05 · v1.0
+ * Single source of truth ported from THG_sale/frontend/app/design-system/tokens.css
+ * v1.0 · 2026-05-07
+ *
+ * Tokens are split into THREE layers:
+ *   1. Primitive tokens — raw values (--bg, --accent, --s-4)
+ *   2. Semantic role tokens — fg1/fg2/bg1, hot/warm/cold
+ *   3. Component-level type roles — h1/h2/p/eyebrow/mono
  */
 
 :root {
-  /* === Surfaces === */
-  --bg:         #08080A;
-  --bg-elev:    #0E0E11;
-  --bg-elev-2:  #131318;
+  /* === SURFACES (dark-first product) === */
+  --bg:         #08080A;   /* page */
+  --bg-elev:    #0E0E11;   /* topbar, sidebar, cards */
+  --bg-elev-2:  #131318;   /* inputs, deeper rows */
 
-  /* === Lines (use for ALL borders) === */
+  /* === LINES (use for ALL borders) === */
   --line:        rgba(255, 255, 255, 0.07);
   --line-strong: rgba(255, 255, 255, 0.14);
   --line-soft:   rgba(255, 255, 255, 0.04);
 
-  /* === Text === */
-  --text:       #F5F5F7;
-  --text-mute:  #A3A3AD;
-  --text-faint: #6B6B78;
+  /* === TEXT === */
+  --text:       #F5F5F7;   /* fg1 — primary */
+  --text-mute:  #A3A3AD;   /* fg2 — secondary body */
+  --text-faint: #6B6B78;   /* fg3 — labels, eyebrow, table head */
 
-  /* === Accent (electric lime) === */
-  --accent:       oklch(0.88 0.18 130);
-  --accent-ink:   #0a1a00;
+  /* alias to fg/bg naming (compat with prompts that ask for fg1, bg1) */
+  --fg1: var(--text);
+  --fg2: var(--text-mute);
+  --fg3: var(--text-faint);
+  --bg1: var(--bg);
+  --bg2: var(--bg-elev);
+  --bg3: var(--bg-elev-2);
+
+  /* === ACCENT — electric lime ===
+   * The single brand-active hue. Used for primary CTA, dot indicators,
+   * active filter pill, accent-stat deltas. Never on body copy. */
+  --accent:       oklch(0.88 0.18 130);   /* ≈ #C7F25E */
+  --accent-ink:   #0a1a00;                /* text laid on top of accent */
   --accent-soft:  oklch(0.88 0.18 130 / 0.12);
   --accent-glow:  oklch(0.88 0.18 130 / 0.4);
 
-  /* === Status (data only) === */
-  --hot:   oklch(0.70 0.22 25);
-  --warn:  oklch(0.78 0.18 60);
-  --info:  oklch(0.78 0.14 240);
-  --ok:    oklch(0.78 0.18 145);
+  /* === BRAND BRONZE (logo / hero / illustrations) ===
+   * The Pegasus is rendered in a warm bronze. Reserved for brand surfaces;
+   * NEVER use on UI chrome (buttons, status, links). */
+  --brand-bronze:       #B7A084;
+  --brand-bronze-deep:  #5C4A36;
+  --brand-bronze-ink:   #2B2218;
 
-  /* Status soft fills */
+  /* === STATUS (data only, never decoration) === */
+  --hot:   oklch(0.70 0.22 25);     /* red — Hot lead, error */
+  --warn:  oklch(0.78 0.18 60);     /* amber — Warm, warning */
+  --info:  oklch(0.78 0.14 240);    /* blue — Cold, info, Facebook */
+  --ok:    oklch(0.78 0.18 145);    /* green — Active, synced */
+
   --hot-bg:  oklch(0.70 0.22 25 / 0.14);
   --warn-bg: oklch(0.78 0.18 60 / 0.14);
   --info-bg: oklch(0.78 0.14 240 / 0.14);
   --ok-bg:   oklch(0.78 0.18 145 / 0.14);
 
-  /* === Radius === */
-  --radius-sm:   6px;
-  --radius-md:   10px;
-  --radius-lg:   16px;
-  --radius-xl:   24px;
-  --radius-pill: 999px;
+  /* === RADIUS === */
+  --radius-sm:   6px;    /* tags, table cells */
+  --radius-md:   10px;   /* inputs, buttons (square), small cards */
+  --radius-lg:   16px;   /* main cards, modals */
+  --radius-xl:   24px;   /* hero panels, big illustrations */
+  --radius-pill: 999px;  /* buttons, filter pills, badges */
 
-  /* === Spacing scale === */
+  /* === SPACING (4px base) === */
   --s-1: 4px;
   --s-2: 8px;
   --s-3: 12px;
@@ -59,22 +80,69 @@
   --s-24: 100px;
   --s-30: 120px;
 
-  /* === Layout === */
-  --container: 1200px;
+  /* === LAYOUT === */
+  --container:     1200px;
   --container-app: 1400px;
-  --gutter: 32px;
-  --sidebar-width: 220px;
+  --gutter:        32px;
+  --sidebar-width:           220px;
   --sidebar-width-collapsed: 56px;
-  --topbar-height: 56px;
+  --topbar-height:           56px;
 
-  /* === Type === */
+  /* === TYPE FAMILIES ===
+   * Geist + Geist Mono are the ONLY two families. JetBrains Mono kept as
+   * fallback for code blocks. The display feel is monospace-led: eyebrow,
+   * field labels, stat values, table heads, filter pills all use mono. */
   --font-sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* === Motion === */
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  /* === SEMANTIC TYPE ROLES ===
+   * Use as `font: var(--type-h1);` or apply via class names below. */
+  --type-h1-size:   clamp(44px, 6.5vw, 84px);
+  --type-h1-lh:     1.02;
+  --type-h1-track:  -0.035em;
+  --type-h1-weight: 500;
+
+  --type-h2-size:   clamp(32px, 4vw, 52px);
+  --type-h2-lh:     1.05;
+  --type-h2-track:  -0.03em;
+  --type-h2-weight: 500;
+
+  --type-h3-size:   18px;
+  --type-h3-lh:     1.3;
+  --type-h3-track:  -0.02em;
+  --type-h3-weight: 500;
+
+  --type-body-size: 15px;
+  --type-body-lh:   1.5;
+  --type-body-track: -0.005em;
+
+  --type-small-size: 13.5px;
+  --type-small-lh:   1.45;
+
+  --type-caption-size: 12px;
+  --type-caption-lh:   1.4;
+
+  /* eyebrow / field-label / table-head — UPPERCASE MONO 11px */
+  --type-eyebrow-size:  11px;
+  --type-eyebrow-track: 0.18em;
+
+  /* stat-value — tabular mono 28px */
+  --type-stat-size:  28px;
+  --type-stat-track: -0.02em;
+
+  /* === MOTION === */
+  --ease:   cubic-bezier(0.4, 0, 0.2, 1);
   --t-fast: 0.15s var(--ease);
   --t-base: 0.25s var(--ease);
+  --t-slow: 0.4s  var(--ease);
+
+  /* === SHADOW / GLOW ===
+   * The product is dark-on-dark; shadow systems are minimal.
+   * Lift comes from BG ELEVATION layers (bg → bg-elev → bg-elev-2) and
+   * 1px borders, NOT drop shadows. Glow is reserved for accent only. */
+  --shadow-card:   0 24px 80px rgba(0,0,0,0.34);
+  --shadow-modal:  0 32px 100px rgba(0,0,0,0.55);
+  --glow-accent:   0 8px 30px -8px var(--accent-glow);
 }
 
 /* Density variants — set on <html data-density="compact|balanced|airy"> */
@@ -82,3 +150,61 @@
 [data-density="balanced"] { --section-pad: var(--s-30); --row-pad: var(--s-4); }
 [data-density="airy"]     { --section-pad: var(--s-24); --row-pad: var(--s-5); }
 :root { --section-pad: var(--s-30); --row-pad: var(--s-4); }
+
+/* ====================================================================
+ * SEMANTIC TYPE CLASSES
+ * Applied directly to elements; pair with role tokens above.
+ * ==================================================================== */
+.t-h1 {
+  font-family: var(--font-sans);
+  font-size: var(--type-h1-size);
+  line-height: var(--type-h1-lh);
+  letter-spacing: var(--type-h1-track);
+  font-weight: var(--type-h1-weight);
+  color: var(--fg1);
+  margin: 0;
+}
+.t-h2 {
+  font-family: var(--font-sans);
+  font-size: var(--type-h2-size);
+  line-height: var(--type-h2-lh);
+  letter-spacing: var(--type-h2-track);
+  font-weight: var(--type-h2-weight);
+  color: var(--fg1);
+  margin: 0;
+}
+.t-h3 {
+  font-family: var(--font-sans);
+  font-size: var(--type-h3-size);
+  line-height: var(--type-h3-lh);
+  letter-spacing: var(--type-h3-track);
+  font-weight: var(--type-h3-weight);
+  color: var(--fg1);
+  margin: 0;
+}
+.t-body { font: 400 var(--type-body-size)/var(--type-body-lh) var(--font-sans); color: var(--fg2); }
+.t-small { font: 400 var(--type-small-size)/var(--type-small-lh) var(--font-sans); color: var(--fg2); }
+.t-caption { font: 400 var(--type-caption-size)/var(--type-caption-lh) var(--font-sans); color: var(--fg3); }
+.t-mono { font-family: var(--font-mono); }
+.t-tabular { font-variant-numeric: tabular-nums; }
+
+.t-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow-size);
+  letter-spacing: var(--type-eyebrow-track);
+  color: var(--fg3);
+  text-transform: uppercase;
+}
+.t-stat {
+  font-family: var(--font-mono);
+  font-size: var(--type-stat-size);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--type-stat-track);
+  color: var(--fg1);
+}
+.t-display-mono {
+  font-family: var(--font-mono);
+  font-style: italic;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}

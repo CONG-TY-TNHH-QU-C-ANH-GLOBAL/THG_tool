@@ -35,28 +35,22 @@ function AuthShell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' 
   return (
     <main className="auth-shell">
       <aside className="auth-side">
-        <div className="brand">
-          <div className="brand-mark">A</div>
-          <span className="brand-name">AutoFlow<span className="dim">.thg</span></span>
+        <div className="auth-mascot" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <img src="/assets/thg-pegasus.png" alt="Pegasus" style={{ height: 220, opacity: 0.92, display: 'block' }} />
+          <img src="/assets/thg-wordmark.png" alt="THG" style={{ height: 64, marginTop: 18, opacity: 0.82, display: 'block' }} />
         </div>
-        <div>
-          <div className="eyebrow"><span className="dot" />WORKSPACE</div>
-          <h2 style={{ marginTop: 16, fontSize: 36, maxWidth: 380 }}>
-            {lang === 'vi' ? (
-              <>Một workspace, <span className="title-mono">năm lớp intelligence.</span></>
-            ) : (
-              <>One workspace, <span className="title-mono">five layers of intelligence.</span></>
-            )}
-          </h2>
-          <p style={{ marginTop: 16, maxWidth: 360, fontSize: 14 }}>
+        <div className="auth-tag" style={{ marginTop: 'auto' }}>
+          <div className="eyebrow"><span className="dot" />{lang === 'vi' ? 'WORKSPACE FACEBOOK' : 'FACEBOOK WORKSPACE'}</div>
+          <h2 style={{ fontSize: 26, marginTop: 14, lineHeight: 1.15, maxWidth: '22ch' }}>
             {lang === 'vi'
-              ? 'Đăng nhập để vào dashboard sales intelligence cho team Facebook của bạn.'
-              : 'Sign in to your Facebook sales intelligence dashboard.'}
+              ? 'Facebook automation chỉ phát huy giá trị khi hệ thống thực sự hiểu doanh nghiệp.'
+              : 'Facebook automation only works when the system understands the business first.'}
+          </h2>
+          <p style={{ marginTop: 16, fontSize: 13.5, color: 'var(--text-mute)', maxWidth: '38ch' }}>
+            {lang === 'vi'
+              ? 'Workspace của đội sales bạn để vận hành Facebook liên tục — không phải scraper một lần.'
+              : 'The workspace your sales team uses to run Facebook continuously — not a one-off scraper.'}
           </p>
-        </div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.04em' }}>
-          <span className="pulse" style={{ verticalAlign: 'middle', marginRight: 8 }} />
-          {lang === 'vi' ? 'LIVE · 482 workspace đang chạy' : 'LIVE · 482 workspaces online'}
         </div>
       </aside>
       <div className="auth-form-wrap">{children}</div>

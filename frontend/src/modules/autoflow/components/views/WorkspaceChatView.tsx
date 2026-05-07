@@ -245,23 +245,20 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: 'calc(100vh - 56px - 48px)' }}>
       <header>
         <div className="eyebrow"><span className="dot" />{tv.eyebrow}</div>
-        <h2 style={{ fontSize: 24, marginTop: 6 }}>
-          {tv.titlePrefix}
-          <span className="title-mono">{tv.titleHighlight}</span>
-        </h2>
-        <p style={{ color: 'var(--text-mute)', fontSize: 13 }}>{t.views.chatSub}</p>
+        <h2 style={{ fontSize: 28, marginTop: 8 }}>{t.views.chatTitle || 'Workspace chat'}</h2>
+        <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6 }}>{t.views.chatSub}</p>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: compact ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 300px', gap: 16, flex: 1, minHeight: 480 }}>
         <div className="card" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 'var(--radius-md)', background: 'var(--accent)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center' }}>
-              <Bot size={16} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 500, color: 'var(--text)' }}>{tv.copilotName}</div>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {selectedAccount ? tv.copilotSubtitleWith(selectedAccount.accountName) : tv.copilotSubtitleNoAccount}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="avatar" style={{ background: 'var(--accent)', color: 'var(--accent-ink)', borderColor: 'var(--accent)' }}>A</span>
+              <div>
+                <div style={{ fontWeight: 500, color: 'var(--text)' }}>{tv.copilotName}</div>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedAccount ? tv.copilotSubtitleWith(selectedAccount.accountName) : tv.copilotSubtitleNoAccount}
+                </div>
               </div>
             </div>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void loadHistory()}>
@@ -303,24 +300,15 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
               const senderLabel = isUser ? tv.senderYou : isSystem ? tv.senderSystem : tv.senderCopilot;
 
               return (
-                <div key={message.id} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-                  <div
-                    style={{
-                      maxWidth: compact ? '100%' : '76%',
-                      background: isUser ? 'var(--accent)' : isSystem ? 'var(--hot-bg)' : 'var(--bg-elev-2)',
-                      color: isUser ? 'var(--accent-ink)' : 'var(--text)',
-                      border: isSystem ? '1px solid var(--hot)' : isUser ? 'none' : '1px solid var(--line)',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '10px 14px',
-                      whiteSpace: 'pre-wrap',
-                      lineHeight: 1.5,
-                      fontSize: 13.5,
-                    }}
-                  >
-                    <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 10, opacity: 0.7 }}>
-                      {isUser ? <UserRound size={11} /> : <Bot size={11} />}
-                      <span>{senderLabel}</span>
-                      <span style={{ marginLeft: 'auto' }}>{message.time}</span>
+                <div key={message.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span className={`avatar ${isUser ? 'avatar-sm' : ''}`}
+                    style={!isUser ? { background: isSystem ? 'var(--hot)' : 'var(--accent)', color: isSystem ? '#fff' : 'var(--accent-ink)', borderColor: isSystem ? 'var(--hot)' : 'var(--accent)' } : {}}>
+                    {isUser ? 'U' : isSystem ? 'S' : 'A'}
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: 'var(--text-faint)', letterSpacing: '0.1em', marginBottom: 6 }}>
+                      {senderLabel.toUpperCase()}
+                      <span style={{ opacity: 0.5 }}>· {message.time}</span>
                       {canDelete && (
                         <button
                           type="button"
@@ -341,7 +329,9 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
                         </button>
                       )}
                     </div>
-                    {message.text}
+                    <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: isSystem ? 'var(--hot)' : 'var(--text)' }}>
+                      {message.text}
+                    </div>
                   </div>
                 </div>
               );

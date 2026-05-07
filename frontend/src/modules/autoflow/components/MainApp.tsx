@@ -83,7 +83,7 @@ const Spinner = () => (
 );
 
 export default function MainApp({ role, goLanding }: MainAppProps) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const [tab, setTab] = useState<Tab>('leads');
   const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: '' });
   const [inboxBadge, setInboxBadge] = useState(0);
@@ -205,57 +205,31 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
   return (
     <div className="app-shell">
       <header className="app-topbar">
-        <div className="brand">
-          <div className="brand-mark">A</div>
-          <span className="brand-name">
-            AutoFlow
-            <span className="dim">.thg</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="pulse" />
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-mute)', letterSpacing: '0.06em' }}>
+            {lang === 'vi' ? 'phiên live · 24fps' : 'session live · 24fps'}
           </span>
         </div>
-
-        <button className="btn btn-ghost btn-sm btn-square" style={{ marginLeft: 8 }} type="button">
-          <span className="avatar avatar-sm">{org.abbr}</span>
-          <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {org.name}
-          </span>
-          <ChevronDown size={13} style={{ color: 'var(--text-faint)' }} />
-        </button>
-
-        <div style={{ flex: 1, maxWidth: 480, margin: '0 auto', position: 'relative' }}>
-          <Search
-            size={14}
-            style={{
-              position: 'absolute',
-              left: 12,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--text-faint)',
-              pointerEvents: 'none',
-            }}
-          />
-          <input
-            className="input"
-            placeholder={`${t.topbar.search}  Ctrl/Cmd + K`}
-            style={{ paddingLeft: 32, background: 'var(--bg-elev-2)' }}
-          />
-        </div>
-
+        <div style={{ flex: 1 }} />
+        <div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{org.name}</div>
         <DensitySwitch />
         <LangSwitch />
-
-        <button className="btn btn-ghost btn-icon" type="button" aria-label="Notifications" style={{ position: 'relative' }}>
-          <Bell size={15} />
-          <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, background: 'var(--hot)', borderRadius: '50%' }} />
-        </button>
-
+        <span className="avatar avatar-sm">{isAdmin ? 'A' : 'S'}</span>
         <button className="btn btn-ghost btn-sm" type="button" onClick={goLanding}>
-          <span className="avatar avatar-sm">{isAdmin ? 'A' : 'S'}</span>
-          <span>{isAdmin ? 'Admin' : 'Staff'}</span>
-          <LogOut size={13} style={{ color: 'var(--text-faint)' }} />
+          {lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
+          <LogOut size={13} style={{ color: 'var(--text-faint)', marginLeft: 6 }} />
         </button>
       </header>
 
       <aside className="app-sidebar">
+        <div style={{ padding: '8px 8px 16px' }}>
+          <div className="brand">
+            <div className="brand-mark" style={{ background: 'var(--accent)', color: 'var(--accent-ink)', fontFamily: 'var(--font-mono)', borderRadius: 4 }}>T</div>
+            <div className="brand-name">THG <span className="dim">/ AutoFlow</span></div>
+          </div>
+        </div>
+
         <div className="sidebar-section">{t.nav.main}</div>
         {mainTabs.map(renderNavItem)}
 
