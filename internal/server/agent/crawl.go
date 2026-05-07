@@ -31,6 +31,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		Error            string         `json:"error"`
 		Keywords         []string       `json:"keywords"`
 		MarketSignalGate map[string]any `json:"market_signal_gate"`
+		UserPrompt       string         `json:"user_prompt"`
 		Items            []struct {
 			ID               string `json:"id"`
 			SourceURL        string `json:"source_url"`
@@ -93,6 +94,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		AIClass:         h.aiClass,
 		SignalGate:      gate,
 		Keywords:        keywords,
+		UserPrompt:      strings.TrimSpace(body.UserPrompt),
 		ExtraSignals:    []string{"chrome_extension_crawl"},
 	}
 

@@ -159,9 +159,13 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 		}
 	}
 	var gate leadingest.SignalGate
+	var userPrompt string
 	if task.Extras != nil {
 		if raw, ok := task.Extras["market_signal_gate"].(map[string]any); ok {
 			gate = leadingest.SignalGateFromMap(raw)
+		}
+		if up, ok := task.Extras["user_prompt"].(string); ok {
+			userPrompt = strings.TrimSpace(up)
 		}
 	}
 
@@ -290,6 +294,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					AIClass:         h.aiClass,
 					SignalGate:      gate,
 					Keywords:        task.Keywords,
+					UserPrompt:      userPrompt,
 				}, leadingest.Input{
 					TaskID:           job.TaskID,
 					OrgID:            task.OrgID,

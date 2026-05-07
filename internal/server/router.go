@@ -114,7 +114,7 @@ func (s *Server) registerRoutes() {
 	// Protected API routes — require JWT
 	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady)
 
-	leads.Routes(r, leads.Deps{DB: s.db, JobStore: s.jobStore}, adminOnly)
+	leads.Routes(r, leads.Deps{DB: s.db, JobStore: s.jobStore, AIClass: s.aiClass}, adminOnly)
 	crawl.Routes(r, crawl.Deps{DB: s.db}, adminOnly)
 
 	// Chrome Profile Login Sessions — any staff can log in their own account

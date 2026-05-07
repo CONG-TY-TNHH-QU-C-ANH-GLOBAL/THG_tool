@@ -59,3 +59,23 @@ export async function deleteLead(orgId: string, leadId: number, sourceType?: str
   const qs = sourceType ? `?source=${encodeURIComponent(sourceType)}` : '';
   await api.del(`/leads/${leadId}${qs}`);
 }
+
+export interface ReclassifyRequest {
+  user_prompt: string;
+  target_role?: string;
+  positive_signals?: string[];
+  only_unknown?: boolean;
+  limit?: number;
+}
+
+export interface ReclassifyResponse {
+  matched: number;
+  reclassified: number;
+  failed: number;
+  message?: string;
+}
+
+export async function reclassifyLeads(orgId: string, body: ReclassifyRequest): Promise<ReclassifyResponse> {
+  void orgId;
+  return api.post<ReclassifyResponse>('/leads/reclassify', body);
+}

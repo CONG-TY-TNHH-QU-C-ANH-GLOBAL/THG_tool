@@ -4,6 +4,7 @@ import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
 import { useStaff } from '../hooks/useStaff';
+import { useAuthStore } from '../stores/authStore';
 import { changePassword } from '../services/authService';
 import { searchInviteCandidates, type InviteCandidate } from '../services/staffService';
 import {
@@ -68,7 +69,8 @@ function usagePercent(current: number, max: number) {
 
 export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('brand');
-  const { staff, invites, isLoading, invite, resendInvite, revokeInvite, toggleStatus, remove } = useStaff(orgId);
+  const { staff, invites, isLoading, invite, resendInvite, revokeInvite, toggleStatus, remove, changeRole } = useStaff(orgId);
+  const currentUserId = useAuthStore(state => state.user?.id ?? null);
   const [showAdd, setShowAdd] = useState(false);
   const [newStaff, setNewStaff] = useState({ email: '', role: 'sales' });
   const [staffMsg, setStaffMsg] = useState('');
@@ -199,7 +201,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
   };
 
   const pickInviteCandidate = (candidate: InviteCandidate) => {
-    setNewStaff({ email: candidate.email, role: candidate.role === 'admin' ? 'admin' : 'sales' });
+    setNewStaff(p => ({ ...p, email: candidate.email }));
     setShowCandidates(false);
     setInviteCandidates([]);
   };
@@ -498,7 +500,9 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
               <tbody>
                 {staff.length === 0 ? (
                   <tr><td colSpan={10} style={{ padding: 22, textAlign: 'center', color: theme.textMuted }}>Chưa có tài khoản nhân viên trong workspace.</td></tr>
-                ) : staff.map(s => (
+                ) : staff.map(s => {
+                  const isSelf = currentUserId !== null && s.id === currentUserId;
+                  return (
                   <tr key={s.id} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
                     <td style={{ padding: '10px 13px', color: theme.primaryPale, fontFamily: 'monospace', fontWeight: 700 }}>#{s.id}</td>
                     <td style={{ padding: '10px 13px' }}>
@@ -512,13 +516,41 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                     </td>
                     <td style={{ padding: '10px 13px', color: theme.textMuted }}>{s.email}</td>
                     <td style={{ padding: '10px 13px', color: theme.textFaint, fontFamily: 'monospace' }}>{s.orgId || org.id}</td>
-                    <td style={{ padding: '10px 13px', color: '#d1d5db' }}>{s.role}</td>
+                    <td style={{ padding: '10px 13px', color: '#d1d5db' }}>
+                      {isAdmin && !isSelf ? (
+                        <select
+                          value={s.role === 'admin' ? 'admin' : 'sales'}
+                          onChange={async e => {
+                            const next = e.target.value === 'admin' ? 'admin' : 'sales';
+                            if (next === s.role) return;
+                            const ok = window.confirm(
+                              next === 'admin'
+                                ? `Cấp quyền admin cho ${s.name}?\nHọ sẽ có toàn quyền chỉnh sửa workspace.`
+                                : `Hạ quyền ${s.name} xuống sales?\nHọ sẽ mất quyền quản trị workspace.`
+                            );
+                            if (!ok) return;
+                            try {
+                              await changeRole(s.id, next);
+                              setStaffMsg(`Da cap nhat vai tro cua ${s.name} -> ${next}.`);
+                            } catch (err) {
+                              setStaffMsg(err instanceof Error ? err.message : 'Khong cap nhat duoc vai tro.');
+                            }
+                          }}
+                          style={{ ...inputStyle, padding: '4px 8px', fontSize: 11, width: 90 }}
+                        >
+                          <option value="sales">sales</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      ) : (
+                        <span title={isSelf ? 'Không thể tự đổi vai trò chính mình' : ''}>{s.role}</span>
+                      )}
+                    </td>
                     <td style={{ padding: '10px 13px', color: '#d1d5db' }}>{s.convs}</td>
                     <td style={{ padding: '10px 13px', color: '#4ade80' }}>{s.converted}</td>
                     <td style={{ padding: '10px 13px', color: '#d1d5db' }}>{s.cmts}</td>
                     <td style={{ padding: '10px 13px' }}><Badge label={s.status} /></td>
                     <td style={{ padding: '10px 13px' }}>
-                      {isAdmin && (
+                      {isAdmin && !isSelf && (
                         <Row style={{ gap: 6 }}>
                           <button onClick={() => toggleStatus(s.id)} style={secondaryBtn({ padding: '4px 8px', fontSize: 10 })}>{s.status === 'Active' ? 'Tạm dừng' : 'Kích hoạt'}</button>
                           <button onClick={() => remove(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textFaint }}><X size={13} /></button>
@@ -526,7 +558,8 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                       )}
                     </td>
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
           </div>

@@ -9,6 +9,64 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
+// UpdateLeadClassification overwrites the AI-derived fields on an existing
+// lead row. Used by the reclassify endpoint to retag legacy leads when the
+// classifier prompt or business profile changes — without losing the
+// original crawl payload (author, content, source_url, etc.).
+func (s *Store) UpdateLeadClassification(orgID, leadID int64, score, serviceMatch, authorRole, painPoint, aiReasoning string) error {
+	_, err := s.db.Exec(
+		`UPDATE leads
+		 SET score = ?, service_match = ?, author_role = ?, pain_point = ?, ai_reasoning = ?,
+		     classified_at = CURRENT_TIMESTAMP
+		 WHERE id = ? AND COALESCE(org_id, 0) = ?`,
+		score, serviceMatch, authorRole, painPoint, aiReasoning, leadID, orgID,
+	)
+	return err
+}
+
+// GetLeadsForReclassify returns leads owned by the org that match the
+// reclassify scope. When onlyUnknown is true, the query filters to leads
+// whose author_role is empty/null/"unknown" — leaving manually labelled
+// leads alone. limit is clamped to a safe ceiling by the caller.
+func (s *Store) GetLeadsForReclassify(orgID int64, onlyUnknown bool, limit int) ([]models.Lead, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT l.id, COALESCE(l.org_id,0), l.source_type, l.source_id,
+	           COALESCE(NULLIF(l.source_url, ''), p.url, '') as source_url,
+	           l.platform, l.author, l.author_url, l.content, l.score, l.service_match,
+	           l.author_role, l.pain_point, l.ai_reasoning, COALESCE(NULLIF(l.niche,''),'logistics'),
+	           l.classified_at, l.created_at
+	          FROM leads l LEFT JOIN posts p ON l.source_id = p.id
+	          LEFT JOIN groups g ON p.group_id = g.id
+	          WHERE (COALESCE(NULLIF(l.org_id,0), g.org_id, 0) = ?)`
+	args := []any{orgID}
+	if onlyUnknown {
+		query += ` AND (l.author_role IS NULL OR TRIM(l.author_role) = '' OR LOWER(l.author_role) = 'unknown')`
+	}
+	query += ` ORDER BY l.created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var leads []models.Lead
+	for rows.Next() {
+		var l models.Lead
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceType, &l.SourceID, &l.SourceURL, &l.Platform,
+			&l.Author, &l.AuthorURL, &l.Content, &l.Score, &l.ServiceMatch,
+			&l.AuthorRole, &l.PainPoint, &l.AIReasoning, &l.Niche,
+			&l.ClassifiedAt, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		leads = append(leads, l)
+	}
+	return leads, nil
+}
+
 // InsertLead inserts a classified lead.
 func (s *Store) InsertLead(l *models.Lead) (int64, error) {
 	if l.Niche == "" {

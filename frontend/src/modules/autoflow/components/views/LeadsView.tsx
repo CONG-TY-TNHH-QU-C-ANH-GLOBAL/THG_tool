@@ -1,15 +1,24 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import type { Lead, LeadStatus } from '../../types';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
+import { reclassifyLeads } from '../../services/leadsService';
 
 interface LeadsViewProps {
   orgId: string;
   isAdmin: boolean;
 }
+
+const RECLASSIFY_TARGET_ROLES: Array<{ value: string; label: string }> = [
+  { value: '', label: 'AI tự quyết' },
+  { value: 'candidate', label: 'Ứng viên / Tuyển dụng' },
+  { value: 'potential_customer', label: 'Khách quan tâm' },
+  { value: 'partner', label: 'Đối tác / Reseller' },
+  { value: 'provider_ad', label: 'Provider quảng cáo' },
+];
 
 const FILTERS: Array<LeadStatus | 'All'> = ['All', 'Hot', 'Warm', 'Cold'];
 
@@ -75,7 +84,6 @@ function leadSearchValue(lead: Lead) {
 }
 
 export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
-  void isAdmin;
   const { lang, t } = useLang();
   const tv = t.leadsView;
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
@@ -85,6 +93,40 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
+  const [reclassifyPrompt, setReclassifyPrompt] = useState('');
+  const [reclassifyTargetRole, setReclassifyTargetRole] = useState('');
+  const [reclassifyOnlyUnknown, setReclassifyOnlyUnknown] = useState(true);
+  const [reclassifyLimit, setReclassifyLimit] = useState(50);
+  const [reclassifyBusy, setReclassifyBusy] = useState(false);
+  const [reclassifyMsg, setReclassifyMsg] = useState('');
+
+  const handleReclassify = async () => {
+    if (reclassifyBusy) return;
+    if (!reclassifyPrompt.trim()) {
+      setReclassifyMsg(lang === 'vi' ? 'Mô tả mục tiêu phân loại trước khi chạy.' : 'Describe the intent before reclassifying.');
+      return;
+    }
+    setReclassifyBusy(true);
+    setReclassifyMsg('');
+    try {
+      const res = await reclassifyLeads(orgId, {
+        user_prompt: reclassifyPrompt.trim(),
+        target_role: reclassifyTargetRole || undefined,
+        only_unknown: reclassifyOnlyUnknown,
+        limit: Math.max(1, Math.min(200, reclassifyLimit)),
+      });
+      const summary = lang === 'vi'
+        ? `Đã phân loại lại ${res.reclassified}/${res.matched} lead${res.failed ? ` · ${res.failed} lỗi` : ''}.`
+        : `Reclassified ${res.reclassified}/${res.matched} leads${res.failed ? ` · ${res.failed} failed` : ''}.`;
+      setReclassifyMsg(summary);
+      void refetch();
+    } catch (err) {
+      setReclassifyMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReclassifyBusy(false);
+    }
+  };
 
   const handleDelete = async (lead: Lead) => {
     if (deletingId !== null) return;
@@ -160,11 +202,125 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
           <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6 }}>{t.views.leadsSub}</p>
         </div>
         <div style={{ flex: 1 }} />
+        {isAdmin && (
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            onClick={() => { setReclassifyOpen(true); setReclassifyMsg(''); }}
+            title={lang === 'vi' ? 'Chạy lại AI phân loại trên các lead cũ' : 'Re-run AI classifier on existing leads'}
+          >
+            <Wand2 size={13} />
+            {lang === 'vi' ? 'Phân loại lại' : 'Reclassify'}
+          </button>
+        )}
         <button className="btn btn-ghost btn-sm" type="button" onClick={() => void refetch()}>
           <RefreshCw size={13} />
           {t.common.refresh}
         </button>
       </header>
+
+      {reclassifyOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
+          onClick={() => { if (!reclassifyBusy) setReclassifyOpen(false); }}
+        >
+          <div
+            className="card"
+            style={{ width: 480, maxWidth: '92vw', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div>
+              <div className="eyebrow"><span className="dot" />{lang === 'vi' ? 'AI PHÂN LOẠI LẠI' : 'AI RECLASSIFY'}</div>
+              <h3 style={{ marginTop: 6, fontSize: 18 }}>{lang === 'vi' ? 'Chạy lại AI phân loại' : 'Re-run AI classifier'}</h3>
+              <p style={{ color: 'var(--text-mute)', fontSize: 12.5, marginTop: 6 }}>
+                {lang === 'vi'
+                  ? 'AI sẽ đọc lại nội dung các lead đã có và gắn lại tệp / điểm dựa theo mục tiêu bạn mô tả bên dưới. Lead đã được gắn nhãn tay sẽ được giữ nguyên khi bật "chỉ phân loại lại lead chưa rõ".'
+                  : 'AI will re-read existing leads and retag intent/score using the goal you describe. Manually labelled leads stay intact when "only unclassified" is on.'}
+              </p>
+            </div>
+
+            <label className="field">
+              <span className="field-label">{lang === 'vi' ? 'MÔ TẢ MỤC TIÊU' : 'GOAL DESCRIPTION'}</span>
+              <textarea
+                className="input"
+                rows={3}
+                placeholder={lang === 'vi' ? 'VD: cào bài tuyển dụng nhân sự sales POD, ưu tiên người đang đăng tin tuyển' : 'e.g. recruiting sales staff for POD shop, prioritise hiring posts'}
+                value={reclassifyPrompt}
+                onChange={e => setReclassifyPrompt(e.target.value)}
+                disabled={reclassifyBusy}
+              />
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 10 }}>
+              <label className="field">
+                <span className="field-label">{lang === 'vi' ? 'TỆP MỤC TIÊU' : 'TARGET INTENT'}</span>
+                <select
+                  className="input"
+                  value={reclassifyTargetRole}
+                  onChange={e => setReclassifyTargetRole(e.target.value)}
+                  disabled={reclassifyBusy}
+                >
+                  {RECLASSIFY_TARGET_ROLES.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="field-label">{lang === 'vi' ? 'GIỚI HẠN' : 'LIMIT'}</span>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  max={200}
+                  value={reclassifyLimit}
+                  onChange={e => setReclassifyLimit(Number(e.target.value) || 50)}
+                  disabled={reclassifyBusy}
+                />
+              </label>
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-mute)' }}>
+              <input
+                type="checkbox"
+                checked={reclassifyOnlyUnknown}
+                onChange={e => setReclassifyOnlyUnknown(e.target.checked)}
+                disabled={reclassifyBusy}
+              />
+              {lang === 'vi' ? 'Chỉ phân loại lại lead "Chưa rõ" (giữ nguyên lead đã có nhãn).' : 'Only re-tag leads with unknown intent.'}
+            </label>
+
+            {reclassifyMsg && (
+              <div style={{ fontSize: 12.5, color: reclassifyMsg.toLowerCase().includes('error') || reclassifyMsg.toLowerCase().includes('lỗi') ? '#fca5a5' : '#4ade80' }}>
+                {reclassifyMsg}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setReclassifyOpen(false)}
+                disabled={reclassifyBusy}
+              >
+                {lang === 'vi' ? 'Đóng' : 'Close'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleReclassify}
+                disabled={reclassifyBusy}
+              >
+                <Wand2 size={13} />
+                {reclassifyBusy
+                  ? (lang === 'vi' ? 'Đang chạy…' : 'Running…')
+                  : (lang === 'vi' ? 'Chạy phân loại' : 'Run reclassify')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="stats-grid">
         <div className="stat">

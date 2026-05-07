@@ -105,6 +105,13 @@ export async function updateStaffStatus(orgId: string, staffId: number, status: 
   };
 }
 
+// Server only accepts 'admin' or 'sales' for the workspace role; anything
+// else is silently rejected and the row keeps its previous role.
+export async function updateStaffRole(orgId: string, staffId: number, role: 'admin' | 'sales'): Promise<void> {
+  void orgId;
+  await api.put<{ status: string }>(`/auth/users/${staffId}`, { role });
+}
+
 export async function deleteStaff(orgId: string, staffId: number): Promise<void> {
   void orgId;
   await api.del(`/auth/users/${staffId}`);

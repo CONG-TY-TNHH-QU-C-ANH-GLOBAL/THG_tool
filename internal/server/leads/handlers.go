@@ -1,6 +1,7 @@
 package leads
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
@@ -18,6 +20,7 @@ import (
 type Deps struct {
 	DB       *store.Store
 	JobStore *jobs.Store
+	AIClass  *ai.MessageGenerator
 }
 
 // getLeads handles GET /api/leads
@@ -74,6 +77,146 @@ func deleteLead(deps Deps) fiber.Handler {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})
+	}
+}
+
+// reclassifyLeads handles POST /api/leads/reclassify (admin only).
+//
+// Re-runs the AI classifier over an org's existing leads using the new
+// ClassifyIntent context (user prompt + target role + positive signals)
+// so leads ingested before the classifier upgrade can be retagged
+// without re-crawling. Defaults to leads whose author_role is unknown
+// to avoid clobbering manually labelled rows.
+//
+// Body:
+//
+//	{
+//	  "user_prompt":      "cào bài tuyển dụng nhân sự",
+//	  "target_role":      "candidate",         // optional anchor for the AI
+//	  "positive_signals": ["đang tuyển", ...], // optional anchor phrases
+//	  "only_unknown":     true,                // default true; set false to retag everything
+//	  "limit":            50                   // max 200, default 50
+//	}
+func reclassifyLeads(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		}
+		if deps.AIClass == nil || !deps.AIClass.Available() {
+			return c.Status(503).JSON(fiber.Map{"error": "AI classifier is not configured"})
+		}
+
+		var req struct {
+			UserPrompt      string   `json:"user_prompt"`
+			TargetRole      string   `json:"target_role"`
+			PositiveSignals []string `json:"positive_signals"`
+			OnlyUnknown     *bool    `json:"only_unknown"`
+			Limit           int      `json:"limit"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		onlyUnknown := true
+		if req.OnlyUnknown != nil {
+			onlyUnknown = *req.OnlyUnknown
+		}
+		limit := req.Limit
+		if limit <= 0 {
+			limit = 50
+		}
+		if limit > 200 {
+			limit = 200
+		}
+
+		profile := ai.LoadProfileForOrg(deps.DB, orgID)
+		if profile == nil {
+			profile = &ai.BusinessProfile{}
+		}
+
+		leadList, err := deps.DB.GetLeadsForReclassify(orgID, onlyUnknown, limit)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		if len(leadList) == 0 {
+			return c.JSON(fiber.Map{
+				"matched":      0,
+				"reclassified": 0,
+				"failed":       0,
+				"message":      "Khong co lead nao thoa man dieu kien.",
+			})
+		}
+
+		intent := ai.ClassifyIntent{
+			UserPrompt:      strings.TrimSpace(req.UserPrompt),
+			TargetRole:      strings.TrimSpace(req.TargetRole),
+			PositiveSignals: req.PositiveSignals,
+		}
+		// Use the lead's stored niche as a keyword anchor when the caller
+		// did not supply explicit positive signals — keeps classification
+		// stable across mixed-vertical workspaces.
+		fallbackKeywords := []string{}
+		if len(intent.PositiveSignals) == 0 {
+			fallbackKeywords = []string{strings.TrimSpace(profile.Industry)}
+		}
+
+		updated := 0
+		failed := 0
+		for _, lead := range leadList {
+			content := strings.TrimSpace(lead.Content)
+			if content == "" {
+				failed++
+				continue
+			}
+			perLeadIntent := intent
+			if len(perLeadIntent.Keywords) == 0 {
+				kw := append([]string{}, fallbackKeywords...)
+				if niche := strings.TrimSpace(lead.Niche); niche != "" && niche != "logistics" {
+					kw = append(kw, niche)
+				}
+				perLeadIntent.Keywords = kw
+			}
+
+			classifyCtx, cancel := context.WithTimeout(c.Context(), 20*time.Second)
+			result, err := deps.AIClass.UniversalClassify(classifyCtx, content, lead.Author, profile, perLeadIntent)
+			cancel()
+			if err != nil || result == nil {
+				log.Printf("[Reclassify] org=%d lead=%d failed: %v", orgID, lead.ID, err)
+				failed++
+				continue
+			}
+			score := strings.TrimSpace(result.Priority)
+			if score == "" {
+				score = string(lead.Score)
+			}
+			if score == "rejected" {
+				score = "cold"
+			}
+			intentStr := strings.TrimSpace(result.Intent)
+			if intentStr == "" {
+				intentStr = "unknown"
+			}
+			painPoint := strings.TrimSpace(result.Reason)
+			if painPoint == "" {
+				painPoint = lead.PainPoint
+			}
+			if err := deps.DB.UpdateLeadClassification(orgID, lead.ID, score, intentStr, intentStr, painPoint, result.Reason); err != nil {
+				log.Printf("[Reclassify] org=%d lead=%d update failed: %v", orgID, lead.ID, err)
+				failed++
+				continue
+			}
+			updated++
+		}
+
+		userID, _ := c.Locals("user_id").(int64)
+		deps.DB.InsertAuditLog(userID, "leads_reclassified", c.IP(),
+			fmt.Sprintf(`{"org_id":%d,"matched":%d,"reclassified":%d,"failed":%d,"only_unknown":%t}`,
+				orgID, len(leadList), updated, failed, onlyUnknown))
+		return c.JSON(fiber.Map{
+			"matched":      len(leadList),
+			"reclassified": updated,
+			"failed":       failed,
+		})
 	}
 }
 

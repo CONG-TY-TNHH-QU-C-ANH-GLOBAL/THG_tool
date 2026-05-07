@@ -159,6 +159,7 @@ type connectorCrawlEnvelope struct {
 	SourceType       string         `json:"source_type"`
 	UseBackgroundTab bool           `json:"use_background_tab"`
 	MarketSignalGate map[string]any `json:"market_signal_gate,omitempty"`
+	UserPrompt       string         `json:"user_prompt,omitempty"`
 	Task             *jobs.Task     `json:"task"`
 	TaskID           string         `json:"task_id,omitempty"`
 	Intent           string         `json:"intent,omitempty"`
@@ -191,6 +192,9 @@ func connectorCrawlEnvelopeForTask(task *jobs.Task) (connectorCrawlEnvelope, err
 	}
 	if gate, ok := task.Extras["market_signal_gate"].(map[string]any); ok && len(gate) > 0 {
 		env.MarketSignalGate = gate
+	}
+	if up, ok := task.Extras["user_prompt"].(string); ok {
+		env.UserPrompt = strings.TrimSpace(up)
 	}
 	return env, nil
 }

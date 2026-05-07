@@ -22,6 +22,23 @@ func wantsAutoOutbound(prompt string) bool {
 	return false
 }
 
+// shouldAutoOutbound combines per-prompt opt-in with the org-level
+// outbound_mode policy. The store layer is the final guardrail (it
+// downgrades to draft when the org has not opted in), so it is safe to
+// upgrade here when either signal is present. This fixes the case where
+// admin sets outbound_mode=auto on the policy panel but the agent kept
+// queuing drafts because the user prompt did not contain magic words like
+// "tự động" / "auto".
+func (a *Agent) shouldAutoOutbound(prompt string, orgID int64) bool {
+	if wantsAutoOutbound(prompt) {
+		return true
+	}
+	if a.db != nil && orgID > 0 && a.db.IsAutoOutboundEnabledForOrg(orgID) {
+		return true
+	}
+	return false
+}
+
 func stripDashboardContext(prompt string) string {
 	marker := "\n\nDashboard context:"
 	if idx := strings.Index(prompt, marker); idx >= 0 {

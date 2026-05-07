@@ -31,6 +31,7 @@ type Deps struct {
 	AIClass         *ai.MessageGenerator
 	SignalGate      SignalGate
 	Keywords        []string
+	UserPrompt      string   // free-form user prompt that triggered this crawl, used to anchor classifier intent
 	ExtraSignals    []string // appended to every Outcome.Signals (e.g. "chrome_extension_crawl")
 	ClassifyTimeout time.Duration
 }
@@ -121,7 +122,13 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			timeout = 20 * time.Second
 		}
 		classifyCtx, cancel := context.WithTimeout(ctx, timeout)
-		aiResult, err := deps.AIClass.UniversalClassify(classifyCtx, content, in.AuthorName, deps.BusinessProfile)
+		intent := ai.ClassifyIntent{
+			UserPrompt:      deps.UserPrompt,
+			Keywords:        deps.Keywords,
+			TargetRole:      deps.SignalGate.TargetRole,
+			PositiveSignals: deps.SignalGate.PositiveSignals,
+		}
+		aiResult, err := deps.AIClass.UniversalClassify(classifyCtx, content, in.AuthorName, deps.BusinessProfile, intent)
 		cancel()
 		if err != nil {
 			slog.WarnContext(ctx, "universal classify failed; using deterministic score",

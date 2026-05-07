@@ -232,6 +232,12 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	success := false
 	for _, action := range plan.Actions {
 		args := prepareBrainActionArgs(action, plan.MarketSignalGate, prompt, orgID, selectedAccountID)
+		// Upgrade auto when the org's outbound_mode policy is set to auto.
+		// prepareBrainActionArgs only inspects the prompt text; the store
+		// layer is the final guard that downgrades when the org is not opted in.
+		if brainToolIsOutbound(action.Tool) && a.shouldAutoOutbound(prompt, orgID) {
+			args["auto"] = true
+		}
 		fnResult, err := a.ActionHandler(action.Tool, args)
 		if firstAction == "" {
 			firstAction = action.Tool

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { StaffInvite, StaffMember, MemberStatus } from '../types';
-import { getStaff, getStaffInvites, inviteStaff, resendStaffInvite, revokeStaffInvite, updateStaffStatus, deleteStaff } from '../services/staffService';
+import { getStaff, getStaffInvites, inviteStaff, resendStaffInvite, revokeStaffInvite, updateStaffRole, updateStaffStatus, deleteStaff } from '../services/staffService';
 
 export function useStaff(orgId: string) {
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -54,5 +54,10 @@ export function useStaff(orgId: string) {
     setStaff(prev => prev.filter(s => s.id !== staffId));
   }, [orgId]);
 
-  return { staff, invites, isLoading, invite, resendInvite, revokeInvite, toggleStatus, remove };
+  const changeRole = useCallback(async (staffId: number, role: 'admin' | 'sales') => {
+    await updateStaffRole(orgId, staffId, role);
+    setStaff(prev => prev.map(s => s.id === staffId ? { ...s, role } : s));
+  }, [orgId]);
+
+  return { staff, invites, isLoading, invite, resendInvite, revokeInvite, toggleStatus, remove, changeRole };
 }

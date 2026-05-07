@@ -9,6 +9,7 @@ import (
 func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// Leads
 	group.Get("/leads", getLeads(deps))
+	group.Post("/leads/reclassify", adminOnly, reclassifyLeads(deps))
 	group.Delete("/leads/all", adminOnly, deleteAllLeads(deps))
 	group.Delete("/leads/:id", deleteLead(deps))
 

@@ -308,7 +308,7 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 					args["keywords"] = kw
 				}
 			}
-			if wantsAutoOutbound(prompt) {
+			if a.shouldAutoOutbound(prompt, orgID) {
 				args["auto"] = true
 			}
 

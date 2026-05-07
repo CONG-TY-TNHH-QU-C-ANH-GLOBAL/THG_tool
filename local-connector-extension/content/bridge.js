@@ -15,12 +15,15 @@ async function thgExecuteCommand(command) {
       || task?.crawl_plan?.sources?.[0]?.url
       || '';
     const gate = payload?.market_signal_gate || task?.extras?.market_signal_gate || null;
+    const userPrompt = payload?.user_prompt || task?.extras?.user_prompt || '';
     const accountId = command?.account_id || command?.accountId || 0;
     const result = await THGContentCrawl.crawlVisibleFacebookPosts(task, expectedUrl, accountId);
-    // Echo gate back to the server so the crawl-result endpoint applies the
-    // same Brain-derived gating without re-reading org context.
-    if (result?.ok && result?.crawl_result && gate) {
-      result.crawl_result.market_signal_gate = gate;
+    // Echo gate + user prompt back to the server so the crawl-result endpoint
+    // applies the same Brain-derived gating and anchors the AI classifier to
+    // the operator's current goal without re-reading org context.
+    if (result?.ok && result?.crawl_result) {
+      if (gate) result.crawl_result.market_signal_gate = gate;
+      if (userPrompt) result.crawl_result.user_prompt = userPrompt;
     }
     return result;
   }
