@@ -88,7 +88,7 @@ jobs:
         env:
           OUT_DIR: thg-extension-store-package
         run: |
-          bash scripts/build-chrome-extension.sh "${{ github.sha }}"
+          bash scripts/build-chrome-extension.sh "${{ github.run_number }}"
           ls -lh thg-extension-store-package
           file thg-extension-store-package/*
 
