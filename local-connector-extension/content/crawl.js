@@ -55,6 +55,24 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     } catch { /* runtime gone */ }
   }
 
+  // Stable hash for content+author when Facebook hasn't rendered the permalink
+  // yet. Using location.href as a fallback dedup key (the prior bug) caused
+  // every post on the same group page to share one key, so the loop only ever
+  // captured the first 1–3 unique items. djb2 is fine here — collision-resilient
+  // enough for one crawl session.
+  function hashKey(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(16);
+  }
+
+  function dedupKey(article, expectedUrl, content, author) {
+    const url = postPermalink(article);
+    const isPagePermalink = !url || url === location.href || url === expectedUrl;
+    if (!isPagePermalink) return url;
+    return `c:${hashKey((author?.author_profile_url || '') + '|' + content.slice(0, 240))}`;
+  }
+
   async function crawlVisibleFacebookPosts(task, expectedUrl, accountId) {
     // Refuse to scrape if Facebook redirected us off the requested page (e.g.
     // newsfeed). Without this guard the extension silently scraped the wrong
@@ -65,23 +83,30 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         error: `wrong_page: expected ${expectedUrl} but tab is on ${location.href}`
       };
     }
-    const maxItems = Math.max(1, Math.min(50, Number(task?.crawl_plan?.max_items || 20)));
+    const maxItems = Math.max(1, Math.min(200, Number(task?.crawl_plan?.max_items || 20)));
+    const maxPasses = 24;
     const seen = new Set();
     const items = [];
+    let stagnantPasses = 0;
+    let prevHeight = 0;
+    let prevArticles = 0;
+    let exitReason = 'pass_exhausted';
     emitProgress(task, accountId, 'started', 0, maxItems);
-    for (let pass = 0; pass < 8 && items.length < maxItems; pass++) {
-      const articles = Array.from(document.querySelectorAll('[role="article"], div[data-pagelet^="FeedUnit_"]'));
+    for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
+      const articles = Array.from(document.querySelectorAll(
+        '[role="article"], div[data-pagelet^="FeedUnit_"], div[role="feed"] > div'
+      ));
       for (const article of articles) {
         const content = THGContentShared.textOf(article);
         if (content.length < 20) continue;
-        const url = postPermalink(article);
-        const key = `${url}|${content.slice(0, 120)}`;
+        const author = authorFromArticle(article);
+        const key = dedupKey(article, expectedUrl, content, author);
         if (seen.has(key)) continue;
         seen.add(key);
-        const author = authorFromArticle(article);
+        const url = postPermalink(article);
         items.push({
           id: key,
-          source_url: url,
+          source_url: url && url !== location.href ? url : (expectedUrl || location.href),
           author_profile_url: author.author_profile_url,
           author_name: author.author_name,
           content,
@@ -91,13 +116,44 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         });
         if (items.length >= maxItems) break;
       }
+      const docHeight = document.body.scrollHeight;
+      const articlesSeen = articles.length;
+      console.log('[THG crawl]', {
+        pass,
+        articles_seen: articlesSeen,
+        items_collected: items.length,
+        scroll_y: Math.round(window.scrollY),
+        doc_height: docHeight
+      });
       // After each scroll pass send a heartbeat. Backend rate-limits these so
       // even an aggressive cadence here won't spam Telegram.
       emitProgress(task, accountId, 'scraping', items.length, maxItems);
-      if (items.length >= maxItems) break;
-      window.scrollBy({ top: Math.max(700, window.innerHeight * 0.85), behavior: 'smooth' });
-      await new Promise(resolve => setTimeout(resolve, 1400));
+      if (items.length >= maxItems) {
+        exitReason = 'maxItems';
+        break;
+      }
+      // No-progress detection: if scrollHeight and visible article count both
+      // stay flat across two consecutive passes, the feed is exhausted (or
+      // Facebook stopped lazy-loading) — stop instead of burning the remaining
+      // passes.
+      if (pass > 0 && docHeight === prevHeight && articlesSeen === prevArticles) {
+        stagnantPasses++;
+        if (stagnantPasses >= 2) {
+          exitReason = 'no_progress';
+          break;
+        }
+      } else {
+        stagnantPasses = 0;
+      }
+      prevHeight = docHeight;
+      prevArticles = articlesSeen;
+      window.scrollBy({ top: Math.max(900, window.innerHeight * 0.9), behavior: 'smooth' });
+      // Lazy-load gets slower deeper into a feed; ramp the wait so the first
+      // few passes stay snappy and later passes give Facebook time to fetch.
+      const waitMs = pass < 6 ? 1400 : 2500;
+      await new Promise(resolve => setTimeout(resolve, waitMs));
     }
+    console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems });
     emitProgress(task, accountId, 'finished', items.length, maxItems);
     return {
       ok: true,
@@ -105,7 +161,8 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         task_id: task?.task_id || '',
         intent: task?.intent || 'facebook_crawl',
         keywords: Array.isArray(task?.keywords) ? task.keywords : [],
-        items
+        items,
+        exit_reason: exitReason
       }
     };
   }

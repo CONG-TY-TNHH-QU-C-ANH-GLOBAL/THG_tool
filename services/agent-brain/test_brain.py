@@ -1,6 +1,6 @@
 import unittest
 
-from brain import classify_market_signal, plan
+from brain import build_market_signal_gate, plan
 
 
 PROFILE = {
@@ -27,7 +27,11 @@ class BrainPlannerTest(unittest.TestCase):
         self.assertEqual(out["decision"], "execute")
         self.assertEqual(out["actions"][0]["tool"], "scrape_group")
         self.assertEqual(out["actions"][0]["args"]["max_items"], 20)
-        self.assertIn("provider advertisement", out["market_signal_gate"]["negative_signals"])
+        # Gate negatives must come from the org's own profile, not from a
+        # vertical-keyed switch in the brain. The profile's negative_signals
+        # field above contains "bài quảng cáo dịch vụ" — that's what should
+        # surface, not English literals injected on a "pod/dropship" keyword.
+        self.assertIn("bài quảng cáo dịch vụ", out["market_signal_gate"]["negative_signals"])
 
     def test_prompt_without_url_discovers_sources(self):
         out = plan({"prompt": "Cào tôi POD dropship sellers cần fulfillment", "business_profile": PROFILE})
@@ -40,16 +44,15 @@ class BrainPlannerTest(unittest.TestCase):
         self.assertEqual(out["domain_scope"], "out_of_scope")
         self.assertEqual(out["decision"], "refuse")
 
-    def test_provider_ad_rejected_unless_profile_targets_providers(self):
-        post = "Bên mình cung cấp dịch vụ fulfillment giá tốt, nhận order POD toàn cầu."
-        rejected = classify_market_signal(post, PROFILE)
-        self.assertFalse(rejected["keep"])
-        self.assertEqual(rejected["reason"], "provider_ad")
-
-        provider_profile = dict(PROFILE)
-        provider_profile["target_author_role"] = "partners, suppliers, providers"
-        kept = classify_market_signal(post, provider_profile)
-        self.assertTrue(kept["keep"])
+    def test_gate_is_empty_when_profile_has_no_signals(self):
+        # No target_signals / negative_signals → gate sides are empty. The
+        # downstream pipeline (deterministic scorer + AI classifier) then
+        # decides without any baked-in vertical phrases.
+        empty_profile = {"name": "Acme", "industry": "anything"}
+        gate = build_market_signal_gate(empty_profile)
+        self.assertEqual(gate["positive_signals"], [])
+        self.assertEqual(gate["negative_signals"], [])
+        self.assertEqual(gate["reject_rules"], [])
 
 
 if __name__ == "__main__":

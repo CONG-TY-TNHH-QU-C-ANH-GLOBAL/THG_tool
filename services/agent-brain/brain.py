@@ -140,17 +140,19 @@ def has_business_profile(profile: dict[str, Any]) -> bool:
     return bool(profile_value(profile, "description", "industry", "services", "targets", "name"))
 
 
-def build_market_signal_gate(profile: dict[str, Any], prompt: str) -> dict[str, Any]:
-    target_role = profile_value(profile, "target_author_role") or "customers"
+def build_market_signal_gate(profile: dict[str, Any]) -> dict[str, Any]:
+    """Build a Market Signal Gate purely from the org's BusinessProfile.
+
+    The gate carries org-driven phrases — target_signals (positive), and
+    negative_signals/reject_rules (negative). Nothing here is keyed off prompt
+    keywords or hardcoded for a vertical. CLAUDE.md hard rule: business profile
+    drives classification; do not hardcode one industry. If a profile field is
+    empty, the corresponding gate side is empty too — the AI classifier and
+    scorer will then act on engagement / quality / keyword signals only.
+    """
+    target_role = profile_value(profile, "target_author_role")
     positives = split_signal_field(profile_value(profile, "target_signals"))
     negatives = split_signal_field(profile_value(profile, "negative_signals", "reject_rules"))
-
-    folded = fold(prompt)
-    if not positives:
-        positives = ["asking for help", "needs quote", "looking for supplier", "recommendation request"]
-    if "fulfillment" in folded or "dropship" in folded or "pod" in folded:
-        positives = merge_unique(positives, ["looking for fulfillment", "needs sourcing", "ship to US/worldwide"])
-        negatives = merge_unique(negatives, ["provider advertisement", "recruiting affiliates", "spam links", "competitor selling service"])
 
     return {
         "target_role": target_role,
@@ -177,21 +179,6 @@ def merge_unique(base: list[str], extra: list[str]) -> list[str]:
     return out
 
 
-def classify_market_signal(post_content: str, profile: dict[str, Any]) -> dict[str, Any]:
-    folded = fold(post_content)
-    target = fold(profile_value(profile, "target_author_role") or "customers")
-    provider_terms = ["dich vu cua toi", "ben minh cung cap", "i offer", "we provide", "agency", "nhan order"]
-    need_terms = ["can tim", "looking for", "need", "bao gia", "recommend", "supplier", "fulfillment", "ship"]
-    is_provider = any(term in folded for term in provider_terms)
-    has_need = any(term in folded for term in need_terms)
-    providers_allowed = any(term in target for term in ["provider", "supplier", "partner"])
-    if is_provider and not providers_allowed:
-        return {"keep": False, "reason": "provider_ad", "confidence": 0.9}
-    if has_need:
-        return {"keep": True, "reason": "need_signal", "confidence": 0.78}
-    return {"keep": False, "reason": "weak_or_missing_intent", "confidence": 0.55}
-
-
 def action(tool: str, args: dict[str, Any], reason: str, evidence: list[str], requires_browser: bool = False, requires_profile: bool = False) -> dict[str, Any]:
     return {
         "tool": tool,
@@ -213,7 +200,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     folded = fold(prompt)
     fb_url = first_facebook_url(prompt)
     max_items = extract_max_items(prompt)
-    gate = build_market_signal_gate(profile, prompt)
+    gate = build_market_signal_gate(profile)
 
     base = {
         "domain_scope": "facebook",
