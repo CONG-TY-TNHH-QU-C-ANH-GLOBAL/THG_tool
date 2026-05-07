@@ -218,30 +218,34 @@ export function LocalConnectorPanel({
                 <div className="mono" style={{
                   fontSize: 36,
                   fontWeight: 800,
-                  letterSpacing: '0.15em',
-                  color: 'var(--text)',
-                  marginBottom: 16
+                  letterSpacing: pairingCodeVisible ? '0.15em' : '0.4em',
+                  color: pairingCodeVisible ? 'var(--text)' : 'var(--text-muted)',
+                  marginBottom: 16,
+                  textShadow: pairingCodeVisible ? '0 0 20px rgba(24, 86, 255, 0.4)' : 'none',
+                  transition: 'all 0.3s ease'
                 }}>
-                  {pairingCode}
+                  {pairingCodeVisible ? pairingCode : '••••••••'}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    onClick={() => navigator.clipboard?.writeText(pairingCode)}
+                    onClick={() => setPairingCodeVisible((v) => !v)}
                   >
-                    <Copy size={13} />
-                    Copy Code
+                    {pairingCodeVisible ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {pairingCodeVisible ? tc.stepPairHide : tc.stepPairShow}
                   </button>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    onClick={() => navigator.clipboard?.writeText(dashboardServer)}
-                    title="Copy Server URL"
+                    disabled={!pairingCodeVisible}
+                    onClick={() => {
+                      if (pairingCodeVisible) navigator.clipboard?.writeText(pairingCode);
+                    }}
                   >
-                    <ExternalLink size={13} />
-                    Copy URL
+                    <Copy size={13} />
+                    Copy Code
                   </button>
                 </div>
 
@@ -266,16 +270,6 @@ export function LocalConnectorPanel({
               </div>
             ) : (
               <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {dashboardServer && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'var(--bg-elev-2)', borderRadius: '8px', border: '1px solid var(--line)' }}>
-                    <code className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--text-mute)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {dashboardServer}
-                    </code>
-                    <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => navigator.clipboard?.writeText(dashboardServer)}>
-                      <Copy size={12} />
-                    </button>
-                  </div>
-                )}
                 <button type="button" className="btn btn-primary" onClick={onCreate} disabled={creating} style={{ padding: '12px', fontSize: 13, fontWeight: 600 }}>
                   {creating ? <RefreshCw size={14} className="spin" /> : <KeyRound size={14} />}
                   {pairingExpired ? 'Generate New Code' : tc.stepPairCreate}
