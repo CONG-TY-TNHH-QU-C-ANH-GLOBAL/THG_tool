@@ -186,26 +186,38 @@ func main() {
 		log.Printf("⚠️  Session registry load failed: %v", err)
 	}
 
-	// Initialize price extractor (OpenAI Vision for reading price list images)
+	// Initialize price extractor (OpenAI Vision for reading price list images).
+	// Pricer is structured-output, accuracy >>> creativity → uses the cheap
+	// classifier model.
 	var pricer *ai.PriceExtractor
 	if cfg.OpenAIAPIKey != "" {
-		pricer = ai.NewPriceExtractor(cfg.OpenAIAPIKey, cfg.OpenAIModel)
+		pricer = ai.NewPriceExtractor(cfg.OpenAIAPIKey, cfg.OpenAIClassifierModel)
 		log.Println("✅ Price extractor initialized")
 	}
 
-	// Initialize AI Agent (OpenAI Function Calling) — v2
+	// Initialize AI Agent (OpenAI Function Calling) — v2.
+	//
+	// Two MessageGenerator instances on purpose:
+	//   - classifierMg: high-volume, schema-locked classification (UniversalClassify).
+	//     Cheap+fast model (OPENAI_CLASSIFIER_MODEL).
+	//   - commentMg: user-facing comment/inbox/post generation.
+	//     Strong model (OPENAI_COMMENT_MODEL).
+	// Both share the same API key + http.Client; the only difference is the
+	// model field. Splitting the two avoids paying for the strong model on
+	// every classified post.
 	var telegramNotify func(string)
 	var agent *ai.Agent
-	var msgGen *ai.MessageGenerator
+	var classifierMg, commentMg *ai.MessageGenerator
 	skillRegistry := skills.NewRegistry()
 	if cfg.OpenAIAPIKey != "" {
-		msgGen = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
+		classifierMg = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAIClassifierModel)
+		commentMg = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
 		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
 		if cfg.AgentBrainURL != "" {
 			agent.SetBrainClient(ai.NewBrainClient(cfg.AgentBrainURL, time.Duration(cfg.AgentBrainTimeout)*time.Millisecond))
 			log.Printf("✅ Agent Brain sidecar enabled: %s", cfg.AgentBrainURL)
 		}
-		actionHandler := makeAgentActionHandler(db, jobStore, msgGen, func(msg string) {
+		actionHandler := makeAgentActionHandler(db, jobStore, commentMg, func(msg string) {
 			if telegramNotify != nil {
 				telegramNotify(msg)
 			}
@@ -218,7 +230,7 @@ func main() {
 		registerBuiltinSkills(skillRegistry, builtinSkillDeps{
 			db:       db,
 			jobStore: jobStore,
-			msgGen:   msgGen,
+			msgGen:   commentMg,
 			notify: func(msg string) {
 				if telegramNotify != nil {
 					telegramNotify(msg)
@@ -227,7 +239,8 @@ func main() {
 			handler: actionHandler,
 		})
 		agent.SetSkillRegistry(skillRegistry)
-		log.Printf("✅ AI Agent initialized (model: %s, skills=%d)", cfg.OpenAICommentModel, len(skillRegistry.All()))
+		log.Printf("✅ AI Agent initialized (classifier: %s, comment: %s, skills=%d)",
+			cfg.OpenAIClassifierModel, cfg.OpenAICommentModel, len(skillRegistry.All()))
 	} else {
 		log.Println("⚠️  OPENAI_API_KEY not set, AI Agent disabled")
 	}
@@ -292,8 +305,11 @@ func main() {
 	})
 
 	srv.SetSessionRegistry(sessionReg)
-	if msgGen != nil {
-		srv.SetUniversalClassifier(msgGen)
+	if classifierMg != nil {
+		// Reclassify endpoint + crawl-result handler call UniversalClassify,
+		// which is high-volume and schema-locked → use the cheap classifier
+		// model, not the strong comment model.
+		srv.SetUniversalClassifier(classifierMg)
 	}
 
 	go func() {

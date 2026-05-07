@@ -67,7 +67,11 @@ func main() {
 	h := facebookcrawl.New(fallback, scorer, jobStore, appStore)
 	h.SetAllocator(allocator, lsFactory)
 	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
-		model := envOr("OPENAI_MODEL", "gpt-4o")
+		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is the
+		// legacy alias kept for backwards compat with /etc/thg-scraper/env on
+		// production VPS. cmd/scraper/main.go reads the same pair via
+		// config.OpenAIClassifierModel — keep the resolution order in sync.
+		model := envOr("OPENAI_CLASSIFIER_MODEL", envOr("OPENAI_MODEL", "gpt-4o-mini"))
 		h.SetUniversalClassifier(mainStore, ai.NewMessageGenerator(apiKey, model))
 		log.Printf("✅ Universal AI classifier enabled (model: %s)", model)
 	}

@@ -105,7 +105,7 @@ MARKET SIGNAL RULES:
 - For broad industries, prefer precision over volume. Reject provider ads, generic promotions, spam, and self-promotion even when they contain matching keywords.
 - If a USER'S CURRENT GOAL block is present above, it overrides the business profile's industry scope for THIS batch — a recruitment-targeted crawl in a non-recruitment workspace must still tag relevant hiring/candidate posts correctly.
 
-INTENT OPTIONS:
+INTENT OPTIONS (must use exactly one of these strings):
 - "potential_customer": wants to buy/use our products/services
 - "candidate": looking for a job (only for recruitment businesses or recruitment-targeted crawls)
 - "partner": could be a business partner/reseller, recruiter, or supplier
@@ -113,36 +113,53 @@ INTENT OPTIONS:
 - "not_relevant": post has nothing to do with our business or current goal
 - "spam": MLM, mass recruitment ads, irrelevant promotions
 
-%s
-
-Respond with ONLY valid JSON:
-{"score": 0.0, "intent": "", "reason": "", "priority": "hot|warm|cold|rejected"}`,
+%s`,
 		profile.ToPromptBlock(), intent.toPromptBlock(), authorName, postContent, langRule)
 
-	raw, err := mg.callOpenAI(ctx, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("universal classify: %w", err)
-	}
-
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}") + 1
-	if start < 0 || end <= start {
-		return &UniversalClassifyResult{Score: 0, Intent: "not_relevant", Priority: "rejected"}, nil
+	// Strict json_schema response format — eliminates the old "find the
+	// first '{' and pray it's valid JSON" parsing path. Enum constraints
+	// also prevent the AI from inventing intent labels (we used to see
+	// "buyer" / "seller" leak through, breaking the dashboard filter).
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"score", "intent", "reason", "priority"},
+		"properties": map[string]any{
+			"score": map[string]any{
+				"type":        "number",
+				"minimum":     0,
+				"maximum":     1,
+				"description": "Confidence the post matches the business goal (0.0–1.0).",
+			},
+			"intent": map[string]any{
+				"type": "string",
+				"enum": []string{
+					"potential_customer", "candidate", "partner",
+					"provider_ad", "not_relevant", "spam",
+				},
+			},
+			"reason": map[string]any{
+				"type":        "string",
+				"description": "One concise sentence explaining the classification.",
+			},
+			"priority": map[string]any{
+				"type": "string",
+				"enum": []string{"hot", "warm", "cold", "rejected"},
+			},
+		},
 	}
 
 	var result UniversalClassifyResult
-	if err := json.Unmarshal([]byte(raw[start:end]), &result); err != nil {
-		return &UniversalClassifyResult{Score: 0, Intent: "not_relevant", Priority: "rejected"}, nil
+	if err := mg.callOpenAIStrictJSON(ctx, prompt, "lead_classification", schema, &result); err != nil {
+		return nil, fmt.Errorf("universal classify: %w", err)
 	}
 
-	// Clamp score
 	if result.Score < 0 {
 		result.Score = 0
 	}
 	if result.Score > 1 {
 		result.Score = 1
 	}
-
 	return &result, nil
 }
 

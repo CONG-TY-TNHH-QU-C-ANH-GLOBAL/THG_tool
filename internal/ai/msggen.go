@@ -510,6 +510,79 @@ CHỈ TRẢ VỀ NỘI DUNG TIN NHẮN.`,
 	return mg.callOpenAI(ctx, prompt)
 }
 
+// callOpenAIStrictJSON is the JSON-schema-locked counterpart to callOpenAI.
+// The model is forced to emit a payload that conforms exactly to `schema`,
+// so callers no longer have to scan the response for balanced braces or
+// strip stray prose. `out` must be a pointer whose Go shape matches the
+// schema.
+//
+// Schema rules (per OpenAI strict mode):
+//   - every object must have "additionalProperties": false
+//   - every property must appear under "required"
+//   - "enum" is honoured for closed sets (e.g. classifier intents)
+//
+// Temperature and max_tokens are intentionally omitted so this helper
+// works on both classic chat models (gpt-4o*) and reasoning models
+// (gpt-5*) without callers having to special-case the model family.
+func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, schemaName string, schema map[string]any, out any) error {
+	body := map[string]any{
+		"model": mg.model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"response_format": map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   schemaName,
+				"strict": true,
+				"schema": schema,
+			},
+		},
+	}
+
+	jsonBody, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+mg.apiKey)
+
+	resp, err := mg.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("OpenAI request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("OpenAI HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+				Refusal string `json:"refusal"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if len(result.Choices) == 0 {
+		return fmt.Errorf("no response from OpenAI")
+	}
+	if refusal := strings.TrimSpace(result.Choices[0].Message.Refusal); refusal != "" {
+		return fmt.Errorf("OpenAI refused: %s", refusal)
+	}
+	content := result.Choices[0].Message.Content
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("empty content from OpenAI")
+	}
+	return json.Unmarshal([]byte(content), out)
+}
+
 func (mg *MessageGenerator) callOpenAI(ctx context.Context, prompt string) (string, error) {
 	body := map[string]any{
 		"model": mg.model,

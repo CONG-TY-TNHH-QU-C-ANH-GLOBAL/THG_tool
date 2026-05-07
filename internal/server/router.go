@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	fiberws "github.com/gofiber/websocket/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
 	serveragent "github.com/thg/scraper/internal/server/agent"
@@ -114,7 +115,14 @@ func (s *Server) registerRoutes() {
 	// Protected API routes — require JWT
 	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady)
 
-	leads.Routes(r, leads.Deps{DB: s.db, JobStore: s.jobStore, AIClass: s.aiClass}, adminOnly)
+	leads.Routes(r, leads.Deps{
+		DB:       s.db,
+		JobStore: s.jobStore,
+		// Lazy getter — SetUniversalClassifier wires aiClass AFTER
+		// registerRoutes runs, so capturing s.aiClass directly here
+		// would freeze it at nil and reclassify would always 503.
+		AIClass: func() *ai.MessageGenerator { return s.aiClass },
+	}, adminOnly)
 	crawl.Routes(r, crawl.Deps{DB: s.db}, adminOnly)
 
 	// Chrome Profile Login Sessions — any staff can log in their own account

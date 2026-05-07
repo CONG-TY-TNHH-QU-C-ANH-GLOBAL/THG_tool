@@ -17,10 +17,16 @@ import (
 )
 
 // Deps holds dependencies needed by the leads subpackage handlers.
+//
+// AIClass is a getter, not a value, because the parent server constructor
+// registers routes BEFORE the universal classifier is wired (msgGen lives
+// behind a SetUniversalClassifier setter). Capturing the field directly
+// would freeze it at nil; the closure resolves the current value at
+// request time.
 type Deps struct {
 	DB       *store.Store
 	JobStore *jobs.Store
-	AIClass  *ai.MessageGenerator
+	AIClass  func() *ai.MessageGenerator
 }
 
 // getLeads handles GET /api/leads
@@ -103,8 +109,12 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 		if orgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
 		}
-		if deps.AIClass == nil || !deps.AIClass.Available() {
-			return c.Status(503).JSON(fiber.Map{"error": "AI classifier is not configured"})
+		var classifier *ai.MessageGenerator
+		if deps.AIClass != nil {
+			classifier = deps.AIClass()
+		}
+		if classifier == nil || !classifier.Available() {
+			return c.Status(503).JSON(fiber.Map{"error": "AI classifier is not configured (OPENAI_API_KEY missing)"})
 		}
 
 		var req struct {
@@ -178,7 +188,7 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 			}
 
 			classifyCtx, cancel := context.WithTimeout(c.Context(), 20*time.Second)
-			result, err := deps.AIClass.UniversalClassify(classifyCtx, content, lead.Author, profile, perLeadIntent)
+			result, err := classifier.UniversalClassify(classifyCtx, content, lead.Author, profile, perLeadIntent)
 			cancel()
 			if err != nil || result == nil {
 				log.Printf("[Reclassify] org=%d lead=%d failed: %v", orgID, lead.ID, err)

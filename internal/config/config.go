@@ -15,10 +15,16 @@ type Config struct {
 	TelegramAdminChat int64
 	TelegramOrgID     int64
 
-	// AI (OpenAI only)
-	OpenAIAPIKey       string
-	OpenAIModel        string // scraping + classification: gpt-4o-mini (cheap, fast)
-	OpenAICommentModel string // comments + inbox generation: gpt-4o (high quality)
+	// AI (OpenAI only).
+	//
+	// Two-model split: classifier runs on every crawled post (high volume,
+	// strict JSON output via response_format: json_schema — accuracy beats
+	// raw quality), so it lives on a cheap/fast model. Comment + inbox
+	// generation runs once per outbound message and is user-facing, so it
+	// gets the strong model.
+	OpenAIAPIKey          string
+	OpenAIClassifierModel string // UniversalClassify + price extraction. Cheap+fast: gpt-4o-mini / gpt-5.4-mini.
+	OpenAICommentModel    string // Comments, inbox, follow-up, job posts, agent reasoning. Strong: gpt-4.1 / gpt-5.4.
 	AgentBrainURL      string // optional Python sidecar planner endpoint base URL
 	AgentBrainTimeout  int    // milliseconds
 
@@ -84,9 +90,12 @@ func Load() *Config {
 		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramAdminChat:  getEnvInt64("TELEGRAM_ADMIN_CHAT_ID", 0),
 		TelegramOrgID:      getEnvInt64("TELEGRAM_ORG_ID", 1),
-		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", ""),
-		OpenAIModel:        getEnv("OPENAI_MODEL", "gpt-4o-mini"),
-		OpenAICommentModel: getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
+		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
+		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
+		// legacy alias so existing /etc/thg-scraper/env files on production VPS
+		// don't break on the next deploy. Drop the alias once VPS env is updated.
+		OpenAIClassifierModel: getEnv("OPENAI_CLASSIFIER_MODEL", getEnv("OPENAI_MODEL", "gpt-4o-mini")),
+		OpenAICommentModel:    getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
 		AgentBrainURL:      getEnv("AGENT_BRAIN_URL", ""),
 		AgentBrainTimeout:  getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
 		APISecret:          getEnv("API_SECRET", ""),

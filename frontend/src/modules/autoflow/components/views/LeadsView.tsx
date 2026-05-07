@@ -100,15 +100,18 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const [reclassifyLimit, setReclassifyLimit] = useState(50);
   const [reclassifyBusy, setReclassifyBusy] = useState(false);
   const [reclassifyMsg, setReclassifyMsg] = useState('');
+  const [reclassifyError, setReclassifyError] = useState(false);
 
   const handleReclassify = async () => {
     if (reclassifyBusy) return;
     if (!reclassifyPrompt.trim()) {
+      setReclassifyError(true);
       setReclassifyMsg(lang === 'vi' ? 'Mô tả mục tiêu phân loại trước khi chạy.' : 'Describe the intent before reclassifying.');
       return;
     }
     setReclassifyBusy(true);
     setReclassifyMsg('');
+    setReclassifyError(false);
     try {
       const res = await reclassifyLeads(orgId, {
         user_prompt: reclassifyPrompt.trim(),
@@ -120,8 +123,10 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
         ? `Đã phân loại lại ${res.reclassified}/${res.matched} lead${res.failed ? ` · ${res.failed} lỗi` : ''}.`
         : `Reclassified ${res.reclassified}/${res.matched} leads${res.failed ? ` · ${res.failed} failed` : ''}.`;
       setReclassifyMsg(summary);
+      setReclassifyError(false);
       void refetch();
     } catch (err) {
+      setReclassifyError(true);
       setReclassifyMsg(err instanceof Error ? err.message : String(err));
     } finally {
       setReclassifyBusy(false);
@@ -206,7 +211,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
           <button
             className="btn btn-ghost btn-sm"
             type="button"
-            onClick={() => { setReclassifyOpen(true); setReclassifyMsg(''); }}
+            onClick={() => { setReclassifyOpen(true); setReclassifyMsg(''); setReclassifyError(false); }}
             title={lang === 'vi' ? 'Chạy lại AI phân loại trên các lead cũ' : 'Re-run AI classifier on existing leads'}
           >
             <Wand2 size={13} />
@@ -292,7 +297,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
             </label>
 
             {reclassifyMsg && (
-              <div style={{ fontSize: 12.5, color: reclassifyMsg.toLowerCase().includes('error') || reclassifyMsg.toLowerCase().includes('lỗi') ? '#fca5a5' : '#4ade80' }}>
+              <div style={{ fontSize: 12.5, color: reclassifyError ? '#fca5a5' : '#4ade80' }}>
                 {reclassifyMsg}
               </div>
             )}
