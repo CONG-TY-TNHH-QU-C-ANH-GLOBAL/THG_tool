@@ -46,6 +46,7 @@ func Routes(api fiber.Router, deps Deps, authLimiter, regLimiter fiber.Handler) 
 	protected.Get("/me", h.me)
 	protected.Put("/me", h.updateOwnProfile)
 	protected.Put("/me/password", h.changeOwnPassword)
+	protected.Get("/me/invites", h.listMyPendingInvites)
 	protected.Post("/join/:token", h.acceptInvite)
 }
 

@@ -123,3 +123,23 @@ export async function searchInviteCandidates(query: string): Promise<InviteCandi
   const res = await api.get<{ users: InviteCandidate[]; count: number }>(`/org/invites/search?q=${encodeURIComponent(query.trim())}`);
   return res.users ?? [];
 }
+
+export interface PendingInvite {
+  id: number;
+  org_id: number;
+  org_name: string;
+  email: string;
+  role: string;
+  token: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export async function getMyPendingInvites(): Promise<PendingInvite[]> {
+  const res = await api.get<{ invites: PendingInvite[]; count: number }>('/auth/me/invites');
+  return res.invites ?? [];
+}
+
+export async function acceptInviteToken(token: string): Promise<{ access_token: string; org_id: number; user: { id: number; org_id: number; email: string; name: string; role: string } }> {
+  return api.post(`/auth/join/${encodeURIComponent(token)}`, {});
+}

@@ -125,9 +125,13 @@ func (h *Handler) onboardingSetup(c *fiber.Ctx) error {
 	}
 
 	var req struct {
-		OrgName string `json:"org_name"`
-		Domain  string `json:"domain"`
-		Type    string `json:"type"` // "team" | "personal"
+		OrgName          string `json:"org_name"`
+		Domain           string `json:"domain"`
+		Type             string `json:"type"` // "team" | "personal"
+		BusinessIndustry string `json:"business_industry"`
+		Services         string `json:"services"`
+		TargetCustomers  string `json:"target_customers"`
+		BusinessProfile  string `json:"business_profile"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
@@ -154,6 +158,25 @@ func (h *Handler) onboardingSetup(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "could not assign user to org"})
 	}
 
+	// Persist optional business positioning fields right away so the new
+	// workspace already has its profile context — used by classifier, gate,
+	// outbound generation, etc. Empty fields are skipped.
+	profileFields := map[string]string{
+		"business_name":     req.OrgName,
+		"business_industry": strings.TrimSpace(req.BusinessIndustry),
+		"services":          strings.TrimSpace(req.Services),
+		"target_customers":  strings.TrimSpace(req.TargetCustomers),
+		"business_profile":  strings.TrimSpace(req.BusinessProfile),
+	}
+	for key, value := range profileFields {
+		if value == "" {
+			continue
+		}
+		if err := h.deps.DB.SetContext(fmt.Sprintf("org:%d:%s", orgID, key), value); err != nil {
+			log.Printf("[Onboarding] could not persist profile field %s for org %d: %v", key, orgID, err)
+		}
+	}
+
 	user, _ = h.deps.DB.GetUserByID(userID)
 
 	// Issue a new token with the correct org_id
@@ -178,6 +201,50 @@ func (h *Handler) onboardingSetup(c *fiber.Ctx) error {
 			"role":   models.RoleAdmin,
 		},
 	})
+}
+
+// listMyPendingInvites handles GET /api/auth/me/invites — returns invites
+// matching the logged-in user's email that haven't been accepted or expired.
+// This is what the "no workspace yet" landing uses to surface invites without
+// the user needing the original invite link.
+func (h *Handler) listMyPendingInvites(c *fiber.Ctx) error {
+	userID, _ := c.Locals("user_id").(int64)
+	user, err := h.deps.DB.GetUserByID(userID)
+	if err != nil || user == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+	}
+	rows, err := h.deps.DB.DB().QueryContext(c.Context(),
+		`SELECT i.id, i.org_id, COALESCE(o.name, ''), i.email,
+		        COALESCE(NULLIF(i.role, ''), 'sales'), i.token, i.expires_at, i.created_at
+		 FROM org_invites i
+		 LEFT JOIN organizations o ON o.id = i.org_id
+		 WHERE lower(trim(i.email)) = lower(trim(?))
+		   AND i.used_at IS NULL
+		   AND i.expires_at > CURRENT_TIMESTAMP
+		 ORDER BY i.created_at DESC`, user.Email)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+	type pending struct {
+		ID        int64  `json:"id"`
+		OrgID     int64  `json:"org_id"`
+		OrgName   string `json:"org_name"`
+		Email     string `json:"email"`
+		Role      string `json:"role"`
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expires_at"`
+		CreatedAt string `json:"created_at"`
+	}
+	out := []pending{}
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.OrgName, &p.Email, &p.Role, &p.Token, &p.ExpiresAt, &p.CreatedAt); err != nil {
+			continue
+		}
+		out = append(out, p)
+	}
+	return c.JSON(fiber.Map{"invites": out, "count": len(out)})
 }
 
 // searchInviteCandidates handles GET /api/org/invites/search?q=... (admin only).

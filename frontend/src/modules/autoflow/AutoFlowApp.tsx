@@ -80,7 +80,12 @@ export default function AutoFlowApp() {
   }
 
   if (screen === 'onboarding') {
-    return <Onboarding onComplete={(r) => setScreen(isPlatformRole(r) ? 'superadmin' : 'app')} />;
+    return (
+      <Onboarding
+        onComplete={(r) => setScreen(isPlatformRole(r) ? 'superadmin' : 'app')}
+        onSignOut={async () => { await logout(); setScreen('landing'); }}
+      />
+    );
   }
 
   if (screen === 'join' && inviteToken) {
