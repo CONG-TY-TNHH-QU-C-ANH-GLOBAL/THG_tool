@@ -13,6 +13,45 @@ interface LeadsViewProps {
 
 const FILTERS: Array<LeadStatus | 'All'> = ['All', 'Hot', 'Warm', 'Cold'];
 
+type IntentKey = 'all' | 'candidate' | 'potential_customer' | 'partner' | 'provider_ad' | 'spam' | 'unknown';
+const INTENT_FILTERS: Array<{ key: IntentKey; label: string }> = [
+  { key: 'all', label: 'Tất cả tệp' },
+  { key: 'potential_customer', label: 'Khách quan tâm' },
+  { key: 'candidate', label: 'Ứng viên / Tuyển dụng' },
+  { key: 'partner', label: 'Đối tác / Reseller' },
+  { key: 'provider_ad', label: 'Provider quảng cáo' },
+  { key: 'spam', label: 'Spam' },
+  { key: 'unknown', label: 'Chưa phân loại' },
+];
+
+function intentDisplay(raw?: string): { label: string; className: string } {
+  const v = (raw ?? '').toLowerCase().trim();
+  switch (v) {
+    case 'candidate':
+      return { label: 'Ứng viên', className: 'tag tag-info' };
+    case 'potential_customer':
+      return { label: 'Khách quan tâm', className: 'tag tag-ok' };
+    case 'partner':
+      return { label: 'Đối tác', className: 'tag tag-warm' };
+    case 'provider_ad':
+      return { label: 'Provider', className: 'tag tag-mute' };
+    case 'not_relevant':
+      return { label: 'Không liên quan', className: 'tag tag-mute' };
+    case 'spam':
+      return { label: 'Spam', className: 'tag tag-hot' };
+    default:
+      return { label: 'Chưa rõ', className: 'tag tag-mute' };
+  }
+}
+
+function leadIntentKey(lead: Lead): IntentKey {
+  const v = (lead.agent ?? '').toLowerCase().trim();
+  if (v === 'candidate' || v === 'potential_customer' || v === 'partner' || v === 'provider_ad' || v === 'spam') {
+    return v;
+  }
+  return 'unknown';
+}
+
 function statusTagClass(status: string): string {
   switch (status) {
     case 'Hot':
@@ -41,6 +80,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const tv = t.leadsView;
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const [filter, setFilter] = useState<LeadStatus | 'All'>('All');
+  const [intentFilter, setIntentFilter] = useState<IntentKey>('all');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
@@ -66,9 +106,29 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
 
   const filteredLeads = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return leads;
-    return leads.filter((lead) => leadSearchValue(lead).includes(normalized));
-  }, [leads, query]);
+    return leads.filter((lead) => {
+      if (intentFilter !== 'all' && leadIntentKey(lead) !== intentFilter) return false;
+      if (normalized && !leadSearchValue(lead).includes(normalized)) return false;
+      return true;
+    });
+  }, [leads, query, intentFilter]);
+
+  const intentCounts = useMemo(() => {
+    const counts: Record<IntentKey, number> = {
+      all: leads.length,
+      potential_customer: 0,
+      candidate: 0,
+      partner: 0,
+      provider_ad: 0,
+      spam: 0,
+      unknown: 0,
+    };
+    for (const lead of leads) {
+      const key = leadIntentKey(lead);
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [leads]);
 
   useEffect(() => {
     if (filteredLeads.length === 0) {
@@ -148,6 +208,22 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
               })}
             </div>
 
+            <div className="sidebar-section" style={{ marginTop: 16 }}>TỆP / INTENT</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {INTENT_FILTERS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`filter-pill ${intentFilter === opt.key ? 'is-active' : ''}`}
+                  style={{ justifyContent: 'space-between', display: 'flex', textAlign: 'left' }}
+                  onClick={() => setIntentFilter(opt.key)}
+                >
+                  <span>{opt.label}</span>
+                  <span style={{ opacity: 0.7 }}>{intentCounts[opt.key] ?? 0}</span>
+                </button>
+              ))}
+            </div>
+
             <div className="sidebar-section" style={{ marginTop: 16 }}>{tv.searchLabel}</div>
             <div style={{ position: 'relative' }}>
               <Search size={13} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-faint)' }} />
@@ -184,25 +260,31 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                 <p>Điều chỉnh bộ lọc hoặc chạy đợt crawl tiếp theo.</p>
               </div>
             ) : (
-              filteredLeads.map((lead) => (
-                <div
-                  key={lead.id}
-                  className={`table-row ${selectedId === lead.id ? 'is-active' : ''}`}
-                  style={{ gridTemplateColumns: '1fr 64px 70px', cursor: 'pointer' }}
-                  onClick={() => setSelectedId(lead.id)}
-                >
-                  <div>
-                    <div style={{ fontSize: 13.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {lead.name}
+              filteredLeads.map((lead) => {
+                const intent = intentDisplay(lead.agent);
+                return (
+                  <div
+                    key={lead.id}
+                    className={`table-row ${selectedId === lead.id ? 'is-active' : ''}`}
+                    style={{ gridTemplateColumns: '1fr 64px 70px', cursor: 'pointer' }}
+                    onClick={() => setSelectedId(lead.id)}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {lead.name}
+                        </span>
+                        <span className={intent.className} style={{ fontSize: 10, padding: '1px 6px' }}>{intent.label}</span>
+                      </div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                        {lead.group || tv.unknownSource}
+                      </div>
                     </div>
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {lead.group || tv.unknownSource}
-                    </div>
+                    <div className="tabular mono" style={{ fontSize: 13.5 }}>{lead.score}</div>
+                    <div><span className={statusTagClass(lead.status)}>{lead.status.toUpperCase()}</span></div>
                   </div>
-                  <div className="tabular mono" style={{ fontSize: 13.5 }}>{lead.score}</div>
-                  <div><span className={statusTagClass(lead.status)}>{lead.status.toUpperCase()}</span></div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -216,6 +298,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                     <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{selectedLead.group || tv.unknownGroup}</div>
                   </div>
                   <div style={{ flex: 1 }} />
+                  <span className={intentDisplay(selectedLead.agent).className}>{intentDisplay(selectedLead.agent).label}</span>
                   <span className={statusTagClass(selectedLead.status)}>{selectedLead.status.toUpperCase()}</span>
                 </div>
 
@@ -230,19 +313,17 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                   </div>
                 </div>
 
-                <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0 }}>GHI CHÚ AGENT</div>
+                <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0 }}>AI PHÂN TÍCH</div>
                 <p style={{ fontSize: 13.5, color: 'var(--text)', lineHeight: 1.55 }}>
                   {selectedLead.phone || tv.noteEmpty}
                 </p>
 
                 <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0 }}>CHI TIẾT</div>
                 <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 16px', fontSize: 13, margin: 0 }}>
-                  <dt style={{ color: 'var(--text-faint)' }}>Agent</dt>
-                  <dd className="mono" style={{ color: 'var(--text)', margin: 0 }}>{selectedLead.agent || tv.defaultClassifier}@</dd>
-                  <dt style={{ color: 'var(--text-faint)' }}>Nguồn</dt>
+                  <dt style={{ color: 'var(--text-faint)' }}>Tệp</dt>
+                  <dd className="mono" style={{ color: 'var(--text)', margin: 0 }}>{intentDisplay(selectedLead.agent).label}</dd>
+                  <dt style={{ color: 'var(--text-faint)' }}>Ngành / nguồn</dt>
                   <dd className="mono" style={{ color: 'var(--text)', margin: 0 }}>{selectedLead.group || '—'}</dd>
-                  <dt style={{ color: 'var(--text-faint)' }}>Điện thoại</dt>
-                  <dd className="mono" style={{ color: 'var(--text)', margin: 0 }}>{selectedLead.phone || '—'}</dd>
                   <dt style={{ color: 'var(--text-faint)' }}>Lần cuối</dt>
                   <dd style={{ color: 'var(--text-mute)', margin: 0 }}>{selectedLead.last}</dd>
                 </dl>

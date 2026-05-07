@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -129,6 +130,26 @@ func (s *Store) GetAutomationLeadsForOrg(orgID int64, score string, limit int) (
 	return out, nil
 }
 
+// parseAIIntentAndReason extracts ai_intent and ai_reason values from a
+// task_leads.signals_json blob. The ingest pipeline appends entries like
+// "ai_intent:candidate" and "ai_reason:Author is hiring sales POD staff"
+// alongside other signals. This helper unpacks them so the dashboard layer
+// can render the intent tag + reason without re-running the classifier.
+func parseAIIntentAndReason(signalsJSON string) (intent, reason string) {
+	var signals []string
+	if err := json.Unmarshal([]byte(signalsJSON), &signals); err != nil {
+		return "", ""
+	}
+	for _, s := range signals {
+		if rest, ok := strings.CutPrefix(s, "ai_intent:"); ok && intent == "" {
+			intent = strings.TrimSpace(rest)
+		} else if rest, ok := strings.CutPrefix(s, "ai_reason:"); ok && reason == "" {
+			reason = strings.TrimSpace(rest)
+		}
+	}
+	return intent, reason
+}
+
 func normalizeLeadScoreFilter(score string) string {
 	score = strings.ToLower(strings.TrimSpace(score))
 	switch score {
@@ -142,7 +163,7 @@ func normalizeLeadScoreFilter(score string) string {
 }
 
 func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) ([]models.Lead, error) {
-	query := `SELECT id, org_id, source_url, author_profile_url, author_name, content, lead_score, category, created_at
+	query := `SELECT id, org_id, source_url, author_profile_url, author_name, content, lead_score, category, signals_json, created_at
 		FROM task_leads WHERE org_id = ?`
 	args := []any{orgID}
 	if f := normalizeLeadScoreFilter(score); f != "" {
@@ -162,14 +183,26 @@ func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) 
 	for rows.Next() {
 		var l models.Lead
 		var numericScore float64
-		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceURL, &l.AuthorURL, &l.Author, &l.Content, &numericScore, &l.Score, &l.CreatedAt); err != nil {
+		var signalsJSON string
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceURL, &l.AuthorURL, &l.Author, &l.Content, &numericScore, &l.Score, &signalsJSON, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		l.SourceType = "task_lead"
 		l.Platform = models.PlatformFacebook
 		l.ServiceMatch = string(l.Score)
-		l.AuthorRole = "AI classifier"
-		l.PainPoint = fmt.Sprintf("score %.0f", numericScore)
+		// Recover ai_intent and ai_reason from signals_json so the dashboard
+		// can show the same intent tag + reason for task_leads as for the
+		// legacy mirror. The ingest pipeline writes both into signals.
+		intent, reason := parseAIIntentAndReason(signalsJSON)
+		if intent == "" {
+			intent = "unknown"
+		}
+		l.AuthorRole = intent
+		if reason != "" {
+			l.PainPoint = reason
+		} else {
+			l.PainPoint = fmt.Sprintf("score %.0f", numericScore)
+		}
 		l.ClassifiedAt = l.CreatedAt
 		leads = append(leads, l)
 	}

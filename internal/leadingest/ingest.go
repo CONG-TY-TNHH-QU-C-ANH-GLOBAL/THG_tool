@@ -169,6 +169,32 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		}
 	}
 	if deps.LegacyDB != nil {
+		// AuthorRole carries the AI classifier intent (candidate / potential_customer
+		// / partner / provider_ad / not_relevant / spam) so the dashboard can render
+		// a meaningful tag per lead instead of a generic "AI classifier" string.
+		authorRole := strings.TrimSpace(out.AIIntent)
+		if authorRole == "" {
+			authorRole = "unknown"
+		}
+		// Niche prefers a clean domain label (industry from profile) over the raw
+		// crawl keywords. Keywords are kept as fallback when no industry is set.
+		niche := ""
+		if deps.BusinessProfile != nil {
+			niche = strings.TrimSpace(deps.BusinessProfile.Industry)
+			if niche == "" {
+				niche = strings.TrimSpace(deps.BusinessProfile.Name)
+			}
+		}
+		if niche == "" {
+			niche = strings.Join(deps.Keywords, ", ")
+		}
+		// PainPoint is the human-readable AI reason ("Author is asking for a POD
+		// supplier from VN to ship to US"); fall back to signals only if reason
+		// is missing. The dashboard shows this as the agent note.
+		painPoint := strings.TrimSpace(out.AIReason)
+		if painPoint == "" {
+			painPoint = strings.Join(out.Signals, "; ")
+		}
 		legacy := &models.Lead{
 			OrgID:        in.OrgID,
 			SourceType:   "post",
@@ -180,10 +206,10 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			Content:      content,
 			Score:        models.LeadScore(out.Category),
 			ServiceMatch: out.Category,
-			AuthorRole:   "AI classifier",
-			PainPoint:    strings.Join(out.Signals, "; "),
+			AuthorRole:   authorRole,
+			PainPoint:    painPoint,
 			AIReasoning:  textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, "; ")),
-			Niche:        strings.Join(deps.Keywords, ", "),
+			Niche:        niche,
 			ClassifiedAt: time.Now().UTC(),
 		}
 		if _, err := deps.LegacyDB.InsertLead(legacy); err != nil {
