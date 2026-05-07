@@ -6,16 +6,17 @@ Facebook Sales Intelligence and Automation workspace.
 Start here before making changes:
 
 1. `specs/PRODUCTION_FLOW.md` — current production wiring + helper layer (read first if you're changing auth, outbound, browser, or AI prompts)
-2. `specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`
-3. `specs/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md`
-4. `specs/PRODUCTION_DATABASE_MIGRATION_PLAN.md`
-5. `specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`
-6. `openspec/root-architecture.md`
-7. `specs/ROOT_ARCHITECTURE.md`
-8. `frontend/src/modules/autoflow/`
-9. `internal/handlers/facebook_crawl/handler.go`
-10. `internal/ai/business.go`
-11. `internal/ai/universal.go`
+2. `specs/STRUCTURAL_REFACTOR_PLAN.md` — open structural debt (auth boundary, worker path drop, file-creation principle); check before adding a package or starting a rename
+3. `specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`
+4. `specs/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md`
+5. `specs/PRODUCTION_DATABASE_MIGRATION_PLAN.md`
+6. `specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`
+7. `openspec/root-architecture.md`
+8. `specs/ROOT_ARCHITECTURE.md`
+9. `frontend/src/modules/autoflow/`
+10. `internal/handlers/facebook_crawl/handler.go`
+11. `internal/ai/business.go`
+12. `internal/ai/universal.go`
 
 ## Current Product Direction
 
