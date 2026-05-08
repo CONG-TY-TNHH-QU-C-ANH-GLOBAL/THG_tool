@@ -57,25 +57,51 @@ func RecordDashboardAutomationEvent(db *store.Store, orgID, accountID int64, mes
 	}
 }
 
-func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, accountID, id int64, typ string, status models.OutboundStatus) {
-	state := "draft waiting for approval"
-	if status == models.OutboundApproved {
-		state = "approved for Chrome Extension execution"
+// Vietnamese label dictionaries used when composing user-facing notifier text.
+// English log lines stay untouched so dev/ops grep pipelines keep working.
+var stageVN = map[string]string{
+	"started":  "đã bắt đầu",
+	"scraping": "đang quét",
+	"finished": "đã hoàn tất",
+	"queued":   "đã vào hàng đợi",
+	"failed":   "đã thất bại",
+}
+
+func stageLabelVN(stage string) string {
+	if v, ok := stageVN[strings.ToLower(strings.TrimSpace(stage))]; ok {
+		return v
 	}
-	label := "Facebook outbound"
+	return stage
+}
+
+const notifierPrefix = "[Trợ lý THG]"
+
+func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, accountID, id int64, typ string, status models.OutboundStatus) {
+	stateEN := "draft waiting for approval"
+	stateVN := "bản nháp chờ duyệt"
+	if status == models.OutboundApproved {
+		stateEN = "approved for Chrome Extension execution"
+		stateVN = "đã duyệt và chờ Chrome Extension thực thi"
+	}
+	labelEN := "Facebook outbound"
+	labelVN := "Hành động Facebook"
 	switch typ {
 	case "comment":
-		label = "Facebook comment"
+		labelEN = "Facebook comment"
+		labelVN = "Bình luận Facebook"
 	case "inbox":
-		label = "Facebook inbox"
+		labelEN = "Facebook inbox"
+		labelVN = "Tin nhắn Facebook"
 	case "group_post":
-		label = "Facebook posting"
+		labelEN = "Facebook posting"
+		labelVN = "Bài đăng Facebook"
 	}
-	msg := fmt.Sprintf("[THG Agent] %s #%d queued as %s. Org #%d, account #%d.", label, id, state, orgID, accountID)
-	log.Printf("[Outbound] %s", msg)
-	RecordDashboardAutomationEvent(db, orgID, accountID, msg, "system_outbound_queued", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, id, typ, status), true)
+	logMsg := fmt.Sprintf("[THG Agent] %s #%d queued as %s. Org #%d, account #%d.", labelEN, id, stateEN, orgID, accountID)
+	userMsg := fmt.Sprintf("%s %s #%d %s. Org #%d, account #%d.", notifierPrefix, labelVN, id, stateVN, orgID, accountID)
+	log.Printf("[Outbound] %s", logMsg)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userMsg, "system_outbound_queued", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, id, typ, status), true)
 	if notifier != nil {
-		notifier(msg)
+		notifier(userMsg)
 	}
 }
 
@@ -87,11 +113,12 @@ func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int6
 	if err != nil || msg == nil {
 		return
 	}
-	text := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, status, msg.TargetName)
-	log.Printf("[Outbound] %s", text)
-	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, text, "system_outbound_status", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, msg.ID, msg.Type, status), status != models.OutboundFailed)
+	logText := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, status, msg.TargetName)
+	userText := fmt.Sprintf("%s Facebook %s #%d trạng thái: %s. Đối tượng: %s", notifierPrefix, msg.Type, msg.ID, status, msg.TargetName)
+	log.Printf("[Outbound] %s", logText)
+	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, "system_outbound_status", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, msg.ID, msg.Type, status), status != models.OutboundFailed)
 	if notifier != nil {
-		notifier(text)
+		notifier(userText)
 	}
 }
 
@@ -101,8 +128,10 @@ func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID
 		label = "facebook_crawl"
 	}
 	sourceURL = strings.TrimSpace(sourceURL)
+	sourceVN := sourceURL
 	if sourceURL == "" {
 		sourceURL = "Facebook source selected by the workspace"
+		sourceVN = "Nguồn Facebook do workspace chọn"
 	}
 	rejected := fetched - inserted
 	if rejected < 0 {
@@ -112,15 +141,18 @@ func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID
 	if skipped < 0 {
 		skipped = 0
 	}
-	outcome := fmt.Sprintf("%d raw items, %d analyzable posts, %d qualified leads saved, %d filtered by Market Signal Gate, %d skipped", totalItems, fetched, inserted, rejected, skipped)
+	outcomeEN := fmt.Sprintf("%d raw items, %d analyzable posts, %d qualified leads saved, %d filtered by Market Signal Gate, %d skipped", totalItems, fetched, inserted, rejected, skipped)
+	outcomeVN := fmt.Sprintf("%d bài thô, %d bài phân tích được, %d leads đủ điều kiện đã lưu, %d bị Bộ lọc tín hiệu thị trường loại, %d bỏ qua", totalItems, fetched, inserted, rejected, skipped)
 	if inserted == 0 {
-		outcome = fmt.Sprintf("%d raw items, %d analyzable posts, but 0 leads passed Market Signal Gate (%d filtered, %d skipped)", totalItems, fetched, rejected, skipped)
+		outcomeEN = fmt.Sprintf("%d raw items, %d analyzable posts, but 0 leads passed Market Signal Gate (%d filtered, %d skipped)", totalItems, fetched, rejected, skipped)
+		outcomeVN = fmt.Sprintf("%d bài thô, %d bài phân tích được, nhưng không có lead nào qua Bộ lọc tín hiệu thị trường (%d bị loại, %d bỏ qua)", totalItems, fetched, rejected, skipped)
 	}
-	text := fmt.Sprintf("[THG Agent] Crawl %s completed. Task %s. Org #%d, account #%d. %s. Source: %s", label, taskID, orgID, accountID, outcome, sourceURL)
-	log.Printf("[ConnectorCrawl] %s", text)
-	RecordDashboardAutomationEvent(db, orgID, accountID, text, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL), true)
+	logText := fmt.Sprintf("[THG Agent] Crawl %s completed. Task %s. Org #%d, account #%d. %s. Source: %s", label, taskID, orgID, accountID, outcomeEN, sourceURL)
+	userText := fmt.Sprintf("%s Crawl %s đã hoàn tất. Tác vụ %s. Org #%d, account #%d. %s. Nguồn: %s", notifierPrefix, label, taskID, orgID, accountID, outcomeVN, sourceVN)
+	log.Printf("[ConnectorCrawl] %s", logText)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL), true)
 	if notifier != nil {
-		notifier(text)
+		notifier(userText)
 	}
 }
 
@@ -138,28 +170,35 @@ func NotifyCrawlProgress(db *store.Store, notifier func(string), orgID, accountI
 		progress = fmt.Sprintf("%d/%d", fetched, max)
 	}
 	source := strings.TrimSpace(sourceURL)
+	sourceVN := source
 	if source == "" {
 		source = "(source not reported)"
+		sourceVN = "(không báo cáo nguồn)"
 	}
-	text := fmt.Sprintf("[THG Agent] Crawl %s in progress. Task %s. Org #%d, account #%d. Stage: %s. Progress: %s posts. Source: %s",
+	logText := fmt.Sprintf("[THG Agent] Crawl %s in progress. Task %s. Org #%d, account #%d. Stage: %s. Progress: %s posts. Source: %s",
 		label, taskID, orgID, accountID, stage, progress, source)
-	log.Printf("[ConnectorCrawl] %s", text)
-	RecordDashboardAutomationEvent(db, orgID, accountID, text, "system_crawl_progress",
+	userText := fmt.Sprintf("%s Crawl %s đang chạy. Tác vụ %s. Org #%d, account #%d. Trạng thái: %s. Tiến độ: %s bài. Nguồn: %s",
+		notifierPrefix, label, taskID, orgID, accountID, stageLabelVN(stage), progress, sourceVN)
+	log.Printf("[ConnectorCrawl] %s", logText)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_progress",
 		fmt.Sprintf(`{"task_id":%q,"intent":%q,"stage":%q,"fetched":%d,"max":%d,"source_url":%q}`, taskID, label, stage, fetched, max, source), true)
 	if notifier != nil {
-		notifier(text)
+		notifier(userText)
 	}
 }
 
 func NotifyCrawlFailure(db *store.Store, notifier func(string), orgID, accountID int64, taskID, reason string) {
 	reason = strings.TrimSpace(reason)
+	reasonVN := reason
 	if reason == "" {
 		reason = "Chrome Extension crawl failed without an explicit error"
+		reasonVN = "Crawl qua Chrome Extension thất bại nhưng không có thông báo lỗi cụ thể"
 	}
-	text := fmt.Sprintf("[THG Agent] Crawl task %s failed. Org #%d, account #%d. Reason: %s", taskID, orgID, accountID, reason)
-	log.Printf("[ConnectorCrawl] %s", text)
-	RecordDashboardAutomationEvent(db, orgID, accountID, text, "system_crawl_failure", fmt.Sprintf(`{"task_id":%q,"reason":%q}`, taskID, reason), false)
+	logText := fmt.Sprintf("[THG Agent] Crawl task %s failed. Org #%d, account #%d. Reason: %s", taskID, orgID, accountID, reason)
+	userText := fmt.Sprintf("%s Tác vụ crawl %s thất bại. Org #%d, account #%d. Lý do: %s", notifierPrefix, taskID, orgID, accountID, reasonVN)
+	log.Printf("[ConnectorCrawl] %s", logText)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_failure", fmt.Sprintf(`{"task_id":%q,"reason":%q}`, taskID, reason), false)
 	if notifier != nil {
-		notifier(text)
+		notifier(userText)
 	}
 }
