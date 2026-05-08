@@ -550,20 +550,6 @@ func (b *Bot) handleFreeText(c tele.Context) error {
 
 // --- Helpers ---
 
-func normalizePlatform(s string) models.Platform {
-	s = strings.ToLower(s)
-	switch {
-	case s == "fb" || s == "facebook":
-		return models.PlatformFacebook
-	case s == "tt" || s == "tiktok":
-		return models.PlatformTikTok
-	case s == "zalo":
-		return models.PlatformZalo
-	default:
-		return models.PlatformFacebook
-	}
-}
-
 func isLegacyPlatformToken(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "fb", "facebook", "tt", "tiktok", "zalo":

@@ -141,7 +141,21 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			slog.WarnContext(ctx, "universal classify failed; using deterministic score",
 				"task_id", in.TaskID, "org_id", in.OrgID, "error", err)
 		} else if aiResult != nil {
-			if aiResult.Priority == "rejected" {
+			// Hard-guard against LLM assigning hot/warm priority to off-target intents
+			if intent.TargetRole != "" && aiResult.Intent != "not_relevant" && aiResult.Intent != "spam" {
+				if intent.TargetRole == "potential_customer" && aiResult.Intent != "potential_customer" {
+					aiResult.Priority = "rejected"
+					aiResult.Reason = "Hard-rejected: target is customer but post is " + aiResult.Intent
+				} else if intent.TargetRole == "candidate" && aiResult.Intent != "candidate" {
+					aiResult.Priority = "rejected"
+					aiResult.Reason = "Hard-rejected: target is candidate but post is " + aiResult.Intent
+				} else if intent.TargetRole == "partner" && aiResult.Intent != "partner" {
+					aiResult.Priority = "rejected"
+					aiResult.Reason = "Hard-rejected: target is partner but post is " + aiResult.Intent
+				}
+			}
+
+			if aiResult.Priority == "rejected" || aiResult.Intent == "not_relevant" || aiResult.Intent == "spam" || aiResult.Intent == "provider_ad" {
 				out.Skipped = "rejected"
 				out.Category = "rejected"
 				out.Signals = append(out.Signals, "ai_intent:"+aiResult.Intent, "ai_reason:"+aiResult.Reason)

@@ -357,7 +357,7 @@ func scaffoldFanpageInboxRun(deps builtinSkillDeps) skills.SkillRun {
 	}
 }
 
-func scaffoldFanpageCareRun(deps builtinSkillDeps) skills.SkillRun {
+func scaffoldFanpageCareRun(_ builtinSkillDeps) skills.SkillRun {
 	return func(ctx context.Context, env skills.Env, args map[string]any) (skills.SkillResult, error) {
 		pageURL, _ := args["page_url"].(string)
 		action, _ := args["action"].(string)

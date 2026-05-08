@@ -82,7 +82,7 @@ func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, e
 	if err == nil {
 		return &ProvisionedOrgClaim{OrgID: inviteOrgID, Role: normalizeWorkspaceRole(inviteRole), Source: "invite", InviteID: inviteID}, nil
 	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 
