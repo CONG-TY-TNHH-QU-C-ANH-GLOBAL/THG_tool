@@ -174,6 +174,9 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 		}
 	}
 	if action, args, ok := deterministicFacebookAction(prompt, orgID, selectedAccountID); ok && a.ActionHandler != nil {
+		if outboundToolUsesPolicy(action) && a.shouldAutoOutbound(prompt, orgID) {
+			args["auto"] = true
+		}
 		args["user_prompt"] = prompt
 		fnResult, err := a.ActionHandler(action, args)
 		success := err == nil

@@ -39,6 +39,15 @@ func (a *Agent) shouldAutoOutbound(prompt string, orgID int64) bool {
 	return false
 }
 
+func outboundToolUsesPolicy(tool string) bool {
+	switch tool {
+	case "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post", "care_fanpage", "post_to_profile":
+		return true
+	default:
+		return false
+	}
+}
+
 func stripDashboardContext(prompt string) string {
 	marker := "\n\nDashboard context:"
 	if idx := strings.Index(prompt, marker); idx >= 0 {

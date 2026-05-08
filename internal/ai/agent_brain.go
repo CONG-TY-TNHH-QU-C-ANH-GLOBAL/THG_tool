@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/textutil"
 )
@@ -501,12 +502,7 @@ func brainToolNeedsAccount(tool string) bool {
 }
 
 func brainToolIsOutbound(tool string) bool {
-	switch tool {
-	case "auto_comment", "comment_all_leads", "auto_inbox", "inbox_all_leads", "create_job_post", "care_fanpage", "post_to_profile":
-		return true
-	default:
-		return false
-	}
+	return outboundToolUsesPolicy(tool)
 }
 
 func isFacebookURL(raw string) bool {
@@ -563,4 +559,3 @@ func brainInt64(v any) int64 {
 		return 0
 	}
 }
-
