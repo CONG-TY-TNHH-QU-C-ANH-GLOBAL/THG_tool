@@ -84,7 +84,8 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       };
     }
     const maxItems = Math.max(1, Math.min(200, Number(task?.crawl_plan?.max_items || 20)));
-    const maxPasses = 24;
+    // Increase maxPasses dynamically based on maxItems (Facebook often only loads 2-4 posts per scroll)
+    const maxPasses = Math.max(40, Math.ceil(maxItems * 1.5));
     const seen = new Set();
     const items = [];
     let stagnantPasses = 0;
@@ -133,12 +134,11 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         break;
       }
       // No-progress detection: if scrollHeight and visible article count both
-      // stay flat across two consecutive passes, the feed is exhausted (or
-      // Facebook stopped lazy-loading) — stop instead of burning the remaining
-      // passes.
+      // stay flat across several consecutive passes, the feed is exhausted (or
+      // Facebook stopped lazy-loading) — stop instead of burning the remaining passes.
       if (pass > 0 && docHeight === prevHeight && articlesSeen === prevArticles) {
         stagnantPasses++;
-        if (stagnantPasses >= 2) {
+        if (stagnantPasses >= 4) { // Increased to 4 to tolerate slow loading
           exitReason = 'no_progress';
           break;
         }
