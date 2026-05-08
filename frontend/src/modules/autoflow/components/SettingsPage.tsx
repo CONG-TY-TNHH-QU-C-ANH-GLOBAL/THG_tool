@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties } from 'react';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
-import { theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
+import { alpha, theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
 import { useStaff } from '../hooks/useStaff';
 import { useAuthStore } from '../stores/authStore';
 import { changePassword } from '../services/authService';
@@ -278,7 +278,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
               cursor: 'pointer',
               fontSize: 12,
               background: activeTab === id ? theme.primary : theme.surface,
-              color: activeTab === id ? '#fff' : theme.textMuted,
+              color: activeTab === id ? 'var(--accent-ink)' : theme.textMuted,
             }}
           >
             <Icon size={12} />{label}
@@ -333,7 +333,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
           </div>
 
           <Row style={{ gap: 10, justifyContent: 'flex-end' }}>
-            {orgMsg && <span style={{ color: orgMsg.includes('Không') || orgMsg.includes('thất bại') ? '#fca5a5' : '#4ade80', fontSize: 12 }}>{orgMsg}</span>}
+            {orgMsg && <span style={{ color: orgMsg.includes('Không') || orgMsg.includes('thất bại') ? theme.red : theme.green, fontSize: 12 }}>{orgMsg}</span>}
             <button disabled={!isAdmin || orgSaving} onClick={saveBrand} style={primaryBtn({ padding: '10px 24px', opacity: isAdmin && !orgSaving ? 1 : 0.55 })}>
               {orgSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
@@ -356,7 +356,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             <input type="password" style={{ ...inputStyle, marginBottom: 16 }} value={pw.confirm} onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} />
             <Row style={{ justifyContent: 'space-between', gap: 10 }}>
               <button onClick={savePassword} style={primaryBtn({ padding: '9px 18px', fontSize: 13 })}>Cập nhật</button>
-              {pwMsg && <span style={{ color: pwMsg.startsWith('Đã') ? '#4ade80' : '#fca5a5', fontSize: 12 }}>{pwMsg}</span>}
+              {pwMsg && <span style={{ color: pwMsg.startsWith('Đã') ? theme.green : theme.red, fontSize: 12 }}>{pwMsg}</span>}
             </Row>
           </div>
 
@@ -403,7 +403,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
           </Row>
 
           {showAdd && (
-            <div style={{ ...cardStyle(), border: `1px solid ${theme.primary}44` }}>
+            <div style={{ ...cardStyle(), border: `1px solid ${alpha(theme.primary, 28)}` }}>
               <p style={{ color: theme.primaryPale, fontWeight: 500, fontSize: 13, marginBottom: 14 }}>Invite nhân viên vào workspace</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 130px auto', gap: 10, alignItems: 'end' }}>
                 <div style={{ position: 'relative' }}>
@@ -432,7 +432,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                             <div style={{ fontSize: 11, color: theme.textFaint, marginTop: 2 }}>
                               {cand.name || '—'} · {cand.role}
                               {inOtherOrg && <span style={{ color: theme.yellow, marginLeft: 6 }}>· đang ở workspace #{cand.org_id}, mời sẽ chuyển họ qua đây</span>}
-                              {cand.org_id === 0 && <span style={{ color: '#4ade80', marginLeft: 6 }}>· chưa thuộc workspace nào</span>}
+                              {cand.org_id === 0 && <span style={{ color: theme.green, marginLeft: 6 }}>· chưa thuộc workspace nào</span>}
                             </div>
                           </button>
                         );
@@ -447,7 +447,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             </div>
           )}
 
-          {staffMsg && <p style={{ color: staffMsg.startsWith('Đã') || staffMsg.startsWith('Da ') || staffMsg.startsWith('Invite da tao') ? '#4ade80' : '#fca5a5', fontSize: 12 }}>{staffMsg}</p>}
+          {staffMsg && <p style={{ color: staffMsg.startsWith('Đã') || staffMsg.startsWith('Da ') || staffMsg.startsWith('Invite da tao') ? theme.green : theme.red, fontSize: 12 }}>{staffMsg}</p>}
 
           {isAdmin && invites.length > 0 && (
             <div style={cardStyle()}>
@@ -457,7 +457,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
               </Row>
               {invites.map(inv => {
                 const inviteUrl = inv.inviteFullUrl || `${window.location.origin}${inv.inviteUrl}`;
-                const statusColor = inv.emailStatus === 'sent' ? '#4ade80' : inv.emailStatus === 'failed' ? '#fca5a5' : theme.yellow;
+                const statusColor = inv.emailStatus === 'sent' ? theme.green : inv.emailStatus === 'failed' ? theme.red : theme.yellow;
                 return (
                   <Row key={inv.id} style={{ justifyContent: 'space-between', gap: 12, padding: '9px 0', borderTop: `1px solid ${theme.borderAlt}` }}>
                     <div style={{ minWidth: 0 }}>
@@ -516,7 +516,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                     </td>
                     <td style={{ padding: '10px 13px', color: theme.textMuted }}>{s.email}</td>
                     <td style={{ padding: '10px 13px', color: theme.textFaint, fontFamily: 'monospace' }}>{s.orgId || org.id}</td>
-                    <td style={{ padding: '10px 13px', color: '#d1d5db' }}>
+                    <td style={{ padding: '10px 13px', color: theme.textMuted }}>
                       {isAdmin && !isSelf ? (
                         <select
                           value={s.role === 'admin' ? 'admin' : 'sales'}
@@ -545,9 +545,9 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                         <span title={isSelf ? 'Không thể tự đổi vai trò chính mình' : ''}>{s.role}</span>
                       )}
                     </td>
-                    <td style={{ padding: '10px 13px', color: '#d1d5db' }}>{s.convs}</td>
-                    <td style={{ padding: '10px 13px', color: '#4ade80' }}>{s.converted}</td>
-                    <td style={{ padding: '10px 13px', color: '#d1d5db' }}>{s.cmts}</td>
+                    <td style={{ padding: '10px 13px', color: theme.textMuted }}>{s.convs}</td>
+                    <td style={{ padding: '10px 13px', color: theme.green }}>{s.converted}</td>
+                    <td style={{ padding: '10px 13px', color: theme.textMuted }}>{s.cmts}</td>
                     <td style={{ padding: '10px 13px' }}><Badge label={s.status} /></td>
                     <td style={{ padding: '10px 13px' }}>
                       {isAdmin && !isSelf && (
@@ -575,14 +575,14 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                 <button onClick={addAgent} style={primaryBtn({ padding: '10px 16px', fontSize: 13 })}>Tạo token</button>
               </Row>
               {newAgentToken && (
-                <div style={{ marginTop: 14, padding: 12, border: `1px solid ${theme.green}55`, borderRadius: 10, background: '#052e1b' }}>
+                <div style={{ marginTop: 14, padding: 12, border: `1px solid ${alpha(theme.green, 34)}`, borderRadius: 10, background: alpha(theme.green, 12) }}>
                   <Row style={{ justifyContent: 'space-between', gap: 10 }}>
-                    <code style={{ color: '#bbf7d0', fontSize: 12, wordBreak: 'break-all' }}>{newAgentToken}</code>
+                    <code style={{ color: theme.green, fontSize: 12, wordBreak: 'break-all' }}>{newAgentToken}</code>
                     <button onClick={() => navigator.clipboard?.writeText(newAgentToken)} style={secondaryBtn({ padding: '6px 10px', fontSize: 11 })}><Copy size={12} /> Copy</button>
                   </Row>
                 </div>
               )}
-              {agentMsg && <p style={{ color: '#fca5a5', fontSize: 12, marginTop: 10 }}>{agentMsg}</p>}
+              {agentMsg && <p style={{ color: theme.red, fontSize: 12, marginTop: 10 }}>{agentMsg}</p>}
             </div>
           )}
 
@@ -593,9 +593,9 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             ) : agents.map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: `1px solid ${theme.border}` }}>
                 <Row style={{ gap: 10 }}>
-                  <div style={{ width: 8, height: 8, background: a.online ? '#4ade80' : (a.active ? theme.yellow : theme.red), borderRadius: '50%' }} />
+                  <div style={{ width: 8, height: 8, background: a.online ? theme.green : (a.active ? theme.yellow : theme.red), borderRadius: '50%' }} />
                   <div>
-                    <p style={{ color: '#d1d5db', fontSize: 13, fontWeight: 500 }}>{a.name}</p>
+                    <p style={{ color: theme.text, fontSize: 13, fontWeight: 500 }}>{a.name}</p>
                     <p style={{ color: theme.textFaint, fontSize: 11 }}>{a.hostname || 'No heartbeat'} · {a.os || 'unknown'} · {a.version || 'unknown'} · {formatDate(a.last_seen)}</p>
                   </div>
                 </Row>
@@ -611,7 +611,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
 
       {activeTab === 'billing' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ ...cardStyle(), border: `1px solid ${theme.primary}44` }}>
+          <div style={{ ...cardStyle(), border: `1px solid ${alpha(theme.primary, 28)}` }}>
             <Row style={{ justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
                 <p style={{ color: theme.textMuted, fontSize: 11, marginBottom: 3 }}>Gói hiện tại</p>
@@ -643,7 +643,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                     <span style={{ color: theme.textMuted, fontSize: 12 }}>{u.label}</span>
                     <span style={{ color: theme.text, fontSize: 12 }}>{u.current.toLocaleString()} / {u.max.toLocaleString()}</span>
                   </Row>
-                  <div style={{ height: 5, background: '#2a2f45', borderRadius: 99 }}>
+                  <div style={{ height: 5, background: theme.surfaceAlt, borderRadius: 99 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: pct > 85 ? theme.red : theme.primary, borderRadius: 99 }} />
                   </div>
                 </div>

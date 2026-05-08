@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Database, ExternalLink, FileSpreadsheet, FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import type { DataSource, DataSourceType } from '../../types';
 import { Badge, Row } from '../ui';
-import { cardStyle, primaryBtn, secondaryBtn, theme } from '../../constants/styles';
+import { alpha, cardStyle, inputStyle, primaryBtn, secondaryBtn, theme } from '../../constants/styles';
 
 interface DataSourcesPanelProps {
   sources: DataSource[];
@@ -63,7 +63,7 @@ export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd,
           <select
             value={form.type}
             onChange={e => setForm(p => ({ ...p, type: e.target.value as DataSourceType }))}
-            style={{ background: theme.border, border: '1px solid #374151', borderRadius: 9, padding: '9px 10px', color: '#fff', fontSize: 12, outline: 'none', width: '100%' }}
+            style={{ ...inputStyle, padding: '9px 10px', fontSize: 12 }}
           >
             <option value="google_sheet">Google Sheet</option>
             <option value="google_drive">Google Drive</option>
@@ -75,7 +75,7 @@ export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd,
             value={form.name}
             onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
             placeholder="Bảng giá, Media folder..."
-            style={{ background: theme.border, border: '1px solid #374151', borderRadius: 9, padding: '9px 10px', color: '#fff', fontSize: 12, outline: 'none', width: '100%', boxSizing: 'border-box' }}
+            style={{ ...inputStyle, padding: '9px 10px', fontSize: 12 }}
           />
         </div>
         <div>
@@ -84,13 +84,13 @@ export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd,
             value={form.source_url}
             onChange={e => setForm(p => ({ ...p, source_url: e.target.value }))}
             placeholder="https://docs.google.com/spreadsheets/... hoặc https://drive.google.com/drive/folders/..."
-            style={{ background: theme.border, border: '1px solid #374151', borderRadius: 9, padding: '9px 10px', color: '#fff', fontSize: 12, outline: 'none', width: '100%', boxSizing: 'border-box' }}
+            style={{ ...inputStyle, padding: '9px 10px', fontSize: 12 }}
           />
         </div>
         <button onClick={submit} style={primaryBtn({ padding: '9px 14px', fontSize: 12 })}>Thêm nguồn</button>
       </div>
 
-      {message && <p style={{ color: message.startsWith('Đã') ? '#4ade80' : '#fca5a5', fontSize: 12, marginBottom: 12 }}>{message}</p>}
+      {message && <p style={{ color: message.startsWith('Đã') ? theme.green : theme.red, fontSize: 12, marginBottom: 12 }}>{message}</p>}
 
       <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden' }}>
         {isLoading ? (
@@ -100,7 +100,7 @@ export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd,
         ) : sources.map(src => (
           <div key={src.id} style={{ padding: 13, borderBottom: `1px solid ${theme.borderAlt}` }}>
             <Row style={{ gap: 10, alignItems: 'flex-start' }}>
-              <div style={{ width: 34, height: 34, background: `${theme.primary}18`, border: `1px solid ${theme.primary}33`, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, background: alpha(theme.primary, 10), border: `1px solid ${alpha(theme.primary, 22)}`, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {src.type === 'google_sheet' ? <FileSpreadsheet size={16} color={theme.primaryLight} /> : <FolderOpen size={16} color={theme.primaryLight} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -110,7 +110,7 @@ export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd,
                   <span style={{ color: theme.textFaint, fontSize: 11 }}>{sourceLabel(src.type)} · {src.item_count} items · {formatDate(src.last_sync_at)}</span>
                 </Row>
                 {src.summary && <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.5, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 72, overflow: 'hidden' }}>{src.summary}</p>}
-                {src.last_error && <p style={{ color: '#fca5a5', fontSize: 12, marginTop: 6 }}>{src.last_error}</p>}
+                {src.last_error && <p style={{ color: theme.red, fontSize: 12, marginTop: 6 }}>{src.last_error}</p>}
               </div>
               <Row style={{ gap: 6, flexShrink: 0 }}>
                 <a href={src.source_url} target="_blank" rel="noopener noreferrer" style={secondaryBtn({ padding: '6px 9px', fontSize: 11 })}>

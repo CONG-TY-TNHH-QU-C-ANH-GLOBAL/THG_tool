@@ -16,7 +16,7 @@ export const theme = {
   bgSoft:       'var(--bg-elev)',
   surface:      'var(--bg-elev-2)',
   surfaceAlt:   'var(--bg-elev)',
-  surfaceHot:   'rgba(255,255,255,0.06)',
+  surfaceHot:   'var(--surface-hot)',
   border:       'var(--line-strong)',
   borderAlt:    'var(--line)',
   text:         'var(--text)',
@@ -36,7 +36,7 @@ export const theme = {
   secondary:    'var(--text-faint)',
   facebook:     'var(--info)',
   focus:        'var(--accent-soft)',
-  shadow:       '0 24px 80px rgba(0,0,0,0.34)',
+  shadow:       'var(--shadow-card)',
   glow:         'none',
 };
 
@@ -60,6 +60,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export const statusColor = (s: string): string => STATUS_COLORS[s] ?? 'var(--text-faint)';
+
+export const alpha = (color: string, percent: number): string =>
+  `color-mix(in oklch, ${color} ${percent}%, transparent)`;
 
 export const rootStyle: CSSProperties = {
   background: 'var(--bg)',

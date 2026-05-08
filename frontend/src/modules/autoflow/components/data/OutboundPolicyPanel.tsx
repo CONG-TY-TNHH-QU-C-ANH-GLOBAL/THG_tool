@@ -1,6 +1,6 @@
 import { ShieldCheck, Zap } from 'lucide-react';
 import { Row } from '../ui';
-import { cardStyle, theme } from '../../constants/styles';
+import { alpha, cardStyle, theme } from '../../constants/styles';
 import type { OutboundMode } from '../../services/settingsService';
 
 interface OutboundPolicyPanelProps {
@@ -20,7 +20,7 @@ export default function OutboundPolicyPanel({ mode, message, isSaving, isAdmin, 
     padding: '12px 14px',
     borderRadius: 10,
     border: `1px solid ${active ? theme.primaryLight : theme.border}`,
-    background: active ? 'rgba(96, 165, 250, 0.08)' : 'transparent',
+    background: active ? alpha(theme.primary, 8) : 'transparent',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled && !active ? 0.6 : 1,
     display: 'flex',
@@ -76,7 +76,7 @@ export default function OutboundPolicyPanel({ mode, message, isSaving, isAdmin, 
           {isAdmin ? 'Bạn là admin — có quyền đổi chế độ này.' : 'Chỉ admin của workspace mới đổi được chính sách này.'}
         </p>
         {message && (
-          <span style={{ color: message.startsWith('Đã') ? '#4ade80' : '#fca5a5', fontSize: 12 }}>{message}</span>
+          <span style={{ color: message.startsWith('Đã') ? theme.green : theme.red, fontSize: 12 }}>{message}</span>
         )}
       </Row>
     </div>

@@ -468,7 +468,7 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
     return 0;
   };
 
-  const statusColor = status === 'ready' ? '#4ade80' : status === 'error' ? '#fca5a5' : '#f59e0b';
+  const statusColor = status === 'ready' ? 'var(--ok)' : status === 'error' ? 'var(--hot)' : 'var(--warn)';
 
   return (
     <>
@@ -482,11 +482,11 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
         </span>
       </div>
 
-      <div style={{ position: 'relative', minHeight: 360, background: '#050505' }}>
+      <div style={{ position: 'relative', minHeight: 360, background: 'var(--screen-bg)' }}>
         <canvas
           ref={canvasRef}
           tabIndex={0}
-          style={{ display: 'block', width: '100%', aspectRatio: '16 / 10', background: '#050505', cursor: 'default', outline: 'none' }}
+          style={{ display: 'block', width: '100%', aspectRatio: '16 / 10', background: 'var(--screen-bg)', cursor: 'default', outline: 'none' }}
           onMouseDown={e => {
             e.currentTarget.focus();
             buttonMaskRef.current |= buttonBit(e.button);
@@ -517,9 +517,9 @@ export default function VncCanvas({ accountId, accountName, cdpPort, vncPort, er
         />
         {(!hasFrame || error) && (
           <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center', pointerEvents: 'none' }}>
-            <div style={{ color: error || errorMsg ? '#fca5a5' : theme.textMuted, fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ color: error || errorMsg ? theme.red : theme.textMuted, fontSize: 13, lineHeight: 1.6 }}>
               {error ? `⚠ ${error}` : message}
-              {!hasFrame && errorMsg && <div style={{ color: '#fca5a5', marginTop: 8 }}>{errorMsg}</div>}
+              {!hasFrame && errorMsg && <div style={{ color: theme.red, marginTop: 8 }}>{errorMsg}</div>}
               <div style={{ color: theme.textFaint, marginTop: 8 }}>vnc:{vncPort ?? '-'} · cdp:{cdpPort ?? '-'}</div>
             </div>
           </div>

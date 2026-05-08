@@ -17,9 +17,9 @@ export default function DataStatsGrid({ files, sources }: DataStatsGridProps) {
   const syncedSources = sources.filter(s => s.status === 'synced').length;
 
   const stats = [
-    { label: 'Tệp đã tải', value: files.length, color: '#fff' },
+    { label: 'Tệp đã tải', value: files.length, color: theme.text },
     { label: 'Tổng dung lượng', value: formatBytes(totalSize), color: theme.primaryLight },
-    { label: 'Nguồn đã sync', value: `${syncedSources}/${sources.length}`, color: '#4ade80' },
+    { label: 'Nguồn đã sync', value: `${syncedSources}/${sources.length}`, color: theme.green },
   ];
 
   return (

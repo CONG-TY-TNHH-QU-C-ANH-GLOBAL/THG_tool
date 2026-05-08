@@ -128,7 +128,7 @@ export default function BusinessMemoryPanel({ context, message, isSaving, onChan
       <Row style={{ justifyContent: 'space-between', gap: 10, marginTop: 10 }}>
         <p style={{ color: theme.textFaint, fontSize: 12 }}>Định vị này điều khiển crawler, classifier và outbound của workspace.</p>
         <Row style={{ gap: 10 }}>
-          {message && <span style={{ color: message.startsWith('Đã') ? '#4ade80' : '#fca5a5', fontSize: 12 }}>{message}</span>}
+          {message && <span style={{ color: message.startsWith('Đã') ? theme.green : theme.red, fontSize: 12 }}>{message}</span>}
           <button disabled={isSaving} onClick={onSave} style={primaryBtn({ padding: '8px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, opacity: isSaving ? 0.6 : 1 })}>
             <Save size={13} /> Lưu định vị
           </button>

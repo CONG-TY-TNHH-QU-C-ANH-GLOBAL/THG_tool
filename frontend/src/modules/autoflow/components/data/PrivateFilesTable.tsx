@@ -1,7 +1,7 @@
 import { FileText, Trash2 } from 'lucide-react';
 import type { FileRecord } from '../../types';
 import { Row } from '../ui';
-import { secondaryBtn, theme } from '../../constants/styles';
+import { alpha, secondaryBtn, theme } from '../../constants/styles';
 
 interface PrivateFilesTableProps {
   files: FileRecord[];
@@ -33,7 +33,7 @@ export default function PrivateFilesTable({ files, onRemove }: PrivateFilesTable
               <tr key={f.id} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
                 <td style={{ padding: '10px 14px' }}>
                   <Row style={{ gap: 8 }}>
-                    <div style={{ width: 32, height: 32, background: `${theme.primary}22`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ width: 32, height: 32, background: alpha(theme.primary, 14), borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <FileText size={14} color={theme.primaryLight} />
                     </div>
                     <span style={{ color: theme.text, fontWeight: 500 }}>{f.name}</span>

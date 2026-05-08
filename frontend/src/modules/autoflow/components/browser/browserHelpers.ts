@@ -21,11 +21,11 @@ export function stateLabel(state?: string): string {
 }
 
 export function stateTone(state?: string) {
-  if (state === 'error' || state === 'local_error') return { color: '#fca5a5', bg: '#7f1d1d55', border: '#ef444466' };
-  if (state === 'checkpoint' || state === 'human_required' || state === 'local_human_required' || state === 'local_login_required') return { color: '#fcd34d', bg: '#78350f55', border: '#f59e0b66' };
-  if (state === 'initializing') return { color: '#fde68a', bg: '#78350f44', border: '#f59e0b55' };
-  if (state === 'local_starting' || state === 'local_active' || state === 'local_ready') return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
-  return { color: '#a7f3d0', bg: '#064e3b44', border: '#10b98155' };
+  if (state === 'error' || state === 'local_error') return { color: 'var(--hot)', bg: 'var(--hot-bg)', border: 'color-mix(in oklch, var(--hot) 38%, transparent)' };
+  if (state === 'checkpoint' || state === 'human_required' || state === 'local_human_required' || state === 'local_login_required') return { color: 'var(--warn)', bg: 'var(--warn-bg)', border: 'color-mix(in oklch, var(--warn) 38%, transparent)' };
+  if (state === 'initializing') return { color: 'var(--warn)', bg: 'var(--warn-bg)', border: 'color-mix(in oklch, var(--warn) 34%, transparent)' };
+  if (state === 'local_starting' || state === 'local_active' || state === 'local_ready') return { color: 'var(--ok)', bg: 'var(--ok-bg)', border: 'color-mix(in oklch, var(--ok) 34%, transparent)' };
+  return { color: 'var(--ok)', bg: 'var(--ok-bg)', border: 'color-mix(in oklch, var(--ok) 34%, transparent)' };
 }
 
 export function formatLastSeen(value?: string) {
@@ -134,15 +134,15 @@ export function actionTypeLabel(type?: string): string {
 export function actionStatusTone(status?: string) {
   switch ((status || '').toLowerCase()) {
     case 'pending':
-      return { label: 'đang chờ Extension', color: '#fde68a', border: '#f59e0b55', bg: '#78350f33' };
+      return { label: 'đang chờ Extension', color: 'var(--warn)', border: 'color-mix(in oklch, var(--warn) 34%, transparent)', bg: 'var(--warn-bg)' };
     case 'claimed':
-      return { label: 'Extension đang chạy', color: '#67e8f9', border: '#06b6d455', bg: '#164e6333' };
+      return { label: 'Extension đang chạy', color: 'var(--info)', border: 'color-mix(in oklch, var(--info) 34%, transparent)', bg: 'var(--info-bg)' };
     case 'done':
-      return { label: 'xong', color: '#86efac', border: '#22c55e55', bg: '#14532d33' };
+      return { label: 'xong', color: 'var(--ok)', border: 'color-mix(in oklch, var(--ok) 34%, transparent)', bg: 'var(--ok-bg)' };
     case 'failed':
-      return { label: 'lỗi', color: '#fca5a5', border: '#ef444455', bg: '#7f1d1d33' };
+      return { label: 'lỗi', color: 'var(--hot)', border: 'color-mix(in oklch, var(--hot) 34%, transparent)', bg: 'var(--hot-bg)' };
     default:
-      return { label: status || 'đang xử lý', color: '#cbd5e1', border: '#47556966', bg: '#0f172a66' };
+      return { label: status || 'đang xử lý', color: 'var(--text-mute)', border: 'var(--line-strong)', bg: 'var(--tag-mute-bg)' };
   }
 }
 

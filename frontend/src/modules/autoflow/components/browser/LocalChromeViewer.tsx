@@ -144,7 +144,7 @@ export function LocalChromeViewer({
   };
 
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden', background: '#000' }}>
+    <div className="card" style={{ padding: 0, overflow: 'hidden', background: 'var(--screen-bg)' }}>
       <header
         style={{
           display: 'flex',
@@ -253,7 +253,7 @@ export function LocalChromeViewer({
             alignItems: 'center',
             overflowX: 'auto',
             padding: 'var(--s-2) var(--s-4)',
-            background: '#000',
+            background: 'var(--screen-bg)',
             borderBottom: '1px solid var(--line)',
           }}
         >
@@ -287,7 +287,7 @@ export function LocalChromeViewer({
       <div
         ref={surfaceRef}
         tabIndex={0}
-        style={{ position: 'relative', minHeight: 420, display: 'grid', placeItems: 'center', background: '#000', outline: 'none' }}
+        style={{ position: 'relative', minHeight: 420, display: 'grid', placeItems: 'center', background: 'var(--screen-bg)', outline: 'none' }}
       >
         <textarea
           ref={keyboardRef}
@@ -314,7 +314,7 @@ export function LocalChromeViewer({
               ref={imgRef}
               src={screen.imageData}
               alt="Facebook stream"
-              style={{ width: '100%', height: 'auto', display: 'block', background: '#000', userSelect: 'none' }}
+              style={{ width: '100%', height: 'auto', display: 'block', background: 'var(--screen-bg)', userSelect: 'none' }}
             />
             <div
               aria-label="Remote browser control surface"

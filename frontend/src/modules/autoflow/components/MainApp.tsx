@@ -6,6 +6,7 @@ import { get } from '../services/api';
 import SettingsPage from './SettingsPage';
 import { LangSwitch } from './ds/LangSwitch';
 import { DensitySwitch } from './ds/DensitySwitch';
+import { ThemeToggle } from './ds/ThemeToggle';
 import { useLang } from '../i18n/useLang';
 import {
   Bell,
@@ -213,6 +214,7 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
         </div>
         <div style={{ flex: 1 }} />
         <div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{org.name}</div>
+        <ThemeToggle />
         <DensitySwitch />
         <LangSwitch />
         <span className="avatar avatar-sm">{isAdmin ? 'A' : 'S'}</span>

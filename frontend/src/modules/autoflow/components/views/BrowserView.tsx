@@ -429,7 +429,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       )}
 
       {selectedId !== null && selectedWs?.running && !selectedIsLocal && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden', background: '#000' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', background: 'var(--screen-bg)' }}>
           <header
             style={{
               display: 'grid',

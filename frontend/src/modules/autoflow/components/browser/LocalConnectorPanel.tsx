@@ -189,7 +189,7 @@ export function LocalConnectorPanel({
               flexDirection: 'column',
               gap: 'var(--s-3)',
               borderColor: pairingCode && !pairingExpired ? 'var(--accent-glow)' : 'var(--line-strong)',
-              background: pairingCode && !pairingExpired ? 'linear-gradient(135deg, rgba(24, 86, 255, 0.05), rgba(255, 255, 255, 0.01))' : 'var(--surface)',
+              background: pairingCode && !pairingExpired ? 'linear-gradient(135deg, var(--accent-soft), var(--control-subtle))' : 'var(--surface)',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -205,7 +205,7 @@ export function LocalConnectorPanel({
               <div style={{
                 marginTop: '12px',
                 padding: '24px 20px',
-                background: 'rgba(0,0,0,0.2)',
+                background: 'var(--surface-hot)',
                 border: '1px solid var(--accent-glow)',
                 borderRadius: '12px',
                 textAlign: 'center',

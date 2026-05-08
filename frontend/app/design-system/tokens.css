@@ -23,6 +23,7 @@
   --text:       #F5F5F7;   /* fg1 — primary */
   --text-mute:  #A3A3AD;   /* fg2 — secondary body */
   --text-faint: #6B6B78;   /* fg3 — labels, eyebrow, table head */
+  --text-muted: var(--text-mute);
 
   /* alias to fg/bg naming (compat with prompts that ask for fg1, bg1) */
   --fg1: var(--text);
@@ -31,6 +32,8 @@
   --bg1: var(--bg);
   --bg2: var(--bg-elev);
   --bg3: var(--bg-elev-2);
+  --surface: var(--bg-elev);
+  --surface-alt: var(--bg-elev-2);
 
   /* === ACCENT — electric lime ===
    * The single brand-active hue. Used for primary CTA, dot indicators,
@@ -57,6 +60,22 @@
   --warn-bg: oklch(0.78 0.18 60 / 0.14);
   --info-bg: oklch(0.78 0.14 240 / 0.14);
   --ok-bg:   oklch(0.78 0.18 145 / 0.14);
+  --danger: var(--hot);
+  --warning: var(--warn);
+  --success: var(--ok);
+
+  /* === INTERACTION / COMPATIBILITY SURFACES === */
+  --surface-hot: rgba(255, 255, 255, 0.06);
+  --control-hover: rgba(255, 255, 255, 0.04);
+  --control-active: rgba(255, 255, 255, 0.04);
+  --control-subtle: rgba(255, 255, 255, 0.025);
+  --tag-mute-bg: rgba(255, 255, 255, 0.05);
+  --table-active-bg: rgba(255, 255, 255, 0.02);
+  --table-head-bg: rgba(255, 255, 255, 0.012);
+  --modal-scrim: rgba(0, 0, 0, 0.6);
+  --avatar-bg: linear-gradient(135deg, #2a2a30, #16161a);
+  --screen-bg: #050505;
+  --grain: 0.4;
 
   /* === RADIUS === */
   --radius-sm:   6px;    /* tags, table cells */
@@ -207,4 +226,57 @@
   font-style: italic;
   color: var(--accent);
   letter-spacing: -0.02em;
+}
+
+/* ====================================================================
+ * LIGHT THEME OVERRIDES
+ * ==================================================================== */
+[data-theme="light"] {
+  /* SURFACES */
+  --bg:         #FFFFFF;
+  --bg-elev:    #F8F9FA;
+  --bg-elev-2:  #F1F3F5;
+
+  /* LINES */
+  --line:        rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.15);
+  --line-soft:   rgba(0, 0, 0, 0.04);
+
+  /* TEXT */
+  --text:       #111827;   /* fg1 */
+  --text-mute:  #4B5563;   /* fg2 */
+  --text-faint: #6B7280;   /* fg3 */
+  --text-muted: var(--text-mute);
+
+  /* ACCENT
+   * Keeping it electric lime might have contrast issues on pure white.
+   * Darkening it slightly for text contrast while keeping the hue. */
+  --accent:       oklch(0.65 0.18 130);
+  --accent-ink:   #FFFFFF;
+  --accent-soft:  oklch(0.65 0.18 130 / 0.12);
+  --accent-glow:  oklch(0.65 0.18 130 / 0.4);
+
+  /* STATUS BACKGROUNDS (opacity over white) */
+  --hot-bg:  oklch(0.70 0.22 25 / 0.08);
+  --warn-bg: oklch(0.78 0.18 60 / 0.08);
+  --info-bg: oklch(0.78 0.14 240 / 0.08);
+  --ok-bg:   oklch(0.78 0.18 145 / 0.08);
+
+  /* INTERACTION / COMPATIBILITY SURFACES */
+  --surface-hot: rgba(17, 24, 39, 0.05);
+  --control-hover: rgba(17, 24, 39, 0.055);
+  --control-active: rgba(17, 24, 39, 0.07);
+  --control-subtle: rgba(17, 24, 39, 0.035);
+  --tag-mute-bg: rgba(17, 24, 39, 0.055);
+  --table-active-bg: rgba(101, 116, 139, 0.09);
+  --table-head-bg: rgba(101, 116, 139, 0.08);
+  --modal-scrim: rgba(15, 23, 42, 0.38);
+  --avatar-bg: linear-gradient(135deg, #E5E7EB, #CBD5E1);
+  --screen-bg: #050505;
+  --grain: 0.12;
+
+  /* BRAND BRONZE */
+  --brand-bronze:       #9E8260;
+  --brand-bronze-deep:  #4D3D2C;
+  --brand-bronze-ink:   #FFFFFF;
 }

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
-import { primaryBtn, theme } from '../../constants/styles';
+import { alpha, primaryBtn, theme } from '../../constants/styles';
 
 interface FileUploadPanelProps {
   isUploading: boolean;
@@ -23,12 +23,12 @@ export default function FileUploadPanel({ isUploading, onUpload }: FileUploadPan
         padding: '32px 20px',
         textAlign: 'center',
         cursor: 'pointer',
-        background: isDragging ? `${theme.primary}11` : theme.surface,
+        background: isDragging ? alpha(theme.primary, 8) : theme.surface,
         transition: 'all 0.15s',
       }}
     >
       <input ref={inputRef} type="file" multiple style={{ display: 'none' }} onChange={e => onUpload(e.target.files)} />
-      <div style={{ width: 48, height: 48, background: `${theme.primary}22`, border: `1px solid ${theme.primary}44`, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+      <div style={{ width: 48, height: 48, background: alpha(theme.primary, 14), border: `1px solid ${alpha(theme.primary, 28)}`, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
         <Upload size={22} color={theme.primaryLight} />
       </div>
       <p style={{ color: theme.text, fontWeight: 500, fontSize: 14, marginBottom: 6 }}>

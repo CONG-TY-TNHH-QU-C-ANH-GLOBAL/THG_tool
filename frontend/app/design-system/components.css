@@ -111,7 +111,7 @@ p  { margin: 0; color: var(--text-mute); }
   border-color: var(--line-strong);
   background: transparent;
 }
-.btn-ghost:hover { background: rgba(255,255,255,0.04); border-color: var(--text-faint); }
+.btn-ghost:hover { background: var(--control-hover); border-color: var(--text-faint); }
 .btn-square { border-radius: var(--radius-md); }
 .btn-lg { padding: 14px 22px; font-size: 15px; }
 .btn-sm { padding: 7px 14px; font-size: 13px; }
@@ -168,7 +168,7 @@ p  { margin: 0; color: var(--text-mute); }
 .tag-warm { background: var(--warn-bg); color: var(--warn); }
 .tag-cold { background: var(--info-bg); color: var(--info); }
 .tag-ok   { background: var(--ok-bg);   color: var(--ok); }
-.tag-mute { background: rgba(255,255,255,0.05); color: var(--text-faint); }
+.tag-mute { background: var(--tag-mute-bg); color: var(--text-faint); }
 
 .badge-num {
   font-family: var(--font-mono);
@@ -215,14 +215,14 @@ p  { margin: 0; color: var(--text-mute); }
   font-size: 13.5px;
 }
 .table-row:first-child { border-top: 0; }
-.table-row.is-active { background: rgba(255,255,255,0.02); }
+.table-row.is-active { background: var(--table-active-bg); }
 .table-head {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.1em;
   color: var(--text-faint);
   text-transform: uppercase;
-  background: rgba(255,255,255,0.012);
+  background: var(--table-head-bg);
 }
 
 /* === Stat (KPI) === */
@@ -266,7 +266,7 @@ p  { margin: 0; color: var(--text-mute); }
 .avatar {
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2a2a30, #16161a);
+  background: var(--avatar-bg);
   display: grid; place-items: center;
   font-size: 11px;
   font-weight: 600;
@@ -331,9 +331,9 @@ p  { margin: 0; color: var(--text-mute); }
   position: relative;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.nav-item:hover { background: rgba(255,255,255,0.025); color: var(--text); }
+.nav-item:hover { background: var(--control-subtle); color: var(--text); }
 .nav-item.is-active {
-  background: rgba(255,255,255,0.04);
+  background: var(--control-active);
   color: var(--text);
 }
 .nav-item.is-active::before {
@@ -439,7 +439,7 @@ p  { margin: 0; color: var(--text-mute); }
 /* === Modal === */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: var(--modal-scrim);
   backdrop-filter: blur(8px);
   z-index: 100;
   display: grid;

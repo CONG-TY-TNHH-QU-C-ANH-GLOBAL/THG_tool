@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { KPIConfig } from '../../types';
 import { Avatar, Badge, Row } from '../ui';
-import { theme, cardStyle, primaryBtn } from '../../constants/styles';
+import { alpha, theme, cardStyle, inputStyle, primaryBtn } from '../../constants/styles';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
 import { Trophy, Save } from 'lucide-react';
 
@@ -27,9 +27,9 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
       {top3.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
           {top3.map((s, i) => (
-            <div key={s.id} style={{ ...cardStyle(), textAlign: 'center', position: 'relative', border: i === 0 ? `1px solid ${theme.primary}55` : `1px solid ${theme.border}` }}>
+            <div key={s.id} style={{ ...cardStyle(), textAlign: 'center', position: 'relative', border: i === 0 ? `1px solid ${alpha(theme.primary, 35)}` : `1px solid ${theme.border}` }}>
               {i === 0 && (
-                <div style={{ position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)', background: theme.primary, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 99, whiteSpace: 'nowrap' }}>
+                <div style={{ position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)', background: theme.primary, color: 'var(--accent-ink)', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 99, whiteSpace: 'nowrap' }}>
                   Top Sales
                 </div>
               )}
@@ -40,8 +40,8 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
               <p style={{ fontSize: 22, fontWeight: 800, color: i === 0 ? theme.primaryLight : theme.text }}>{s.pts} <span style={{ fontSize: 12, fontWeight: 400, color: theme.textMuted }}>pts</span></p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginTop: 10 }}>
                 {[{ l: 'Hội thoại', v: s.convs }, { l: 'Chốt', v: s.converted }, { l: 'Comments', v: s.cmts }].map(st => (
-                  <div key={st.l} style={{ background: theme.border, borderRadius: 7, padding: '6px 4px' }}>
-                    <p style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>{st.v}</p>
+                  <div key={st.l} style={{ background: theme.surfaceAlt, borderRadius: 7, padding: '6px 4px' }}>
+                    <p style={{ color: theme.text, fontWeight: 700, fontSize: 13 }}>{st.v}</p>
                     <p style={{ color: theme.textFaint, fontSize: 9 }}>{st.l}</p>
                   </div>
                 ))}
@@ -75,9 +75,9 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
                       </div>
                     </Row>
                   </td>
-                  <td style={{ padding: '9px 14px', color: '#d1d5db' }}>{s.convs}</td>
-                  <td style={{ padding: '9px 14px', color: '#d1d5db' }}>{s.converted}</td>
-                  <td style={{ padding: '9px 14px', color: '#d1d5db' }}>{s.cmts}</td>
+                  <td style={{ padding: '9px 14px', color: theme.textMuted }}>{s.convs}</td>
+                  <td style={{ padding: '9px 14px', color: theme.textMuted }}>{s.converted}</td>
+                  <td style={{ padding: '9px 14px', color: theme.textMuted }}>{s.cmts}</td>
                   <td style={{ padding: '9px 14px' }}>
                     <span style={{ color: theme.primaryLight, fontWeight: 700 }}>{s.pts}</span>
                     <span style={{ color: theme.textFaint, fontSize: 10 }}> pts</span>
@@ -123,7 +123,7 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
                     value={editMode ? draft[key] : config[key]}
                     onChange={e => editMode && setDraft(d => ({ ...d, [key]: Number(e.target.value) }))}
                     disabled={!editMode}
-                    style={{ flex: 1, background: theme.border, border: `1px solid #374151`, borderRadius: 7, padding: '7px 10px', color: '#fff', fontSize: 12, outline: 'none', opacity: editMode ? 1 : 0.7 }}
+                    style={{ ...inputStyle, flex: 1, padding: '7px 10px', fontSize: 12, opacity: editMode ? 1 : 0.7 }}
                   />
                   <span style={{ color: theme.textFaint, fontSize: 11 }}>{hint}</span>
                 </Row>

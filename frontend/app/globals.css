@@ -20,3 +20,4 @@ html, body { background: var(--bg); color: var(--text); }
  * `document.documentElement.dataset.density`. tokens.css owns the
  * actual variable values for compact / balanced / airy. */
 html { color-scheme: dark; }
+html[data-theme="light"] { color-scheme: light; }

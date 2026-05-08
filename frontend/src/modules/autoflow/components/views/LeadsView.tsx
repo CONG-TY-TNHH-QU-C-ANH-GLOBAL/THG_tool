@@ -228,7 +228,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
         <div
           role="dialog"
           aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
+          style={{ position: 'fixed', inset: 0, background: 'var(--modal-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
           onClick={() => { if (!reclassifyBusy) setReclassifyOpen(false); }}
         >
           <div
@@ -297,7 +297,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
             </label>
 
             {reclassifyMsg && (
-              <div style={{ fontSize: 12.5, color: reclassifyError ? '#fca5a5' : '#4ade80' }}>
+              <div style={{ fontSize: 12.5, color: reclassifyError ? 'var(--hot)' : 'var(--ok)' }}>
                 {reclassifyMsg}
               </div>
             )}
@@ -509,7 +509,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    style={{ marginLeft: 'auto', color: 'var(--danger, #c0392b)' }}
+                    style={{ marginLeft: 'auto', color: 'var(--danger)' }}
                     disabled={deletingId === selectedLead.id}
                     onClick={() => void handleDelete(selectedLead)}
                   >

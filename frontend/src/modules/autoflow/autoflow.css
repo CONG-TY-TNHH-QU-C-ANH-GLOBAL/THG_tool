@@ -7,6 +7,8 @@
   --af-danger: #ea2143;
   --af-bg: #07111f;
   --af-bg-soft: #0b1730;
+  --af-bg-2: #050812;
+  --af-surface: rgba(255, 255, 255, 0.07);
   --af-text: #f7fbff;
   --af-muted: #b8c6dc;
   --af-faint: #8190aa;
@@ -569,12 +571,12 @@ select:focus-visible {
   gap: 14px;
   align-items: start;
   padding: 18px;
-  border: 1px solid rgba(125, 164, 255, 0.22);
+  border: 1px solid color-mix(in oklch, var(--accent) 24%, var(--line));
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(24, 86, 255, 0.16), rgba(7, 202, 107, 0.075)),
-    rgba(255, 255, 255, 0.07);
-  box-shadow: var(--af-glow);
+    linear-gradient(135deg, var(--accent-soft), color-mix(in oklch, var(--ok) 8%, transparent)),
+    var(--bg-elev);
+  box-shadow: var(--shadow-card);
   backdrop-filter: blur(18px) saturate(145%);
   -webkit-backdrop-filter: blur(18px) saturate(145%);
 }
@@ -588,8 +590,8 @@ select:focus-visible {
   align-items: center;
   gap: 7px;
   margin-bottom: 10px;
-  color: #9ec5ff;
-  font-family: var(--af-mono);
+  color: var(--accent);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -597,7 +599,7 @@ select:focus-visible {
 
 .af-command-copy h2 {
   margin: 0;
-  color: #ffffff;
+  color: var(--text);
   font-size: 24px;
   line-height: 1.18;
   font-weight: 900;
@@ -606,7 +608,7 @@ select:focus-visible {
 .af-command-copy p {
   max-width: 760px;
   margin: 8px 0 0;
-  color: var(--af-muted);
+  color: var(--text-mute);
   font-size: 13px;
   line-height: 1.58;
 }
@@ -620,14 +622,14 @@ select:focus-visible {
 .af-command-metrics div {
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--af-border-soft);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(2, 6, 23, 0.28);
+  background: var(--surface-hot);
 }
 
 .af-command-metrics span {
   display: block;
-  color: #ffffff;
+  color: var(--text);
   font-size: 22px;
   font-weight: 900;
   line-height: 1;
@@ -636,7 +638,7 @@ select:focus-visible {
 .af-command-metrics small {
   display: block;
   margin-top: 5px;
-  color: var(--af-faint);
+  color: var(--text-faint);
   font-size: 11px;
   font-weight: 700;
 }
@@ -667,16 +669,16 @@ select:focus-visible {
 }
 
 .af-btn-primary {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: linear-gradient(135deg, var(--af-primary), #3b82ff);
-  color: #ffffff;
-  box-shadow: 0 14px 34px rgba(24, 86, 255, 0.26);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 8px 30px -8px var(--accent-glow);
 }
 
 .af-btn-ghost {
-  border: 1px solid var(--af-border);
-  background: rgba(255, 255, 255, 0.055);
-  color: var(--af-muted);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-mute);
 }
 
 .af-pipeline-rail {
@@ -693,10 +695,10 @@ select:focus-visible {
   align-items: center;
   gap: 8px;
   padding: 9px 10px;
-  border: 1px solid var(--af-border-soft);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(2, 6, 23, 0.22);
-  color: var(--af-faint);
+  background: var(--surface-hot);
+  color: var(--text-faint);
 }
 
 .af-pipeline-step span {
@@ -706,7 +708,7 @@ select:focus-visible {
   place-items: center;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--control-hover);
   color: inherit;
   font-family: var(--af-mono);
   font-size: 10px;
@@ -724,9 +726,9 @@ select:focus-visible {
 }
 
 .af-pipeline-step.is-active {
-  border-color: rgba(7, 202, 107, 0.42);
-  background: rgba(7, 202, 107, 0.09);
-  color: #bbf7d0;
+  border-color: color-mix(in oklch, var(--ok) 40%, transparent);
+  background: var(--ok-bg);
+  color: var(--ok);
 }
 
 .af-browser-legacy-summary {
