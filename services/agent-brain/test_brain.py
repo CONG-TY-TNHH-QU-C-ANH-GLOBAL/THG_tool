@@ -1,6 +1,13 @@
+import os
 import unittest
+from unittest.mock import patch
 
-from brain import build_market_signal_gate, plan
+# Ensure planner_llm sees no API key during these unit tests so it returns
+# empty plans deterministically. brain tests cover the rule-based router only;
+# planner_llm has its own test file.
+os.environ.pop("OPENAI_API_KEY", None)
+
+from brain import build_market_signal_gate, combine_keywords, plan
 
 
 PROFILE = {
@@ -53,6 +60,61 @@ class BrainPlannerTest(unittest.TestCase):
         self.assertEqual(gate["positive_signals"], [])
         self.assertEqual(gate["negative_signals"], [])
         self.assertEqual(gate["reject_rules"], [])
+
+    def test_gate_merges_llm_plan_with_profile(self):
+        # LLM plan signals must be additive on top of the profile's signals,
+        # and prompt-derived target_role wins over the profile default.
+        plan_payload = {
+            "target_role": "potential_customer",
+            "include_signals": ["tìm kho", "cần supplier"],
+            "exclude_signals": ["chuyên cung cấp"],
+        }
+        gate = build_market_signal_gate(PROFILE, plan_payload)
+        self.assertEqual(gate["target_role"], "potential_customer")
+        self.assertIn("tìm fulfillment", gate["positive_signals"])  # from profile
+        self.assertIn("tìm kho", gate["positive_signals"])  # from LLM plan
+        self.assertIn("bài quảng cáo dịch vụ", gate["negative_signals"])  # from profile
+        self.assertIn("chuyên cung cấp", gate["negative_signals"])  # from LLM plan
+
+    def test_gate_falls_back_to_profile_when_plan_role_empty(self):
+        gate = build_market_signal_gate(PROFILE, {"target_role": "", "include_signals": [], "exclude_signals": []})
+        self.assertEqual(gate["target_role"], "customers")  # profile default
+
+    def test_combine_keywords_merges_unique(self):
+        merged = combine_keywords("kho, xuong", ["tìm kho", "cần warehouse", "xuong"])
+        # case-folded duplicate ("xuong") filtered; LLM phrases appended in order.
+        self.assertIn("kho", merged)
+        self.assertIn("tìm kho", merged)
+        self.assertIn("cần warehouse", merged)
+        # base 2 (kho, xuong) + 2 unique extras (tìm kho, cần warehouse); xuong dedup'd
+        parts = [p.strip() for p in merged.split(",") if p.strip()]
+        self.assertEqual(len(parts), 4)
+        self.assertEqual(parts.count("xuong"), 1)
+
+    def test_plan_uses_llm_signals_when_available(self):
+        # Mock the LLM extractor so we don't need an OpenAI key.
+        fake_plan = {
+            "target_role": "potential_customer",
+            "domain": "warehouse_us",
+            "queries": ["tìm kho mỹ", "looking for warehouse US"],
+            "include_signals": ["tìm kho", "cần xưởng"],
+            "exclude_signals": ["chuyên cung cấp", "agency cần tuyển"],
+        }
+        with patch("brain.planner_llm.extract_execution_plan", return_value=fake_plan):
+            out = plan(
+                {
+                    "prompt": "Tìm khách có nhu cầu tìm kho hoặc xưởng tại Mỹ cào 100 bài https://www.facebook.com/groups/1312868109620530",
+                    "business_profile": PROFILE,
+                }
+            )
+        self.assertEqual(out["intent"], "crawl_source")
+        gate = out["market_signal_gate"]
+        self.assertEqual(gate["target_role"], "potential_customer")
+        self.assertIn("tìm kho", gate["positive_signals"])
+        self.assertIn("chuyên cung cấp", gate["negative_signals"])
+        # crawl action keywords enriched with LLM queries
+        kws = out["actions"][0]["args"].get("keywords", "")
+        self.assertIn("tìm kho mỹ", kws)
 
 
 if __name__ == "__main__":

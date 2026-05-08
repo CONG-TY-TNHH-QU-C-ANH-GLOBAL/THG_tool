@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY brain.py ./brain.py
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY brain.py planner_llm.py ./
 
 ENV AGENT_BRAIN_HOST=0.0.0.0
 ENV AGENT_BRAIN_PORT=8091

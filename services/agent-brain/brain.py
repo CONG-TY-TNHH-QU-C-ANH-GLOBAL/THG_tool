@@ -14,6 +14,8 @@ import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+import planner_llm
+
 
 FACEBOOK_URL_RE = re.compile(r"https?://[^\s]+(?:facebook\.com|fb\.com)[^\s]*", re.I)
 
@@ -140,19 +142,38 @@ def has_business_profile(profile: dict[str, Any]) -> bool:
     return bool(profile_value(profile, "description", "industry", "services", "targets", "name"))
 
 
-def build_market_signal_gate(profile: dict[str, Any]) -> dict[str, Any]:
-    """Build a Market Signal Gate purely from the org's BusinessProfile.
+def build_market_signal_gate(
+    profile: dict[str, Any],
+    llm_plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a Market Signal Gate from BusinessProfile + per-prompt LLM plan.
 
-    The gate carries org-driven phrases — target_signals (positive), and
-    negative_signals/reject_rules (negative). Nothing here is keyed off prompt
-    keywords or hardcoded for a vertical. CLAUDE.md hard rule: business profile
-    drives classification; do not hardcode one industry. If a profile field is
-    empty, the corresponding gate side is empty too — the AI classifier and
-    scorer will then act on engagement / quality / keyword signals only.
+    Profile-derived phrases (org's standing target_signals / negative_signals)
+    are merged with the LLM Planner's per-prompt include_signals /
+    exclude_signals. The merge is additive: profile signals always survive,
+    and LLM signals enrich them with prompt-specific phrases (e.g. "tìm kho",
+    "cần supplier") so the downstream Go gate can hard-reject obvious
+    off-target posts before they reach the AI classifier.
+
+    target_role: prompt-derived role wins when set, otherwise the org default.
+    Empty fields disable each rule — the AI classifier still gets the prompt
+    context via ClassifyIntent on the Go side.
     """
-    target_role = profile_value(profile, "target_author_role")
-    positives = split_signal_field(profile_value(profile, "target_signals"))
-    negatives = split_signal_field(profile_value(profile, "negative_signals", "reject_rules"))
+    profile_role = profile_value(profile, "target_author_role")
+    profile_positives = split_signal_field(profile_value(profile, "target_signals"))
+    profile_negatives = split_signal_field(profile_value(profile, "negative_signals", "reject_rules"))
+
+    plan_role = ""
+    plan_positives: list[str] = []
+    plan_negatives: list[str] = []
+    if isinstance(llm_plan, dict):
+        plan_role = str(llm_plan.get("target_role") or "").strip()
+        plan_positives = [str(x).strip() for x in (llm_plan.get("include_signals") or []) if str(x).strip()]
+        plan_negatives = [str(x).strip() for x in (llm_plan.get("exclude_signals") or []) if str(x).strip()]
+
+    positives = merge_unique(profile_positives, plan_positives)
+    negatives = merge_unique(profile_negatives, plan_negatives)
+    target_role = plan_role or profile_role
 
     return {
         "target_role": target_role,
@@ -166,6 +187,25 @@ def build_market_signal_gate(profile: dict[str, Any]) -> dict[str, Any]:
 def split_signal_field(value: str) -> list[str]:
     parts = re.split(r"[\n,;|]+", value or "")
     return [compact(p, 80) for p in parts if compact(p, 80)]
+
+
+def combine_keywords(base: str, extra: Any) -> str:
+    """Merge prompt-derived keywords with LLM-derived queries.
+
+    The crawler `keywords` arg is a comma-separated string. We append unique
+    LLM queries so the connector's keyword filter benefits from richer phrases
+    without duplicating folded tokens already present.
+    """
+    base_parts = [p.strip() for p in (base or "").split(",") if p.strip()]
+    extras: list[str] = []
+    if isinstance(extra, list):
+        for item in extra:
+            if isinstance(item, str):
+                clean = " ".join(item.split()).strip()
+                if clean:
+                    extras.append(clean)
+    merged = merge_unique(base_parts, extras)
+    return ", ".join(merged)
 
 
 def merge_unique(base: list[str], extra: list[str]) -> list[str]:
@@ -200,7 +240,8 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     folded = fold(prompt)
     fb_url = first_facebook_url(prompt)
     max_items = extract_max_items(prompt)
-    gate = build_market_signal_gate(profile)
+    llm_plan = planner_llm.extract_execution_plan(prompt, profile)
+    gate = build_market_signal_gate(profile, llm_plan)
 
     base = {
         "domain_scope": "facebook",
@@ -281,7 +322,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
         args = {"post_url" if tool == "scrape_comments" else "url": fb_url}
         if max_items:
             args["max_items"] = max_items
-        keywords = prompt_keywords(prompt)
+        keywords = combine_keywords(prompt_keywords(prompt), llm_plan.get("queries"))
         if keywords:
             args["keywords"] = keywords
         return {
@@ -294,7 +335,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
         }
 
     if any(term in folded for term in ["cao", "crawl", "scrape", "quet", "tim tep", "tim khach", "lead", "leads"]):
-        query = prompt_keywords(prompt) or compact(prompt, 160)
+        query = combine_keywords(prompt_keywords(prompt), llm_plan.get("queries")) or compact(prompt, 160)
         args = {"query": query}
         if max_items:
             args["max_items"] = max_items
