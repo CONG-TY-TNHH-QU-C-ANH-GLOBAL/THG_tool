@@ -590,7 +590,7 @@ func (mg *MessageGenerator) callOpenAI(ctx context.Context, prompt string) (stri
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.7,
-		"max_tokens":  400,
+		"max_completion_tokens":  400,
 	}
 
 	jsonBody, _ := json.Marshal(body)
