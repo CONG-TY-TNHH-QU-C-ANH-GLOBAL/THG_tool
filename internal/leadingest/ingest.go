@@ -114,9 +114,10 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		return out, nil
 	}
 
-	// AI classifier overrides deterministic when configured. Failures fall
-	// back to deterministic so a flaky LLM never blocks lead capture.
-	if deps.BusinessProfile != nil && deps.BusinessProfile.IsConfigured() && deps.AIClass != nil && deps.AIClass.Available() {
+	// AI classifier overrides deterministic when configured (or when an explicit prompt is provided).
+	// Failures fall back to deterministic so a flaky LLM never blocks lead capture.
+	hasAIContext := (deps.BusinessProfile != nil && deps.BusinessProfile.IsConfigured()) || strings.TrimSpace(deps.UserPrompt) != ""
+	if hasAIContext && deps.AIClass != nil && deps.AIClass.Available() {
 		timeout := deps.ClassifyTimeout
 		if timeout <= 0 {
 			timeout = 20 * time.Second
