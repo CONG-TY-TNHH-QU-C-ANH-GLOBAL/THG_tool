@@ -3,19 +3,62 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     const anchors = Array.from(article.querySelectorAll('a[href]'));
     const match = anchors.find(a => {
       const href = a.getAttribute('href') || '';
-      return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|\/groups\/[^/]+\/permalink\//i.test(href);
+      // Exclude profile links and common action links
+      if (href.includes('/user/') || href.includes('/hashtag/') || href.includes('comment_id=')) return false;
+      return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|\/groups\/[^/]+\/permalink\//i.test(href) || 
+             (href.includes('__cft__') && !href.includes('/groups/') && !href.includes('facebook.com/groups/'));
     });
+    
+    // If we didn't find a standard post URL, try to find any link that looks like a timestamp
+    if (!match) {
+        const timeLink = anchors.find(a => {
+            const href = a.getAttribute('href') || '';
+            if (href.includes('/user/') || href.includes('/hashtag/')) return false;
+            // Often timestamps have a hover tooltip or contain numbers/relative time
+            const txt = THGContentShared.textOf(a);
+            return txt.length > 0 && txt.length < 15 && /\d/.test(txt) && !txt.includes('like') && !txt.includes('comment');
+        });
+        if (timeLink) return THGContentShared.normalizeHref(timeLink.getAttribute('href'));
+    }
+    
     return THGContentShared.normalizeHref(match?.getAttribute('href') || location.href);
   }
 
   function authorFromArticle(article) {
+    // 1. Prioritize structural headers (h2, h3, h4, strong) which usually contain the real author name
+    // This correctly handles "Anonymous participant" which has no anchor link.
+    const headers = Array.from(article.querySelectorAll('h2, h3, h4, strong, b'));
+    for (const el of headers) {
+      const name = THGContentShared.textOf(el);
+      if (name.length < 2 || name.length > 80) continue;
+      if (/^(like|comment|share|see more|follow)$/i.test(name)) continue;
+      
+      // Skip obfuscated Sponsored garbage (usually no spaces, contains numbers/weird caps, or exactly "Sponsored")
+      if (name.length > 10 && !name.includes(' ') && /\d/.test(name)) continue;
+      
+      // Find the closest anchor if any, to get the profile URL
+      const a = el.closest('a') || el.querySelector('a');
+      const href = a ? THGContentShared.normalizeHref(a.getAttribute('href')) : '';
+      
+      return { author_name: name, author_profile_url: href };
+    }
+
+    // 2. Fallback to anchors
     const anchors = Array.from(article.querySelectorAll('a[href]'));
     for (const a of anchors) {
       const href = THGContentShared.normalizeHref(a.getAttribute('href'));
       if (!href || !THGContentShared.FACEBOOK_URL_RE.test(href)) continue;
+      
+      // Skip links that look like post permalinks, we want profile links
+      if (/\/posts\/|\/permalink\/|story_fbid=/.test(href)) continue;
+
       const name = THGContentShared.textOf(a);
       if (name.length < 2 || name.length > 80) continue;
       if (/^(like|comment|share|see more|follow)$/i.test(name)) continue;
+      
+      // Skip obfuscated Sponsored garbage
+      if (name.length > 10 && !name.includes(' ') && /\d/.test(name)) continue;
+
       return { author_name: name, author_profile_url: href };
     }
     return { author_name: '', author_profile_url: '' };
