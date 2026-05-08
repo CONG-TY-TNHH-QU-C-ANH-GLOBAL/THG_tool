@@ -60,6 +60,20 @@ var THGCommands = globalThis.THGCommands || (() => {
     return got === want || got.startsWith(want + '/');
   }
 
+  function crawlNavigateUrl(raw) {
+    try {
+      const u = new URL(String(raw || ''));
+      if (!/(^|\.)facebook\.com$/i.test(u.hostname)) return String(raw || '');
+      const parts = u.pathname.split('/').filter(Boolean);
+      if (parts.length === 2 && parts[0] === 'groups') {
+        u.searchParams.set('sorting_setting', 'CHRONOLOGICAL');
+      }
+      return u.toString();
+    } catch {
+      return String(raw || '');
+    }
+  }
+
   async function sendCrawlResult(command, result) {
     if (!result?.crawl_result) return;
     const body = {
@@ -173,10 +187,11 @@ var THGCommands = globalThis.THGCommands || (() => {
           await handleWindowControl(payload);
         } else if (cmdType === 'crawl') {
           const envelope = JSON.parse(command.payload_json || '{}');
-          const navigateTo = envelope?.navigate_to || sourceUrlFromCrawlPayload(command);
-          if (!navigateTo) {
+          const requestedUrl = envelope?.navigate_to || sourceUrlFromCrawlPayload(command);
+          if (!requestedUrl) {
             throw new Error('missing navigate_to in crawl payload (refusing newsfeed fallback)');
           }
+          const navigateTo = crawlNavigateUrl(requestedUrl);
           console.log(`[THGCommands] crawl command #${command.id} navigate_to=${navigateTo}`);
           const useBackground = Boolean(envelope?.use_background_tab);
           if (useBackground) {

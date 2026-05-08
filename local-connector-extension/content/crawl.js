@@ -1,4 +1,5 @@
-var THGContentCrawl = globalThis.THGContentCrawl || (() => {
+var THGContentCrawl = (() => {
+  const CRAWLER_VERSION = 'scroll-target-v2';
   function postPermalink(article) {
     const anchors = Array.from(article.querySelectorAll('a[href]'));
     const match = anchors.find(a => {
@@ -87,6 +88,7 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     try {
       chrome.runtime.sendMessage({
         type: 'thg_crawl_progress',
+        crawler_version: CRAWLER_VERSION,
         task_id: task?.task_id || '',
         intent: task?.intent || 'facebook_crawl',
         account_id: accountId || 0,
@@ -116,6 +118,127 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     return `c:${hashKey((author?.author_profile_url || '') + '|' + content.slice(0, 240))}`;
   }
 
+  function climbPostContainer(node) {
+    let best = null;
+    for (let el = node; el && el !== document.body; el = el.parentElement) {
+      if (!(el instanceof Element)) continue;
+      if (el.getAttribute('role') === 'article') return el;
+      const rect = el.getBoundingClientRect();
+      const text = THGContentShared.textOf(el);
+      if (text.length >= 20 && rect.height >= 80 && rect.height <= window.innerHeight * 2.8 && rect.width >= 260) {
+        best = el;
+      }
+    }
+    return best;
+  }
+
+  function collectPostCandidates() {
+    const out = new Set();
+    const push = node => {
+      if (!(node instanceof Element)) return;
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 240 || rect.height < 60) return;
+      if (rect.bottom < -window.innerHeight || rect.top > window.innerHeight * 2.5) return;
+      if (node.closest('[role="navigation"], [role="banner"], [role="complementary"]')) return;
+      if (THGContentShared.textOf(node).length < 20) return;
+      out.add(node);
+    };
+    document.querySelectorAll('[role="article"], div[data-pagelet^="FeedUnit_"], div[aria-posinset]').forEach(push);
+    document.querySelectorAll('div[data-ad-preview="message"], div[data-ad-comet-preview="message"]').forEach(node => {
+      push(node.closest('[role="article"], div[data-pagelet^="FeedUnit_"], div[aria-posinset]') || climbPostContainer(node));
+    });
+    return Array.from(out);
+  }
+
+  function documentScroller() {
+    return document.scrollingElement || document.documentElement || document.body;
+  }
+
+  function isDocumentScroller(el) {
+    const root = documentScroller();
+    return !el || el === root || el === document.documentElement || el === document.body;
+  }
+
+  function scrollTargetLabel(el) {
+    if (isDocumentScroller(el)) return 'document';
+    const role = el.getAttribute('role') || '';
+    const pagelet = el.getAttribute('data-pagelet') || '';
+    return `${el.tagName.toLowerCase()}${role ? `[role=${role}]` : ''}${pagelet ? `[pagelet=${pagelet}]` : ''}`;
+  }
+
+  function scrollMetrics(el) {
+    const root = documentScroller();
+    if (isDocumentScroller(el)) {
+      return {
+        label: 'document',
+        top: Math.round(window.scrollY || root.scrollTop || document.body.scrollTop || 0),
+        clientHeight: window.innerHeight,
+        scrollHeight: Math.max(root.scrollHeight || 0, document.body.scrollHeight || 0, document.documentElement.scrollHeight || 0)
+      };
+    }
+    return {
+      label: scrollTargetLabel(el),
+      top: Math.round(el.scrollTop || 0),
+      clientHeight: el.clientHeight || 0,
+      scrollHeight: el.scrollHeight || 0
+    };
+  }
+
+  function findScrollTarget() {
+    const root = documentScroller();
+    const rootDelta = Math.max(root.scrollHeight || 0, document.body.scrollHeight || 0) - window.innerHeight;
+    let best = { el: root, score: Math.max(0, rootDelta) };
+    const nodes = Array.from(document.querySelectorAll('main, div, section'));
+    for (const el of nodes) {
+      const delta = (el.scrollHeight || 0) - (el.clientHeight || 0);
+      if (delta < 180) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height < 280 || rect.width < 360) continue;
+      if (rect.bottom < 80 || rect.top > window.innerHeight - 80) continue;
+      const style = window.getComputedStyle(el);
+      if (!/(auto|scroll|overlay)/i.test(style.overflowY || '') && el.getAttribute('role') !== 'main' && el.getAttribute('role') !== 'feed') continue;
+      const role = el.getAttribute('role') || '';
+      const score = delta + rect.height * 2 + (role === 'feed' ? 1200 : 0) + (role === 'main' ? 800 : 0);
+      if (score > best.score) best = { el, score };
+    }
+    return best.el;
+  }
+
+  function dispatchWheel(deltaY) {
+    try {
+      const x = Math.floor(window.innerWidth * 0.55);
+      const y = Math.floor(window.innerHeight * 0.75);
+      const el = document.elementFromPoint(x, y) || document.body;
+      el.dispatchEvent(new WheelEvent('wheel', {
+        bubbles: true,
+        cancelable: true,
+        deltaY,
+        deltaMode: 0,
+        clientX: x,
+        clientY: y
+      }));
+    } catch { /* best effort */ }
+  }
+
+  function scrollByTarget(target, deltaY, articles, pass) {
+    const last = articles[articles.length - 1];
+    if (last && pass % 4 === 3) {
+      try { last.scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch { /* ignore */ }
+    }
+    dispatchWheel(deltaY);
+    if (isDocumentScroller(target)) {
+      window.scrollBy({ top: deltaY, behavior: 'smooth' });
+      const root = documentScroller();
+      root.scrollTop = Math.min(root.scrollHeight, (root.scrollTop || window.scrollY || 0) + deltaY);
+      document.dispatchEvent(new Event('scroll', { bubbles: true }));
+      window.dispatchEvent(new Event('scroll'));
+      return;
+    }
+    target.scrollBy({ top: deltaY, behavior: 'smooth' });
+    target.scrollTop = Math.min(target.scrollHeight, (target.scrollTop || 0) + deltaY);
+    target.dispatchEvent(new Event('scroll', { bubbles: true }));
+  }
+
   async function crawlVisibleFacebookPosts(task, expectedUrl, accountId) {
     // Refuse to scrape if Facebook redirected us off the requested page (e.g.
     // newsfeed). Without this guard the extension silently scraped the wrong
@@ -139,6 +262,7 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     let prevArticles = 0;
     let prevItemsLength = 0;
     let prevScrollY = -1;
+    let prevScrollTarget = '';
     let exitReason = 'pass_exhausted';
     emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
@@ -146,9 +270,7 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       if (pass > 0) await new Promise(r => setTimeout(r, 300));
       const itemsBeforePass = items.length;
       
-      const articles = Array.from(document.querySelectorAll(
-        '[role="article"], div[data-pagelet^="FeedUnit_"], div[role="feed"] > div'
-      ));
+      const articles = collectPostCandidates();
       for (const article of articles) {
         const content = THGContentShared.textOf(article);
         if (content.length < 20) continue;
@@ -169,9 +291,11 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         });
         if (items.length >= maxItems) break;
       }
-      const docHeight = document.body.scrollHeight;
+      const scrollTarget = findScrollTarget();
+      const scrollInfo = scrollMetrics(scrollTarget);
+      const docHeight = scrollInfo.scrollHeight;
       const articlesSeen = articles.length;
-      const scrollY = Math.round(window.scrollY);
+      const scrollY = scrollInfo.top;
       const newItemsThisPass = items.length > itemsBeforePass;
       if (newItemsThisPass) lastNewItemPass = pass;
       console.log('[THG crawl]', {
@@ -179,7 +303,8 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         articles_seen: articlesSeen,
         items_collected: items.length,
         scroll_y: scrollY,
-        doc_height: docHeight
+        doc_height: docHeight,
+        scroll_target: scrollInfo.label
       });
       // After each scroll pass send a heartbeat. Backend rate-limits these so
       // even an aggressive cadence here won't spam Telegram.
@@ -192,7 +317,8 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       // flat while the viewport still moves. Count scroll movement as progress,
       // then stop only after enough active scrolling fails to produce new posts.
       const scrollMoved = prevScrollY >= 0 && Math.abs(scrollY - prevScrollY) > 24;
-      const pageMoved = docHeight !== prevHeight || articlesSeen !== prevArticles || items.length !== prevItemsLength || scrollMoved;
+      const targetChanged = prevScrollTarget && prevScrollTarget !== scrollInfo.label;
+      const pageMoved = docHeight !== prevHeight || articlesSeen !== prevArticles || items.length !== prevItemsLength || scrollMoved || targetChanged;
       if (pass > 0 && !pageMoved) {
         stagnantPasses++;
         if (stagnantPasses >= 10 && pass >= minPassesBeforeStop) {
@@ -210,15 +336,12 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       prevArticles = articlesSeen;
       prevItemsLength = items.length;
       prevScrollY = scrollY;
+      prevScrollTarget = scrollInfo.label;
       
       // Facebook's infinite scroll is more reliable with steady viewport-sized
       // movement and an occasional larger push to wake lazy loading.
       const viewportStep = Math.max(Math.floor(window.innerHeight * 0.95), 700);
-      if (pass % 6 === 5) {
-        window.scrollTo({ top: window.scrollY + viewportStep * 2, behavior: 'smooth' });
-      } else {
-        window.scrollBy({ top: viewportStep, behavior: 'smooth' });
-      }
+      scrollByTarget(scrollTarget, pass % 6 === 5 ? viewportStep * 2 : viewportStep, articles, pass);
       // Lazy-load gets slower deeper into a feed
       const waitMs = pass < 8 ? 2200 : 3600;
       await new Promise(resolve => setTimeout(resolve, waitMs));
@@ -228,6 +351,7 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     return {
       ok: true,
       crawl_result: {
+        crawler_version: CRAWLER_VERSION,
         task_id: task?.task_id || '',
         intent: task?.intent || 'facebook_crawl',
         keywords: Array.isArray(task?.keywords) ? task.keywords : [],
