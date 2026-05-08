@@ -42,7 +42,10 @@ apt-get install -y --no-install-recommends \
     fail2ban \
     logrotate \
     ca-certificates \
-    openssl
+    openssl \
+    python3 \
+    python3-venv \
+    python3-pip
 
 echo "✅ Packages installed"
 

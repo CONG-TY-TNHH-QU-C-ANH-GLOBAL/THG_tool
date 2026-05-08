@@ -1,53 +1,52 @@
-# /etc/systemd/system/thg-scraper.service
-# Install: sudo systemctl daemon-reload && sudo systemctl enable thg-scraper
+# /etc/systemd/system/thg-agent-brain.service
+# Install: sudo systemctl daemon-reload && sudo systemctl enable thg-agent-brain
 
 [Unit]
-Description=THG Agentic Scraper
-After=network.target thg-agent-brain.service
-Wants=network-online.target thg-agent-brain.service
-
+Description=THG Agent Brain (LLM Planner Sidecar)
+After=network.target
+Before=thg-scraper.service
 
 [Service]
 Type=simple
 
-# ── Dedicated service user (no shell, no login) ───────────────────────────
+# ── Run as same user as scraper ───────────────────────────────────────────
 User=thg-scraper
 Group=thg-scraper
 
 # ── Working directory and binary ──────────────────────────────────────────
-WorkingDirectory=/opt/thg-scraper
-ExecStart=/opt/thg-scraper/scraper
+WorkingDirectory=/opt/thg-agent-brain
+ExecStart=/opt/thg-agent-brain/venv/bin/python brain.py
 
-# ── Secrets loaded from root-owned env file (mode 0600) ──────────────────
-# File must be: sudo chown root:thg-scraper /etc/thg-scraper/env && sudo chmod 640 /etc/thg-scraper/env
+# ── Config ────────────────────────────────────────────────────────────────
+# Bind to localhost only — scraper connects via loopback
+Environment=AGENT_BRAIN_HOST=127.0.0.1
+Environment=AGENT_BRAIN_PORT=8091
+Environment=AGENT_BRAIN_PLANNER_MODEL=gpt-4o-mini
+Environment=AGENT_BRAIN_PLANNER_TIMEOUT_S=5
+
+# Reads OPENAI_API_KEY (and other secrets) from scraper env file
 EnvironmentFile=/etc/thg-scraper/env
 
 # ── Crash recovery ────────────────────────────────────────────────────────
 Restart=on-failure
-RestartSec=10
+RestartSec=5
 StartLimitInterval=120
-StartLimitBurst=5
+StartLimitBurst=10
 
-# ── Resource limits ───────────────────────────────────────────────────────
-MemoryMax=2G
-TasksMax=512
+# ── Resource limits (very lightweight service) ────────────────────────────
+MemoryMax=256M
+TasksMax=64
 
 # ── Hardening (principle of least privilege) ──────────────────────────────
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Allow writing to data dir + Docker socket for browser containers
-ReadWritePaths=/opt/thg-scraper/data /var/run/docker.sock /tmp
-SupplementaryGroups=docker
+ReadWritePaths=/opt/thg-agent-brain
 
 # Prevent the process from gaining new capabilities
 CapabilityBoundingSet=
 AmbientCapabilities=
-
-# Restrict syscalls to a safe subset
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
 
 # Network: allow only outbound (no raw sockets)
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
@@ -58,10 +57,10 @@ ProtectKernelTunables=true
 ProtectControlGroups=true
 
 # ── Logging ───────────────────────────────────────────────────────────────
-# Logs go to journald: sudo journalctl -u thg-scraper -f
+# Logs go to journald: sudo journalctl -u thg-agent-brain -f
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=thg-scraper
+SyslogIdentifier=thg-agent-brain
 
 [Install]
 WantedBy=multi-user.target

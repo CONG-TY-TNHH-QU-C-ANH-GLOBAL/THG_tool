@@ -141,7 +141,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ steps.cfg.outputs.ssh_port }}
-          source: "frontend-standalone.tar.gz,docker/,deploy/,thg-extension-store-package/thg-chrome-extension.zip"
+          source: "frontend-standalone.tar.gz,docker/,deploy/,services/agent-brain/,thg-extension-store-package/thg-chrome-extension.zip"
           target: "/tmp/thg-deploy/"
           overwrite: true
 
@@ -251,8 +251,30 @@ jobs:
 
             usermod -aG docker thg-scraper 2>/dev/null || true
 
+            # ── Agent Brain sidecar (Python LLM Planner) ──
+            sudo mkdir -p /opt/thg-agent-brain
+            if [ -f /tmp/thg-deploy/services/agent-brain/brain.py ]; then
+              sudo cp /tmp/thg-deploy/services/agent-brain/brain.py /opt/thg-agent-brain/
+              sudo cp /tmp/thg-deploy/services/agent-brain/planner_llm.py /opt/thg-agent-brain/
+              sudo cp /tmp/thg-deploy/services/agent-brain/requirements.txt /opt/thg-agent-brain/
+              sudo chown -R thg-scraper:thg-scraper /opt/thg-agent-brain
+
+              # Create venv if missing
+              if [ ! -d /opt/thg-agent-brain/venv ]; then
+                python3 -m venv /opt/thg-agent-brain/venv
+              fi
+
+              # Install/update deps if requirements changed
+              if ! cmp -s /opt/thg-agent-brain/requirements.txt \
+                          /opt/thg-agent-brain/requirements.txt.prev 2>/dev/null; then
+                /opt/thg-agent-brain/venv/bin/pip install -q -r /opt/thg-agent-brain/requirements.txt
+                cp /opt/thg-agent-brain/requirements.txt /opt/thg-agent-brain/requirements.txt.prev
+              fi
+              echo "Agent Brain code deployed"
+            fi
+
             # Install systemd service files.
-            for svc in thg-scraper thg-worker thg-frontend; do
+            for svc in thg-scraper thg-worker thg-frontend thg-agent-brain; do
               if [ -f /tmp/thg-deploy/deploy/${svc}.service ]; then
                 sudo cp /tmp/thg-deploy/deploy/${svc}.service /etc/systemd/system/${svc}.service
               fi
@@ -274,7 +296,15 @@ jobs:
             rm -rf /tmp/thg-deploy /tmp/frontend-standalone.tar.gz
 
             # Restart services.
-            sudo systemctl enable thg-scraper thg-frontend thg-worker 2>/dev/null || true
+            sudo systemctl enable thg-scraper thg-frontend thg-worker thg-agent-brain 2>/dev/null || true
+            sudo systemctl restart thg-agent-brain
+            sleep 3
+            if curl -sf http://127.0.0.1:8091/healthz > /dev/null 2>&1; then
+              echo "Agent Brain healthy"
+            else
+              echo "Agent Brain not responding (non-fatal, scraper falls back to deterministic)"
+              sudo journalctl -u thg-agent-brain --no-pager -n 10 || true
+            fi
             sudo systemctl restart thg-scraper thg-worker
             sleep 5
             sudo systemctl restart thg-frontend
