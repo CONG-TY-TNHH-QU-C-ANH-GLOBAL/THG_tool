@@ -18,5 +18,7 @@ Production UX:
 The extension does not receive a Facebook password and does not try to bypass
 Facebook checkpoint or CAPTCHA flows.
 
-Production install goes through Chrome Web Store. The build package is only for
-Chrome Web Store upload/validation.
+Production install goes through Chrome Web Store. Internal beta installs must
+use the CI-built beta zip served by the dashboard. Do not install this source
+folder directly; it is kept in the repo only so official and beta packages can
+be built from one source of truth.

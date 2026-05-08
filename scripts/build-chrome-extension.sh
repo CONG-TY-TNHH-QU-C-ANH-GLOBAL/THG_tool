@@ -7,7 +7,7 @@
 #
 # VERSION_SUFFIX behavior:
 #   - "dev" / unset / "0" → manifest.json is zipped as-is (base version, e.g. "0.3.0").
-#     Use this for local dev where you don't want to keep bumping versions.
+#     Use only for source validation; users install official or beta builds.
 #   - numeric (e.g. CI ${{ github.run_number }} = "42") → manifest is patched to
 #     "<base>.<suffix>" (e.g. "0.3.0.42") in the staged copy ONLY. The repo's
 #     manifest.json is never touched.
@@ -29,6 +29,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="$ROOT/$OUT_DIR"
 EXTENSION_DIR="$ROOT/local-connector-extension"
 ZIP_NAME="thg-chrome-extension.zip"
+
+# Source directory only. User installs should come from the official Web Store
+# item or the CI-built beta zip, not from this repo folder directly.
 
 mkdir -p "$OUTPUT_DIR"
 

@@ -4,6 +4,11 @@ This document replaces the previous connector flow. Production should use
 the official Chrome Web Store item as the primary install path for THG Chrome
 Extension inside the user's trusted Chrome profile.
 
+There is no separate "local extension" product path. The
+`local-connector-extension/` directory is source code only; official and beta
+packages are both built from it. Operators should install either the Chrome Web
+Store release or the CI-built beta zip exposed by the dashboard.
+
 ## User Flow
 
 1. Staff opens the Browser dashboard.
@@ -49,6 +54,9 @@ Extension inside the user's trusted Chrome profile.
     `CHROME_EXTENSION_BETA_PACKAGE_URL`
 - The beta lane must serve the same CI-built package that was just produced
   from `local-connector-extension/`; do not hand-maintain a stale zip on VPS.
+- Operators must not install the repo source folder directly. If beta is needed,
+  download the dashboard-served beta package, remove the old beta extension, and
+  install the newly extracted beta package.
 - Deploy now installs the beta package into both `/opt/thg-scraper/releases/`
   and `/opt/thg-scraper/data/downloads/`, then verifies that
   `/api/system/extension-beta-package` returns the same manifest version as the

@@ -47,6 +47,59 @@
   margin: 22px 0;
 }
 
+.versionBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  padding: 14px;
+  background: #0f172a;
+}
+
+.versionLabel {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.versionValue {
+  margin-top: 4px;
+  color: #f8fafc;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.versionMeta {
+  margin-top: 4px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.versionActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 7px;
+  background: #1f2937;
+  color: #e5edf7;
+  cursor: pointer;
+}
+
 .primary,
 .secondary {
   display: inline-flex;
@@ -105,5 +158,14 @@
 
   .panel h1 {
     font-size: 28px;
+  }
+
+  .versionBox {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .versionActions {
+    justify-content: flex-start;
   }
 }

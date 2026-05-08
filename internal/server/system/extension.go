@@ -1,10 +1,14 @@
 package system
 
 import (
+	"archive/zip"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -53,6 +57,79 @@ func chromeExtensionBetaInfo() (string, string) {
 	return betaURL, packageURL
 }
 
+type chromeExtensionManifest struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	VersionName string `json:"version_name"`
+}
+
+func chromeExtensionPackageManifest(packagePath string) (chromeExtensionManifest, error) {
+	zr, err := zip.OpenReader(packagePath)
+	if err != nil {
+		return chromeExtensionManifest{}, err
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if f.Name != "manifest.json" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return chromeExtensionManifest{}, err
+		}
+		defer rc.Close()
+		raw, err := io.ReadAll(rc)
+		if err != nil {
+			return chromeExtensionManifest{}, err
+		}
+		var manifest chromeExtensionManifest
+		if err := json.Unmarshal(raw, &manifest); err != nil {
+			return chromeExtensionManifest{}, err
+		}
+		return manifest, nil
+	}
+	return chromeExtensionManifest{}, fmt.Errorf("manifest.json not found in extension package")
+}
+
+// ServeExtensionBetaInfo reports the exact beta zip currently being served so
+// operators can verify whether Chrome is still running an old package.
+func ServeExtensionBetaInfo() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		packageURL := strings.TrimSpace(os.Getenv("CHROME_EXTENSION_BETA_PACKAGE_URL"))
+		if packageURL == "" {
+			packageURL = "/api/system/extension-beta-package"
+		}
+		if !envFlagEnabled("CHROME_EXTENSION_BETA_ENABLED") {
+			return c.JSON(fiber.Map{
+				"enabled":     false,
+				"package_url": packageURL,
+			})
+		}
+		packagePath := filepath.Clean(chromeExtensionBetaPackagePath())
+		info, err := os.Stat(packagePath)
+		if err != nil || info.IsDir() {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "extension beta package not found"})
+		}
+		manifest, err := chromeExtensionPackageManifest(packagePath)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		version := strings.TrimSpace(manifest.VersionName)
+		if version == "" {
+			version = strings.TrimSpace(manifest.Version)
+		}
+		c.Set(fiber.HeaderCacheControl, "no-store")
+		return c.JSON(fiber.Map{
+			"enabled":     true,
+			"name":        manifest.Name,
+			"version":     version,
+			"package_url": packageURL,
+			"size_bytes":  info.Size(),
+			"updated_at":  info.ModTime().UTC().Format(time.RFC3339),
+		})
+	}
+}
+
 // ServeExtensionBetaPackage returns the CI-built Chrome Extension zip as a
 // download. The file is read from disk with Cache-Control: no-store so
 // browsers always get the latest version.
@@ -66,7 +143,18 @@ func ServeExtensionBetaPackage() fiber.Handler {
 		if err != nil || info.IsDir() {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "extension beta package not found"})
 		}
+		if manifest, err := chromeExtensionPackageManifest(packagePath); err == nil {
+			version := strings.TrimSpace(manifest.VersionName)
+			if version == "" {
+				version = strings.TrimSpace(manifest.Version)
+			}
+			if version != "" {
+				c.Set("X-THG-Extension-Version", version)
+			}
+		}
 		c.Set(fiber.HeaderCacheControl, "no-store")
+		c.Set(fiber.HeaderPragma, "no-cache")
+		c.Set(fiber.HeaderExpires, "0")
 		c.Set(fiber.HeaderContentType, "application/zip")
 		c.Attachment("thg-chrome-extension.zip")
 		return c.SendFile(packagePath)
