@@ -118,6 +118,15 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		if primarySourceURL == "" && sourceURL != "" {
 			primarySourceURL = sourceURL
 		}
+		
+		// 1. Deduplicate: Memory check before hitting AI.
+		// Prevents bringing in duplicate leads and wasting expensive LLM tokens across multiple scrapes.
+		if sourceURL != "" && appStore != nil {
+			if exists, _ := appStore.HasLeadWithSourceURL(c.Context(), orgID, sourceURL); exists {
+				continue
+			}
+		}
+		
 		outcome, err := leadingest.IngestPost(c.Context(), deps, leadingest.Input{
 			TaskID:           body.TaskID,
 			OrgID:            orgID,

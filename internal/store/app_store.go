@@ -310,6 +310,21 @@ func (a *AppStore) InsertLead(ctx context.Context, taskID string, orgID int64, l
 	return err
 }
 
+func (a *AppStore) HasLeadWithSourceURL(ctx context.Context, orgID int64, sourceURL string) (bool, error) {
+	if sourceURL == "" {
+		return false, nil
+	}
+	var id int64
+	err := a.db.QueryRowContext(ctx, `SELECT id FROM task_leads WHERE org_id = ? AND source_url = ? LIMIT 1`, orgID, sourceURL).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (a *AppStore) ListLeads(ctx context.Context, orgID int64, category, keyword string, minScore float64, limit, offset int) ([]TaskLead, error) {
 	q := `SELECT id, task_id, org_id, source_url, author_profile_url, author_name, content,
 	             lead_score, category, signals_json, created_at
