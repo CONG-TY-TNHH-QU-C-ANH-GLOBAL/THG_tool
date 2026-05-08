@@ -1,9 +1,11 @@
 var THGHeartbeat = globalThis.THGHeartbeat || (() => {
+  let running = null;
+
   function schedule() {
     chrome.alarms.create(THGShared.HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
   }
 
-  async function run() {
+  async function runOnce() {
     const cfg = await THGApi.getConfig();
     if (!cfg.deviceToken) return { paired: false };
     let state = await THGFacebookState.collectFacebookState();
@@ -22,6 +24,14 @@ var THGHeartbeat = globalThis.THGHeartbeat || (() => {
       lastSeenAt: new Date().toISOString()
     });
     return { paired: true, status: state.streamStatus, currentUrl: state.currentUrl, fbUserId: state.fbUserId };
+  }
+
+  async function run() {
+    if (running) return running;
+    running = runOnce().finally(() => {
+      running = null;
+    });
+    return running;
   }
 
   return { run, schedule };

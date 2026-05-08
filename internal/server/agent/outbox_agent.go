@@ -87,9 +87,13 @@ func (h *Handler) agentOutboxFailed(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
+	var req struct {
+		Error string `json:"error"`
+	}
+	_ = c.BodyParser(&req)
 	if err := h.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundFailed); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
 	}
-	system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, models.OutboundFailed)
+	system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, models.OutboundFailed, req.Error)
 	return c.JSON(fiber.Map{"status": "failed"})
 }

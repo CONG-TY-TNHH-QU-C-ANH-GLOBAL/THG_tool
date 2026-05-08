@@ -1,6 +1,8 @@
 var THGOutbox = globalThis.THGOutbox || (() => {
+  let processing = null;
+
   async function fetchApprovedOutbox() {
-    const res = await THGApi.agentFetch('/api/connectors/outbox?limit=5');
+    const res = await THGApi.agentFetch('/api/connectors/outbox?limit=1');
     if (!res.ok) return [];
     const payload = await res.json().catch(() => ({}));
     return Array.isArray(payload.messages) ? payload.messages : [];
@@ -38,7 +40,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     }
   }
 
-  async function process(target, state) {
+  async function processOnce(target, state) {
     if (!target || !state.fbUserId) return;
     const messages = await fetchApprovedOutbox();
     if (!messages.length) return;
@@ -52,8 +54,19 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       } catch (err) {
         error = err?.message || String(err);
       }
+      if (error) {
+        await THGShared.storageSet({ lastOutboxError: error, lastError: error }).catch(() => {});
+      }
       await completeOutbox(message.id, ok, error).catch(() => {});
     }
+  }
+
+  async function process(target, state) {
+    if (processing) return processing;
+    processing = processOnce(target, state).finally(() => {
+      processing = null;
+    });
+    return processing;
   }
 
   return { process };

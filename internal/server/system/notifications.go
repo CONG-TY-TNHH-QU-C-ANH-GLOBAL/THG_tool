@@ -106,6 +106,10 @@ func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, account
 }
 
 func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int64, status models.OutboundStatus) {
+	NotifyOutboundStatusDetail(db, notifier, orgID, id, status, "")
+}
+
+func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, id int64, status models.OutboundStatus, detail string) {
 	if db == nil {
 		return
 	}
@@ -113,10 +117,18 @@ func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int6
 	if err != nil || msg == nil {
 		return
 	}
+	detail = strings.TrimSpace(detail)
+	if len(detail) > 240 {
+		detail = detail[:240]
+	}
 	logText := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, status, msg.TargetName)
 	userText := fmt.Sprintf("%s Facebook %s #%d trạng thái: %s. Đối tượng: %s", notifierPrefix, msg.Type, msg.ID, status, msg.TargetName)
+	if detail != "" {
+		logText += fmt.Sprintf(". Detail: %s", detail)
+		userText += fmt.Sprintf(". Chi tiet: %s", detail)
+	}
 	log.Printf("[Outbound] %s", logText)
-	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, "system_outbound_status", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, msg.ID, msg.Type, status), status != models.OutboundFailed)
+	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, "system_outbound_status", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q,"detail":%q}`, msg.ID, msg.Type, status, detail), status != models.OutboundFailed)
 	if notifier != nil {
 		notifier(userText)
 	}
