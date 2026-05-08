@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -55,6 +56,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	queued, skipped := 0, 0
 	approvedCount := 0
 	skipReasons := map[string]int{}
+	var lastGenErr error
 	for _, lead := range leads {
 		targetURL := strings.TrimSpace(lead.SourceURL)
 		profileURL := strings.TrimSpace(lead.AuthorURL)
@@ -80,6 +82,8 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			}
 			cancel()
 			if genErr != nil {
+				log.Printf("[queueLeadOutreach] AI generation failed for lead %s: %v", targetURL, genErr)
+				lastGenErr = genErr
 				skipped++
 				skipReasons["generation_failed"]++
 				continue
@@ -131,7 +135,13 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if notify != nil && queued > 0 {
 		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}
-	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v", msgType, queued, skipped, mode, skipReasons), nil
+	
+	errDetails := ""
+	if lastGenErr != nil {
+		errDetails = fmt.Sprintf(" | Last Error: %v", lastGenErr)
+	}
+	
+	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s", msgType, queued, skipped, mode, skipReasons, errDetails), nil
 }
 
 func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {

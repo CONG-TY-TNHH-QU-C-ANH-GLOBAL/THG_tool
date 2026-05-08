@@ -134,9 +134,13 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
     let stagnantPasses = 0;
     let prevHeight = 0;
     let prevArticles = 0;
+    let prevItemsLength = 0;
     let exitReason = 'pass_exhausted';
     emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
+      // Small pause before grabbing elements, giving UI a moment to react to the previous scroll
+      if (pass > 0) await new Promise(r => setTimeout(r, 300));
+      
       const articles = Array.from(document.querySelectorAll(
         '[role="article"], div[data-pagelet^="FeedUnit_"], div[role="feed"] > div'
       ));
@@ -176,12 +180,11 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         exitReason = 'maxItems';
         break;
       }
-      // No-progress detection: if scrollHeight and visible article count both
-      // stay flat across several consecutive passes, the feed is exhausted (or
-      // Facebook stopped lazy-loading) — stop instead of burning the remaining passes.
-      if (pass > 0 && docHeight === prevHeight && articlesSeen === prevArticles) {
+      // No-progress detection: if scrollHeight, visible article count, and collected items
+      // all stay flat across several consecutive passes, the feed is exhausted.
+      if (pass > 0 && docHeight === prevHeight && articlesSeen === prevArticles && items.length === prevItemsLength) {
         stagnantPasses++;
-        if (stagnantPasses >= 4) { // Increased to 4 to tolerate slow loading
+        if (stagnantPasses >= 6) { // Increased to 6 to tolerate slow loading and network hiccups
           exitReason = 'no_progress';
           break;
         }
@@ -190,10 +193,12 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       }
       prevHeight = docHeight;
       prevArticles = articlesSeen;
-      window.scrollBy({ top: Math.max(900, window.innerHeight * 0.9), behavior: 'smooth' });
-      // Lazy-load gets slower deeper into a feed; ramp the wait so the first
-      // few passes stay snappy and later passes give Facebook time to fetch.
-      const waitMs = pass < 6 ? 1400 : 2500;
+      prevItemsLength = items.length;
+      
+      // Facebook's infinite scroll sometimes requires small scrolls rather than massive jumps
+      window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' });
+      // Lazy-load gets slower deeper into a feed
+      const waitMs = pass < 6 ? 1600 : 2800;
       await new Promise(resolve => setTimeout(resolve, waitMs));
     }
     console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems });
