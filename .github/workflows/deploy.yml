@@ -257,19 +257,28 @@ jobs:
               sudo cp /tmp/thg-deploy/services/agent-brain/brain.py /opt/thg-agent-brain/
               sudo cp /tmp/thg-deploy/services/agent-brain/planner_llm.py /opt/thg-agent-brain/
               sudo cp /tmp/thg-deploy/services/agent-brain/requirements.txt /opt/thg-agent-brain/
-              sudo chown -R thg-scraper:thg-scraper /opt/thg-agent-brain
 
-              # Create venv if missing
-              if [ ! -d /opt/thg-agent-brain/venv ]; then
-                python3 -m venv /opt/thg-agent-brain/venv
+              # Ensure python3-venv is installed (in case setup-server.sh wasn't run)
+              if ! dpkg -l | grep -q python3-venv; then
+                sudo apt-get update
+                sudo apt-get install -y python3-venv
+              fi
+
+              # Create venv if missing or broken (no pip)
+              if [ ! -f /opt/thg-agent-brain/venv/bin/pip ]; then
+                sudo rm -rf /opt/thg-agent-brain/venv
+                sudo python3 -m venv /opt/thg-agent-brain/venv
               fi
 
               # Install/update deps if requirements changed
               if ! cmp -s /opt/thg-agent-brain/requirements.txt \
                           /opt/thg-agent-brain/requirements.txt.prev 2>/dev/null; then
-                /opt/thg-agent-brain/venv/bin/pip install -q -r /opt/thg-agent-brain/requirements.txt
-                cp /opt/thg-agent-brain/requirements.txt /opt/thg-agent-brain/requirements.txt.prev
+                sudo /opt/thg-agent-brain/venv/bin/pip install -q -r /opt/thg-agent-brain/requirements.txt
+                sudo cp /opt/thg-agent-brain/requirements.txt /opt/thg-agent-brain/requirements.txt.prev
               fi
+              
+              # Set permissions after venv and pip are done
+              sudo chown -R thg-scraper:thg-scraper /opt/thg-agent-brain
               echo "Agent Brain code deployed"
             fi
 
