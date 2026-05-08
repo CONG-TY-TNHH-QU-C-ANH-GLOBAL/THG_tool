@@ -9,7 +9,7 @@ import (
 type Deps struct {
 	DB       *store.Store
 	Agent    *ai.Agent
-	AIClass  *ai.MessageGenerator
+	AIClass  func() *ai.MessageGenerator
 	WSHub    *WSHub
 	Notifier func(string)
 }
@@ -17,7 +17,7 @@ type Deps struct {
 type Handler struct {
 	db       *store.Store
 	agent    *ai.Agent
-	aiClass  *ai.MessageGenerator
+	aiClass  func() *ai.MessageGenerator
 	wsHub    *WSHub
 	notifier func(string)
 }

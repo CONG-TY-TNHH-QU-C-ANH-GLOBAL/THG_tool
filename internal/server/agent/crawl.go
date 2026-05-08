@@ -85,13 +85,17 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	keywords := normalizeCrawlKeywords(append(body.Keywords, orgIntelligenceKeywords(h.db, orgID)...))
 	businessProfile := ai.LoadProfileForOrg(h.db, orgID)
 	gate := leadingest.SignalGateFromMap(body.MarketSignalGate)
+	var aiClass *ai.MessageGenerator
+	if h.aiClass != nil {
+		aiClass = h.aiClass()
+	}
 	deps := leadingest.Deps{
 		AppStore:        appStore,
 		LegacyDB:        h.db,
 		Scorer:          scoring.New(scoring.DefaultConfig()),
 		Guidance:        guidance,
 		BusinessProfile: businessProfile,
-		AIClass:         h.aiClass,
+		AIClass:         aiClass,
 		SignalGate:      gate,
 		Keywords:        keywords,
 		UserPrompt:      strings.TrimSpace(body.UserPrompt),

@@ -81,7 +81,7 @@ func (s *Server) registerRoutes() {
 	serveragent.LocalConnectorPairingRoutes(api, serveragent.LocalConnectorDeps{DB: s.db}, pairingLimiter)
 	serveragent.ConnectorRoutes(api, serveragent.Deps{
 		DB:       s.db,
-		AIClass:  s.aiClass,
+		AIClass:  func() *ai.MessageGenerator { return s.aiClass },
 		WSHub:    s.wsHub,
 		Notifier: s.cfg.Notifier,
 	})
@@ -130,7 +130,7 @@ func (s *Server) registerRoutes() {
 	serveragent.DashboardRoutes(r, serveragent.Deps{
 		DB:       s.db,
 		Agent:    s.agent,
-		AIClass:  s.aiClass,
+		AIClass:  func() *ai.MessageGenerator { return s.aiClass },
 		WSHub:    s.wsHub,
 		Notifier: s.cfg.Notifier,
 	}, adminOnly)
@@ -147,7 +147,7 @@ func (s *Server) registerRoutes() {
 	serveragent.AdminTokenRoutes(adminGrp, serveragent.Deps{
 		DB:       s.db,
 		Agent:    s.agent,
-		AIClass:  s.aiClass,
+		AIClass:  func() *ai.MessageGenerator { return s.aiClass },
 		WSHub:    s.wsHub,
 		Notifier: s.cfg.Notifier,
 	})
