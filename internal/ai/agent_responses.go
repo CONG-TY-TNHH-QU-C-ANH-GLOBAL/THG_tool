@@ -72,9 +72,9 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 
 	var sb strings.Builder
 	if commandID != "" {
-		sb.WriteString("Đã gửi lệnh crawl xuống Chrome Extension đang online.\n\n")
+		sb.WriteString("Đã gửi lệnh xử lý đến Tiện ích Chrome (Extension) đang online.\n\n")
 	} else {
-		sb.WriteString("Đã nhận lệnh crawl và đưa vào hàng đợi xử lý.\n\n")
+		sb.WriteString("Đã nhận lệnh xử lý và đưa vào hàng đợi.\n\n")
 	}
 	sb.WriteString("Mục tiêu: ")
 	sb.WriteString(strings.TrimSpace(stripDashboardContext(prompt)))
@@ -82,25 +82,25 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 	sb.WriteString(sourceLabel)
 	sb.WriteString("\n")
 	if jobID != "" {
-		sb.WriteString("Job: #")
+		sb.WriteString("Mã Job: #")
 		sb.WriteString(jobID)
 		sb.WriteString("\n")
 	}
 	if commandID != "" {
-		sb.WriteString("Lệnh tới Extension: #")
+		sb.WriteString("Mã lệnh tiện ích: #")
 		sb.WriteString(commandID)
 		sb.WriteString("\n")
 	}
 	if taskID != "" {
-		sb.WriteString("Tác vụ: ")
+		sb.WriteString("Mã tác vụ: ")
 		sb.WriteString(taskID)
 		sb.WriteString("\n")
 	}
 	if commandID != "" {
-		sb.WriteString("\nTrạng thái này mới xác nhận Chrome Extension đã nhận lệnh. Sau khi crawl xong, hệ thống mới ghi số liệu fetched / qualified / filtered về dashboard và Telegram.")
+		sb.WriteString("\nTrạng thái này xác nhận trình duyệt Chrome của bạn đã nhận lệnh thành công. Sau khi quét xong, hệ thống mới cập nhật số liệu bài viết đã thu thập, số khách hàng đủ điều kiện và số lượng bị loại bỏ về Dashboard và Telegram.")
 	} else {
-		sb.WriteString("\nHệ thống đã tạo job nền. Nếu workspace dùng Chrome Extension mà không thấy lệnh tới Extension, bạn cần kiểm tra lại routing account/session.")
+		sb.WriteString("\nHệ thống đã tạo Job chạy ngầm. Nếu workspace đang dùng Chrome Extension mà không thấy lệnh gửi xuống, bạn cần kiểm tra lại kết nối của tài khoản.")
 	}
-	sb.WriteString("\nĐể bật Automation 24/7, thêm chu kỳ vào lệnh (ví dụ: 'crawl group này mỗi 30 phút').")
+	sb.WriteString("\nĐể tự động hóa 24/7, hãy thêm chu kỳ vào câu lệnh (ví dụ: 'quét nhóm này mỗi 30 phút').")
 	return sb.String()
 }
