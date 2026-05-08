@@ -92,17 +92,9 @@ func InferTargetRoleFromPrompt(prompt string) string {
 		return "candidate"
 	}
 
-	// Partner / supplier / reseller.
-	if containsAny(lower, []string{
-		"đối tác", "doi tac", "nhà cung cấp", "nha cung cap",
-		"reseller", "đại lý", "dai ly", "supplier",
-		"cộng tác viên", "cong tac vien", "ctv",
-	}) {
-		return "partner"
-	}
-
-	// Customer-facing prompts. Run last because "khách" is generic enough
-	// to over-trigger if checked too early.
+	// Customer-facing prompts. We check this BEFORE partner because
+	// a prompt like "tìm khách cần tìm supplier" means the target is
+	// the customer. "Khách" is the primary subject.
 	if containsAny(lower, []string{
 		"tìm khách", "tim khach", "khách hàng", "khach hang",
 		"khách có nhu cầu", "khach co nhu cau",
@@ -110,6 +102,15 @@ func InferTargetRoleFromPrompt(prompt string) string {
 		"có nhu cầu mua", "co nhu cau mua",
 	}) {
 		return "potential_customer"
+	}
+
+	// Partner / supplier / reseller.
+	if containsAny(lower, []string{
+		"đối tác", "doi tac", "nhà cung cấp", "nha cung cap",
+		"reseller", "đại lý", "dai ly", "supplier",
+		"cộng tác viên", "cong tac vien", "ctv",
+	}) {
+		return "partner"
 	}
 
 	return ""
