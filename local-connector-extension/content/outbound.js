@@ -214,7 +214,16 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return score;
   }
 
-  function findSubmitButton(editor, excluded = []) {
+  function submitCandidateSpatial(editor, button) {
+    const er = editor.getBoundingClientRect();
+    const br = button.getBoundingClientRect();
+    const verticallyNear = br.bottom >= er.top - 28 && br.top <= er.bottom + 42;
+    const toRight = br.left >= er.left - 10;
+    const compact = br.width <= 110 && br.height <= 72;
+    return verticallyNear && toRight && compact;
+  }
+
+  function findSubmitButtons(editor, excluded = []) {
     const submitKeys = ['comment', 'post', 'send', 'binh luan', 'dang', 'gui'];
     const scopes = [];
     const form = editor.closest('form');
@@ -233,15 +242,18 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         if (seen.has(el)) continue;
         seen.add(el);
         const label = labelOf(el);
-        if (!visible(el) || !enabledButton(el) || !label) continue;
-        if (!hasAny(label, submitKeys) || rejectActionLabel(label)) continue;
+        const hasSubmitLabel = hasAny(label, submitKeys);
+        const spatial = submitCandidateSpatial(editor, el);
+        if (!visible(el) || !enabledButton(el)) continue;
+        if (label && rejectActionLabel(label)) continue;
+        if (!hasSubmitLabel && !spatial) continue;
         if (el === editor || el.contains(editor)) continue;
         candidates.push(el);
       }
-      if (candidates.length) break;
+      if (candidates.length >= 3) break;
     }
     candidates.sort((a, b) => submitScore(editor, a) - submitScore(editor, b));
-    return candidates[0] || null;
+    return candidates.slice(0, 5);
   }
 
   async function executeComment(content) {
@@ -268,18 +280,21 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
     if (!inserted) return { ok: false, error: 'comment_text_not_confirmed' };
 
-    const submit = findSubmitButton(editor, [commentButton]);
-    if (submit && clickLikeUser(submit)) {
-      const cleared = await waitFor(() => !editorContainsContent(editor, content), 3500, 200);
-      if (cleared) return { ok: true, detail: 'sent_comment_button' };
+    const submitButtons = findSubmitButtons(editor, [commentButton]);
+    for (const submit of submitButtons) {
+      if (submit && clickLikeUser(submit)) {
+        const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
+        if (cleared) return { ok: true, detail: 'sent_comment_button' };
+      }
+      await wait(400);
     }
 
     if (pressEnter(editor)) {
-      const cleared = await waitFor(() => !editorContainsContent(editor, content), 3500, 200);
+      const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
       if (cleared) return { ok: true, detail: 'sent_comment_enter' };
     }
 
-    return { ok: false, error: submit ? 'comment_submit_not_confirmed' : 'comment_submit_not_found' };
+    return { ok: false, error: submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found' };
   }
 
   async function executeInbox(content) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
@@ -66,6 +67,11 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if targetURL == "" {
 			skipped++
 			skipReasons["missing_target"]++
+			continue
+		}
+		if msgType == "comment" && !isCommentableFacebookPostURL(targetURL) {
+			skipped++
+			skipReasons["missing_post_permalink"]++
 			continue
 		}
 
@@ -135,12 +141,12 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if notify != nil && queued > 0 {
 		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}
-	
+
 	errDetails := ""
 	if lastGenErr != nil {
 		errDetails = fmt.Sprintf(" | Last Error: %v", lastGenErr)
 	}
-	
+
 	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s", msgType, queued, skipped, mode, skipReasons, errDetails), nil
 }
 
@@ -178,6 +184,42 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 		limit = 25
 	}
 	return db.GetAutomationLeadsForOrg(orgID, score, limit)
+}
+
+func isCommentableFacebookPostURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := strings.ToLower(u.Host)
+	if host != "fb.watch" && !strings.HasSuffix(host, ".fb.watch") &&
+		host != "facebook.com" && !strings.HasSuffix(host, ".facebook.com") {
+		return false
+	}
+	path := strings.ToLower(strings.TrimSpace(u.EscapedPath()))
+	if (host == "fb.watch" || strings.HasSuffix(host, ".fb.watch")) && strings.Trim(path, "/") != "" {
+		return true
+	}
+	query := u.Query()
+	if query.Get("story_fbid") != "" || query.Get("multi_permalinks") != "" {
+		return true
+	}
+	if strings.Contains(path, "/posts/") ||
+		strings.Contains(path, "/permalink/") ||
+		strings.Contains(path, "/videos/") ||
+		strings.Contains(path, "/reel/") ||
+		strings.Contains(path, "/watch/") ||
+		strings.Contains(path, "/share/") {
+		return true
+	}
+	if strings.HasSuffix(path, "/photo.php") && query.Get("fbid") != "" {
+		return true
+	}
+	return false
 }
 
 func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {

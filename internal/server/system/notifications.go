@@ -134,7 +134,22 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	}
 }
 
-func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID int64, taskID, intent string, totalItems, fetched, inserted int, sourceURL string) {
+func crawlExitReasonLabel(reason string) string {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "maxitems":
+		return "đã đạt số bài yêu cầu"
+	case "no_progress":
+		return "Facebook không tải thêm bài sau nhiều lần cuộn"
+	case "no_new_items_after_scroll":
+		return "đã cuộn tiếp nhưng không thấy bài mới"
+	case "pass_exhausted":
+		return "đã hết số vòng cuộn an toàn"
+	default:
+		return strings.TrimSpace(reason)
+	}
+}
+
+func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID int64, taskID, intent string, totalItems, fetched, inserted int, sourceURL, exitReason string) {
 	label := strings.TrimSpace(intent)
 	if label == "" {
 		label = "facebook_crawl"
@@ -159,10 +174,16 @@ func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID
 		outcomeEN = fmt.Sprintf("%d raw items, %d analyzable posts, but 0 leads passed Market Signal Gate (%d filtered, %d skipped)", totalItems, fetched, rejected, skipped)
 		outcomeVN = fmt.Sprintf("%d bài thô, %d bài phân tích được, nhưng không có lead nào qua Bộ lọc tín hiệu thị trường (%d bị loại, %d bỏ qua)", totalItems, fetched, rejected, skipped)
 	}
+	exitReason = strings.TrimSpace(exitReason)
+	exitReasonVN := crawlExitReasonLabel(exitReason)
+	if exitReason != "" {
+		outcomeEN = fmt.Sprintf("%s. Exit reason: %s", outcomeEN, exitReason)
+		outcomeVN = fmt.Sprintf("%s. Lý do dừng: %s", outcomeVN, exitReasonVN)
+	}
 	logText := fmt.Sprintf("[THG Agent] Crawl %s completed. Task %s. Org #%d, account #%d. %s. Source: %s", label, taskID, orgID, accountID, outcomeEN, sourceURL)
 	userText := fmt.Sprintf("%s Crawl %s đã hoàn tất. Tác vụ %s. Org #%d, account #%d. %s. Nguồn: %s", notifierPrefix, label, taskID, orgID, accountID, outcomeVN, sourceVN)
 	log.Printf("[ConnectorCrawl] %s", logText)
-	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL), true)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q,"exit_reason":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL, exitReason), true)
 	if notifier != nil {
 		notifier(userText)
 	}

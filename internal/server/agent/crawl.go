@@ -29,6 +29,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		AccountID        int64          `json:"account_id"`
 		Status           string         `json:"status"`
 		Error            string         `json:"error"`
+		ExitReason       string         `json:"exit_reason"`
 		Keywords         []string       `json:"keywords"`
 		MarketSignalGate map[string]any `json:"market_signal_gate"`
 		UserPrompt       string         `json:"user_prompt"`
@@ -118,7 +119,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		if primarySourceURL == "" && sourceURL != "" {
 			primarySourceURL = sourceURL
 		}
-		
+
 		// 1. Deduplicate: Memory check before hitting AI.
 		// Prevents bringing in duplicate leads and wasting expensive LLM tokens across multiple scrapes.
 		if sourceURL != "" && appStore != nil {
@@ -126,7 +127,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 				continue
 			}
 		}
-		
+
 		outcome, err := leadingest.IngestPost(c.Context(), deps, leadingest.Input{
 			TaskID:           body.TaskID,
 			OrgID:            orgID,
@@ -147,7 +148,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		}
 	}
 	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
-	system.NotifyCrawlSummary(h.db, h.notifier, orgID, body.AccountID, body.TaskID, intent, len(body.Items), fetched, inserted, primarySourceURL)
+	system.NotifyCrawlSummary(h.db, h.notifier, orgID, body.AccountID, body.TaskID, intent, len(body.Items), fetched, inserted, primarySourceURL, body.ExitReason)
 	return c.JSON(fiber.Map{
 		"status":   "stored",
 		"task_id":  body.TaskID,
@@ -192,7 +193,6 @@ func (h *Handler) agentConnectorCrawlProgress(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"status": "ok"})
 }
-
 
 func normalizeCrawlKeywords(values []string) []string {
 	out := make([]string, 0, len(values))
@@ -263,4 +263,3 @@ func orgScoringGuidance(db *store.Store, orgID int64) scoring.Guidance {
 		RejectPhrases:    ai.SplitSignalPhrases(strings.Join([]string{get("negative_signals"), get("reject_rules")}, "\n")),
 	}
 }
-

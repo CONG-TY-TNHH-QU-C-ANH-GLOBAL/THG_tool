@@ -81,7 +81,7 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
   }
 
   // Best-effort heartbeat to the background page so users on Telegram can
-  // follow the crawl in real time. Failures are intentionally swallowed —
+  // follow the crawl in real time. Failures are intentionally swallowed;
   // missing a heartbeat must never block the crawl itself.
   function emitProgress(task, accountId, stage, fetched, max) {
     try {
@@ -101,7 +101,7 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
   // Stable hash for content+author when Facebook hasn't rendered the permalink
   // yet. Using location.href as a fallback dedup key (the prior bug) caused
   // every post on the same group page to share one key, so the loop only ever
-  // captured the first 1–3 unique items. djb2 is fine here — collision-resilient
+  // captured the first 1-3 unique items. djb2 is fine here: collision-resilient
   // enough for one crawl session.
   function hashKey(s) {
     let h = 5381;
@@ -127,19 +127,24 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       };
     }
     const maxItems = Math.max(1, Math.min(200, Number(task?.crawl_plan?.max_items || 20)));
-    // Increase maxPasses dynamically based on maxItems (Facebook often only loads 2-4 posts per scroll)
-    const maxPasses = Math.max(40, Math.ceil(maxItems * 1.5));
+    // Facebook often loads only a few posts per scroll, especially in groups.
+    // Give 50+ post crawls enough passes before deciding the feed is exhausted.
+    const maxPasses = Math.max(70, Math.min(260, Math.ceil(maxItems * 3)));
+    const minPassesBeforeStop = Math.min(maxPasses - 1, Math.max(18, Math.ceil(maxItems * 0.7)));
     const seen = new Set();
     const items = [];
     let stagnantPasses = 0;
+    let lastNewItemPass = 0;
     let prevHeight = 0;
     let prevArticles = 0;
     let prevItemsLength = 0;
+    let prevScrollY = -1;
     let exitReason = 'pass_exhausted';
     emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
       // Small pause before grabbing elements, giving UI a moment to react to the previous scroll
       if (pass > 0) await new Promise(r => setTimeout(r, 300));
+      const itemsBeforePass = items.length;
       
       const articles = Array.from(document.querySelectorAll(
         '[role="article"], div[data-pagelet^="FeedUnit_"], div[role="feed"] > div'
@@ -166,11 +171,14 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
       }
       const docHeight = document.body.scrollHeight;
       const articlesSeen = articles.length;
+      const scrollY = Math.round(window.scrollY);
+      const newItemsThisPass = items.length > itemsBeforePass;
+      if (newItemsThisPass) lastNewItemPass = pass;
       console.log('[THG crawl]', {
         pass,
         articles_seen: articlesSeen,
         items_collected: items.length,
-        scroll_y: Math.round(window.scrollY),
+        scroll_y: scrollY,
         doc_height: docHeight
       });
       // After each scroll pass send a heartbeat. Backend rate-limits these so
@@ -180,25 +188,39 @@ var THGContentCrawl = globalThis.THGContentCrawl || (() => {
         exitReason = 'maxItems';
         break;
       }
-      // No-progress detection: if scrollHeight, visible article count, and collected items
-      // all stay flat across several consecutive passes, the feed is exhausted.
-      if (pass > 0 && docHeight === prevHeight && articlesSeen === prevArticles && items.length === prevItemsLength) {
+      // Facebook virtualizes the feed, so scrollHeight/article count can stay
+      // flat while the viewport still moves. Count scroll movement as progress,
+      // then stop only after enough active scrolling fails to produce new posts.
+      const scrollMoved = prevScrollY >= 0 && Math.abs(scrollY - prevScrollY) > 24;
+      const pageMoved = docHeight !== prevHeight || articlesSeen !== prevArticles || items.length !== prevItemsLength || scrollMoved;
+      if (pass > 0 && !pageMoved) {
         stagnantPasses++;
-        if (stagnantPasses >= 6) { // Increased to 6 to tolerate slow loading and network hiccups
+        if (stagnantPasses >= 10 && pass >= minPassesBeforeStop) {
           exitReason = 'no_progress';
           break;
         }
       } else {
         stagnantPasses = 0;
       }
+      if (pass >= minPassesBeforeStop && items.length > 0 && pass - lastNewItemPass >= 16) {
+        exitReason = 'no_new_items_after_scroll';
+        break;
+      }
       prevHeight = docHeight;
       prevArticles = articlesSeen;
       prevItemsLength = items.length;
+      prevScrollY = scrollY;
       
-      // Facebook's infinite scroll sometimes requires small scrolls rather than massive jumps
-      window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' });
+      // Facebook's infinite scroll is more reliable with steady viewport-sized
+      // movement and an occasional larger push to wake lazy loading.
+      const viewportStep = Math.max(Math.floor(window.innerHeight * 0.95), 700);
+      if (pass % 6 === 5) {
+        window.scrollTo({ top: window.scrollY + viewportStep * 2, behavior: 'smooth' });
+      } else {
+        window.scrollBy({ top: viewportStep, behavior: 'smooth' });
+      }
       // Lazy-load gets slower deeper into a feed
-      const waitMs = pass < 6 ? 1600 : 2800;
+      const waitMs = pass < 8 ? 2200 : 3600;
       await new Promise(resolve => setTimeout(resolve, waitMs));
     }
     console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems });

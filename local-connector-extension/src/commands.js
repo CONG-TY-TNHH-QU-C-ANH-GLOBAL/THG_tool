@@ -92,9 +92,10 @@ var THGCommands = globalThis.THGCommands || (() => {
     }
   }
 
-  // Opens a background tab for crawling in the Facebook window.
+  // Opens a foreground crawl tab in the Facebook window. Keeping the tab active
+  // makes Facebook's virtual feed load consistently during long crawls.
   // If the Facebook window is minimized, restores it first so Chrome allows
-  // full requestAnimationFrame scheduling — minimized windows throttle rAF
+  // full requestAnimationFrame scheduling; minimized windows throttle rAF
   // which prevents React/SPA from rendering the feed.
   // Returns { tab, shouldReminimize, crawlWinId } so the caller can re-minimize after.
   async function openCrawlTab(navigateTo) {
@@ -106,14 +107,19 @@ var THGCommands = globalThis.THGCommands || (() => {
     if (crawlWinId) {
       const win = await chrome.windows.get(crawlWinId).catch(() => null);
       if (win?.state === 'minimized') {
-        await chrome.windows.update(crawlWinId, { state: 'normal' }).catch(() => {});
+        await chrome.windows.update(crawlWinId, { state: 'normal', focused: true }).catch(() => {});
         shouldReminimize = true;
         await THGShared.delay(600);
+      } else {
+        await chrome.windows.update(crawlWinId, { focused: true }).catch(() => {});
       }
     }
-    const tabOpts = { url: navigateTo, active: false };
+    const tabOpts = { url: navigateTo, active: true };
     if (crawlWinId) tabOpts.windowId = crawlWinId;
     const tab = await chrome.tabs.create(tabOpts);
+    if (tab?.windowId) {
+      await chrome.windows.update(tab.windowId, { state: 'normal', focused: true }).catch(() => {});
+    }
     return { tab, shouldReminimize, crawlWinId };
   }
 
@@ -126,7 +132,7 @@ var THGCommands = globalThis.THGCommands || (() => {
   }
 
   async function navigateAndVerify(navigateTo) {
-    // Try up to 3 times: open tab → wait ready → verify URL matches.
+    // Try up to 3 times: open tab, wait ready, then verify URL matches.
     // Facebook can redirect /groups/<id> to newsfeed when the user is logged
     // out or hits a checkpoint. Retrying without verification would mask that
     // and silently crawl the wrong page.
@@ -135,7 +141,7 @@ var THGCommands = globalThis.THGCommands || (() => {
       try {
         await THGFacebookState.waitForTabReady(info.tab.id);
       } catch {
-        // continue — verifyTabAtExpected will re-check tab state
+        // continue; verifyTabAtExpected will re-check tab state
       }
       await THGShared.delay(5000); // SPA render
       const { tab, matched } = await verifyTabAtExpected(info.tab.id, navigateTo);
@@ -174,16 +180,15 @@ var THGCommands = globalThis.THGCommands || (() => {
           console.log(`[THGCommands] crawl command #${command.id} navigate_to=${navigateTo}`);
           const useBackground = Boolean(envelope?.use_background_tab);
           if (useBackground) {
-            // Restore the Facebook window from minimize before opening the crawl tab.
-            // Inactive tabs in a visible window render at full speed; minimized
-            // windows throttle rendering and prevent the feed from loading.
+            // Use a temporary active crawl tab so Facebook keeps rendering the
+            // virtual feed while the scraper scrolls.
             const crawlInfo = await navigateAndVerify(navigateTo);
             tempTabId = crawlInfo.tab.id;
             shouldReminimize = crawlInfo.shouldReminimize;
             crawlWinId = crawlInfo.crawlWinId;
             liveState = { ...liveState, tab: crawlInfo.tab };
           } else {
-            liveState = await THGFacebookState.ensureFacebookTabVisible(navigateTo, { focus: false });
+            liveState = await THGFacebookState.ensureFacebookTabVisible(navigateTo, { focus: true });
             await THGShared.delay(2500);
             const { matched } = await verifyTabAtExpected(liveState.tab?.id, navigateTo);
             if (!matched) {

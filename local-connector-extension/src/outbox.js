@@ -25,9 +25,35 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     return '';
   }
 
+  function isCommentableFacebookPostUrl(raw) {
+    try {
+      const url = new URL(String(raw || '').trim());
+      const host = url.hostname.toLowerCase();
+      if (host !== 'fb.watch' && !host.endsWith('.fb.watch') &&
+        host !== 'facebook.com' && !host.endsWith('.facebook.com')) {
+        return false;
+      }
+      const path = url.pathname.toLowerCase();
+      if ((host === 'fb.watch' || host.endsWith('.fb.watch')) && path.replace(/^\/+|\/+$/g, '')) return true;
+      const query = url.searchParams;
+      if (query.get('story_fbid') || query.get('multi_permalinks')) return true;
+      if (path.includes('/posts/') || path.includes('/permalink/') ||
+        path.includes('/videos/') || path.includes('/reel/') ||
+        path.includes('/watch/') || path.includes('/share/')) {
+        return true;
+      }
+      return path.endsWith('/photo.php') && Boolean(query.get('fbid'));
+    } catch {
+      return false;
+    }
+  }
+
   async function executeInFacebookTab(message) {
     const targetUrl = targetUrlForMessage(message);
     if (!targetUrl) throw new Error('outbox target URL is empty');
+    if (String(message.type || '').toLowerCase() === 'comment' && !isCommentableFacebookPostUrl(targetUrl)) {
+      throw new Error('comment_target_not_post_permalink');
+    }
     let state = await THGFacebookState.ensureFacebookTabVisible(targetUrl);
     if (!state.tab?.id) throw new Error('Facebook tab is not ready');
     await THGFacebookState.waitForTabReady(state.tab.id, 20000);
