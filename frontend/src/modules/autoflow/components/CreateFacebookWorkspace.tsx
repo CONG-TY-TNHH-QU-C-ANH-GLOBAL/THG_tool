@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Building2, Check, Inbox, User } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, Check, Inbox, User } from 'lucide-react';
 import type { AuthUser } from '../services/authService';
 import { useAuthStore } from '../stores/authStore';
 import { useLang } from '../i18n/useLang';
@@ -112,20 +112,28 @@ export default function CreateFacebookWorkspace() {
 
   if (view === 'choice') {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', padding: 24, minHeight: '100%' }}>
-        <div className="card" style={{ maxWidth: 560, width: '100%', padding: 36 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '32px 24px' }}>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => router.push('/services')}
+            style={{ marginBottom: 16, gap: 6 }}
+          >
+            <ArrowLeft size={13} /> {lang === 'vi' ? 'Tất cả services' : 'All services'}
+          </button>
           <div className="eyebrow" style={{ marginBottom: 8 }}>
-            <span className="dot" />{lang === 'vi' ? 'KHỞI TẠO FACEBOOK AUTOMATION' : 'INITIALISE FACEBOOK AUTOMATION'}
+            <span className="dot" />PLATFORM / FACEBOOK AUTOMATION
           </div>
-          <h2 style={{ fontSize: 26, marginBottom: 6 }}>
+          <h1 style={{ fontSize: 28, marginBottom: 6 }}>
             {lang === 'vi'
-              ? <>Tạo workspace Facebook cho <span className="title-mono">đội của bạn.</span></>
-              : <>Create a Facebook workspace for <span className="title-mono">your team.</span></>}
-          </h2>
-          <p style={{ color: 'var(--text-mute)', marginBottom: 18, fontSize: 13.5 }}>
+              ? <>Khởi tạo workspace <span className="title-mono">Facebook</span></>
+              : <>Initialise your <span className="title-mono">Facebook</span> workspace</>}
+          </h1>
+          <p style={{ color: 'var(--text-mute)', marginBottom: 24, fontSize: 14, maxWidth: 600 }}>
             {lang === 'vi'
-              ? 'Workspace là không gian vận hành Facebook automation — chứa account, leads, browser session, và team. Bạn có thể tạo mới hoặc tham gia workspace bạn được mời.'
-              : 'A workspace is your Facebook automation operations layer — accounts, leads, browser sessions, and team. Create your own or join one you were invited to.'}
+              ? 'Workspace là không gian vận hành riêng cho service này — chứa account, leads, browser session, và team. Bạn có thể tạo mới hoặc nhận lời mời từ team có sẵn.'
+              : 'A workspace is the operations space for this service — accounts, leads, browser sessions, and team. Create your own or accept an invite from an existing team.'}
           </p>
 
           {invites.length > 0 && (
@@ -186,21 +194,24 @@ export default function CreateFacebookWorkspace() {
   ];
 
   return (
-    <div style={{ display: 'grid', placeItems: 'center', padding: 24, minHeight: '100%' }}>
-      <div className="card" style={{ maxWidth: 580, width: '100%', padding: 36 }}>
-        <div style={{ marginBottom: 18 }}>
-          <button type="button" className="auth-back" onClick={() => setView('choice')}>
-            ← {lang === 'vi' ? 'Quay lại' : 'Back'}
-          </button>
-        </div>
+    <div style={{ flex: 1, overflow: 'auto', padding: '32px 24px' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => setView('choice')}
+          style={{ marginBottom: 16, gap: 6 }}
+        >
+          <ArrowLeft size={13} /> {lang === 'vi' ? 'Quay lại' : 'Back'}
+        </button>
 
         <div className="eyebrow" style={{ marginBottom: 8 }}>
-          <span className="dot" />{lang === 'vi' ? 'TẠO WORKSPACE FACEBOOK' : 'CREATE FACEBOOK WORKSPACE'}
+          <span className="dot" />PLATFORM / FACEBOOK AUTOMATION / {lang === 'vi' ? 'KHỞI TẠO' : 'INITIALISE'}
         </div>
-        <h2 style={{ fontSize: 24, marginBottom: 6 }}>
+        <h1 style={{ fontSize: 26, marginBottom: 6 }}>
           {lang === 'vi' ? 'Định vị workspace để AI làm đúng việc của bạn' : 'Position your workspace so AI runs your playbook'}
-        </h2>
-        <p style={{ color: 'var(--text-mute)', marginBottom: 18, fontSize: 13 }}>
+        </h1>
+        <p style={{ color: 'var(--text-mute)', marginBottom: 22, fontSize: 13, maxWidth: 600 }}>
           {lang === 'vi'
             ? 'Càng rõ định vị, classifier + comment + outbound càng đúng tệp. Có thể chỉnh lại sau ở Data Private.'
             : 'The clearer you are, the better classifier + outbound match your target. Editable later in Data Private.'}

@@ -2,6 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { useLang } from '../../modules/autoflow/i18n/useLang';
+import { useAuthStore } from '../../modules/autoflow/stores/authStore';
 import { usePlatformServices } from './usePlatformServices';
 import { resolveWorkspacePresentation, type PresentationTone } from './resolveWorkspacePresentation';
 import type { PlatformService } from './types';
@@ -77,10 +78,22 @@ function ServiceCard({ svc, lang, onNavigate }: { svc: PlatformService; lang: 'v
   );
 }
 
+function firstName(name: string | undefined | null): string {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0];
+}
+
 export default function PlatformServicesPage() {
   const router = useRouter();
   const { lang } = useLang();
   const services = usePlatformServices();
+  const user = useAuthStore(s => s.user);
+
+  const greeting = lang === 'vi' ? 'Xin chào' : 'Welcome';
+  const display = firstName(user?.name) || user?.email || (lang === 'vi' ? 'bạn' : 'there');
+  const availableCount = services.filter(s => s.status === 'available').length;
+  const totalCount = services.length;
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '32px 24px' }}>
@@ -88,12 +101,27 @@ export default function PlatformServicesPage() {
         <div className="eyebrow" style={{ marginBottom: 8 }}>
           <span className="dot" />PLATFORM
         </div>
-        <h1 style={{ fontSize: 28, marginBottom: 6 }}>Services</h1>
-        <p style={{ color: 'var(--text-mute)', marginBottom: 28, fontSize: 14, maxWidth: 640 }}>
+        <h1 style={{ fontSize: 28, marginBottom: 6 }}>
+          {greeting}, <span className="title-mono">{display}</span>.
+        </h1>
+        <p style={{ color: 'var(--text-mute)', marginBottom: 6, fontSize: 14, maxWidth: 720 }}>
           {lang === 'vi'
-            ? 'Mỗi service là một mảng tự động hoá độc lập. Khởi tạo workspace riêng cho từng service khi cần.'
-            : 'Each service is an independent automation domain. Initialise a workspace per service as you need it.'}
+            ? 'Mỗi service là một mảng tự động hoá độc lập. Khởi tạo workspace cho service nào bạn muốn dùng — các service khác vẫn ở đây khi cần.'
+            : 'Each service is an independent automation domain. Initialise a workspace for the one you want to use — the others stay here for later.'}
         </p>
+        {user?.email && (
+          <p className="mono" style={{ color: 'var(--text-faint)', marginBottom: 28, fontSize: 12 }}>
+            {user.email}
+            {totalCount > 0 && (
+              <>
+                {' · '}
+                {lang === 'vi'
+                  ? `${availableCount}/${totalCount} service đang khả dụng`
+                  : `${availableCount}/${totalCount} services available`}
+              </>
+            )}
+          </p>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {services.map(svc => (
