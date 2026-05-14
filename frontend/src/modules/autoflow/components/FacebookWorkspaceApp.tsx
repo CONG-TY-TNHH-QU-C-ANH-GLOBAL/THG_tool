@@ -200,7 +200,21 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
   );
 
   return (
-    <div className="workspace-shell" style={{ display: 'grid', gridTemplateColumns: '220px 1fr', height: '100%', minHeight: 0 }}>
+    <div
+      className="workspace-shell"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '220px 1fr',
+        // `.app-sidebar` / `.app-content` are defined for the legacy `.app-shell`
+        // grid which used named areas. PlatformShell now wraps this view in
+        // a flex column with no template-areas — we have to declare them here
+        // or both children collapse into the same cell (the bug that surfaced
+        // as overlapping sidebar + content).
+        gridTemplateAreas: '"sidebar content"',
+        height: '100%',
+        minHeight: 0,
+      }}
+    >
       <aside className="app-sidebar">
         <div style={{ padding: '8px 8px 16px' }}>
           <div className="brand">
