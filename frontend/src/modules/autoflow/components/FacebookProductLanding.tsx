@@ -2,20 +2,18 @@
 
 import {
   ArrowRight,
-  Bot,
   Database,
   MessagesSquare,
   ShieldCheck,
   Target,
   Workflow,
-  Zap,
 } from 'lucide-react';
 
 import { useLang } from '../i18n/useLang';
-import { LangSwitch } from './ds/LangSwitch';
-import styles from './Landing.module.css';
+import MarketingNav from '../../../marketing/MarketingNav';
+import styles from '../../../marketing/landing.module.css';
 
-interface LandingProps {
+interface FacebookProductLandingProps {
   onLogin: () => void;
   onRegister: () => void;
   onAdmin: () => void;
@@ -203,7 +201,7 @@ const VALUE_PILLS = [
   'Telegram log',
 ];
 
-export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) {
+export default function FacebookProductLanding({ onLogin, onRegister, onAdmin }: FacebookProductLandingProps) {
   const { lang } = useLang();
   const copy = COPY[lang];
 
@@ -211,35 +209,16 @@ export default function Landing({ onLogin, onRegister, onAdmin }: LandingProps) 
     <main className={styles.page}>
       <div className={styles.backdrop} aria-hidden="true" />
 
-      <header className={styles.navWrap}>
-        <div className={styles.nav}>
-          <div className={styles.brand}>
-            <div className={styles.brandMark}>
-              <img src="/assets/thg-pegasus.png" alt="THG" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-            </div>
-            <div>
-              <strong>THG AutoFlow</strong>
-              <span>Workspace</span>
-            </div>
-          </div>
-
-          <nav className={styles.navLinks} aria-label="Landing navigation">
-            <a href="#features">{copy.navFeatures}</a>
-            <a href="#workflow">{copy.navFlow}</a>
-            <a href="#security">{copy.navSecurity}</a>
-          </nav>
-
-          <div className={styles.navActions}>
-            <LangSwitch />
-            <button type="button" className="btn btn-ghost" onClick={onLogin}>
-              {copy.login}
-            </button>
-            <button type="button" className="btn btn-primary" onClick={onRegister}>
-              {copy.register}
-            </button>
-          </div>
-        </div>
-      </header>
+      <MarketingNav
+        onLogin={onLogin}
+        onRegister={onRegister}
+        currentServiceSlug="facebook-automation"
+        sectionLinks={[
+          { href: '#features', label: copy.navFeatures },
+          { href: '#workflow', label: copy.navFlow },
+          { href: '#security', label: copy.navSecurity },
+        ]}
+      />
 
       <section className={styles.hero}>
         <div className={styles.heroCopy}>

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Landing from '@/src/modules/autoflow/components/Landing';
+import PlatformLanding from '@/src/marketing/PlatformLanding';
 import { useAuth } from '@/src/modules/autoflow/hooks/useAuth';
 import { useAuthStore } from '@/src/modules/autoflow/stores/authStore';
 import { initAuthSync } from '@/src/modules/autoflow/services/authSync';
@@ -51,10 +51,9 @@ export default function HomePage() {
   if (googleAuthPending || (hydrated && user)) return <Spinner />;
 
   return (
-    <Landing
+    <PlatformLanding
       onLogin={() => router.push('/auth?mode=login')}
       onRegister={() => router.push('/auth?mode=register')}
-      onAdmin={() => router.push('/auth?mode=login')}
     />
   );
 }
