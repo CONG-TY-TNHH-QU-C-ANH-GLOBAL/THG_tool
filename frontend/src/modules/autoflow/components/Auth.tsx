@@ -13,7 +13,6 @@ interface AuthProps {
   mode: AuthMode;
   setMode: (m: AuthMode) => void;
   onSuccess: (role: AuthSuccessRole) => void;
-  onNeedsOnboarding?: () => void;
   goBack: () => void;
 }
 
@@ -58,7 +57,7 @@ function AuthShell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' 
   );
 }
 
-export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBack }: AuthProps) {
+export default function Auth({ mode, setMode, onSuccess, goBack }: AuthProps) {
   const { lang, t } = useLang();
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState('');
@@ -97,8 +96,7 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
       }
       const { useAuthStore } = await import('../stores/authStore');
       useAuthStore.getState().setAuth(data.access_token, data.user);
-      if (data.needs_onboarding && onNeedsOnboarding) onNeedsOnboarding();
-      else onSuccess(routeRoleFor(data.user));
+      onSuccess(routeRoleFor(data.user));
     } catch {
       setRegError(lang === 'vi' ? 'Lỗi kết nối, thử lại sau' : 'Connection error, try again');
     } finally {
@@ -112,8 +110,6 @@ export default function Auth({ mode, setMode, onSuccess, onNeedsOnboarding, goBa
       await login(email, password);
       const { useAuthStore } = await import('../stores/authStore');
       const user = useAuthStore.getState().user;
-      if (isPlatformRole(user?.role)) { onSuccess(routeRoleFor(user)); return; }
-      if (user?.org_id === 0 && onNeedsOnboarding) { onNeedsOnboarding(); return; }
       onSuccess(routeRoleFor(user));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : (lang === 'vi' ? 'Đăng nhập thất bại' : 'Login failed'));

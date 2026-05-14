@@ -295,10 +295,12 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					SignalGate:      gate,
 					Keywords:        task.Keywords,
 					UserPrompt:      userPrompt,
+					IntentID:        task.IntentID,
 				}, leadingest.Input{
 					TaskID:           job.TaskID,
 					OrgID:            task.OrgID,
-					SourceURL:        item.SourceURL,
+					SourceType:       "post",
+					PrimaryURL:       item.SourceURL,
 					AuthorName:       item.AuthorName,
 					AuthorProfileURL: item.AuthorProfileURL,
 					Content:          item.Content,

@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Lead, LeadStatus } from '../types';
-import { getLeads, deleteLead as deleteLeadService } from '../services/leadsService';
+import {
+  deleteLead as deleteLeadService,
+  getLeadEngagementsBatch,
+  getLeads,
+} from '../services/leadsService';
 
 const CRAWL_DISPATCH_KEY = 'autoflow:last_crawl_dispatch';
 const POLL_INTERVAL_MS = 15_000;
@@ -16,7 +20,18 @@ export function useLeads(orgId: string, statusFilter: LeadStatus | 'All' = 'All'
     setIsLoading(true);
     setError(null);
     getLeads(orgId, statusFilter === 'All' ? undefined : statusFilter)
-      .then(data => { if (!cancelled) setLeads(data); })
+      .then(async data => {
+        if (cancelled) return;
+        // Render the list immediately; merge engagement when it lands.
+        // PR-4 Lead Engagement is decorative — list shows up even if the
+        // engagement batch call fails (handled inside the service).
+        setLeads(data);
+        if (data.length === 0) return;
+        const ids = data.map(l => l.id);
+        const engagementMap = await getLeadEngagementsBatch(orgId, ids);
+        if (cancelled) return;
+        setLeads(prev => prev.map(l => ({ ...l, engagement: engagementMap[l.id] })));
+      })
       .catch(err => { if (!cancelled) setError(err instanceof Error ? err : new Error(String(err))); })
       .finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };

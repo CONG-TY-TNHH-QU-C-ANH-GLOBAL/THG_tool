@@ -9,7 +9,11 @@ type Task struct {
 	TaskID              string        `json:"task_id"`
 	OrgID               int64         `json:"org_id"`
 	AccountID           int64         `json:"account_id,omitempty"`
-	Intent              string        `json:"intent"`
+	// IntentID is the recurring crawl intent that produced this task (0 for
+	// one-shot / user-prompted runs). Carried through so the ingest pipeline
+	// can advance the per-intent cursor. See project_scheduled_intelligence.md.
+	IntentID int64 `json:"intent_id,omitempty"`
+	Intent   string `json:"intent"`
 	Keywords            []string      `json:"keywords"`
 	Entities            []string      `json:"entities,omitempty"`
 	CrawlPlan           CrawlPlan     `json:"crawl_plan"`
@@ -49,6 +53,14 @@ type CrawlPlan struct {
 	Sources   []Source `json:"sources"`
 	MaxItems  int      `json:"max_items"`
 	BatchSize int      `json:"batch_size"`
+	// Recurring crawl cursor. When CursorLastPostID is non-empty, the crawler
+	// SHOULD stop traversal upon encountering that post id (it has caught up
+	// to the previous frontier). CursorLastPostAt / SinceRunAt are freshness
+	// signals; post_id is the primary dedup key per the design mandate in
+	// project_scheduled_intelligence.md (cursor is NEVER timestamp-only).
+	CursorLastPostID string    `json:"cursor_last_post_id,omitempty"`
+	CursorLastPostAt time.Time `json:"cursor_last_post_at,omitempty"`
+	SinceRunAt       time.Time `json:"since_run_at,omitempty"`
 }
 
 // Source is a single crawl target.

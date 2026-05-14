@@ -156,8 +156,12 @@ func TestQueueOutboundForOrgBlocksDuplicateActiveTarget(t *testing.T) {
 	if res.Decision.Allowed {
 		t.Fatal("expected duplicate to be blocked")
 	}
-	if res.Decision.Reason != "duplicate_outbound_target" {
-		t.Fatalf("expected duplicate_outbound_target, got %q", res.Decision.Reason)
+	// Coordination Plane PR-1: per-account scoping for comment means
+	// same-account duplicates surface the per-account reason. (Cross-account
+	// for comment is now ALLOWED — amplification case. Cross-account dedup
+	// kept for inbox; see TestQueueOutbound_InboxIsCrossAccountStrict.)
+	if res.Decision.Reason != "duplicate_outbound_per_account" {
+		t.Fatalf("expected duplicate_outbound_per_account, got %q", res.Decision.Reason)
 	}
 }
 

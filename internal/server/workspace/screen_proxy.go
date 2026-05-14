@@ -67,10 +67,13 @@ func (h *Handler) screenProxyHandler() func(*fiberws.Conn) {
 			return
 		}
 
-		// Org-scope guard via shared helper. Superadmin (orgID=0) bypasses check.
+		// RBAC-1: execution-layer ownership guard. Sales staff can only see
+		// the browser screen of an account they own; admin / platform passes.
+		// See feedback_shared_battlefield_not_crm.md.
 		orgID, _ := ws.Locals("org_id").(int64)
+		userID, _ := ws.Locals("user_id").(int64)
 		role, _ := ws.Locals("user_role").(string)
-		if _, ok := serveragent.RequireAccountForOrgWS(h.db, orgID, role, id); !ok {
+		if _, ok := serveragent.RequireAccountOwnerWS(h.db, orgID, userID, role, id); !ok {
 			_ = ws.WriteJSON(screenFrame{Type: "error", Msg: "access denied"})
 			return
 		}

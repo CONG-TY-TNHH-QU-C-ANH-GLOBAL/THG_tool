@@ -19,24 +19,11 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if orgID <= 0 {
 		return "", fmt.Errorf("org_id is required for outbound automation")
 	}
-	accountID := argInt64(args, "account_id")
-	if accountID <= 0 {
-		accounts, err := db.GetAllAccounts(orgID)
-		if err != nil {
-			return "", err
-		}
-		for _, acc := range accounts {
-			if acc.Platform == models.PlatformFacebook && acc.BrowserLoggedIn && acc.Status == models.AccountActive {
-				accountID = acc.ID
-				break
-			}
-		}
-		if accountID <= 0 && len(accounts) > 0 {
-			accountID = accounts[0].ID
-		}
-	}
-	if accountID <= 0 {
-		return "", fmt.Errorf("no Facebook account available for org %d", orgID)
+	userID := argInt64(args, "user_id")
+	role := argString(args, "user_role")
+	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), true)
+	if err != nil {
+		return "", err
 	}
 
 	// requestedAuto carries the AI/agent's preference. The store layer
@@ -249,7 +236,15 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 
 func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
 	orgID := argInt64(args, "org_id")
-	accountID := argInt64(args, "account_id")
+	userID := argInt64(args, "user_id")
+	role := argString(args, "user_role")
+	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
+	if err != nil {
+		return "", err
+	}
+	// Persist the resolved+owner-checked account_id so queueFacebookPostTargets
+	// uses it instead of resolving again.
+	args["account_id"] = accountID
 	target := argString(args, "profile_url")
 	if target == "" && accountID > 0 {
 		if acc, err := db.GetAccountForOrg(accountID, orgID); err == nil && acc != nil {
@@ -267,16 +262,11 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 	if orgID <= 0 {
 		return "", fmt.Errorf("org_id is required for Facebook posting")
 	}
-	accountID := argInt64(args, "account_id")
-	if accountID <= 0 {
-		accounts, err := db.GetAllAccounts(orgID)
-		if err != nil {
-			return "", err
-		}
-		if len(accounts) == 0 {
-			return "", fmt.Errorf("no Facebook account available for org %d", orgID)
-		}
-		accountID = accounts[0].ID
+	userID := argInt64(args, "user_id")
+	role := argString(args, "user_role")
+	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
+	if err != nil {
+		return "", err
 	}
 
 	content := textutil.FirstNonEmpty(argString(args, "content"), argString(args, "description"), argString(args, "title"))
@@ -337,6 +327,66 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}
 	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s", msgType, queued, skipped, mode), nil
+}
+
+// resolveCallerAccountID picks the FB account_id the skill executor will use,
+// enforcing execution-layer ownership per RBAC-1 (see
+// feedback_shared_battlefield_not_crm.md):
+//
+//   - If requestedAccountID > 0: load it and verify the caller owns it.
+//     Admin / platform roles pass; sales must match acc.AssignedUserID.
+//   - If requestedAccountID <= 0 and the caller is identified (userID > 0):
+//     pick from the caller's OWNED accounts only (sales = GetAccountsForUser,
+//     admin / platform = GetAllAccounts).
+//   - If userID <= 0 (Telegram bot / legacy unauthenticated path): pick
+//     from any account in the org (preserves current behaviour; future PR
+//     resolves Telegram operator → DB user).
+//
+// preferLoggedIn rewards the first FB-platform, browser-logged-in, active
+// account in the candidate list (legacy lead-outreach behaviour). Set to
+// false for post / profile_post paths that don't need a logged-in browser.
+func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (int64, error) {
+	if requestedAccountID > 0 {
+		acc, err := db.GetAccountForOrg(requestedAccountID, orgID)
+		if err != nil || acc == nil {
+			return 0, fmt.Errorf("account_id %d not found in org %d", requestedAccountID, orgID)
+		}
+		if userID > 0 && !models.IsAccountOwnerAllowed(acc, userID, role) {
+			return 0, fmt.Errorf("you do not own account #%d", requestedAccountID)
+		}
+		return acc.ID, nil
+	}
+
+	var candidates []models.Account
+	var err error
+	if userID > 0 {
+		r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
+		if models.IsPlatformRole(r) || r == models.RoleAdmin {
+			candidates, err = db.GetAllAccounts(orgID)
+		} else {
+			candidates, err = db.GetAccountsForUser(orgID, userID)
+		}
+	} else {
+		// Legacy / unauthenticated path: any org account.
+		candidates, err = db.GetAllAccounts(orgID)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		if userID > 0 {
+			return 0, fmt.Errorf("you have no Facebook account assigned in org %d; ask an admin to assign one", orgID)
+		}
+		return 0, fmt.Errorf("no Facebook account available for org %d", orgID)
+	}
+	if preferLoggedIn {
+		for _, acc := range candidates {
+			if acc.Platform == models.PlatformFacebook && acc.BrowserLoggedIn && acc.Status == models.AccountActive {
+				return acc.ID, nil
+			}
+		}
+	}
+	return candidates[0].ID, nil
 }
 
 func formatOutboundNotification(orgID, accountID int64, msgType string, queued, skipped int, mode string) string {

@@ -23,7 +23,12 @@ func (h *Handler) aiPrompt(c *fiber.Ctx) error {
 
 	prompt := strings.TrimSpace(req.Prompt)
 	orgID, _ := c.Locals("org_id").(int64)
-	response, err := h.agent.ProcessPromptForOrgWithAccount(c.Context(), prompt, "dashboard", orgID, req.AccountID)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
+	// RBAC-1 skill-path enforcement: thread caller identity so skill executors
+	// can verify account ownership before queueing outbound. Sales staff cannot
+	// queue via accounts they don't own.
+	response, err := h.agent.ProcessPromptForOrgWithUser(c.Context(), prompt, "dashboard", orgID, req.AccountID, userID, role)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

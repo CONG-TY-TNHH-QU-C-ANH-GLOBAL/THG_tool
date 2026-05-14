@@ -37,11 +37,13 @@ func TestIngestPost_DeterministicHotLeadQualifies(t *testing.T) {
 		Keywords: []string{"pod", "dropship", "supplier"},
 	}
 	in := Input{
-		TaskID:    "task-1",
-		OrgID:     1,
-		Content:   "Mình cần tìm supplier POD/dropship, cần báo giá ship đi Mỹ. Ai biết bên nào uy tín không? Cần tư vấn gấp.",
-		Reactions: 12,
-		Comments:  5,
+		TaskID:     "task-1",
+		OrgID:      1,
+		SourceType: "post",
+		PrimaryURL: "https://facebook.com/groups/1/posts/100",
+		Content:    "Mình cần tìm supplier POD/dropship, cần báo giá ship đi Mỹ. Ai biết bên nào uy tín không? Cần tư vấn gấp.",
+		Reactions:  12,
+		Comments:   5,
 	}
 	out, err := IngestPost(context.Background(), deps, in)
 	if err != nil {
@@ -63,7 +65,9 @@ func TestIngestPost_ColdLeadIsSkippedNotInserted(t *testing.T) {
 		Keywords: []string{"unrelated"},
 	}
 	in := Input{
-		Content: "Just a friendly hello to everyone, hope you have a wonderful day today.",
+		SourceType: "post",
+		PrimaryURL: "https://facebook.com/groups/1/posts/101",
+		Content:    "Just a friendly hello to everyone, hope you have a wonderful day today.",
 	}
 	out, err := IngestPost(context.Background(), deps, in)
 	if err != nil {
@@ -87,7 +91,9 @@ func TestIngestPost_RejectRuleHardRejects(t *testing.T) {
 	}
 	in := Input{
 		// Otherwise a strong buyer-intent post; the gate phrase still wins.
-		Content: "Looking for a supplier urgently — recruiting affiliates next week, need quotes.",
+		SourceType: "post",
+		PrimaryURL: "https://facebook.com/groups/1/posts/102",
+		Content:    "Looking for a supplier urgently — recruiting affiliates next week, need quotes.",
 	}
 	out, err := IngestPost(context.Background(), deps, in)
 	if err != nil {

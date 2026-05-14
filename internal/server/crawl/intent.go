@@ -47,3 +47,23 @@ func setIntentEnabled(deps Deps) fiber.Handler {
 		return c.JSON(fiber.Map{"status": "ok", "enabled": body.Enabled})
 	}
 }
+
+// transitionIntent is the explicit state-transition handler shared by the
+// /pause, /resume, /archive endpoints. The target status is curried by the
+// caller; the body is empty.
+func transitionIntent(deps Deps, targetStatus string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil || id <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+		}
+		if err := deps.DB.SetCrawlIntentStatus(c.Context(), orgID, id, targetStatus); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+			}
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "intent_status": targetStatus})
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"github.com/thg/scraper/internal/server/leads"
 	servermw "github.com/thg/scraper/internal/server/middleware"
 	serverorg "github.com/thg/scraper/internal/server/org"
+	serverplatform "github.com/thg/scraper/internal/server/platform"
 	serverskills "github.com/thg/scraper/internal/server/skills"
 	"github.com/thg/scraper/internal/server/system"
 	serverworkspace "github.com/thg/scraper/internal/server/workspace"
@@ -157,6 +158,10 @@ func (s *Server) registerRoutes() {
 	// member (so the dashboard chat box can hint capabilities); enable
 	// / disable requires admin role; audit feed is org-scoped.
 	serverskills.Routes(r, serverskills.Deps{DB: s.db, Agent: s.agent}, adminOnly)
+
+	// Platform service registry — backend authority for which services exist.
+	// GET /api/platform/services returns the resolved PlatformService contracts.
+	serverplatform.Routes(r, serverplatform.Deps{DB: s.db})
 
 	// Browser workspace — per-account Chrome management
 	// Chrome Extension connectors are the production path for trusted user devices.

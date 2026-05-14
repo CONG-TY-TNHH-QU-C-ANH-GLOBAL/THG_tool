@@ -47,7 +47,8 @@ type Env struct {
 	Notify   func(string)
 
 	OrgID     int64
-	UserID    int64  // operator who triggered the prompt; 0 = Telegram bot
+	UserID    int64  // operator who triggered the prompt; 0 = Telegram bot / unauthenticated path
+	Role      string // operator role: "admin" | "sales" | "founder" | "superadmin" | "" (unknown)
 	AccountID int64  // Facebook account already resolved, 0 if not picked
 	Source    string // "dashboard" | "telegram" | "api"
 	Prompt    string // original user text — for audit + skill heuristics

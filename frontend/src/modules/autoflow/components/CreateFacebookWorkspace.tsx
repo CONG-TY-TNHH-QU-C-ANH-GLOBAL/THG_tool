@@ -1,26 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ArrowRight, Building2, Check, Inbox, LogOut, User } from 'lucide-react';
-import { getMe, isPlatformRole, refreshToken } from '../services/authService';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, Building2, Check, Inbox, User } from 'lucide-react';
 import type { AuthUser } from '../services/authService';
 import { useAuthStore } from '../stores/authStore';
-import { LangSwitch } from './ds/LangSwitch';
 import { useLang } from '../i18n/useLang';
 import { getMyPendingInvites, acceptInviteToken, type PendingInvite } from '../services/staffService';
-
-interface OnboardingProps {
-  onComplete: (role: 'admin' | 'staff' | 'founder' | 'superadmin') => void;
-  onSignOut?: () => void;
-}
+import { facebookWorkspaceIdOf } from '../service';
 
 type View = 'choice' | 'form';
 
-function routeRoleFor(user?: Partial<AuthUser> | null): 'admin' | 'staff' | 'founder' | 'superadmin' {
-  if (isPlatformRole(user?.role)) return 'founder';
-  return user?.role === 'admin' ? 'admin' : 'staff';
-}
-
-export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
+export default function CreateFacebookWorkspace() {
+  const router = useRouter();
   const { lang } = useLang();
   const [view, setView] = useState<View>('choice');
   const [orgType, setOrgType] = useState<'team' | 'personal'>('team');
@@ -33,27 +24,9 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [acceptingId, setAcceptingId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getMe()
-      .then(async user => {
-        if (cancelled) return;
-        if (isPlatformRole(user.role)) { onComplete('founder'); return; }
-        if (user.org_id === 0) return;
-        try {
-          const token = await refreshToken();
-          useAuthStore.getState().setAuth(token, user);
-        } catch {
-          useAuthStore.getState().setUser(user);
-        }
-        onComplete(user.role === 'admin' ? 'admin' : 'staff');
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [onComplete]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,13 +36,19 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
     return () => { cancelled = true; };
   }, []);
 
+  function navigateToWorkspace(workspaceId: string) {
+    router.push(`/services/facebook/workspaces/${workspaceId}`);
+  }
+
   async function handleAcceptInvite(invite: PendingInvite) {
     setAcceptingId(invite.id);
     setError('');
     try {
       const data = await acceptInviteToken(invite.token);
       useAuthStore.getState().setAuth(data.access_token, data.user as AuthUser);
-      onComplete(routeRoleFor(data.user as AuthUser));
+      const workspaceId = facebookWorkspaceIdOf((data.user as AuthUser).org_id);
+      if (workspaceId) navigateToWorkspace(workspaceId);
+      else router.push('/services');
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'vi' ? 'Không nhận được invite.' : 'Could not accept invite.'));
     } finally {
@@ -79,7 +58,7 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
 
   async function handleSetup() {
     setError('');
-    if (!orgName.trim()) { setError(lang === 'vi' ? 'Vui lòng nhập tên tổ chức' : 'Please enter the workspace name'); return; }
+    if (!orgName.trim()) { setError(lang === 'vi' ? 'Vui lòng nhập tên workspace' : 'Please enter the workspace name'); return; }
     setLoading(true);
     try {
       const api = await import('../services/api');
@@ -95,8 +74,9 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
           business_profile: businessProfile.trim(),
         },
       );
-      const { useAuthStore } = await import('../stores/authStore');
       useAuthStore.getState().setAuth(data.access_token, data.user);
+      const workspaceId = facebookWorkspaceIdOf(data.user.org_id);
+      setCreatedWorkspaceId(workspaceId ?? null);
       setDone(true);
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : (lang === 'vi' ? 'Lỗi kết nối, thử lại sau' : 'Connection error, try again'));
@@ -105,45 +85,47 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
     }
   }
 
-  if (done) {
+  if (done && createdWorkspaceId) {
     return (
-      <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <div style={{ display: 'grid', placeItems: 'center', padding: 24, minHeight: '100%' }}>
         <div className="card" style={{ maxWidth: 440, textAlign: 'center', padding: 40 }}>
           <div className="auth-success-icon"><Check size={28} /></div>
           <h2 style={{ fontSize: 24, marginBottom: 8 }}>
-            {lang === 'vi' ? 'Workspace đã sẵn sàng' : 'Workspace ready'}
+            {lang === 'vi' ? 'Workspace Facebook đã sẵn sàng' : 'Facebook workspace ready'}
           </h2>
           <p style={{ color: 'var(--text-mute)', marginBottom: 28 }}>
-            {lang === 'vi' ? <>Tổ chức <strong style={{ color: 'var(--text)' }}>{orgName}</strong> đã được tạo thành công.</> : <>Workspace <strong style={{ color: 'var(--text)' }}>{orgName}</strong> created successfully.</>}
+            {lang === 'vi'
+              ? <>Workspace <strong style={{ color: 'var(--text)' }}>{orgName}</strong> đã được khởi tạo cho Facebook Automation.</>
+              : <>Workspace <strong style={{ color: 'var(--text)' }}>{orgName}</strong> initialised for Facebook Automation.</>}
           </p>
-          <button className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center' }} onClick={() => onComplete('admin')}>
-            {lang === 'vi' ? 'Vào AutoFlow' : 'Enter AutoFlow'} <ArrowRight size={14} />
+          <button
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => navigateToWorkspace(createdWorkspaceId)}
+          >
+            {lang === 'vi' ? 'Vào workspace' : 'Open workspace'} <ArrowRight size={14} />
           </button>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (view === 'choice') {
     return (
-      <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <div style={{ display: 'grid', placeItems: 'center', padding: 24, minHeight: '100%' }}>
         <div className="card" style={{ maxWidth: 560, width: '100%', padding: 36 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <div className="brand">
-              <div className="brand-mark">A</div>
-              <span className="brand-name">AutoFlow<span className="dim">.thg</span></span>
-            </div>
-            <LangSwitch />
+          <div className="eyebrow" style={{ marginBottom: 8 }}>
+            <span className="dot" />{lang === 'vi' ? 'KHỞI TẠO FACEBOOK AUTOMATION' : 'INITIALISE FACEBOOK AUTOMATION'}
           </div>
-
-          <div className="eyebrow" style={{ marginBottom: 8 }}><span className="dot" />{lang === 'vi' ? 'BẮT ĐẦU' : 'GET STARTED'}</div>
           <h2 style={{ fontSize: 26, marginBottom: 6 }}>
-            {lang === 'vi' ? <>Bạn đang là một <span className="title-mono">tài khoản trong hệ thống.</span></> : <>You're a <span className="title-mono">platform account.</span></>}
+            {lang === 'vi'
+              ? <>Tạo workspace Facebook cho <span className="title-mono">đội của bạn.</span></>
+              : <>Create a Facebook workspace for <span className="title-mono">your team.</span></>}
           </h2>
           <p style={{ color: 'var(--text-mute)', marginBottom: 18, fontSize: 13.5 }}>
             {lang === 'vi'
-              ? 'Workspace là không gian làm việc riêng có Facebook automation, leads, và team. Bạn có thể tạo của riêng hoặc tham gia workspace bạn được mời.'
-              : 'A workspace is your private operations layer for Facebook automation, leads, and team. You can create your own or join one you were invited to.'}
+              ? 'Workspace là không gian vận hành Facebook automation — chứa account, leads, browser session, và team. Bạn có thể tạo mới hoặc tham gia workspace bạn được mời.'
+              : 'A workspace is your Facebook automation operations layer — accounts, leads, browser sessions, and team. Create your own or join one you were invited to.'}
           </p>
 
           {invites.length > 0 && (
@@ -183,7 +165,7 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
             >
               <Building2 size={22} color="var(--accent)" />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{lang === 'vi' ? 'Tạo workspace mới' : 'Create a new workspace'}</div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{lang === 'vi' ? 'Tạo workspace Facebook mới' : 'Create a new Facebook workspace'}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 3 }}>
                   {lang === 'vi' ? 'Đặt tên, ngành, dịch vụ + tệp khách mục tiêu. Bạn sẽ là admin.' : 'Set name, industry, services & target audience. You become admin.'}
                 </div>
@@ -193,19 +175,8 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
           </div>
 
           {error && <div className="auth-error" style={{ marginBottom: 12 }}>{error}</div>}
-
-          {onSignOut && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ width: '100%', justifyContent: 'center' }}
-              onClick={onSignOut}
-            >
-              <LogOut size={12} /> {lang === 'vi' ? 'Tạo sau — đăng xuất' : 'Decide later — sign out'}
-            </button>
-          )}
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -215,16 +186,17 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
   ];
 
   return (
-    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+    <div style={{ display: 'grid', placeItems: 'center', padding: 24, minHeight: '100%' }}>
       <div className="card" style={{ maxWidth: 580, width: '100%', padding: 36 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+        <div style={{ marginBottom: 18 }}>
           <button type="button" className="auth-back" onClick={() => setView('choice')}>
             ← {lang === 'vi' ? 'Quay lại' : 'Back'}
           </button>
-          <LangSwitch />
         </div>
 
-        <div className="eyebrow" style={{ marginBottom: 8 }}><span className="dot" />{lang === 'vi' ? 'TẠO WORKSPACE' : 'CREATE WORKSPACE'}</div>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>
+          <span className="dot" />{lang === 'vi' ? 'TẠO WORKSPACE FACEBOOK' : 'CREATE FACEBOOK WORKSPACE'}
+        </div>
         <h2 style={{ fontSize: 24, marginBottom: 6 }}>
           {lang === 'vi' ? 'Định vị workspace để AI làm đúng việc của bạn' : 'Position your workspace so AI runs your playbook'}
         </h2>
@@ -266,7 +238,7 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
             <span className="field-label">
               {orgType === 'personal'
                 ? (lang === 'vi' ? 'TÊN BẠN / THƯƠNG HIỆU' : 'YOUR NAME / BRAND')
-                : (lang === 'vi' ? 'TÊN TỔ CHỨC' : 'WORKSPACE NAME')}
+                : (lang === 'vi' ? 'TÊN WORKSPACE' : 'WORKSPACE NAME')}
             </span>
             <input className="input" placeholder={orgType === 'personal' ? 'Nguyễn Văn A' : 'Công ty TNHH ABC'} value={orgName} onChange={e => setOrgName(e.target.value)} />
           </label>
@@ -303,10 +275,10 @@ export default function Onboarding({ onComplete, onSignOut }: OnboardingProps) {
         >
           {loading
             ? (lang === 'vi' ? 'Đang tạo workspace…' : 'Creating workspace…')
-            : (lang === 'vi' ? 'Tạo workspace' : 'Create workspace')}
+            : (lang === 'vi' ? 'Tạo workspace Facebook' : 'Create Facebook workspace')}
           <ArrowRight size={14} />
         </button>
       </div>
-    </main>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Lead, LeadStatus } from '../types';
+import type { Lead, LeadEngagementState, LeadStatus } from '../types';
 import * as api from './api';
 
 interface LeadsResponse { leads: BackendLead[]; count: number; }
@@ -78,4 +78,39 @@ export interface ReclassifyResponse {
 export async function reclassifyLeads(orgId: string, body: ReclassifyRequest): Promise<ReclassifyResponse> {
   void orgId;
   return api.post<ReclassifyResponse>('/leads/reclassify', body);
+}
+
+// Lead Engagement batch fetch — see project_distributed_coordination.md PR-4.
+// Returns a map keyed by lead_id; missing ids resolve to undefined (caller
+// must default to 'priority' for display purposes).
+interface EngagementBatchResponse {
+  engagements: Record<string, LeadEngagementState | undefined>;
+}
+
+export async function getLeadEngagementsBatch(
+  orgId: string,
+  leadIds: number[],
+): Promise<Record<number, LeadEngagementState | undefined>> {
+  void orgId;
+  if (leadIds.length === 0) return {};
+  // Backend caps at 100 per call.
+  const chunks: number[][] = [];
+  for (let i = 0; i < leadIds.length; i += 100) {
+    chunks.push(leadIds.slice(i, i + 100));
+  }
+  const out: Record<number, LeadEngagementState | undefined> = {};
+  for (const chunk of chunks) {
+    try {
+      const res = await api.get<EngagementBatchResponse>(
+        `/leads/engagement?ids=${chunk.join(',')}`,
+      );
+      const map = res.engagements ?? {};
+      for (const [k, v] of Object.entries(map)) {
+        out[Number(k)] = v;
+      }
+    } catch {
+      // Best-effort: engagement is decorative. Leads still render without it.
+    }
+  }
+  return out;
 }

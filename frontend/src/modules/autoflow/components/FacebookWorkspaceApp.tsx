@@ -3,22 +3,17 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import type { Organization } from '../types';
 import { get } from '../services/api';
+import { useRoleStore } from '../stores/roleStore';
 import SettingsPage from './SettingsPage';
-import { LangSwitch } from './ds/LangSwitch';
-import { DensitySwitch } from './ds/DensitySwitch';
-import { ThemeToggle } from './ds/ThemeToggle';
 import { useLang } from '../i18n/useLang';
+import { isPlatformRole } from '../services/authService';
 import {
-  Bell,
   Bot,
-  ChevronDown,
   Database,
   FileText,
   Globe,
-  LogOut,
   MessageCircle,
   MessageSquare,
-  Search,
   Settings as SettingsIcon,
   Trophy,
   Users,
@@ -35,9 +30,8 @@ const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
 
 type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'data' | 'settings';
 
-interface MainAppProps {
-  role: 'admin' | 'staff';
-  goLanding: () => void;
+interface FacebookWorkspaceAppProps {
+  workspaceId: string;
 }
 
 interface NavItem {
@@ -83,8 +77,11 @@ const Spinner = () => (
   </div>
 );
 
-export default function MainApp({ role, goLanding }: MainAppProps) {
-  const { lang, t } = useLang();
+export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceAppProps) {
+  const { t } = useLang();
+  const { role } = useRoleStore();
+  const isAdmin = role === 'admin' || isPlatformRole(role);
+
   const [tab, setTab] = useState<Tab>('leads');
   const [org, setOrg] = useState<Organization>({ id: 0, name: '...', abbr: '..', plan: 'Starter', color: '' });
   const [inboxBadge, setInboxBadge] = useState(0);
@@ -108,9 +105,8 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
         });
       })
       .catch(() => {});
-  }, []);
+  }, [workspaceId]);
 
-  const isAdmin = role === 'admin';
   const orgId = String(org.id);
 
   useEffect(() => {
@@ -204,31 +200,12 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
   );
 
   return (
-    <div className="app-shell">
-      <header className="app-topbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="pulse" />
-          <span className="mono" style={{ fontSize: 11, color: 'var(--text-mute)', letterSpacing: '0.06em' }}>
-            {lang === 'vi' ? 'phiên live · 24fps' : 'session live · 24fps'}
-          </span>
-        </div>
-        <div style={{ flex: 1 }} />
-        <div className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>{org.name}</div>
-        <ThemeToggle />
-        <DensitySwitch />
-        <LangSwitch />
-        <span className="avatar avatar-sm">{isAdmin ? 'A' : 'S'}</span>
-        <button className="btn btn-ghost btn-sm" type="button" onClick={goLanding}>
-          {lang === 'vi' ? 'Đăng xuất' : 'Sign out'}
-          <LogOut size={13} style={{ color: 'var(--text-faint)', marginLeft: 6 }} />
-        </button>
-      </header>
-
+    <div className="workspace-shell" style={{ display: 'grid', gridTemplateColumns: '220px 1fr', height: '100%', minHeight: 0 }}>
       <aside className="app-sidebar">
         <div style={{ padding: '8px 8px 16px' }}>
           <div className="brand">
-            <div className="brand-mark" style={{ background: 'var(--accent)', color: 'var(--accent-ink)', fontFamily: 'var(--font-mono)', borderRadius: 4 }}>T</div>
-            <div className="brand-name">THG <span className="dim">/ AutoFlow</span></div>
+            <div className="brand-mark" style={{ background: 'var(--accent)', color: 'var(--accent-ink)', fontFamily: 'var(--font-mono)', borderRadius: 4 }}>F</div>
+            <div className="brand-name">{org.name || 'Facebook Automation'}</div>
           </div>
         </div>
 
@@ -242,7 +219,7 @@ export default function MainApp({ role, goLanding }: MainAppProps) {
         {renderNavItem({ id: 'settings', Icon: SettingsIcon })}
       </aside>
 
-      <main className="app-content">
+      <main className="app-content" style={{ minHeight: 0, overflow: 'auto' }}>
         <Suspense fallback={<Spinner />}>{renderView()}</Suspense>
       </main>
     </div>

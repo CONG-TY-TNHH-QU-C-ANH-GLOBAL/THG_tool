@@ -73,9 +73,10 @@ func (s *Store) InsertLead(l *models.Lead) (int64, error) {
 		l.Niche = "logistics"
 	}
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO leads (org_id, source_type, source_id, source_url, platform, author, author_url, content, score, service_match, author_role, pain_point, ai_reasoning, niche, classified_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.OrgID, l.SourceType, l.SourceID, l.SourceURL, l.Platform, l.Author, l.AuthorURL, l.Content,
+		`INSERT OR IGNORE INTO leads (org_id, source_type, source_id, source_url, secondary_url, post_fbid, comment_fbid, group_fbid, platform, author, author_url, content, score, service_match, author_role, pain_point, ai_reasoning, niche, classified_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.OrgID, l.SourceType, l.SourceID, l.SourceURL, l.SecondaryURL, l.PostFBID, l.CommentFBID, l.GroupFBID,
+		l.Platform, l.Author, l.AuthorURL, l.Content,
 		l.Score, l.ServiceMatch, l.AuthorRole, l.PainPoint, l.AIReasoning, l.Niche, l.ClassifiedAt,
 	)
 	if err != nil {
@@ -93,6 +94,7 @@ func (s *Store) GetLeads(score string, limit, offset int) ([]models.Lead, error)
 func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID int64) ([]models.Lead, error) {
 	query := `SELECT l.id, COALESCE(l.org_id,0), l.source_type, l.source_id,
 	           COALESCE(NULLIF(l.source_url, ''), p.url, '') as source_url,
+	           COALESCE(l.secondary_url,''), COALESCE(l.post_fbid,''), COALESCE(l.comment_fbid,''), COALESCE(l.group_fbid,''),
 	           l.platform, l.author, l.author_url, l.content, l.score, l.service_match,
 	           l.author_role, l.pain_point, l.ai_reasoning, COALESCE(NULLIF(l.niche,''),'logistics'),
 	           l.classified_at, l.created_at,
@@ -131,7 +133,8 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	var leads []models.Lead
 	for rows.Next() {
 		var l models.Lead
-		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceType, &l.SourceID, &l.SourceURL, &l.Platform,
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceType, &l.SourceID, &l.SourceURL,
+			&l.SecondaryURL, &l.PostFBID, &l.CommentFBID, &l.GroupFBID, &l.Platform,
 			&l.Author, &l.AuthorURL, &l.Content, &l.Score, &l.ServiceMatch,
 			&l.AuthorRole, &l.PainPoint, &l.AIReasoning, &l.Niche,
 			&l.ClassifiedAt, &l.CreatedAt, &l.Commented); err != nil {

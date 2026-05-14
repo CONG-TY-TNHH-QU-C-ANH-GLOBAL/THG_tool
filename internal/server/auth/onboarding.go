@@ -37,7 +37,6 @@ func (h *Handler) signupUser(c *fiber.Ctx) error {
 
 	orgID := int64(0)
 	role := models.RoleAdmin
-	needsOnboarding := true
 	var provisionedClaim *store.ProvisionedOrgClaim
 	if claim, err := h.deps.DB.FindProvisionedOrgByEmail(req.Email); err != nil {
 		log.Printf("[Signup] Provisioned org lookup error: %v", err)
@@ -45,7 +44,6 @@ func (h *Handler) signupUser(c *fiber.Ctx) error {
 	} else if claim != nil {
 		orgID = claim.OrgID
 		role = claim.Role
-		needsOnboarding = false
 		provisionedClaim = claim
 	}
 
@@ -79,8 +77,7 @@ func (h *Handler) signupUser(c *fiber.Ctx) error {
 	h.deps.DB.InsertAuditLog(userID, "signup", c.IP(), `{}`)
 
 	return c.Status(201).JSON(fiber.Map{
-		"access_token":     accessToken,
-		"needs_onboarding": needsOnboarding,
+		"access_token": accessToken,
 		"user": fiber.Map{
 			"id":     userID,
 			"org_id": orgID,

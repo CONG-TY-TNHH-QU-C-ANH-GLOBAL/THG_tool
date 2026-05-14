@@ -9,6 +9,10 @@ import (
 func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// Leads
 	group.Get("/leads", getLeads(deps))
+	// Engagement endpoints MUST be registered before the /leads/:id catch-all
+	// or Fiber routes /leads/engagement into the :id handler.
+	group.Get("/leads/engagement", getLeadEngagementsBatch(deps))
+	group.Get("/leads/:id/engagement", getLeadEngagement(deps))
 	group.Post("/leads/reclassify", adminOnly, reclassifyLeads(deps))
 	group.Delete("/leads/all", adminOnly, deleteAllLeads(deps))
 	group.Delete("/leads/:id", deleteLead(deps))

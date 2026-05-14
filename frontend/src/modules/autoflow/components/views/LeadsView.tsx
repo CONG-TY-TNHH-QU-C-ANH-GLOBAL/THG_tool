@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
-import type { Lead, LeadStatus } from '../../types';
+import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus } from '../../types';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
 import { reclassifyLeads } from '../../services/leadsService';
@@ -59,6 +59,57 @@ function leadIntentKey(lead: Lead): IntentKey {
     return v;
   }
   return 'unknown';
+}
+
+// Lead Engagement badge → tag class + Vietnamese label.
+// Derived state from the Action Ledger; see feedback_battlefield_badge_framing.md.
+// NOT a CRM status — do not let staff edit it; the orchestrator owns it.
+function engagementBadgeDisplay(badge: LeadEngagementBadge | undefined): { label: string; className: string } {
+  switch (badge) {
+    case 'priority':
+      return { label: 'CHƯA AI CHẠM', className: 'tag tag-ok' };
+    case 'protected':
+      return { label: 'ĐANG XỬ LÝ', className: 'tag tag-warm' };
+    case 'followup_pending':
+      return { label: 'CHỜ REPLY', className: 'tag tag-info' };
+    case 'visible':
+      return { label: 'ĐÃ CHẠM', className: 'tag tag-mute' };
+    case 'closed':
+      return { label: 'ĐÃ ĐÓNG', className: 'tag tag-mute' };
+    default:
+      // No engagement loaded yet — render the same neutral state as untouched.
+      return { label: 'CHƯA AI CHẠM', className: 'tag tag-ok' };
+  }
+}
+
+// Relative time helper for badge context lines ("Alice 4m", "Bob 2h").
+function relativeTime(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (sec < 60) return `${Math.max(1, sec)}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86_400) return `${Math.floor(sec / 3600)}h`;
+  return `${Math.floor(sec / 86_400)}d`;
+}
+
+// Context line: surfaces who/when next to the badge so the list row reads
+// like a battlefield occupancy map ("Alice inbox 4m") instead of an
+// abstract status pill.
+function engagementContext(state: LeadEngagementState | undefined): string {
+  if (!state || !state.last_engaged_at) return 'chưa ai chạm — ưu tiên';
+  const who = state.last_engaged_by || '(unassigned)';
+  const when = relativeTime(state.last_engaged_at);
+  if (state.badge === 'followup_pending') return `${who} • chờ reply ${when}`;
+  if (state.badge === 'closed') return `${who} • đã đóng`;
+  const action = state.last_engaged_action || 'engaged';
+  const actionLabel = action === 'inbox' ? 'inbox' :
+                      action === 'comment' ? 'comment' :
+                      action === 'group_post' ? 'post' :
+                      action === 'profile_post' ? 'post' :
+                      action;
+  return `${who} • ${actionLabel} ${when}`;
 }
 
 function statusTagClass(status: string): string {
@@ -423,6 +474,8 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
             ) : (
               filteredLeads.map((lead) => {
                 const intent = intentDisplay(lead.agent);
+                const engagement = engagementBadgeDisplay(lead.engagement?.badge);
+                const ctx = engagementContext(lead.engagement);
                 return (
                   <div
                     key={lead.id}
@@ -437,8 +490,11 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                         </span>
                         <span className={intent.className} style={{ fontSize: 10, padding: '1px 6px' }}>{intent.label}</span>
                       </div>
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                        {lead.group || tv.unknownSource}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, minWidth: 0 }}>
+                        <span className={engagement.className} style={{ fontSize: 10, padding: '1px 6px', flexShrink: 0 }}>{engagement.label}</span>
+                        <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ctx}
+                        </span>
                       </div>
                     </div>
                     <div className="tabular mono" style={{ fontSize: 13.5 }}>{lead.score}</div>
@@ -478,6 +534,39 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                 <p style={{ fontSize: 13.5, color: 'var(--text)', lineHeight: 1.55 }}>
                   {selectedLead.phone || tv.noteEmpty}
                 </p>
+
+                <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>HOẠT ĐỘNG WORKSPACE</span>
+                  <span className={engagementBadgeDisplay(selectedLead.engagement?.badge).className} style={{ fontSize: 10, padding: '1px 6px' }}>
+                    {engagementBadgeDisplay(selectedLead.engagement?.badge).label}
+                  </span>
+                </div>
+                {(() => {
+                  const entries = selectedLead.engagement?.entries ?? [];
+                  if (entries.length === 0) {
+                    return (
+                      <p style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 4 }}>
+                        Chưa có ai trong workspace tương tác lead này.
+                      </p>
+                    );
+                  }
+                  return (
+                    <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {entries.slice(0, 5).map((entry, idx) => {
+                        const who = entry.user_name || '(tài khoản chưa gán)';
+                        const acct = entry.account_name ? ` qua ${entry.account_name}` : '';
+                        const when = relativeTime(entry.performed_at);
+                        return (
+                          <li key={idx} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5 }}>
+                            <span className="mono" style={{ color: 'var(--text)', minWidth: 32 }}>{when}</span>
+                            <span style={{ color: 'var(--text)' }}>{who}</span>
+                            <span style={{ color: 'var(--text-faint)' }}>· {entry.action}{acct}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
 
                 <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0 }}>CHI TIẾT</div>
                 <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 16px', fontSize: 13, margin: 0 }}>

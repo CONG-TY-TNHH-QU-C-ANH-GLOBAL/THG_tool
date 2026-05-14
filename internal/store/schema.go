@@ -62,6 +62,10 @@ func (s *Store) migrate() error {
 		source_type TEXT NOT NULL,
 		source_id INTEGER NOT NULL,
 		source_url TEXT DEFAULT '',
+		secondary_url TEXT DEFAULT '',
+		post_fbid TEXT DEFAULT '',
+		comment_fbid TEXT DEFAULT '',
+		group_fbid TEXT DEFAULT '',
 		platform TEXT NOT NULL,
 		author TEXT,
 		author_url TEXT,
@@ -308,6 +312,13 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE career_jobs ADD COLUMN urgency_score INTEGER DEFAULT 50`)
 	// Auto-migrate: add source_url to leads if missing
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN source_url TEXT DEFAULT ''`)
+	// Auto-migrate: lead routing/context layer — secondary (comment) URL + the
+	// Facebook-side ids. source_type is now load-bearing (no longer hardcoded
+	// to "post" in the ingest pipeline). See project_lead_routing_gap.md.
+	s.db.Exec(`ALTER TABLE leads ADD COLUMN secondary_url TEXT DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE leads ADD COLUMN post_fbid TEXT DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE leads ADD COLUMN comment_fbid TEXT DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE leads ADD COLUMN group_fbid TEXT DEFAULT ''`)
 	// Auto-migrate: add image_path to outbound_messages if missing
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
@@ -326,14 +337,96 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_at DATETIME`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_jobs_local_pending ON jobs(execution_mode, status, created_at)`)
-	// Phase 2.1: partial UNIQUE index is the last-line guard against two
-	// workers concurrently passing CanQueueOutboundForOrg and double-queuing
-	// the same comment / inbox / group_post. Sent / failed / rejected rows
-	// are excluded so historical sends don't block legitimate retries.
+	// Coordination Plane PR-1: per-account uniqueness on the dedup index.
+	// Previously (org_id, type, target_url) — too strict, blocked legitimate
+	// amplification (3 accounts commenting on the same viral post). Now
+	// (org_id, account_id, type, target_url) — different accounts CAN target
+	// the same URL with the same action type. Cross-account dedup for inbox
+	// (the spam-cluster case) lives in canQueueOutboundTx at the application
+	// layer. Sent / failed / rejected rows excluded so historical sends don't
+	// block legitimate retries. See project_distributed_coordination.md.
 	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_active_target`)
 	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_active_target
-		ON outbound_messages(org_id, type, target_url)
+		ON outbound_messages(org_id, account_id, type, target_url)
 		WHERE status IN ('draft','approved','sending')`)
+
+	// Coordination Plane PR-1: Action Ledger.
+	// Records every outbound action attempted, by which account, on which
+	// target, at what time. Foundation for the Coordination Plane — future
+	// orchestrator + behaviour-profile PRs query this to decide spacing,
+	// account rotation, and rate caps. PR-1 only WRITES; policy reads come
+	// later. See project_distributed_coordination.md priority order.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS action_ledger (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id INTEGER NOT NULL,
+		action_type TEXT NOT NULL,
+		target_type TEXT NOT NULL DEFAULT '',
+		target_url TEXT NOT NULL,
+		account_id INTEGER NOT NULL DEFAULT 0,
+		outbound_id INTEGER NOT NULL DEFAULT 0,
+		performed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		cooldown_until DATETIME,
+		outcome TEXT NOT NULL DEFAULT 'queued',
+		reason TEXT NOT NULL DEFAULT ''
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_target
+		ON action_ledger(org_id, action_type, target_url, performed_at DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_account
+		ON action_ledger(org_id, account_id, action_type, performed_at DESC)`)
+
+	// Coordination Plane PR-2: per-account behaviour profile substrate.
+	// Two tables on purpose — static identity vs high-churn runtime counters.
+	// Mixing them produces lock contention once the orchestrator runs hot.
+	// See feedback_behaviour_profile_design.md.
+	//
+	// account_behaviour_profiles — static identity (low write rate).
+	//   trust_level is a POLICY PRESET, not a numeric cap. Concrete daily
+	//   caps + cooldowns are derived from (trust_level, workspace_role) by
+	//   policy.ResolveCaps. Per-account overrides allowed via caps_override.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS account_behaviour_profiles (
+		account_id       INTEGER PRIMARY KEY,
+		org_id           INTEGER NOT NULL DEFAULT 0,
+		trust_level      TEXT    NOT NULL DEFAULT 'warming',
+		account_age_days INTEGER NOT NULL DEFAULT 0,
+		persona_type     TEXT    NOT NULL DEFAULT '',
+		workspace_role   TEXT    NOT NULL DEFAULT '',
+		capabilities     TEXT    NOT NULL DEFAULT '{}',
+		caps_override    TEXT    NOT NULL DEFAULT '{}',
+		notes            TEXT    NOT NULL DEFAULT '',
+		created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_behaviour_profile_org
+		ON account_behaviour_profiles(org_id, trust_level)`)
+
+	// account_runtime_state — high-churn counters (updated on every queue
+	// decision). counters_day is the date the *_today counters belong to;
+	// the read API rolls over atomically when the date changes so callers
+	// never see stale day-N counters on day N+1.
+	//
+	// risk_score is updated through a multi-signal writer (ApplyRiskSignal)
+	// even though v1 only emits failure / success. Future signals plug into
+	// the same row without schema migration.
+	//
+	// Contextual cooldowns (same group / same post / same profile) are NOT
+	// stored here — they are derived from action_ledger queries. Only the
+	// global per-account cooldown lives in cooldown_until.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS account_runtime_state (
+		account_id          INTEGER PRIMARY KEY,
+		org_id              INTEGER NOT NULL DEFAULT 0,
+		counters_day        TEXT    NOT NULL DEFAULT '',
+		comments_today      INTEGER NOT NULL DEFAULT 0,
+		inbox_today         INTEGER NOT NULL DEFAULT 0,
+		group_posts_today   INTEGER NOT NULL DEFAULT 0,
+		profile_posts_today INTEGER NOT NULL DEFAULT 0,
+		risk_score          REAL    NOT NULL DEFAULT 0,
+		recent_failures     INTEGER NOT NULL DEFAULT 0,
+		cooldown_until      DATETIME,
+		last_action_at      DATETIME,
+		updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_runtime_state_org
+		ON account_runtime_state(org_id, cooldown_until)`)
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_score ON leads(org_id, score)`)
 	// Auto-migrate: add niche to leads if missing
@@ -601,7 +694,11 @@ func (s *Store) migrate() error {
 		interval_minutes INTEGER NOT NULL DEFAULT 30,
 		max_items INTEGER NOT NULL DEFAULT 50,
 		enabled INTEGER NOT NULL DEFAULT 1,
+		status TEXT NOT NULL DEFAULT 'active',
 		dedup_hash TEXT NOT NULL,
+		cursor_last_post_id TEXT NOT NULL DEFAULT '',
+		cursor_last_post_at DATETIME,
+		cursor_updated_at DATETIME,
 		next_run_at DATETIME NOT NULL,
 		last_run_at DATETIME,
 		last_task_id TEXT NOT NULL DEFAULT '',
@@ -612,6 +709,20 @@ func (s *Store) migrate() error {
 	)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_due ON org_crawl_intents(enabled, next_run_at)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_org ON org_crawl_intents(org_id, enabled)`)
+	// Field state machine + per-intent crawl cursor.
+	// See project_scheduled_intelligence.md. status is now the source of truth;
+	// enabled is kept synced for legacy queries until removed in a later PR.
+	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`)
+	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_last_post_id TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_last_post_at DATETIME`)
+	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_updated_at DATETIME`)
+	// One-time backfill: derive status from legacy enabled+last_error.
+	// Idempotent — transitions sync both columns, so legacy enabled=0 rows are
+	// the only matches after the first run.
+	s.db.Exec(`UPDATE org_crawl_intents
+		SET status = CASE WHEN last_error != '' THEN 'failed' ELSE 'paused' END
+		WHERE enabled = 0 AND status = 'active'`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_status_due ON org_crawl_intents(status, next_run_at)`)
 
 	// AutoFlow: extend conversation_threads with org scoping and unread tracking
 	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0`)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -104,7 +105,7 @@ func (s *Store) queueOutboundForOrgOnce(msg *models.OutboundMessage, requestedAu
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	guard, err := s.canQueueOutboundTx(tx, msg.OrgID, string(msg.Type), msg.TargetURL, msg.TargetURL, cooldown)
+	guard, err := s.canQueueOutboundTx(tx, msg.OrgID, msg.AccountID, string(msg.Type), msg.TargetURL, msg.TargetURL, cooldown)
 	if err != nil {
 		return OutboundQueueResult{}, err
 	}
@@ -143,6 +144,22 @@ func (s *Store) queueOutboundForOrgOnce(msg *models.OutboundMessage, requestedAu
 	if err != nil {
 		return OutboundQueueResult{}, err
 	}
+
+	// Coordination Plane: record this attempt in the action ledger. Ledger
+	// failure must NOT fail the queue — the outbound row is already written.
+	if ledgerErr := recordActionLedgerTx(tx, msg.OrgID, msg.AccountID, string(msg.Type), msg.TargetURL, id, cooldown); ledgerErr != nil {
+		// Best-effort log; do not roll back the outbound row.
+		// The ledger is additive coordination data, not the source of truth.
+		_ = ledgerErr
+	}
+
+	// Coordination Plane PR-2: bump the per-account daily counter for
+	// this action type. Same best-effort policy as the ledger — the
+	// queue is the source of truth, counters are policy data.
+	if counterErr := incrementRuntimeCounterTx(tx, msg.OrgID, msg.AccountID, string(msg.Type)); counterErr != nil {
+		_ = counterErr
+	}
+
 	if err := tx.Commit(); err != nil {
 		return OutboundQueueResult{}, err
 	}
@@ -156,7 +173,23 @@ func (s *Store) queueOutboundForOrgOnce(msg *models.OutboundMessage, requestedAu
 // canQueueOutboundTx is the transactional twin of CanQueueOutboundForOrg.
 // Inlines the same logic but reads through the open transaction so the
 // SELECT and the subsequent INSERT see the same snapshot under SQLite WAL.
-func (s *Store) canQueueOutboundTx(tx *sql.Tx, orgID int64, msgType, targetURL, profileURL string, cooldown time.Duration) (OutboundGuardDecision, error) {
+//
+// Coordination Plane scoping rule:
+//   - inbox: cross-account check (3 accounts to same lead in 5min = spam — block)
+//   - all other types: per-account check (3 accounts commenting same viral post
+//     over the day = amplification — allow). See project_distributed_coordination.md.
+//
+// Coordination Plane PR-2 adds the per-account behaviour layer:
+//   - account-wide cooldown_until (anti-burst / orchestrator-imposed pause)
+//   - daily cap from the resolved trust-level preset
+//   - risk-score ceiling
+//
+// Caps are looked up via the resolver (trust_level + workspace_role); the
+// runtime state is read tx-aware so concurrent queue calls see the most
+// recent committed counter. A small race window between SELECT and the
+// counter UPDATE in the success path may allow off-by-one over-cap under
+// heavy concurrency — accepted for v1.
+func (s *Store) canQueueOutboundTx(tx *sql.Tx, orgID, accountID int64, msgType, targetURL, profileURL string, cooldown time.Duration) (OutboundGuardDecision, error) {
 	msgType = strings.TrimSpace(strings.ToLower(msgType))
 	targetURL = strings.TrimSpace(targetURL)
 	profileURL = strings.TrimSpace(profileURL)
@@ -164,24 +197,39 @@ func (s *Store) canQueueOutboundTx(tx *sql.Tx, orgID int64, msgType, targetURL, 
 		cooldown = 24 * time.Hour
 	}
 
+	// inbox is the one action whose dedup is workspace-wide (cross-account)
+	// because multiple staff messaging the same lead is the spam-cluster case
+	// the Coordination Plane explicitly prevents. Every other action type is
+	// per-account: Alice having a pending comment on post X does not stop
+	// Bob from commenting on post X.
+	crossAccount := msgType == "inbox"
+
+	query := `SELECT id, status, COALESCE(sent_at, created_at)
+		 FROM outbound_messages
+		 WHERE org_id = ? AND type = ? AND target_url = ?
+		   AND status NOT IN ('failed','rejected')`
+	args := []any{orgID, msgType, targetURL}
+	if !crossAccount {
+		query += ` AND account_id = ?`
+		args = append(args, accountID)
+	}
+	query += ` ORDER BY created_at DESC LIMIT 1`
+
 	var existingID int64
 	var status string
 	var createdAt string
-	err := tx.QueryRow(
-		`SELECT id, status, COALESCE(sent_at, created_at)
-		 FROM outbound_messages
-		 WHERE org_id = ? AND type = ? AND target_url = ?
-		   AND status NOT IN ('failed','rejected')
-		 ORDER BY created_at DESC LIMIT 1`,
-		orgID, msgType, targetURL,
-	).Scan(&existingID, &status, &createdAt)
+	err := tx.QueryRow(query, args...).Scan(&existingID, &status, &createdAt)
 	if err != nil && err != sql.ErrNoRows {
 		return OutboundGuardDecision{}, err
 	}
 	if err == nil {
 		lastAt := parseSQLiteTime(createdAt)
+		reason := "duplicate_outbound_target"
+		if !crossAccount {
+			reason = "duplicate_outbound_per_account"
+		}
 		if msgType == "comment" || status == string(models.OutboundDraft) || status == string(models.OutboundApproved) {
-			return OutboundGuardDecision{Allowed: false, Reason: "duplicate_outbound_target", ExistingID: existingID, LastOutboundAt: lastAt}, nil
+			return OutboundGuardDecision{Allowed: false, Reason: reason, ExistingID: existingID, LastOutboundAt: lastAt}, nil
 		}
 		if time.Since(lastAt) < cooldown {
 			return OutboundGuardDecision{Allowed: false, Reason: "outbound_cooldown_active", ExistingID: existingID, LastOutboundAt: lastAt}, nil
@@ -204,6 +252,81 @@ func (s *Store) canQueueOutboundTx(tx *sql.Tx, orgID int64, msgType, targetURL, 
 			}
 		} else if err != nil && err != sql.ErrNoRows {
 			return OutboundGuardDecision{}, err
+		}
+	}
+
+	// Behaviour Profile checks: account cooldown + daily cap + risk ceiling.
+	// Account_id == 0 means a legacy / unowned queue path — skip the
+	// behaviour layer entirely (no profile to check against).
+	if accountID > 0 {
+		if guard, err := s.checkBehaviourCapsTx(tx, accountID, msgType); err != nil {
+			return OutboundGuardDecision{}, err
+		} else if !guard.Allowed {
+			return guard, nil
+		}
+	}
+
+	return OutboundGuardDecision{Allowed: true, Reason: "ok"}, nil
+}
+
+// checkBehaviourCapsTx runs the Coordination Plane PR-2 enforcement layer
+// against an open queue transaction. Reasons returned to the caller:
+//   - account_cooldown_active        : cooldown_until is in the future
+//   - daily_limit_exceeded           : today-counter has reached the cap
+//   - risk_ceiling_exceeded          : risk_score >= preset ceiling
+//
+// Profile-missing is NOT an error — a fresh account inherits the
+// TrustWarming preset.
+func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string) (OutboundGuardDecision, error) {
+	caps, _, err := s.ResolveAccountCaps(context.Background(), accountID)
+	if err != nil {
+		return OutboundGuardDecision{}, err
+	}
+
+	col := counterColumnForAction(msgType)
+	var counter int
+	var countersDay string
+	var riskScore float64
+	var cooldownUntilStr string
+	err = tx.QueryRow(
+		`SELECT counters_day, comments_today, inbox_today, group_posts_today,
+		        profile_posts_today, risk_score, COALESCE(cooldown_until,'')
+		   FROM account_runtime_state
+		  WHERE account_id = ?`, accountID,
+	).Scan(&countersDay, new(int), new(int), new(int), new(int), &riskScore, &cooldownUntilStr)
+	if err != nil && err != sql.ErrNoRows {
+		return OutboundGuardDecision{}, err
+	}
+
+	if cooldownUntilStr != "" {
+		until := parseSQLiteTime(cooldownUntilStr)
+		if !until.IsZero() && time.Now().UTC().Before(until.UTC()) {
+			return OutboundGuardDecision{
+				Allowed:        false,
+				Reason:         "account_cooldown_active",
+				LastOutboundAt: until,
+			}, nil
+		}
+	}
+
+	if caps.RiskScoreCeiling > 0 && riskScore >= caps.RiskScoreCeiling {
+		return OutboundGuardDecision{Allowed: false, Reason: "risk_ceiling_exceeded"}, nil
+	}
+
+	if col != "" {
+		cap := caps.CapForAction(msgType)
+		if cap > 0 {
+			// Re-read just the relevant column with the day-rollover rule
+			// applied: counters belong to today only if counters_day == today.
+			if err := tx.QueryRow(
+				`SELECT `+col+` FROM account_runtime_state WHERE account_id = ? AND counters_day = ?`,
+				accountID, utcDayKey(time.Now()),
+			).Scan(&counter); err != nil && err != sql.ErrNoRows {
+				return OutboundGuardDecision{}, err
+			}
+			if counter >= cap {
+				return OutboundGuardDecision{Allowed: false, Reason: "daily_limit_exceeded"}, nil
+			}
 		}
 	}
 

@@ -104,9 +104,13 @@ type InboxMessage struct {
 type Lead struct {
 	ID           int64     `json:"id" db:"id"`
 	OrgID        int64     `json:"org_id" db:"org_id"`
-	SourceType   string    `json:"source_type" db:"source_type"` // post, comment, inbox
-	SourceID     int64     `json:"source_id" db:"source_id"`
-	SourceURL    string    `json:"source_url" db:"source_url"` // URL of the original post
+	SourceType   string    `json:"source_type" db:"source_type"` // post | comment | inbox
+	SourceID     int64     `json:"source_id" db:"source_id"`     // internal posts.id FK (0 when unknown)
+	SourceURL    string    `json:"source_url" db:"source_url"`   // canonical POST url — always the post, never a standalone comment
+	SecondaryURL string    `json:"secondary_url" db:"secondary_url"` // optional COMMENT url, set only for comment-sourced leads
+	PostFBID     string    `json:"post_fbid" db:"post_fbid"`     // Facebook-side post id (traceability + fallback URL build)
+	CommentFBID  string    `json:"comment_fbid" db:"comment_fbid"` // Facebook-side comment id
+	GroupFBID    string    `json:"group_fbid" db:"group_fbid"`   // Facebook-side group id
 	Platform     Platform  `json:"platform" db:"platform"`
 	Author       string    `json:"author" db:"author"`
 	AuthorURL    string    `json:"author_url" db:"author_url"`

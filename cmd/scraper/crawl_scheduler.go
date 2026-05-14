@@ -106,6 +106,13 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 			"user_prompt":    intent.Prompt,
 			"_recurring_run": true,
 			"_task_id":       taskID,
+			// Soft cursor: crawler may skip content older than the previous
+			// run / the explicit cursor when honoring this. See
+			// project_scheduled_intelligence.md gap #2.
+			"_intent_id":              intent.ID,
+			"_since_run_at":           formatRFC3339OrEmpty(intent.LastRunAt),
+			"_cursor_last_post_id":    intent.CursorLastPostID,
+			"_cursor_last_post_at":    formatRFC3339OrEmpty(intent.CursorLastPostAt),
 		}
 		source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: textutil.FirstNonEmpty(intent.SourceLabel, "recurring_intent")}
 		result, submitErr := submitOpenCrawl(ctx, db, jobStore, intent.Intent, []jobs.Source{source}, args)
@@ -123,6 +130,26 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 		log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s", intent.ID, taskID, result)
 	}
 	return nil
+}
+
+func formatRFC3339OrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func parseRFC3339OrZero(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Time{}
 }
 
 func recurringCrawlTaskID(intentID int64, now time.Time, intervalMinutes int) string {

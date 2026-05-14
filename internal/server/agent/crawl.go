@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
@@ -12,6 +13,22 @@ import (
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store"
 )
+
+// parsePostedAtRFC3339 parses a Facebook post timestamp emitted by the
+// extension. Empty / unparseable values return the zero time, which the
+// ingest pipeline treats as degraded last-call-wins for cursor advancement.
+func parsePostedAtRFC3339(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Time{}
+}
 
 // agentConnectorCrawlResult stores crawl output produced by THG Chrome Extension.
 // The extension runs inside the user's signed-in Chrome, so this is the
@@ -27,6 +44,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		TaskID           string         `json:"task_id"`
 		Intent           string         `json:"intent"`
 		AccountID        int64          `json:"account_id"`
+		IntentID         int64          `json:"intent_id"` // recurring crawl intent id; 0 for one-shot runs
 		Status           string         `json:"status"`
 		Error            string         `json:"error"`
 		ExitReason       string         `json:"exit_reason"`
@@ -42,6 +60,12 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 			Reactions        int    `json:"reactions"`
 			Comments         int    `json:"comments"`
 			Shares           int    `json:"shares"`
+			// Routing/cursor fields emitted by the DOM crawler (extension).
+			// Backward-compatible — older extensions that don't emit these
+			// will leave them empty, and the server falls back to URL parsing.
+			PostFBID  string `json:"post_fbid"`
+			GroupFBID string `json:"group_fbid"`
+			PostedAt  string `json:"posted_at"` // RFC3339; empty when crawler can't extract
 		} `json:"items"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -101,6 +125,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		Keywords:        keywords,
 		UserPrompt:      strings.TrimSpace(body.UserPrompt),
 		ExtraSignals:    []string{"chrome_extension_crawl"},
+		IntentID:        body.IntentID,
 	}
 
 	inserted := 0
@@ -131,7 +156,11 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		outcome, err := leadingest.IngestPost(c.Context(), deps, leadingest.Input{
 			TaskID:           body.TaskID,
 			OrgID:            orgID,
-			SourceURL:        sourceURL,
+			SourceType:       "post",
+			PrimaryURL:       sourceURL,
+			PostFBID:         strings.TrimSpace(item.PostFBID),
+			GroupFBID:        strings.TrimSpace(item.GroupFBID),
+			PostedAt:         parsePostedAtRFC3339(item.PostedAt),
 			AuthorName:       strings.TrimSpace(item.AuthorName),
 			AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
 			Content:          content,

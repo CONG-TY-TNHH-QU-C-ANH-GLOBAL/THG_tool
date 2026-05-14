@@ -27,8 +27,12 @@ func (h *Handler) perAccountVNCProxyHandler() func(*fiberws.Conn) {
 		}
 
 		orgID, _ := ws.Locals("org_id").(int64)
+		userID, _ := ws.Locals("user_id").(int64)
 		role, _ := ws.Locals("user_role").(string)
-		acc, ok := serveragent.RequireAccountForOrgWS(h.db, orgID, role, accountID)
+		// RBAC-1: execution-layer ownership. Sales staff can only stream the
+		// browser of an account they own. Admin / platform passes.
+		// See feedback_shared_battlefield_not_crm.md.
+		acc, ok := serveragent.RequireAccountOwnerWS(h.db, orgID, userID, role, accountID)
 		if !ok {
 			_ = ws.WriteMessage(fiberws.TextMessage, []byte("access denied"))
 			return

@@ -12,11 +12,13 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 2. **Multi-platform language:** Python for Taobao + 1688 services (Playwright async ecosystem strength); Go remains for Facebook worker.
 3. **Phase 0 timing:** Defer execution. Plan saved as reference; actual start happens later by explicit kickoff.
 
+**Revalidated 2026-05-14:** FB still highest-priority traffic (confirmed). Postgres/Redis still absent from the stack. `services/agent-brain/` now deployed via CI/CD (2026-05-08) — first real microservice in production. Other defaults unchanged.
+
 ## Baseline (current state)
 
 | Already in place | Still missing |
 |---|---|
-| [services/agent-brain/](../services/agent-brain/) Python sidecar — polyglot precedent exists | `apps/`, `packages/`, `infrastructure/` directories |
+| [services/agent-brain/](../services/agent-brain/) — Python sidecar, deployed via CI 2026-05-08, called by api-gateway over HTTP `:8091`. First real microservice in the codebase. | `apps/`, `packages/`, `infrastructure/` directories |
 | [frontend/](../frontend/) Next.js | Single flat `go.mod` — no workspace yet |
 | 30 packages under [internal/](../internal/), 3 entrypoints under [cmd/](../cmd/) | In-process job queue ([internal/jobs/](../internal/jobs/) + SQLite) — no real MQ |
 | [local-connector-extension/](../local-connector-extension/) | Facebook-only — Taobao/1688 services do not exist |
@@ -83,13 +85,25 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 **Risk:** Medium — `internal/ai` is imported in many places. May eventually need its own `packages/core-ai`, but **not in this phase** — keep scope tight.
 
-**Verify:** Server boots, `/api/auth/login`, `/api/leads`, `/api/agent/*` all return 200.
+**Existing integrations to preserve:**
+
+- `apps/api-gateway` must continue to call `services/agent-brain/` over HTTP `:8091` exactly as it does today. No shared Go types, no in-process call — this contract is already in production and out of scope for Phase 2 refactor.
+- The Go client code that talks to agent-brain (if it lives in a discrete file) moves with `apps/api-gateway`. Do not lift it into `packages/` — single-consumer, gateway-internal.
+
+**Verify:** Server boots, `/api/auth/login`, `/api/leads`, `/api/agent/*` all return 200. Agent-brain calls from gateway still succeed (smoke test a prompt that hits the planner).
 
 ---
 
 ## Phase 3 — `services/fb-automation-worker`
 
 **Goal:** Worker fully separated from gateway, communicates only via queue (+ shared DB read).
+
+**Pre-condition (resolve before Phase 3 starts):** Decide the fate of `cmd/worker`. There is a latent conflict between this plan and [STRUCTURAL_REFACTOR_PLAN.md § Decision 2](STRUCTURAL_REFACTOR_PLAN.md):
+
+- **Scenario A — `cmd/worker` dropped** (STRUCTURAL Decision 2 Option A executed). `services/fb-automation-worker/` then hosts only background loops: recovery, scheduler, lead ingest, outbound dispatcher — **not** CDP crawl. Actual crawling lives in `apps/connector-extension`. Phase 3 scope shrinks.
+- **Scenario B — `cmd/worker` retained.** Plan below stays as written, but document explicitly why path B is worth carrying forward.
+
+**Recommendation:** Wait for Chrome Extension to clock 14 consecutive days of stable production (target window opens ~2026-05-22 if no further incidents land after the 2026-05-08 bugfix cluster), then execute Scenario A. Phase 3 becomes simpler and avoids carrying a known foot-gun across the structural move.
 
 **Scope:**
 
@@ -114,6 +128,8 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 - Redis is already in most deploys (cache, rate limit). No new operational component.
 - Consumer groups + ack + replay are sufficient for automation workloads up to ~1M tasks/day.
 - Switch to Kafka only when needed (>100k msg/s sustained or cross-region durability). Not needed yet.
+
+**Verified 2026-05-14:** Redis is **not yet** in our stack — `grep -r redis` returns zero imports in `go.mod` and code. Adding Redis is a net-new operational concern for this phase, not the reuse of existing infra. The "Highest risk" rating below stands unchanged.
 
 **Scope:**
 
@@ -193,7 +209,13 @@ A separate plan, not bundled with this structural refactor. Can run any time aft
 
 ## Open questions to revisit before kickoff
 
-- Is the Facebook worker still the highest-traffic path when this kicks off, or has Taobao/1688 priority shifted? Affects whether to bring up new services before or after the FB queue swap.
-- Has the Postgres migration already happened by the time this starts? Affects what Phase 1 `core-database` exports as its public interface (raw SQL vs. ORM-style).
-- Has Redis already been added to the stack for another reason? If yes, Phase 4 risk drops because operational expertise already exists.
-- Is the Chrome Extension content script under `apps/connector-extension/` going to stay extension-shaped, or pivot to a native Chrome connector with a different distribution path? Affects Phase 0 path choice.
+State as of 2026-05-14 revalidation:
+
+- **Q1 — Is Facebook still the highest-traffic path?** ✅ **Confirmed 2026-05-14** — yes, FB remains the top priority. Taobao/1688 stay in Phase 5 after the MQ swap. Phase order unchanged.
+- **Q2 — Has the Postgres migration already happened?** ❌ **Not yet.** `go.mod` still has only `modernc.org/sqlite`. Phase 1 `core-database` should export a Store interface with the SQLite implementation today, leaving a clean seam for a future Postgres backend (see [PRODUCTION_DATABASE_MIGRATION_PLAN.md](PRODUCTION_DATABASE_MIGRATION_PLAN.md)).
+- **Q3 — Has Redis been added to the stack?** ❌ **Not yet.** Phase 4 risk does **not** drop — Redis introduction is itself part of Phase 4's work.
+- **Q4 — Will the Chrome Extension stay extension-shaped?** Open — gated on [STRUCTURAL_REFACTOR_PLAN.md § Decision 2](STRUCTURAL_REFACTOR_PLAN.md). Revisit when the 14-day stability gate is reached.
+
+## Future packages candidate (informational)
+
+`internal/skills/` already implements a validated skill registry + blueprint compilation (per the Phase 6 work landed 2026-05-04). When a second service (likely the Taobao worker in Phase 5) needs the same registry, promote it to `packages/core-skills`. Do **not** refactor proactively — wait for the second consumer per the user's anti-proactive-refactor preference.

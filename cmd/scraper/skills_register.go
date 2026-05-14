@@ -235,8 +235,13 @@ func skillThroughHandler(actionID string, deps builtinSkillDeps) skills.SkillRun
 			args = map[string]any{}
 		}
 		// Inject env values the handler expects without trusting any
-		// matching keys the LLM might have produced.
+		// matching keys the LLM might have produced. user_id + user_role
+		// are SERVER-SIDE truth — even if the LLM tried to set them in
+		// args, we overwrite with the authenticated caller's identity.
+		// See feedback_shared_battlefield_not_crm.md.
 		args["org_id"] = env.OrgID
+		args["user_id"] = env.UserID
+		args["user_role"] = env.Role
 		if env.AccountID > 0 {
 			if existing, ok := args["account_id"].(int64); !ok || existing == 0 {
 				args["account_id"] = env.AccountID
@@ -385,6 +390,8 @@ func profilePostRun(deps builtinSkillDeps) skills.SkillRun {
 			return skills.SkillResult{}, fmt.Errorf("post_to_profile requires content")
 		}
 		args["org_id"] = env.OrgID
+		args["user_id"] = env.UserID
+		args["user_role"] = env.Role
 		if env.AccountID > 0 {
 			args["account_id"] = env.AccountID
 		}

@@ -8,6 +8,7 @@ package leadingest
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -34,6 +35,10 @@ type Deps struct {
 	UserPrompt      string   // free-form user prompt that triggered this crawl, used to anchor classifier intent
 	ExtraSignals    []string // appended to every Outcome.Signals (e.g. "chrome_extension_crawl")
 	ClassifyTimeout time.Duration
+	// IntentID is the recurring crawl intent driving this run (0 for one-shot
+	// runs). When > 0 AND LegacyDB is set, IngestPost advances the per-intent
+	// cursor after each successful insert. See project_scheduled_intelligence.md.
+	IntentID int64
 }
 
 // SignalGate mirrors brain.MarketSignalGate but lives in this package to avoid
@@ -46,28 +51,119 @@ type SignalGate struct {
 	MinConfidence   float64
 }
 
-// Input is one crawled post.
+// Input is one crawled lead candidate — a post, or a comment that MUST route
+// to its parent post. Every lead carries a usable POST url as PrimaryURL;
+// the routing contract is enforced by ValidateRouting before persist.
+// See project_lead_routing_gap.md.
 type Input struct {
 	TaskID           string
 	OrgID            int64
-	SourceURL        string
+	SourceType       string // "post" | "comment" — empty defaults to "post"
+	PrimaryURL       string // canonical POST url — ALWAYS the post, never a standalone comment
+	SecondaryURL     string // optional COMMENT url, set only when SourceType == "comment"
+	PostFBID         string // Facebook-side post id (traceability + fallback URL build)
+	CommentFBID      string // Facebook-side comment id
+	GroupFBID        string // Facebook-side group id
 	AuthorName       string
 	AuthorProfileURL string
 	Content          string
-	Reactions        int
-	Comments         int
-	Shares           int
+	// PostedAt is the original post timestamp (zero when the crawler does not
+	// emit one). Drives the conditional cursor advance — only newer posts move
+	// the cursor forward. Zero falls back to last-call-wins.
+	PostedAt  time.Time
+	Reactions int
+	Comments  int
+	Shares    int
 }
 
 // Outcome describes what happened to one input.
 type Outcome struct {
 	Inserted bool
-	Skipped  string // "" | "filter" | "cold" | "rejected" | "gate_negative" | "gate_low_confidence"
+	Skipped  string // "" | "filter" | "invalid_routing" | "cold" | "rejected" | "gate_negative" | "gate_low_confidence"
 	Score    float64
 	Category string
 	Signals  []string
 	AIReason string
 	AIIntent string
+}
+
+// normalizeSourceType maps a free-form source type onto the two supported
+// values. Empty / unknown defaults to "post" — the safe, common case.
+func normalizeSourceType(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "comment":
+		return "comment"
+	default:
+		return "post"
+	}
+}
+
+// ExtractFacebookPostID parses the Facebook-side post id out of a permalink.
+// Returns "" when no canonical id is recognisable. Used as a fallback when the
+// crawler does not emit PostFBID explicitly — the cursor needs an id, and the
+// URL is the next best source.
+func ExtractFacebookPostID(u string) string {
+	if u == "" {
+		return ""
+	}
+	// Order matters: more specific markers first. story_fbid must precede the
+	// bare fbid= patterns so the longer one wins.
+	for _, marker := range []string{"/posts/", "/permalink/", "story_fbid=", "?fbid=", "&fbid="} {
+		i := strings.Index(u, marker)
+		if i < 0 {
+			continue
+		}
+		rest := u[i+len(marker):]
+		if id := cutAtNonDigit(rest); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func cutAtNonDigit(s string) string {
+	for i, c := range s {
+		if c < '0' || c > '9' {
+			return s[:i]
+		}
+	}
+	return s
+}
+
+// looksLikeCommentOnlyURL reports whether a URL points at a comment with no
+// post context — i.e. it cannot serve as a primary (post) link.
+func looksLikeCommentOnlyURL(u string) bool {
+	if u == "" {
+		return false
+	}
+	hasComment := strings.Contains(u, "comment_id=") || strings.Contains(u, "/comment/")
+	hasPost := strings.Contains(u, "/posts/") ||
+		strings.Contains(u, "/permalink/") ||
+		strings.Contains(u, "story_fbid=")
+	return hasComment && !hasPost
+}
+
+// ValidateRouting enforces the lead routing contract before persist. The rule:
+// every lead MUST carry a usable POST url as its primary link. A comment-sourced
+// lead whose parent post was never resolved is invalid — dropped, not stored.
+// This is enforcement, not inference: the crawler obeys the contract; the
+// pipeline rejects what violates it. See project_lead_routing_gap.md.
+func ValidateRouting(in Input) error {
+	primary := strings.TrimSpace(in.PrimaryURL)
+	if primary == "" {
+		return errors.New("missing primary (post) URL")
+	}
+	if looksLikeCommentOnlyURL(primary) {
+		return errors.New("primary URL is a comment link, not a post")
+	}
+	if normalizeSourceType(in.SourceType) == "comment" {
+		// A comment lead must route to its parent post. If the primary link is
+		// identical to the comment link, the parent post was never resolved.
+		if primary == strings.TrimSpace(in.SecondaryURL) {
+			return errors.New("comment did not resolve to a parent post")
+		}
+	}
+	return nil
 }
 
 // IngestPost classifies a single crawled post and, when qualified, persists
@@ -79,6 +175,17 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	if content == "" {
 		return Outcome{Skipped: "filter"}, nil
 	}
+
+	// Routing contract — enforced before any scoring/classification work.
+	// A lead with no usable post link is dropped, not stored. The Skipped
+	// reason is surfaced so the crawler bug (not the data) gets fixed.
+	if err := ValidateRouting(in); err != nil {
+		return Outcome{
+			Skipped: "invalid_routing",
+			Signals: []string{"invalid_routing:" + err.Error()},
+		}, nil
+	}
+	sourceType := normalizeSourceType(in.SourceType)
 
 	scorer := deps.Scorer
 	if scorer == nil {
@@ -185,7 +292,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		taskLead := store.TaskLead{
 			TaskID:           in.TaskID,
 			OrgID:            in.OrgID,
-			SourceURL:        in.SourceURL,
+			SourceURL:        in.PrimaryURL,
 			AuthorProfileURL: in.AuthorProfileURL,
 			AuthorName:       in.AuthorName,
 			Content:          content,
@@ -226,9 +333,13 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		}
 		legacy := &models.Lead{
 			OrgID:        in.OrgID,
-			SourceType:   "post",
+			SourceType:   sourceType,
 			SourceID:     0,
-			SourceURL:    in.SourceURL,
+			SourceURL:    in.PrimaryURL,
+			SecondaryURL: in.SecondaryURL,
+			PostFBID:     in.PostFBID,
+			CommentFBID:  in.CommentFBID,
+			GroupFBID:    in.GroupFBID,
 			Platform:     models.PlatformFacebook,
 			Author:       in.AuthorName,
 			AuthorURL:    in.AuthorProfileURL,
@@ -249,6 +360,24 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		}
 	}
 	out.Inserted = true
+
+	// Advance the per-intent crawl cursor for recurring runs. Best-effort —
+	// a cursor write failure must not fail the lead insert. The store-side
+	// AdvanceCrawlIntentCursor only moves the cursor forward (or sets it
+	// unconditionally when PostedAt is zero — last-call-wins fallback).
+	if deps.IntentID > 0 && deps.LegacyDB != nil {
+		postID := strings.TrimSpace(in.PostFBID)
+		if postID == "" {
+			postID = ExtractFacebookPostID(in.PrimaryURL)
+		}
+		if postID != "" {
+			if cErr := deps.LegacyDB.AdvanceCrawlIntentCursor(ctx, deps.IntentID, postID, in.PostedAt); cErr != nil {
+				slog.WarnContext(ctx, "advance crawl intent cursor failed",
+					"intent_id", deps.IntentID, "post_id", postID, "error", cErr)
+			}
+		}
+	}
+
 	return out, nil
 }
 

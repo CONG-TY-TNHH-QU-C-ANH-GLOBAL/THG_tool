@@ -84,12 +84,14 @@ func (a *Agent) SkillRegistry() *skills.Registry {
 // the call falls back to the legacy ActionHandler so unmigrated tools
 // keep working unchanged. Returns the textual result the agent should
 // surface back to chat / Telegram.
-func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[string]any, orgID, accountID int64, source, prompt string) (string, error) {
+func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[string]any, orgID, accountID, userID int64, role, source, prompt string) (string, error) {
 	if a.registry != nil {
 		if skill := a.registry.Get(fnName); skill != nil {
 			env := skills.Env{
 				DB:        a.db,
 				OrgID:     orgID,
+				UserID:    userID,
+				Role:      role,
 				AccountID: accountID,
 				Source:    source,
 				Prompt:    prompt,
@@ -114,15 +116,26 @@ func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (strin
 }
 
 // ProcessPromptForOrg runs a prompt with tenant-scoped business context and
-// injects org_id into production tool calls.
+// injects org_id into production tool calls. UserID / Role default to zero
+// (unauthenticated / Telegram path). Dashboard callers should use
+// ProcessPromptForOrgWithUser so skill executors can enforce account
+// ownership (RBAC-1 skill-path enforcement).
 func (a *Agent) ProcessPromptForOrg(ctx context.Context, prompt, source string, orgID int64) (string, error) {
-	return a.ProcessPromptForOrgWithAccount(ctx, prompt, source, orgID, 0)
+	return a.ProcessPromptForOrgWithUser(ctx, prompt, source, orgID, 0, 0, "")
 }
 
-// ProcessPromptForOrgWithAccount runs a prompt with tenant scope plus an
-// optional dashboard-selected Facebook account. The selected account is kept
-// out of user-visible prompt text and injected directly into tool args.
+// ProcessPromptForOrgWithAccount is the legacy entry-point with a selected
+// account but no user context. Kept for back-compat; new callers should use
+// ProcessPromptForOrgWithUser so RBAC-1 skill-path enforcement applies.
 func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, source string, orgID int64, selectedAccountID int64) (string, error) {
+	return a.ProcessPromptForOrgWithUser(ctx, prompt, source, orgID, selectedAccountID, 0, "")
+}
+
+// ProcessPromptForOrgWithUser is the canonical entry-point. It threads the
+// caller's identity (userID + role) into skill-execution args so skill
+// handlers can enforce execution-layer ownership. Sales staff cannot queue
+// outbound through accounts they do not own; admin / platform passes.
+func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source string, orgID int64, selectedAccountID int64, userID int64, role string) (string, error) {
 	if !a.Available() {
 		return "", fmt.Errorf("OpenAI API key not configured")
 	}
@@ -320,7 +333,7 @@ func (a *Agent) ProcessPromptForOrgWithAccount(ctx context.Context, prompt, sour
 			// validation, and audit logging in skill_executions. Fall
 			// back to the legacy ActionHandler for skills that have
 			// not been registered yet (e.g. tests, partial boot).
-			fnResult, err := a.dispatchToolCall(ctx, fnName, args, orgID, selectedAccountID, source, prompt)
+			fnResult, err := a.dispatchToolCall(ctx, fnName, args, orgID, selectedAccountID, userID, role, source, prompt)
 			if err != nil {
 				allResults = append(allResults, fmt.Sprintf("❌ Lỗi %s: %v", fnName, err))
 			} else {

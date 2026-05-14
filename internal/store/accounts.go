@@ -248,6 +248,47 @@ func (s *Store) GetAllAccounts(orgID int64) ([]models.Account, error) {
 	return accounts, nil
 }
 
+// GetAccountsForUser returns accounts in an org that are assigned to a
+// specific user. Used by sales-staff handlers to filter the account list to
+// owned-only (execution-layer scoping per the battlefield model — see
+// feedback_shared_battlefield_not_crm.md). Admin / platform handlers should
+// call GetAllAccounts directly.
+func (s *Store) GetAccountsForUser(orgID, userID int64) ([]models.Account, error) {
+	if orgID <= 0 || userID <= 0 {
+		return nil, nil
+	}
+	q := `SELECT a.id, COALESCE(a.org_id,0), a.platform, a.name, a.email, a.cookies_json, a.proxy_url, a.user_agent,
+		        a.status, a.notes, COALESCE(a.last_used,''), a.created_at,
+		        COALESCE(a.assigned_user_id,0), COALESCE(u.name,''), COALESCE(a.browser_logged_in,0), COALESCE(a.fb_user_id,''),
+		        COALESCE(a.fb_display_name,''), COALESCE(a.fb_username,''), COALESCE(a.fb_profile_url,'')
+		 FROM accounts a LEFT JOIN users u ON u.id = a.assigned_user_id
+		 WHERE a.org_id = ? AND a.assigned_user_id = ?
+		 ORDER BY a.created_at DESC`
+	rows, err := s.db.Query(q, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []models.Account
+	for rows.Next() {
+		var a models.Account
+		var lastUsed string
+		if err := rows.Scan(&a.ID, &a.OrgID, &a.Platform, &a.Name, &a.Email, &a.CookiesJSON, &a.ProxyURL,
+			&a.UserAgent, &a.Status, &a.Notes, &lastUsed, &a.CreatedAt,
+			&a.AssignedUserID, &a.AssignedUserName, &a.BrowserLoggedIn, &a.FBUserID,
+			&a.FBDisplayName, &a.FBUsername, &a.FBProfileURL); err != nil {
+			return nil, err
+		}
+		if lastUsed != "" {
+			a.LastUsed, _ = time.Parse(time.RFC3339, lastUsed)
+		}
+		a.CookiesJSON, _ = auth.Decrypt(a.CookiesJSON, s.encKey)
+		accounts = append(accounts, a)
+	}
+	return accounts, nil
+}
+
 // GetActiveAccounts returns active accounts for a platform with decrypted cookies.
 func (s *Store) GetActiveAccounts(platform models.Platform) ([]models.Account, error) {
 	rows, err := s.db.Query(

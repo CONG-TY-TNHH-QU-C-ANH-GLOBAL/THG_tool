@@ -12,15 +12,31 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	serveragent "github.com/thg/scraper/internal/server/agent"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 )
 
 // workspaceList returns all Facebook accounts with their live browser status.
 // GET /api/browser/workspaces
+//
+// RBAC-1: sales staff see only accounts assigned to them. Admin / platform
+// see every account in the org. Execution-layer scoping per
+// feedback_shared_battlefield_not_crm.md — leads stay shared elsewhere.
 func (h *Handler) workspaceList(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	accounts, err := h.db.GetAllAccounts(orgID)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
+	var (
+		accounts []models.Account
+		err      error
+	)
+	r := models.UserRole(role)
+	if models.IsPlatformRole(r) || r == models.RoleAdmin {
+		accounts, err = h.db.GetAllAccounts(orgID)
+	} else {
+		accounts, err = h.db.GetAccountsForUser(orgID, userID)
+	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -97,11 +113,14 @@ func (h *Handler) workspaceList(c *fiber.Ctx) error {
 func (h *Handler) workspaceStart(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	orgID, _ := c.Locals("org_id").(int64)
-	acc, err := h.db.GetAccountForOrg(id, orgID)
-	if err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
-	}
 	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
+	// RBAC-1: only the owner (or admin) may start this account's browser.
+	acc, err := serveragent.RequireAccountOwner(h.db, c, id, orgID, userID, role)
+	if err != nil {
+		return err
+	}
+	_ = acc.Name // acc already validated; keep name access via acc.Name below
 	hasOrgLocalConnector, _ := h.localConnectorAvailability(orgID)
 	hasLocalConnector, hasOnlineLocalConnector := h.localConnectorAvailabilityForUser(orgID, userID, id)
 	if hasOnlineLocalConnector {
@@ -157,12 +176,16 @@ func (h *Handler) workspaceStart(c *fiber.Ctx) error {
 
 // workspaceStop kills the Docker browser for a specific account.
 // POST /api/browser/workspaces/:id/stop
+//
+// RBAC-1: only the owner (or admin) may stop this account's browser.
 func (h *Handler) workspaceStop(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
 	if orgID != 0 {
-		if acc, err := h.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
-			return c.Status(403).JSON(fiber.Map{"error": "access denied"})
+		if _, err := serveragent.RequireAccountOwner(h.db, c, id, orgID, userID, role); err != nil {
+			return err
 		}
 	}
 	if h.workspace != nil {

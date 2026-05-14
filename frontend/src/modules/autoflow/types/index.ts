@@ -27,6 +27,37 @@ export interface Lead {
   facebookUrl?: string;
   postUrl?: string;
   sourceType?: string;
+  engagement?: LeadEngagementState;
+}
+
+// Lead Engagement = derived coordination state from the Action Ledger.
+// NOT a CRM status. NOT a manual field. See feedback_battlefield_badge_framing.md.
+export type LeadEngagementBadge =
+  | 'priority'           // untouched battlefield
+  | 'protected'          // active engagement in flight (last <15min)
+  | 'followup_pending'   // conversation alive, original engager still natural owner
+  | 'visible'            // previously touched, no immediate claim
+  | 'closed';            // terminal — converted / closed thread
+
+export interface LeadEngagementEntry {
+  user_id: number;
+  user_name: string;
+  account_id: number;
+  account_name: string;
+  action: string;           // comment | inbox | group_post | profile_post
+  target_url: string;
+  outcome: string;
+  performed_at: string;     // ISO-ish from backend
+}
+
+export interface LeadEngagementState {
+  lead_id: number;
+  badge: LeadEngagementBadge;
+  entries: LeadEngagementEntry[];
+  last_engaged_at: string;
+  last_engaged_by: string;
+  last_engaged_action: string;
+  thread_status: string;
 }
 
 export interface Thread {

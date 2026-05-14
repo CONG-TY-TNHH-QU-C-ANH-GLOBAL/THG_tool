@@ -1,5 +1,3 @@
-export { default as AutoFlowApp } from './AutoFlowApp';
-
 // Types
 export type { Role, PlanTier, LeadStatus, ThreadStatus, PostStatus, MemberStatus } from './types';
 export type { Lead, Thread, Message, Post, Comment, StaffMember, StaffInvite, ScoredStaff, FileRecord, DataSource, DataSourceType, DataSourceStatus, KPIConfig, Organization, OrgSummary, FacebookStatus } from './types';

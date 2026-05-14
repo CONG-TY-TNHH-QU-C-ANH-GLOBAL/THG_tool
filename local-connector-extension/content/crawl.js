@@ -1,5 +1,29 @@
 var THGContentCrawl = (() => {
-  const CRAWLER_VERSION = 'scroll-target-v2';
+  const CRAWLER_VERSION = 'scroll-target-v3-cursor';
+
+  // Extracts the Facebook-side post id from a permalink. Mirror of the Go
+  // helper ExtractFacebookPostID; the JS side runs first and emits the id so
+  // the server does not need URL fallback parsing. Empty when no canonical
+  // id pattern matches.
+  function extractPostFBID(url) {
+    if (!url) return '';
+    let m = url.match(/\/posts\/(\d+)/);
+    if (m) return m[1];
+    m = url.match(/\/permalink\/(\d+)/);
+    if (m) return m[1];
+    m = url.match(/story_fbid=(\d+)/);
+    if (m) return m[1];
+    m = url.match(/[?&]fbid=(\d+)/);
+    if (m) return m[1];
+    return '';
+  }
+
+  function extractGroupFBID(url) {
+    if (!url) return '';
+    const m = url.match(/\/groups\/(\d+)/);
+    return m ? m[1] : '';
+  }
+
   function postPermalink(article) {
     const anchors = Array.from(article.querySelectorAll('a[href]'));
     const match = anchors.find(a => {
@@ -250,6 +274,13 @@ var THGContentCrawl = (() => {
       };
     }
     const maxItems = Math.max(1, Math.min(200, Number(task?.crawl_plan?.max_items || 20)));
+    // Recurring crawl cursor — when present, stop traversal as soon as we
+    // re-encounter the post id from the previous run. The post id (not the
+    // timestamp) is the dedup decision per the design mandate; FB feed
+    // reorders/pins/async-injects too aggressively for timestamp-only logic.
+    // See project_scheduled_intelligence.md cursor design mandate.
+    const cursorPostID = String(task?.crawl_plan?.cursor_last_post_id || '').trim();
+    const groupFBID = extractGroupFBID(expectedUrl || location.href);
     // Facebook often loads only a few posts per scroll, especially in groups.
     // Give 50+ post crawls enough passes before deciding the feed is exhausted.
     const maxPasses = Math.max(70, Math.min(260, Math.ceil(maxItems * 3)));
@@ -264,6 +295,7 @@ var THGContentCrawl = (() => {
     let prevScrollY = -1;
     let prevScrollTarget = '';
     let exitReason = 'pass_exhausted';
+    let cursorReached = false;
     emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
       // Small pause before grabbing elements, giving UI a moment to react to the previous scroll
@@ -279,6 +311,16 @@ var THGContentCrawl = (() => {
         if (seen.has(key)) continue;
         seen.add(key);
         const url = postPermalink(article);
+        const postFBID = extractPostFBID(url);
+        // CURSOR HONOR — physical incremental optimization. If we hit the post
+        // id from the previous run, we have caught up to the prior frontier:
+        // everything below in the feed is already ingested. Stop traversal
+        // entirely instead of scanning the rest of the feed.
+        if (cursorPostID && postFBID && postFBID === cursorPostID) {
+          cursorReached = true;
+          exitReason = 'cursor_match';
+          break;
+        }
         items.push({
           id: key,
           source_url: url && url !== location.href ? url : (expectedUrl || location.href),
@@ -287,10 +329,14 @@ var THGContentCrawl = (() => {
           content,
           reactions: 0,
           comments: 0,
-          shares: 0
+          shares: 0,
+          post_fbid: postFBID,
+          group_fbid: groupFBID,
+          posted_at: ''
         });
         if (items.length >= maxItems) break;
       }
+      if (cursorReached) break;
       const scrollTarget = findScrollTarget();
       const scrollInfo = scrollMetrics(scrollTarget);
       const docHeight = scrollInfo.scrollHeight;
@@ -346,7 +392,7 @@ var THGContentCrawl = (() => {
       const waitMs = pass < 8 ? 2200 : 3600;
       await new Promise(resolve => setTimeout(resolve, waitMs));
     }
-    console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems });
+    console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems, cursor_reached: cursorReached });
     emitProgress(task, accountId, 'finished', items.length, maxItems);
     return {
       ok: true,
@@ -356,7 +402,8 @@ var THGContentCrawl = (() => {
         intent: task?.intent || 'facebook_crawl',
         keywords: Array.isArray(task?.keywords) ? task.keywords : [],
         items,
-        exit_reason: exitReason
+        exit_reason: exitReason,
+        cursor_reached: cursorReached
       }
     };
   }

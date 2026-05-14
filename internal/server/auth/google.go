@@ -307,9 +307,8 @@ func (h *Handler) googleToken(c *fiber.Ctx) error {
 	setAuthCookies(c, token, time.Now().Add(authpkg.AccessTokenTTL))
 
 	return c.JSON(fiber.Map{
-		"access_token":     token,
-		"expires_in":       int(authpkg.AccessTokenTTL.Seconds()),
-		"needs_onboarding": user.OrgID == 0 && !models.IsPlatformRole(user.Role),
+		"access_token": token,
+		"expires_in":   int(authpkg.AccessTokenTTL.Seconds()),
 		"user": fiber.Map{
 			"id":     user.ID,
 			"org_id": user.OrgID,
