@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -39,7 +40,8 @@ type TaskLead struct {
 	AuthorName       string    `json:"author_name"`
 	Content          string    `json:"content"`
 	LeadScore        float64   `json:"lead_score"`
-	Category         string    `json:"category"` // hot | warm | cold
+	Category         string    `json:"category"`    // hot | warm | cold
+	ThreadRole       string    `json:"thread_role"` // intent_originator | supplier_responder | ... (Phase B)
 	Signals          []string  `json:"signals"`
 	CreatedAt        time.Time `json:"created_at"`
 }
@@ -192,6 +194,9 @@ func (a *AppStore) migrate() error {
 	}
 
 	// Additive column migrations (idempotent — errors ignored)
+	// Coordination Plane Phase B: thread role axis on the connector lead
+	// table. See project_thread_role_architecture.md.
+	a.db.Exec(`ALTER TABLE task_leads ADD COLUMN thread_role TEXT NOT NULL DEFAULT 'intent_originator'`)
 	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN version        INTEGER NOT NULL DEFAULT 0`)
 	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN worker_id      TEXT    NOT NULL DEFAULT ''`)
 	a.db.Exec(`ALTER TABLE browser_sessions ADD COLUMN retry_count    INTEGER NOT NULL DEFAULT 0`)
@@ -300,12 +305,16 @@ func (a *AppStore) ListTasks(ctx context.Context, orgID int64, intent, status st
 
 func (a *AppStore) InsertLead(ctx context.Context, taskID string, orgID int64, lead TaskLead) error {
 	sigJSON, _ := json.Marshal(lead.Signals)
+	threadRole := strings.TrimSpace(lead.ThreadRole)
+	if threadRole == "" {
+		threadRole = "intent_originator"
+	}
 	_, err := a.db.ExecContext(ctx,
 		`INSERT OR IGNORE INTO task_leads
-		 (task_id, org_id, source_url, author_profile_url, author_name, content, lead_score, category, signals_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (task_id, org_id, source_url, author_profile_url, author_name, content, lead_score, category, thread_role, signals_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		taskID, orgID, lead.SourceURL, lead.AuthorProfileURL, lead.AuthorName,
-		lead.Content, lead.LeadScore, lead.Category, string(sigJSON),
+		lead.Content, lead.LeadScore, lead.Category, threadRole, string(sigJSON),
 	)
 	return err
 }

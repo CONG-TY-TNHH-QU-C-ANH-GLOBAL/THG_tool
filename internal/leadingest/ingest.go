@@ -310,6 +310,13 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		return out, nil
 	}
 
+	// Phase B — thread role. Derived deterministically from the crawler's
+	// source_type, the classifier's intent, and vendor-speak signals in the
+	// content. Orthogonal to score: a vendor comment that scored "warm" on
+	// buyer keywords still resolves to supplier_responder. See
+	// project_thread_role_architecture.md.
+	threadRole := string(models.InferThreadRole(sourceType, out.AIIntent, content))
+
 	if deps.AppStore != nil {
 		taskLead := store.TaskLead{
 			TaskID:           in.TaskID,
@@ -320,6 +327,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			Content:          content,
 			LeadScore:        out.Score,
 			Category:         out.Category,
+			ThreadRole:       threadRole,
 			Signals:          out.Signals,
 		}
 		if err := deps.AppStore.InsertLead(ctx, in.TaskID, in.OrgID, taskLead); err != nil {
@@ -372,6 +380,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			PainPoint:    painPoint,
 			AIReasoning:  textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, "; ")),
 			Niche:        niche,
+			ThreadRole:   threadRole,
 			ClassifiedAt: time.Now().UTC(),
 		}
 		if _, err := deps.LegacyDB.InsertLead(legacy); err != nil {

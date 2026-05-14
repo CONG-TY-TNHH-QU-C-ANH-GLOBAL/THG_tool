@@ -319,6 +319,13 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN post_fbid TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN comment_fbid TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN group_fbid TEXT DEFAULT ''`)
+	// Coordination Plane Phase B: thread role axis. Orthogonal to score —
+	// intent_originator / buyer_responder are leads; supplier_responder /
+	// competitor / noise are not. Legacy rows default to intent_originator
+	// (every pre-Phase-B crawl was a post-sourced lead). See
+	// project_thread_role_architecture.md.
+	s.db.Exec(`ALTER TABLE leads ADD COLUMN thread_role TEXT NOT NULL DEFAULT 'intent_originator'`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_thread_role ON leads(org_id, thread_role)`)
 	// Auto-migrate: add image_path to outbound_messages if missing
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)

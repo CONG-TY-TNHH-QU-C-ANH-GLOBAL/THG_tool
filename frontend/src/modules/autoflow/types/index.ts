@@ -15,6 +15,17 @@ export interface Organization {
   avatar_url?: string;
 }
 
+// Thread role — the participant's structural position in the FB thread.
+// Orthogonal to status (Hot/Warm/Cold). See project_thread_role_architecture.md.
+//   intent_originator / buyer_responder = an actual lead
+//   supplier_responder / competitor / noise = not a lead
+export type LeadThreadRole =
+  | 'intent_originator'
+  | 'supplier_responder'
+  | 'buyer_responder'
+  | 'competitor'
+  | 'noise';
+
 export interface Lead {
   id: number;
   name: string;
@@ -24,9 +35,15 @@ export interface Lead {
   last: string;
   score: number;
   phone: string;
+  // The three distinct URLs — never collapse them (see thread-role memory):
+  //   postUrl            = canonical battlefield (the post everyone discusses)
+  //   facebookUrl        = actor profile URL (the participant's FB profile)
+  //   engagementPermalink= exact comment permalink (set for comment-sourced leads)
   facebookUrl?: string;
   postUrl?: string;
+  engagementPermalink?: string;
   sourceType?: string;
+  threadRole?: LeadThreadRole;
   engagement?: LeadEngagementState;
 }
 

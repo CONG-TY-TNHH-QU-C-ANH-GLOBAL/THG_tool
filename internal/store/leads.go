@@ -103,12 +103,16 @@ func (s *Store) InsertLead(l *models.Lead) (int64, error) {
 	if l.Niche == "" {
 		l.Niche = "logistics"
 	}
+	threadRole := strings.TrimSpace(l.ThreadRole)
+	if threadRole == "" {
+		threadRole = string(models.ThreadRoleIntentOriginator)
+	}
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO leads (org_id, source_type, source_id, source_url, secondary_url, post_fbid, comment_fbid, group_fbid, platform, author, author_url, content, score, service_match, author_role, pain_point, ai_reasoning, niche, classified_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO leads (org_id, source_type, source_id, source_url, secondary_url, post_fbid, comment_fbid, group_fbid, platform, author, author_url, content, score, service_match, author_role, pain_point, ai_reasoning, niche, thread_role, classified_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		l.OrgID, l.SourceType, l.SourceID, l.SourceURL, l.SecondaryURL, l.PostFBID, l.CommentFBID, l.GroupFBID,
 		l.Platform, l.Author, l.AuthorURL, l.Content,
-		l.Score, l.ServiceMatch, l.AuthorRole, l.PainPoint, l.AIReasoning, l.Niche, l.ClassifiedAt,
+		l.Score, l.ServiceMatch, l.AuthorRole, l.PainPoint, l.AIReasoning, l.Niche, threadRole, l.ClassifiedAt,
 	)
 	if err != nil {
 		return 0, err
@@ -128,6 +132,7 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	           COALESCE(l.secondary_url,''), COALESCE(l.post_fbid,''), COALESCE(l.comment_fbid,''), COALESCE(l.group_fbid,''),
 	           l.platform, l.author, l.author_url, l.content, l.score, l.service_match,
 	           l.author_role, l.pain_point, l.ai_reasoning, COALESCE(NULLIF(l.niche,''),'logistics'),
+	           COALESCE(NULLIF(l.thread_role,''),'intent_originator'),
 	           l.classified_at, l.created_at,
 	           EXISTS(SELECT 1 FROM outbound_messages om WHERE om.target_url = COALESCE(NULLIF(l.source_url,''),p.url,'') AND om.type='comment' AND om.status = 'sent') as commented
 	          FROM leads l LEFT JOIN posts p ON l.source_id = p.id`
@@ -167,7 +172,7 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceType, &l.SourceID, &l.SourceURL,
 			&l.SecondaryURL, &l.PostFBID, &l.CommentFBID, &l.GroupFBID, &l.Platform,
 			&l.Author, &l.AuthorURL, &l.Content, &l.Score, &l.ServiceMatch,
-			&l.AuthorRole, &l.PainPoint, &l.AIReasoning, &l.Niche,
+			&l.AuthorRole, &l.PainPoint, &l.AIReasoning, &l.Niche, &l.ThreadRole,
 			&l.ClassifiedAt, &l.CreatedAt, &l.Commented); err != nil {
 			return nil, err
 		}
@@ -256,7 +261,8 @@ func normalizeLeadScoreFilter(score string) string {
 }
 
 func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) ([]models.Lead, error) {
-	query := `SELECT id, org_id, source_url, author_profile_url, author_name, content, lead_score, category, signals_json, created_at
+	query := `SELECT id, org_id, source_url, author_profile_url, author_name, content, lead_score, category,
+		COALESCE(NULLIF(thread_role,''),'intent_originator'), signals_json, created_at
 		FROM task_leads WHERE org_id = ?`
 	args := []any{orgID}
 	if f := normalizeLeadScoreFilter(score); f != "" {
@@ -277,7 +283,7 @@ func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) 
 		var l models.Lead
 		var numericScore float64
 		var signalsJSON string
-		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceURL, &l.AuthorURL, &l.Author, &l.Content, &numericScore, &l.Score, &signalsJSON, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.SourceURL, &l.AuthorURL, &l.Author, &l.Content, &numericScore, &l.Score, &l.ThreadRole, &signalsJSON, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		l.SourceType = "task_lead"

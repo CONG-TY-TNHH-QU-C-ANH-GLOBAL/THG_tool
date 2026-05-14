@@ -122,6 +122,12 @@ type Lead struct {
 	AIReasoning  string    `json:"ai_reasoning" db:"ai_reasoning"`
 	Niche        string    `json:"niche" db:"niche"`         // e.g. "logistics", "tuyen_dung"
 	Commented    bool      `json:"commented" db:"commented"` // true if already commented
+	// ThreadRole is the participant's role in the thread — orthogonal to
+	// Score. intent_originator / buyer_responder = a real lead;
+	// supplier_responder / competitor / noise = not a lead. Derived
+	// deterministically at ingest by models.InferThreadRole. See
+	// project_thread_role_architecture.md.
+	ThreadRole   string    `json:"thread_role" db:"thread_role"`
 	ClassifiedAt time.Time `json:"classified_at" db:"classified_at"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }

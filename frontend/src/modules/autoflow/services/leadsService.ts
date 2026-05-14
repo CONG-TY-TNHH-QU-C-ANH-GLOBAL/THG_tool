@@ -1,12 +1,24 @@
-import type { Lead, LeadEngagementState, LeadStatus } from '../types';
+import type { Lead, LeadEngagementState, LeadStatus, LeadThreadRole } from '../types';
 import * as api from './api';
 
 interface LeadsResponse { leads: BackendLead[]; count: number; }
 interface BackendLead {
   id: number; author: string; author_url: string; content: string;
   score: string; service_match: string; author_role: string; pain_point: string;
-  niche: string; source_url: string; source_type?: string;
+  niche: string; source_url: string; secondary_url?: string; source_type?: string;
+  thread_role?: string;
   classified_at: string; created_at: string;
+}
+
+const THREAD_ROLES: LeadThreadRole[] = [
+  'intent_originator', 'supplier_responder', 'buyer_responder', 'competitor', 'noise',
+];
+
+function normalizeThreadRole(raw?: string): LeadThreadRole {
+  const v = (raw ?? '').toLowerCase().trim() as LeadThreadRole;
+  // Legacy / unknown rows default to intent_originator — every pre-Phase-B
+  // crawl was a post-sourced lead. Mirrors models.NormalizeThreadRole.
+  return THREAD_ROLES.includes(v) ? v : 'intent_originator';
 }
 
 function normalizeScore(s: string): LeadStatus {
@@ -31,9 +43,12 @@ function toLead(b: BackendLead): Lead {
     last: new Date(b.created_at).toLocaleDateString('vi'),
     score: numericScore(status),
     phone: b.pain_point || '',
-    facebookUrl: b.author_url || undefined,
-    postUrl: b.source_url || undefined,
+    // 3-URL separation — never collapse these (thread-role memory):
+    facebookUrl: b.author_url || undefined,           // actor profile
+    postUrl: b.source_url || undefined,               // canonical post
+    engagementPermalink: b.secondary_url || undefined, // exact comment permalink
     sourceType: b.source_type || undefined,
+    threadRole: normalizeThreadRole(b.thread_role),
   };
 }
 

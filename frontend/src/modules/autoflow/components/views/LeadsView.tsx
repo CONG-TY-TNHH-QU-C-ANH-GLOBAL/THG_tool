@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
-import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus } from '../../types';
+import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus, LeadThreadRole } from '../../types';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
 import { deleteAllLeads, reclassifyLeads } from '../../services/leadsService';
@@ -59,6 +59,44 @@ function leadIntentKey(lead: Lead): IntentKey {
     return v;
   }
   return 'unknown';
+}
+
+// Thread role — the participant's structural position in the FB thread.
+// See project_thread_role_architecture.md. NOT a CRM status: it is derived
+// deterministically at ingest from source_type + intent + vendor-speak.
+type RoleKey = 'all' | 'leads' | LeadThreadRole;
+const ROLE_FILTERS: Array<{ key: RoleKey; label: string }> = [
+  { key: 'leads', label: 'Chỉ leads thật' },
+  { key: 'all', label: 'Tất cả vai trò' },
+  { key: 'intent_originator', label: 'Người đăng tin' },
+  { key: 'buyer_responder', label: 'Khách bình luận' },
+  { key: 'supplier_responder', label: 'Nhà cung cấp' },
+  { key: 'competitor', label: 'Đối thủ' },
+  { key: 'noise', label: 'Nhiễu / Spam' },
+];
+
+function threadRoleDisplay(role: LeadThreadRole | undefined): { label: string; className: string } {
+  switch (role) {
+    case 'intent_originator':
+      return { label: 'NGƯỜI ĐĂNG TIN', className: 'tag tag-ok' };
+    case 'buyer_responder':
+      return { label: 'KHÁCH BÌNH LUẬN', className: 'tag tag-info' };
+    case 'supplier_responder':
+      return { label: 'NHÀ CUNG CẤP', className: 'tag tag-warm' };
+    case 'competitor':
+      return { label: 'ĐỐI THỦ', className: 'tag tag-hot' };
+    case 'noise':
+      return { label: 'NHIỄU', className: 'tag tag-mute' };
+    default:
+      return { label: 'NGƯỜI ĐĂNG TIN', className: 'tag tag-ok' };
+  }
+}
+
+// A "real lead" is someone with buying intent — the originator or a
+// secondary buyer. Vendors / competitors / noise are not leads. Mirrors
+// models.LeadThreadRole.IsLeadRole.
+function isLeadRole(role: LeadThreadRole | undefined): boolean {
+  return role === 'intent_originator' || role === 'buyer_responder' || role === undefined;
 }
 
 // Lead Engagement badge → tag class + Vietnamese label.
@@ -149,6 +187,9 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const [filter, setFilter] = useState<LeadStatus | 'All'>('All');
   const [intentFilter, setIntentFilter] = useState<IntentKey>('all');
+  // Default to "real leads only" — the whole point of Phase B is to keep
+  // vendors / competitors / noise out of the primary lead surface.
+  const [roleFilter, setRoleFilter] = useState<RoleKey>('leads');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
@@ -241,11 +282,13 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const filteredLeads = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return leads.filter((lead) => {
+      if (roleFilter === 'leads' && !isLeadRole(lead.threadRole)) return false;
+      if (roleFilter !== 'all' && roleFilter !== 'leads' && (lead.threadRole ?? 'intent_originator') !== roleFilter) return false;
       if (intentFilter !== 'all' && leadIntentKey(lead) !== intentFilter) return false;
       if (normalized && !leadSearchValue(lead).includes(normalized)) return false;
       return true;
     });
-  }, [leads, query, intentFilter]);
+  }, [leads, query, intentFilter, roleFilter]);
 
   const intentCounts = useMemo(() => {
     const counts: Record<IntentKey, number> = {
@@ -260,6 +303,24 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
     for (const lead of leads) {
       const key = leadIntentKey(lead);
       counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [leads]);
+
+  const roleCounts = useMemo(() => {
+    const counts: Record<RoleKey, number> = {
+      all: leads.length,
+      leads: 0,
+      intent_originator: 0,
+      buyer_responder: 0,
+      supplier_responder: 0,
+      competitor: 0,
+      noise: 0,
+    };
+    for (const lead of leads) {
+      const role = lead.threadRole ?? 'intent_originator';
+      counts[role] = (counts[role] ?? 0) + 1;
+      if (isLeadRole(lead.threadRole)) counts.leads += 1;
     }
     return counts;
   }, [leads]);
@@ -471,6 +532,22 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
               })}
             </div>
 
+            <div className="sidebar-section" style={{ marginTop: 16 }}>VAI TRÒ THREAD</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {ROLE_FILTERS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`filter-pill ${roleFilter === opt.key ? 'is-active' : ''}`}
+                  style={{ justifyContent: 'space-between', display: 'flex', textAlign: 'left' }}
+                  onClick={() => setRoleFilter(opt.key)}
+                >
+                  <span>{opt.label}</span>
+                  <span style={{ opacity: 0.7 }}>{roleCounts[opt.key] ?? 0}</span>
+                </button>
+              ))}
+            </div>
+
             <div className="sidebar-section" style={{ marginTop: 16 }}>TỆP / INTENT</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {INTENT_FILTERS.map((opt) => (
@@ -525,13 +602,20 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
             ) : (
               filteredLeads.map((lead) => {
                 const intent = intentDisplay(lead.agent);
+                const role = threadRoleDisplay(lead.threadRole);
                 const engagement = engagementBadgeDisplay(lead.engagement?.badge);
                 const ctx = engagementContext(lead.engagement);
                 return (
                   <div
                     key={lead.id}
                     className={`table-row ${selectedId === lead.id ? 'is-active' : ''}`}
-                    style={{ gridTemplateColumns: '1fr 64px 70px', cursor: 'pointer' }}
+                    style={{
+                      gridTemplateColumns: '1fr 64px 70px',
+                      cursor: 'pointer',
+                      // De-emphasise non-lead participants so the eye still
+                      // lands on real leads even when "all roles" is on.
+                      opacity: isLeadRole(lead.threadRole) ? 1 : 0.62,
+                    }}
                     onClick={() => setSelectedId(lead.id)}
                   >
                     <div style={{ minWidth: 0 }}>
@@ -539,7 +623,8 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                         <span style={{ fontSize: 13.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {lead.name}
                         </span>
-                        <span className={intent.className} style={{ fontSize: 10, padding: '1px 6px' }}>{intent.label}</span>
+                        <span className={role.className} style={{ fontSize: 10, padding: '1px 6px', flexShrink: 0 }}>{role.label}</span>
+                        <span className={intent.className} style={{ fontSize: 10, padding: '1px 6px', flexShrink: 0 }}>{intent.label}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, minWidth: 0 }}>
                         <span className={engagement.className} style={{ fontSize: 10, padding: '1px 6px', flexShrink: 0 }}>{engagement.label}</span>
@@ -566,9 +651,25 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                     <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{selectedLead.group || tv.unknownGroup}</div>
                   </div>
                   <div style={{ flex: 1 }} />
+                  <span className={threadRoleDisplay(selectedLead.threadRole).className}>{threadRoleDisplay(selectedLead.threadRole).label}</span>
                   <span className={intentDisplay(selectedLead.agent).className}>{intentDisplay(selectedLead.agent).label}</span>
                   <span className={statusTagClass(selectedLead.status)}>{selectedLead.status.toUpperCase()}</span>
                 </div>
+                {!isLeadRole(selectedLead.threadRole) && (
+                  <div
+                    style={{
+                      marginTop: 10, padding: '8px 12px', borderRadius: 8,
+                      background: 'var(--bg-elev)', border: '1px solid var(--line)',
+                      fontSize: 12.5, color: 'var(--text-mute)',
+                    }}
+                  >
+                    {selectedLead.threadRole === 'supplier_responder'
+                      ? 'Đây là nhà cung cấp trả lời trong thread — KHÔNG phải khách hàng tiềm năng.'
+                      : selectedLead.threadRole === 'competitor'
+                        ? 'Đây là đối thủ đăng bài quảng cáo — KHÔNG phải lead.'
+                        : 'Đây là nhiễu / spam — KHÔNG phải lead.'}
+                  </div>
+                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, marginTop: 24, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
                   <div className="stat" style={{ background: 'var(--bg-elev)' }}>
@@ -629,28 +730,59 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                   <dd style={{ color: 'var(--text-mute)', margin: 0 }}>{selectedLead.last}</dd>
                 </dl>
 
-                <div style={{ display: 'flex', gap: 8, marginTop: 24, flexWrap: 'wrap' }}>
-                  {isFacebookPostURL(selectedLead.postUrl) ? (
-                    <a className="btn btn-primary btn-sm" href={selectedLead.postUrl} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink size={13} style={{ marginRight: 6 }} />
-                      Mở bài viết
-                    </a>
-                  ) : selectedLead.postUrl ? (
-                    <span
-                      className="btn btn-ghost btn-sm"
-                      title={`URL không có post id, có thể route về newsfeed: ${selectedLead.postUrl}`}
-                      style={{ opacity: 0.5, cursor: 'not-allowed' }}
-                    >
-                      <ExternalLink size={13} style={{ marginRight: 6 }} />
-                      Không có link bài viết
-                    </span>
-                  ) : null}
-                  {selectedLead.facebookUrl && (
-                    <a className="btn btn-ghost btn-sm" href={selectedLead.facebookUrl} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink size={13} style={{ marginRight: 6 }} />
-                      Mở profile
-                    </a>
-                  )}
+                {/* Role-aware routing (Phase D). The primary action depends
+                    on the thread role: an originator's battlefield is the
+                    post; a responder's exact location is their comment.
+                    "Mở bài viết" always opens the canonical post; we never
+                    default the primary action to the (unstable) profile URL. */}
+                {(() => {
+                  const postOpenable = isFacebookPostURL(selectedLead.postUrl);
+                  const commentUrl = selectedLead.engagementPermalink;
+                  const commentOpenable = isFacebookPostURL(commentUrl);
+                  const responderRole = !isLeadRole(selectedLead.threadRole);
+                  // For a responder with a real comment permalink, the comment
+                  // is the primary surface. Otherwise the post is.
+                  const commentIsPrimary = responderRole && commentOpenable;
+                  const postBtnClass = commentIsPrimary ? 'btn btn-ghost btn-sm' : 'btn btn-primary btn-sm';
+                  return (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 24, flexWrap: 'wrap' }}>
+                      {commentOpenable && (
+                        <a
+                          className={commentIsPrimary ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+                          href={commentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink size={13} style={{ marginRight: 6 }} />
+                          Mở bình luận
+                        </a>
+                      )}
+                      {postOpenable ? (
+                        <a className={postBtnClass} href={selectedLead.postUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink size={13} style={{ marginRight: 6 }} />
+                          Mở bài viết
+                        </a>
+                      ) : selectedLead.postUrl ? (
+                        <span
+                          className="btn btn-ghost btn-sm"
+                          title={`URL không có post id, có thể route về newsfeed: ${selectedLead.postUrl}`}
+                          style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                        >
+                          <ExternalLink size={13} style={{ marginRight: 6 }} />
+                          Không có link bài viết
+                        </span>
+                      ) : null}
+                      {selectedLead.facebookUrl && (
+                        <a className="btn btn-ghost btn-sm" href={selectedLead.facebookUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink size={13} style={{ marginRight: 6 }} />
+                          Mở profile
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refetch()}>
                     <RefreshCw size={13} style={{ marginRight: 6 }} />
                     Đồng bộ
