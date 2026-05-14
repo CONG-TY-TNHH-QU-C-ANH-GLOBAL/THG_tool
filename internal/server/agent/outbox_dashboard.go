@@ -194,6 +194,16 @@ func (h *Handler) deleteAllOutboundComments(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	log.Printf("[API] Reset all outbound comments: %d deleted", count)
+	log.Printf("[API] Reset all outbound comments (org=%d): %d deleted", orgID, count)
+	return c.JSON(fiber.Map{"ok": true, "deleted": count})
+}
+
+func (h *Handler) deleteAllOutboundPosts(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
+	count, err := h.db.DeleteAllOutboundPostsForOrg(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	log.Printf("[API] Reset all outbound posts (org=%d): %d deleted", orgID, count)
 	return c.JSON(fiber.Map{"ok": true, "deleted": count})
 }

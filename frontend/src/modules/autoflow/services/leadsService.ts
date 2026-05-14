@@ -60,6 +60,14 @@ export async function deleteLead(orgId: string, leadId: number, sourceType?: str
   await api.del(`/leads/${leadId}${qs}`);
 }
 
+// deleteAllLeads clears every lead for the org (legacy + task_leads tables).
+// Admin-only on the backend. Optional niche narrows the legacy side.
+export async function deleteAllLeads(orgId: string, niche?: string): Promise<{ deleted: number }> {
+  void orgId;
+  const qs = niche ? `?niche=${encodeURIComponent(niche)}` : '';
+  return api.del<{ deleted: number }>(`/leads/all${qs}`);
+}
+
 export interface ReclassifyRequest {
   user_prompt: string;
   target_role?: string;

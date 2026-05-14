@@ -365,3 +365,39 @@ func (s *Store) DeleteLeads(niche string) (int64, error) {
 	}
 	return result.RowsAffected()
 }
+
+// DeleteAllLeadsForOrg clears every lead for one tenant from BOTH backing
+// tables — the legacy `leads` mirror and the connector `task_leads` table.
+// The dashboard merges both (GetAutomationLeadsForOrg), so deleting only
+// one side leaves ghost rows that re-appear on the next refresh. Returns
+// the combined deleted count. Optional niche narrows the legacy side.
+func (s *Store) DeleteAllLeadsForOrg(orgID int64, niche string) (int64, error) {
+	if orgID <= 0 {
+		return 0, fmt.Errorf("org_id is required")
+	}
+	var total int64
+
+	legacyQuery := `DELETE FROM leads WHERE COALESCE(org_id,0) = ?`
+	legacyArgs := []any{orgID}
+	if n := strings.TrimSpace(niche); n != "" {
+		legacyQuery += ` AND niche = ?`
+		legacyArgs = append(legacyArgs, n)
+	}
+	if res, err := s.db.Exec(legacyQuery, legacyArgs...); err != nil {
+		return total, err
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		total += n
+	}
+
+	// task_leads has no niche column — clear the whole org slice. The
+	// table may not exist on older databases; treat that as "nothing to do".
+	if res, err := s.db.Exec(`DELETE FROM task_leads WHERE org_id = ?`, orgID); err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return total, err
+		}
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		total += n
+	}
+
+	return total, nil
+}

@@ -5,7 +5,7 @@ import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus } from '../../types';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
-import { reclassifyLeads } from '../../services/leadsService';
+import { deleteAllLeads, reclassifyLeads } from '../../services/leadsService';
 
 interface LeadsViewProps {
   orgId: string;
@@ -153,6 +153,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [reclassifyPrompt, setReclassifyPrompt] = useState('');
   const [reclassifyTargetRole, setReclassifyTargetRole] = useState('');
@@ -208,6 +209,32 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
       }
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (deletingAll) return;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        lang === 'vi'
+          ? `Xoá TẤT CẢ ${leads.length} leads của workspace? Hành động này không thể hoàn tác.`
+          : `Delete ALL ${leads.length} leads in this workspace? This cannot be undone.`,
+      );
+      if (!ok) return;
+    }
+    setDeletingAll(true);
+    try {
+      const res = await deleteAllLeads(orgId);
+      void refetch();
+      if (typeof window !== 'undefined') {
+        window.alert(lang === 'vi' ? `Đã xoá ${res.deleted} leads.` : `Deleted ${res.deleted} leads.`);
+      }
+    } catch (err) {
+      if (typeof window !== 'undefined') {
+        window.alert(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setDeletingAll(false);
     }
   };
 
@@ -276,6 +303,21 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
           >
             <Wand2 size={13} />
             {lang === 'vi' ? 'Phân loại lại' : 'Reclassify'}
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            style={{ color: 'var(--danger)' }}
+            disabled={deletingAll || leads.length === 0}
+            onClick={() => void handleDeleteAll()}
+            title={lang === 'vi' ? 'Xoá toàn bộ leads của workspace' : 'Delete every lead in this workspace'}
+          >
+            <Trash2 size={13} />
+            {deletingAll
+              ? (lang === 'vi' ? 'Đang xoá…' : 'Deleting…')
+              : (lang === 'vi' ? 'Xoá tất cả' : 'Delete all')}
           </button>
         )}
         <button className="btn btn-ghost btn-sm" type="button" onClick={() => void refetch()}>

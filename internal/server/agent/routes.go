@@ -82,6 +82,7 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Get("/outbox", h.getOutbox)
 	group.Post("/outbox/draft", h.draftOutbound)
 	group.Delete("/outbox/comments/all", adminOnly, h.deleteAllOutboundComments)
+	group.Delete("/outbox/posts/all", adminOnly, h.deleteAllOutboundPosts)
 	group.Put("/outbox/:id/approve", h.approveOutbound)
 	group.Put("/outbox/:id/reject", h.rejectOutbound)
 	group.Put("/outbox/:id/content", h.editOutbound)

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, ExternalLink, RefreshCw, Trash2, X } from 'lucide-react';
 import {
   approveOutbox,
+  deleteAllOutboundComments,
   deleteOutbox,
   getOutbox,
   type OutboundMessage,
@@ -13,6 +14,7 @@ import { useLang } from '../../i18n/useLang';
 
 interface CommentingViewProps {
   orgId: string;
+  isAdmin: boolean;
 }
 
 type CommentFilter = 'all' | 'draft' | 'approved' | 'sent' | 'failed' | 'rejected';
@@ -33,15 +35,41 @@ function statusTag(status: string): string {
   }
 }
 
-export default function CommentingView({ orgId }: CommentingViewProps) {
+export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) {
   void orgId;
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const tv = t.commentingView;
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
   const [filter, setFilter] = useState<CommentFilter>('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  const handleDeleteAll = async () => {
+    if (deletingAll) return;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        lang === 'vi'
+          ? `Xoá TẤT CẢ ${messages.length} comment trong hàng đợi? Không thể hoàn tác.`
+          : `Delete ALL ${messages.length} queued comments? This cannot be undone.`,
+      );
+      if (!ok) return;
+    }
+    setDeletingAll(true);
+    setErrorMsg('');
+    try {
+      const res = await deleteAllOutboundComments();
+      await load();
+      if (typeof window !== 'undefined') {
+        window.alert(lang === 'vi' ? `Đã xoá ${res.deleted} comment.` : `Deleted ${res.deleted} comments.`);
+      }
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : tv.updateError);
+    } finally {
+      setDeletingAll(false);
+    }
+  };
 
   const FILTERS: Array<{ label: string; value: CommentFilter }> = [
     { label: tv.filterAll, value: 'all' },
@@ -115,6 +143,21 @@ export default function CommentingView({ orgId }: CommentingViewProps) {
           <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6 }}>{t.views.commentingSub}</p>
         </div>
         <div style={{ flex: 1 }} />
+        {isAdmin && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ color: 'var(--danger)' }}
+            disabled={deletingAll || messages.length === 0}
+            onClick={() => void handleDeleteAll()}
+            title={lang === 'vi' ? 'Xoá toàn bộ comment trong hàng đợi' : 'Delete every queued comment'}
+          >
+            <Trash2 size={13} />
+            {deletingAll
+              ? (lang === 'vi' ? 'Đang xoá…' : 'Deleting…')
+              : (lang === 'vi' ? 'Xoá tất cả' : 'Delete all')}
+          </button>
+        )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
           <RefreshCw size={13} />
           {t.common.refresh}

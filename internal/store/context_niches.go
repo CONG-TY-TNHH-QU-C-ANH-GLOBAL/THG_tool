@@ -125,6 +125,21 @@ func (s *Store) DeleteAllOutboundCommentsForOrg(orgID int64) (int64, error) {
 	return n, nil
 }
 
+// DeleteAllOutboundPostsForOrg deletes posting outbox rows (group + profile
+// posts) for one tenant. The Posting dashboard view shows exactly these two
+// types, so "delete all posting" maps to this set.
+func (s *Store) DeleteAllOutboundPostsForOrg(orgID int64) (int64, error) {
+	res, err := s.db.Exec(
+		`DELETE FROM outbound_messages WHERE type IN ('group_post','profile_post') AND org_id = ?`,
+		orgID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // HasSentInbox checks whether an inbox message has been sent to authorURL.
 func (s *Store) HasSentInbox(authorURL string) bool {
 	var count int

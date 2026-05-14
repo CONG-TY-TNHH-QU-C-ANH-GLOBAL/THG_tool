@@ -46,3 +46,15 @@ export async function updateOutboxContent(id: number, content: string): Promise<
 export async function deleteOutbox(id: number): Promise<void> {
   await del(`/outbox/${id}`);
 }
+
+// deleteAllOutboundComments clears every comment outbox row for the org.
+// Admin-only on the backend (DELETE /outbox/comments/all).
+export async function deleteAllOutboundComments(): Promise<{ deleted: number }> {
+  return del<{ deleted: number }>('/outbox/comments/all');
+}
+
+// deleteAllOutboundPosts clears every group_post + profile_post outbox row
+// for the org. Admin-only on the backend (DELETE /outbox/posts/all).
+export async function deleteAllOutboundPosts(): Promise<{ deleted: number }> {
+  return del<{ deleted: number }>('/outbox/posts/all');
+}

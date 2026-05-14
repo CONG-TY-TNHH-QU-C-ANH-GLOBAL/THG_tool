@@ -169,9 +169,9 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       case 'inbox':
         return <InboxView orgId={orgId} />;
       case 'posting':
-        return <PostingView orgId={orgId} />;
+        return <PostingView orgId={orgId} isAdmin={isAdmin} />;
       case 'commenting':
-        return <CommentingView orgId={orgId} />;
+        return <CommentingView orgId={orgId} isAdmin={isAdmin} />;
       case 'leaderboard':
         return <LeaderboardView orgId={orgId} isAdmin={isAdmin} />;
       case 'data':

@@ -173,8 +173,8 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
   }));
 }
 
-export async function del(path: string): Promise<void> {
-  await handleJSON<void>(await apiFetch(path, { method: 'DELETE' }));
+export async function del<T = void>(path: string): Promise<T> {
+  return handleJSON<T>(await apiFetch(path, { method: 'DELETE' }));
 }
 
 export async function upload<T>(path: string, file: File): Promise<T> {

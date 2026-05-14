@@ -231,10 +231,19 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 }
 
 // deleteAllLeads handles DELETE /api/leads/all
+//
+// Org-scoped: clears both the legacy `leads` mirror and the connector
+// `task_leads` table for the caller's tenant only. Previously this used
+// the global DeleteLeads which wiped every tenant's leads — a multi-tenant
+// data-loss bug. Optional ?niche= narrows the legacy side.
 func deleteAllLeads(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		niche := c.Query("niche", "")
-		count, err := deps.DB.DeleteLeads(niche)
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
+		count, err := deps.DB.DeleteAllLeadsForOrg(orgID, niche)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -243,8 +252,8 @@ func deleteAllLeads(deps Deps) fiber.Handler {
 			scope = niche
 		}
 		userID, _ := c.Locals("user_id").(int64)
-		deps.DB.InsertAuditLog(userID, "delete_leads", c.IP(), fmt.Sprintf(`{"scope":%q,"count":%d}`, scope, count))
-		log.Printf("[API] Deleted leads (scope=%s): %d removed", scope, count)
+		deps.DB.InsertAuditLog(userID, "delete_leads", c.IP(), fmt.Sprintf(`{"scope":%q,"count":%d,"org_id":%d}`, scope, count, orgID))
+		log.Printf("[API] Deleted leads (org=%d scope=%s): %d removed", orgID, scope, count)
 		return c.JSON(fiber.Map{"ok": true, "deleted": count, "scope": scope})
 	}
 }

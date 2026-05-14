@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Check, ExternalLink, RefreshCw, Trash2, X } from 'lucide-react';
-import { approveOutbox, deleteOutbox, getOutbox, OutboundMessage, rejectOutbox } from '../../services/outboxService';
+import { approveOutbox, deleteAllOutboundPosts, deleteOutbox, getOutbox, OutboundMessage, rejectOutbox } from '../../services/outboxService';
 
-interface PostingViewProps { orgId: string; }
+interface PostingViewProps { orgId: string; isAdmin: boolean; }
 
 type PostFilter = 'all' | 'sent' | 'draft' | 'approved' | 'failed' | 'rejected';
 
@@ -15,11 +15,12 @@ const FILTERS: { label: string; value: PostFilter }[] = [
   { label: 'Từ chối', value: 'rejected' },
 ];
 
-export default function PostingView({ orgId }: PostingViewProps) {
+export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
   const [filter, setFilter] = useState<PostFilter>('all');
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
+  const [deletingAll, setDeletingAll] = useState(false);
   void orgId;
 
   const load = async () => {
@@ -48,6 +49,27 @@ export default function PostingView({ orgId }: PostingViewProps) {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (deletingAll) return;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(`Xoá TẤT CẢ ${messages.length} bài posting trong hàng đợi? Không thể hoàn tác.`);
+      if (!ok) return;
+    }
+    setDeletingAll(true);
+    setMsg('');
+    try {
+      const res = await deleteAllOutboundPosts();
+      await load();
+      if (typeof window !== 'undefined') {
+        window.alert(`Đã xoá ${res.deleted} bài posting.`);
+      }
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Không xoá được posting.');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   const filtered = filter === 'all' ? messages : messages.filter(m => m.status === filter);
 
   return (
@@ -65,6 +87,17 @@ export default function PostingView({ orgId }: PostingViewProps) {
           ))}
         </div>
         <div style={{ flex: 1 }} />
+        {isAdmin && (
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: 'var(--danger)' }}
+            disabled={deletingAll || messages.length === 0}
+            onClick={() => void handleDeleteAll()}
+            title="Xoá toàn bộ bài posting trong hàng đợi"
+          >
+            <Trash2 size={13} /> {deletingAll ? 'Đang xoá…' : 'Xoá tất cả'}
+          </button>
+        )}
         <button className="btn btn-ghost btn-sm" onClick={load}>
           <RefreshCw size={13} /> Làm mới
         </button>
