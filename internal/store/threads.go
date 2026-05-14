@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/thg/scraper/internal/models"
@@ -76,6 +77,50 @@ func (s *Store) GetThreadByProfileForOrg(orgID int64, profileURL string) (*model
 	t.LastOutboundAt = parseSQLiteTime(lastOut)
 	t.LastInboundAt = parseSQLiteTime(lastIn)
 	return &t, nil
+}
+
+// GetThreadsByProfilesForOrg is the batch twin of GetThreadByProfileForOrg.
+// Used by GetLeadEngagementsBatch to avoid an N+1 thread lookup when the
+// dashboard renders a list view (50 leads = 50 thread queries previously).
+// Returns a map keyed by profile_url; missing profiles are simply absent.
+func (s *Store) GetThreadsByProfilesForOrg(orgID int64, profileURLs []string) (map[string]*models.ConversationThread, error) {
+	out := make(map[string]*models.ConversationThread, len(profileURLs))
+	if orgID <= 0 || len(profileURLs) == 0 {
+		return out, nil
+	}
+	// SQLite default placeholder limit is 999 — leads list is bounded
+	// to 50 by the API + 3 URLs per lead so we will not approach that.
+	placeholders := strings.Repeat("?,", len(profileURLs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(profileURLs)+1)
+	args = append(args, orgID)
+	for _, u := range profileURLs {
+		args = append(args, u)
+	}
+	rows, err := s.db.Query(
+		`SELECT id, COALESCE(org_id,0), lead_id, platform, profile_url, profile_name, niche, status,
+		        COALESCE(last_outbound_at,''), COALESCE(last_inbound_at,''), created_at
+		 FROM conversation_threads
+		 WHERE org_id = ? AND profile_url IN (`+placeholders+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t models.ConversationThread
+		var lastOut, lastIn string
+		if err := rows.Scan(&t.ID, &t.OrgID, &t.LeadID, &t.Platform, &t.ProfileURL, &t.ProfileName,
+			&t.Niche, &t.Status, &lastOut, &lastIn, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		t.LastOutboundAt = parseSQLiteTime(lastOut)
+		t.LastInboundAt = parseSQLiteTime(lastIn)
+		copy := t
+		out[t.ProfileURL] = &copy
+	}
+	return out, rows.Err()
 }
 
 // GetActiveThreads returns threads awaiting reply (we sent, they haven't replied yet).

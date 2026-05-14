@@ -373,6 +373,12 @@ func (s *Store) migrate() error {
 		ON action_ledger(org_id, action_type, target_url, performed_at DESC)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_account
 		ON action_ledger(org_id, account_id, action_type, performed_at DESC)`)
+	// Coordination Plane PR-4: engagement projection queries match by
+	// (org_id, target_url) WITHOUT action_type, so the action_type-prefixed
+	// index above can only use org_id and has to scan. This index lets the
+	// engagement projection seek directly per URL.
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_engagement
+		ON action_ledger(org_id, target_url, performed_at DESC)`)
 
 	// Coordination Plane PR-2: per-account behaviour profile substrate.
 	// Two tables on purpose — static identity vs high-churn runtime counters.

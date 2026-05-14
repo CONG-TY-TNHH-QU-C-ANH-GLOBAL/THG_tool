@@ -127,6 +127,14 @@ func (s *Store) GetLeadEngagementsBatch(ctx context.Context, orgID int64, leadID
 		}
 	}
 
+	// Batch thread lookup — fixes the N+1 the per-lead loop used to do.
+	// For a 50-lead list view this used to fire 50 separate thread queries;
+	// now it is a single IN-clause query.
+	threadByURL, err := s.batchThreadStateForLeads(orgID, leads)
+	if err != nil {
+		return nil, err
+	}
+
 	// Per-lead: sort entries (desc), look up thread, derive badge.
 	now := time.Now().UTC()
 	for _, l := range leads {
@@ -138,12 +146,54 @@ func (s *Store) GetLeadEngagementsBatch(ctx context.Context, orgID int64, leadID
 			state.LastEngagedBy = latest.UserName
 			state.LastEngagedAction = latest.Action
 		}
-		threadStatus, awaitingReply := s.threadStateForLead(orgID, &l)
+		threadStatus, awaitingReply := threadStateFromBatch(threadByURL, &l)
 		state.ThreadStatus = threadStatus
 		state.Badge = models.DeriveBadge(state.Entries, threadStatus, awaitingReply, now,
 			models.DefaultProtectedWindow, models.DefaultFollowupWindow)
 	}
 	return out, nil
+}
+
+// batchThreadStateForLeads pulls all conversation_threads that match any
+// lead's author_url in one IN-clause query. Returns a map keyed by
+// profile_url so threadStateFromBatch can lookup per-lead in O(1).
+func (s *Store) batchThreadStateForLeads(orgID int64, leads []models.Lead) (map[string]*models.ConversationThread, error) {
+	urls := make([]string, 0, len(leads))
+	seen := make(map[string]struct{}, len(leads))
+	for _, l := range leads {
+		u := strings.TrimSpace(l.AuthorURL)
+		if u == "" {
+			continue
+		}
+		if _, dup := seen[u]; dup {
+			continue
+		}
+		seen[u] = struct{}{}
+		urls = append(urls, u)
+	}
+	if len(urls) == 0 {
+		return map[string]*models.ConversationThread{}, nil
+	}
+	return s.GetThreadsByProfilesForOrg(orgID, urls)
+}
+
+// threadStateFromBatch is the pure twin of threadStateForLead — same
+// rules, but reads from a pre-fetched map instead of issuing a query.
+func threadStateFromBatch(threads map[string]*models.ConversationThread, lead *models.Lead) (string, bool) {
+	if lead == nil {
+		return "", false
+	}
+	url := strings.TrimSpace(lead.AuthorURL)
+	if url == "" {
+		return "", false
+	}
+	thread, ok := threads[url]
+	if !ok || thread == nil {
+		return "", false
+	}
+	awaitingReply := !thread.LastOutboundAt.IsZero() &&
+		(thread.LastInboundAt.IsZero() || thread.LastInboundAt.Before(thread.LastOutboundAt))
+	return thread.Status, awaitingReply
 }
 
 // listEngagementEntries pulls + enriches ledger entries for one lead's

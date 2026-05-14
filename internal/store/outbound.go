@@ -283,17 +283,22 @@ func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string
 		return OutboundGuardDecision{}, err
 	}
 
-	col := counterColumnForAction(msgType)
-	var counter int
-	var countersDay string
-	var riskScore float64
-	var cooldownUntilStr string
+	// Single round-trip: read every column the cap decision needs in one
+	// SELECT, then apply the day-rollover rule + cap check in Go. The prior
+	// version did two reads per queue (cooldown/risk + per-action counter).
+	var (
+		countersDay              string
+		commentsToday, inboxToday, groupPostsToday, profilePostsToday int
+		riskScore                float64
+		cooldownUntilStr         string
+	)
 	err = tx.QueryRow(
 		`SELECT counters_day, comments_today, inbox_today, group_posts_today,
 		        profile_posts_today, risk_score, COALESCE(cooldown_until,'')
 		   FROM account_runtime_state
 		  WHERE account_id = ?`, accountID,
-	).Scan(&countersDay, new(int), new(int), new(int), new(int), &riskScore, &cooldownUntilStr)
+	).Scan(&countersDay, &commentsToday, &inboxToday, &groupPostsToday,
+		&profilePostsToday, &riskScore, &cooldownUntilStr)
 	if err != nil && err != sql.ErrNoRows {
 		return OutboundGuardDecision{}, err
 	}
@@ -313,16 +318,23 @@ func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string
 		return OutboundGuardDecision{Allowed: false, Reason: "risk_ceiling_exceeded"}, nil
 	}
 
-	if col != "" {
+	if col := counterColumnForAction(msgType); col != "" {
 		cap := caps.CapForAction(msgType)
 		if cap > 0 {
-			// Re-read just the relevant column with the day-rollover rule
-			// applied: counters belong to today only if counters_day == today.
-			if err := tx.QueryRow(
-				`SELECT `+col+` FROM account_runtime_state WHERE account_id = ? AND counters_day = ?`,
-				accountID, utcDayKey(time.Now()),
-			).Scan(&counter); err != nil && err != sql.ErrNoRows {
-				return OutboundGuardDecision{}, err
+			// Day rollover: counters belong to today only if counters_day == today.
+			// Reading a row with a stale counters_day means today's counter is 0.
+			counter := 0
+			if countersDay == utcDayKey(time.Now()) {
+				switch col {
+				case "comments_today":
+					counter = commentsToday
+				case "inbox_today":
+					counter = inboxToday
+				case "group_posts_today":
+					counter = groupPostsToday
+				case "profile_posts_today":
+					counter = profilePostsToday
+				}
 			}
 			if counter >= cap {
 				return OutboundGuardDecision{Allowed: false, Reason: "daily_limit_exceeded"}, nil
