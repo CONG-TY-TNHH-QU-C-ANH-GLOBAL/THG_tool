@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/fburl"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
@@ -98,77 +99,26 @@ func normalizeSourceType(s string) string {
 	}
 }
 
-// ExtractFacebookPostID parses the Facebook-side post id out of a permalink.
-// Returns "" when no canonical id is recognisable. Used as a fallback when the
-// crawler does not emit PostFBID explicitly — the cursor needs an id, and the
-// URL is the next best source.
-func ExtractFacebookPostID(u string) string {
-	if u == "" {
-		return ""
-	}
-	// Order matters: more specific markers first. story_fbid must precede the
-	// bare fbid= patterns so the longer one wins.
-	for _, marker := range []string{"/posts/", "/permalink/", "story_fbid=", "?fbid=", "&fbid="} {
-		i := strings.Index(u, marker)
-		if i < 0 {
-			continue
-		}
-		rest := u[i+len(marker):]
-		if id := cutAtNonDigit(rest); id != "" {
-			return id
-		}
-	}
-	return ""
-}
+// URL helpers (LooksLikePostURL, looksLikeCommentOnlyURL,
+// CanonicalPostPermalink, ExtractFacebookPostID) live in internal/fburl
+// so the store-layer read path can use the same canonicalisation
+// without an import cycle. The aliases below preserve the existing
+// leadingest public surface.
 
-func cutAtNonDigit(s string) string {
-	for i, c := range s {
-		if c < '0' || c > '9' {
-			return s[:i]
-		}
-	}
-	return s
-}
+// ExtractFacebookPostID is re-exported from internal/fburl for back-compat.
+func ExtractFacebookPostID(u string) string { return fburl.ExtractFacebookPostID(u) }
 
-// looksLikeCommentOnlyURL reports whether a URL points at a comment with no
-// post context — i.e. it cannot serve as a primary (post) link.
-func looksLikeCommentOnlyURL(u string) bool {
-	if u == "" {
-		return false
-	}
-	hasComment := strings.Contains(u, "comment_id=") || strings.Contains(u, "/comment/")
-	return hasComment && !looksLikePostURL(u)
-}
+// LooksLikePostURL is re-exported from internal/fburl for back-compat.
+func LooksLikePostURL(u string) bool { return fburl.LooksLikePostURL(u) }
 
-// looksLikePostURL is true when the URL carries a post identifier the
-// dashboard's "Mở bài viết" button can open. Any URL that just points at
-// a group/page/profile shell (e.g. facebook.com/groups/123) is rejected
-// — it routes to the feed, not the specific post.
-func looksLikePostURL(u string) bool {
-	if u == "" {
-		return false
-	}
-	return strings.Contains(u, "/posts/") ||
-		strings.Contains(u, "/permalink/") ||
-		strings.Contains(u, "story_fbid=") ||
-		strings.Contains(u, "multi_permalinks=") ||
-		strings.Contains(u, "fbid=")
-}
-
-// CanonicalPostPermalink builds a stable Facebook post URL from the
-// IDs the crawler already extracts. Used as the server-side rescue
-// when the DOM-scraped URL is a group shell — common when Facebook
-// virtualises the permalink anchor until hover.
+// CanonicalPostPermalink is re-exported from internal/fburl for back-compat.
 func CanonicalPostPermalink(groupFBID, postFBID string) string {
-	postFBID = strings.TrimSpace(postFBID)
-	if postFBID == "" {
-		return ""
-	}
-	if g := strings.TrimSpace(groupFBID); g != "" {
-		return "https://www.facebook.com/groups/" + g + "/posts/" + postFBID + "/"
-	}
-	return "https://www.facebook.com/permalink.php?story_fbid=" + postFBID
+	return fburl.CanonicalPostPermalink(groupFBID, postFBID)
 }
+
+// looksLikeCommentOnlyURL stays package-private — its callers are
+// inside leadingest.ValidateRouting only. Thin delegate.
+func looksLikeCommentOnlyURL(u string) bool { return fburl.LooksLikeCommentOnlyURL(u) }
 
 // ValidateRouting enforces the lead routing contract before persist. The rule:
 // every lead MUST carry a usable POST url as its primary link. A comment-sourced
@@ -187,7 +137,7 @@ func ValidateRouting(in Input) error {
 	// /permalink/, no story_fbid) cannot serve as a post link. The dashboard
 	// "Mở bài viết" button on such a URL would land the user on the feed,
 	// not the specific post. This is the failure mode the user reported.
-	if !looksLikePostURL(primary) {
+	if !LooksLikePostURL(primary) {
 		return errors.New("primary URL has no post identifier (group/page shell)")
 	}
 	if normalizeSourceType(in.SourceType) == "comment" {
@@ -214,7 +164,7 @@ func repairPrimaryURL(in *Input) {
 		return
 	}
 	primary := strings.TrimSpace(in.PrimaryURL)
-	if primary != "" && looksLikePostURL(primary) {
+	if primary != "" && LooksLikePostURL(primary) {
 		return
 	}
 	postID := strings.TrimSpace(in.PostFBID)

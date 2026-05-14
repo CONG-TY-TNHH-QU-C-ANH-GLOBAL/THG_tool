@@ -197,8 +197,8 @@ func TestLooksLikePostURL(t *testing.T) {
 		"https://facebook.com/?multi_permalinks=1",
 	}
 	for _, u := range posts {
-		if !looksLikePostURL(u) {
-			t.Errorf("looksLikePostURL(%q) = false, want true", u)
+		if !LooksLikePostURL(u) {
+			t.Errorf("LooksLikePostURL(%q) = false, want true", u)
 		}
 	}
 	shells := []string{
@@ -208,8 +208,8 @@ func TestLooksLikePostURL(t *testing.T) {
 		"https://facebook.com/groups/1/?ref=feed",
 	}
 	for _, u := range shells {
-		if looksLikePostURL(u) {
-			t.Errorf("looksLikePostURL(%q) = true, want false", u)
+		if LooksLikePostURL(u) {
+			t.Errorf("LooksLikePostURL(%q) = true, want false", u)
 		}
 	}
 }

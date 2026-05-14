@@ -112,6 +112,15 @@ function engagementContext(state: LeadEngagementState | undefined): string {
   return `${who} • ${actionLabel} ${when}`;
 }
 
+// FE defensive: only treat a URL as openable for "Mở bài viết" when it
+// carries a Facebook post identifier. A profile or group shell would
+// otherwise route the user to the newsfeed (the routing-collapse bug
+// described in project_thread_role_architecture.md).
+function isFacebookPostURL(u: string | undefined): boolean {
+  if (!u) return false;
+  return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|[?&]fbid=/.test(u);
+}
+
 function statusTagClass(status: string): string {
   switch (status) {
     case 'Hot':
@@ -579,12 +588,21 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                 </dl>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 24, flexWrap: 'wrap' }}>
-                  {selectedLead.postUrl && (
+                  {isFacebookPostURL(selectedLead.postUrl) ? (
                     <a className="btn btn-primary btn-sm" href={selectedLead.postUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink size={13} style={{ marginRight: 6 }} />
                       Mở bài viết
                     </a>
-                  )}
+                  ) : selectedLead.postUrl ? (
+                    <span
+                      className="btn btn-ghost btn-sm"
+                      title={`URL không có post id, có thể route về newsfeed: ${selectedLead.postUrl}`}
+                      style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                    >
+                      <ExternalLink size={13} style={{ marginRight: 6 }} />
+                      Không có link bài viết
+                    </span>
+                  ) : null}
                   {selectedLead.facebookUrl && (
                     <a className="btn btn-ghost btn-sm" href={selectedLead.facebookUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink size={13} style={{ marginRight: 6 }} />

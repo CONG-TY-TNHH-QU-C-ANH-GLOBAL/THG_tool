@@ -6,8 +6,39 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/thg/scraper/internal/fburl"
 	"github.com/thg/scraper/internal/models"
 )
+
+// repairLeadSourceURL is the read-time twin of the ingest-time rescue
+// in internal/leadingest. The database holds legacy rows where source_url
+// is a profile / group shell. Every lead read through the API gets
+// checked: if source_url does not look like a post URL but post_fbid
+// (+ optionally group_fbid) is present, the canonical permalink is
+// synthesised before the row leaves the store layer.
+//
+// This guarantees the dashboard's "Mở bài viết" surface never lands on
+// the newsfeed for a lead whose IDs were actually captured. See
+// project_thread_role_architecture.md § Phase A.
+func repairLeadSourceURL(l *models.Lead) {
+	if l == nil {
+		return
+	}
+	if fburl.LooksLikePostURL(l.SourceURL) {
+		return
+	}
+	postID := strings.TrimSpace(l.PostFBID)
+	if postID == "" {
+		// Last-ditch: try to recover from the URL we already hold.
+		postID = fburl.ExtractFacebookPostID(l.SourceURL)
+		if postID == "" {
+			return
+		}
+	}
+	if synth := fburl.CanonicalPostPermalink(l.GroupFBID, postID); synth != "" {
+		l.SourceURL = synth
+	}
+}
 
 // UpdateLeadClassification overwrites the AI-derived fields on an existing
 // lead row. Used by the reclassify endpoint to retag legacy leads when the
@@ -140,6 +171,7 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 			&l.ClassifiedAt, &l.CreatedAt, &l.Commented); err != nil {
 			return nil, err
 		}
+		repairLeadSourceURL(&l)
 		leads = append(leads, l)
 	}
 	return leads, nil
@@ -265,6 +297,12 @@ func (s *Store) getTaskLeadsForAutomation(orgID int64, score string, limit int) 
 			l.PainPoint = fmt.Sprintf("score %.0f", numericScore)
 		}
 		l.ClassifiedAt = l.CreatedAt
+		// task_leads does not carry post_fbid / group_fbid columns, so the
+		// rescue can only run on URL-shape recovery (ExtractFacebookPostID
+		// of whatever URL was stored). It still helps for legacy rows whose
+		// source_url was a comment permalink — the embedded id is enough
+		// to synthesise the post permalink without IDs.
+		repairLeadSourceURL(&l)
 		leads = append(leads, l)
 	}
 	return leads, rows.Err()
