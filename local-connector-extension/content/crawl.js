@@ -24,6 +24,23 @@ var THGContentCrawl = (() => {
     return m ? m[1] : '';
   }
 
+  // Build a canonical post permalink from the IDs we already extracted.
+  // Mirror of the Go side leadingest.CanonicalPostPermalink — so a lead
+  // whose anchor was lazy-rendered still gets a real post URL on the
+  // dashboard's "Mở bài viết" button.
+  function canonicalPostPermalink(groupFBID, postFBID) {
+    if (!postFBID) return '';
+    if (groupFBID) return `https://www.facebook.com/groups/${groupFBID}/posts/${postFBID}/`;
+    return `https://www.facebook.com/permalink.php?story_fbid=${postFBID}`;
+  }
+
+  // True when the URL carries an identifier the dashboard can open as a
+  // specific post (not just the group/page feed shell).
+  function looksLikePostURL(u) {
+    if (!u) return false;
+    return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|[?&]fbid=/.test(u);
+  }
+
   function postPermalink(article) {
     const anchors = Array.from(article.querySelectorAll('a[href]'));
     const match = anchors.find(a => {
@@ -311,7 +328,16 @@ var THGContentCrawl = (() => {
         if (seen.has(key)) continue;
         seen.add(key);
         const url = postPermalink(article);
-        const postFBID = extractPostFBID(url);
+        // Try every anchor in the article for a post id — postPermalink may
+        // have fallen back to a timestamp or the page URL, both of which
+        // can lack /posts/N. The wider scan catches lazy-rendered anchors.
+        let postFBID = extractPostFBID(url);
+        if (!postFBID) {
+          for (const a of article.querySelectorAll('a[href]')) {
+            const id = extractPostFBID(a.getAttribute('href') || '');
+            if (id) { postFBID = id; break; }
+          }
+        }
         // CURSOR HONOR — physical incremental optimization. If we hit the post
         // id from the previous run, we have caught up to the prior frontier:
         // everything below in the feed is already ingested. Stop traversal
@@ -321,9 +347,23 @@ var THGContentCrawl = (() => {
           exitReason = 'cursor_match';
           break;
         }
+        // Source URL resolution priority:
+        //   1. The anchor we scraped, IF it actually identifies a post.
+        //   2. Synthesised canonical permalink from postFBID + groupFBID.
+        //   3. The crawler's expected URL (the group/page shell) — last resort,
+        //      will be rejected by the server-side validator unless rescued.
+        let sourceURL = '';
+        if (url && looksLikePostURL(url) && url !== location.href) {
+          sourceURL = url;
+        } else if (postFBID) {
+          sourceURL = canonicalPostPermalink(groupFBID, postFBID);
+        }
+        if (!sourceURL) {
+          sourceURL = expectedUrl || location.href;
+        }
         items.push({
           id: key,
-          source_url: url && url !== location.href ? url : (expectedUrl || location.href),
+          source_url: sourceURL,
           author_profile_url: author.author_profile_url,
           author_name: author.author_name,
           content,

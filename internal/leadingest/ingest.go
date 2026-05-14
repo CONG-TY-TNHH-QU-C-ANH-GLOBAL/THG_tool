@@ -137,10 +137,37 @@ func looksLikeCommentOnlyURL(u string) bool {
 		return false
 	}
 	hasComment := strings.Contains(u, "comment_id=") || strings.Contains(u, "/comment/")
-	hasPost := strings.Contains(u, "/posts/") ||
+	return hasComment && !looksLikePostURL(u)
+}
+
+// looksLikePostURL is true when the URL carries a post identifier the
+// dashboard's "Mở bài viết" button can open. Any URL that just points at
+// a group/page/profile shell (e.g. facebook.com/groups/123) is rejected
+// — it routes to the feed, not the specific post.
+func looksLikePostURL(u string) bool {
+	if u == "" {
+		return false
+	}
+	return strings.Contains(u, "/posts/") ||
 		strings.Contains(u, "/permalink/") ||
-		strings.Contains(u, "story_fbid=")
-	return hasComment && !hasPost
+		strings.Contains(u, "story_fbid=") ||
+		strings.Contains(u, "multi_permalinks=") ||
+		strings.Contains(u, "fbid=")
+}
+
+// CanonicalPostPermalink builds a stable Facebook post URL from the
+// IDs the crawler already extracts. Used as the server-side rescue
+// when the DOM-scraped URL is a group shell — common when Facebook
+// virtualises the permalink anchor until hover.
+func CanonicalPostPermalink(groupFBID, postFBID string) string {
+	postFBID = strings.TrimSpace(postFBID)
+	if postFBID == "" {
+		return ""
+	}
+	if g := strings.TrimSpace(groupFBID); g != "" {
+		return "https://www.facebook.com/groups/" + g + "/posts/" + postFBID + "/"
+	}
+	return "https://www.facebook.com/permalink.php?story_fbid=" + postFBID
 }
 
 // ValidateRouting enforces the lead routing contract before persist. The rule:
@@ -156,6 +183,13 @@ func ValidateRouting(in Input) error {
 	if looksLikeCommentOnlyURL(primary) {
 		return errors.New("primary URL is a comment link, not a post")
 	}
+	// A URL that points at a group/page/profile shell (no /posts/, no
+	// /permalink/, no story_fbid) cannot serve as a post link. The dashboard
+	// "Mở bài viết" button on such a URL would land the user on the feed,
+	// not the specific post. This is the failure mode the user reported.
+	if !looksLikePostURL(primary) {
+		return errors.New("primary URL has no post identifier (group/page shell)")
+	}
 	if normalizeSourceType(in.SourceType) == "comment" {
 		// A comment lead must route to its parent post. If the primary link is
 		// identical to the comment link, the parent post was never resolved.
@@ -164,6 +198,37 @@ func ValidateRouting(in Input) error {
 		}
 	}
 	return nil
+}
+
+// repairPrimaryURL is the server-side rescue for crawls where the
+// extracted primary URL is a group/page shell but the crawler also
+// supplied PostFBID. It synthesises a canonical post permalink and
+// rewrites Input.PrimaryURL in place. No-op when:
+//   - primary already looks like a post URL
+//   - no PostFBID available to synthesise from
+//
+// Called BEFORE ValidateRouting so a synthesised URL passes the contract
+// and the lead is persisted with a valid "Mở bài viết" target.
+func repairPrimaryURL(in *Input) {
+	if in == nil {
+		return
+	}
+	primary := strings.TrimSpace(in.PrimaryURL)
+	if primary != "" && looksLikePostURL(primary) {
+		return
+	}
+	postID := strings.TrimSpace(in.PostFBID)
+	if postID == "" {
+		// Last-ditch: try to recover an ID from whatever URL we have.
+		postID = ExtractFacebookPostID(primary)
+		if postID == "" {
+			return
+		}
+		in.PostFBID = postID
+	}
+	if synth := CanonicalPostPermalink(in.GroupFBID, postID); synth != "" {
+		in.PrimaryURL = synth
+	}
 }
 
 // IngestPost classifies a single crawled post and, when qualified, persists
@@ -175,6 +240,13 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	if content == "" {
 		return Outcome{Skipped: "filter"}, nil
 	}
+
+	// Server-side rescue: when the crawler emits a group/page shell URL
+	// but ALSO sends PostFBID, synthesise the canonical post permalink
+	// before validating. Common case: Facebook lazy-renders the post
+	// anchor, the JS falls back to expectedUrl (the group URL), but the
+	// post id was still extracted off the page. See project_lead_routing_gap.md.
+	repairPrimaryURL(&in)
 
 	// Routing contract — enforced before any scoring/classification work.
 	// A lead with no usable post link is dropped, not stored. The Skipped

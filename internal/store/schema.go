@@ -589,6 +589,31 @@ func (s *Store) migrate() error {
 		SELECT p.id FROM posts p WHERE p.content = leads.content LIMIT 1
 	) WHERE (source_url IS NULL OR source_url = '') AND source_id = 0`)
 
+	// Rescue: leads whose source_url is a group/page/profile shell but where
+	// the crawler did extract post_fbid + group_fbid. Idempotent — the
+	// pattern guards skip rows that already carry a post identifier.
+	// See project_lead_routing_gap.md (the "Mở bài viết" routing bug).
+	s.db.Exec(`UPDATE leads
+		SET source_url = 'https://www.facebook.com/groups/' || group_fbid || '/posts/' || post_fbid || '/'
+		WHERE COALESCE(post_fbid,'')  != ''
+		  AND COALESCE(group_fbid,'') != ''
+		  AND source_url != ''
+		  AND source_url NOT LIKE '%/posts/%'
+		  AND source_url NOT LIKE '%/permalink/%'
+		  AND source_url NOT LIKE '%story_fbid=%'
+		  AND source_url NOT LIKE '%multi_permalinks=%'
+		  AND source_url NOT LIKE '%fbid=%'`)
+	s.db.Exec(`UPDATE leads
+		SET source_url = 'https://www.facebook.com/permalink.php?story_fbid=' || post_fbid
+		WHERE COALESCE(post_fbid,'')  != ''
+		  AND COALESCE(group_fbid,'') = ''
+		  AND source_url != ''
+		  AND source_url NOT LIKE '%/posts/%'
+		  AND source_url NOT LIKE '%/permalink/%'
+		  AND source_url NOT LIKE '%story_fbid=%'
+		  AND source_url NOT LIKE '%multi_permalinks=%'
+		  AND source_url NOT LIKE '%fbid=%'`)
+
 	// Conversation threads: memory across sessions for each lead we're talking to
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS conversation_threads (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

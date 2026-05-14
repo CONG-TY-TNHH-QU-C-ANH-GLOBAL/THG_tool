@@ -50,6 +50,20 @@ func TestValidateRouting(t *testing.T) {
 			in:      Input{SourceType: "comment", PrimaryURL: ""},
 			wantErr: true,
 		},
+		{
+			name:    "primary URL is a bare group shell — no post id",
+			in:      Input{SourceType: "post", PrimaryURL: "https://facebook.com/groups/123"},
+			wantErr: true,
+		},
+		{
+			name:    "primary URL is a profile shell — no post id",
+			in:      Input{SourceType: "post", PrimaryURL: "https://facebook.com/some.user"},
+			wantErr: true,
+		},
+		{
+			name: "permalink.php with story_fbid is accepted",
+			in:   Input{SourceType: "post", PrimaryURL: "https://www.facebook.com/permalink.php?story_fbid=12345"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,6 +110,107 @@ func TestExtractFacebookPostID(t *testing.T) {
 				t.Errorf("ExtractFacebookPostID(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCanonicalPostPermalink locks the synthesis used as the server-side
+// rescue when the crawler emitted a group shell URL.
+func TestCanonicalPostPermalink(t *testing.T) {
+	cases := []struct {
+		group, post, want string
+	}{
+		{"123", "456", "https://www.facebook.com/groups/123/posts/456/"},
+		{"", "456", "https://www.facebook.com/permalink.php?story_fbid=456"},
+		{"123", "", ""},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		got := CanonicalPostPermalink(tc.group, tc.post)
+		if got != tc.want {
+			t.Errorf("CanonicalPostPermalink(%q, %q) = %q, want %q", tc.group, tc.post, got, tc.want)
+		}
+	}
+}
+
+// TestRepairPrimaryURL covers the IngestPost rescue path: when the
+// crawler emits a group shell as PrimaryURL but supplies PostFBID + GroupFBID,
+// the pipeline must rewrite the URL to a real post permalink BEFORE
+// ValidateRouting runs.
+func TestRepairPrimaryURL(t *testing.T) {
+	t.Run("group shell + IDs rescue to canonical permalink", func(t *testing.T) {
+		in := Input{
+			SourceType: "post",
+			PrimaryURL: "https://www.facebook.com/groups/123",
+			PostFBID:   "456",
+			GroupFBID:  "123",
+		}
+		repairPrimaryURL(&in)
+		want := "https://www.facebook.com/groups/123/posts/456/"
+		if in.PrimaryURL != want {
+			t.Errorf("PrimaryURL = %q, want %q", in.PrimaryURL, want)
+		}
+		if err := ValidateRouting(in); err != nil {
+			t.Errorf("rescued lead must pass validator, got err=%v", err)
+		}
+	})
+	t.Run("post URL untouched when already valid", func(t *testing.T) {
+		in := Input{
+			SourceType: "post",
+			PrimaryURL: "https://www.facebook.com/groups/123/posts/456",
+			PostFBID:   "456",
+			GroupFBID:  "123",
+		}
+		repairPrimaryURL(&in)
+		if in.PrimaryURL != "https://www.facebook.com/groups/123/posts/456" {
+			t.Errorf("valid post URL must not be rewritten, got %q", in.PrimaryURL)
+		}
+	})
+	t.Run("group shell with no PostFBID stays broken", func(t *testing.T) {
+		in := Input{
+			SourceType: "post",
+			PrimaryURL: "https://www.facebook.com/groups/123",
+		}
+		repairPrimaryURL(&in)
+		if err := ValidateRouting(in); err == nil {
+			t.Error("expected validator to reject group shell with no PostFBID")
+		}
+	})
+	t.Run("group shell with story_fbid in URL recovers post id", func(t *testing.T) {
+		in := Input{
+			SourceType: "post",
+			PrimaryURL: "https://www.facebook.com/foo?story_fbid=789",
+		}
+		repairPrimaryURL(&in)
+		// looksLikePostURL is already true — should be untouched, validator passes.
+		if err := ValidateRouting(in); err != nil {
+			t.Errorf("URL with story_fbid must validate, got err=%v", err)
+		}
+	})
+}
+
+func TestLooksLikePostURL(t *testing.T) {
+	posts := []string{
+		"https://facebook.com/groups/1/posts/2",
+		"https://facebook.com/permalink/2",
+		"https://facebook.com/x?story_fbid=99",
+		"https://facebook.com/photo.php?fbid=42",
+		"https://facebook.com/?multi_permalinks=1",
+	}
+	for _, u := range posts {
+		if !looksLikePostURL(u) {
+			t.Errorf("looksLikePostURL(%q) = false, want true", u)
+		}
+	}
+	shells := []string{
+		"",
+		"https://facebook.com/groups/1",
+		"https://facebook.com/some.user",
+		"https://facebook.com/groups/1/?ref=feed",
+	}
+	for _, u := range shells {
+		if looksLikePostURL(u) {
+			t.Errorf("looksLikePostURL(%q) = true, want false", u)
+		}
 	}
 }
 
