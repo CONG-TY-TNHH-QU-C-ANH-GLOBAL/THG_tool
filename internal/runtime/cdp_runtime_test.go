@@ -27,7 +27,7 @@ func TestCanonicalSourceURL(t *testing.T) {
 			postURL:    "",
 			postFBID:   "456",
 			groupFBID:  "123",
-			want:       "https://www.facebook.com/groups/123/posts/456/",
+			want:       "https://www.facebook.com/groups/123/permalink/456/",
 			wantSignal: URLRepairSynthFromFBID,
 		},
 		{
@@ -59,7 +59,7 @@ func TestCanonicalSourceURL(t *testing.T) {
 			postURL:    "https://www.facebook.com/home.php",
 			postFBID:   "789",
 			groupFBID:  "111",
-			want:       "https://www.facebook.com/groups/111/posts/789/",
+			want:       "https://www.facebook.com/groups/111/permalink/789/",
 			wantSignal: URLRepairSynthFromFBID,
 		},
 		{
@@ -173,7 +173,7 @@ func TestParseRawItems_NewFields(t *testing.T) {
 	if items[0].PostFBID != "222" || items[0].GroupFBID != "111" {
 		t.Errorf("item 0 fbids = %q / %q", items[0].PostFBID, items[0].GroupFBID)
 	}
-	if items[1].SourceURL != "https://www.facebook.com/groups/111/posts/999/" {
+	if items[1].SourceURL != "https://www.facebook.com/groups/111/permalink/999/" {
 		t.Errorf("item 1 synthesised SourceURL = %q", items[1].SourceURL)
 	}
 	if items[2].SourceURL != "" {

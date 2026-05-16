@@ -5,15 +5,21 @@ var THGContentCrawl = (() => {
   // helper ExtractFacebookPostID; the JS side runs first and emits the id so
   // the server does not need URL fallback parsing. Empty when no canonical
   // id pattern matches.
+  //
+  // /permalink/ FIRST because that form always carries the URL-resolvable
+  // story_fbid. /posts/ LAST because Facebook sometimes renders the
+  // FB-internal top_level_post_id there which doesn't resolve as a URL
+  // (the "content isn't available" production bug). When both forms exist
+  // on the same article, this ordering picks the working one.
   function extractPostFBID(url) {
     if (!url) return '';
-    let m = url.match(/\/posts\/(\d+)/);
-    if (m) return m[1];
-    m = url.match(/\/permalink\/(\d+)/);
+    let m = url.match(/\/permalink\/(\d+)/);
     if (m) return m[1];
     m = url.match(/story_fbid=(\d+)/);
     if (m) return m[1];
     m = url.match(/[?&]fbid=(\d+)/);
+    if (m) return m[1];
+    m = url.match(/\/posts\/(\d+)/);
     if (m) return m[1];
     return '';
   }
@@ -25,12 +31,18 @@ var THGContentCrawl = (() => {
   }
 
   // Build a canonical post permalink from the IDs we already extracted.
-  // Mirror of the Go side leadingest.CanonicalPostPermalink — so a lead
-  // whose anchor was lazy-rendered still gets a real post URL on the
-  // dashboard's "Mở bài viết" button.
+  // Mirror of the Go side fburl.CanonicalPostPermalink — so a lead whose
+  // anchor was lazy-rendered still gets a real post URL on the dashboard's
+  // "Mở bài viết" button.
+  //
+  // Uses the /permalink/ URL form (NOT /posts/). /permalink/ is Facebook's
+  // canonical group-navigation path and reliably resolves regardless of
+  // which internal id (story_fbid vs top_level_post_id) the caller passed.
+  // The legacy /posts/ form rejects top_level_post_id post-2026 and was
+  // the source of the "content isn't available" production bug.
   function canonicalPostPermalink(groupFBID, postFBID) {
     if (!postFBID) return '';
-    if (groupFBID) return `https://www.facebook.com/groups/${groupFBID}/posts/${postFBID}/`;
+    if (groupFBID) return `https://www.facebook.com/groups/${groupFBID}/permalink/${postFBID}/`;
     return `https://www.facebook.com/permalink.php?story_fbid=${postFBID}`;
   }
 
@@ -41,29 +53,74 @@ var THGContentCrawl = (() => {
     return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|[?&]fbid=/.test(u);
   }
 
+  // Multi-pass scan preferring URL forms whose post id is guaranteed to
+  // be URL-resolvable. /permalink/ and story_fbid= carry the working
+  // story_fbid; /posts/ may carry top_level_post_id (the dead-link bug).
+  // Comment-count anchors (with comment_id=) often have the working
+  // /permalink/ form embedded, so we DON'T exclude them — instead we
+  // strip the trailing query params before returning.
   function postPermalink(article) {
     const anchors = Array.from(article.querySelectorAll('a[href]'));
-    const match = anchors.find(a => {
-      const href = a.getAttribute('href') || '';
-      // Exclude profile links and common action links
-      if (href.includes('/user/') || href.includes('/hashtag/') || href.includes('comment_id=')) return false;
-      return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|\/groups\/[^/]+\/permalink\//i.test(href) || 
-             (href.includes('__cft__') && !href.includes('/groups/') && !href.includes('facebook.com/groups/'));
-    });
-    
-    // If we didn't find a standard post URL, try to find any link that looks like a timestamp
-    if (!match) {
-        const timeLink = anchors.find(a => {
-            const href = a.getAttribute('href') || '';
-            if (href.includes('/user/') || href.includes('/hashtag/')) return false;
-            // Often timestamps have a hover tooltip or contain numbers/relative time
-            const txt = THGContentShared.textOf(a);
-            return txt.length > 0 && txt.length < 15 && /\d/.test(txt) && !txt.includes('like') && !txt.includes('comment');
-        });
-        if (timeLink) return THGContentShared.normalizeHref(timeLink.getAttribute('href'));
+    const isCandidate = (href) => {
+      if (!href) return false;
+      if (href.includes('/user/') || href.includes('/hashtag/')) return false;
+      return true;
+    };
+    const tiers = [
+      // Tier 1: /permalink/{id}/ — canonical form, always story_fbid.
+      (h) => /\/permalink\/\d+/.test(h),
+      // Tier 2: story_fbid= query — story_fbid spelled explicitly.
+      (h) => /[?&]story_fbid=\d+/.test(h),
+      // Tier 3: fbid= query — usually story_fbid on group surfaces.
+      (h) => /[?&]fbid=\d+/.test(h),
+      // Tier 4: /posts/{id}/ — last resort because FB sometimes renders
+      // top_level_post_id here, producing dead links.
+      (h) => /\/posts\/\d+/.test(h),
+      // Tier 5: multi_permalinks legacy form.
+      (h) => /multi_permalinks=\d+/.test(h),
+    ];
+    let match = null;
+    for (const accept of tiers) {
+      match = anchors.find(a => {
+        const href = a.getAttribute('href') || '';
+        return isCandidate(href) && accept(href);
+      });
+      if (match) break;
     }
-    
-    return THGContentShared.normalizeHref(match?.getAttribute('href') || location.href);
+
+    // Last resort: timestamp link (numeric text, no like/comment text).
+    if (!match) {
+      const timeLink = anchors.find(a => {
+        const href = a.getAttribute('href') || '';
+        if (!isCandidate(href)) return false;
+        const txt = THGContentShared.textOf(a);
+        return txt.length > 0 && txt.length < 15 && /\d/.test(txt) && !txt.includes('like') && !txt.includes('comment');
+      });
+      if (timeLink) return stripPostQueryParams(THGContentShared.normalizeHref(timeLink.getAttribute('href')));
+    }
+
+    return stripPostQueryParams(THGContentShared.normalizeHref(match?.getAttribute('href') || location.href));
+  }
+
+  // Drop comment_id and tracking params from a candidate post URL so the
+  // returned link opens at the top of the post, not on a specific comment.
+  // The path (/permalink/{id}/ or /posts/{id}/) is preserved verbatim.
+  function stripPostQueryParams(raw) {
+    if (!raw) return raw;
+    try {
+      const u = new URL(raw, location.origin);
+      const drop = [];
+      u.searchParams.forEach((_v, k) => {
+        if (k === 'comment_id' || k === 'reply_comment_id' || k === 'notif_id' ||
+            k === 'notif_t' || k === 'ref' || k.indexOf('__') === 0) {
+          drop.push(k);
+        }
+      });
+      drop.forEach(k => u.searchParams.delete(k));
+      return u.toString();
+    } catch (e) {
+      return raw;
+    }
   }
 
   function authorFromArticle(article) {

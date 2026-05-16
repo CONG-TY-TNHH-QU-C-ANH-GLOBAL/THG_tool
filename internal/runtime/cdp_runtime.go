@@ -231,9 +231,12 @@ func extractPostsJS(limit int) string {
   }
 
   // Pull the numeric post id out of any Facebook permalink form.
+  // /permalink/ FIRST because that form always carries the URL-resolvable
+  // story_fbid; /posts/ last because that path sometimes contains the
+  // Facebook-internal top_level_post_id which does NOT resolve as a URL.
   function extractPostID(url) {
     if (!url) return '';
-    var patterns = [/\/posts\/(\d+)/, /\/permalink\/(\d+)/, /story_fbid=(\d+)/, /[?&]fbid=(\d+)/];
+    var patterns = [/\/permalink\/(\d+)/, /story_fbid=(\d+)/, /[?&]fbid=(\d+)/, /\/posts\/(\d+)/];
     for (var i = 0; i < patterns.length; i++) {
       var m = url.match(patterns[i]);
       if (m) return m[1];
@@ -241,18 +244,49 @@ func extractPostsJS(limit int) string {
     return '';
   }
 
-  // data-ft is a JSON blob Facebook embeds on article wrappers; contains
-  // top_level_post_id when the visible permalink anchor isn't rendered yet.
+  // data-ft is a JSON blob Facebook embeds on article wrappers.
+  // story_fbid is the URL-resolvable post id (used in /permalink/).
+  // top_level_post_id is a FB-internal object id that does NOT resolve in
+  // URL paths — only useful as a last-resort fallback. mf_story_key sits
+  // between the two on the reliability scale.
   function postIDFromDataFT(el) {
     var ft = el.getAttribute && el.getAttribute('data-ft');
     if (!ft) return '';
     try {
       var parsed = JSON.parse(ft);
-      if (parsed && parsed.top_level_post_id) return String(parsed.top_level_post_id);
+      if (parsed && parsed.story_fbid) return String(parsed.story_fbid);
       if (parsed && parsed.mf_story_key) return String(parsed.mf_story_key);
+      if (parsed && parsed.top_level_post_id) return String(parsed.top_level_post_id);
     } catch (e) {}
-    var m = ft.match(/"top_level_post_id"\s*:\s*"?(\d+)/);
+    var m = ft.match(/"story_fbid"\s*:\s*"?(\d+)/);
+    if (m) return m[1];
+    m = ft.match(/"mf_story_key"\s*:\s*"?(\d+)/);
+    if (m) return m[1];
+    m = ft.match(/"top_level_post_id"\s*:\s*"?(\d+)/);
     return m ? m[1] : '';
+  }
+
+  // Find the anchor most likely to carry a URL-resolvable post id.
+  // /permalink/ and story_fbid= are always URL-resolvable; /posts/ is
+  // unreliable (FB sometimes renders top_level_post_id there). Multi-pass
+  // scan preserves DOM order WITHIN each tier but never lets a /posts/
+  // anchor win over a /permalink/ anchor in the same article.
+  function findPostAnchor(el) {
+    var anchors = el.querySelectorAll('a[href]');
+    var preferences = [
+      function(h) { return /\/permalink\/\d+/.test(h); },
+      function(h) { return /[?&]story_fbid=\d+/.test(h); },
+      function(h) { return /[?&]fbid=\d+/.test(h); },
+      function(h) { return /\/posts\/\d+/.test(h); },
+    ];
+    for (var p = 0; p < preferences.length; p++) {
+      for (var i = 0; i < anchors.length; i++) {
+        var href = anchors[i].href || '';
+        if (!href) continue;
+        if (preferences[p](href)) return anchors[i];
+      }
+    }
+    return null;
   }
 
   // group_fbid comes from the page URL — when the crawler drifts to home.php
@@ -275,8 +309,8 @@ func extractPostsJS(limit int) string {
     var author = authorEl ? (authorEl.getAttribute('aria-label') || authorEl.innerText.trim()) : '';
     var authorURL = authorEl ? cleanURL(authorEl.href) : '';
 
-    // Post permalink
-    var postLinkEl = el.querySelector('a[href*="/posts/"], a[href*="story_fbid"], a[href*="/permalink/"]');
+    // Post permalink — prefer the most-resolvable URL form available.
+    var postLinkEl = findPostAnchor(el);
     var postURL = postLinkEl ? cleanURL(postLinkEl.href) : '';
     var postFBID = extractPostID(postURL);
     if (!postFBID) {

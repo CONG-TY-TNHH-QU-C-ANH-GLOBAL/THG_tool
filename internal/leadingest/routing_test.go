@@ -119,7 +119,9 @@ func TestCanonicalPostPermalink(t *testing.T) {
 	cases := []struct {
 		group, post, want string
 	}{
-		{"123", "456", "https://www.facebook.com/groups/123/posts/456/"},
+		// /permalink/ is the canonical group navigation form — see
+		// fburl.CanonicalPostPermalink doc on why we don't use /posts/.
+		{"123", "456", "https://www.facebook.com/groups/123/permalink/456/"},
 		{"", "456", "https://www.facebook.com/permalink.php?story_fbid=456"},
 		{"123", "", ""},
 		{"", "", ""},
@@ -145,7 +147,7 @@ func TestRepairPrimaryURL(t *testing.T) {
 			GroupFBID:  "123",
 		}
 		repairPrimaryURL(&in)
-		want := "https://www.facebook.com/groups/123/posts/456/"
+		want := "https://www.facebook.com/groups/123/permalink/456/"
 		if in.PrimaryURL != want {
 			t.Errorf("PrimaryURL = %q, want %q", in.PrimaryURL, want)
 		}

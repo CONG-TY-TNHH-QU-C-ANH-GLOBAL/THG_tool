@@ -43,26 +43,39 @@ func LooksLikeCommentOnlyURL(u string) bool {
 //
 //   groupFBID empty → falls back to the global permalink form.
 //   postFBID empty  → returns "" (no rescue possible).
+//
+// Synthesis uses the /permalink/ URL form (NOT /posts/). The /permalink/
+// form is the canonical Facebook navigation path for group posts and
+// reliably resolves regardless of which internal id (story_fbid vs
+// top_level_post_id) the caller passed in. The /posts/ form historically
+// resolved both but post-2026 changes made it reject top_level_post_id —
+// causing the "content isn't available" production bug where 7/8 crawled
+// leads opened dead pages.
 func CanonicalPostPermalink(groupFBID, postFBID string) string {
 	postFBID = strings.TrimSpace(postFBID)
 	if postFBID == "" {
 		return ""
 	}
 	if g := strings.TrimSpace(groupFBID); g != "" {
-		return "https://www.facebook.com/groups/" + g + "/posts/" + postFBID + "/"
+		return "https://www.facebook.com/groups/" + g + "/permalink/" + postFBID + "/"
 	}
 	return "https://www.facebook.com/permalink.php?story_fbid=" + postFBID
 }
 
 // ExtractFacebookPostID parses the Facebook-side post id out of a
-// permalink. Returns "" when no canonical id is recognisable. Order
-// of markers matters: more specific markers first so story_fbid wins
-// over the bare fbid= patterns.
+// permalink. Returns "" when no canonical id is recognisable.
+//
+// Marker order is load-bearing: /permalink/ FIRST because that path
+// always carries the URL-resolvable story_fbid. /posts/ LAST because
+// Facebook sometimes renders the FB-internal top_level_post_id there,
+// which does NOT resolve as a URL (the "content isn't available"
+// production bug — different from story_fbid). When the same URL has
+// both forms, the /permalink/ extraction is the one we want.
 func ExtractFacebookPostID(u string) string {
 	if u == "" {
 		return ""
 	}
-	for _, marker := range []string{"/posts/", "/permalink/", "story_fbid=", "?fbid=", "&fbid="} {
+	for _, marker := range []string{"/permalink/", "story_fbid=", "?fbid=", "&fbid=", "/posts/"} {
 		i := strings.Index(u, marker)
 		if i < 0 {
 			continue

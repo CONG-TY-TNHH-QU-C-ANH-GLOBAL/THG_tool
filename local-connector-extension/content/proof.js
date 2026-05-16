@@ -379,7 +379,13 @@ var THGContentProof = globalThis.THGContentProof || (() => {
       const t = norm(a.innerText || '').slice(0, 200);
       if (t.indexOf(expected) !== -1) {
         proof.node_matched = true;
-        const link = a.querySelector('a[href*="/posts/"], a[href*="story_fbid"], a[href*="/permalink/"]');
+        // Prefer /permalink/ anchors over /posts/ — the latter sometimes
+        // carries Facebook's top_level_post_id which doesn't resolve as
+        // a URL. Same root cause as the dashboard "content isn't
+        // available" bug closed in the crawler path.
+        const link = a.querySelector('a[href*="/permalink/"]')
+          || a.querySelector('a[href*="story_fbid"]')
+          || a.querySelector('a[href*="/posts/"]');
         if (link) proof.comment_permalink = link.href || '';
         proof.dom_snippet = truncateSnippet(a.innerText || '');
         break;

@@ -27,7 +27,7 @@ func TestRepairLeadSourceURL(t *testing.T) {
 				PostFBID:  "456",
 				GroupFBID: "123",
 			},
-			want: "https://www.facebook.com/groups/123/posts/456/",
+			want: "https://www.facebook.com/groups/123/permalink/456/",
 		},
 		{
 			name: "profile URL + post_fbid only → permalink.php fallback",
@@ -127,7 +127,7 @@ func TestGetLeadsFiltered_RescuesStaleSourceURL(t *testing.T) {
 		t.Fatalf("expected 1 lead, got %d", len(leads))
 	}
 	got := leads[0].SourceURL
-	want := "https://www.facebook.com/groups/123/posts/456/"
+	want := "https://www.facebook.com/groups/123/permalink/456/"
 	if got != want {
 		t.Errorf("read source_url = %q, want %q (repair should have synthesised the post permalink)", got, want)
 	}
