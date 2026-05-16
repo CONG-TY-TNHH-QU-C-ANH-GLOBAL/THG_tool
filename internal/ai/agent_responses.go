@@ -81,6 +81,15 @@ func crawlerQueuedMessage(raw, prompt, sourceLabel string) string {
 	sb.WriteString("\nNguồn: ")
 	sb.WriteString(sourceLabel)
 	sb.WriteString("\n")
+	// When the orchestrator chose to infer targeting from the prompt
+	// instead of pausing to ask for business positioning, surface the
+	// inferred audience + matched signals so the operator can verify
+	// "the system understood what I meant" without opening another panel.
+	// Empty when nothing was inferred — line is simply omitted.
+	if summary := inferredTargetingSummary(prompt); summary != "" {
+		sb.WriteString(summary)
+		sb.WriteString("\n")
+	}
 	if jobID != "" {
 		sb.WriteString("Mã Job: #")
 		sb.WriteString(jobID)

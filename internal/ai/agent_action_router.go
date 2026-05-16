@@ -159,6 +159,79 @@ func isCrawlerTool(name string) bool {
 	}
 }
 
+// promptIsSelfSufficient reports whether the user's prompt already carries
+// enough specificity to dispatch a crawl WITHOUT consulting the brain
+// planner. Three signals together:
+//
+//  1. A Facebook URL (the source).
+//  2. A crawl verb (cào/crawl/scrape/quét) — distinguishes execution
+//     intent from a "what does this group look like?" research question.
+//  3. EITHER an explicit max_items count OR inferred buyer/candidate/
+//     supplier signals from the prompt body. Either is enough; together
+//     they triangulate "the user already specified target + source + qty".
+//
+// When true, the orchestrator skips the brain planner (which can produce
+// over-defensive ask_user responses for self-sufficient prompts) and goes
+// straight to deterministic dispatch. This is the over-defensive-gating
+// bug fix — the brain is for ambiguous prompts, not these.
+//
+// Returning false is the SAFE default: anything ambiguous falls through
+// to the brain so it can still ask for clarification when truly needed.
+func promptIsSelfSufficient(prompt string) bool {
+	if firstFacebookURL(prompt) == "" {
+		return false
+	}
+	folded := foldVietnameseForMatch(strings.ToLower(stripDashboardContext(prompt)))
+	if !containsAnyFolded(folded, []string{"cao", "crawl", "scrape", "quet"}) {
+		return false
+	}
+	// Either an explicit count OR inferred target signals make the prompt
+	// self-describing. We do NOT count target_author_role alone — that
+	// helper defaults to "customers" for empty prompts, so it'd always
+	// trip and the gate would become meaningless.
+	if extractMaxItemsFromPrompt(prompt) > 0 {
+		return true
+	}
+	inferred := inferCrawlTargetingFromPrompt(prompt)
+	return strings.TrimSpace(inferred["target_signals"]) != ""
+}
+
+// inferredTargetingSummary builds the human-readable "Target recognized:"
+// line surfaced in the response when the orchestrator chose to infer the
+// audience instead of asking. Empty string when no signal was inferred —
+// in which case the response simply omits the line.
+//
+// The summary is operator-trust UX, not classifier input. Its job is to
+// answer the user's implicit question "did you understand what I asked
+// for, or did you just blindly crawl?" without making them open another
+// panel to find out.
+func inferredTargetingSummary(prompt string) string {
+	inferred := inferCrawlTargetingFromPrompt(prompt)
+	role := strings.TrimSpace(inferred["target_author_role"])
+	signals := strings.TrimSpace(inferred["target_signals"])
+	if role == "" && signals == "" {
+		return ""
+	}
+	roleLabel := map[string]string{
+		"customers":  "khách hàng tiềm năng (buyer-intent)",
+		"candidates": "ứng viên / nhân sự",
+		"suppliers":  "nhà cung cấp / nguồn hàng",
+		"partners":   "đối tác / reseller",
+	}[role]
+	if roleLabel == "" {
+		roleLabel = role
+	}
+	var parts []string
+	parts = append(parts, "Đối tượng nhận diện: "+roleLabel)
+	if signals != "" {
+		parts = append(parts, "Tín hiệu khớp: "+signals)
+	}
+	if neg := strings.TrimSpace(inferred["negative_signals"]); neg != "" {
+		parts = append(parts, "Lọc bỏ: "+neg)
+	}
+	return strings.Join(parts, "\n")
+}
+
 func promptKeywords(prompt string) string {
 	prompt = stripDashboardContext(prompt)
 	prompt = regexp.MustCompile(`https?://\S+`).ReplaceAllString(prompt, " ")

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/skills"
 	"github.com/thg/scraper/internal/store"
 )
@@ -109,6 +110,58 @@ func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[st
 	return a.ActionHandler(fnName, args)
 }
 
+// runDeterministicFastPath dispatches a crawl/search/comment/inbox action
+// when the prompt matches one of the deterministic patterns recognised by
+// deterministicFacebookAction. Returns (response, handled): handled=false
+// means no pattern matched and the caller should fall through to the
+// next dispatch layer (brain planner or LLM tool-call fallback).
+//
+// Two callers:
+//
+//  1. The over-defensive-gating bypass — when promptIsSelfSufficient
+//     returns true, we run this BEFORE the brain so a fully-specified
+//     prompt never gets a "configure business profile" ask-back.
+//  2. The legacy late-path — after brain decides not to handle and the
+//     preflights pass. Behaviour-identical to the inline code it replaced.
+//
+// accounts is consumed only to pick a ready account when selectedAccountID
+// is 0 AND the matched action requires a browser — same picker the legacy
+// late-path used.
+func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedAccountID int64, accounts []models.Account) (string, bool) {
+	action, args, ok := deterministicFacebookAction(prompt, orgID, selectedAccountID)
+	if !ok || a.ActionHandler == nil {
+		return "", false
+	}
+	// Pick an account when the action requires a browser and the caller
+	// didn't already select one. Mirrors the brain path's behaviour.
+	if selectedAccountID == 0 && brainToolNeedsAccount(action) {
+		if picked := pickReadyFacebookAccountID(accounts); picked > 0 {
+			selectedAccountID = picked
+			args["account_id"] = picked
+		}
+	}
+	if outboundToolUsesPolicy(action) && a.shouldAutoOutbound(prompt, orgID) {
+		args["auto"] = true
+	}
+	args["user_prompt"] = prompt
+	fnResult, err := a.ActionHandler(action, args)
+	success := err == nil
+	raw := fmt.Sprintf("✅ `%s` → %s", action, fnResult)
+	if err != nil {
+		raw = fmt.Sprintf("❌ Lỗi %s: %v", action, err)
+	}
+	responseText := polishActionResponse(action, raw, prompt)
+	actionArgs := mustJSON(args)
+	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, action, actionArgs, success)
+	if success {
+		a.updateMemory(prompt, action, actionArgs)
+		if action == "scrape_group" {
+			_ = a.db.SetContext("last_search_intent", prompt)
+		}
+	}
+	return responseText, true
+}
+
 // ProcessPrompt takes a user prompt, sends it to OpenAI with function definitions,
 // and executes the appropriate action. Returns the AI response text.
 func (a *Agent) ProcessPrompt(ctx context.Context, prompt, source string) (string, error) {
@@ -166,6 +219,19 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 	}
 	// Load accounts for AI account mapping
 	accounts, _ := a.db.GetAllAccounts(orgID)
+
+	// Over-defensive-gating bug fix: when the prompt is self-sufficient
+	// (URL + crawl verb + max_items OR inferred target signals), bypass the
+	// brain planner entirely and go straight to deterministic dispatch.
+	// The brain is for AMBIGUOUS prompts; using it on fully-specified ones
+	// produces "please position your business" ask-backs that the user
+	// already answered in the prompt itself. See promptIsSelfSufficient.
+	if promptIsSelfSufficient(prompt) {
+		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts); handled {
+			return response, nil
+		}
+	}
+
 	if response, handled := a.processBrainPlan(ctx, prompt, source, orgID, selectedAccountID, userContext, accounts); handled {
 		return response, nil
 	}
@@ -186,27 +252,8 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 			selectedAccountID = pickReadyFacebookAccountID(accounts)
 		}
 	}
-	if action, args, ok := deterministicFacebookAction(prompt, orgID, selectedAccountID); ok && a.ActionHandler != nil {
-		if outboundToolUsesPolicy(action) && a.shouldAutoOutbound(prompt, orgID) {
-			args["auto"] = true
-		}
-		args["user_prompt"] = prompt
-		fnResult, err := a.ActionHandler(action, args)
-		success := err == nil
-		raw := fmt.Sprintf("✅ `%s` → %s", action, fnResult)
-		if err != nil {
-			raw = fmt.Sprintf("❌ Lỗi %s: %v", action, err)
-		}
-		responseText := polishActionResponse(action, raw, prompt)
-		actionArgs := mustJSON(args)
-		a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, action, actionArgs, success)
-		if success {
-			a.updateMemory(prompt, action, actionArgs)
-			if action == "scrape_group" {
-				_ = a.db.SetContext("last_search_intent", prompt)
-			}
-		}
-		return responseText, nil
+	if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts); handled {
+		return response, nil
 	}
 
 	// Get semantically relevant few-shot examples
