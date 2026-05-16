@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/thg/scraper/internal/models"
 )
@@ -28,10 +29,19 @@ func (s *Store) InsertInboxMessage(m *models.InboxMessage) (int64, error) {
 }
 
 // InsertPromptLog records an AI prompt interaction.
+//
+// Watchpoint B: writes routing_decision_json alongside the legacy fields.
+// Default '{}' when the caller didn't construct a decision — keeps the
+// column always-valid JSON so dashboards can json.Unmarshal without
+// per-row error handling.
 func (s *Store) InsertPromptLog(p *models.PromptLog) error {
+	decisionJSON := strings.TrimSpace(p.RoutingDecisionJSON)
+	if decisionJSON == "" {
+		decisionJSON = "{}"
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO prompt_logs (org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.OrgID, p.AccountID, p.Source, p.UserPrompt, p.AIResponse, p.ActionTaken, p.ActionArgs, p.Success,
+		`INSERT INTO prompt_logs (org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success, routing_decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.OrgID, p.AccountID, p.Source, p.UserPrompt, p.AIResponse, p.ActionTaken, p.ActionArgs, p.Success, decisionJSON,
 	)
 	return err
 }

@@ -22,8 +22,15 @@ import (
 // future observability surfaces (crawl url-repair distribution, action-
 // ledger health, classifier-decision counters) can be added without
 // re-threading the router.
+//
+// PromptIsSelfSufficient is injected so the conflict-candidate handler
+// can reuse the orchestrator's self-sufficient gate without this package
+// importing internal/ai. nil-tolerant: when nil, the false-negative
+// conflict heuristic returns no rows (the false-positive heuristic still
+// works since it has no internal/ai dependency).
 type Deps struct {
-	DB *store.Store
+	DB                    *store.Store
+	PromptIsSelfSufficient func(prompt string) bool
 }
 
 // Routes registers the GET-only observability endpoints under group.
@@ -33,4 +40,11 @@ func Routes(group fiber.Router, deps Deps) {
 	exec.Get("/distribution", executionDistribution(deps))
 	exec.Get("/recent", executionRecent(deps))
 	exec.Get("/account-health", executionAccountHealth(deps))
+
+	// Watchpoint B — prompt routing observability.
+	pr := group.Group("/observability/prompt-routing")
+	pr.Get("/distribution", promptRoutingDistribution(deps))
+	pr.Get("/recent", promptRoutingRecent(deps))
+	pr.Get("/conflicts", promptRoutingConflicts(deps))
+	pr.Get("/missing-signals", promptRoutingMissingSignals(deps))
 }

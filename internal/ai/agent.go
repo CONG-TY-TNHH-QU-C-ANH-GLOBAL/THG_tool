@@ -116,18 +116,20 @@ func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[st
 // means no pattern matched and the caller should fall through to the
 // next dispatch layer (brain planner or LLM tool-call fallback).
 //
-// Two callers:
+// Two callers (reasonCode disambiguates them on the routing dashboard):
 //
 //  1. The over-defensive-gating bypass — when promptIsSelfSufficient
 //     returns true, we run this BEFORE the brain so a fully-specified
 //     prompt never gets a "configure business profile" ask-back.
+//     reasonCode = ReasonSelfSufficient.
 //  2. The legacy late-path — after brain decides not to handle and the
 //     preflights pass. Behaviour-identical to the inline code it replaced.
+//     reasonCode = ReasonDeterministicMatched.
 //
 // accounts is consumed only to pick a ready account when selectedAccountID
 // is 0 AND the matched action requires a browser — same picker the legacy
 // late-path used.
-func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedAccountID int64, accounts []models.Account) (string, bool) {
+func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedAccountID int64, accounts []models.Account, reasonCode string) (string, bool) {
 	action, args, ok := deterministicFacebookAction(prompt, orgID, selectedAccountID)
 	if !ok || a.ActionHandler == nil {
 		return "", false
@@ -152,7 +154,8 @@ func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedA
 	}
 	responseText := polishActionResponse(action, raw, prompt)
 	actionArgs := mustJSON(args)
-	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, action, actionArgs, success)
+	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, action, actionArgs, success,
+		NewDeterministicDecision(prompt, action, reasonCode))
 	if success {
 		a.updateMemory(prompt, action, actionArgs)
 		if action == "scrape_group" {
@@ -227,7 +230,7 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 	// produces "please position your business" ask-backs that the user
 	// already answered in the prompt itself. See promptIsSelfSufficient.
 	if promptIsSelfSufficient(prompt) {
-		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts); handled {
+		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts, ReasonSelfSufficient); handled {
 			return response, nil
 		}
 	}
@@ -236,23 +239,25 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 		return response, nil
 	}
 	if ok, msg := facebookScopePreflight(prompt); !ok {
-		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "facebook_scope_guard", "", true)
+		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "facebook_scope_guard", "", true, NewScopeGuardDecision(msg))
 		return msg, nil
 	}
 	if requiresFacebookBrowser(prompt) {
 		if ok, msg := businessCalibrationPreflight(userContext, prompt); !ok {
-			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "business_preflight", "", false)
+			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "business_preflight", "", false,
+				NewPreflightDecision(ReasonBusinessPreflightBlocked, msg))
 			return msg, nil
 		}
 		if ok, msg := facebookBrowserPreflight(accounts, selectedAccountID); !ok {
-			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "browser_preflight", "", false)
+			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "browser_preflight", "", false,
+				NewPreflightDecision(ReasonBrowserPreflightBlocked, msg))
 			return msg, nil
 		}
 		if selectedAccountID <= 0 {
 			selectedAccountID = pickReadyFacebookAccountID(accounts)
 		}
 	}
-	if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts); handled {
+	if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts, ReasonDeterministicMatched); handled {
 		return response, nil
 	}
 
@@ -419,8 +424,10 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 		a.learnFromPrompt(prompt)
 	}
 
-	// Log prompt for learning
-	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, actionTaken, actionArgs, success)
+	// Log prompt for learning. LLM fallback path — the OpenAI tool-call
+	// resolved (or didn't), so this is the catch-all routing surface.
+	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, actionTaken, actionArgs, success,
+		NewLLMFallbackDecision(actionTaken, "OpenAI tool-call fallback"))
 
 	// Update memory for learning
 	if success && actionTaken != "chat" {

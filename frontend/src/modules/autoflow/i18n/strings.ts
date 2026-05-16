@@ -23,6 +23,7 @@ export interface DashboardStrings {
     leaderboard: string;
     dataPrivate: string;
     execution: string;
+    routing: string;
     system: string;
     settings: string;
   };
@@ -284,6 +285,7 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       leaderboard: 'Leaderboard',
       dataPrivate: 'Data Private',
       execution: 'Thực thi',
+      routing: 'Định tuyến',
       system: 'HỆ THỐNG',
       settings: 'Settings',
     },
@@ -543,6 +545,7 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       leaderboard: 'Leaderboard',
       dataPrivate: 'Data Private',
       execution: 'Execution',
+      routing: 'Routing',
       system: 'SYSTEM',
       settings: 'Settings',
     },

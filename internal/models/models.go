@@ -212,16 +212,20 @@ type Account struct {
 
 // PromptLog records every AI prompt interaction for learning.
 type PromptLog struct {
-	ID          int64     `json:"id" db:"id"`
-	OrgID       int64     `json:"org_id" db:"org_id"`
-	AccountID   int64     `json:"account_id" db:"account_id"`
-	Source      string    `json:"source" db:"source"` // telegram, dashboard
-	UserPrompt  string    `json:"user_prompt" db:"user_prompt"`
-	AIResponse  string    `json:"ai_response" db:"ai_response"`
-	ActionTaken string    `json:"action_taken" db:"action_taken"` // function name called
-	ActionArgs  string    `json:"action_args" db:"action_args"`   // JSON args
-	Success     bool      `json:"success" db:"success"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	ID          int64  `json:"id" db:"id"`
+	OrgID       int64  `json:"org_id" db:"org_id"`
+	AccountID   int64  `json:"account_id" db:"account_id"`
+	Source      string `json:"source" db:"source"` // telegram, dashboard
+	UserPrompt  string `json:"user_prompt" db:"user_prompt"`
+	AIResponse  string `json:"ai_response" db:"ai_response"`
+	ActionTaken string `json:"action_taken" db:"action_taken"` // function name called
+	ActionArgs  string `json:"action_args" db:"action_args"`   // JSON args
+	Success     bool   `json:"success" db:"success"`
+	// RoutingDecisionJSON is the Watchpoint B substrate: serialised
+	// ai.RoutingDecision capturing route + reason code + missing/inferred
+	// signals. Default "{}" for legacy rows. See internal/ai/routing_decision.go.
+	RoutingDecisionJSON string    `json:"routing_decision_json" db:"routing_decision_json"`
+	CreatedAt           time.Time `json:"created_at" db:"created_at"`
 }
 
 // AIMemory stores learned prompt patterns for few-shot injection.

@@ -196,6 +196,16 @@ func promptIsSelfSufficient(prompt string) bool {
 	return strings.TrimSpace(inferred["target_signals"]) != ""
 }
 
+// PromptIsSelfSufficient is the exported wrapper around the package-
+// private gate. Exported because the observability handler needs the
+// predicate for its false-negative conflict heuristic, and keeping the
+// gate unexported elsewhere prevents accidental use by non-orchestrator
+// code paths. There is exactly one decision logic — both call sites
+// reach it through this name.
+func PromptIsSelfSufficient(prompt string) bool {
+	return promptIsSelfSufficient(prompt)
+}
+
 // inferredTargetingSummary builds the human-readable "Target recognized:"
 // line surfaced in the response when the orchestrator chose to infer the
 // audience instead of asking. Empty string when no signal was inferred —

@@ -15,6 +15,7 @@ import {
   Globe,
   MessageCircle,
   MessageSquare,
+  Route as RouteIcon,
   Settings as SettingsIcon,
   Trophy,
   Users,
@@ -29,8 +30,9 @@ const CommentingView = lazy(() => import('./views/CommentingView'));
 const LeaderboardView = lazy(() => import('./views/LeaderboardView'));
 const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
 const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
+const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
 
-type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'data' | 'execution' | 'settings';
+type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'data' | 'execution' | 'routing' | 'settings';
 
 interface FacebookWorkspaceAppProps {
   workspaceId: string;
@@ -65,6 +67,7 @@ const STAFF_TABS: NavItem[] = [
 const ANALYTICS_TABS: NavItem[] = [
   { id: 'leaderboard', Icon: Trophy },
   { id: 'execution', Icon: Activity },
+  { id: 'routing', Icon: RouteIcon },
   { id: 'data', Icon: Database },
 ];
 
@@ -157,6 +160,7 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       leaderboard: t.nav.leaderboard,
       data: t.nav.dataPrivate,
       execution: t.nav.execution,
+      routing: t.nav.routing,
       settings: t.nav.settings,
     };
     return map[id];
@@ -182,6 +186,8 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
         return <DataPrivateView orgId={orgId} isAdmin={isAdmin} />;
       case 'execution':
         return <ExecutionRealityView orgId={orgId} isAdmin={isAdmin} />;
+      case 'routing':
+        return <PromptRoutingRealityView orgId={orgId} isAdmin={isAdmin} />;
       case 'settings':
         return <SettingsPage org={org} orgId={orgId} isAdmin={isAdmin} />;
       default:

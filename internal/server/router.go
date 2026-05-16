@@ -164,11 +164,19 @@ func (s *Server) registerRoutes() {
 	// GET /api/platform/services returns the resolved PlatformService contracts.
 	serverplatform.Routes(r, serverplatform.Deps{DB: s.db})
 
-	// Step 4a — Verified Execution Observability. Read-only surfaces over
-	// execution_attempts + account_runtime_state for the dashboard. No
-	// auto-decisions live here; the orchestrator (PR-5) consumes the same
-	// data server-side via the store API directly.
-	serverobservability.Routes(r, serverobservability.Deps{DB: s.db})
+	// Step 4a — Verified Execution Observability + Watchpoint B — Prompt
+	// Routing Observability. Read-only surfaces over execution_attempts +
+	// account_runtime_state + prompt_logs.routing_decision_json for the
+	// dashboard. No auto-decisions live here; the orchestrator (PR-5)
+	// consumes the same data server-side via the store API directly.
+	//
+	// PromptIsSelfSufficient is injected so the conflict-candidate handler
+	// can label false-negative deterministic routings — observability
+	// stays decoupled from internal/ai while still using the same gate.
+	serverobservability.Routes(r, serverobservability.Deps{
+		DB:                     s.db,
+		PromptIsSelfSufficient: ai.PromptIsSelfSufficient,
+	})
 
 	// Browser workspace — per-account Chrome management
 	// Chrome Extension connectors are the production path for trusted user devices.

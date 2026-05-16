@@ -444,6 +444,18 @@ func (s *Store) migrate() error {
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_ledger
 		ON execution_attempts(action_ledger_id, started_at DESC)`)
 
+	// Watchpoint B — Prompt Routing Observability. Persistent record of
+	// the orchestrator's routing reasoning for every prompt: which route
+	// (deterministic / brain / llm_fallback / scope_guard / preflight)
+	// fired, what signals the prompt carried vs. missed, and the machine-
+	// readable ReasonCode dashboards aggregate on. Stored as JSON so the
+	// shape can evolve without further migrations. Default '{}' means
+	// "no routing decision recorded yet" — pre-Watchpoint-B rows render
+	// as legacy / unknown on the dashboard.
+	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN routing_decision_json TEXT NOT NULL DEFAULT '{}'`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created
+		ON prompt_logs(org_id, created_at DESC)`)
+
 	// Coordination Plane PR-2: per-account behaviour profile substrate.
 	// Two tables on purpose — static identity vs high-churn runtime counters.
 	// Mixing them produces lock contention once the orchestrator runs hot.

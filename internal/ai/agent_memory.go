@@ -121,16 +121,25 @@ func keywordOverlap(a, b []string) float64 {
 	return float64(intersection) / float64(union)
 }
 
-func (a *Agent) logPrompt(orgID, accountID int64, source, prompt, response, action, args string, success bool) {
+// logPrompt persists a single orchestrator decision to prompt_logs.
+//
+// Watchpoint B: every call site MUST supply a RoutingDecision so the
+// dashboard can aggregate on ReasonCode + Route. Zero-value decision is
+// tolerated (serialises to "{}") but renders as "legacy/unknown" on the
+// routing dashboard — prefer the constructor helpers in routing_decision.go
+// (NewDeterministicDecision / NewBrainDecision / NewPreflightDecision /
+// NewScopeGuardDecision / NewLLMFallbackDecision).
+func (a *Agent) logPrompt(orgID, accountID int64, source, prompt, response, action, args string, success bool, decision RoutingDecision) {
 	pl := &models.PromptLog{
-		OrgID:       orgID,
-		AccountID:   accountID,
-		Source:      source,
-		UserPrompt:  prompt,
-		AIResponse:  response,
-		ActionTaken: action,
-		ActionArgs:  args,
-		Success:     success,
+		OrgID:               orgID,
+		AccountID:           accountID,
+		Source:              source,
+		UserPrompt:          prompt,
+		AIResponse:          response,
+		ActionTaken:         action,
+		ActionArgs:          args,
+		Success:             success,
+		RoutingDecisionJSON: decision.ToJSON(),
 	}
 	_ = a.db.InsertPromptLog(pl)
 }
