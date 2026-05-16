@@ -326,6 +326,30 @@ func (s *Store) migrate() error {
 	// project_thread_role_architecture.md.
 	s.db.Exec(`ALTER TABLE leads ADD COLUMN thread_role TEXT NOT NULL DEFAULT 'intent_originator'`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_thread_role ON leads(org_id, thread_role)`)
+
+	// Classifier observability: log EVERY AI classify decision (kept AND
+	// rejected) so an admin can answer "why did 50/50 posts get rejected".
+	// Without this table, rejected leads have no DB footprint — the ingest
+	// pipeline returns early on Intent=provider_ad/not_relevant/spam.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS classification_log (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id          INTEGER NOT NULL,
+		task_id         TEXT    NOT NULL DEFAULT '',
+		account_id      INTEGER NOT NULL DEFAULT 0,
+		source_url      TEXT    NOT NULL DEFAULT '',
+		author_name     TEXT    NOT NULL DEFAULT '',
+		content_snippet TEXT    NOT NULL DEFAULT '',
+		ai_intent       TEXT    NOT NULL DEFAULT '',
+		ai_priority     TEXT    NOT NULL DEFAULT '',
+		ai_reason       TEXT    NOT NULL DEFAULT '',
+		ai_score        REAL    NOT NULL DEFAULT 0,
+		target_role     TEXT    NOT NULL DEFAULT '',
+		decision        TEXT    NOT NULL,
+		user_prompt     TEXT    NOT NULL DEFAULT '',
+		created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_classification_log_org_task ON classification_log(org_id, task_id, created_at DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_classification_log_org_decision ON classification_log(org_id, decision, created_at DESC)`)
 	// Auto-migrate: add image_path to outbound_messages if missing
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
@@ -386,6 +410,39 @@ func (s *Store) migrate() error {
 	// engagement projection seek directly per URL.
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_engagement
 		ON action_ledger(org_id, target_url, performed_at DESC)`)
+
+	// Step 3 — Execution Verification (see project_execution_verification.md).
+	// One row per attempt at executing an outbound action. The action_ledger
+	// stores the queued INTENT (action × target × account); this stores the
+	// observed REALITY (did the platform accept it? what proof do we have?).
+	// Retries APPEND new rows here, do NOT overwrite — the attempt chain is
+	// itself a coordination signal (retry frequency feeds risk_score).
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS execution_attempts (
+		id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		action_ledger_id  INTEGER NOT NULL DEFAULT 0,
+		outbound_id       INTEGER NOT NULL DEFAULT 0,
+		org_id            INTEGER NOT NULL,
+		account_id        INTEGER NOT NULL DEFAULT 0,
+		target_url        TEXT    NOT NULL DEFAULT '',
+		action_type       TEXT    NOT NULL DEFAULT '',
+		attempt           INTEGER NOT NULL DEFAULT 1,
+		status            TEXT    NOT NULL DEFAULT 'queued',
+		outcome           TEXT    NOT NULL DEFAULT '',
+		failure_reason    TEXT    NOT NULL DEFAULT '',
+		evidence_json     TEXT    NOT NULL DEFAULT '{}',
+		dom_verified      INTEGER NOT NULL DEFAULT 0,
+		network_verified  INTEGER NOT NULL DEFAULT 0,
+		started_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		finished_at       DATETIME
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_outbound
+		ON execution_attempts(outbound_id, attempt DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_org_outcome
+		ON execution_attempts(org_id, outcome, started_at DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_account
+		ON execution_attempts(org_id, account_id, started_at DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_ledger
+		ON execution_attempts(action_ledger_id, started_at DESC)`)
 
 	// Coordination Plane PR-2: per-account behaviour profile substrate.
 	// Two tables on purpose — static identity vs high-churn runtime counters.

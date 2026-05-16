@@ -75,6 +75,12 @@ type Input struct {
 	Reactions int
 	Comments  int
 	Shares    int
+	// URLRepairPath is the crawler-side telemetry for HOW PrimaryURL was
+	// built (anchor_clean | synth_from_fbid | dropped_transient). Surfaces
+	// in Outcome.Signals as `url:<path>` and gets upgraded to
+	// `repaired_in_pipeline` if repairPrimaryURL mutates the URL further.
+	// Phase 1 observability — see project_crawler_trust_phase_plan.md.
+	URLRepairPath string
 }
 
 // Outcome describes what happened to one input.
@@ -159,26 +165,32 @@ func ValidateRouting(in Input) error {
 //
 // Called BEFORE ValidateRouting so a synthesised URL passes the contract
 // and the lead is persisted with a valid "Mở bài viết" target.
-func repairPrimaryURL(in *Input) {
+//
+// Returns true when PrimaryURL was actually mutated — used to upgrade the
+// URL repair telemetry signal to `repaired_in_pipeline` so the Chrome
+// extension ingest path is distinguishable from the crawler-side synth.
+func repairPrimaryURL(in *Input) bool {
 	if in == nil {
-		return
+		return false
 	}
 	primary := strings.TrimSpace(in.PrimaryURL)
 	if primary != "" && LooksLikePostURL(primary) {
-		return
+		return false
 	}
 	postID := strings.TrimSpace(in.PostFBID)
 	if postID == "" {
 		// Last-ditch: try to recover an ID from whatever URL we have.
 		postID = ExtractFacebookPostID(primary)
 		if postID == "" {
-			return
+			return false
 		}
 		in.PostFBID = postID
 	}
 	if synth := CanonicalPostPermalink(in.GroupFBID, postID); synth != "" {
 		in.PrimaryURL = synth
+		return true
 	}
+	return false
 }
 
 // IngestPost classifies a single crawled post and, when qualified, persists
@@ -196,15 +208,25 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	// before validating. Common case: Facebook lazy-renders the post
 	// anchor, the JS falls back to expectedUrl (the group URL), but the
 	// post id was still extracted off the page. See project_lead_routing_gap.md.
-	repairPrimaryURL(&in)
+	pipelineRepaired := repairPrimaryURL(&in)
+
+	// URL repair telemetry — `url:<path>` rides into every Outcome.Signals
+	// so Phase 1 dashboards can count anchor_clean vs synth_from_fbid vs
+	// dropped_transient. `repaired_in_pipeline` flags the Chrome-extension
+	// path where the crawler emitted a shell but we synthesised here.
+	urlSignal := buildURLRepairSignal(in.URLRepairPath, pipelineRepaired)
 
 	// Routing contract — enforced before any scoring/classification work.
 	// A lead with no usable post link is dropped, not stored. The Skipped
 	// reason is surfaced so the crawler bug (not the data) gets fixed.
 	if err := ValidateRouting(in); err != nil {
+		signals := []string{"invalid_routing:" + err.Error()}
+		if urlSignal != "" {
+			signals = append(signals, urlSignal)
+		}
 		return Outcome{
 			Skipped: "invalid_routing",
-			Signals: []string{"invalid_routing:" + err.Error()},
+			Signals: signals,
 		}, nil
 	}
 	sourceType := normalizeSourceType(in.SourceType)
@@ -215,6 +237,9 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	}
 	sr := scorer.ScoreWithGuidance(content, deps.Keywords, in.Reactions, in.Comments, in.AuthorProfileURL, deps.Guidance)
 	signals := append([]string{}, sr.Signals...)
+	if urlSignal != "" {
+		signals = append(signals, urlSignal)
+	}
 	if len(deps.ExtraSignals) > 0 {
 		signals = append(signals, deps.ExtraSignals...)
 	}
@@ -267,9 +292,28 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		}
 		aiResult, err := deps.AIClass.UniversalClassify(classifyCtx, content, in.AuthorName, deps.BusinessProfile, intent)
 		cancel()
+
+		// Observability: build a classification_log row for EVERY outcome
+		// (kept, rejected, errored). Without this, rejected posts have no
+		// DB footprint and "why did all 50 posts reject?" is unanswerable.
+		logEntry := store.ClassificationLogEntry{
+			OrgID:          in.OrgID,
+			TaskID:         in.TaskID,
+			SourceURL:      in.PrimaryURL,
+			AuthorName:     in.AuthorName,
+			ContentSnippet: content,
+			TargetRole:     intent.TargetRole,
+			UserPrompt:     deps.UserPrompt,
+		}
+
 		if err != nil {
 			slog.WarnContext(ctx, "universal classify failed; using deterministic score",
 				"task_id", in.TaskID, "org_id", in.OrgID, "error", err)
+			logEntry.Decision = store.ClassificationError
+			logEntry.AIReason = err.Error()
+			if deps.LegacyDB != nil {
+				_ = deps.LegacyDB.RecordClassification(ctx, logEntry)
+			}
 		} else if aiResult != nil {
 			// Hard-guard against LLM assigning hot/warm priority to off-target intents
 			if intent.TargetRole != "" && aiResult.Intent != "not_relevant" && aiResult.Intent != "spam" {
@@ -285,10 +329,19 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 				}
 			}
 
+			logEntry.AIIntent = aiResult.Intent
+			logEntry.AIPriority = aiResult.Priority
+			logEntry.AIReason = aiResult.Reason
+			logEntry.AIScore = aiResult.Score
+
 			if aiResult.Priority == "rejected" || aiResult.Intent == "not_relevant" || aiResult.Intent == "spam" || aiResult.Intent == "provider_ad" {
 				out.Skipped = "rejected"
 				out.Category = "rejected"
 				out.Signals = append(out.Signals, "ai_intent:"+aiResult.Intent, "ai_reason:"+aiResult.Reason)
+				logEntry.Decision = store.ClassificationRejected
+				if deps.LegacyDB != nil {
+					_ = deps.LegacyDB.RecordClassification(ctx, logEntry)
+				}
 				return out, nil
 			}
 			out.Score = aiResult.Score * 100
@@ -301,6 +354,14 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			)
 			if out.Category == "" {
 				out.Category = "cold"
+			}
+			if out.Category == "cold" {
+				logEntry.Decision = store.ClassificationCold
+			} else {
+				logEntry.Decision = store.ClassificationKept
+			}
+			if deps.LegacyDB != nil {
+				_ = deps.LegacyDB.RecordClassification(ctx, logEntry)
 			}
 		}
 	}
@@ -410,6 +471,24 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	}
 
 	return out, nil
+}
+
+// buildURLRepairSignal turns the crawler-emitted URLRepairPath into the
+// `url:<path>` signal that rides through Outcome.Signals. When the in-
+// pipeline repairPrimaryURL mutated the URL (Chrome-extension path where
+// the crawler emitted a shell), the signal is upgraded so the two ingest
+// surfaces are distinguishable in telemetry.
+func buildURLRepairSignal(crawlerPath string, pipelineRepaired bool) string {
+	path := strings.TrimSpace(crawlerPath)
+	if pipelineRepaired {
+		// In-pipeline synth supersedes whatever the crawler reported —
+		// the URL the lead actually carries was built here.
+		return "url:repaired_in_pipeline"
+	}
+	if path == "" {
+		return ""
+	}
+	return "url:" + path
 }
 
 func matchAny(content string, phrases []string) string {

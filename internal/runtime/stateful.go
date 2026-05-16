@@ -162,6 +162,8 @@ func (s *StatefulSession) FetchNext(batchSize int) ([]RawItem, error) {
 		Author    string `json:"author"`
 		AuthorURL string `json:"author_url"`
 		PostURL   string `json:"post_url"`
+		PostFBID  string `json:"post_fbid"`
+		GroupFBID string `json:"group_fbid"`
 		Reactions int    `json:"reactions"`
 		Comments  int    `json:"comments"`
 	}
@@ -185,12 +187,16 @@ func (s *StatefulSession) FetchNext(batchSize int) ([]RawItem, error) {
 		if s.cache != nil {
 			s.cache.Mark(r.PostURL, key)
 		}
+		url, repairPath := canonicalSourceURL(r.PostURL, r.PostFBID, r.GroupFBID)
 		items = append(items, RawItem{
 			ID:               key,
 			Content:          r.Content,
 			AuthorName:       r.Author,
 			AuthorProfileURL: r.AuthorURL,
-			SourceURL:        coalesce(r.PostURL, ""),
+			SourceURL:        url,
+			PostFBID:         r.PostFBID,
+			GroupFBID:        r.GroupFBID,
+			URLRepairPath:    repairPath,
 			Timestamp:        time.Now().UTC(),
 			Reactions:        r.Reactions,
 			Comments:         r.Comments,

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/input"
@@ -145,4 +146,47 @@ func checkBanSignals(ctx context.Context) error {
 		return CDPError{Code: ErrFacebookBanned, Message: "ban page detected: " + title}
 	}
 	return nil
+}
+
+// AssertInGroup verifies the current page URL still belongs to the expected
+// Facebook group. Returns ErrFacebookContextDrift when the crawler has
+// navigated out (e.g. fallback to home.php, profile redirect, feed escape).
+// Returns nil silently when expectedGroupID is empty — non-group sources
+// (search, profile, single post) are exempt from this check.
+func AssertInGroup(ctx context.Context, expectedGroupID string) error {
+	expected := strings.TrimSpace(expectedGroupID)
+	if expected == "" {
+		return nil
+	}
+	var url string
+	if err := chromedp.Run(ctx, chromedp.Location(&url)); err != nil {
+		return nil // can't check — don't block
+	}
+	got := parseGroupID(url)
+	if got == expected {
+		return nil
+	}
+	return CDPError{
+		Code:    ErrFacebookContextDrift,
+		Message: "expected group " + expected + " but page is " + url,
+	}
+}
+
+// parseGroupID extracts the {id} segment from a /groups/{id}/... URL. The
+// segment is whatever follows /groups/ up to the next slash or query
+// separator. Returns "" when the URL is not a group URL (home feed,
+// profile, watch, etc.) — the caller treats empty as drift.
+func parseGroupID(u string) string {
+	_, rest, ok := strings.Cut(u, "/groups/")
+	if !ok {
+		return ""
+	}
+	end := len(rest)
+	for j, c := range rest {
+		if c == '/' || c == '?' || c == '#' {
+			end = j
+			break
+		}
+	}
+	return rest[:end]
 }

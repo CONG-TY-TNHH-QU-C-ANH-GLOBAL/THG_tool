@@ -5,7 +5,12 @@ import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus, LeadThreadRole } from '../../types';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
-import { deleteAllLeads, reclassifyLeads } from '../../services/leadsService';
+import {
+  type ClassificationEntry,
+  deleteAllLeads,
+  getRecentClassifications,
+  reclassifyLeads,
+} from '../../services/leadsService';
 
 interface LeadsViewProps {
   orgId: string;
@@ -195,6 +200,33 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [classifyDebugOpen, setClassifyDebugOpen] = useState(false);
+  const [classifyEntries, setClassifyEntries] = useState<ClassificationEntry[]>([]);
+  const [classifyFilter, setClassifyFilter] = useState<'all' | 'rejected' | 'kept' | 'cold' | 'error'>('rejected');
+  const [classifyBusy, setClassifyBusy] = useState(false);
+  const [classifyErr, setClassifyErr] = useState('');
+
+  const loadClassifications = async (filter: 'all' | 'rejected' | 'kept' | 'cold' | 'error') => {
+    setClassifyBusy(true);
+    setClassifyErr('');
+    try {
+      const res = await getRecentClassifications({
+        decision: filter === 'all' ? undefined : filter,
+        limit: 100,
+      });
+      setClassifyEntries(res.classifications ?? []);
+    } catch (err) {
+      setClassifyErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setClassifyBusy(false);
+    }
+  };
+
+  const openClassifyDebug = () => {
+    setClassifyDebugOpen(true);
+    void loadClassifications(classifyFilter);
+  };
+
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [reclassifyPrompt, setReclassifyPrompt] = useState('');
   const [reclassifyTargetRole, setReclassifyTargetRole] = useState('');
@@ -359,6 +391,17 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
           <button
             className="btn btn-ghost btn-sm"
             type="button"
+            onClick={openClassifyDebug}
+            title={lang === 'vi' ? 'Xem AI loại bài như thế nào (kept / rejected + lý do)' : 'See how the AI classifies posts (kept / rejected + reason)'}
+          >
+            <Wand2 size={13} />
+            {lang === 'vi' ? 'Debug AI' : 'AI debug'}
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
             onClick={() => { setReclassifyOpen(true); setReclassifyMsg(''); setReclassifyError(false); }}
             title={lang === 'vi' ? 'Chạy lại AI phân loại trên các lead cũ' : 'Re-run AI classifier on existing leads'}
           >
@@ -386,6 +429,148 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
           {t.common.refresh}
         </button>
       </header>
+
+      {classifyDebugOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'var(--modal-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
+          onClick={() => setClassifyDebugOpen(false)}
+        >
+          <div
+            className="card"
+            style={{ width: 900, maxWidth: '94vw', maxHeight: '86vh', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <div>
+                <div className="eyebrow"><span className="dot" />AI DEBUG</div>
+                <h3 style={{ marginTop: 4, fontSize: 18 }}>
+                  {lang === 'vi' ? 'AI đã loại bài như thế nào' : 'How the AI classified posts'}
+                </h3>
+                <p style={{ color: 'var(--text-mute)', fontSize: 12.5, marginTop: 4 }}>
+                  {lang === 'vi'
+                    ? 'Mỗi bài đi qua classifier đều được log lại — cả bài được giữ lẫn bài bị loại — kèm intent + lý do của AI.'
+                    : 'Every post that hits the classifier is logged — kept and rejected alike — with the AI intent and reason.'}
+                </p>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setClassifyDebugOpen(false)}
+              >
+                {lang === 'vi' ? 'Đóng' : 'Close'}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {(['rejected', 'cold', 'kept', 'error', 'all'] as const).map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  className={`filter-pill ${classifyFilter === f ? 'is-active' : ''}`}
+                  onClick={() => { setClassifyFilter(f); void loadClassifications(f); }}
+                >
+                  {f === 'all' ? (lang === 'vi' ? 'Tất cả' : 'All')
+                    : f === 'kept' ? (lang === 'vi' ? 'Được giữ' : 'Kept')
+                    : f === 'rejected' ? (lang === 'vi' ? 'Bị loại' : 'Rejected')
+                    : f === 'cold' ? 'Cold'
+                    : (lang === 'vi' ? 'Lỗi AI' : 'AI error')}
+                </button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void loadClassifications(classifyFilter)}
+                disabled={classifyBusy}
+              >
+                <RefreshCw size={13} /> {classifyBusy ? (lang === 'vi' ? 'Đang tải…' : 'Loading…') : (lang === 'vi' ? 'Tải lại' : 'Refresh')}
+              </button>
+            </div>
+
+            {classifyErr && <div className="auth-error">{classifyErr}</div>}
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {classifyEntries.length === 0 && !classifyBusy && (
+                <div className="empty" style={{ margin: 20 }}>
+                  <div className="eyebrow"><span className="dot" />KHÔNG CÓ DỮ LIỆU</div>
+                  <h3>{lang === 'vi' ? 'Chưa có classification nào' : 'No classifications yet'}</h3>
+                  <p>{lang === 'vi' ? 'Chạy thử một đợt crawl rồi quay lại đây.' : 'Run a crawl first then come back.'}</p>
+                </div>
+              )}
+              {classifyEntries.map(entry => {
+                const decisionColor =
+                  entry.decision === 'kept' ? 'var(--ok)'
+                  : entry.decision === 'rejected' ? 'var(--hot)'
+                  : entry.decision === 'cold' ? 'var(--text-mute)'
+                  : entry.decision === 'error' ? 'var(--warn)'
+                  : 'var(--text-faint)';
+                return (
+                  <div
+                    key={entry.id}
+                    style={{
+                      padding: 12,
+                      border: '1px solid var(--line)',
+                      borderRadius: 10,
+                      background: 'var(--bg-elev)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{entry.author_name || '(no author)'}</span>
+                      <span className="tag" style={{ fontSize: 10, color: decisionColor, borderColor: decisionColor }}>
+                        {entry.decision.toUpperCase()}
+                      </span>
+                      {entry.ai_intent && (
+                        <span className="tag tag-mute" style={{ fontSize: 10 }}>
+                          intent: {entry.ai_intent}
+                        </span>
+                      )}
+                      {entry.ai_priority && (
+                        <span className="tag tag-mute" style={{ fontSize: 10 }}>
+                          priority: {entry.ai_priority}
+                        </span>
+                      )}
+                      {entry.target_role && (
+                        <span className="tag tag-mute" style={{ fontSize: 10 }}>
+                          target: {entry.target_role}
+                        </span>
+                      )}
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+                        score {entry.ai_score.toFixed(2)}
+                      </span>
+                      <div style={{ flex: 1 }} />
+                      {entry.source_url && (
+                        <a
+                          href={entry.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mono"
+                          style={{ fontSize: 11, color: 'var(--text-faint)' }}
+                        >
+                          {entry.source_url.slice(0, 60)}{entry.source_url.length > 60 ? '…' : ''}
+                        </a>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 12.5, color: 'var(--text)', margin: 0, lineHeight: 1.5 }}>
+                      {entry.content_snippet || '(no content)'}
+                    </p>
+                    {entry.ai_reason && (
+                      <p style={{ fontSize: 12, color: 'var(--text-mute)', margin: 0, fontStyle: 'italic' }}>
+                        AI: {entry.ai_reason}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {reclassifyOpen && (
         <div

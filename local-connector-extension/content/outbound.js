@@ -258,6 +258,15 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
 
   async function executeComment(content) {
     await dismissBlockingOverlays();
+
+    // Step 3b — snapshot pre-submit state so the proof builder can
+    // compute count_increased and duplicate without relying on the
+    // executor's own beliefs.
+    const proof = THGContentProof || null;
+    const fbUID = proof?.currentFBUserID() || '';
+    const preCount = proof ? proof.snapshotCommentCount() : 0;
+    const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
+
     const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
     const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     const commentButton = buttons.find(el => {
@@ -275,53 +284,94 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       await wait(900);
       editor = findCommentEditor(scope) || findCommentEditor(document);
     }
-    if (!editor) return { ok: false, error: 'comment_box_not_found' };
-    if (!setEditableText(editor, content)) return { ok: false, error: 'comment_text_insert_failed' };
+    if (!editor) return commentResult(false, 'comment_box_not_found', null, { content, userID: fbUID, preCount, duplicate: preMatched });
+    if (!setEditableText(editor, content)) return commentResult(false, 'comment_text_insert_failed', null, { content, userID: fbUID, preCount, duplicate: preMatched });
     const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
-    if (!inserted) return { ok: false, error: 'comment_text_not_confirmed' };
+    if (!inserted) return commentResult(false, 'comment_text_not_confirmed', null, { content, userID: fbUID, preCount, duplicate: preMatched });
 
     const submitButtons = findSubmitButtons(editor, [commentButton]);
     for (const submit of submitButtons) {
       if (submit && clickLikeUser(submit)) {
         const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
-        if (cleared) return { ok: true, detail: 'sent_comment_button' };
+        if (cleared) {
+          // Settle delay — give the DOM a moment to render the new comment
+          // node before we walk it for proof. Without this, the verifier
+          // often misses the node and downgrades to optimistic_success.
+          await wait(700);
+          return commentResult(true, '', 'sent_comment_button', { content, userID: fbUID, preCount, duplicate: preMatched });
+        }
       }
       await wait(400);
     }
 
     if (pressEnter(editor)) {
       const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
-      if (cleared) return { ok: true, detail: 'sent_comment_enter' };
+      if (cleared) {
+        await wait(700);
+        return commentResult(true, '', 'sent_comment_enter', { content, userID: fbUID, preCount, duplicate: preMatched });
+      }
     }
 
-    return { ok: false, error: submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found' };
+    return commentResult(false, submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found', null, { content, userID: fbUID, preCount, duplicate: preMatched });
+  }
+
+  // commentResult bundles the executor's verdict + the DOM proof the
+  // backend's ClassifyExtensionReport consumes. ok=false routes through
+  // the proof builder too so platform-reject banners (rate_limited /
+  // blocked / redirected_feed) override the executor's generic error code.
+  function commentResult(ok, errorCode, detail, ctx) {
+    const proof = THGContentProof ? THGContentProof.buildCommentProof({
+      ok, errorCode, content: ctx.content, userID: ctx.userID, preCount: ctx.preCount, duplicate: ctx.duplicate
+    }) : null;
+    const base = ok
+      ? { ok: true, detail: detail || 'sent_comment' }
+      : { ok: false, error: errorCode || 'comment_failed' };
+    return proof ? { ...base, proof } : base;
   }
 
   async function executeInbox(content) {
     await dismissBlockingOverlays();
+    const proof = THGContentProof || null;
+    // Snapshot the last bubble pre-submit so the proof builder can detect
+    // whether a NEW bubble appeared (vs. an existing one already matching
+    // our text — the duplicate / idempotent case).
+    const preBubbleHash = proof ? proof.snapshotLastBubble() : '';
+
     const messageKeys = ['message', 'messenger', 'send message', 'nhan tin'];
     const sendKeys = ['send', 'press enter to send', 'gui'];
     let editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
     if (!editors.length) {
       const messageButton = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"]')).filter(visible)
         .find(el => hasAny(labelOf(el), messageKeys));
-      if (!messageButton || !clickLikeUser(messageButton)) return { ok: false, error: 'message_button_not_found' };
+      if (!messageButton || !clickLikeUser(messageButton)) return inboxResult(false, 'message_button_not_found', null, { content, preBubbleHash });
       await wait(1800);
       editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
     }
     let editor = editors.find(el => hasAny(labelOf(el), messageKeys) || norm(el.getAttribute('role')) === 'textbox');
     if (!editor) editor = editors[editors.length - 1];
-    if (!editor) return { ok: false, error: 'message_box_not_found' };
-    if (!setEditableText(editor, content)) return { ok: false, error: 'inbox_text_insert_failed' };
+    if (!editor) return inboxResult(false, 'message_box_not_found', null, { content, preBubbleHash });
+    if (!setEditableText(editor, content)) return inboxResult(false, 'inbox_text_insert_failed', null, { content, preBubbleHash });
     await wait(700);
     const scope = editor.closest('[role="dialog"], form, div[aria-label]') || document;
     const send = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).find(el => {
       const label = labelOf(el);
       return hasAny(label, sendKeys) && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
     });
-    if (!send || !clickLikeUser(send)) return { ok: false, error: 'inbox_submit_not_found' };
-    await wait(1000);
-    return { ok: true, detail: 'sent_inbox_button' };
+    if (!send || !clickLikeUser(send)) return inboxResult(false, 'inbox_submit_not_found', null, { content, preBubbleHash });
+    // Longer settle for bubble + timestamp to render — FB animates the
+    // bubble in, and "Just now" copy can lag the bubble itself.
+    await wait(1500);
+    return inboxResult(true, '', 'sent_inbox_button', { content, preBubbleHash });
+  }
+
+  function inboxResult(ok, errorCode, detail, ctx) {
+    const proof = THGContentProof ? THGContentProof.buildInboxProof({
+      ok, errorCode, content: ctx.content, preBubbleHash: ctx.preBubbleHash
+    }) : null;
+    const base = ok
+      ? { ok: true, detail: detail || 'sent_inbox' }
+      : { ok: false, error: errorCode || 'inbox_failed' };
+    return proof ? { ...base, proof } : base;
   }
 
   async function executePost(content) {
@@ -331,12 +381,12 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const composer = Array.from(document.querySelectorAll('div[role="button"], button, textarea, [contenteditable="true"], [aria-label]'))
       .filter(visible)
       .find(el => hasAny(labelOf(el), composerKeys));
-    if (!composer || !clickLikeUser(composer)) return { ok: false, error: 'post_composer_not_found' };
+    if (!composer || !clickLikeUser(composer)) return postResult(false, 'post_composer_not_found', null, { content });
     await wait(1500);
     const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
     let editor = editors.find(el => norm(el.getAttribute('role')) === 'textbox') || editors[editors.length - 1];
-    if (!editor) return { ok: false, error: 'post_editor_not_found' };
-    if (!setEditableText(editor, content)) return { ok: false, error: 'post_text_insert_failed' };
+    if (!editor) return postResult(false, 'post_editor_not_found', null, { content });
+    if (!setEditableText(editor, content)) return postResult(false, 'post_text_insert_failed', null, { content });
     await wait(900);
     const scope = editor.closest('[role="dialog"], form') || document;
     const postButton = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).reverse().find(el => {
@@ -344,9 +394,21 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       return hasAny(label, postKeys) && !label.includes('comment') && !label.includes('cancel') &&
         el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
     });
-    if (!postButton || !clickLikeUser(postButton)) return { ok: false, error: 'post_submit_not_found' };
-    await wait(1500);
-    return { ok: true, detail: 'sent_post_button' };
+    if (!postButton || !clickLikeUser(postButton)) return postResult(false, 'post_submit_not_found', null, { content });
+    // Generous settle — posting closes the composer dialog and re-renders
+    // the feed; we need both to complete before walking the DOM for proof.
+    await wait(2500);
+    return postResult(true, '', 'sent_post_button', { content });
+  }
+
+  function postResult(ok, errorCode, detail, ctx) {
+    const proof = THGContentProof ? THGContentProof.buildPostProof({
+      ok, errorCode, content: ctx.content
+    }) : null;
+    const base = ok
+      ? { ok: true, detail: detail || 'sent_post' }
+      : { ok: false, error: errorCode || 'post_failed' };
+    return proof ? { ...base, proof } : base;
   }
 
   async function executeOutbound(message) {

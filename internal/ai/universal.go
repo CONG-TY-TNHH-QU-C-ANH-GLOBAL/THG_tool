@@ -104,6 +104,37 @@ func InferTargetRoleFromPrompt(prompt string) string {
 		return "potential_customer"
 	}
 
+	// Seller / shop / store as the CUSTOMER for a service the user offers
+	// (fulfillment, printing, shipping, dropship, POD). Before this rule
+	// the prompt "seller có nhu cầu fulfill POD" produced target_role=""
+	// → the classifier defaulted to its "reject anyone advertising/selling"
+	// guard and rejected every seller post in the group. The user's actual
+	// business model: sellers ARE customers (they buy fulfillment from us).
+	//
+	// Order-sensitive: must come BEFORE the partner rule because "supplier"
+	// / "fulfillment" co-occur in vendor language. We only match when there
+	// is an explicit need/want anchor OR a service-the-user-offers anchor
+	// alongside a seller-subject anchor — bare "seller" alone is ambiguous.
+	needAnchor := containsAny(lower, []string{
+		"có nhu cầu", "co nhu cau", "cần ", "can ",
+		"đang cần", "dang can", "đang tìm", "dang tim",
+		"looking for", "need ", "needs ", "want ",
+	})
+	subjectAnchor := containsAny(lower, []string{
+		"seller", "shop", "store", "người bán", "nguoi ban",
+		"chủ shop", "chu shop", "tệp seller", "tep seller",
+	})
+	serviceAnchor := containsAny(lower, []string{
+		"fulfill", "fullfill",
+		"dropship", "drop ship", "drop-ship",
+		"pod", "print on demand", "print-on-demand",
+		"vận chuyển", "van chuyen", "shipping",
+		"in ấn", "in an", "printing",
+	})
+	if (subjectAnchor && (needAnchor || serviceAnchor)) || (needAnchor && serviceAnchor) {
+		return "potential_customer"
+	}
+
 	// Partner / supplier / reseller.
 	if containsAny(lower, []string{
 		"đối tác", "doi tac", "nhà cung cấp", "nha cung cap",

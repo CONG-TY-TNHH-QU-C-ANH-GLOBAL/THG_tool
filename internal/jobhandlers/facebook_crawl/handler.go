@@ -220,14 +220,23 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 			if err != nil {
 				// Invariant CHECKPOINT: human-verification gate detected — never retry.
 				var cdpErr runtime.CDPError
-				if errors.As(err, &cdpErr) && runtime.IsBanSignal(err) {
-					slog.WarnContext(ctx, "ban signal from Facebook",
-						"job_id", job.ID, "code", cdpErr.Code.String(), "src", src.URL)
-					if cdpErr.Code == runtime.ErrFacebookCheckpoint {
-						return `{"status":"human_required","reason":"facebook_checkpoint"}`, nil
+				if errors.As(err, &cdpErr) {
+					if runtime.IsBanSignal(err) {
+						slog.WarnContext(ctx, "ban signal from Facebook",
+							"job_id", job.ID, "code", cdpErr.Code.String(), "src", src.URL)
+						if cdpErr.Code == runtime.ErrFacebookCheckpoint {
+							return `{"status":"human_required","reason":"facebook_checkpoint"}`, nil
+						}
+						// Logout / banned — abort, no human intervention queued.
+						return `{"status":"aborted","reason":"` + cdpErr.Code.String() + `"}`, nil
 					}
-					// Logout / banned — abort, no human intervention queued.
-					return `{"status":"aborted","reason":"` + cdpErr.Code.String() + `"}`, nil
+					if cdpErr.Code == runtime.ErrFacebookContextDrift {
+						// Crawler escaped the target group (home.php, redirect).
+						// Hard-abort rather than continue scraping off-target posts.
+						slog.WarnContext(ctx, "context drift — aborting crawl",
+							"job_id", job.ID, "src", src.URL, "detail", cdpErr.Message)
+						return `{"status":"aborted","reason":"context_drift"}`, nil
+					}
 				}
 				return "", fmt.Errorf("fetch batch (src=%s offset=%d): %w", src.URL, offset, err)
 			}
@@ -237,6 +246,20 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 
 			for _, item := range rawItems {
 				stats.TotalFetched++
+
+				// URL-repair telemetry — emit BEFORE dedup/filter so every
+				// extracted item is counted, including ones that get dropped
+				// downstream. The `event` key lets log aggregators group
+				// counts by path (anchor_clean | synth_from_fbid | dropped_transient).
+				if item.URLRepairPath != "" {
+					slog.InfoContext(ctx, "crawler url repair",
+						"event", "crawler.url_repair",
+						"path", item.URLRepairPath,
+						"org_id", task.OrgID,
+						"task_id", job.TaskID,
+						"src", src.URL,
+					)
+				}
 
 				if seen[item.ID] {
 					stats.TotalDeduped++
@@ -301,6 +324,9 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					OrgID:            task.OrgID,
 					SourceType:       "post",
 					PrimaryURL:       item.SourceURL,
+					PostFBID:         item.PostFBID,
+					GroupFBID:        item.GroupFBID,
+					URLRepairPath:    item.URLRepairPath,
 					AuthorName:       item.AuthorName,
 					AuthorProfileURL: item.AuthorProfileURL,
 					Content:          item.Content,

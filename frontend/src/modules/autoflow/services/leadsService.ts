@@ -103,6 +103,51 @@ export async function reclassifyLeads(orgId: string, body: ReclassifyRequest): P
   return api.post<ReclassifyResponse>('/leads/reclassify', body);
 }
 
+// Classifier observability — answers "why did the AI reject every post
+// in my crawl?". Admin-only on the backend.
+export interface ClassificationEntry {
+  id: number;
+  org_id: number;
+  task_id: string;
+  account_id: number;
+  source_url: string;
+  author_name: string;
+  content_snippet: string;
+  ai_intent: string;
+  ai_priority: string;
+  ai_reason: string;
+  ai_score: number;
+  target_role: string;
+  decision: 'kept' | 'rejected' | 'cold' | 'error' | 'skipped_filter';
+  user_prompt: string;
+  created_at: string;
+}
+
+export interface ClassificationBreakdown {
+  total: number;
+  kept: number;
+  rejected: number;
+  by_intent: Record<string, number>;
+  by_reason: Array<{ reason: string; count: number }>;
+}
+
+export interface ClassificationsResponse {
+  classifications: ClassificationEntry[];
+  count: number;
+  breakdown: ClassificationBreakdown | null;
+}
+
+export async function getRecentClassifications(
+  params: { taskId?: string; decision?: string; limit?: number } = {},
+): Promise<ClassificationsResponse> {
+  const q = new URLSearchParams();
+  if (params.taskId) q.set('task_id', params.taskId);
+  if (params.decision) q.set('decision', params.decision);
+  if (params.limit) q.set('limit', String(params.limit));
+  const qs = q.toString();
+  return api.get<ClassificationsResponse>('/leads/classifications/recent' + (qs ? '?' + qs : ''));
+}
+
 // Lead Engagement batch fetch — see project_distributed_coordination.md PR-4.
 // Returns a map keyed by lead_id; missing ids resolve to undefined (caller
 // must default to 'priority' for display purposes).

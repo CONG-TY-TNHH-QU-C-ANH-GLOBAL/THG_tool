@@ -258,6 +258,38 @@ func deleteAllLeads(deps Deps) fiber.Handler {
 	}
 }
 
+// getClassificationsRecent handles GET /api/leads/classifications/recent
+// Admin-only diagnostic surface — answers "why did the AI reject every
+// post in my crawl?". Filters: ?task_id=... (single batch),
+// ?decision=kept|rejected|cold|error, ?limit=N (capped at 500).
+func getClassificationsRecent(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
+		taskID := strings.TrimSpace(c.Query("task_id", ""))
+		decision := strings.TrimSpace(c.Query("decision", ""))
+		limit, _ := strconv.Atoi(c.Query("limit", "50"))
+		entries, err := deps.DB.ListRecentClassifications(c.Context(), orgID, taskID, decision, limit)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// If filtering by task_id, also surface the rejection-reason breakdown.
+		var breakdown any
+		if taskID != "" {
+			if b, err := deps.DB.SummariseClassifications(c.Context(), orgID, taskID); err == nil {
+				breakdown = b
+			}
+		}
+		return c.JSON(fiber.Map{
+			"classifications": entries,
+			"count":           len(entries),
+			"breakdown":       breakdown,
+		})
+	}
+}
+
 // getNiches handles GET /api/niches
 func getNiches(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {

@@ -195,3 +195,39 @@ func (s *Store) MarkActionLedgerOutcome(ctx context.Context, ledgerID int64, out
 	}
 	return nil
 }
+
+// MarkActionLedgerOutcomeByOutbound updates the ledger entry tied to a given
+// outbound_messages.id. The Execution Verification layer (Step 3) uses this
+// as its single write-point: the verifier classifies an outcome and propagates
+// it to the ledger by outbound id without needing to know the ledger id
+// separately. Returns (ledgerID, error) so the caller can record the linkage
+// on the execution_attempts row. ledgerID=0 when no matching ledger row
+// exists (rare — possible for manually-sent outbounds that bypassed the queue).
+func (s *Store) MarkActionLedgerOutcomeByOutbound(ctx context.Context, orgID, outboundID int64, outcome, reason string) (int64, error) {
+	if orgID <= 0 || outboundID <= 0 {
+		return 0, fmt.Errorf("org_id and outbound_id are required")
+	}
+	outcome = strings.TrimSpace(outcome)
+	if outcome == "" {
+		outcome = LedgerOutcomeQueued
+	}
+	var ledgerID int64
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id FROM action_ledger WHERE org_id = ? AND outbound_id = ?
+		  ORDER BY performed_at DESC LIMIT 1`,
+		orgID, outboundID,
+	)
+	if err := row.Scan(&ledgerID); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE action_ledger SET outcome = ?, reason = ? WHERE id = ?`,
+		outcome, reason, ledgerID,
+	); err != nil {
+		return ledgerID, err
+	}
+	return ledgerID, nil
+}

@@ -13,6 +13,9 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// or Fiber routes /leads/engagement into the :id handler.
 	group.Get("/leads/engagement", getLeadEngagementsBatch(deps))
 	group.Get("/leads/:id/engagement", getLeadEngagement(deps))
+	// Admin-only: see every AI classification decision (kept + rejected)
+	// to answer "why did the AI reject 50/50 posts on this crawl?".
+	group.Get("/leads/classifications/recent", adminOnly, getClassificationsRecent(deps))
 	group.Post("/leads/reclassify", adminOnly, reclassifyLeads(deps))
 	group.Delete("/leads/all", adminOnly, deleteAllLeads(deps))
 	group.Delete("/leads/:id", deleteLead(deps))

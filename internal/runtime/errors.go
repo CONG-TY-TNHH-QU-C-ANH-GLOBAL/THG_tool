@@ -23,6 +23,7 @@ const (
 	ErrRateLimitExceeded
 	ErrBudgetExceeded       // hard stop: runtime or batch-call limit breached
 	ErrSessionContaminated  // logged-in user doesn't match expected account
+	ErrFacebookContextDrift // crawler navigated outside the expected group (home feed, redirect)
 )
 
 func (c CDPErrorCode) String() string {
@@ -55,6 +56,8 @@ func (c CDPErrorCode) String() string {
 		return "budget_exceeded"
 	case ErrSessionContaminated:
 		return "session_contaminated"
+	case ErrFacebookContextDrift:
+		return "facebook_context_drift"
 	default:
 		return fmt.Sprintf("cdp_error_%d", int(c))
 	}

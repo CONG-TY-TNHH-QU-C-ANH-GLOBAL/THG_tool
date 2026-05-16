@@ -21,6 +21,7 @@ import (
 	"github.com/thg/scraper/internal/server/crawl"
 	"github.com/thg/scraper/internal/server/leads"
 	servermw "github.com/thg/scraper/internal/server/middleware"
+	serverobservability "github.com/thg/scraper/internal/server/observability"
 	serverorg "github.com/thg/scraper/internal/server/org"
 	serverplatform "github.com/thg/scraper/internal/server/platform"
 	serverskills "github.com/thg/scraper/internal/server/skills"
@@ -162,6 +163,12 @@ func (s *Server) registerRoutes() {
 	// Platform service registry — backend authority for which services exist.
 	// GET /api/platform/services returns the resolved PlatformService contracts.
 	serverplatform.Routes(r, serverplatform.Deps{DB: s.db})
+
+	// Step 4a — Verified Execution Observability. Read-only surfaces over
+	// execution_attempts + account_runtime_state for the dashboard. No
+	// auto-decisions live here; the orchestrator (PR-5) consumes the same
+	// data server-side via the store API directly.
+	serverobservability.Routes(r, serverobservability.Deps{DB: s.db})
 
 	// Browser workspace — per-account Chrome management
 	// Chrome Extension connectors are the production path for trusted user devices.

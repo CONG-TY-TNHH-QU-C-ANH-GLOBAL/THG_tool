@@ -117,6 +117,15 @@ const (
 	RiskSignalReplyReceived   RiskSignal = "reply_received"
 	RiskSignalBrowserCrash    RiskSignal = "browser_crash"
 	RiskSignalCommentDeleted  RiskSignal = "comment_deleted"
+	// Step 3 — execution verification signals. Fired by the verifier
+	// layer (internal/runtime/verifier.go) when the post-DOM observation
+	// classifies an attempt. These supplant the generic ActionRejected
+	// signal for the specific failure modes the verifier can identify.
+	RiskSignalShadowRejected    RiskSignal = "shadow_rejected"    // submit landed, DOM proof never appeared
+	RiskSignalRedirectEscape    RiskSignal = "redirect_escape"    // browser landed on feed/home after submit
+	RiskSignalBlocked           RiskSignal = "blocked"            // platform actively rejected (banner / 403 / muted)
+	RiskSignalDuplicateDetected RiskSignal = "duplicate_detected" // verifier saw the action already present at start
+	RiskSignalRateLimited       RiskSignal = "rate_limited"       // platform surfaced explicit rate-limit copy
 )
 
 // SignalWeights is the default impact each signal type has on risk_score.

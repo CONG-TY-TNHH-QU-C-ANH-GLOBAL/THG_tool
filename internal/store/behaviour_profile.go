@@ -252,9 +252,13 @@ func (s *Store) ApplyRiskSignal(ctx context.Context, orgID, accountID int64, sig
 		models.RiskSignalCaptcha,
 		models.RiskSignalActionRejected,
 		models.RiskSignalBrowserCrash,
-		models.RiskSignalCommentDeleted:
+		models.RiskSignalCommentDeleted,
+		models.RiskSignalShadowRejected,
+		models.RiskSignalRedirectEscape,
+		models.RiskSignalBlocked,
+		models.RiskSignalRateLimited:
 		failureBump = 1
-	case models.RiskSignalSuccess, models.RiskSignalReplyReceived:
+	case models.RiskSignalSuccess, models.RiskSignalReplyReceived, models.RiskSignalDuplicateDetected:
 		failureBump = -1
 	}
 
