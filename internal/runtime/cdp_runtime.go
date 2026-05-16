@@ -212,14 +212,20 @@ func isTransientFacebookURL(u string) bool {
 func extractPostsJS(limit int) string {
 	return fmt.Sprintf(`
 (function() {
-  // Strip Facebook tracking params so anchor.href can be persisted as-is.
+  // Strip Facebook tracking params AND comment-jump params so anchor.href
+  // can be persisted as-is. comment_id/reply_comment_id are common on the
+  // "View N comments" anchor that often carries the working /permalink/
+  // form — we want the /permalink/ path but NOT to land the operator on a
+  // specific comment when they click "Mở bài viết".
   function cleanURL(raw) {
     if (!raw) return '';
     try {
       var u = new URL(raw, window.location.origin);
       var toDrop = [];
       u.searchParams.forEach(function(_v, k) {
-        if (k.indexOf('__') === 0 || k === 'notif_id' || k === 'notif_t' || k === 'ref') {
+        if (k.indexOf('__') === 0 ||
+            k === 'notif_id' || k === 'notif_t' || k === 'ref' ||
+            k === 'comment_id' || k === 'reply_comment_id') {
           toDrop.push(k);
         }
       });

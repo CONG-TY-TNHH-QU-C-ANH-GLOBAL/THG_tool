@@ -187,6 +187,56 @@ func TestParseRawItems_NewFields(t *testing.T) {
 	}
 }
 
+// Regression for the production bug: Facebook renders SOME posts as
+// /groups/{g}/posts/{N}/ and OTHERS as /groups/{g}/permalink/{M}/. Both
+// are valid; the system must preserve whichever form the anchor used
+// (no re-canonicalization). The bug was that the crawler grabbed an
+// anchor with the wrong ID; the fix preserves the right anchor's URL
+// form verbatim. This pins that behaviour so a future "let's always
+// rewrite to /permalink/" refactor doesn't break URLs that FB chose to
+// render as /posts/.
+func TestParseRawItems_PreservesBothURLForms(t *testing.T) {
+	t.Parallel()
+	rows := []map[string]any{
+		// FB rendered this post under /posts/{story_fbid}/ — preserved as-is.
+		{
+			"id":         "posts-form",
+			"content":    "Post A",
+			"post_url":   "https://www.facebook.com/groups/1312868109620530/posts/2019673682273299/",
+			"post_fbid":  "2019673682273299",
+			"group_fbid": "1312868109620530",
+		},
+		// FB rendered this post under /permalink/{story_fbid}/ — preserved as-is.
+		{
+			"id":         "permalink-form",
+			"content":    "Post B",
+			"post_url":   "https://www.facebook.com/groups/1312868109620530/permalink/2019565862284081/",
+			"post_fbid":  "2019565862284081",
+			"group_fbid": "1312868109620530",
+		},
+	}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	items, err := parseRawItems(string(raw))
+	if err != nil {
+		t.Fatalf("parseRawItems: %v", err)
+	}
+	if items[0].SourceURL != "https://www.facebook.com/groups/1312868109620530/posts/2019673682273299/" {
+		t.Errorf("/posts/ form not preserved verbatim: %q", items[0].SourceURL)
+	}
+	if items[1].SourceURL != "https://www.facebook.com/groups/1312868109620530/permalink/2019565862284081/" {
+		t.Errorf("/permalink/ form not preserved verbatim: %q", items[1].SourceURL)
+	}
+	// Both must classify as anchor_clean (no synthesis, no transient).
+	for i, it := range items {
+		if it.URLRepairPath != URLRepairAnchorClean {
+			t.Errorf("item %d URLRepairPath = %q; want %q (anchor preserved as-is)", i, it.URLRepairPath, URLRepairAnchorClean)
+		}
+	}
+}
+
 func TestParseGroupID(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
