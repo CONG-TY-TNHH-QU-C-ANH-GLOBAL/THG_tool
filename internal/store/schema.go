@@ -1,5 +1,19 @@
 package store
 
+// schemaBootstrapVersion is the marker version migrate() writes at
+// the end of a successful run. Bump this any time migrate()'s body
+// changes (new table, new column, anything an existing production DB
+// might be missing). The fast-path in migrate() only skips the body
+// when this exact version is present in _schema_bootstrap_marker —
+// older versions (or missing marker) force a full re-run.
+//
+// Why versioning matters: a production DB that was bootstrapped with
+// an older binary may have `groups` but not `knowledge_assets` (added
+// later to migrate). Without versioning, a fast-path that probes any
+// long-lived table would skip the body and silently leave the newer
+// tables missing, breaking subsequent file migrations.
+const schemaBootstrapVersion = 2
+
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
 // Idempotent — every statement is guarded — so it is safe to run on a
@@ -8,10 +22,9 @@ package store
 // Fast path: under the race detector + modernc.org/sqlite the per-Exec
 // overhead is ~5–10ms; running 150+ of them per test (the
 // `internal/store` package has ~110 tests) burned the full CI 120s
-// timeout. When the schema is already in place (a test helper copied
-// from a pre-migrated template, or a re-open of an existing prod DB),
-// we detect via one probe and return immediately. The probe checks a
-// table that has existed since v1 of the schema.
+// timeout. When the bootstrap has already completed for THIS version,
+// _schema_bootstrap_marker carries the version row and we return
+// immediately. Any older / missing marker triggers a full re-run.
 func (s *Store) migrate() error {
 	if s.schemaAlreadyApplied() {
 		return nil
@@ -995,6 +1008,18 @@ func (s *Store) migrate() error {
 		ON knowledge_feedback(org_id, occurred_at DESC)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_retrieval
 		ON knowledge_feedback(org_id, retrieval_id)`)
+
+	// Marker row written AFTER every other DDL. The fast-path probe
+	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears
+	// only after the bootstrap finishes, so a crash mid-migrate leaves
+	// the marker absent and the next boot re-runs everything. Version
+	// changes (see schemaBootstrapVersion) force a re-run on existing
+	// production DBs whose schema lags.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS _schema_bootstrap_marker (
+		version    INTEGER PRIMARY KEY,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`INSERT OR IGNORE INTO _schema_bootstrap_marker (version) VALUES (?)`, schemaBootstrapVersion)
 
 	return nil
 }

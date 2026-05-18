@@ -158,15 +158,21 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// schemaAlreadyApplied probes whether the legacy bootstrap has already
-// run against this database. The `groups` table has been part of the
-// schema since v1; its presence is a stable signal that migrate() can
-// skip its 150+ idempotent DDLs. Used by migrate() to keep test
-// helpers that copy from a pre-migrated template fast under the race
-// detector.
+// schemaAlreadyApplied reports whether migrate() finished writing the
+// current-version marker on this DB. Distinct from "any tables exist":
+// the marker is the *last* thing migrate() writes, and its version
+// must match schemaBootstrapVersion (see schema.go) — so an older
+// production DB whose schema lags will fail this probe and re-run
+// migrate(), creating any tables/columns added since.
+//
+// A failed Scan (table missing, no row, wrong version, sqlite error)
+// always returns false → migrate() body runs. Safe by default.
 func (s *Store) schemaAlreadyApplied() bool {
 	var n int
-	row := s.db.QueryRow(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='groups'`)
+	row := s.db.QueryRow(
+		`SELECT 1 FROM _schema_bootstrap_marker WHERE version = ?`,
+		schemaBootstrapVersion,
+	)
 	if err := row.Scan(&n); err != nil {
 		return false
 	}
