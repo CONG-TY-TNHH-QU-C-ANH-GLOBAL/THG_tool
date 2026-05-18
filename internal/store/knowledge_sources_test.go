@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,13 +11,7 @@ import (
 )
 
 func newKnowledgeTestStore(t *testing.T) *Store {
-	t.Helper()
-	db, err := New(filepath.Join(t.TempDir(), "knowledge.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return newSharedStore(t, "knowledge.db")
 }
 
 func newTestSource(orgID int64, label string, typ sources.SourceType) *sources.Source {

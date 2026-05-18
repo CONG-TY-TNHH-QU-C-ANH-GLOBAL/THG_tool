@@ -1,7 +1,6 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
@@ -10,11 +9,7 @@ import (
 // GetAccountsForUser must filter to a single staff's assigned accounts.
 // Backs the sales-staff account list view per RBAC-1.
 func TestGetAccountsForUser_FiltersToAssigned(t *testing.T) {
-	db, err := New(filepath.Join(t.TempDir(), "rbac_accounts.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer db.Close()
+	db := newSharedStore(t, "rbac_accounts.db")
 
 	// Seed 3 accounts: 2 assigned to user 7 (Alice), 1 assigned to user 8 (Bob).
 	seed := []models.Account{
@@ -69,11 +64,7 @@ func TestGetAccountsForUser_FiltersToAssigned(t *testing.T) {
 }
 
 func TestGetAccountsForUser_InvalidInputs(t *testing.T) {
-	db, err := New(filepath.Join(t.TempDir(), "rbac_invalid.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer db.Close()
+	db := newSharedStore(t, "rbac_invalid.db")
 
 	if accs, _ := db.GetAccountsForUser(0, 7); accs != nil {
 		t.Error("org_id=0 must return nil (no leak to other orgs)")

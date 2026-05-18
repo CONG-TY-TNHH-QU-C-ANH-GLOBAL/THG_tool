@@ -4,19 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func newCrawlIntentTestStore(t *testing.T) *Store {
-	t.Helper()
-	db, err := New(filepath.Join(t.TempDir(), "intents.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return newSharedStore(t, "intents.db")
 }
 
 func seedIntent(t *testing.T, db *Store, orgID int64) CrawlIntent {

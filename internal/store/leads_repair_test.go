@@ -1,7 +1,6 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/thg/scraper/internal/fburl"
@@ -99,11 +98,7 @@ func TestRepairLeadSourceURL_NilGuard(t *testing.T) {
 // are populated, then read it back through the API and confirm the
 // dashboard would receive a canonical permalink.
 func TestGetLeadsFiltered_RescuesStaleSourceURL(t *testing.T) {
-	db, err := New(filepath.Join(t.TempDir(), "leads_repair.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	defer db.Close()
+	db := newSharedStore(t, "leads_repair.db")
 
 	// Direct INSERT to simulate a legacy row written before the contract
 	// fix landed. Bypasses the ingest path on purpose — that path now

@@ -1,19 +1,13 @@
 package store
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
 )
 
 func TestSetAccountFacebookIdentityStoresMetaWithoutEmail(t *testing.T) {
-	db, err := New(filepath.Join(t.TempDir(), "identity.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
+	db := newSharedStore(t, "identity.db")
 	id, err := db.AddAccount(&models.Account{
 		OrgID:    1,
 		Platform: models.PlatformFacebook,
@@ -49,11 +43,7 @@ func TestSetAccountFacebookIdentityStoresMetaWithoutEmail(t *testing.T) {
 }
 
 func TestSetAccountFacebookIdentityRejectsProfileMismatch(t *testing.T) {
-	db, err := New(filepath.Join(t.TempDir(), "identity-mismatch.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := newSharedStore(t, "identity-mismatch.db")
 
 	id, err := db.AddAccount(&models.Account{
 		OrgID:    1,

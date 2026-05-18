@@ -1,6 +1,21 @@
 package store
 
+// migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
+// IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
+// Idempotent — every statement is guarded — so it is safe to run on a
+// DB that already has the schema.
+//
+// Fast path: under the race detector + modernc.org/sqlite the per-Exec
+// overhead is ~5–10ms; running 150+ of them per test (the
+// `internal/store` package has ~110 tests) burned the full CI 120s
+// timeout. When the schema is already in place (a test helper copied
+// from a pre-migrated template, or a re-open of an existing prod DB),
+// we detect via one probe and return immediately. The probe checks a
+// table that has existed since v1 of the schema.
 func (s *Store) migrate() error {
+	if s.schemaAlreadyApplied() {
+		return nil
+	}
 	schema := `
 	CREATE TABLE IF NOT EXISTS groups (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

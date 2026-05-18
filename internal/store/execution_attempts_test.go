@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,13 +10,7 @@ import (
 )
 
 func newAttemptsTestStore(t *testing.T) *Store {
-	t.Helper()
-	db, err := New(filepath.Join(t.TempDir(), "attempts.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return newSharedStore(t, "attempts.db")
 }
 
 // Step 3 invariant: an attempt's outcome is the single write-point for

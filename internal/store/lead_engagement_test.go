@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -10,13 +9,7 @@ import (
 )
 
 func newEngagementTestStore(t *testing.T) *Store {
-	t.Helper()
-	db, err := New(filepath.Join(t.TempDir(), "engagement.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return newSharedStore(t, "engagement.db")
 }
 
 // Untouched lead: no action_ledger rows, no thread → badge=priority,

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -10,13 +9,7 @@ import (
 )
 
 func newBehaviourTestStore(t *testing.T) *Store {
-	t.Helper()
-	db, err := New(filepath.Join(t.TempDir(), "behaviour.db"))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	return newSharedStore(t, "behaviour.db")
 }
 
 // Missing profile is not an error; the resolver returns the TrustWarming

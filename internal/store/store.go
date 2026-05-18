@@ -153,37 +153,24 @@ func isPostgresDSN(s string) bool {
 	return false
 }
 
-// closeTimeout is the upper bound Close() will wait for the underlying
-// sql.DB to release its handle. Picked to be longer than any sane
-// SQLite checkpoint (the only thing modernc.org/sqlite blocks on
-// during Close in WAL mode) but short enough to surface a real hang
-// inside a CI test timeout rather than swallowing the whole 120s.
-const closeTimeout = 10 * time.Second
-
-// ErrCloseTimedOut is returned when Close() did not observe the
-// underlying sql.DB shutting down within closeTimeout. It indicates
-// a leaked rows/stmt/tx somewhere — Close() blocks until every
-// in-flight statement finishes — and is a real test failure, not a
-// flake to retry. The Close caller's defer still runs; the timeout
-// just unblocks the goroutine.
-var ErrCloseTimedOut = fmt.Errorf("store.Close: db did not close within %s (leaked rows/stmt/tx?)", closeTimeout)
-
-// Close closes the database connection with a bounded wait. database/sql.Close
-// is documented to "wait for all queries that have started processing on
-// the server to finish" — under modernc.org/sqlite + the race detector,
-// that can hang indefinitely if a test forgot to Close a *sql.Rows or
-// left a transaction open. We translate that hang into ErrCloseTimedOut
-// so CI fails loud with a diagnosable error instead of running out the
-// `-timeout 120s` budget.
+// Close closes the database connection.
 func (s *Store) Close() error {
-	done := make(chan error, 1)
-	go func() { done <- s.db.Close() }()
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(closeTimeout):
-		return ErrCloseTimedOut
+	return s.db.Close()
+}
+
+// schemaAlreadyApplied probes whether the legacy bootstrap has already
+// run against this database. The `groups` table has been part of the
+// schema since v1; its presence is a stable signal that migrate() can
+// skip its 150+ idempotent DDLs. Used by migrate() to keep test
+// helpers that copy from a pre-migrated template fast under the race
+// detector.
+func (s *Store) schemaAlreadyApplied() bool {
+	var n int
+	row := s.db.QueryRow(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='groups'`)
+	if err := row.Scan(&n); err != nil {
+		return false
 	}
+	return n == 1
 }
 
 // DB returns the underlying *sql.DB for packages that need direct SQL access

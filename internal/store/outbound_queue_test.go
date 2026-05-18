@@ -1,7 +1,6 @@
 package store
 
 import (
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -10,13 +9,7 @@ import (
 )
 
 func newTestStore(t *testing.T) *Store {
-	t.Helper()
-	db, err := New(filepath.Join(t.TempDir(), "outbound.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return newSharedStore(t, "outbound.db")
 }
 
 func TestQueueOutboundForOrgDefaultsToDraft(t *testing.T) {
