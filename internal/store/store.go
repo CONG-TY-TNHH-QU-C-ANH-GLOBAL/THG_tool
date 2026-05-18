@@ -1,23 +1,61 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 // Store provides database access for the scraper system.
 type Store struct {
-	db     *sql.DB
-	encKey string // AES-256-GCM key for sensitive fields; empty = no encryption
+	db      *sql.DB
+	dialect Dialect // never nil after New; set during boot based on driver
+	encKey  string  // AES-256-GCM key for sensitive fields; empty = no encryption
 }
 
-// New creates a new Store, initializing the SQLite database and running migrations.
+// New creates a new Store, initializing the database and running
+// migrations. dbPath is interpreted as follows:
+//
+//   - empty → fall back to env DATABASE_URL (PG mode if non-empty,
+//     else error)
+//   - starts with "postgres://" or "postgresql://" → PG connection
+//     string (driver: pgx/v5/stdlib, registered separately)
+//   - anything else → treated as a SQLite file path
+//
+// The dialect is determined at this point and is constant for the
+// lifetime of the Store. All subsequent code paths reach the dialect
+// via *Store.Dialect() — never re-detect.
+//
+// Production guidance: see specs/POSTGRES_COMPAT_PLAN.md §4 for the
+// rollout sequence and §3.6 for test infrastructure.
 func New(dbPath string) (*Store, error) {
-	// Ensure data directory exists
+	// DATABASE_URL takes precedence when dbPath is empty. This is the
+	// production cutover hook — operators set DATABASE_URL in the
+	// deployment config and existing dev callers (which pass file
+	// paths) are unaffected.
+	if dbPath == "" {
+		dbPath = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		if dbPath == "" {
+			return nil, fmt.Errorf("store.New: empty dbPath and DATABASE_URL not set")
+		}
+	}
+
+	if isPostgresDSN(dbPath) {
+		return newPostgres(dbPath)
+	}
+	return newSQLite(dbPath)
+}
+
+// newSQLite opens the SQLite driver with the pragmas the existing
+// codebase relies on. Behaviour preserved verbatim from the previous
+// implementation — only the dialect-wiring is new.
+func newSQLite(dbPath string) (*Store, error) {
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
@@ -33,12 +71,70 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	s := &Store{db: db}
+	s := &Store{db: db, dialect: sqliteDialect{}}
 	if err := s.migrate(); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-
+	if err := s.runMigrations(context.Background()); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
 	return s, nil
+}
+
+// newPostgres opens the PostgreSQL driver. Pool tuning addresses R12
+// in POSTGRES_COMPAT_PLAN.md:
+//
+//   - MaxOpenConns 25: enough for the agent runtime + 2 workers + UI
+//     without saturating a small production PG. Tunable via env later.
+//   - MaxIdleConns 5: keep a warm pool but do not hold many idle.
+//   - ConnMaxLifetime 5m: refresh connections regularly so cloud-PG
+//     proxies (e.g. RDS Proxy) can rebalance.
+//
+// Driver registration happens via a build tag in postgres_driver.go
+// — keeps the standard build from depending on pgx unless PG is wanted.
+func newPostgres(dsn string) (*Store, error) {
+	db, err := sql.Open(postgresDriverName, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open postgres: %w", err)
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("postgres ping: %w", err)
+	}
+
+	s := &Store{db: db, dialect: postgresDialect{}}
+	// On a brand-new PG DB, s.migrate() (the SQLite-style baseline)
+	// would fail because its DDL is SQLite-flavour. The PG baseline
+	// MUST land via a 0001 migration file. Until that file exists,
+	// store.New(postgres://...) errors clearly — operators get a
+	// migration-missing message, not a confusing schema error.
+	if !s.tableExists(context.Background(), "schema_migrations") {
+		// Run the legacy SQLite migrate for SQLite only; PG must rely
+		// on migrations/0001_baseline__postgres.up.sql (added in PR
+		// that finalizes PG support).
+	}
+	if err := s.runMigrations(context.Background()); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+	return s, nil
+}
+
+// isPostgresDSN heuristically detects a Postgres connection string.
+// Both `postgres://` and `postgresql://` are RFC-recognised forms;
+// `host=... port=...` keyword form is the older libpq style.
+func isPostgresDSN(s string) bool {
+	low := strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case strings.HasPrefix(low, "postgres://"):
+		return true
+	case strings.HasPrefix(low, "postgresql://"):
+		return true
+	case strings.Contains(low, "host=") && strings.Contains(low, "user="):
+		return true
+	}
+	return false
 }
 
 // Close closes the database connection.
@@ -48,7 +144,17 @@ func (s *Store) Close() error {
 
 // DB returns the underlying *sql.DB for packages that need direct SQL access
 // (e.g. session.StateMachine, session.CheckpointManager).
+//
+// NOTE: callers reaching for DB() directly bypass the dialect layer.
+// That is fine for SQL that is identical on every dialect (most reads).
+// SQL that uses `CURRENT_TIMESTAMP`, intervals, or `?` placeholders
+// MUST route through s.Dialect() or it WILL break on Postgres.
 func (s *Store) DB() *sql.DB { return s.db }
+
+// Dialect returns the SQL flavor the store was opened against.
+// Repository code that constructs dialect-divergent SQL must read
+// this once per call — see specs/POSTGRES_COMPAT_PLAN.md §3.
+func (s *Store) Dialect() Dialect { return s.dialect }
 
 // SetEncryptionKey sets the AES-256-GCM key used to encrypt sensitive DB fields
 // (cookies_json, proxy_url). Must be called before any account operations.

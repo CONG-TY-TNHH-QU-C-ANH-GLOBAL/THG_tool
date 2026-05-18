@@ -275,15 +275,15 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         }
 
-    if not has_business_profile(profile) and any(term in folded for term in ["cao", "crawl", "scrape", "quet", "tim khach", "lead"]):
-        return {
-            **base,
-            "intent": "needs_context",
-            "decision": "ask_user",
-            "confidence": 0.86,
-            "response_summary": "Mình cần định vị doanh nghiệp trước khi crawl để Market Signal Gate lọc đúng buyer intent và loại bài quảng cáo dịch vụ.",
-        }
-
+    # Outbound actions on already-stored leads (inbox / comment) and posting
+    # are evaluated BEFORE the "needs positioning" ask-back. The leads exist
+    # in the workspace already — scored by the signal gate that captured
+    # them — so refusing to act until the operator re-supplies positioning
+    # blocks legitimate execution. The comment generator handles missing
+    # profile data gracefully (downstream context loader returns a safe
+    # fallback when nothing is set), so dispatching without a profile
+    # produces blander copy, not broken copy. Positioning belongs to crawl
+    # branches below.
     if any(term in folded for term in ["inbox", "messenger", "nhan tin", "dm"]) and any(term in folded for term in ["lead", "khach", "tat ca", "all"]):
         return {
             **base,
@@ -315,6 +315,21 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
             "confidence": 0.78,
             "response_summary": "Mình sẽ tạo draft bài đăng Facebook theo context doanh nghiệp.",
             "actions": [action("create_job_post", args, "Create Facebook post draft", ["User requested posting"], True, True)],
+        }
+
+    # Crawl-prep ask-back: only fires for genuine crawl/discovery prompts.
+    # The bare token "lead"/"leads" was removed from the keyword set —
+    # it false-positives on outbound action prompts ("comment all leads",
+    # "inbox the leads") that already passed through the branches above.
+    # "tim khach" (find customers) is the durable crawl-intent signal that
+    # remains.
+    if not has_business_profile(profile) and any(term in folded for term in ["cao", "crawl", "scrape", "quet", "tim khach"]):
+        return {
+            **base,
+            "intent": "needs_context",
+            "decision": "ask_user",
+            "confidence": 0.86,
+            "response_summary": "Mình cần định vị doanh nghiệp trước khi crawl để Market Signal Gate lọc đúng buyer intent và loại bài quảng cáo dịch vụ.",
         }
 
     if fb_url and any(term in folded for term in ["cao", "crawl", "scrape", "quet", "tim", "lead", "phan tich"]):

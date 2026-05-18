@@ -209,6 +209,47 @@ func (p *BusinessProfile) Save(db *store.Store) error {
 	return nil
 }
 
+// SaveForOrg persists the profile under org-scoped keys (org:{id}:{key}),
+// the canonical storage location read by LoadProfileForOrg. Description
+// is written to the "business_profile" key — matching the onboarding
+// flow's convention so the loader at agent.go's userContext build picks
+// it up alongside the structured fields.
+//
+// Empty fields are skipped (partial update semantics), matching the
+// behavior of Save() and updateOrg. To clear a field, the caller would
+// need a dedicated delete path; that is not exposed here.
+func (p *BusinessProfile) SaveForOrg(db *store.Store, orgID int64) error {
+	if db == nil || orgID <= 0 {
+		return fmt.Errorf("SaveForOrg: db and orgID required")
+	}
+	fields := map[string]string{
+		"business_name":      p.Name,
+		"business_industry":  p.Industry,
+		"business_profile":   p.Description,
+		"services":           p.Services,
+		"target_customers":   p.Targets,
+		"target_author_role": p.TargetAuthorRole,
+		"target_signals":     p.TargetSignals,
+		"negative_signals":   p.NegativeSignals,
+		"business_location":  p.Location,
+		"markets":            p.Markets,
+		"business_usp":       p.USP,
+		"tone":               p.Tone,
+		"approval_policy":    p.ApprovalPolicy,
+		"reject_rules":       p.RejectRules,
+	}
+	for k, v := range fields {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if err := db.SetContext(fmt.Sprintf("org:%d:%s", orgID, k), v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ExtractProfile uses AI to extract a structured BusinessProfile from any free-form description.
 // This is the onboarding function — user says "Tôi bán bánh mì tại HCM" → structured profile.
 func (mg *MessageGenerator) ExtractProfile(ctx context.Context, userDescription string) (*BusinessProfile, error) {

@@ -235,6 +235,18 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 		}
 	}
 
+	// Outbound-on-stored-leads bypass: comment_all_leads / inbox_all_leads
+	// already have deterministic patterns and do not depend on a positioning
+	// re-ask. brain.py's "needs context" gate false-positives on the bare
+	// word "lead", so routing these through the planner can ask the user to
+	// position their business even when they have qualified leads ready to
+	// act on. Skip the brain when the prompt clearly says act-on-leads.
+	if promptIsLeadActionSelfSufficient(prompt) {
+		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, accounts, ReasonSelfSufficientLeadAction); handled {
+			return response, nil
+		}
+	}
+
 	if response, handled := a.processBrainPlan(ctx, prompt, source, orgID, selectedAccountID, userContext, accounts); handled {
 		return response, nil
 	}

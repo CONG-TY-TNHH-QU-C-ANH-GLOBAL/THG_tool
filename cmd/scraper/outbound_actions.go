@@ -12,6 +12,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/textutil"
+	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
 
 func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
@@ -40,6 +41,20 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	}
 
 	businessContext := businessContextForOrg(db, orgID)
+	// Knowledge OS runtime builder. Per-lead retrieval augments the
+	// org-wide freeform business profile with top-K matched assets
+	// (PRODUCTS, POLICIES, CTAs). When the org has not configured a
+	// Knowledge OS source, BuildForLeadWithTrace returns businessContext
+	// unchanged — backward compatible by construction. See
+	// specs/WORKSPACE_KNOWLEDGE_OS.md §11 (Migration path).
+	//
+	// TraceRec wires the Operator Replay surface: each retrieval gets
+	// a full Trace + Budget recorded under a retrievalID we thread into
+	// the outcome event when the message is queued. Replay UI joins on
+	// retrievalID to show "this lead → these assets → this outcome".
+	knowledgeBuilder := knowledgeRuntime.NewBuilder(db)
+	knowledgeBuilder.Recorder = db
+	knowledgeBuilder.TraceRec = db
 	template := argString(args, "template")
 	queued, skipped := 0, 0
 	approvedCount := 0
@@ -63,15 +78,24 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		}
 
 		content := template
+		var retrievalID string
 		if msgGen != nil && msgGen.Available() {
 			genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+			// Per-lead Knowledge OS retrieval with full trace.
+			// 1.5s timeout because the LIKE-based naive searcher is fast;
+			// pgvector replacement should still fit comfortably.
+			retrievalCtx, retrievalCancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+			generatedAction := msgType + "_drafted"
+			var leadContext string
+			leadContext, retrievalID = knowledgeBuilder.BuildForLeadWithTrace(retrievalCtx, orgID, lead.Content, businessContext, generatedAction)
+			retrievalCancel()
 			var genErr error
 			if template != "" && msgType == "comment" {
 				content, genErr = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
 			} else if msgType == "comment" {
-				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, businessContext, lead.ServiceMatch, "")
+				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, leadContext, lead.ServiceMatch, "")
 			} else {
-				content, genErr = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, businessContext, "")
+				content, genErr = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, leadContext, "")
 			}
 			cancel()
 			if genErr != nil {
@@ -106,11 +130,24 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if !result.Decision.Allowed {
 			skipped++
 			skipReasons[result.Decision.Reason]++
+			// Record the rejection outcome so the Operator Replay UI
+			// shows "retrieved → drafted → rejected (reason)" instead
+			// of leaving the retrieval event dangling.
+			if retrievalID != "" {
+				db.RecordKnowledgeOutcome(ctx, orgID, retrievalID, "rejected")
+			}
 			continue
 		}
 		queued++
 		if result.Status == models.OutboundApproved {
 			approvedCount++
+		}
+		// Stage outcome: queue success. The downstream browser-execution
+		// layer is responsible for the FINAL "sent" / "failed" outcome
+		// against the same retrievalID — that's where image attachments
+		// (Phase E) and DOM verification land.
+		if retrievalID != "" {
+			db.RecordKnowledgeOutcome(ctx, orgID, retrievalID, "queued")
 		}
 	}
 

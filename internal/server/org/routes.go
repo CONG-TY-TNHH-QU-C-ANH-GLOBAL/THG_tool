@@ -44,6 +44,17 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly 
 	group.Get("/org", h.getMyOrg)
 	group.Put("/org", adminOnly, h.updateOrg)
 	group.Post("/org/assets/:kind", adminOnly, h.uploadOrgAsset)
+	group.Get("/org/business-profile", h.getBusinessProfile)
+	group.Put("/org/business-profile", adminOnly, h.updateBusinessProfile)
+
+	// Workspace Knowledge OS — Operator Replay surface. Read-only;
+	// tenant-scoped via c.Locals("org_id"). See
+	// specs/WORKSPACE_KNOWLEDGE_OS.md.
+	group.Get("/org/knowledge/events", h.listKnowledgeEvents)
+	group.Get("/org/knowledge/events/:retrieval_id", h.getKnowledgeEvent)
+	group.Get("/org/knowledge/sources/:source_id/syncs", h.listSourceSyncs)
+	group.Get("/org/knowledge/stats", h.getKnowledgeStats)
+	group.Get("/org/knowledge/soak", h.getKnowledgeSoak)
 
 	superAdminGrp := group.Group("/superadmin", founderOnly)
 	superAdminGrp.Get("/orgs", h.listOrgs)

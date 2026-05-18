@@ -849,5 +849,137 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Workspace Knowledge OS — Phase A foundation.
+	// knowledge_sources (L1) + knowledge_assets (L3). The retrieval port
+	// (L4), ingestion port (L2), and observability port (L7) are Go-side
+	// interfaces and do not require schema.
+	//
+	// Design contract: specs/WORKSPACE_KNOWLEDGE_OS.md. Read that before
+	// changing these tables — the four invariants documented there
+	// (tenant isolation, idempotent ingest, operator-state survives sync,
+	// approved-only retrieval) are enforced by the column layout AND the
+	// indexes below. Adding columns is safe; changing column meaning or
+	// dropping an index will break load-bearing tests.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_sources (
+		id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id                 INTEGER  NOT NULL,
+		type                   TEXT     NOT NULL,
+		label                  TEXT     NOT NULL,
+		connection_config      TEXT     NOT NULL DEFAULT '{}',
+		sync_policy            TEXT     NOT NULL DEFAULT 'manual',
+		health_status          TEXT     NOT NULL DEFAULT 'healthy',
+		health_message         TEXT     NOT NULL DEFAULT '',
+		last_sync_at           DATETIME,
+		last_sync_asset_count  INTEGER  NOT NULL DEFAULT 0,
+		created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_sources_org
+		ON knowledge_sources(org_id, health_status)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_sources_sync
+		ON knowledge_sources(sync_policy, last_sync_at)`)
+
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_assets (
+		id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id                INTEGER  NOT NULL,
+		source_id             INTEGER  NOT NULL,
+		external_id           TEXT     NOT NULL DEFAULT '',
+		type                  TEXT     NOT NULL,
+		title                 TEXT     NOT NULL,
+		description           TEXT     NOT NULL DEFAULT '',
+		tags                  TEXT     NOT NULL DEFAULT '[]',
+		payload               TEXT     NOT NULL DEFAULT '{}',
+		state                 TEXT     NOT NULL DEFAULT 'pending',
+		pinned                INTEGER  NOT NULL DEFAULT 0,
+		boost                 INTEGER  NOT NULL DEFAULT 0,
+		retrieval_count_30d   INTEGER  NOT NULL DEFAULT 0,
+		conversion_count_30d  INTEGER  NOT NULL DEFAULT 0,
+		last_retrieved_at     DATETIME,
+		created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (source_id) REFERENCES knowledge_sources(id)
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_state
+		ON knowledge_assets(org_id, state)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_source
+		ON knowledge_assets(org_id, source_id)`)
+	// Idempotent-ingest guard: a re-sync of the same source must UPDATE,
+	// not insert. Empty external_id is allowed (e.g. CSV rows without a
+	// stable key) — the partial index excludes those rows so the ingestor
+	// path that hashes the row body remains the source of truth.
+	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_assets_idem
+		ON knowledge_assets(org_id, source_id, external_id)
+		WHERE external_id != ''`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_pin_boost
+		ON knowledge_assets(org_id, pinned DESC, boost DESC, retrieval_count_30d DESC)`)
+
+	// Workspace Knowledge OS — Phase D observability.
+	//
+	// Three event streams (sync / retrieval / outcome) recorded in a
+	// single unified table for ease of join. event_type is the
+	// discriminator; data_json carries the per-type payload.
+	//
+	// retrieval_id is the join key for the Operator Replay surface:
+	// a "retrieval" event and the subsequent "outcome" event share
+	// the same retrieval_id so the UI can show "this comment used
+	// these 3 assets and was rejected by compliance" on one row.
+	//
+	// org_id is indexed first because every query is tenant-scoped.
+	// occurred_at DESC second because the Replay UI's default view
+	// is "most recent first."
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_events (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id        INTEGER  NOT NULL,
+		event_type    TEXT     NOT NULL,
+		retrieval_id  TEXT     NOT NULL DEFAULT '',
+		source_type   TEXT     NOT NULL DEFAULT '',
+		query         TEXT     NOT NULL DEFAULT '',
+		data_json     TEXT     NOT NULL DEFAULT '{}',
+		duration_ms   INTEGER  NOT NULL DEFAULT 0,
+		occurred_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_events_org_time
+		ON knowledge_events(org_id, occurred_at DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_events_retrieval
+		ON knowledge_events(org_id, retrieval_id)`)
+
+	// Workspace Knowledge OS — Goal G10 human-feedback substrate.
+	//
+	// Feedback events are IMMUTABLE (no UPDATE column) and act ONLY as:
+	//   1. Audit trail (operator review of past actions).
+	//   2. Offline signal for rerank evaluation + gold-dataset
+	//      enrichment.
+	//
+	// CRITICAL: the system MUST NOT auto-train from these events.
+	// There is no runtime path that reads knowledge_feedback to alter
+	// future retrieval scoring. Enforcement is structural — only the
+	// analytics handlers query this table, never the retrieval engine.
+	//
+	// Schema:
+	//   - retrieval_id ties feedback to a specific retrieval event so
+	//     replay can show "operator marked this comment as good" next
+	//     to the underlying retrieval trace.
+	//   - asset_id is optional; only present when feedback targets one
+	//     specific asset within a retrieval ("this CTA was wrong for
+	//     this lead, this product was right").
+	//   - kind: "thumbs_up" | "thumbs_down" | "approve" | "reject" |
+	//           "edit" | "rating".
+	//   - data_json carries kind-specific payload (e.g. star rating,
+	//     edit diff) so the schema doesn't churn per feedback type.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_feedback (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id        INTEGER  NOT NULL,
+		user_id       INTEGER  NOT NULL DEFAULT 0,
+		retrieval_id  TEXT     NOT NULL DEFAULT '',
+		asset_id      INTEGER  NOT NULL DEFAULT 0,
+		kind          TEXT     NOT NULL,
+		data_json     TEXT     NOT NULL DEFAULT '{}',
+		occurred_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_org_time
+		ON knowledge_feedback(org_id, occurred_at DESC)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_retrieval
+		ON knowledge_feedback(org_id, retrieval_id)`)
+
 	return nil
 }

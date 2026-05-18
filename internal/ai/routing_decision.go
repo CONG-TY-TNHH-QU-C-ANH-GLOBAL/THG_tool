@@ -58,6 +58,7 @@ const (
 const (
 	// Deterministic-route reasons.
 	ReasonSelfSufficient           = "self_sufficient_prompt"
+	ReasonSelfSufficientLeadAction = "self_sufficient_lead_action"
 	ReasonExplicitUserCommand      = "explicit_user_command"
 	ReasonDeterministicMatched     = "deterministic_match"
 	ReasonDeterministicNoMatch     = "deterministic_no_match"

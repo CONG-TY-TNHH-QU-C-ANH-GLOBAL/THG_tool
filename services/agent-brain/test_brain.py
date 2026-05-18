@@ -91,6 +91,37 @@ class BrainPlannerTest(unittest.TestCase):
         self.assertEqual(len(parts), 4)
         self.assertEqual(parts.count("xuong"), 1)
 
+    def test_comment_all_leads_executes_even_with_empty_profile(self):
+        # Regression: brain.py used to evaluate the "needs business
+        # positioning" ask-back BEFORE the comment_leads branch, so an
+        # outbound prompt containing the word "lead" was bounced into
+        # ask_user when the org had no profile yet. The user's exact
+        # reported phrasing must now execute, not ask back.
+        out = plan({"prompt": "Comments lên tất cả các leads cho tôi", "business_profile": {}})
+        self.assertEqual(out["decision"], "execute")
+        self.assertEqual(out["intent"], "comment_leads")
+        self.assertEqual(out["actions"][0]["tool"], "comment_all_leads")
+
+    def test_inbox_all_leads_executes_even_with_empty_profile(self):
+        # Same family of fix for the inbox action — leads are already
+        # stored, the user is asking for execution, positioning is not a
+        # precondition for outbound on existing leads.
+        out = plan({"prompt": "Inbox tất cả leads cho tôi", "business_profile": {}})
+        self.assertEqual(out["decision"], "execute")
+        self.assertEqual(out["intent"], "inbox_leads")
+        self.assertEqual(out["actions"][0]["tool"], "inbox_all_leads")
+
+    def test_crawl_prompt_without_profile_still_asks(self):
+        # The ask-back gate must STAY in place for genuine crawl prompts —
+        # we only narrowed its keyword set to drop bare "lead"/"leads", we
+        # did not remove the gate. A crawl on an empty profile is the
+        # original case the gate was built for.
+        out = plan(
+            {"prompt": "Cào cho tôi tìm khách POD dropship", "business_profile": {}}
+        )
+        self.assertEqual(out["decision"], "ask_user")
+        self.assertEqual(out["intent"], "needs_context")
+
     def test_plan_uses_llm_signals_when_available(self):
         # Mock the LLM extractor so we don't need an OpenAI key.
         fake_plan = {

@@ -206,6 +206,44 @@ func PromptIsSelfSufficient(prompt string) bool {
 	return promptIsSelfSufficient(prompt)
 }
 
+// promptIsLeadActionSelfSufficient reports whether the prompt is an
+// outbound action on already-stored leads (comment / inbox / DM all
+// leads). These prompts do not need pre-crawl business positioning —
+// the leads already exist in the workspace, scored by the gate that
+// captured them. The user is asking for action, not for clarification.
+//
+// Signals:
+//  1. An outbound-action verb (comment / bình luận / inbox / messenger /
+//     nhắn tin / DM).
+//  2. A scope phrase indicating "all qualified leads" (lead / leads /
+//     tệp khách / khách hàng / tất cả / all).
+//  3. NO Facebook URL — a URL means "act on this specific source," which
+//     is the crawl / scrape_comments path, not the leads-pool path.
+//
+// Mirrors promptIsSelfSufficient's intent: bypass the brain planner for
+// fully-specified prompts so the user is not asked to re-position their
+// business before each outbound run. brain.py's ask_user gate at
+// services/agent-brain/brain.py:278 false-positives on the word "lead"
+// for empty-profile orgs; this Go gate prevents the round-trip entirely.
+func promptIsLeadActionSelfSufficient(prompt string) bool {
+	if firstFacebookURL(prompt) != "" {
+		return false
+	}
+	folded := foldVietnameseForMatch(strings.ToLower(stripDashboardContext(prompt)))
+	if !containsAnyFolded(folded, []string{"comment", "binh luan", "inbox", "messenger", "nhan tin", "dm "}) {
+		return false
+	}
+	return containsAnyFolded(folded, []string{"lead", "leads", "tep khach", "khach hang", "tat ca", "all"})
+}
+
+// PromptIsLeadActionSelfSufficient is the exported wrapper, mirroring
+// PromptIsSelfSufficient. The observability handler uses it to label
+// rows that bypassed the brain because of the outbound-on-leads gate
+// rather than the URL+crawl gate.
+func PromptIsLeadActionSelfSufficient(prompt string) bool {
+	return promptIsLeadActionSelfSufficient(prompt)
+}
+
 // inferredTargetingSummary builds the human-readable "Target recognized:"
 // line surfaced in the response when the orchestrator chose to infer the
 // audience instead of asking. Empty string when no signal was inferred —

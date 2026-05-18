@@ -101,6 +101,75 @@ func TestInferredTargetingSummary(t *testing.T) {
 	}
 }
 
+// promptIsLeadActionSelfSufficient is the second self-sufficiency gate:
+// it covers outbound actions on already-stored leads (comment / inbox /
+// DM "all leads"). The regression here is the same family of bug as
+// promptIsSelfSufficient — brain.py was bouncing these prompts into an
+// ask-back for business positioning even when the workspace already had
+// qualified leads ready to act on.
+//
+// Invariants:
+//   - YES when outbound-action verb + "all leads" scope phrase + no URL.
+//   - NO when a URL is present (that is the crawl path, not the leads
+//     pool path) or when either side of the verb+scope conjunction is
+//     missing.
+func TestPromptIsLeadActionSelfSufficient(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		prompt string
+		want   bool
+	}{
+		{
+			name:   "the user's reported case — Vietnamese comment-on-all-leads",
+			prompt: "Comments lên tất cả các leads cho tôi",
+			want:   true,
+		},
+		{
+			name:   "English inbox-all-leads",
+			prompt: "Inbox all leads",
+			want:   true,
+		},
+		{
+			name:   "Vietnamese inbox phrasing",
+			prompt: "Nhắn tin tất cả khách hàng đủ điều kiện",
+			want:   true,
+		},
+		{
+			name:   "DM with scope phrase",
+			prompt: "DM tất cả leads ngay",
+			want:   true,
+		},
+		{
+			name:   "outbound verb but no scope phrase — single-target",
+			prompt: "Comment cho bài này thôi",
+			want:   false,
+		},
+		{
+			name:   "scope phrase but no outbound verb — could be a report request",
+			prompt: "Xem tất cả các leads",
+			want:   false,
+		},
+		{
+			name:   "URL present — this is scrape_comments / crawl path, not leads-pool",
+			prompt: "Comment giúp tôi trong https://facebook.com/groups/12345",
+			want:   false,
+		},
+		{
+			name:   "crawl prompt without URL — must NOT trip lead-action gate",
+			prompt: "Cào 50 bài tìm tệp khách POD",
+			want:   false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := promptIsLeadActionSelfSufficient(c.prompt); got != c.want {
+				t.Errorf("promptIsLeadActionSelfSufficient(%q) = %v; want %v", c.prompt, got, c.want)
+			}
+		})
+	}
+}
+
 // Regression guard: the wiring at agent_responses.go calls
 // inferredTargetingSummary(prompt) — make sure the helper doesn't
 // silently start panicking on prompts with no inferrable signals.
