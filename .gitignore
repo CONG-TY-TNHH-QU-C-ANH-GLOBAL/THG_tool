@@ -67,3 +67,9 @@ out.txt
 
 # TypeScript config (only needed if TS tooling is published)
 tsconfig.json
+
+# Build artifacts — auto-regenerate, machine-specific, no review value.
+# Untracked from git history in commit a6a6a75+.
+frontend/tsconfig.tsbuildinfo
+**/__pycache__/
+*.pyc
