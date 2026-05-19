@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useFiles } from '../../hooks/useFiles';
 import { useDataSources } from '../../hooks/useDataSources';
 import {
   getBusinessContext, saveBusinessContext, type BusinessContext,
   getOrgPolicy, updateOrgPolicy, type OutboundMode,
+  type InferBusinessContextResult, INFERRED_FIELD_KEYS, type InferredFieldKey,
 } from '../../services/settingsService';
-import BusinessMemoryPanel from '../data/BusinessMemoryPanel';
+import BusinessMemoryPanel, { type BusinessConfidences } from '../data/BusinessMemoryPanel';
 import ContextSummaryPanel from '../data/ContextSummaryPanel';
 import DataSourcesPanel from '../data/DataSourcesPanel';
 import DataStatsGrid from '../data/DataStatsGrid';
 import FileUploadPanel from '../data/FileUploadPanel';
+import MagicOmnibox from '../data/MagicOmnibox';
 import OutboundPolicyPanel from '../data/OutboundPolicyPanel';
 import PrivateFilesTable from '../data/PrivateFilesTable';
 
@@ -43,6 +46,9 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
   const [outboundMode, setOutboundMode] = useState<OutboundMode>('draft');
   const [policyMsg, setPolicyMsg] = useState('');
   const [savingPolicy, setSavingPolicy] = useState(false);
+  const [confidences, setConfidences] = useState<BusinessConfidences>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [inferSummary, setInferSummary] = useState<string>('');
 
   const loadContext = useCallback(async () => {
     const ctx = await getBusinessContext();
@@ -125,8 +131,60 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
     await loadContext().catch(() => {});
   };
 
+  // When MagicOmnibox returns a proposal we merge non-empty values into
+  // the form state and stash the per-field confidences. Empty proposals
+  // are skipped so we never wipe out a value the user already typed.
+  const handleInferred = (result: InferBusinessContextResult) => {
+    const patch: Partial<BusinessContext> = {};
+    const nextConfidences: BusinessConfidences = { ...confidences };
+    INFERRED_FIELD_KEYS.forEach((key) => {
+      const field = result[key];
+      if (field && field.value) {
+        (patch as Record<string, string>)[key] = field.value;
+        nextConfidences[key] = field.confidence;
+      }
+    });
+    setBusinessContext(prev => ({ ...prev, ...patch }));
+    setConfidences(nextConfidences);
+    setAdvancedOpen(true);
+    setInferSummary(result.source_summary || '');
+  };
+
+  // Editing a field invalidates the AI confidence tag for that field —
+  // the value is now user-owned. We also drop the inferSummary banner
+  // once the user starts touching anything (it's not a permanent badge).
+  const handleContextChange = (patch: Partial<BusinessContext>) => {
+    setBusinessContext(prev => ({ ...prev, ...patch }));
+    setConfidences(prev => {
+      const next = { ...prev };
+      Object.keys(patch).forEach((key) => {
+        if ((INFERRED_FIELD_KEYS as readonly string[]).includes(key)) {
+          delete next[key as InferredFieldKey];
+        }
+      });
+      return next;
+    });
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {isAdmin && <MagicOmnibox onInferred={handleInferred} />}
+
+      {inferSummary && (
+        <div className="cyber-oracle-summary" style={{
+          padding: '10px 14px',
+          borderRadius: 12,
+          background: 'linear-gradient(135deg, rgba(79,70,229,0.06), rgba(6,182,212,0.06))',
+          border: '1px solid rgba(6,182,212,0.18)',
+          fontSize: 13,
+          color: 'var(--text)',
+          lineHeight: 1.5,
+        }}>
+          <span style={{ fontWeight: 700, color: '#06B6D4', marginRight: 8 }}>AI tóm tắt:</span>
+          {inferSummary}
+        </div>
+      )}
+
       <DataStatsGrid files={files} sources={sources} />
       <OutboundPolicyPanel
         mode={outboundMode}
@@ -139,20 +197,46 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
         context={businessContext}
         message={contextMsg}
         isSaving={savingContext}
-        onChange={patch => setBusinessContext(prev => ({ ...prev, ...patch }))}
+        confidences={confidences}
+        onChange={handleContextChange}
         onSave={saveContext}
       />
-      <DataSourcesPanel
-        sources={sources}
-        isLoading={isLoading}
-        isSyncing={isSyncing}
-        onAdd={add}
-        onSync={syncSource}
-        onRemove={deleteSource}
-      />
-      <FileUploadPanel isUploading={isUploading} onUpload={handleFiles} />
-      <ContextSummaryPanel privateFilesSummary={privateFilesSummary} dataSourcesSummary={dataSourcesSummary} />
-      <PrivateFilesTable files={files} onRemove={deleteFile} />
+
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          alignSelf: 'flex-start',
+          background: 'transparent',
+          border: 0,
+          color: 'var(--text-mute)',
+          fontSize: 12,
+          cursor: 'pointer',
+        }}
+      >
+        {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        Nguồn dữ liệu &amp; tệp đính kèm (nâng cao)
+      </button>
+
+      {advancedOpen && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <DataSourcesPanel
+            sources={sources}
+            isLoading={isLoading}
+            isSyncing={isSyncing}
+            onAdd={add}
+            onSync={syncSource}
+            onRemove={deleteSource}
+          />
+          <FileUploadPanel isUploading={isUploading} onUpload={handleFiles} />
+          <ContextSummaryPanel privateFilesSummary={privateFilesSummary} dataSourcesSummary={dataSourcesSummary} />
+          <PrivateFilesTable files={files} onRemove={deleteFile} />
+        </div>
+      )}
     </div>
   );
 }

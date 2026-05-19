@@ -40,6 +40,10 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Get("/facebook/status", h.autoflowFacebookStatus)
 	group.Get("/context/business", h.getBusinessContext)
 	group.Put("/context/business", h.updateBusinessContext)
+	// Auto-infer the business profile from a website URL or a 1-line
+	// description. Read-only (LLM call) — does not save. The FE pre-
+	// fills updateBusinessContext fields and the user can edit + save.
+	group.Post("/context/business/infer", adminOnly, h.inferBusinessContext)
 	group.Get("/org/policy", h.getOrgPolicy)
 	group.Put("/org/policy", adminOnly, h.updateOrgPolicy)
 	group.Get("/billing/summary", h.billingSummary)

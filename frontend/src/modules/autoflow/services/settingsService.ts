@@ -115,6 +115,77 @@ export async function saveBusinessContext(context: Partial<BusinessContext>): Pr
   await api.put('/context/business', context);
 }
 
+// ── Magic Omnibox: auto-infer business profile ──────────────────────────────
+//
+// The user pastes a website URL (catalog / landing page) or a 1-line
+// description; the backend fetches the URL, strips HTML to text, runs an
+// LLM extractor, and returns each of the 13 fields paired with a
+// confidence score. The FE pre-fills the form and lets the user edit
+// inline before persisting via saveBusinessContext.
+
+export interface InferredField {
+  value: string;
+  confidence: number; // 0..1
+}
+
+export interface InferBusinessContextResult {
+  business_profile: InferredField;
+  business_name: InferredField;
+  business_industry: InferredField;
+  services: InferredField;
+  target_customers: InferredField;
+  target_author_role: InferredField;
+  target_signals: InferredField;
+  negative_signals: InferredField;
+  business_location: InferredField;
+  markets: InferredField;
+  business_usp: InferredField;
+  tone: InferredField;
+  approval_policy: InferredField;
+  reject_rules: InferredField;
+  source_summary: string;
+  source_url?: string;
+}
+
+export async function inferBusinessContext(input: { source_url?: string; note?: string }): Promise<InferBusinessContextResult> {
+  return api.post<InferBusinessContextResult>('/context/business/infer', input);
+}
+
+// Inferred field names map 1:1 to BusinessContext keys minus the two
+// "summary" pseudo-fields.
+export type InferredFieldKey =
+  | 'business_profile'
+  | 'business_name'
+  | 'business_industry'
+  | 'services'
+  | 'target_customers'
+  | 'target_author_role'
+  | 'target_signals'
+  | 'negative_signals'
+  | 'business_location'
+  | 'markets'
+  | 'business_usp'
+  | 'tone'
+  | 'approval_policy'
+  | 'reject_rules';
+
+export const INFERRED_FIELD_KEYS: InferredFieldKey[] = [
+  'business_profile',
+  'business_name',
+  'business_industry',
+  'services',
+  'target_customers',
+  'target_author_role',
+  'target_signals',
+  'negative_signals',
+  'business_location',
+  'markets',
+  'business_usp',
+  'tone',
+  'approval_policy',
+  'reject_rules',
+];
+
 export type OutboundMode = 'auto' | 'draft';
 
 export interface OrgPolicy {

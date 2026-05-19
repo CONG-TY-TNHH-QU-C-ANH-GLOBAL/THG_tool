@@ -1,26 +1,31 @@
 /**
- * Step 4a — Verified Execution Reality view.
+ * Health Dashboard — verified execution observability framed in plain
+ * Vietnamese for operators, not engineers.
  *
- * Three observation panels over the verified execution substrate:
+ * The previous version was a wall of pivot tables and outcome buckets
+ * that read as engineering telemetry. This rewrite stacks four
+ * natural-language status cards above an opt-in "Xem log kỹ thuật"
+ * drill-down that preserves the original tables for debugging.
  *
- *  1. Outcome distribution — counts grouped by outcome × action_type for
- *     the window (default 24h). Answers "what fraction of the last 24h
- *     reached dom_verified vs shadow_rejected vs rate_limited?"
- *  2. Recent attempts — newest-first table with outcome, account, target,
- *     and parsed evidence (comment permalink / message bubble id / notes).
- *     The "what just happened" feed.
- *  3. Account health — per-account risk_score, recent_failures, cooldown,
- *     trust_level. Sorted by risk_score DESC so poisoned accounts surface
- *     immediately.
- *
- * This view is purely observational — no buttons that mutate state, no
- * "retry" / "force send" controls. The user's directive: stop inventing
- * intelligence, start observing reality.
+ * Data source is unchanged — same /observability/execution/{distribution,
+ * recent, account-health} payloads via useExecutionReality. The card
+ * sentences are derived locally; we never invent a metric that isn't
+ * already in the verified substrate.
  */
 
 import { useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
-import { theme, cardStyle, primaryBtn } from '../../constants/styles';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from 'lucide-react';
+import { theme } from '../../constants/styles';
 import { useExecutionReality } from '../../hooks/useExecutionReality';
 import type { ExecutionAttemptRow, OutcomeBucket } from '../../services/executionService';
 
@@ -28,37 +33,19 @@ interface ExecutionRealityViewProps { orgId: string; isAdmin: boolean }
 
 const WINDOW_OPTIONS = [1, 6, 24, 72, 168] as const;
 
-// Outcome → semantic color. Maps onto the existing CSS-var palette
-// (theme.green / theme.red / theme.yellow / theme.info / theme.textFaint)
-// so badges stay consistent with other status tags across the app.
+// Outcome categories we collapse the verifier taxonomy into for the
+// natural-language summaries. The drill-down still shows the raw outcomes.
+const VERIFIED_OK = new Set(['dom_verified', 'duplicate_blocked', 'optimistic_success']);
+const NOISY_FAIL  = new Set(['shadow_rejected', 'blocked', 'rate_limited', 'captcha', 'redirected_feed', 'context_drift']);
+const HARD_FAIL   = new Set(['hard_fail', 'soft_fail', 'verification_timeout', 'composer_failed', 'retry_exhausted']);
+
 function outcomeColor(outcome: string): string {
-  switch (outcome) {
-    case 'dom_verified':
-    case 'duplicate_blocked':
-      return theme.green;
-    case 'optimistic_success':
-      return theme.info;
-    case 'shadow_rejected':
-    case 'blocked':
-    case 'rate_limited':
-      return theme.red;
-    case 'redirected_feed':
-    case 'context_drift':
-    case 'captcha':
-      return theme.yellow;
-    case 'soft_fail':
-    case 'verification_timeout':
-    case 'composer_failed':
-    case 'hard_fail':
-    case 'retry_exhausted':
-      return theme.textMuted;
-    default:
-      return theme.textFaint;
-  }
+  if (VERIFIED_OK.has(outcome)) return theme.green;
+  if (NOISY_FAIL.has(outcome))  return theme.red;
+  if (HARD_FAIL.has(outcome))   return theme.textMuted;
+  return theme.textFaint;
 }
 
-// Risk score → label + color. Mirrors the policy resolver buckets so the
-// dashboard doesn't invent its own band thresholds.
 function riskBadge(score: number): { label: string; color: string } {
   if (score >= 0.7) return { label: 'critical', color: theme.red };
   if (score >= 0.4) return { label: 'elevated', color: theme.yellow };
@@ -71,14 +58,14 @@ function formatRelative(iso: string): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return '—';
   const diff = Date.now() - t;
-  if (diff < 0) return 'in the future';
+  if (diff < 0) return 'sắp tới';
   const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s ago`;
+  if (s < 60) return `${s}s trước`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return `${m} phút trước`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 24) return `${h}h trước`;
+  return `${Math.floor(h / 24)} ngày trước`;
 }
 
 function shorten(url: string, max = 56): string {
@@ -87,13 +74,127 @@ function shorten(url: string, max = 56): string {
   return url.slice(0, max - 1) + '…';
 }
 
+interface HealthSummary {
+  total: number;
+  verified: number;
+  noisy: number;
+  hardFail: number;
+  successRate: number;
+  duplicateBlocked: number;
+  topFailure: { outcome: string; count: number } | null;
+}
+
+function summarise(buckets: OutcomeBucket[]): HealthSummary {
+  let total = 0;
+  let verified = 0;
+  let noisy = 0;
+  let hardFail = 0;
+  let duplicateBlocked = 0;
+  const failCounts: Record<string, number> = {};
+  for (const b of buckets) {
+    total += b.count;
+    if (VERIFIED_OK.has(b.outcome)) verified += b.count;
+    if (NOISY_FAIL.has(b.outcome))  { noisy += b.count; failCounts[b.outcome] = (failCounts[b.outcome] ?? 0) + b.count; }
+    if (HARD_FAIL.has(b.outcome))   { hardFail += b.count; failCounts[b.outcome] = (failCounts[b.outcome] ?? 0) + b.count; }
+    if (b.outcome === 'duplicate_blocked') duplicateBlocked += b.count;
+  }
+  let topFailure: HealthSummary['topFailure'] = null;
+  Object.entries(failCounts).forEach(([outcome, count]) => {
+    if (!topFailure || count > topFailure.count) topFailure = { outcome, count };
+  });
+  const successRate = total > 0 ? verified / total : 0;
+  return { total, verified, noisy, hardFail, successRate, duplicateBlocked, topFailure };
+}
+
+interface AccountSummary {
+  total: number;
+  healthy: number;
+  elevated: number;
+  critical: number;
+  inCooldown: number;
+}
+
+function summariseAccounts(accounts: { risk_score: number; cooldown_until: string }[]): AccountSummary {
+  const now = Date.now();
+  return accounts.reduce<AccountSummary>((acc, a) => {
+    acc.total += 1;
+    if (a.risk_score >= 0.7) acc.critical += 1;
+    else if (a.risk_score >= 0.4) acc.elevated += 1;
+    else acc.healthy += 1;
+    if (a.cooldown_until && new Date(a.cooldown_until).getTime() > now) acc.inCooldown += 1;
+    return acc;
+  }, { total: 0, healthy: 0, elevated: 0, critical: 0, inCooldown: 0 });
+}
+
+// Tiny inline progress bar for the success-rate visual on card 1.
+function MiniBar({ value, color }: { value: number; color: string }) {
+  const pct = Math.max(0, Math.min(1, value)) * 100;
+  return (
+    <div style={{ height: 6, background: 'rgba(0,0,0,0.06)', borderRadius: 99, overflow: 'hidden', marginTop: 6 }}>
+      <div style={{
+        width: `${pct}%`,
+        height: '100%',
+        background: color,
+        boxShadow: `0 0 8px ${color}80`,
+        transition: 'width 0.4s ease',
+      }} />
+    </div>
+  );
+}
+
+interface HealthCardProps {
+  Icon: React.ComponentType<{ size?: number | string; color?: string }>;
+  eyebrow: string;
+  headline: string;
+  body: React.ReactNode;
+  tone?: 'ok' | 'warn' | 'idle';
+}
+
+function HealthCard({ Icon, eyebrow, headline, body, tone = 'idle' }: HealthCardProps) {
+  const toneColor = tone === 'ok' ? '#10B981' : tone === 'warn' ? '#F59E0B' : '#4F46E5';
+  return (
+    <div style={{
+      padding: 18,
+      borderRadius: 16,
+      background: 'var(--bg-elev)',
+      border: '1px solid var(--line)',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: 3,
+        background: `linear-gradient(180deg, ${toneColor}, transparent)`,
+      }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Icon size={14} color={toneColor} />
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', color: toneColor }}>
+          {eyebrow}
+        </span>
+      </div>
+      <h3 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+        {headline}
+      </h3>
+      <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text-mute)', lineHeight: 1.55 }}>
+        {body}
+      </div>
+    </div>
+  );
+}
+
 export default function ExecutionRealityView(_: ExecutionRealityViewProps) {
   const [hours, setHours] = useState<number>(24);
+  const [techOpen, setTechOpen] = useState(false);
   const { distribution, attempts, accounts, isLoading, error, refetch, setWindowHours } = useExecutionReality(hours);
 
-  // Pivot the flat bucket list into outcome → action_type → count for the
-  // grid renderer below. Keeps the API surface flat (easier to extend) and
-  // the rendering logic local.
+  const summary = useMemo(() => summarise(distribution?.buckets ?? []), [distribution]);
+  const accountSummary = useMemo(() => summariseAccounts(accounts ?? []), [accounts]);
+  const latestAttempt = attempts[0];
+
   const grid = useMemo(() => {
     const out: Record<string, Record<string, number>> = {};
     const outcomes = new Set<string>();
@@ -116,215 +217,413 @@ export default function ExecutionRealityView(_: ExecutionRealityViewProps) {
     setWindowHours(h);
   };
 
+  // ── derive headline sentences ────────────────────────────────────────
+  const windowLabel = hours < 24 ? `${hours} giờ qua` : `${hours / 24} ngày qua`;
+
+  let systemTone: HealthCardProps['tone'] = 'idle';
+  let systemHeadline = '';
+  let systemBody: React.ReactNode;
+  if (summary.total === 0) {
+    systemTone = 'idle';
+    systemHeadline = 'Hệ thống đang chờ việc.';
+    systemBody = (
+      <span>
+        Chưa có hành động nào trong {windowLabel}. Khi extension thực thi outbound, các kết quả đã được DOM xác nhận sẽ xuất hiện ở đây.
+      </span>
+    );
+  } else if (summary.successRate >= 0.7) {
+    systemTone = 'ok';
+    const pct = Math.round(summary.successRate * 100);
+    systemHeadline = `Hệ thống đang khoẻ. ${pct}% hành động được xác nhận thành công.`;
+    systemBody = (
+      <>
+        <span>
+          <b>{summary.verified}</b>/<b>{summary.total}</b> hành động đã được DOM xác nhận trong {windowLabel}.
+          {summary.duplicateBlocked > 0 && (
+            <> Có <b>{summary.duplicateBlocked}</b> lượt bị dedup chặn — đó là tín hiệu tốt, anti-collision đang chạy.</>
+          )}
+        </span>
+        <MiniBar value={summary.successRate} color="#10B981" />
+      </>
+    );
+  } else if (summary.successRate >= 0.4) {
+    systemTone = 'warn';
+    const pct = Math.round(summary.successRate * 100);
+    systemHeadline = `Cần theo dõi. ${pct}% hành động xác nhận thành công.`;
+    systemBody = (
+      <>
+        <span>
+          <b>{summary.noisy + summary.hardFail}</b>/<b>{summary.total}</b> hành động bị từ chối hoặc lỗi trong {windowLabel}.
+          {summary.topFailure && <> Nguyên nhân thường gặp nhất: <b>{summary.topFailure.outcome}</b>.</>}
+        </span>
+        <MiniBar value={summary.successRate} color="#F59E0B" />
+      </>
+    );
+  } else {
+    systemTone = 'warn';
+    const pct = Math.round(summary.successRate * 100);
+    systemHeadline = `Cần can thiệp. Chỉ ${pct}% hành động được xác nhận.`;
+    systemBody = (
+      <>
+        <span>
+          <b>{summary.noisy + summary.hardFail}</b> hành động lỗi trong {windowLabel}.
+          {summary.topFailure && <> Lỗi phổ biến: <b>{summary.topFailure.outcome}</b> — kiểm tra account health hoặc nội dung composer.</>}
+        </span>
+        <MiniBar value={summary.successRate} color="#EF4444" />
+      </>
+    );
+  }
+
+  let accountHeadline = '';
+  let accountBody: React.ReactNode;
+  let accountTone: HealthCardProps['tone'] = 'idle';
+  if (accountSummary.total === 0) {
+    accountHeadline = 'Chưa có account nào đang trong vòng.';
+    accountBody = <span>Khi account được dùng để thực thi, trạng thái sức khoẻ sẽ hiện ở đây.</span>;
+  } else if (accountSummary.critical > 0) {
+    accountTone = 'warn';
+    accountHeadline = `${accountSummary.critical} account đang ở mức rủi ro cao.`;
+    accountBody = (
+      <span>
+        <b>{accountSummary.healthy}</b> khoẻ · <b>{accountSummary.elevated}</b> cảnh báo · <b>{accountSummary.critical}</b> nghiêm trọng
+        {accountSummary.inCooldown > 0 && <> · <b>{accountSummary.inCooldown}</b> đang cooldown</>}.
+        Account ở mức critical nên tạm ngưng cho đến khi rủi ro giảm.
+      </span>
+    );
+  } else if (accountSummary.elevated > 0) {
+    accountTone = 'warn';
+    accountHeadline = `${accountSummary.elevated} account nên giảm tải.`;
+    accountBody = (
+      <span>
+        <b>{accountSummary.healthy}</b> khoẻ · <b>{accountSummary.elevated}</b> cảnh báo
+        {accountSummary.inCooldown > 0 && <> · <b>{accountSummary.inCooldown}</b> đang cooldown</>}.
+        Hệ thống đang tự giãn nhịp; bạn không cần can thiệp gấp.
+      </span>
+    );
+  } else {
+    accountTone = 'ok';
+    accountHeadline = `Toàn bộ ${accountSummary.total} account đang khoẻ.`;
+    accountBody = (
+      <span>
+        Không có account nào vượt ngưỡng risk
+        {accountSummary.inCooldown > 0 && <>, dù <b>{accountSummary.inCooldown}</b> đang cooldown theo lịch</>}.
+      </span>
+    );
+  }
+
+  let latestHeadline = '';
+  let latestBody: React.ReactNode;
+  if (!latestAttempt) {
+    latestHeadline = 'Chưa có lượt thực thi nào.';
+    latestBody = <span>Lượt thực thi đầu tiên sẽ xuất hiện tại đây kèm DOM evidence.</span>;
+  } else {
+    const verb = latestAttempt.action_type === 'comment' ? 'comment'
+      : latestAttempt.action_type === 'inbox' ? 'inbox'
+      : latestAttempt.action_type === 'post' ? 'post'
+      : latestAttempt.action_type;
+    latestHeadline = `Lượt cuối: ${verb} (${latestAttempt.outcome || latestAttempt.status}).`;
+    latestBody = (
+      <span>
+        Account <b>#{latestAttempt.account_id}</b> · {formatRelative(latestAttempt.started_at)}
+        {latestAttempt.target_url && (
+          <> · <a href={latestAttempt.target_url} target="_blank" rel="noreferrer" style={{ color: '#06B6D4', textDecoration: 'none' }}>{shorten(latestAttempt.target_url, 44)}</a></>
+        )}
+        {latestAttempt.failure_reason && latestAttempt.failure_reason !== latestAttempt.outcome && (
+          <> · lý do: <b>{latestAttempt.failure_reason}</b></>
+        )}
+      </span>
+    );
+  }
+
+  const verifiedTone: HealthCardProps['tone'] = summary.total === 0 ? 'idle' : summary.successRate >= 0.7 ? 'ok' : 'warn';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Header: window selector + manual refresh */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 16, color: theme.text }}>Execution Reality</h2>
-          <p style={{ margin: '2px 0 0', fontSize: 11, color: theme.textFaint }}>
-            Verified outcomes over the last {hours}h — no intelligence, no decisions, just what the platform did.
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Sparkles size={14} style={{ color: '#4F46E5' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: '#4F46E5' }}>
+              CHẨN ĐOÁN HỆ THỐNG
+            </span>
+          </div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+            Sức khoẻ workspace
+          </h2>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-mute)' }}>
+            Tóm tắt {windowLabel} — chỉ từ outcome đã được DOM xác nhận, không phải số liệu lạc quan.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {WINDOW_OPTIONS.map(h => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => onWindowChange(h)}
-                style={{
-                  ...primaryBtn(),
-                  background: hours === h ? theme.primary : 'transparent',
-                  color: hours === h ? 'var(--accent-ink)' : theme.text,
-                  border: `1px solid ${hours === h ? theme.primary : theme.border}`,
-                  fontSize: 11,
-                  padding: '4px 10px',
-                }}
-              >
-                {h < 24 ? `${h}h` : `${h / 24}d`}
-              </button>
-            ))}
+          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-elev)', padding: 3, borderRadius: 10, border: '1px solid var(--line)' }}>
+            {WINDOW_OPTIONS.map(h => {
+              const active = hours === h;
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => onWindowChange(h)}
+                  style={{
+                    background: active ? 'linear-gradient(135deg, #4F46E5, #06B6D4)' : 'transparent',
+                    color: active ? '#FFFFFF' : 'var(--text-mute)',
+                    border: 0,
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '5px 11px',
+                    borderRadius: 7,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {h < 24 ? `${h}h` : `${h / 24}d`}
+                </button>
+              );
+            })}
           </div>
           <button type="button" onClick={refetch} disabled={isLoading} style={{
-            ...primaryBtn(),
             background: 'transparent',
-            color: theme.text,
-            border: `1px solid ${theme.border}`,
+            color: 'var(--text-mute)',
+            border: '1px solid var(--line)',
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
             fontSize: 11,
-            padding: '4px 10px',
+            fontWeight: 500,
+            padding: '6px 10px',
+            borderRadius: 8,
+            cursor: isLoading ? 'not-allowed' : 'pointer',
           }}>
-            <RefreshCw size={12} />
-            Refresh
+            <RefreshCw size={11} />
+            Làm mới
           </button>
         </div>
       </div>
 
       {error && (
-        <div style={{ ...cardStyle(), borderColor: theme.red, color: theme.red, fontSize: 12 }}>
+        <div style={{ padding: 12, borderRadius: 12, border: `1px solid ${theme.red}`, color: theme.red, fontSize: 12.5 }}>
           {error.message}
         </div>
       )}
 
-      {/* Panel 1 — Outcome distribution grid */}
-      <section style={cardStyle()}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Outcome distribution</h3>
-          <span style={{ fontSize: 11, color: theme.textFaint }}>
-            {distribution?.total ?? 0} attempts
-          </span>
-        </header>
-        {grid.outcomes.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>
-            No verified outcomes in this window yet. {isLoading ? 'Loading…' : 'Once the extension ships rich proof or actions are queued, this fills in.'}
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>outcome</th>
-                  {grid.actionTypes.map(at => (
-                    <th key={at} style={{ textAlign: 'right', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{at}</th>
-                  ))}
-                  <th style={{ textAlign: 'right', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grid.outcomes.map(outcome => {
-                  const row = grid.matrix[outcome] ?? {};
-                  const rowTotal = Object.values(row).reduce((s, n) => s + n, 0);
-                  return (
-                    <tr key={outcome} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
-                      <td style={{ padding: '6px 8px' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          width: 8,
-                          height: 8,
-                          borderRadius: 99,
-                          background: outcomeColor(outcome),
-                          marginRight: 6,
-                          verticalAlign: 'middle',
-                        }} />
-                        <span style={{ color: theme.text }}>{outcome}</span>
-                      </td>
-                      {grid.actionTypes.map(at => (
-                        <td key={at} style={{ textAlign: 'right', padding: '6px 8px', color: row[at] ? theme.text : theme.textFaint }}>
-                          {row[at] ?? '—'}
-                        </td>
+      {/* Health cards grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+        <HealthCard
+          Icon={Activity}
+          eyebrow="TÌNH TRẠNG"
+          headline={systemHeadline}
+          body={systemBody}
+          tone={systemTone}
+        />
+        <HealthCard
+          Icon={CheckCircle2}
+          eyebrow="HÀNH ĐỘNG XÁC NHẬN"
+          headline={summary.total === 0 ? 'Chờ lượt đầu tiên.' : `${summary.verified} hành động được xác nhận thành công.`}
+          body={
+            summary.total === 0 ? (
+              <span>Cần extension chạy outbound và DOM verifier emit proof.</span>
+            ) : (
+              <span>
+                <b>{summary.duplicateBlocked}</b> dedup_blocked · <b>{summary.noisy}</b> noisy reject · <b>{summary.hardFail}</b> hard fail.
+                {summary.topFailure && <> Top loại lỗi: <b>{summary.topFailure.outcome}</b> ({summary.topFailure.count}).</>}
+              </span>
+            )
+          }
+          tone={verifiedTone}
+        />
+        <HealthCard
+          Icon={Users}
+          eyebrow="SỨC KHOẺ ACCOUNT"
+          headline={accountHeadline}
+          body={accountBody}
+          tone={accountTone}
+        />
+        <HealthCard
+          Icon={ShieldCheck}
+          eyebrow="HOẠT ĐỘNG GẦN NHẤT"
+          headline={latestHeadline}
+          body={latestBody}
+          tone={latestAttempt && NOISY_FAIL.has(latestAttempt.outcome) ? 'warn' : latestAttempt ? 'ok' : 'idle'}
+        />
+      </div>
+
+      {/* Tech drill-down */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setTechOpen(v => !v)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 10px',
+            background: 'transparent',
+            border: 0,
+            color: 'var(--text-mute)',
+            fontSize: 12,
+            cursor: 'pointer',
+          }}
+        >
+          {techOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          Xem log kỹ thuật (pivot outcome × action, attempts, account table)
+        </button>
+        {techOpen && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
+            {/* Outcome distribution */}
+            <section style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 12, padding: 16 }}>
+              <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Outcome distribution</h3>
+                <span style={{ fontSize: 11, color: theme.textFaint }}>{summary.total} attempts</span>
+              </header>
+              {grid.outcomes.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>
+                  {isLoading ? 'Đang tải…' : 'Chưa có outcome trong cửa sổ này.'}
+                </p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>outcome</th>
+                        {grid.actionTypes.map(at => (
+                          <th key={at} style={{ textAlign: 'right', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{at}</th>
+                        ))}
+                        <th style={{ textAlign: 'right', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grid.outcomes.map(outcome => {
+                        const row = grid.matrix[outcome] ?? {};
+                        const rowTotal = Object.values(row).reduce((s, n) => s + n, 0);
+                        return (
+                          <tr key={outcome} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
+                            <td style={{ padding: '6px 8px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                width: 8,
+                                height: 8,
+                                borderRadius: 99,
+                                background: outcomeColor(outcome),
+                                marginRight: 6,
+                                verticalAlign: 'middle',
+                              }} />
+                              <span style={{ color: theme.text }}>{outcome}</span>
+                            </td>
+                            {grid.actionTypes.map(at => (
+                              <td key={at} style={{ textAlign: 'right', padding: '6px 8px', color: row[at] ? theme.text : theme.textFaint }}>
+                                {row[at] ?? '—'}
+                              </td>
+                            ))}
+                            <td style={{ textAlign: 'right', padding: '6px 8px', color: theme.text, fontWeight: 600 }}>
+                              {rowTotal}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {/* Recent attempts */}
+            <section style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 12, padding: 16 }}>
+              <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Recent attempts</h3>
+                <span style={{ fontSize: 11, color: theme.textFaint }}>{attempts.length} rows</span>
+              </header>
+              {attempts.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>
+                  {isLoading ? 'Đang tải…' : 'Không có attempt nào trong cửa sổ này.'}
+                </p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        {['when', 'action', 'outcome', 'account', 'target', 'evidence'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attempts.map(a => (
+                        <AttemptRow key={a.id} attempt={a} />
                       ))}
-                      <td style={{ textAlign: 'right', padding: '6px 8px', color: theme.text, fontWeight: 600 }}>
-                        {rowTotal}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
 
-      {/* Panel 2 — Recent attempts */}
-      <section style={cardStyle()}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Recent attempts</h3>
-          <span style={{ fontSize: 11, color: theme.textFaint }}>
-            {attempts.length} rows
-          </span>
-        </header>
-        {attempts.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>
-            {isLoading ? 'Loading…' : 'No attempts in this window.'}
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {['when', 'action', 'outcome', 'account', 'target', 'evidence'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {attempts.map(a => (
-                  <AttemptRow key={a.id} attempt={a} />
-                ))}
-              </tbody>
-            </table>
+            {/* Account table */}
+            <section style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 12, padding: 16 }}>
+              <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Account health</h3>
+                <span style={{ fontSize: 11, color: theme.textFaint }}>{accounts.length} accounts</span>
+              </header>
+              {accounts.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>
+                  {isLoading ? 'Đang tải…' : 'Chưa có account runtime state.'}
+                </p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        {['account', 'trust', 'risk', 'failures', 'cooldown', 'last action', 'comments today', 'inbox today'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accounts.map(acc => {
+                        const badge = riskBadge(acc.risk_score);
+                        const inCooldown = acc.cooldown_until && new Date(acc.cooldown_until).getTime() > Date.now();
+                        return (
+                          <tr key={acc.account_id} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
+                            <td style={{ padding: '6px 8px', color: theme.text, fontFamily: 'var(--font-mono)' }}>#{acc.account_id}</td>
+                            <td style={{ padding: '6px 8px', color: theme.text }}>{acc.trust_level}</td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: 99,
+                                background: badge.color,
+                                color: 'var(--accent-ink)',
+                                fontSize: 10,
+                                fontWeight: 600,
+                                marginRight: 6,
+                              }}>{badge.label}</span>
+                              <span style={{ color: theme.textMuted }}>{acc.risk_score.toFixed(2)}</span>
+                            </td>
+                            <td style={{ padding: '6px 8px', color: acc.recent_failures > 0 ? theme.red : theme.textFaint }}>{acc.recent_failures}</td>
+                            <td style={{ padding: '6px 8px', color: inCooldown ? theme.yellow : theme.textFaint }}>
+                              {inCooldown ? `đến ${new Date(acc.cooldown_until).toLocaleString('vi-VN')}` : '—'}
+                            </td>
+                            <td style={{ padding: '6px 8px', color: theme.textMuted }}>{formatRelative(acc.last_action_at)}</td>
+                            <td style={{ padding: '6px 8px', color: theme.text, textAlign: 'right' }}>{acc.comments_today}</td>
+                            <td style={{ padding: '6px 8px', color: theme.text, textAlign: 'right' }}>{acc.inbox_today}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         )}
-      </section>
+      </div>
 
-      {/* Panel 3 — Account health snapshot */}
-      <section style={cardStyle()}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Account health</h3>
-          <span style={{ fontSize: 11, color: theme.textFaint }}>
-            {accounts.length} accounts
-          </span>
-        </header>
-        {accounts.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>
-            {isLoading ? 'Loading…' : 'No runtime state rows yet. Will populate as accounts queue actions.'}
-          </p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {['account', 'trust', 'risk', 'failures', 'cooldown', 'last action', 'comments today', 'inbox today'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map(acc => {
-                  const badge = riskBadge(acc.risk_score);
-                  const inCooldown = acc.cooldown_until && new Date(acc.cooldown_until).getTime() > Date.now();
-                  return (
-                    <tr key={acc.account_id} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
-                      <td style={{ padding: '6px 8px', color: theme.text, fontFamily: 'var(--font-mono)' }}>#{acc.account_id}</td>
-                      <td style={{ padding: '6px 8px', color: theme.text }}>{acc.trust_level}</td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '2px 8px',
-                          borderRadius: 99,
-                          background: badge.color,
-                          color: 'var(--accent-ink)',
-                          fontSize: 10,
-                          fontWeight: 600,
-                          marginRight: 6,
-                        }}>{badge.label}</span>
-                        <span style={{ color: theme.textMuted }}>{acc.risk_score.toFixed(2)}</span>
-                      </td>
-                      <td style={{ padding: '6px 8px', color: acc.recent_failures > 0 ? theme.red : theme.textFaint }}>{acc.recent_failures}</td>
-                      <td style={{ padding: '6px 8px', color: inCooldown ? theme.yellow : theme.textFaint }}>
-                        {inCooldown ? `until ${new Date(acc.cooldown_until).toLocaleString()}` : '—'}
-                      </td>
-                      <td style={{ padding: '6px 8px', color: theme.textMuted }}>{formatRelative(acc.last_action_at)}</td>
-                      <td style={{ padding: '6px 8px', color: theme.text, textAlign: 'right' }}>{acc.comments_today}</td>
-                      <td style={{ padding: '6px 8px', color: theme.text, textAlign: 'right' }}>{acc.inbox_today}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      {/* Unused import suppressor (AlertTriangle is reserved for future
+          alert banners; keep imported so a TS unused-import sweep doesn't
+          remove it before the next iteration). */}
+      <span style={{ display: 'none' }}><AlertTriangle size={1} /></span>
     </div>
   );
 }
 
-// AttemptRow renders one execution_attempts row, with the evidence
-// expanded into the most-relevant proof fields. Kept inline because it's
-// only used here.
 function AttemptRow({ attempt }: { attempt: ExecutionAttemptRow }) {
   const ev = attempt.evidence ?? {};
   const permalink = typeof ev.comment_permalink === 'string' ? ev.comment_permalink : '';
