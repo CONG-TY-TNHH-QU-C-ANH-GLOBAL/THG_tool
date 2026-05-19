@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, CheckCircle2, Clock, Cpu, RefreshCw, Send, Trash2, UserRound } from 'lucide-react';
+import { CheckCircle2, Cpu, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import {
   clearAgentHistory,
@@ -11,8 +11,8 @@ import {
   type AgentChatHistoryItem,
 } from '../../services/agentChatService';
 import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
+import MissionCard from '../missions/MissionCard';
 import { useLang } from '../../i18n/useLang';
-import type { DashboardStrings } from '../../i18n/strings';
 
 interface WorkspaceChatViewProps {
   orgId: string;
@@ -37,22 +37,6 @@ function historyTimeLabel(value: string, locale: string) {
   const ts = new Date(value);
   if (Number.isNaN(ts.getTime())) return nowLabel(locale);
   return ts.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-}
-
-function scheduleLabel(value: string | undefined, tv: DashboardStrings['chatView'], locale: string) {
-  if (!value) return '—';
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return '—';
-  const diff = timestamp - Date.now();
-  if (diff <= 0) return tv.schedulePending;
-  const minutes = Math.ceil(diff / 60000);
-  if (minutes < 60) return tv.scheduleInMinutes(minutes);
-  return new Date(value).toLocaleString(locale, {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-  });
 }
 
 function flattenHistory(items: AgentChatHistoryItem[], locale: string): ChatMessage[] {
@@ -437,23 +421,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
             )}
 
             {!loadingIntents && enabledIntents.slice(0, 4).map((intent) => (
-              <div key={intent.id} style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {intent.name || intent.source_type}
-                </div>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 }}>
-                  {intent.source_url}
-                </div>
-                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-mute)' }}>
-                    <Clock size={11} />
-                    {tv.automationEvery(intent.interval_minutes)}
-                  </span>
-                  <span className="mono" style={{ color: intent.last_error ? 'var(--hot)' : 'var(--ok)' }}>
-                    {intent.last_error ? tv.automationError : scheduleLabel(intent.next_run_at, tv, locale)}
-                  </span>
-                </div>
-              </div>
+              <MissionCard key={intent.id} intent={intent} variant="compact" />
             ))}
           </div>
         </aside>

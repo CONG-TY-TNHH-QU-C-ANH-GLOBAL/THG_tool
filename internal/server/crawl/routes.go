@@ -8,6 +8,9 @@ import (
 // Routes registers crawl intent endpoints.
 func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Get("/crawl-intents", listIntents(deps))
+	// User-facing creation surface (Missions UI in the FE). Idempotent via
+	// store.UpsertCrawlIntent — re-POSTing the same URL refines the same row.
+	group.Post("/crawl-intents", adminOnly, createIntent(deps))
 	// Legacy binary toggle — kept for back-compat with existing clients.
 	// New clients should use the explicit state-transition routes below.
 	group.Put("/crawl-intents/:id/enabled", adminOnly, setIntentEnabled(deps))

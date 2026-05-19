@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties } from 'react';
+
+const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
+const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
+const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { alpha, theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
@@ -21,10 +25,12 @@ import {
   revokeAgentToken,
 } from '../services/settingsService';
 import {
+  Activity,
   AlertTriangle,
   Check,
   Copy,
   CreditCard,
+  Database,
   KeyRound,
   Mail,
   Palette,
@@ -39,7 +45,7 @@ import {
 
 interface SettingsPageProps { org: Organization; orgId: string; isAdmin: boolean; }
 
-type SettingsTab = 'brand' | 'security' | 'staff' | 'agents' | 'billing';
+type SettingsTab = 'brand' | 'security' | 'staff' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics';
 
 const inputStyle: CSSProperties = baseInputStyle;
 
@@ -53,7 +59,15 @@ const TABS: { id: SettingsTab; label: string; Icon: ComponentType<{ size?: numbe
   { id: 'staff', label: 'Nhân viên', Icon: Users },
   { id: 'agents', label: 'AI Agents', Icon: Zap },
   { id: 'billing', label: 'Thanh toán', Icon: CreditCard },
+  { id: 'workspace_knowledge', label: 'Kho dữ liệu', Icon: Database },
+  { id: 'diagnostics', label: 'Chẩn đoán', Icon: Activity },
 ];
+
+const Spinner = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 160 }}>
+    <div className="skeleton" style={{ width: 220, height: 14 }} />
+  </div>
+);
 
 function formatDate(value?: string | null) {
   if (!value) return 'Chưa kết nối';
@@ -651,6 +665,21 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             })}
           </div>
         </div>
+      )}
+
+      {activeTab === 'workspace_knowledge' && (
+        <Suspense fallback={<Spinner />}>
+          <DataPrivateView orgId={orgId} isAdmin={isAdmin} />
+        </Suspense>
+      )}
+
+      {activeTab === 'diagnostics' && (
+        <Suspense fallback={<Spinner />}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <ExecutionRealityView orgId={orgId} isAdmin={isAdmin} />
+            <PromptRoutingRealityView orgId={orgId} isAdmin={isAdmin} />
+          </div>
+        </Suspense>
       )}
     </div>
   );

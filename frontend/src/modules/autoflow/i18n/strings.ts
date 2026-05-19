@@ -24,6 +24,7 @@ export interface DashboardStrings {
     dataPrivate: string;
     execution: string;
     routing: string;
+    missions: string;
     system: string;
     settings: string;
   };
@@ -269,6 +270,50 @@ export interface DashboardStrings {
     selectTitle: string;
     selectDesc: string;
   };
+  missionsView: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    createCta: string;
+    createCtaShort: string;
+    cancelCta: string;
+    emptyTitle: string;
+    emptyDesc: string;
+    formPromptLabel: string;
+    formPromptHelp: string;
+    formPromptPlaceholder: string;
+    formUrlLabel: string;
+    formUrlHelp: string;
+    formUrlPlaceholder: string;
+    formUrlInvalid: string;
+    formPromptShort: (min: number) => string;
+    formAdvancedLabel: string;
+    formIntervalLabel: string;
+    formIntervalHint: (minutes: number) => string;
+    formMaxItemsLabel: string;
+    formAccountLabel: string;
+    formAccountAuto: string;
+    formSubmitCta: string;
+    formSubmittingCta: string;
+    toastCreated: string;
+    toastResurrected: (name: string) => string;
+    statusActive: string;
+    statusPaused: string;
+    statusArchived: string;
+    statusFailed: string;
+    statusCooldown: string;
+    pauseCta: string;
+    resumeCta: string;
+    archiveCta: string;
+    confirmArchive: (name: string) => string;
+    fieldNextRun: string;
+    fieldLastRun: string;
+    fieldInterval: string;
+    fieldLastError: string;
+    fieldSource: string;
+    loadError: string;
+    busyLabel: string;
+  };
 }
 
 export const STRINGS: Record<Lang, DashboardStrings> = {
@@ -281,11 +326,12 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       inbox: 'Inbox',
       posting: 'Posting',
       commenting: 'Commenting',
-      analytics: 'PHÂN TÍCH',
+      analytics: 'TỰ ĐỘNG HÓA',
       leaderboard: 'Leaderboard',
       dataPrivate: 'Data Private',
       execution: 'Thực thi',
       routing: 'Định tuyến',
+      missions: 'Nhiệm vụ',
       system: 'HỆ THỐNG',
       settings: 'Settings',
     },
@@ -531,6 +577,50 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       selectTitle: 'Chọn một lead',
       selectDesc: 'Chọn một lead từ danh sách để xem tín hiệu thị trường và bước hành động kế tiếp.',
     },
+    missionsView: {
+      eyebrow: 'NHIỆM VỤ 24/7',
+      title: 'Nhiệm vụ tự động',
+      subtitle: 'Mô tả thứ bạn cần — hệ thống tự cào dữ liệu định kỳ và đẩy vào kho của workspace.',
+      createCta: 'Tạo nhiệm vụ mới',
+      createCtaShort: '+ Nhiệm vụ',
+      cancelCta: 'Hủy',
+      emptyTitle: 'Chưa có nhiệm vụ nào',
+      emptyDesc: 'Dán một URL group/page Facebook và mô tả điều bạn muốn thu thập. Hệ thống sẽ tự lặp lại đều đặn.',
+      formPromptLabel: 'Bạn muốn thu thập gì?',
+      formPromptHelp: 'Mô tả tự nhiên — đối tượng, ý định, tín hiệu cần bắt.',
+      formPromptPlaceholder: 'Ví dụ: Tìm seller đang cần tìm đơn vị fulfill POD/dropship trong group này.',
+      formUrlLabel: 'URL Facebook',
+      formUrlHelp: 'Link group hoặc page muốn theo dõi.',
+      formUrlPlaceholder: 'https://www.facebook.com/groups/...',
+      formUrlInvalid: 'URL phải bắt đầu bằng https://facebook.com',
+      formPromptShort: (min) => `Cần ít nhất ${min} ký tự để hệ thống học được ý định.`,
+      formAdvancedLabel: 'Tùy chọn nâng cao',
+      formIntervalLabel: 'Tần suất (phút)',
+      formIntervalHint: (minutes) => `Mỗi ${minutes} phút chạy lại một lần.`,
+      formMaxItemsLabel: 'Số bài tối đa mỗi lần',
+      formAccountLabel: 'Account Facebook',
+      formAccountAuto: 'Tự chọn account đang sẵn sàng',
+      formSubmitCta: 'Bắt đầu thu thập',
+      formSubmittingCta: 'Đang tạo...',
+      toastCreated: 'Đã tạo nhiệm vụ. Lượt cào đầu tiên sẽ chạy trong vài phút.',
+      toastResurrected: (name) => `Nhiệm vụ "${name}" đã có sẵn — đã kích hoạt lại.`,
+      statusActive: 'Đang chạy',
+      statusPaused: 'Tạm dừng',
+      statusArchived: 'Lưu trữ',
+      statusFailed: 'Lỗi',
+      statusCooldown: 'Hạ nhiệt',
+      pauseCta: 'Tạm dừng',
+      resumeCta: 'Tiếp tục',
+      archiveCta: 'Lưu trữ',
+      confirmArchive: (name) => `Lưu trữ nhiệm vụ "${name}"? Lịch chạy sẽ ngưng cho tới khi bạn khôi phục.`,
+      fieldNextRun: 'Lượt kế tiếp',
+      fieldLastRun: 'Lượt cuối',
+      fieldInterval: 'Tần suất',
+      fieldLastError: 'Lỗi gần nhất',
+      fieldSource: 'Nguồn',
+      loadError: 'Không tải được danh sách nhiệm vụ.',
+      busyLabel: 'Đang xử lý...',
+    },
   },
   en: {
     nav: {
@@ -541,11 +631,12 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       inbox: 'Inbox',
       posting: 'Posting',
       commenting: 'Commenting',
-      analytics: 'ANALYTICS',
+      analytics: 'AUTOMATION',
       leaderboard: 'Leaderboard',
       dataPrivate: 'Data Private',
       execution: 'Execution',
       routing: 'Routing',
+      missions: 'Missions',
       system: 'SYSTEM',
       settings: 'Settings',
     },
@@ -790,6 +881,50 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       errorTitle: 'Could not load leads',
       selectTitle: 'Select a lead',
       selectDesc: 'Pick a lead from the list to inspect the market signal and the next action.',
+    },
+    missionsView: {
+      eyebrow: 'MISSIONS 24/7',
+      title: 'Automation missions',
+      subtitle: 'Describe what you need — the system crawls it on a schedule and stacks results into your workspace store.',
+      createCta: 'Create mission',
+      createCtaShort: '+ Mission',
+      cancelCta: 'Cancel',
+      emptyTitle: 'No missions yet',
+      emptyDesc: 'Paste a Facebook group or page URL and describe what you want collected. It will repeat on schedule.',
+      formPromptLabel: 'What should we collect?',
+      formPromptHelp: 'Plain language — audience, intent, signals to capture.',
+      formPromptPlaceholder: 'Example: Find sellers looking for a POD/dropship fulfillment partner in this group.',
+      formUrlLabel: 'Facebook URL',
+      formUrlHelp: 'Group or page link to monitor.',
+      formUrlPlaceholder: 'https://www.facebook.com/groups/...',
+      formUrlInvalid: 'URL must start with https://facebook.com',
+      formPromptShort: (min) => `At least ${min} characters so the system can learn the intent.`,
+      formAdvancedLabel: 'Advanced options',
+      formIntervalLabel: 'Frequency (minutes)',
+      formIntervalHint: (minutes) => `Re-runs every ${minutes} minutes.`,
+      formMaxItemsLabel: 'Max items per run',
+      formAccountLabel: 'Facebook account',
+      formAccountAuto: 'Pick a ready account automatically',
+      formSubmitCta: 'Start collecting',
+      formSubmittingCta: 'Creating...',
+      toastCreated: 'Mission created. First crawl will run within minutes.',
+      toastResurrected: (name) => `Mission "${name}" already existed — reactivated.`,
+      statusActive: 'Active',
+      statusPaused: 'Paused',
+      statusArchived: 'Archived',
+      statusFailed: 'Error',
+      statusCooldown: 'Cooldown',
+      pauseCta: 'Pause',
+      resumeCta: 'Resume',
+      archiveCta: 'Archive',
+      confirmArchive: (name) => `Archive mission "${name}"? The schedule stops until you restore it.`,
+      fieldNextRun: 'Next run',
+      fieldLastRun: 'Last run',
+      fieldInterval: 'Frequency',
+      fieldLastError: 'Last error',
+      fieldSource: 'Source',
+      loadError: 'Could not load missions.',
+      busyLabel: 'Working...',
     },
   },
 };

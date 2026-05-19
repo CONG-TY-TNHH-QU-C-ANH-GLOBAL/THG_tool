@@ -317,6 +317,23 @@ func (s *Store) AdvanceCrawlIntentCursor(ctx context.Context, id int64, lastPost
 	return err
 }
 
+// CountActiveCrawlIntentsForOrg returns how many intents are currently in
+// status='active' for the org. Used by handlers to rate-limit how many
+// concurrent recurring intents an org can run.
+func (s *Store) CountActiveCrawlIntentsForOrg(ctx context.Context, orgID int64) (int, error) {
+	if orgID <= 0 {
+		return 0, fmt.Errorf("org_id is required")
+	}
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM org_crawl_intents WHERE org_id = ? AND status = 'active'`,
+		orgID).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (s *Store) ListCrawlIntentsForOrg(ctx context.Context, orgID int64, limit int) ([]CrawlIntent, error) {
 	if orgID <= 0 {
 		return nil, fmt.Errorf("org_id is required")

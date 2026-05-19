@@ -8,15 +8,13 @@ import SettingsPage from './SettingsPage';
 import { useLang } from '../i18n/useLang';
 import { isPlatformRole } from '../services/authService';
 import {
-  Activity,
   Bot,
-  Database,
   FileText,
   Globe,
   MessageCircle,
   MessageSquare,
-  Route as RouteIcon,
   Settings as SettingsIcon,
+  Target,
   Trophy,
   Users,
 } from 'lucide-react';
@@ -28,11 +26,9 @@ const InboxView = lazy(() => import('./views/InboxView'));
 const PostingView = lazy(() => import('./views/PostingView'));
 const CommentingView = lazy(() => import('./views/CommentingView'));
 const LeaderboardView = lazy(() => import('./views/LeaderboardView'));
-const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
-const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
-const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
+const MissionsView = lazy(() => import('./views/MissionsView'));
 
-type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'data' | 'execution' | 'routing' | 'settings';
+type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'missions' | 'settings';
 
 interface FacebookWorkspaceAppProps {
   workspaceId: string;
@@ -65,10 +61,8 @@ const STAFF_TABS: NavItem[] = [
 ];
 
 const ANALYTICS_TABS: NavItem[] = [
+  { id: 'missions', Icon: Target },
   { id: 'leaderboard', Icon: Trophy },
-  { id: 'execution', Icon: Activity },
-  { id: 'routing', Icon: RouteIcon },
-  { id: 'data', Icon: Database },
 ];
 
 function makeAbbr(name: string): string {
@@ -158,9 +152,7 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       posting: t.nav.posting,
       commenting: t.nav.commenting,
       leaderboard: t.nav.leaderboard,
-      data: t.nav.dataPrivate,
-      execution: t.nav.execution,
-      routing: t.nav.routing,
+      missions: t.nav.missions,
       settings: t.nav.settings,
     };
     return map[id];
@@ -182,12 +174,8 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
         return <CommentingView orgId={orgId} isAdmin={isAdmin} />;
       case 'leaderboard':
         return <LeaderboardView orgId={orgId} isAdmin={isAdmin} />;
-      case 'data':
-        return <DataPrivateView orgId={orgId} isAdmin={isAdmin} />;
-      case 'execution':
-        return <ExecutionRealityView orgId={orgId} isAdmin={isAdmin} />;
-      case 'routing':
-        return <PromptRoutingRealityView orgId={orgId} isAdmin={isAdmin} />;
+      case 'missions':
+        return <MissionsView orgId={orgId} isAdmin={isAdmin} />;
       case 'settings':
         return <SettingsPage org={org} orgId={orgId} isAdmin={isAdmin} />;
       default:
