@@ -30,6 +30,14 @@ func proofToEvidence(p runtime.VerifierProof) store.VerificationEvidence {
 
 // agentGetOutbox returns approved outbound messages for local execution.
 // GET /api/agent/outbox
+//
+// Each successful claim issues a fresh execution_id and stamps a
+// per-row lease_expiry (see store.DefaultOutboundLease). Both fields
+// flow back in the response so the executor can echo execution_id
+// on its /sent or /failed callback — that token gates the terminal
+// CAS in store.FinalizeOutboundAttempt and is what prevents
+// duplicate-comment when the extension's service worker restarts
+// mid-execution or a flaky network triggers a retry.
 func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	agentID, _ := c.Locals("agent_id").(int64)
@@ -45,6 +53,9 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 	if limit > 20 {
 		limit = 20
 	}
+	// 10-min fallback only applies to legacy rows (lease_expiry IS
+	// NULL). New claims get a per-row lease so this global window is
+	// no longer the primary stale-detection knob.
 	_ = h.db.ResetStaleSendingOutboundForOrg(orgID, 10*time.Minute)
 	candidates, err := h.db.GetOutboundByStatusForOrg(orgID, string(models.OutboundApproved), limit*4)
 	if err != nil {
@@ -68,10 +79,12 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 		if !ownsStream {
 			continue
 		}
-		if err := h.db.ClaimApprovedOutboundForOrg(orgID, msg.ID, workerID); err != nil {
+		claim, err := h.db.ClaimApprovedOutboundForOrg(orgID, msg.ID, workerID, 0)
+		if err != nil || claim == nil {
 			continue
 		}
 		msg.Status = models.OutboundSending
+		msg.ExecutionID = claim.ExecutionID
 		msgs = append(msgs, msg)
 	}
 	return c.JSON(fiber.Map{"messages": msgs, "count": len(msgs)})
@@ -102,8 +115,7 @@ func (h *Handler) agentOutboxSent(c *fiber.Ctx) error {
 	report := runtime.ExtensionExecutionReport{Success: true}
 	_ = c.BodyParser(&report)
 
-	outcome, attemptID := h.recordExecutionAttempt(c, orgID, id, report)
-
+	outcome, proof := runtime.ClassifyExtensionReport(report)
 	// Translate verified outcome → outbound terminal status. Success-class
 	// outcomes (dom_verified / optimistic_success / duplicate_blocked)
 	// stay marked Sent; failure-class outcomes flip to Failed even though
@@ -113,32 +125,20 @@ func (h *Handler) agentOutboxSent(c *fiber.Ctx) error {
 	if !models.IsSuccessOutcome(outcome) {
 		terminalStatus = models.OutboundFailed
 	}
-	if err := h.db.UpdateOutboundStatusForOrg(orgID, id, terminalStatus); err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
-	}
 
-	// Inbox-specific thread bookkeeping retained from the legacy flow —
-	// only do it when we actually believe the message landed.
-	if models.IsSuccessOutcome(outcome) {
-		if msg, err := h.db.GetOutboundForOrg(orgID, id); err == nil && msg.Type == "inbox" && msg.TargetURL != "" {
-			threadID, threadErr := h.db.CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, "")
-			if threadErr == nil {
-				_ = h.db.AddThreadMessage(threadID, "outbound", msg.Content, true)
-			}
-		}
+	// Terminal-state CAS gated on execution_id. This is the
+	// load-bearing invariant for SW-restart safety: even if the same
+	// /sent callback fires twice (network retry, content-script-side
+	// direct callback after SW respawn), only the FIRST report that
+	// holds the row's current execution_id finalizes. Replays return
+	// idempotent-OK (no double execution_attempts row, no double
+	// ledger update, no double risk-signal application); stale tokens
+	// return 409 so the operator dashboard can surface the drift.
+	resolution, err := h.finalizeOutbound(c, orgID, id, report, terminalStatus, outcome, proof)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-
-	if terminalStatus == models.OutboundSent {
-		system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, models.OutboundSent)
-	} else {
-		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, models.OutboundFailed, string(outcome))
-	}
-
-	return c.JSON(fiber.Map{
-		"status":     string(terminalStatus),
-		"outcome":    string(outcome),
-		"attempt_id": attemptID,
-	})
+	return resolution.write(c)
 }
 
 // agentOutboxFailed records a failed send attempt.
@@ -162,61 +162,129 @@ func (h *Handler) agentOutboxFailed(c *fiber.Ctx) error {
 	report := runtime.ExtensionExecutionReport{Success: false}
 	_ = c.BodyParser(&report)
 
-	outcome, attemptID := h.recordExecutionAttempt(c, orgID, id, report)
-
-	if err := h.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundFailed); err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
+	outcome, proof := runtime.ClassifyExtensionReport(report)
+	// Same execution_id-gated CAS pathway as agentOutboxSent — the
+	// only difference is the terminal status defaults to Failed.
+	resolution, err := h.finalizeOutbound(c, orgID, id, report, models.OutboundFailed, outcome, proof)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, models.OutboundFailed, string(outcome))
-	return c.JSON(fiber.Map{
-		"status":     "failed",
-		"outcome":    string(outcome),
-		"attempt_id": attemptID,
-	})
+	return resolution.write(c)
 }
 
-// recordExecutionAttempt is the single write-point Step 3 commits the
-// verifier's classification through:
-//
-//  1. Classify the extension report → ExecutionOutcome + VerifierProof.
-//  2. Open an execution_attempts row.
-//  3. Finish that row with the outcome + evidence.
-//  4. Propagate the outcome to action_ledger by outbound_id.
-//  5. Apply the corresponding risk signal to the executing account.
-//
-// Every downstream consumer (ledger, badge, risk_score, future orchestrator)
-// derives its view of reality from these writes. Errors here are logged
-// but never propagated to the HTTP response — the user-visible status
-// change still happens; verification telemetry is best-effort, not blocking.
-func (h *Handler) recordExecutionAttempt(c *fiber.Ctx, orgID, outboundID int64, report runtime.ExtensionExecutionReport) (models.ExecutionOutcome, int64) {
-	ctx := c.UserContext()
-	outcome, proof := runtime.ClassifyExtensionReport(report)
+// finalizeResolution is the HTTP-shaped result of a /sent or /failed
+// callback. The handler builds one of these and writes it through.
+// Centralising the shape here keeps the two handlers symmetric and
+// makes the three terminal pathways (committed / idempotent replay /
+// stale execution_id) easy to audit.
+type finalizeResolution struct {
+	HTTPStatus int
+	Body       fiber.Map
+}
 
-	msg, msgErr := h.db.GetOutboundForOrg(orgID, outboundID)
+func (f *finalizeResolution) write(c *fiber.Ctx) error {
+	return c.Status(f.HTTPStatus).JSON(f.Body)
+}
+
+// finalizeOutbound is the single write-point for terminal outbound
+// callbacks. It encodes three invariants:
+//
+//  1. EXECUTION IDENTITY (post-hoc defense for wrong-post bug class):
+//     EnforceTargetIdentity downgrades success-class outcomes to
+//     ContextDrift when the extension's reported page_url_after does
+//     not address the same Facebook entity as the queued target_url.
+//
+//  2. TERMINAL CAS (lease + execution_id idempotency):
+//     FinalizeOutboundAttempt requires (status='sending', execution_id
+//     matches OR row's execution_id is empty for legacy rows). A
+//     replayed callback hitting an already-terminal row returns
+//     idempotent-OK; a callback whose execution_id no longer matches
+//     the row (because ResetStaleSendingOutboundForOrg lease-evicted
+//     it and a new claim issued a fresh token) returns 409 stale.
+//
+//  3. SIDE EFFECTS ARE COMMITTED ONLY ON FIRST-WIN:
+//     execution_attempts row, action_ledger update, and risk-signal
+//     application happen INSIDE the finalized==true branch only.
+//     Replays do NOT replay them — that was the whole point of
+//     introducing execution_id. The previous architecture wrote side
+//     effects unconditionally on every /sent or /failed hit and so
+//     would have multiplied evidence rows on SW-restart-triggered
+//     duplicate callbacks.
+//
+// Errors from the side-effect writes are logged but never propagated
+// — they are verification telemetry, not the load-bearing path.
+func (h *Handler) finalizeOutbound(
+	c *fiber.Ctx,
+	orgID, id int64,
+	report runtime.ExtensionExecutionReport,
+	terminalStatus models.OutboundStatus,
+	outcome models.ExecutionOutcome,
+	proof runtime.VerifierProof,
+) (*finalizeResolution, error) {
+	ctx := c.UserContext()
+
+	msg, msgErr := h.db.GetOutboundForOrg(orgID, id)
 	if msgErr != nil {
-		slog.WarnContext(ctx, "exec-verify: outbound lookup failed",
-			"org_id", orgID, "outbound_id", outboundID, "error", msgErr)
-		// Fail closed: when we can't even load the queued target, a
-		// success-class outcome cannot be independently corroborated.
-		// Downgrade to context_drift so we never claim sent without
-		// verification. Failure outcomes stay as classified.
-		if models.IsSuccessOutcome(outcome) {
-			outcome = models.ExecutionContextDrift
-		}
-		return outcome, 0
+		return &finalizeResolution{
+			HTTPStatus: 404,
+			Body:       fiber.Map{"error": "outbound message not found"},
+		}, nil
 	}
 
-	// Defense-in-depth — independently verify that the extension's
-	// reported page_url_after addresses the SAME Facebook entity as
-	// the queued target_url. Without this, a comment posted on the
-	// wrong post (extension fooled by SPA race-rendering) reaches
-	// `sent` simply because the executor found a comment node that
-	// matched our content. See May-2026 incident commit 1b93629.
+	// Defense-in-depth identity check. EnforceTargetIdentity downgrades
+	// success-class outcomes to ContextDrift if target_url/page_url_after
+	// entity ids mismatch.
 	outcome, proof = runtime.EnforceTargetIdentity(outcome, proof, msg.TargetURL, msg.Type)
+	if !models.IsSuccessOutcome(outcome) {
+		terminalStatus = models.OutboundFailed
+	}
 
+	finalized, currentStatus, currentExecID, err := h.db.FinalizeOutboundAttempt(ctx, orgID, id, report.ExecutionID, terminalStatus)
+	if err != nil {
+		return nil, err
+	}
+	if !finalized {
+		// Disambiguate: is this a replay (same token, already terminal)
+		// or a stale (token mismatch, row was re-claimed)?
+		if report.ExecutionID != "" && currentExecID != "" && report.ExecutionID != currentExecID {
+			// Stale: the row was lease-evicted and re-claimed; this
+			// callback belongs to an execution that no longer owns
+			// the row. Refuse loudly — 409 surfaces to the dashboard.
+			slog.WarnContext(ctx, "exec-verify: stale execution_id",
+				"org_id", orgID, "outbound_id", id,
+				"submitted_execution_id", report.ExecutionID,
+				"current_execution_id", currentExecID,
+				"current_status", currentStatus,
+			)
+			return &finalizeResolution{
+				HTTPStatus: 409,
+				Body: fiber.Map{
+					"error":                "stale execution_id",
+					"current_status":       string(currentStatus),
+					"current_execution_id": currentExecID,
+				},
+			}, nil
+		}
+		// Idempotent replay: same execution_id, row already terminal.
+		// Return success-shaped response WITHOUT replaying side effects.
+		slog.InfoContext(ctx, "exec-verify: idempotent replay",
+			"org_id", orgID, "outbound_id", id,
+			"execution_id", report.ExecutionID, "current_status", currentStatus,
+		)
+		return &finalizeResolution{
+			HTTPStatus: 200,
+			Body: fiber.Map{
+				"status":     string(currentStatus),
+				"outcome":    string(outcome),
+				"idempotent": true,
+			},
+		}, nil
+	}
+
+	// FIRST-WIN PATH — commit side effects exactly once.
 	attemptID, err := h.db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
 		OrgID:      orgID,
-		OutboundID: outboundID,
+		OutboundID: id,
 		AccountID:  msg.AccountID,
 		TargetURL:  msg.TargetURL,
 		ActionType: msg.Type,
@@ -225,51 +293,66 @@ func (h *Handler) recordExecutionAttempt(c *fiber.Ctx, orgID, outboundID int64, 
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "exec-verify: begin attempt failed",
-			"org_id", orgID, "outbound_id", outboundID, "error", err)
-		return outcome, 0
+			"org_id", orgID, "outbound_id", id, "error", err)
+		attemptID = 0
+	} else {
+		failureReason := ""
+		if !models.IsSuccessOutcome(outcome) {
+			failureReason = report.FailureReason
+			if failureReason == "" {
+				failureReason = string(outcome)
+			}
+		}
+		if err := h.db.FinishExecutionAttempt(ctx, attemptID, outcome, failureReason, proofToEvidence(proof)); err != nil {
+			slog.WarnContext(ctx, "exec-verify: finish attempt failed",
+				"attempt_id", attemptID, "outcome", outcome, "error", err)
+		}
+
+		ledgerOutcome := models.LedgerOutcomeAlias(outcome)
+		ledgerReason := string(outcome)
+		if failureReason != "" && failureReason != string(outcome) {
+			ledgerReason = string(outcome) + ":" + failureReason
+		}
+		if _, err := h.db.MarkActionLedgerOutcomeByOutbound(ctx, orgID, id, ledgerOutcome, ledgerReason); err != nil {
+			slog.WarnContext(ctx, "exec-verify: ledger outcome update failed",
+				"org_id", orgID, "outbound_id", id, "error", err)
+		}
+
+		if sig := models.RiskSignalForOutcome(outcome); sig != "" && msg.AccountID > 0 {
+			if err := h.db.ApplyRiskSignal(ctx, orgID, msg.AccountID, sig, 0); err != nil {
+				slog.WarnContext(ctx, "exec-verify: apply risk signal failed",
+					"org_id", orgID, "account_id", msg.AccountID, "signal", sig, "error", err)
+			}
+		}
+		slog.InfoContext(ctx, "exec-verify: attempt classified",
+			"event", "execution.verified",
+			"outbound_id", id,
+			"attempt_id", attemptID,
+			"outcome", outcome,
+			"account_id", msg.AccountID,
+			"action_type", msg.Type,
+		)
 	}
 
-	failureReason := ""
-	if !models.IsSuccessOutcome(outcome) {
-		failureReason = report.FailureReason
-		if failureReason == "" {
-			failureReason = string(outcome)
+	// Inbox-specific thread bookkeeping — only on actual landing.
+	if models.IsSuccessOutcome(outcome) && msg.Type == "inbox" && msg.TargetURL != "" {
+		if threadID, threadErr := h.db.CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, ""); threadErr == nil {
+			_ = h.db.AddThreadMessage(threadID, "outbound", msg.Content, true)
 		}
 	}
-	if err := h.db.FinishExecutionAttempt(ctx, attemptID, outcome, failureReason, proofToEvidence(proof)); err != nil {
-		slog.WarnContext(ctx, "exec-verify: finish attempt failed",
-			"attempt_id", attemptID, "outcome", outcome, "error", err)
+
+	if terminalStatus == models.OutboundSent {
+		system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, models.OutboundSent)
+	} else {
+		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, models.OutboundFailed, string(outcome))
 	}
 
-	// Action ledger — supersede the queued state with verified reality.
-	ledgerOutcome := models.LedgerOutcomeAlias(outcome)
-	ledgerReason := string(outcome)
-	if failureReason != "" && failureReason != string(outcome) {
-		ledgerReason = string(outcome) + ":" + failureReason
-	}
-	if _, err := h.db.MarkActionLedgerOutcomeByOutbound(ctx, orgID, outboundID, ledgerOutcome, ledgerReason); err != nil {
-		slog.WarnContext(ctx, "exec-verify: ledger outcome update failed",
-			"org_id", orgID, "outbound_id", outboundID, "error", err)
-	}
-
-	// Risk signal — only emit when the outcome maps to a meaningful
-	// signal. Empty signal = ambiguous outcome (optimistic_success,
-	// soft_fail, verification_timeout); we deliberately do NOT move
-	// risk_score in either direction for those.
-	if sig := models.RiskSignalForOutcome(outcome); sig != "" && msg.AccountID > 0 {
-		if err := h.db.ApplyRiskSignal(ctx, orgID, msg.AccountID, sig, 0); err != nil {
-			slog.WarnContext(ctx, "exec-verify: apply risk signal failed",
-				"org_id", orgID, "account_id", msg.AccountID, "signal", sig, "error", err)
-		}
-	}
-
-	slog.InfoContext(ctx, "exec-verify: attempt classified",
-		"event", "execution.verified",
-		"outbound_id", outboundID,
-		"attempt_id", attemptID,
-		"outcome", outcome,
-		"account_id", msg.AccountID,
-		"action_type", msg.Type,
-	)
-	return outcome, attemptID
+	return &finalizeResolution{
+		HTTPStatus: 200,
+		Body: fiber.Map{
+			"status":     string(terminalStatus),
+			"outcome":    string(outcome),
+			"attempt_id": attemptID,
+		},
+	}, nil
 }

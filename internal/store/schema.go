@@ -383,6 +383,31 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN claimed_at DATETIME`)
+	// Execution lease + idempotency token.
+	//
+	// execution_id  — opaque ID issued when status flips approved → sending.
+	//                 Stamped on the row and threaded all the way out to the
+	//                 Chrome Extension; the extension echoes it back on the
+	//                 /sent or /failed callback. The server's terminal-state
+	//                 CAS requires execution_id to match the row's current
+	//                 value, so:
+	//                   - replayed callbacks (network retry, SW restart +
+	//                     content-script-side direct callback) become no-ops
+	//                   - a stale callback that survives a re-claim cannot
+	//                     finalize the row a second time
+	//                 Empty string means "legacy / no token issued" — the
+	//                 finalize CAS treats empty as "status-only check" for
+	//                 backward compatibility during rollout.
+	//
+	// lease_expiry  — per-row expiration timestamp. ResetStaleSending uses
+	//                 this instead of a global "claimed_at + 10 min" window,
+	//                 so a slow-but-legitimate execution can be granted a
+	//                 longer lease at claim time without changing global
+	//                 policy. NULL = legacy row (no lease semantics) — old
+	//                 timeout window still applies.
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN lease_expiry DATETIME`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_lease ON outbound_messages(status, lease_expiry) WHERE status = 'sending'`)
 	s.db.Exec(`UPDATE outbound_messages
 		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)

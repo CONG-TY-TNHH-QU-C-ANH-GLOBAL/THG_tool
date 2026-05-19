@@ -56,11 +56,20 @@ var THGOutbox = globalThis.THGOutbox || (() => {
   // legacy `optimistic_success` no-proof fallback). The legacy `error`
   // field is preserved in `failure_reason` for backward compatibility
   // with older server builds during rollout.
-  async function completeOutbox(id, ok, error = '', proof = null) {
+  // completeOutbox ships the terminal callback for one queued message.
+  //
+  // executionId MUST be forwarded explicitly (not derived from proof
+  // alone): when the content script fails to load or throws before it
+  // can build a proof object, proof is null but the row's execution_id
+  // is still meaningful. Without it the body would omit execution_id
+  // and the backend's CAS would reject the report as stale — turning
+  // an honest network error into a phantom "stale token" failure.
+  async function completeOutbox(id, ok, error = '', proof = null, executionId = '') {
     const path = ok ? 'sent' : 'failed';
+    const exec = (proof && proof.execution_id) || executionId || '';
     const body = proof
-      ? { ...proof, success: !!ok, failure_reason: proof.failure_reason || (ok ? '' : error || '') }
-      : { success: !!ok, failure_reason: ok ? '' : error || '', error };
+      ? { ...proof, success: !!ok, failure_reason: proof.failure_reason || (ok ? '' : error || ''), execution_id: exec }
+      : { success: !!ok, failure_reason: ok ? '' : error || '', error, execution_id: exec };
     await THGApi.agentFetch(`/api/connectors/outbox/${id}/${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -154,7 +163,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       if (error) {
         await THGShared.storageSet({ lastOutboxError: error, lastError: error }).catch(() => {});
       }
-      await completeOutbox(message.id, ok, error, proof).catch(() => {});
+      await completeOutbox(message.id, ok, error, proof, message.execution_id || '').catch(() => {});
     }
   }
 

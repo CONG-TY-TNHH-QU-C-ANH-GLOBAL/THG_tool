@@ -283,6 +283,14 @@ type ExtensionExecutionReport struct {
 	BubbleFresh      bool   `json:"bubble_fresh"`
 	Duplicate        bool   `json:"duplicate"`
 	Notes            string `json:"notes"`
+	// ExecutionID is the per-attempt idempotency token the server
+	// issued at claim time and the executor MUST echo back. The
+	// terminal-state CAS in store.FinalizeOutboundAttempt requires
+	// this to match the row's stored execution_id; mismatches return
+	// 409 Conflict so a stale callback (e.g. SW restart + content-
+	// script-side replay) cannot finalize a row that has been
+	// re-claimed.
+	ExecutionID string `json:"execution_id,omitempty"`
 }
 
 // truncateSnippet bounds proof text so a chatty extension can't bloat

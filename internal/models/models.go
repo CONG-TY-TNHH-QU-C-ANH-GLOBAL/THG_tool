@@ -288,6 +288,11 @@ type OutboundMessage struct {
 	AIModel    string         `json:"ai_model" db:"ai_model"` // model used to generate
 	SentAt     time.Time      `json:"sent_at" db:"sent_at"`
 	CreatedAt  time.Time      `json:"created_at" db:"created_at"`
+	// ExecutionID is the per-attempt idempotency token issued at claim
+	// time. The executor MUST echo this back on /sent or /failed; the
+	// server's terminal-state CAS gates on a match. Empty string =
+	// legacy row claimed before this column existed.
+	ExecutionID string `json:"execution_id,omitempty" db:"execution_id"`
 }
 
 // PriceItem stores a learned pricing entry for a service or product.

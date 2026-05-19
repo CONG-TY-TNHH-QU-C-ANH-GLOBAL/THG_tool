@@ -453,7 +453,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return candidates.slice(0, 5);
   }
 
-  async function executeComment(content, targetUrl = '') {
+  async function executeComment(content, targetUrl = '', executionId = '') {
     await dismissBlockingOverlays();
 
     // Pre-submit DOM snapshot (count + dup check) so the proof builder
@@ -463,7 +463,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const fbUID = proof?.currentFBUserID() || '';
     const preCount = proof ? proof.snapshotCommentCount() : 0;
     const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
-    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched };
+    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
 
     // ====================================================================
     // P0 INVARIANT — NO TYPING UNTIL TARGET IDENTITY VERIFIED FIRST
@@ -646,19 +646,28 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (proof && notes) {
       proof.notes = proof.notes ? proof.notes + ' · ' + notes : notes;
     }
+    // Echo the server-issued execution_id back so the backend's
+    // terminal-state CAS in store.FinalizeOutboundAttempt can gate on
+    // it. Without this, a callback from a re-claimed (lease-evicted)
+    // execution would silently finalize a row that no longer belongs
+    // to us, masking the SW-restart-then-re-execute duplicate bug.
+    if (proof && ctx && ctx.executionId) {
+      proof.execution_id = ctx.executionId;
+    }
     const base = ok
       ? { ok: true, detail: detail || 'sent_comment' }
       : { ok: false, error: errorCode || 'comment_failed' };
     return proof ? { ...base, proof } : base;
   }
 
-  async function executeInbox(content) {
+  async function executeInbox(content, executionId = '') {
     await dismissBlockingOverlays();
     const proof = THGContentProof || null;
     // Snapshot the last bubble pre-submit so the proof builder can detect
     // whether a NEW bubble appeared (vs. an existing one already matching
     // our text — the duplicate / idempotent case).
     const preBubbleHash = proof ? proof.snapshotLastBubble() : '';
+    const ctx = { content, preBubbleHash, executionId };
 
     const messageKeys = ['message', 'messenger', 'send message', 'nhan tin'];
     const sendKeys = ['send', 'press enter to send', 'gui'];
@@ -666,50 +675,54 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (!editors.length) {
       const messageButton = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"]')).filter(visible)
         .find(el => hasAny(labelOf(el), messageKeys));
-      if (!messageButton || !clickLikeUser(messageButton)) return inboxResult(false, 'message_button_not_found', null, { content, preBubbleHash });
+      if (!messageButton || !clickLikeUser(messageButton)) return inboxResult(false, 'message_button_not_found', null, ctx);
       await wait(1800);
       editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
     }
     let editor = editors.find(el => hasAny(labelOf(el), messageKeys) || norm(el.getAttribute('role')) === 'textbox');
     if (!editor) editor = editors[editors.length - 1];
-    if (!editor) return inboxResult(false, 'message_box_not_found', null, { content, preBubbleHash });
-    if (!setEditableText(editor, content)) return inboxResult(false, 'inbox_text_insert_failed', null, { content, preBubbleHash });
+    if (!editor) return inboxResult(false, 'message_box_not_found', null, ctx);
+    if (!setEditableText(editor, content)) return inboxResult(false, 'inbox_text_insert_failed', null, ctx);
     await wait(700);
     const scope = editor.closest('[role="dialog"], form, div[aria-label]') || document;
     const send = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).find(el => {
       const label = labelOf(el);
       return hasAny(label, sendKeys) && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
     });
-    if (!send || !clickLikeUser(send)) return inboxResult(false, 'inbox_submit_not_found', null, { content, preBubbleHash });
+    if (!send || !clickLikeUser(send)) return inboxResult(false, 'inbox_submit_not_found', null, ctx);
     // Longer settle for bubble + timestamp to render — FB animates the
     // bubble in, and "Just now" copy can lag the bubble itself.
     await wait(1500);
-    return inboxResult(true, '', 'sent_inbox_button', { content, preBubbleHash });
+    return inboxResult(true, '', 'sent_inbox_button', ctx);
   }
 
   function inboxResult(ok, errorCode, detail, ctx) {
     const proof = THGContentProof ? THGContentProof.buildInboxProof({
       ok, errorCode, content: ctx.content, preBubbleHash: ctx.preBubbleHash
     }) : null;
+    if (proof && ctx && ctx.executionId) {
+      proof.execution_id = ctx.executionId;
+    }
     const base = ok
       ? { ok: true, detail: detail || 'sent_inbox' }
       : { ok: false, error: errorCode || 'inbox_failed' };
     return proof ? { ...base, proof } : base;
   }
 
-  async function executePost(content) {
+  async function executePost(content, executionId = '') {
     await dismissBlockingOverlays();
     const composerKeys = ["what's on your mind", 'write something', 'create a public post', 'ban dang nghi gi', 'viet gi do'];
     const postKeys = ['post', 'dang'];
+    const ctx = { content, executionId };
     const composer = Array.from(document.querySelectorAll('div[role="button"], button, textarea, [contenteditable="true"], [aria-label]'))
       .filter(visible)
       .find(el => hasAny(labelOf(el), composerKeys));
-    if (!composer || !clickLikeUser(composer)) return postResult(false, 'post_composer_not_found', null, { content });
+    if (!composer || !clickLikeUser(composer)) return postResult(false, 'post_composer_not_found', null, ctx);
     await wait(1500);
     const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
     let editor = editors.find(el => norm(el.getAttribute('role')) === 'textbox') || editors[editors.length - 1];
-    if (!editor) return postResult(false, 'post_editor_not_found', null, { content });
-    if (!setEditableText(editor, content)) return postResult(false, 'post_text_insert_failed', null, { content });
+    if (!editor) return postResult(false, 'post_editor_not_found', null, ctx);
+    if (!setEditableText(editor, content)) return postResult(false, 'post_text_insert_failed', null, ctx);
     await wait(900);
     const scope = editor.closest('[role="dialog"], form') || document;
     const postButton = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).reverse().find(el => {
@@ -717,17 +730,20 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       return hasAny(label, postKeys) && !label.includes('comment') && !label.includes('cancel') &&
         el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
     });
-    if (!postButton || !clickLikeUser(postButton)) return postResult(false, 'post_submit_not_found', null, { content });
+    if (!postButton || !clickLikeUser(postButton)) return postResult(false, 'post_submit_not_found', null, ctx);
     // Generous settle — posting closes the composer dialog and re-renders
     // the feed; we need both to complete before walking the DOM for proof.
     await wait(2500);
-    return postResult(true, '', 'sent_post_button', { content });
+    return postResult(true, '', 'sent_post_button', ctx);
   }
 
   function postResult(ok, errorCode, detail, ctx) {
     const proof = THGContentProof ? THGContentProof.buildPostProof({
       ok, errorCode, content: ctx.content
     }) : null;
+    if (proof && ctx && ctx.executionId) {
+      proof.execution_id = ctx.executionId;
+    }
     const base = ok
       ? { ok: true, detail: detail || 'sent_post' }
       : { ok: false, error: errorCode || 'post_failed' };
@@ -744,9 +760,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // pin the DOM search to the exact post the queue intended, instead
     // of the first comment button visible on the SPA-rendered page.
     const targetUrl = String(message?.target_url || message?.targetUrl || '').trim();
-    if (type === 'comment') return executeComment(content, targetUrl);
-    if (type === 'inbox') return executeInbox(content);
-    if (type === 'group_post' || type === 'profile_post') return executePost(content);
+    // execution_id is the server-issued idempotency token. We do NOT
+    // mutate it here; we just thread it through. The proof builder in
+    // commentResult attaches it to proof.execution_id so the eventual
+    // /sent or /failed POST body echoes it. Backend's
+    // FinalizeOutboundAttempt CAS requires this to match the row's
+    // current execution_id; replays and re-claim collisions are
+    // rejected there.
+    const executionId = String(message?.execution_id || message?.executionId || '').trim();
+    if (type === 'comment') return executeComment(content, targetUrl, executionId);
+    if (type === 'inbox') return executeInbox(content, executionId);
+    if (type === 'group_post' || type === 'profile_post') return executePost(content, executionId);
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
 

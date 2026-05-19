@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -418,7 +420,7 @@ func (s *Store) CanQueueOutboundForOrg(orgID int64, msgType, targetURL, profileU
 // GetOutboundByStatus returns outbound messages filtered by status.
 func (s *Store) GetOutboundByStatus(status string, limit int) ([]models.OutboundMessage, error) {
 	query := `SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
-		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, '')
 		FROM outbound_messages`
 	var args []any
 	if status != "" {
@@ -453,7 +455,7 @@ func (s *Store) GetOutboundByStatusForOrg(orgID int64, status string, limit int)
 // GetOutboundByFilter returns outbound messages filtered by optional status and/or type.
 func (s *Store) GetOutboundByFilter(status, msgType string, limit int) ([]models.OutboundMessage, error) {
 	query := `SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
-		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, '')
 		FROM outbound_messages`
 	var args []any
 	var clauses []string
@@ -491,7 +493,7 @@ func (s *Store) GetOutboundByFilter(status, msgType string, limit int) ([]models
 // GetOutboundByFilterForOrg returns tenant-scoped outbound messages.
 func (s *Store) GetOutboundByFilterForOrg(orgID int64, status, msgType string, limit int) ([]models.OutboundMessage, error) {
 	query := `SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
-		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, '')
 		FROM outbound_messages`
 	var args []any
 	clauses := []string{"org_id = ?"}
@@ -529,7 +531,7 @@ func (s *Store) GetOutboundByFilterForOrg(orgID int64, status, msgType string, l
 func (s *Store) GetSentGroupPosts(withinDays int) ([]models.OutboundMessage, error) {
 	rows, err := s.db.Query(
 		`SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
-			COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+			COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, '')
 		FROM outbound_messages
 		WHERE type = 'group_post' AND status IN ('sent', 'approved')
 		  AND created_at >= datetime('now', ?)
@@ -558,10 +560,10 @@ func (s *Store) GetOutbound(id int64) (*models.OutboundMessage, error) {
 	var sentAt string
 	err := s.db.QueryRow(
 		`SELECT id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
-		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at
+		COALESCE(image_path,''), status, ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, '')
 		FROM outbound_messages WHERE id = ?`, id,
 	).Scan(&m.ID, &m.OrgID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-		&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+		&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt, &m.ExecutionID)
 	if err != nil {
 		return nil, err
 	}
@@ -583,32 +585,170 @@ func (s *Store) GetOutboundForOrg(orgID, id int64) (*models.OutboundMessage, err
 	return msg, nil
 }
 
-// ClaimApprovedOutboundForOrg atomically moves one approved message into the
-// internal sending state so a Chrome Extension can execute it exactly once.
-func (s *Store) ClaimApprovedOutboundForOrg(orgID, id int64, workerID string) error {
+// ClaimResult is what ClaimApprovedOutboundForOrg returns on a successful
+// claim. The caller MUST thread ExecutionID all the way out to the
+// executor (Chrome Extension or chromedp tab); the executor echoes it
+// back on the /sent or /failed callback. The server's terminal-state
+// CAS gates on a match — see [Store.FinalizeOutboundAttempt].
+type ClaimResult struct {
+	// ExecutionID is the per-attempt idempotency token. Opaque hex
+	// string; opaque to callers but unique per claim across the
+	// process lifetime.
+	ExecutionID string
+	// LeaseExpiry is the wall-clock deadline after which
+	// [Store.ResetStaleSendingOutboundForOrg] is allowed to steal the
+	// row back to "approved". Slow executions that need more time
+	// should be granted a longer lease at claim time (passed via
+	// leaseDuration argument) — there is intentionally no extend-lease
+	// path so a wedged executor cannot keep a row pinned forever.
+	LeaseExpiry time.Time
+}
+
+// DefaultOutboundLease is the per-row lease window the production
+// outbox handler uses unless a caller specifies otherwise. Sized for
+// comment + inbox + post actions (each ~5–30s end-to-end) with ~6x
+// headroom for slow networks and post-action verification settle. The
+// previous global 10-min reset window is now ONLY a fallback for
+// legacy rows (lease_expiry IS NULL).
+const DefaultOutboundLease = 3 * time.Minute
+
+// newExecutionID generates the per-claim idempotency token. 16
+// crypto-random bytes hex-encoded — collision-free across realistic
+// traffic and short enough to pass through HTTP bodies / Chrome
+// message bus without padding overhead.
+func newExecutionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// rand.Read never fails on modern platforms, but if it
+		// somehow does we still need an id. Fall back to a
+		// time-derived value rather than crashing the claim path.
+		return fmt.Sprintf("exec-fallback-%d", time.Now().UnixNano())
+	}
+	return "exec_" + hex.EncodeToString(b[:])
+}
+
+// ClaimApprovedOutboundForOrg atomically moves one approved message
+// into the internal sending state, stamps a fresh execution_id, and
+// sets a lease_expiry so a stuck executor cannot pin the row beyond
+// its budget. Returns the (execution_id, lease_expiry) the caller
+// must thread out to the executor.
+//
+// CAS guarantees:
+//
+//   - status must currently be "approved" (concurrent claimers compete
+//     on this single atomic UPDATE; only one wins).
+//   - org_id must match (cross-tenant defense; the row's tenant is the
+//     source of truth, the caller-supplied orgID is the assertion).
+//
+// Backward compatibility: leaseDuration == 0 falls back to
+// [DefaultOutboundLease]. workerID is normalised to a default token
+// when blank.
+func (s *Store) ClaimApprovedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*ClaimResult, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
 		workerID = "chrome-extension"
 	}
+	if leaseDuration <= 0 {
+		leaseDuration = DefaultOutboundLease
+	}
+	execID := newExecutionID()
+	leaseExpiry := time.Now().UTC().Add(leaseDuration)
 	res, err := s.db.Exec(
 		`UPDATE outbound_messages
-		 SET status = ?, claimed_by = ?, claimed_at = CURRENT_TIMESTAMP
+		 SET status = ?, claimed_by = ?, claimed_at = CURRENT_TIMESTAMP,
+		     execution_id = ?, lease_expiry = ?
 		 WHERE id = ? AND org_id = ? AND status = ?`,
-		models.OutboundSending, workerID, id, orgID, models.OutboundApproved,
+		models.OutboundSending, workerID, execID, leaseExpiry, id, orgID, models.OutboundApproved,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return sql.ErrNoRows
+		return nil, sql.ErrNoRows
 	}
-	return nil
+	return &ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
 }
 
-// ResetStaleSendingOutboundForOrg returns abandoned sending rows to approved.
-// This protects production from a Chrome Extension disconnecting after
-// claiming work but before reporting sent/failed.
+// FinalizeOutboundAttempt is the terminal-state CAS the agent callback
+// (/sent and /failed) goes through. It encodes the execution
+// idempotency invariant:
+//
+//   - First report with the row's current execution_id wins → status
+//     flips to terminal, lease_expiry cleared. Returns finalized=true.
+//   - Replayed report with the SAME execution_id when the row is
+//     already terminal → returns finalized=false + the current
+//     state. Handlers should treat this as success-equivalent (the
+//     work already landed) — the duplicate side effects (ledger /
+//     execution_attempts / risk signal) must NOT be replayed.
+//   - Report carrying a DIFFERENT execution_id than the row's current
+//     value → returns finalized=false + current state. Handlers
+//     should 409 the request — the original execution was reset by
+//     [Store.ResetStaleSendingOutboundForOrg] and re-claimed; the
+//     caller's report is stale.
+//   - Empty executionID in the request body is allowed for backward
+//     compatibility with legacy extensions: the CAS treats it as a
+//     status-only check. Once all clients ship the new token, this
+//     branch can be tightened.
+//
+// terminalStatus must be OutboundSent or OutboundFailed; other values
+// return an error.
+func (s *Store) FinalizeOutboundAttempt(ctx context.Context, orgID, id int64, executionID string, terminalStatus models.OutboundStatus) (finalized bool, currentStatus models.OutboundStatus, currentExecID string, err error) {
+	if terminalStatus != models.OutboundSent && terminalStatus != models.OutboundFailed {
+		return false, "", "", fmt.Errorf("FinalizeOutboundAttempt: terminalStatus must be sent or failed, got %q", terminalStatus)
+	}
+
+	// CAS — match by (id, org_id, status='sending') and either
+	// execution_id agreement OR an empty stored execution_id (legacy
+	// rows). sent_at is only set when transitioning to sent.
+	const sql = `
+		UPDATE outbound_messages
+		SET status = ?,
+		    sent_at = CASE WHEN ? = 'sent' THEN CURRENT_TIMESTAMP ELSE sent_at END,
+		    claimed_by = '',
+		    claimed_at = NULL,
+		    lease_expiry = NULL
+		WHERE id = ? AND org_id = ? AND status = ?
+		  AND (execution_id = '' OR execution_id = ?)`
+	res, execErr := s.db.ExecContext(ctx, sql,
+		terminalStatus, terminalStatus, id, orgID, models.OutboundSending, executionID,
+	)
+	if execErr != nil {
+		return false, "", "", execErr
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		return true, terminalStatus, executionID, nil
+	}
+
+	// CAS did not finalize. Disambiguate by reading the current row.
+	row := s.db.QueryRowContext(ctx,
+		`SELECT status, COALESCE(execution_id,'') FROM outbound_messages WHERE id = ? AND org_id = ?`,
+		id, orgID,
+	)
+	var rowStatus string
+	if scanErr := row.Scan(&rowStatus, &currentExecID); scanErr != nil {
+		return false, "", "", scanErr
+	}
+	return false, models.OutboundStatus(rowStatus), currentExecID, nil
+}
+
+// ResetStaleSendingOutboundForOrg returns abandoned sending rows to
+// approved when their per-row lease has expired. Two paths:
+//
+//   - Primary (new rows): lease_expiry is non-NULL and in the past.
+//     The lease was set at claim time via
+//     [Store.ClaimApprovedOutboundForOrg]; once it expires the row
+//     is fair game for a re-claim.
+//   - Legacy (rows claimed before the lease column existed):
+//     lease_expiry IS NULL. Falls back to the previous claimed_at +
+//     staleAfter window so historical data still drains.
+//
+// Resetting CLEARS execution_id so the next claim issues a fresh
+// token — any in-flight report from the abandoned attempt then
+// rightly fails its execution_id CAS at finalize time and is rejected
+// as stale, preventing the SW-restart-then-re-claim duplicate-comment
+// bug class.
 func (s *Store) ResetStaleSendingOutboundForOrg(orgID int64, staleAfter time.Duration) error {
 	if orgID <= 0 {
 		return nil
@@ -618,11 +758,14 @@ func (s *Store) ResetStaleSendingOutboundForOrg(orgID int64, staleAfter time.Dur
 	}
 	_, err := s.db.Exec(
 		`UPDATE outbound_messages
-		 SET status = ?, claimed_by = '', claimed_at = NULL
+		 SET status = ?, claimed_by = '', claimed_at = NULL,
+		     execution_id = '', lease_expiry = NULL
 		 WHERE org_id = ?
 		   AND status = ?
-		   AND claimed_at IS NOT NULL
-		   AND claimed_at <= datetime('now', ?)`,
+		   AND (
+		     (lease_expiry IS NOT NULL AND lease_expiry <= CURRENT_TIMESTAMP)
+		     OR (lease_expiry IS NULL AND claimed_at IS NOT NULL AND claimed_at <= datetime('now', ?))
+		   )`,
 		models.OutboundApproved, orgID, models.OutboundSending, fmt.Sprintf("-%d seconds", int(staleAfter.Seconds())),
 	)
 	return err
@@ -733,7 +876,7 @@ func scanOutboundMessage(rows *sql.Rows) (*models.OutboundMessage, error) {
 	var m models.OutboundMessage
 	var sentAt string
 	err := rows.Scan(&m.ID, &m.OrgID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-		&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt)
+		&m.Content, &m.Context, &m.ImagePath, &m.Status, &m.AIModel, &sentAt, &m.CreatedAt, &m.ExecutionID)
 	if err != nil {
 		return nil, err
 	}
