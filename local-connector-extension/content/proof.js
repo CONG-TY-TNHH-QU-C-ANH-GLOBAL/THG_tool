@@ -219,6 +219,19 @@ var THGContentProof = globalThis.THGContentProof || (() => {
         // composer issue OR silent reject; ambiguous, mark as composer_failed
         // so the backend doesn't over-poison risk_score.
         return 'composer_failed';
+      // Identity-gate aborts from the pre-typing route guard (see
+      // outbound.js executeComment). Every one of these means "we
+      // refused to type because the rendered post is not the queued
+      // target" — semantically equivalent to context_drift, the same
+      // outcome the backend identity invariant emits when it detects
+      // drift after the fact. Mapping them here keeps the failure
+      // taxonomy consistent regardless of which layer caught the miss.
+      case 'context_drift':
+      case 'target_post_not_on_page':
+      case 'target_identity_mismatch':
+      case 'target_identity_mismatch_post_click':
+      case 'target_identity_mismatch_at_typing':
+        return 'context_drift';
       default:
         return '';
     }

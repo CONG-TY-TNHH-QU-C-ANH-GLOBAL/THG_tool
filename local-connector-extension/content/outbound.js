@@ -201,7 +201,23 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   //   /photo.php?fbid=<id>
   function extractPostIdFromUrl(raw) {
     try {
-      const url = new URL(String(raw || ''));
+      // FB DOM anchors often store relative paths in their `href`
+      // attribute (e.g. "/groups/X/permalink/123/"). new URL() rejects
+      // those — prepend a base so the parser succeeds. The base only
+      // affects pathname / searchParams parsing, which is all we need.
+      let s = String(raw || '');
+      if (s.startsWith('/') && !s.startsWith('//')) s = 'https://www.facebook.com' + s;
+      const url = new URL(s);
+      // Foreign-host guard. FB pages contain 3rd-party tracking anchors
+      // and external shortlinks; their paths can SHAPE-MATCH our regexes
+      // (e.g. https://shortener.evil/posts/123) but they obviously do
+      // not address a Facebook entity. Reject anything that isn't on a
+      // Facebook-controlled host so the identity gate cannot be tricked
+      // by hostile DOM content.
+      const host = url.hostname.toLowerCase();
+      const isFB = host === 'facebook.com' || host.endsWith('.facebook.com') ||
+                   host === 'fb.watch' || host.endsWith('.fb.watch');
+      if (!isFB) return '';
       const path = url.pathname;
       // Compact identifier ("pfbid..."): match BEFORE the numeric branch
       // because pfbid tokens contain alphanumerics and are unique.
@@ -233,38 +249,55 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     }
   }
 
+  // extractArticleCanonicalEntityId returns the entity id of the post
+  // that the supplied article container ACTUALLY REPRESENTS.
+  //
+  // The rule: the FIRST post-shape permalink anchor in DOM order is the
+  // article's own timestamp link — Facebook's UI puts the timestamp at
+  // the very top of the post header, and that timestamp is rendered as
+  // an <a> targeting the post's permalink. Anchors that appear later
+  // belong to embedded shared posts, "Related posts" carousels,
+  // reaction buttons with fbclid query params, or comment-thread links.
+  // Those are NOT the article's own identity.
+  //
+  // Returns "" when no permalink anchor exists — the caller MUST treat
+  // that as "identity unverifiable" and abort rather than guess.
+  function extractArticleCanonicalEntityId(article) {
+    if (!article) return '';
+    const anchors = article.querySelectorAll(
+      'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"], a[href*="fbid="]'
+    );
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || a.href || '';
+      const id = extractPostIdFromUrl(href);
+      if (id) return id;
+    }
+    return '';
+  }
+
   // findTargetArticle locates the [role="article"] / [role="dialog"]
-  // container on the live DOM that represents the target post.
-  // Matching is two-stage so a post can be found whether Facebook
-  // rendered it inline (feed/permalink page) or in a modal dialog
-  // (clicked through from a feed item):
+  // container on the live DOM whose CANONICAL identity (its first
+  // post-shape permalink anchor in DOM order — i.e. the post header's
+  // timestamp link) matches the target entity id.
   //
-  //   Stage 1 (high confidence): the container has at least one
-  //     anchor whose href references the target post id via the
-  //     usual permalink shapes.
-  //   Stage 2 (fallback): the post id literally appears anywhere in
-  //     the container's innerHTML. Sufficient for FB renderings that
-  //     embed the id in data-* attributes or fbclid query params on
-  //     reaction buttons.
+  // This is intentionally strict. The previous two-stage fallback
+  // (innerHTML.includes) accepted articles that merely *referenced*
+  // the target id somewhere — in a shared embedded post, in a reaction
+  // button query param, or in a sidebar — and that was the load-bearing
+  // bug behind the May-2026 route-mismatch incident
+  // (comment id 1293405342441584). The whole point of this guard is
+  // "is this article the target post, or just an article that mentions
+  // the target post?" — and only canonical-permalink matching answers
+  // that correctly.
   //
-  // Returns null when no container matches — the executor MUST then
-  // refuse to comment rather than fall back to "first visible comment
-  // button" which is exactly the route-mismatch bug this guard fixes.
+  // Returns null when no container matches. The caller MUST refuse to
+  // type rather than fall back to "first visible comment button".
   function findTargetArticle(postId) {
     if (!postId) return null;
     const id = String(postId);
     const containers = Array.from(document.querySelectorAll('[role="article"], [role="dialog"]')).filter(visible);
     for (const container of containers) {
-      const permalinks = container.querySelectorAll(
-        'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
-      );
-      for (const a of permalinks) {
-        const href = a.getAttribute('href') || '';
-        if (href.includes(id)) return container;
-      }
-    }
-    for (const container of containers) {
-      if (container.innerHTML.includes(id)) return container;
+      if (extractArticleCanonicalEntityId(container) === id) return container;
     }
     return null;
   }
@@ -340,39 +373,56 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   async function executeComment(content, targetUrl = '') {
     await dismissBlockingOverlays();
 
-    // Step 3b — snapshot pre-submit state so the proof builder can
-    // compute count_increased and duplicate without relying on the
+    // Pre-submit DOM snapshot (count + dup check) so the proof builder
+    // can compute count_increased and duplicate without relying on the
     // executor's own beliefs.
     const proof = THGContentProof || null;
     const fbUID = proof?.currentFBUserID() || '';
     const preCount = proof ? proof.snapshotCommentCount() : 0;
     const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
+    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched };
 
-    // Step 3c — route guard: lock the executor to the SPECIFIC post
-    // identified by target_url. Without this, document-wide selectors
-    // pick the first comment button on the feed, which on Facebook's
-    // SPA after chrome.tabs.update is often a different post that
-    // happens to be rendered above the target (re-routing incident,
-    // comment id 1293405342441584, May 2026).
+    // ====================================================================
+    // P0 INVARIANT — NO TYPING UNTIL TARGET IDENTITY VERIFIED FIRST
+    // ====================================================================
     //
-    // Behaviour:
-    //   - target_url with extractable post id + article found → scope
-    //     every selector to that container.
-    //   - target_url with extractable post id + article NOT found →
-    //     fail loudly with `target_post_not_on_page`. The server marks
-    //     the outbound failed and the operator sees the failure on
-    //     the dashboard. Better than commenting on the wrong post.
-    //   - target_url empty or unparseable → fall back to legacy
-    //     document-wide search (backward compatible with older
-    //     callers and with profile_post / inbox flows).
+    // Three identity checkpoints fire BEFORE setEditableText is ever
+    // reached. Each one independently aborts (returns context_drift)
+    // rather than mutating any user-visible DOM. Goal: prevent wrong
+    // comments, not just detect them after the fact.
+    //
+    //   Checkpoint 1 — PRE-LOCATE: find an article whose CANONICAL
+    //   permalink (first post-shape anchor in DOM order, i.e. the
+    //   timestamp link) extracts to the target entity id. No article
+    //   found ⇒ abort. This is enforced by findTargetArticle's strict
+    //   matching (canonical-only; the loose innerHTML fallback was
+    //   removed because it was the root cause of the May-2026
+    //   route-mismatch incident).
+    //
+    //   Checkpoint 2 — POST-CLICK: after the "Comment" / "Bình luận"
+    //   button click, Facebook may open a modal dialog. RE-RUN the
+    //   canonical-id check on the resolved scope. Mismatch ⇒ abort.
+    //
+    //   Checkpoint 3 — PRE-TYPE: just before setEditableText runs,
+    //   verify the editor's closest enclosing article container STILL
+    //   resolves to the target identity. Defends against the edge case
+    //   where FB swaps article content between findCommentEditor and
+    //   the actual text insertion call.
+    //
+    // Backward compatibility: when target_url is empty or has no
+    // extractable post id, all three checkpoints become no-ops — the
+    // legacy document-wide search is preserved for profile_post /
+    // inbox / older callers. Comment flows ALWAYS provide a target_url
+    // in production (server-side outbox writers require it), so this
+    // backward-compat lane carries no live traffic.
     const targetPostId = extractPostIdFromUrl(targetUrl);
     let targetScope = null;
     if (targetPostId) {
+      // Checkpoint 1 — pre-locate.
       targetScope = findTargetArticle(targetPostId);
       if (!targetScope) {
-        return commentResult(false, 'target_post_not_on_page', null, {
-          content, userID: fbUID, preCount, duplicate: preMatched
-        });
+        return commentResult(false, 'context_drift', null, ctx,
+          'identity_gate_1_no_article: target id=' + abbreviate(targetPostId) + ' not present as any article\'s canonical permalink on this page');
       }
     }
     const searchRoot = targetScope || document;
@@ -387,37 +437,61 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       clickLikeUser(commentButton);
       await wait(900);
     }
-    // After the comment button click Facebook may open a modal dialog
-    // anchored to THIS post (clicked from a feed surface). Re-query the
-    // target article: if a dialog now contains the post id, prefer it
-    // — that's where the new editor lives. Otherwise stay inside the
-    // article we already scoped to. We never silently fall back to
-    // `document` when targetScope was set: the scoping guard above
-    // already proved the post is on the page, so a document-wide
-    // fallback would defeat the whole purpose of the route guard.
+
+    // Checkpoint 2 — post-click. The "Comment" click can:
+    //  (a) expand the inline comment section in-place (article unchanged),
+    //  (b) open a modal dialog anchored to the target post,
+    //  (c) open a modal dialog anchored to a DIFFERENT post (rare but
+    //      observed when Facebook lazy-resolves the click target).
+    // (a) and (b) are safe. (c) is exactly what this checkpoint catches.
     let scope;
-    if (targetScope) {
-      const refreshed = targetPostId ? findTargetArticle(targetPostId) : null;
+    if (targetPostId) {
+      const refreshed = findTargetArticle(targetPostId);
       scope = refreshed || targetScope;
+      if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+        return commentResult(false, 'context_drift', null, ctx,
+          'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId));
+      }
     } else {
       scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
     }
+
     let editor = findCommentEditor(scope);
     if (!editor) {
       window.scrollBy({ top: 420, behavior: 'smooth' });
       await wait(900);
-      if (targetScope) {
-        const refreshed = targetPostId ? findTargetArticle(targetPostId) : null;
+      if (targetPostId) {
+        const refreshed = findTargetArticle(targetPostId);
         scope = refreshed || targetScope;
+        // Re-verify after the scroll — article references may have gone
+        // stale, and the React tree may have rotated.
+        if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+          return commentResult(false, 'context_drift', null, ctx,
+            'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId));
+        }
         editor = findCommentEditor(scope);
       } else {
         editor = findCommentEditor(scope) || findCommentEditor(document);
       }
     }
-    if (!editor) return commentResult(false, 'comment_box_not_found', null, { content, userID: fbUID, preCount, duplicate: preMatched });
-    if (!setEditableText(editor, content)) return commentResult(false, 'comment_text_insert_failed', null, { content, userID: fbUID, preCount, duplicate: preMatched });
+    if (!editor) return commentResult(false, 'comment_box_not_found', null, ctx);
+
+    // Checkpoint 3 — pre-type. The editor we are about to type into
+    // must still belong to the target article. This is the LAST line
+    // of defence; once setEditableText runs, the comment composer
+    // carries our content and a stray submit click would commit it.
+    if (targetPostId) {
+      const editorArticle = editor.closest('[role="article"], [role="dialog"]');
+      if (!editorArticle || extractArticleCanonicalEntityId(editorArticle) !== targetPostId) {
+        return commentResult(false, 'context_drift', null, ctx,
+          'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId));
+      }
+    }
+
+    // Identity locked. Only NOW do we type.
+    if (!setEditableText(editor, content)) return commentResult(false, 'comment_text_insert_failed', null, ctx);
     const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
-    if (!inserted) return commentResult(false, 'comment_text_not_confirmed', null, { content, userID: fbUID, preCount, duplicate: preMatched });
+    if (!inserted) return commentResult(false, 'comment_text_not_confirmed', null, ctx);
 
     const submitButtons = findSubmitButtons(editor, [commentButton]);
     for (const submit of submitButtons) {
@@ -428,7 +502,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
           // node before we walk it for proof. Without this, the verifier
           // often misses the node and downgrades to optimistic_success.
           await wait(700);
-          return commentResult(true, '', 'sent_comment_button', { content, userID: fbUID, preCount, duplicate: preMatched });
+          return commentResult(true, '', 'sent_comment_button', ctx);
         }
       }
       await wait(400);
@@ -438,21 +512,43 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
       if (cleared) {
         await wait(700);
-        return commentResult(true, '', 'sent_comment_enter', { content, userID: fbUID, preCount, duplicate: preMatched });
+        return commentResult(true, '', 'sent_comment_enter', ctx);
       }
     }
 
-    return commentResult(false, submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found', null, { content, userID: fbUID, preCount, duplicate: preMatched });
+    return commentResult(false, submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found', null, ctx);
+  }
+
+  // abbreviate keeps identity-gate failure notes short. pfbid tokens run
+  // ~60 chars; first 16 is enough to tell two entities apart in the
+  // operator-replay UI without bloating evidence_json. Matches the
+  // backend's abbreviateID convention so notes from the extension and
+  // backend layers read uniformly.
+  function abbreviate(id) {
+    if (!id) return '<missing>';
+    if (id.length <= 16) return id;
+    return id.slice(0, 16) + '…';
   }
 
   // commentResult bundles the executor's verdict + the DOM proof the
   // backend's ClassifyExtensionReport consumes. ok=false routes through
   // the proof builder too so platform-reject banners (rate_limited /
   // blocked / redirected_feed) override the executor's generic error code.
-  function commentResult(ok, errorCode, detail, ctx) {
+  //
+  // notes (optional, ok=false only): a short stage-specific reason
+  // string for the operator-replay UI. Appended onto proof.notes after
+  // the proof builder has set its own annotation, so platform-detected
+  // failures (banner, redirect) still take precedence in the notes
+  // ordering. Used by the identity-gate aborts in executeComment to
+  // distinguish "no article on page" from "post-click swap" from
+  // "editor drift" in the dashboard.
+  function commentResult(ok, errorCode, detail, ctx, notes) {
     const proof = THGContentProof ? THGContentProof.buildCommentProof({
       ok, errorCode, content: ctx.content, userID: ctx.userID, preCount: ctx.preCount, duplicate: ctx.duplicate
     }) : null;
+    if (proof && notes) {
+      proof.notes = proof.notes ? proof.notes + ' · ' + notes : notes;
+    }
     const base = ok
       ? { ok: true, detail: detail || 'sent_comment' }
       : { ok: false, error: errorCode || 'comment_failed' };
