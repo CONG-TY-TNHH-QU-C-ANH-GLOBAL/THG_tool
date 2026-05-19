@@ -19,6 +19,7 @@ import (
 	serverauth "github.com/thg/scraper/internal/server/auth"
 	"github.com/thg/scraper/internal/server/autoflow"
 	"github.com/thg/scraper/internal/server/crawl"
+	serverknowledge "github.com/thg/scraper/internal/server/knowledge"
 	"github.com/thg/scraper/internal/server/leads"
 	servermw "github.com/thg/scraper/internal/server/middleware"
 	serverobservability "github.com/thg/scraper/internal/server/observability"
@@ -27,6 +28,9 @@ import (
 	serverskills "github.com/thg/scraper/internal/server/skills"
 	"github.com/thg/scraper/internal/server/system"
 	serverworkspace "github.com/thg/scraper/internal/server/workspace"
+	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
+	"github.com/thg/scraper/internal/workspace_knowledge/ingestion/rest_json"
+	wsksources "github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
 
 func (s *Server) registerRoutes() {
@@ -198,6 +202,25 @@ func (s *Server) registerRoutes() {
 	// Analytics
 	r.Get("/analytics/sentiment", system.SentimentStats(s.db))
 	autoflow.Routes(r, autoflow.Deps{DB: s.db}, adminOnly)
+
+	// Workspace Knowledge OS — connector framework. The dispatcher is
+	// wired here once at boot; HTTP handlers in serverknowledge route
+	// inbound /knowledge/* traffic through it. New adapters
+	// (shopify, woocommerce, csv) register into the same registry
+	// when they land; no per-adapter handler wiring needed.
+	ingestRegistry := ingestion.NewRegistry()
+	ingestRegistry.Register(rest_json.New())
+	knowledgeDispatcher := &ingestion.Dispatcher{
+		Registry: ingestRegistry,
+		Health:   s.db,
+		WriterFactory: func(src *wsksources.Source) ingestion.AssetWriter {
+			return ingestion.NewStoreAssetWriter(s.db, src)
+		},
+	}
+	serverknowledge.Routes(r, serverknowledge.Deps{
+		DB:         s.db,
+		Dispatcher: knowledgeDispatcher,
+	}, adminOnly)
 
 	// WS_AUTH_ALLOW_QUERY_TOKEN gates the legacy ?token=... query
 	// fallback for WS / SSE auth. Default is "1" today so legacy
