@@ -188,6 +188,87 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return hasAny(label, ['share', 'like', 'cancel', 'photo', 'gif', 'emoji', 'sticker', 'anh', 'huy', 'thich', 'chia se']);
   }
 
+  // extractPostIdFromUrl pulls the canonical Facebook post identifier
+  // out of a target URL. Returns "" when the URL is missing or shaped
+  // in a way the executor cannot pin to a specific post — caller then
+  // falls back to legacy global scoping. Recognised forms:
+  //   /groups/<gid>/posts/<numeric>/
+  //   /<user>/posts/<numeric>/
+  //   /<user>/posts/pfbid<base64ish>
+  //   /<page>/permalink/<numeric>/
+  //   /<page>/videos/<numeric>/   /<page>/reel/<numeric>/   /watch/<numeric>/
+  //   ?story_fbid=<id>
+  //   /photo.php?fbid=<id>
+  function extractPostIdFromUrl(raw) {
+    try {
+      const url = new URL(String(raw || ''));
+      const path = url.pathname;
+      // Compact identifier ("pfbid..."): match BEFORE the numeric branch
+      // because pfbid tokens contain alphanumerics and are unique.
+      let m = path.match(/\/(?:posts|permalink|videos|reel|watch|share)\/(pfbid[A-Za-z0-9]+)/i);
+      if (m) return m[1];
+      // Numeric post id (group posts, legacy permalinks).
+      m = path.match(/\/(?:posts|permalink|videos|reel|watch|share)\/(\d{6,})/i);
+      if (m) return m[1];
+      const sf = url.searchParams.get('story_fbid');
+      if (sf) return sf;
+      // multi_permalinks may be a comma-list; the first id is the canonical target.
+      const mp = url.searchParams.get('multi_permalinks');
+      if (mp) {
+        const first = mp.split(',')[0].trim();
+        if (first) return first;
+      }
+      if (path.toLowerCase().endsWith('/photo.php')) {
+        const fbid = url.searchParams.get('fbid');
+        if (fbid) return fbid;
+      }
+      // /watch/?v=<id> — FB Watch page; id lives in the query param.
+      if (path.toLowerCase().includes('/watch')) {
+        const v = url.searchParams.get('v');
+        if (v) return v;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  // findTargetArticle locates the [role="article"] / [role="dialog"]
+  // container on the live DOM that represents the target post.
+  // Matching is two-stage so a post can be found whether Facebook
+  // rendered it inline (feed/permalink page) or in a modal dialog
+  // (clicked through from a feed item):
+  //
+  //   Stage 1 (high confidence): the container has at least one
+  //     anchor whose href references the target post id via the
+  //     usual permalink shapes.
+  //   Stage 2 (fallback): the post id literally appears anywhere in
+  //     the container's innerHTML. Sufficient for FB renderings that
+  //     embed the id in data-* attributes or fbclid query params on
+  //     reaction buttons.
+  //
+  // Returns null when no container matches — the executor MUST then
+  // refuse to comment rather than fall back to "first visible comment
+  // button" which is exactly the route-mismatch bug this guard fixes.
+  function findTargetArticle(postId) {
+    if (!postId) return null;
+    const id = String(postId);
+    const containers = Array.from(document.querySelectorAll('[role="article"], [role="dialog"]')).filter(visible);
+    for (const container of containers) {
+      const permalinks = container.querySelectorAll(
+        'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
+      );
+      for (const a of permalinks) {
+        const href = a.getAttribute('href') || '';
+        if (href.includes(id)) return container;
+      }
+    }
+    for (const container of containers) {
+      if (container.innerHTML.includes(id)) return container;
+    }
+    return null;
+  }
+
   function findCommentEditor(scope) {
     const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
     const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
@@ -256,7 +337,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return candidates.slice(0, 5);
   }
 
-  async function executeComment(content) {
+  async function executeComment(content, targetUrl = '') {
     await dismissBlockingOverlays();
 
     // Step 3b — snapshot pre-submit state so the proof builder can
@@ -267,8 +348,37 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const preCount = proof ? proof.snapshotCommentCount() : 0;
     const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
 
+    // Step 3c — route guard: lock the executor to the SPECIFIC post
+    // identified by target_url. Without this, document-wide selectors
+    // pick the first comment button on the feed, which on Facebook's
+    // SPA after chrome.tabs.update is often a different post that
+    // happens to be rendered above the target (re-routing incident,
+    // comment id 1293405342441584, May 2026).
+    //
+    // Behaviour:
+    //   - target_url with extractable post id + article found → scope
+    //     every selector to that container.
+    //   - target_url with extractable post id + article NOT found →
+    //     fail loudly with `target_post_not_on_page`. The server marks
+    //     the outbound failed and the operator sees the failure on
+    //     the dashboard. Better than commenting on the wrong post.
+    //   - target_url empty or unparseable → fall back to legacy
+    //     document-wide search (backward compatible with older
+    //     callers and with profile_post / inbox flows).
+    const targetPostId = extractPostIdFromUrl(targetUrl);
+    let targetScope = null;
+    if (targetPostId) {
+      targetScope = findTargetArticle(targetPostId);
+      if (!targetScope) {
+        return commentResult(false, 'target_post_not_on_page', null, {
+          content, userID: fbUID, preCount, duplicate: preMatched
+        });
+      }
+    }
+    const searchRoot = targetScope || document;
+
     const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
-    const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const buttons = Array.from(searchRoot.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     const commentButton = buttons.find(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
@@ -277,12 +387,32 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       clickLikeUser(commentButton);
       await wait(900);
     }
-    const scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
+    // After the comment button click Facebook may open a modal dialog
+    // anchored to THIS post (clicked from a feed surface). Re-query the
+    // target article: if a dialog now contains the post id, prefer it
+    // — that's where the new editor lives. Otherwise stay inside the
+    // article we already scoped to. We never silently fall back to
+    // `document` when targetScope was set: the scoping guard above
+    // already proved the post is on the page, so a document-wide
+    // fallback would defeat the whole purpose of the route guard.
+    let scope;
+    if (targetScope) {
+      const refreshed = targetPostId ? findTargetArticle(targetPostId) : null;
+      scope = refreshed || targetScope;
+    } else {
+      scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
+    }
     let editor = findCommentEditor(scope);
     if (!editor) {
       window.scrollBy({ top: 420, behavior: 'smooth' });
       await wait(900);
-      editor = findCommentEditor(scope) || findCommentEditor(document);
+      if (targetScope) {
+        const refreshed = targetPostId ? findTargetArticle(targetPostId) : null;
+        scope = refreshed || targetScope;
+        editor = findCommentEditor(scope);
+      } else {
+        editor = findCommentEditor(scope) || findCommentEditor(document);
+      }
     }
     if (!editor) return commentResult(false, 'comment_box_not_found', null, { content, userID: fbUID, preCount, duplicate: preMatched });
     if (!setEditableText(editor, content)) return commentResult(false, 'comment_text_insert_failed', null, { content, userID: fbUID, preCount, duplicate: preMatched });
@@ -416,7 +546,12 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (!content) return { ok: false, error: 'outbox_content_empty' };
     if (content.length > 3000) return { ok: false, error: 'outbox_content_too_long' };
     const type = String(message?.type || '').trim().toLowerCase();
-    if (type === 'comment') return executeComment(content);
+    // target_url is the SAME field outbox.js navigates the tab to via
+    // chrome.tabs.update. Surfacing it to the comment executor lets us
+    // pin the DOM search to the exact post the queue intended, instead
+    // of the first comment button visible on the SPA-rendered page.
+    const targetUrl = String(message?.target_url || message?.targetUrl || '').trim();
+    if (type === 'comment') return executeComment(content, targetUrl);
     if (type === 'inbox') return executeInbox(content);
     if (type === 'group_post' || type === 'profile_post') return executePost(content);
     return { ok: false, error: `unsupported_outbox_type:${type}` };
