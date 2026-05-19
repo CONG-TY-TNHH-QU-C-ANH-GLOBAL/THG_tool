@@ -86,3 +86,171 @@ func TestLooksLikePostURL_AcceptsPermalinkSynthesisOutput(t *testing.T) {
 		t.Fatalf("synthesised URL %q must pass LooksLikePostURL — otherwise repair → validate → drop loop", url)
 	}
 }
+
+// ExtractFacebookEntityID must recognise BOTH the numeric and the
+// compact pfbid identifier forms. It is the identity helper the
+// verifier defense-in-depth check relies on — when this returns "",
+// the verifier downgrades a "sent" outcome to context_drift. Every
+// shape Facebook actually serves must round-trip; every shape we
+// cannot trust must return "" so the caller fails closed.
+func TestExtractFacebookEntityID(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, url, want string
+	}{
+		{
+			name: "numeric /posts/ in group permalink",
+			url:  "https://www.facebook.com/groups/1312868109620530/posts/2019673682273299/",
+			want: "2019673682273299",
+		},
+		{
+			name: "pfbid /posts/ in profile permalink",
+			url:  "https://www.facebook.com/luong.the.hung.800599/posts/pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl",
+			want: "pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl",
+		},
+		{
+			name: "pfbid followed by ?comment_id query — body terminates at ?",
+			url:  "https://www.facebook.com/luong.the.hung.800599/posts/pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl?comment_id=1293405342441584",
+			want: "pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl",
+		},
+		{
+			name: "/permalink/ form",
+			url:  "https://www.facebook.com/groups/X/permalink/456/",
+			want: "456",
+		},
+		{
+			name: "?story_fbid= query",
+			url:  "https://www.facebook.com/story.php?story_fbid=999&id=1",
+			want: "999",
+		},
+		{
+			name: "/photo.php?fbid= form",
+			url:  "https://www.facebook.com/photo.php?fbid=123",
+			want: "123",
+		},
+		{
+			name: "/watch/?v= form",
+			url:  "https://www.facebook.com/watch/?v=987654321",
+			want: "987654321",
+		},
+		{
+			name: "empty URL fails closed",
+			url:  "",
+			want: "",
+		},
+		{
+			name: "group/page profile shell — no post id",
+			url:  "https://www.facebook.com/groups/123",
+			want: "",
+		},
+		{
+			name: "garbage string",
+			url:  "not a url",
+			want: "",
+		},
+		{
+			name: "accidental pfbid substring inside path (no URL boundary) is rejected",
+			// This URL has "pfbid" embedded but not preceded by /=?&, so it's
+			// not a real identifier — must NOT match.
+			url:  "https://www.facebook.com/about/contentpfbidsomestuff",
+			want: "",
+		},
+		{
+			name: "pfbid too short to be a real id",
+			// pfbid token bodies are long base64-ish blobs. Refuse short matches.
+			url:  "https://www.facebook.com/x/posts/pfbid123",
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ExtractFacebookEntityID(c.url); got != c.want {
+				t.Errorf("ExtractFacebookEntityID(%q) = %q; want %q", c.url, got, c.want)
+			}
+		})
+	}
+}
+
+// SameFacebookEntity is the comparison primitive the verifier uses.
+// "Same" must be tight enough that two URLs only return true when both
+// independently resolve to the same id. The "fail closed" requirement
+// (empty id ⇒ never equal, even to another empty id) is load-bearing:
+// a caller that gets an empty page_url_after from the extension
+// MUST be treated as unverified, not as "trivially matching" the
+// (also unparseable) noise.
+func TestSameFacebookEntity(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{
+			name: "numeric == numeric — same group post",
+			a:    "https://www.facebook.com/groups/1312868109620530/posts/2019673682273299/",
+			b:    "https://www.facebook.com/groups/1312868109620530/posts/2019673682273299/?comment_id=999",
+			want: true,
+		},
+		{
+			name: "/permalink/ form normalises to /posts/ numeric",
+			a:    "https://www.facebook.com/groups/X/posts/2019673682273299/",
+			b:    "https://www.facebook.com/groups/X/permalink/2019673682273299/",
+			want: true,
+		},
+		{
+			name: "story_fbid query normalises to /posts/ numeric",
+			a:    "https://www.facebook.com/groups/X/posts/2019673682273299/",
+			b:    "https://www.facebook.com/story.php?story_fbid=2019673682273299&id=1",
+			want: true,
+		},
+		{
+			name: "pfbid == pfbid — same profile post even with comment anchor",
+			a:    "https://www.facebook.com/u/posts/pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl",
+			b:    "https://www.facebook.com/u/posts/pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl?comment_id=1293405342441584",
+			want: true,
+		},
+		{
+			name: "INCIDENT: numeric group post vs different pfbid profile post — must NOT match",
+			a:    "https://www.facebook.com/groups/1312868109620530/posts/2019673682273299/",
+			b:    "https://www.facebook.com/luong.the.hung.800599/posts/pfbid02R3qUXYGfCsyT4HbSWdFWgaccCeXg7qFCiPqxDueupCEpPghznjaVNDBCxYVPT9VZl?comment_id=1293405342441584",
+			want: false,
+		},
+		{
+			name: "different numeric ids in same group — must NOT match",
+			a:    "https://www.facebook.com/groups/X/posts/111/",
+			b:    "https://www.facebook.com/groups/X/posts/222/",
+			want: false,
+		},
+		{
+			name: "empty actual fails closed",
+			a:    "https://www.facebook.com/groups/X/posts/2019673682273299/",
+			b:    "",
+			want: false,
+		},
+		{
+			name: "empty target fails closed",
+			a:    "",
+			b:    "https://www.facebook.com/groups/X/posts/2019673682273299/",
+			want: false,
+		},
+		{
+			name: "both empty fails closed — empty does NOT equal empty",
+			a:    "",
+			b:    "",
+			want: false,
+		},
+		{
+			name: "garbage on either side fails closed",
+			a:    "https://www.facebook.com/groups/X/posts/2019673682273299/",
+			b:    "not a url",
+			want: false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := SameFacebookEntity(c.a, c.b); got != c.want {
+				t.Errorf("SameFacebookEntity(%q, %q) = %v; want %v", c.a, c.b, got, c.want)
+			}
+		})
+	}
+}

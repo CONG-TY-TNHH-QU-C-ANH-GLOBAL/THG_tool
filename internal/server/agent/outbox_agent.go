@@ -196,8 +196,23 @@ func (h *Handler) recordExecutionAttempt(c *fiber.Ctx, orgID, outboundID int64, 
 	if msgErr != nil {
 		slog.WarnContext(ctx, "exec-verify: outbound lookup failed",
 			"org_id", orgID, "outbound_id", outboundID, "error", msgErr)
+		// Fail closed: when we can't even load the queued target, a
+		// success-class outcome cannot be independently corroborated.
+		// Downgrade to context_drift so we never claim sent without
+		// verification. Failure outcomes stay as classified.
+		if models.IsSuccessOutcome(outcome) {
+			outcome = models.ExecutionContextDrift
+		}
 		return outcome, 0
 	}
+
+	// Defense-in-depth — independently verify that the extension's
+	// reported page_url_after addresses the SAME Facebook entity as
+	// the queued target_url. Without this, a comment posted on the
+	// wrong post (extension fooled by SPA race-rendering) reaches
+	// `sent` simply because the executor found a comment node that
+	// matched our content. See May-2026 incident commit 1b93629.
+	outcome, proof = runtime.EnforceTargetIdentity(outcome, proof, msg.TargetURL, msg.Type)
 
 	attemptID, err := h.db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
 		OrgID:      orgID,

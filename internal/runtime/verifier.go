@@ -99,33 +99,38 @@ func VerifyComment(vc VerifyContext) (models.ExecutionOutcome, VerifierProof, er
 	// independently observable; we do not collapse them into a single
 	// "platform_says_no" because the orchestrator (PR-5) prices them
 	// differently in risk_score.
-	if result.Duplicate {
-		return models.ExecutionDuplicateBlocked, proof, nil
-	}
-	if result.Verified {
-		return models.ExecutionDOMVerified, proof, nil
-	}
-	if result.Blocked {
+	var outcome models.ExecutionOutcome
+	switch {
+	case result.Duplicate:
+		outcome = models.ExecutionDuplicateBlocked
+	case result.Verified:
+		outcome = models.ExecutionDOMVerified
+	case result.Blocked:
 		proof.Notes = "blocked banner/toast detected"
-		return models.ExecutionBlocked, proof, nil
-	}
-	if result.RateLimited {
+		outcome = models.ExecutionBlocked
+	case result.RateLimited:
 		proof.Notes = "rate-limit copy detected"
-		return models.ExecutionRateLimited, proof, nil
-	}
-	if isTransientFacebookURL(result.PageURL) {
+		outcome = models.ExecutionRateLimited
+	case isTransientFacebookURL(result.PageURL):
 		proof.Notes = "redirected to feed/home after submit"
-		return models.ExecutionRedirectedFeed, proof, nil
-	}
-	if result.CountIncreased && result.ComposerCleared {
+		outcome = models.ExecutionRedirectedFeed
+	case result.CountIncreased && result.ComposerCleared:
 		// We saw partial proof (count moved, composer cleared) but couldn't
 		// match the specific node — the comment is THERE but we can't be
 		// certain it's OURS. Better than nothing; flag for re-verification.
 		proof.Notes = "count+composer proof only; no node match"
-		return models.ExecutionOptimisticSuccess, proof, nil
+		outcome = models.ExecutionOptimisticSuccess
+	default:
+		proof.Notes = "no DOM proof within window"
+		outcome = models.ExecutionShadowRejected
 	}
-	proof.Notes = "no DOM proof within window"
-	return models.ExecutionShadowRejected, proof, nil
+	// Defense-in-depth — even when the content+author match succeeds,
+	// require the page we observed to be the SAME entity as the one
+	// the caller intended. EnforceTargetIdentity downgrades any
+	// success-class outcome to ContextDrift on mismatch, and is a
+	// no-op when the outcome is already a failure class.
+	outcome, proof = EnforceTargetIdentity(outcome, proof, vc.TargetURL, "comment")
+	return outcome, proof, nil
 }
 
 // VerifyInbox is the per-action verifier for a Facebook Messenger thread.

@@ -96,3 +96,131 @@ func cutAtNonDigit(s string) string {
 	}
 	return s
 }
+
+// ExtractFacebookEntityID returns a canonical identifier for the Facebook
+// entity addressed by u, suitable for cross-checking that two URLs
+// reference the SAME post even when they use different URL shapes.
+//
+// Difference from [ExtractFacebookPostID]: this function also recognises
+// the compact "pfbid<token>" form Facebook ships in profile and page
+// post permalinks (e.g. /<user>/posts/pfbid02R3qUXY...).
+// ExtractFacebookPostID only handles the numeric form because it serves
+// URL CONSTRUCTION ([CanonicalPostPermalink] needs the numeric story id).
+//
+//   - Use [ExtractFacebookEntityID] for IDENTITY COMPARISON
+//     (verifier defense-in-depth, dedup keys, replay traces).
+//   - Use [ExtractFacebookPostID] for URL CONSTRUCTION
+//     (CanonicalPostPermalink synthesis).
+//
+// Returns "" when u is empty, malformed, or carries no recognisable
+// identifier. The empty string is the FAIL CLOSED signal — callers that
+// rely on identity comparison MUST treat "" as a non-match against any
+// non-empty id, even when both sides of the comparison are "".
+func ExtractFacebookEntityID(u string) string {
+	if u == "" {
+		return ""
+	}
+
+	// /watch/<numeric> path form — handle BEFORE the generic pfbid block
+	// so /watch/?v=… (covered later) does not collide with /watch/<id>.
+	if id := afterMarkerWithBreak(u, "/watch/", isVideoIDByte); id != "" && !strings.HasPrefix(id, "?") {
+		return id
+	}
+
+	// pfbid<base64ish> form. Marker is the literal "pfbid" prefix and the
+	// token body runs until the first non-pfbid character. We DO NOT
+	// lowercase: the body is base64-ish (mixed case is significant on
+	// Facebook's side) — folding case would create false matches between
+	// genuinely different entities.
+	if i := strings.Index(u, "pfbid"); i >= 0 {
+		// Anchor to a URL boundary so an accidental "pfbid" substring
+		// inside a content payload doesn't get treated as an id. We
+		// require either the start of the URL fragment OR a preceding
+		// path/query separator.
+		if i == 0 || isPfbidBoundary(u[i-1]) {
+			rest := u[i:]
+			end := pfbidTokenEnd(rest)
+			if end >= len("pfbid")+8 { // "pfbid" + ≥8 char body — guards against accidental "pfbid" mention
+				return rest[:end]
+			}
+		}
+	}
+
+	// Numeric identifiers. Marker order matches [ExtractFacebookPostID]
+	// for consistency: /permalink/ first because that path always carries
+	// the URL-resolvable story_fbid.
+	for _, marker := range []string{"/permalink/", "story_fbid=", "?fbid=", "&fbid=", "/posts/", "?v=", "&v="} {
+		i := strings.Index(u, marker)
+		if i < 0 {
+			continue
+		}
+		rest := u[i+len(marker):]
+		if id := cutAtNonDigit(rest); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+// SameFacebookEntity reports whether two URLs address the same Facebook
+// entity for identity-comparison purposes. False when EITHER URL has no
+// extractable id ("fail closed"): a caller that cannot independently
+// verify both sides must not be allowed to claim a match.
+func SameFacebookEntity(a, b string) bool {
+	idA := ExtractFacebookEntityID(a)
+	idB := ExtractFacebookEntityID(b)
+	if idA == "" || idB == "" {
+		return false
+	}
+	return idA == idB
+}
+
+// isPfbidBoundary returns true for characters that mark a URL field
+// boundary preceding a pfbid token (/, =, &, ?). Keeps the "pfbid"
+// prefix from being misread when it happens to appear inside encoded
+// content (e.g. tracking params).
+func isPfbidBoundary(c byte) bool {
+	switch c {
+	case '/', '=', '&', '?':
+		return true
+	}
+	return false
+}
+
+// pfbidTokenEnd returns the index in s where the pfbid token ends. The
+// pfbid body uses [A-Za-z0-9] (base64-without-padding) so any other
+// byte (including '/', '?', '&', '_', '-') terminates.
+func pfbidTokenEnd(s string) int {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i < len("pfbid") {
+			continue
+		}
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		return i
+	}
+	return len(s)
+}
+
+// afterMarkerWithBreak extracts the substring starting after marker, up
+// to the first byte the supplied predicate rejects. Returns "" when
+// marker is absent or no characters were captured.
+func afterMarkerWithBreak(u, marker string, accept func(byte) bool) string {
+	i := strings.Index(u, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := u[i+len(marker):]
+	for j := 0; j < len(rest); j++ {
+		if !accept(rest[j]) {
+			return rest[:j]
+		}
+	}
+	return rest
+}
+
+func isVideoIDByte(c byte) bool {
+	return c >= '0' && c <= '9'
+}
