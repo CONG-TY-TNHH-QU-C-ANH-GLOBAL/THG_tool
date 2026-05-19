@@ -28,6 +28,13 @@ const (
 	SourceNotion       SourceType = "notion"
 	SourceWebsite      SourceType = "website"
 	SourceCatalog      SourceType = "catalog"
+	// SourceRESTJSON is the generic configurable REST/JSON ingestor.
+	// A tenant points it at any HTTP endpoint that returns JSON; the
+	// connection_config carries the field_map, pagination scheme and
+	// auth config. There is no per-tenant hardcoded vendor — the
+	// platform's own catalog hub is just one config among many. See
+	// internal/workspace_knowledge/ingestion/rest_json.
+	SourceRESTJSON SourceType = "rest_json"
 )
 
 // IsKnown reports whether t is a SourceType the system currently
@@ -39,7 +46,7 @@ const (
 // this source type?".
 func (t SourceType) IsKnown() bool {
 	switch t {
-	case SourceShopify, SourceCSV, SourceGoogleSheets, SourceNotion, SourceWebsite, SourceCatalog:
+	case SourceShopify, SourceCSV, SourceGoogleSheets, SourceNotion, SourceWebsite, SourceCatalog, SourceRESTJSON:
 		return true
 	}
 	return false
