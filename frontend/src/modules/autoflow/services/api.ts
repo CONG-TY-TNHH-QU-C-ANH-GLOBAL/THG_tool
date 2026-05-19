@@ -173,6 +173,13 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
   }));
 }
 
+export async function patch<T>(path: string, body: unknown): Promise<T> {
+  return handleJSON<T>(await apiFetch(path, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }));
+}
+
 export async function del<T = void>(path: string): Promise<T> {
   return handleJSON<T>(await apiFetch(path, { method: 'DELETE' }));
 }

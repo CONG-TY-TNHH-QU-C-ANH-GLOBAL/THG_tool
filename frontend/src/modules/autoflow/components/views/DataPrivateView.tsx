@@ -15,6 +15,7 @@ import FileUploadPanel from '../data/FileUploadPanel';
 import MagicOmnibox from '../data/MagicOmnibox';
 import OutboundPolicyPanel from '../data/OutboundPolicyPanel';
 import PrivateFilesTable from '../data/PrivateFilesTable';
+import KnowledgeSourcesPanel from '../knowledge/KnowledgeSourcesPanel';
 
 interface DataPrivateViewProps { orgId: string; isAdmin: boolean; }
 
@@ -224,6 +225,7 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
 
       {advancedOpen && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <KnowledgeSourcesPanel readonly={!isAdmin} />
           <DataSourcesPanel
             sources={sources}
             isLoading={isLoading}
