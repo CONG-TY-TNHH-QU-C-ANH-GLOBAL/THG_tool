@@ -275,6 +275,89 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return '';
   }
 
+  // articleIsReadyForComment returns true iff the supplied article
+  // container is fully mounted enough that we can interact with its
+  // composer. Three conditions, all must hold:
+  //
+  //   1. The article's canonical permalink anchor exists AND is
+  //      visible. If FB hasn't rendered the timestamp link yet the
+  //      article is in a transient state — we cannot trust scope
+  //      lookups against a half-mounted React subtree.
+  //
+  //   2. A visible "Comment" / "Bình luận" interaction button is
+  //      present inside the article. Without it we cannot expand the
+  //      composer; waiting for the article to exist but not for its
+  //      interactive surface is the source of intermittent flakes.
+  //
+  //   3. (Implicit, enforced by the caller stability window.) These
+  //      conditions hold continuously for stableMs milliseconds, so
+  //      we are not catching a transient mount that will unmount.
+  function articleIsReadyForComment(article) {
+    if (!article) return false;
+    const permalink = article.querySelector(
+      'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
+    );
+    if (!permalink || !visible(permalink)) return false;
+    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const buttons = Array.from(article.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    return buttons.some(el => {
+      const label = labelOf(el);
+      return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
+    });
+  }
+
+  // waitUntilTargetArticleStable polls the live DOM until the target
+  // article container is BOTH present AND ready-for-comment AND
+  // stable for stableMs continuous milliseconds, OR until timeoutMs
+  // elapses. Returns the stable article reference on success, null
+  // on timeout.
+  //
+  // Why "stable for 500ms" matters: Facebook's SPA frequently mounts
+  // an article into the DOM and then unmounts it within 100–300 ms
+  // as React reconciles route transitions. waitForTabReady (Chrome's
+  // load-complete signal) fires far too early to see that; the
+  // article we found at first-paint can be gone before we type. The
+  // stability window absorbs that churn — any flicker resets the
+  // window and the call keeps polling.
+  //
+  // The stability check also catches the case where the canonical
+  // identity CHANGES mid-window (FB swaps article content in place
+  // during virtualised scroll). When findTargetArticle returns a
+  // different element across two checks, the window resets.
+  async function waitUntilTargetArticleStable(targetPostId, opts) {
+    const options = opts || {};
+    const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 8000;
+    const stableMs = typeof options.stableMs === 'number' ? options.stableMs : 500;
+    const pollMs = typeof options.pollMs === 'number' ? options.pollMs : 200;
+    if (!targetPostId) return null;
+    const deadline = Date.now() + timeoutMs;
+    let stableSince = 0;
+    let stableArticle = null;
+    while (Date.now() < deadline) {
+      const article = findTargetArticle(targetPostId);
+      const ready = article && articleIsReadyForComment(article);
+      if (ready && article === stableArticle) {
+        if (stableSince === 0) stableSince = Date.now();
+        if (Date.now() - stableSince >= stableMs) {
+          return article;
+        }
+      } else if (ready) {
+        // Found a ready article but it's a different reference than
+        // the previous tick (or this is the first tick). Start a
+        // fresh stability window.
+        stableArticle = article;
+        stableSince = Date.now();
+        // Don't return yet — wait at least one more poll to confirm.
+      } else {
+        // Either no article, or article not ready. Reset.
+        stableArticle = null;
+        stableSince = 0;
+      }
+      await wait(pollMs);
+    }
+    return null;
+  }
+
   // findTargetArticle locates the [role="article"] / [role="dialog"]
   // container on the live DOM whose CANONICAL identity (its first
   // post-shape permalink anchor in DOM order — i.e. the post header's
@@ -418,11 +501,25 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const targetPostId = extractPostIdFromUrl(targetUrl);
     let targetScope = null;
     if (targetPostId) {
-      // Checkpoint 1 — pre-locate.
-      targetScope = findTargetArticle(targetPostId);
+      // Checkpoint 1 — pre-locate WITH stability wait.
+      //
+      // Previously this was a single synchronous findTargetArticle
+      // call. That was correct for stable pages but flaked under FB's
+      // SPA mount-unmount churn during route transitions: the
+      // article would exist at the moment we checked, then unmount
+      // before we tried to type. waitUntilTargetArticleStable polls
+      // for the article + its permalink + comment button all
+      // continuously holding for stableMs — replacing
+      // waitForTabReady's "Chrome says load complete" with a
+      // DOM-truth check that survives the SPA's intermediate states.
+      targetScope = await waitUntilTargetArticleStable(targetPostId, {
+        timeoutMs: 8000,
+        stableMs: 500,
+        pollMs: 200,
+      });
       if (!targetScope) {
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_1_no_article: target id=' + abbreviate(targetPostId) + ' not present as any article\'s canonical permalink on this page');
+          'identity_gate_1_no_article_or_unstable: target id=' + abbreviate(targetPostId) + ' did not settle (article+permalink+comment-button stable 500ms) within 8s');
       }
     }
     const searchRoot = targetScope || document;

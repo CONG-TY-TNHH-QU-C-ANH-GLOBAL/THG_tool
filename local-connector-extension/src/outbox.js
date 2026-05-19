@@ -1,6 +1,45 @@
 var THGOutbox = globalThis.THGOutbox || (() => {
   let processing = null;
 
+  // tabExecutionLocks enforces the "1 tab = 1 active outbound execution"
+  // invariant at the background layer. Keyed by Chrome tab id; the
+  // value is the in-flight Promise so a second caller can either await
+  // it or short-circuit. The map is module-scoped on purpose — there
+  // is exactly one background service worker per browser, so this
+  // singleton owns the tab-execution truth for the whole extension.
+  //
+  // Why per-tab instead of per-account: Chrome tabs are the
+  // composition unit for FB sessions. Two tabs CAN belong to the same
+  // FB account (user opens FB in two windows) but they have separate
+  // DOM, separate React state, separate composer focus. Locking by
+  // account would forbid legitimate parallelism on two tabs of the
+  // same account; locking by tab forbids the actual race we care
+  // about — two outbound commands mutating the same DOM tree.
+  //
+  // Why this is NOT redundant with `processing`: the module-level
+  // `processing` lock serialises calls to processOnce (outbox batch).
+  // But other code paths can also invoke chrome.tabs.sendMessage on
+  // the same content script — heartbeat (thg_collect_meta), crawl
+  // (thg_execute_command). Per-tab lock guarantees no two MUTATING
+  // commands execute concurrently regardless of code path.
+  const tabExecutionLocks = new Map();
+
+  // acquireTabExecutionLock returns a release function when the lock
+  // is granted, OR null when another execution is already in flight
+  // on the same tab. The caller MUST call release() in a finally so
+  // the lock cannot leak across an exception path.
+  function acquireTabExecutionLock(tabId) {
+    if (!tabId || typeof tabId !== 'number') return null;
+    if (tabExecutionLocks.has(tabId)) return null;
+    let release;
+    const promise = new Promise(resolve => { release = resolve; });
+    tabExecutionLocks.set(tabId, promise);
+    return () => {
+      tabExecutionLocks.delete(tabId);
+      release();
+    };
+  }
+
   async function fetchApprovedOutbox() {
     const res = await THGApi.agentFetch('/api/connectors/outbox?limit=1');
     if (!res.ok) return [];
@@ -68,13 +107,31 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     }
     let state = await THGFacebookState.ensureFacebookTabVisible(targetUrl);
     if (!state.tab?.id) throw new Error('Facebook tab is not ready');
-    await THGFacebookState.waitForTabReady(state.tab.id, 20000);
-    await THGShared.delay(1200);
+
+    // PRIORITY A — per-tab execution lock at the BACKGROUND layer.
+    // Defense-in-depth alongside the content-script-level lock in
+    // content/bridge.js: if some other background caller starts a
+    // mutate-class command on this tab concurrently, that caller
+    // gets short-circuited here before any work is queued. We refuse
+    // by THROWING instead of waiting — the outbox poller will pick
+    // the message up again next cycle (every few seconds). Queueing
+    // would silently extend latency without bounded back-pressure.
+    const releaseTabLock = acquireTabExecutionLock(state.tab.id);
+    if (!releaseTabLock) {
+      throw new Error('tab_busy_executing');
+    }
+
     try {
-      return await chrome.tabs.sendMessage(state.tab.id, { type: 'thg_execute_outbound', message });
-    } catch {
-      await THGShared.injectContentScripts(state.tab.id);
-      return chrome.tabs.sendMessage(state.tab.id, { type: 'thg_execute_outbound', message });
+      await THGFacebookState.waitForTabReady(state.tab.id, 20000);
+      await THGShared.delay(1200);
+      try {
+        return await chrome.tabs.sendMessage(state.tab.id, { type: 'thg_execute_outbound', message });
+      } catch {
+        await THGShared.injectContentScripts(state.tab.id);
+        return await chrome.tabs.sendMessage(state.tab.id, { type: 'thg_execute_outbound', message });
+      }
+    } finally {
+      releaseTabLock();
     }
   }
 
