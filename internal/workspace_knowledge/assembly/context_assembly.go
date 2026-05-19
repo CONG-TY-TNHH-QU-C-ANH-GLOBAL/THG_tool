@@ -14,10 +14,13 @@
 package assembly
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
+	"github.com/thg/scraper/internal/workspace_knowledge/products"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
 )
 
@@ -134,6 +137,53 @@ func renderProduct(h retrieval.Hit, withMetrics bool) string {
 	a := h.Asset
 	var parts []string
 	parts = append(parts, a.Title)
+
+	// Try the structured PayloadV1 first (PR-1 product-catalog assets).
+	// Every product written by the rest_json / shopify / future
+	// product-catalog adapters carries this shape; an unmarshal that
+	// returns SchemaVersion >= 1 means the payload is one of ours.
+	//
+	// Falling back to the legacy {"price":"$X"} substring extraction
+	// below keeps the seven existing test fixtures green and tolerates
+	// any pre-Workspace-Knowledge POD assets that may still sit in the
+	// org's catalog table.
+	var pv products.PayloadV1
+	if len(a.Payload) > 0 && json.Unmarshal(a.Payload, &pv) == nil && pv.SchemaVersion > 0 {
+		if pv.Origin != "" {
+			parts = append(parts, "origin: "+pv.Origin)
+		}
+		if priceStr := formatPriceRange(pv.PriceMin, pv.PriceMax, pv.Currency); priceStr != "" {
+			parts = append(parts, "price: "+priceStr)
+		}
+		if len(pv.Sizes) > 0 {
+			parts = append(parts, "sizes: "+strings.Join(pv.Sizes, "/"))
+		}
+		if pv.DisplaySKU != "" {
+			parts = append(parts, "sku: "+pv.DisplaySKU)
+		}
+		// Surface availability ONLY when it signals a constraint the
+		// LLM should reflect in its draft. in_stock is the default
+		// assumption; unknown is noise; the other three values matter.
+		switch pv.Availability {
+		case products.AvailLowStock:
+			parts = append(parts, "low stock")
+		case products.AvailOutOfStock:
+			parts = append(parts, "out of stock")
+		case products.AvailDiscontinued:
+			parts = append(parts, "discontinued")
+		}
+		// Source URL lands LAST so the LLM can choose to drop it into
+		// the comment as a citation (or omit it for casual tone).
+		if pv.SourceURL != "" {
+			parts = append(parts, pv.SourceURL)
+		}
+		if withMetrics {
+			parts = append(parts, fmt.Sprintf("score=%.2f", h.Score))
+		}
+		return strings.Join(parts, " · ")
+	}
+
+	// Legacy path: free-form Description + naive substring price.
 	if a.Description != "" {
 		parts = append(parts, truncate(a.Description, 160))
 	}
@@ -144,6 +194,45 @@ func renderProduct(h retrieval.Hit, withMetrics bool) string {
 		parts = append(parts, fmt.Sprintf("score=%.2f", h.Score))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// formatPriceRange renders the canonical price interval into the
+// short format the prompt block uses. Examples:
+//
+//	min=17.5  max=22    currency=USD  → "17.5-22 USD"
+//	min=22    max=22    currency=USD  → "22 USD"
+//	min=22    max=nil   currency=""   → "22"
+//	min=nil   max=nil                 → ""           (no price block)
+//
+// Currency is appended only when non-empty; some upstream feeds
+// expose prices without a unit and we surface them as-is rather than
+// inventing a currency.
+func formatPriceRange(minPrice, maxPrice *float64, currency string) string {
+	if minPrice == nil && maxPrice == nil {
+		return ""
+	}
+	a := minPrice
+	b := maxPrice
+	if a == nil {
+		a = b
+	}
+	if b == nil {
+		b = a
+	}
+	currency = strings.TrimSpace(currency)
+	left := strconv.FormatFloat(*a, 'f', -1, 64)
+	if *a == *b {
+		if currency == "" {
+			return left
+		}
+		return left + " " + currency
+	}
+	right := strconv.FormatFloat(*b, 'f', -1, 64)
+	out := left + "-" + right
+	if currency != "" {
+		out += " " + currency
+	}
+	return out
 }
 
 func renderPolicy(h retrieval.Hit, withMetrics bool) string {

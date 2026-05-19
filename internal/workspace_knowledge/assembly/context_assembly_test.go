@@ -103,3 +103,166 @@ func TestAssembleContext_MetricsAnnotation(t *testing.T) {
 		t.Errorf("IncludeMetrics should annotate scores; got:\n%s", out)
 	}
 }
+
+// payloadV1ProductFixture is a literal PR-1 PayloadV1 JSON blob —
+// the exact shape the rest_json adapter persists. Keeping it as raw
+// JSON (rather than constructing through the products package) keeps
+// the assembly test free of an extra runtime import and proves the
+// renderer reads the on-disk contract, not the in-memory struct.
+func payloadV1ProductFixture(opts struct {
+	priceMin, priceMax string // empty = field absent
+	currency           string
+	origin             string
+	sizes              []string
+	sku                string
+	sourceURL          string
+	availability       string // "" defaults to "unknown"
+}) string {
+	parts := []string{`"schema_version":1`}
+	parts = append(parts, `"source_id":"p1"`)
+	parts = append(parts, `"name":"Stainless Travel Mug"`)
+	parts = append(parts, `"extractor_version":"rest_json/v1"`)
+	parts = append(parts, `"source_updated_at":"2026-05-17T15:44:47Z"`)
+	if opts.priceMin != "" {
+		parts = append(parts, `"price_min":`+opts.priceMin)
+	}
+	if opts.priceMax != "" {
+		parts = append(parts, `"price_max":`+opts.priceMax)
+	}
+	if opts.currency != "" {
+		parts = append(parts, `"currency":"`+opts.currency+`"`)
+	}
+	if opts.origin != "" {
+		parts = append(parts, `"origin":"`+opts.origin+`"`)
+	}
+	if len(opts.sizes) > 0 {
+		var quoted []string
+		for _, s := range opts.sizes {
+			quoted = append(quoted, `"`+s+`"`)
+		}
+		parts = append(parts, `"sizes":[`+strings.Join(quoted, ",")+`]`)
+	}
+	if opts.sku != "" {
+		parts = append(parts, `"display_sku":"`+opts.sku+`"`)
+	}
+	if opts.sourceURL != "" {
+		parts = append(parts, `"source_url":"`+opts.sourceURL+`"`)
+	}
+	if opts.availability != "" {
+		parts = append(parts, `"availability":"`+opts.availability+`"`)
+	} else {
+		parts = append(parts, `"availability":"unknown"`)
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+func TestRenderProduct_PayloadV1_SurfacesPriceRangeOriginSKUSourceURL(t *testing.T) {
+	out := AssembleContext([]retrieval.Hit{
+		hit(assets.AssetPODProduct, "Stainless Travel Mug", "", payloadV1ProductFixture(struct {
+			priceMin, priceMax string
+			currency           string
+			origin             string
+			sizes              []string
+			sku                string
+			sourceURL          string
+			availability       string
+		}{
+			priceMin:     "17.5",
+			priceMax:     "22",
+			currency:     "USD",
+			origin:       "US",
+			sizes:        []string{"S", "M", "L"},
+			sku:          "THG-US002-RHLG5I",
+			sourceURL:    "https://www.thgfulfill.com/catalog/p1",
+			availability: "in_stock",
+		}), 0.9),
+	}, AssembleOptions{})
+
+	wants := []string{
+		"Stainless Travel Mug",
+		"origin: US",
+		"price: 17.5-22 USD",
+		"sizes: S/M/L",
+		"sku: THG-US002-RHLG5I",
+		"https://www.thgfulfill.com/catalog/p1",
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("expected %q in output:\n%s", w, out)
+		}
+	}
+}
+
+func TestRenderProduct_PayloadV1_SinglePrice_NoCurrency(t *testing.T) {
+	out := AssembleContext([]retrieval.Hit{
+		hit(assets.AssetPODProduct, "Free product", "", payloadV1ProductFixture(struct {
+			priceMin, priceMax string
+			currency           string
+			origin             string
+			sizes              []string
+			sku                string
+			sourceURL          string
+			availability       string
+		}{priceMin: "0", priceMax: "0"}), 0.5),
+	}, AssembleOptions{})
+
+	// Same min == max collapses to single number; missing currency
+	// renders without the trailing unit (we do not invent USD).
+	if !strings.Contains(out, "price: 0") {
+		t.Errorf("expected unit-less single price; got:\n%s", out)
+	}
+	if strings.Contains(out, "0-0") {
+		t.Errorf("min==max should collapse, not render '0-0':\n%s", out)
+	}
+}
+
+func TestRenderProduct_PayloadV1_OutOfStock_SurfacesWarning(t *testing.T) {
+	out := AssembleContext([]retrieval.Hit{
+		hit(assets.AssetPODProduct, "Discontinued tee", "", payloadV1ProductFixture(struct {
+			priceMin, priceMax string
+			currency           string
+			origin             string
+			sizes              []string
+			sku                string
+			sourceURL          string
+			availability       string
+		}{availability: "out_of_stock"}), 0.5),
+	}, AssembleOptions{})
+	if !strings.Contains(out, "out of stock") {
+		t.Errorf("availability warning missing for out_of_stock; got:\n%s", out)
+	}
+}
+
+func TestRenderProduct_PayloadV1_InStock_NoNoiseAnnotation(t *testing.T) {
+	// in_stock is the default assumption — should NOT add an
+	// "in stock" annotation that wastes prompt tokens.
+	out := AssembleContext([]retrieval.Hit{
+		hit(assets.AssetPODProduct, "Active tee", "", payloadV1ProductFixture(struct {
+			priceMin, priceMax string
+			currency           string
+			origin             string
+			sizes              []string
+			sku                string
+			sourceURL          string
+			availability       string
+		}{availability: "in_stock"}), 0.5),
+	}, AssembleOptions{})
+	if strings.Contains(out, "in stock") || strings.Contains(strings.ToLower(out), "availability") {
+		t.Errorf("default in_stock should NOT surface annotation; got:\n%s", out)
+	}
+}
+
+func TestRenderProduct_LegacyPayload_StillWorks(t *testing.T) {
+	// Pre-PR-1 legacy payload — naive {"price":"$X"} string — must
+	// still render correctly. The existing TestAssembleContext_GroupsByType
+	// already covers the happy path; this one is explicit.
+	out := AssembleContext([]retrieval.Hit{
+		hit(assets.AssetPODProduct, "Legacy item", "6.1oz heavyweight", `{"price":"$18"}`, 0.5),
+	}, AssembleOptions{})
+	if !strings.Contains(out, "price: $18") {
+		t.Errorf("legacy payload extraction broke; output:\n%s", out)
+	}
+	if !strings.Contains(out, "6.1oz heavyweight") {
+		t.Errorf("legacy description missing; output:\n%s", out)
+	}
+}
