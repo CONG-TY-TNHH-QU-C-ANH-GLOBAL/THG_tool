@@ -1,3 +1,4 @@
+// Domain: coordination (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -104,7 +105,7 @@ func TestQueueOutbound_IncrementsRuntimeCounter(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 7, TargetURL: "https://facebook.com/post/1", Content: "hi",
 	}
-	res, err := db.QueueOutboundForOrg(msg, false, 24*time.Hour)
+	res, err := db.QueueOutboundForOrg(msg, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 		res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 			OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 9,
 			TargetURL: postURL(i), Content: "n",
-		}, false, 24*time.Hour)
+		}, 24*time.Hour)
 		if err != nil {
 			t.Fatalf("queue #%d: %v", i, err)
 		}
@@ -161,7 +162,7 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 9,
 		TargetURL: postURL(cap + 1), Content: "n",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue cap+1: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestQueueOutbound_AccountCooldownBlocks(t *testing.T) {
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 11,
 		TargetURL: "https://facebook.com/post/cooldown", Content: "x",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}
@@ -220,7 +221,7 @@ func TestQueueOutbound_RiskCeilingBlocks(t *testing.T) {
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 13,
 		TargetURL: "https://facebook.com/post/risky", Content: "x",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}

@@ -1,3 +1,4 @@
+// Domain: connectors (see internal/store/DOMAINS.md)
 package store
 
 // ConnectorOwnsAccountStream reports whether the agent identified by agentID

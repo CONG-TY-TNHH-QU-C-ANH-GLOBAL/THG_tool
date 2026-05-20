@@ -1,6 +1,8 @@
+// Domain: leads (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"fmt"
 	"strings"
@@ -109,7 +111,7 @@ func (s *Store) ListRecentClassifications(ctx context.Context, orgID int64, task
 			&e.Decision, &e.UserPrompt, &createdAt); err != nil {
 			return nil, err
 		}
-		e.CreatedAt = parseSQLiteTime(createdAt)
+		e.CreatedAt = dbutil.ParseSQLiteTime(createdAt)
 		out = append(out, e)
 	}
 	return out, rows.Err()

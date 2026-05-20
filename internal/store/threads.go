@@ -1,6 +1,8 @@
+// Domain: threads (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"database/sql"
 	"strings"
 	"time"
@@ -56,8 +58,8 @@ func (s *Store) GetThreadByProfile(profileURL string) (*models.ConversationThrea
 	if err != nil {
 		return nil, err
 	}
-	t.LastOutboundAt = parseSQLiteTime(lastOut)
-	t.LastInboundAt = parseSQLiteTime(lastIn)
+	t.LastOutboundAt = dbutil.ParseSQLiteTime(lastOut)
+	t.LastInboundAt = dbutil.ParseSQLiteTime(lastIn)
 	return &t, nil
 }
 
@@ -74,8 +76,8 @@ func (s *Store) GetThreadByProfileForOrg(orgID int64, profileURL string) (*model
 	if err != nil {
 		return nil, err
 	}
-	t.LastOutboundAt = parseSQLiteTime(lastOut)
-	t.LastInboundAt = parseSQLiteTime(lastIn)
+	t.LastOutboundAt = dbutil.ParseSQLiteTime(lastOut)
+	t.LastInboundAt = dbutil.ParseSQLiteTime(lastIn)
 	return &t, nil
 }
 
@@ -115,8 +117,8 @@ func (s *Store) GetThreadsByProfilesForOrg(orgID int64, profileURLs []string) (m
 			&t.Niche, &t.Status, &lastOut, &lastIn, &t.CreatedAt); err != nil {
 			return nil, err
 		}
-		t.LastOutboundAt = parseSQLiteTime(lastOut)
-		t.LastInboundAt = parseSQLiteTime(lastIn)
+		t.LastOutboundAt = dbutil.ParseSQLiteTime(lastOut)
+		t.LastInboundAt = dbutil.ParseSQLiteTime(lastIn)
 		copy := t
 		out[t.ProfileURL] = &copy
 	}
@@ -163,8 +165,8 @@ func scanThreads(rows *sql.Rows) ([]models.ConversationThread, error) {
 			&t.Status, &lastOut, &lastIn, &t.CreatedAt); err != nil {
 			return nil, err
 		}
-		t.LastOutboundAt = parseSQLiteTime(lastOut)
-		t.LastInboundAt = parseSQLiteTime(lastIn)
+		t.LastOutboundAt = dbutil.ParseSQLiteTime(lastOut)
+		t.LastInboundAt = dbutil.ParseSQLiteTime(lastIn)
 		threads = append(threads, t)
 	}
 	return threads, nil

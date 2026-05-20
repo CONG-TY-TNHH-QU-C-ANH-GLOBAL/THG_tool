@@ -1,6 +1,8 @@
+// Domain: leads (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
@@ -287,7 +289,7 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 		if outcome.Valid {
 			e.Outcome = outcome.String
 		}
-		e.PerformedAt = parseSQLiteTime(performed)
+		e.PerformedAt = dbutil.ParseSQLiteTime(performed)
 		out[e.TargetURL] = append(out[e.TargetURL], e)
 	}
 	return out, rows.Err()

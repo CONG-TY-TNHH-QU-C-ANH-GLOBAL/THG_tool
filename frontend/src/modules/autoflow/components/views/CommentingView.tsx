@@ -17,70 +17,87 @@ interface CommentingViewProps {
 
 // AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): the
 // human-approval flow is gone. Outbound rows go directly from queue
-// to executor with no draft/approve/reject gate. The filter surface
-// only shows execution lifecycle states:
-//   - planned   (was: approved on the wire — queued, waiting to run)
-//   - executing (was: sending on the wire — extension claimed it)
-//   - verified  (was: sent on the wire — DOM-verified success)
-//   - failed    (everything else: context_drift, blocked, expired …)
+// to executor with no draft/approve/reject gate.
+//
+// PR-1 (verified-state-centric): the filter surface reads the
+// (execution_state, verification_outcome) pair directly, not the
+// legacy `status` string. The pair-aware predicate below is the
+// single source of truth — every status pill, label and filter band
+// derives from it.
 type CommentFilter = 'all' | 'planned' | 'executing' | 'verified' | 'failed';
 
-// matchesFilter maps the on-disk status string onto the autonomous
-// filter band. The wire still uses 'approved' / 'sending' / 'sent' /
-// 'failed' (constants alias on Go side) — when the DB column flips to
-// discrete autonomous values this mapping collapses to direct equality.
-function matchesFilter(status: string, filter: CommentFilter): boolean {
+// matchesFilter projects the dual-column state pair onto the
+// autonomous filter bands the operator picks from. `failed` covers
+// every non-verified terminal outcome plus the no-observation
+// expired state, since from the operator's point of view all of
+// those are "didn't land".
+function matchesFilter(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>, filter: CommentFilter): boolean {
+  const state = msg.execution_state;
+  const outcome = msg.verification_outcome ?? '';
   switch (filter) {
     case 'all':
       return true;
     case 'planned':
-      return status === 'approved';
+      return state === 'planned';
     case 'executing':
-      return status === 'sending';
+      return state === 'executing';
     case 'verified':
-      return status === 'sent';
+      return state === 'finished' && outcome === 'verified_success';
     case 'failed':
-      return status === 'failed' || status === 'rejected';
+      return state === 'expired' || (state === 'finished' && outcome !== 'verified_success' && outcome !== '');
   }
 }
 
-function statusTag(status: string): string {
-  switch (status) {
-    case 'sent':
-      return 'tag tag-ok';
-    case 'sending':
-      return 'tag tag-warm';
-    case 'approved':
-      return 'tag tag-cold';
-    case 'failed':
-    case 'rejected':
-      return 'tag tag-hot';
-    default:
-      return 'tag tag-mute';
-  }
+function statusTag(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>): string {
+  const state = msg.execution_state;
+  const outcome = msg.verification_outcome ?? '';
+  if (state === 'finished' && outcome === 'verified_success') return 'tag tag-ok';
+  if (state === 'executing') return 'tag tag-warm';
+  if (state === 'planned') return 'tag tag-cold';
+  if (state === 'finished' || state === 'expired') return 'tag tag-hot';
+  return 'tag tag-mute';
 }
 
-// Operator-facing label for a status pill. Replaces the legacy
-// SENT/DRAFT/APPROVED uppercase strings.
-function statusLabel(status: string, lang: 'vi' | 'en'): string {
+// Operator-facing label. Surfaces the specific verification outcome
+// when finished so the dashboard can distinguish "verified" from
+// "context_drift" / "rate_limited" / "blocked" at a glance.
+function statusLabel(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>, lang: 'vi' | 'en'): string {
+  const state = msg.execution_state;
+  const outcome = msg.verification_outcome ?? '';
   if (lang === 'vi') {
-    switch (status) {
-      case 'approved': return 'ĐÃ LÊN KẾ HOẠCH';
-      case 'sending':  return 'ĐANG THỰC THI';
-      case 'sent':     return 'ĐÃ XÁC NHẬN';
-      case 'failed':   return 'THẤT BẠI';
-      case 'rejected': return 'TỪ CHỐI';
-      default:         return status.toUpperCase();
+    if (state === 'planned')   return 'ĐÃ LÊN KẾ HOẠCH';
+    if (state === 'executing') return 'ĐANG THỰC THI';
+    if (state === 'expired')   return 'HẾT HẠN';
+    if (state === 'finished') {
+      switch (outcome) {
+        case 'verified_success': return 'ĐÃ XÁC NHẬN';
+        case 'context_drift':    return 'SAI MỤC TIÊU';
+        case 'rate_limited':     return 'BỊ GIỚI HẠN';
+        case 'blocked':          return 'BỊ CHẶN';
+        case 'captcha':          return 'CẦN XỬ LÝ THỦ CÔNG';
+        case 'shadow_rejected':  return 'BỊ FB ẨN';
+        case 'execution_failed': return 'LỖI THỰC THI';
+        default:                 return 'THẤT BẠI';
+      }
+    }
+    return String(state).toUpperCase();
+  }
+  if (state === 'planned')   return 'PLANNED';
+  if (state === 'executing') return 'EXECUTING';
+  if (state === 'expired')   return 'EXPIRED';
+  if (state === 'finished') {
+    switch (outcome) {
+      case 'verified_success': return 'VERIFIED';
+      case 'context_drift':    return 'CONTEXT DRIFT';
+      case 'rate_limited':     return 'RATE LIMITED';
+      case 'blocked':          return 'BLOCKED';
+      case 'captcha':          return 'CAPTCHA';
+      case 'shadow_rejected':  return 'SHADOW REJECTED';
+      case 'execution_failed': return 'EXECUTION FAILED';
+      default:                 return 'FAILED';
     }
   }
-  switch (status) {
-    case 'approved': return 'PLANNED';
-    case 'sending':  return 'EXECUTING';
-    case 'sent':     return 'VERIFIED';
-    case 'failed':   return 'FAILED';
-    case 'rejected': return 'REJECTED';
-    default:         return status.toUpperCase();
-  }
+  return String(state).toUpperCase();
 }
 
 export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) {
@@ -147,7 +164,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(
-    () => (filter === 'all' ? messages : messages.filter((message) => matchesFilter(message.status, filter))),
+    () => (filter === 'all' ? messages : messages.filter((message) => matchesFilter(message, filter))),
     [filter, messages],
   );
 
@@ -292,7 +309,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <span className="mono" style={{ fontSize: 12, color: 'var(--text-mute)' }}>#{message.account_id}</span>
-                      <span className={statusTag(message.status)}>{statusLabel(message.status, lang)}</span>
+                      <span className={statusTag(message)}>{statusLabel(message, lang)}</span>
                     </div>
                     <div style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {message.content || <span style={{ color: 'var(--text-faint)' }}>{tv.emptyValue}</span>}
@@ -323,7 +340,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                       #{selectedMessage.account_id}
                     </div>
                   </div>
-                  <span className={statusTag(selectedMessage.status)}>{statusLabel(selectedMessage.status, lang)}</span>
+                  <span className={statusTag(selectedMessage)}>{statusLabel(selectedMessage, lang)}</span>
                 </header>
 
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>

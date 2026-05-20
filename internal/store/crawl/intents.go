@@ -1,4 +1,4 @@
-package store
+package crawl
 
 import (
 	"context"
@@ -18,31 +18,32 @@ const (
 	maxCrawlMaxItems            = 250
 )
 
-// Field state machine. status is the source of truth; enabled is kept synced
-// for legacy queries. A field is only claimed by the scheduler when status =
-// "active". See project_scheduled_intelligence.md.
+// Field state machine. status is the source of truth; enabled is
+// kept synced for legacy queries. A field is only claimed by the
+// scheduler when status = "active". See project_scheduled_intelligence.md.
 const (
-	CrawlIntentStatusActive   = "active"
-	CrawlIntentStatusPaused   = "paused"
-	CrawlIntentStatusArchived = "archived"
-	CrawlIntentStatusFailed   = "failed"
-	CrawlIntentStatusCooldown = "cooldown"
+	IntentStatusActive   = "active"
+	IntentStatusPaused   = "paused"
+	IntentStatusArchived = "archived"
+	IntentStatusFailed   = "failed"
+	IntentStatusCooldown = "cooldown"
 )
 
-var validCrawlIntentStatuses = map[string]bool{
-	CrawlIntentStatusActive:   true,
-	CrawlIntentStatusPaused:   true,
-	CrawlIntentStatusArchived: true,
-	CrawlIntentStatusFailed:   true,
-	CrawlIntentStatusCooldown: true,
+var validIntentStatuses = map[string]bool{
+	IntentStatusActive:   true,
+	IntentStatusPaused:   true,
+	IntentStatusArchived: true,
+	IntentStatusFailed:   true,
+	IntentStatusCooldown: true,
 }
 
-// IsValidCrawlIntentStatus reports whether s is one of the known states.
-func IsValidCrawlIntentStatus(s string) bool { return validCrawlIntentStatuses[s] }
+// IsValidIntentStatus reports whether s is one of the known states.
+func IsValidIntentStatus(s string) bool { return validIntentStatuses[s] }
 
-// CrawlIntent is an org-scoped, recurring market-intelligence need learned
-// from an initial prompt. Scheduled runs reuse this plan without calling AI.
-type CrawlIntent struct {
+// Intent is an org-scoped, recurring market-intelligence need learned
+// from an initial prompt. Scheduled runs reuse this plan without
+// calling AI.
+type Intent struct {
 	ID               int64     `json:"id"`
 	OrgID            int64     `json:"org_id"`
 	AccountID        int64     `json:"account_id"`
@@ -69,11 +70,11 @@ type CrawlIntent struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// UpsertCrawlIntent records a reusable crawl plan. It is idempotent per
-// org/account/source/keyword set, so repeated prompts refine the same plan
-// instead of creating duplicate 24/7 jobs.
-func (s *Store) UpsertCrawlIntent(ctx context.Context, in CrawlIntent) (*CrawlIntent, error) {
-	normalized, err := normalizeCrawlIntent(in)
+// UpsertIntent records a reusable crawl plan. Idempotent per
+// org/account/source/keyword set, so repeated prompts refine the
+// same plan instead of creating duplicate 24/7 jobs.
+func (s *Store) UpsertIntent(ctx context.Context, in Intent) (*Intent, error) {
+	normalized, err := normalizeIntent(in)
 	if err != nil {
 		return nil, err
 	}
@@ -120,13 +121,13 @@ func (s *Store) UpsertCrawlIntent(ctx context.Context, in CrawlIntent) (*CrawlIn
 	if err != nil {
 		return nil, err
 	}
-	return s.getCrawlIntentByHash(ctx, normalized.OrgID, normalized.DedupHash)
+	return s.GetIntentByHash(ctx, normalized.OrgID, normalized.DedupHash)
 }
 
-// ClaimDueCrawlIntents atomically claims due recurring plans by advancing their
-// next_run_at inside the same transaction. This keeps multiple API processes
-// from enqueueing the same recurring crawl.
-func (s *Store) ClaimDueCrawlIntents(ctx context.Context, now time.Time, limit int) ([]CrawlIntent, error) {
+// ClaimDueIntents atomically claims due recurring plans by advancing
+// their next_run_at inside the same transaction. This keeps multiple
+// API processes from enqueueing the same recurring crawl.
+func (s *Store) ClaimDueIntents(ctx context.Context, now time.Time, limit int) ([]Intent, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -153,9 +154,9 @@ func (s *Store) ClaimDueCrawlIntents(ctx context.Context, now time.Time, limit i
 	if err != nil {
 		return nil, err
 	}
-	var candidates []CrawlIntent
+	var candidates []Intent
 	for rows.Next() {
-		intent, scanErr := scanCrawlIntent(rows)
+		intent, scanErr := scanIntent(rows)
 		if scanErr != nil {
 			rows.Close()
 			return nil, scanErr
@@ -169,7 +170,7 @@ func (s *Store) ClaimDueCrawlIntents(ctx context.Context, now time.Time, limit i
 		return nil, err
 	}
 
-	claimed := make([]CrawlIntent, 0, len(candidates))
+	claimed := make([]Intent, 0, len(candidates))
 	for _, intent := range candidates {
 		interval := time.Duration(intent.IntervalMinutes) * time.Minute
 		if interval <= 0 {
@@ -198,7 +199,11 @@ func (s *Store) ClaimDueCrawlIntents(ctx context.Context, now time.Time, limit i
 	return claimed, nil
 }
 
-func (s *Store) MarkCrawlIntentRunResult(ctx context.Context, id int64, taskID, errMsg string) error {
+// MarkIntentRunResult records the outcome of a scheduler-claimed run.
+// An empty errMsg means success; a non-empty errMsg marks the row as
+// failed after 2 consecutive errors (status flips to 'failed' to
+// prevent indefinite scheduler spam).
+func (s *Store) MarkIntentRunResult(ctx context.Context, id int64, taskID, errMsg string) error {
 	taskID = strings.TrimSpace(taskID)
 	errMsg = strings.TrimSpace(errMsg)
 	if errMsg == "" {
@@ -209,10 +214,9 @@ func (s *Store) MarkCrawlIntentRunResult(ctx context.Context, id int64, taskID, 
 			taskID, id)
 		return err
 	}
-	// Mark intent as failed after 2 consecutive failures (last_error already
-	// set → 2nd failure). This prevents errored intents from spamming the
-	// scheduler indefinitely. enabled stays mirrored to status for legacy
-	// readers. User can explicitly /resume to retry.
+	// Mark intent as failed after 2 consecutive failures (last_error
+	// already set → 2nd failure). enabled stays mirrored to status
+	// for legacy readers. User can explicitly /resume to retry.
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE org_crawl_intents
 		SET last_task_id = ?,
@@ -225,18 +229,18 @@ func (s *Store) MarkCrawlIntentRunResult(ctx context.Context, id int64, taskID, 
 	return err
 }
 
-// SetCrawlIntentStatus transitions a field to a new status. Returns
-// sql.ErrNoRows if the intent does not exist or does not belong to orgID.
-// status must be one of CrawlIntentStatus*. enabled is kept mirrored.
-func (s *Store) SetCrawlIntentStatus(ctx context.Context, orgID, id int64, status string) error {
+// SetIntentStatus transitions a field to a new status. Returns
+// sql.ErrNoRows if the intent does not exist or does not belong to
+// orgID. status must be one of IntentStatus*. enabled is kept mirrored.
+func (s *Store) SetIntentStatus(ctx context.Context, orgID, id int64, status string) error {
 	if orgID <= 0 || id <= 0 {
 		return fmt.Errorf("org_id and id are required")
 	}
-	if !IsValidCrawlIntentStatus(status) {
+	if !IsValidIntentStatus(status) {
 		return fmt.Errorf("invalid crawl intent status %q", status)
 	}
 	enabled := 0
-	if status == CrawlIntentStatusActive {
+	if status == IntentStatusActive {
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx, `
@@ -253,10 +257,15 @@ func (s *Store) SetCrawlIntentStatus(ctx context.Context, orgID, id int64, statu
 	return nil
 }
 
-// UpdateCrawlIntentCursor sets the per-intent crawl cursor unconditionally.
+// UpdateIntentCursor sets the per-intent crawl cursor unconditionally.
 // Callers that want "advance only if newer" semantics should use
-// AdvanceCrawlIntentCursor instead.
-func (s *Store) UpdateCrawlIntentCursor(ctx context.Context, id int64, lastPostID string, lastPostAt time.Time) error {
+// [Store.AdvanceIntentCursor] instead.
+//
+// tenant-ok: this method takes an id without orgID. The scheduler
+// claim path that calls this owns the row id via [Store.ClaimDueIntents]
+// which already filtered by org-scoped queries. Surface use of this
+// method outside the claim flow is restricted; see callers.
+func (s *Store) UpdateIntentCursor(ctx context.Context, id int64, lastPostID string, lastPostAt time.Time) error {
 	if id <= 0 {
 		return fmt.Errorf("id is required")
 	}
@@ -277,14 +286,16 @@ func (s *Store) UpdateCrawlIntentCursor(ctx context.Context, id int64, lastPostI
 	return nil
 }
 
-// AdvanceCrawlIntentCursor moves the cursor forward iff the supplied post is
-// newer than the stored value. When postedAt is zero the cursor is set
-// unconditionally (last-call-wins fallback for crawlers that do not yet emit
-// per-post timestamps). The cursor design treats (last_post_id, observed_at)
-// as a composite — post_id is the dedup key, timestamp is the freshness
-// signal. See project_scheduled_intelligence.md priority #1 (cursor design
-// mandate: never timestamp-only).
-func (s *Store) AdvanceCrawlIntentCursor(ctx context.Context, id int64, lastPostID string, lastPostAt time.Time) error {
+// AdvanceIntentCursor moves the cursor forward iff the supplied post
+// is newer than the stored value. When postedAt is zero the cursor is
+// set unconditionally (last-call-wins fallback for crawlers that do
+// not yet emit per-post timestamps). The cursor design treats
+// (last_post_id, observed_at) as a composite — post_id is the dedup
+// key, timestamp is the freshness signal. See
+// project_scheduled_intelligence.md priority #1.
+//
+// tenant-ok: see UpdateIntentCursor.
+func (s *Store) AdvanceIntentCursor(ctx context.Context, id int64, lastPostID string, lastPostAt time.Time) error {
 	if id <= 0 {
 		return fmt.Errorf("id is required")
 	}
@@ -317,10 +328,10 @@ func (s *Store) AdvanceCrawlIntentCursor(ctx context.Context, id int64, lastPost
 	return err
 }
 
-// CountActiveCrawlIntentsForOrg returns how many intents are currently in
-// status='active' for the org. Used by handlers to rate-limit how many
-// concurrent recurring intents an org can run.
-func (s *Store) CountActiveCrawlIntentsForOrg(ctx context.Context, orgID int64) (int, error) {
+// CountActiveIntentsForOrg returns how many intents are currently in
+// status='active' for the org. Used by handlers to rate-limit how
+// many concurrent recurring intents an org can run.
+func (s *Store) CountActiveIntentsForOrg(ctx context.Context, orgID int64) (int, error) {
 	if orgID <= 0 {
 		return 0, fmt.Errorf("org_id is required")
 	}
@@ -334,7 +345,9 @@ func (s *Store) CountActiveCrawlIntentsForOrg(ctx context.Context, orgID int64) 
 	return n, nil
 }
 
-func (s *Store) ListCrawlIntentsForOrg(ctx context.Context, orgID int64, limit int) ([]CrawlIntent, error) {
+// ListIntentsForOrg returns intents for an org, sorted by status
+// priority then by next_run_at.
+func (s *Store) ListIntentsForOrg(ctx context.Context, orgID int64, limit int) ([]Intent, error) {
 	if orgID <= 0 {
 		return nil, fmt.Errorf("org_id is required")
 	}
@@ -359,9 +372,9 @@ func (s *Store) ListCrawlIntentsForOrg(ctx context.Context, orgID int64, limit i
 		return nil, err
 	}
 	defer rows.Close()
-	var out []CrawlIntent
+	var out []Intent
 	for rows.Next() {
-		intent, err := scanCrawlIntent(rows)
+		intent, err := scanIntent(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -370,17 +383,21 @@ func (s *Store) ListCrawlIntentsForOrg(ctx context.Context, orgID int64, limit i
 	return out, rows.Err()
 }
 
-// SetCrawlIntentEnabled is a legacy boolean wrapper around SetCrawlIntentStatus.
+// SetIntentEnabled is a legacy boolean wrapper around SetIntentStatus.
 // New callers should use the explicit state-transition methods.
-func (s *Store) SetCrawlIntentEnabled(ctx context.Context, orgID, id int64, enabled bool) error {
-	status := CrawlIntentStatusPaused
+func (s *Store) SetIntentEnabled(ctx context.Context, orgID, id int64, enabled bool) error {
+	status := IntentStatusPaused
 	if enabled {
-		status = CrawlIntentStatusActive
+		status = IntentStatusActive
 	}
-	return s.SetCrawlIntentStatus(ctx, orgID, id, status)
+	return s.SetIntentStatus(ctx, orgID, id, status)
 }
 
-func (s *Store) getCrawlIntentByHash(ctx context.Context, orgID int64, hash string) (*CrawlIntent, error) {
+// GetIntentByHash returns the intent matching (orgID, dedup_hash) or
+// sql.ErrNoRows. Exposed (vs the legacy unexported `getIntentByHash`)
+// so integration tests in the top-level store package can verify the
+// upsert dedup invariant without poking at private internals.
+func (s *Store) GetIntentByHash(ctx context.Context, orgID int64, hash string) (*Intent, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, org_id, account_id, name, prompt, intent, source_type, source_url, source_label,
 		       keywords_json, interval_minutes, max_items, enabled, COALESCE(status,'active'),
@@ -389,19 +406,19 @@ func (s *Store) getCrawlIntentByHash(ctx context.Context, orgID int64, hash stri
 		       next_run_at, COALESCE(last_run_at,''), last_task_id, last_error, created_at, updated_at
 		FROM org_crawl_intents
 		WHERE org_id = ? AND dedup_hash = ?`, orgID, hash)
-	intent, err := scanCrawlIntent(row)
+	intent, err := scanIntent(row)
 	if err != nil {
 		return nil, err
 	}
 	return &intent, nil
 }
 
-type crawlIntentScanner interface {
+type intentScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanCrawlIntent(row crawlIntentScanner) (CrawlIntent, error) {
-	var out CrawlIntent
+func scanIntent(row intentScanner) (Intent, error) {
+	var out Intent
 	var keywordsJSON string
 	var enabled int
 	var status string
@@ -420,7 +437,7 @@ func scanCrawlIntent(row crawlIntentScanner) (CrawlIntent, error) {
 	out.Enabled = enabled == 1
 	out.Status = status
 	if out.Status == "" {
-		out.Status = CrawlIntentStatusActive
+		out.Status = IntentStatusActive
 	}
 	out.CursorLastPostAt = parseDBTime(cursorLastPostAt)
 	out.CursorUpdatedAt = parseDBTime(cursorUpdatedAt)
@@ -431,7 +448,7 @@ func scanCrawlIntent(row crawlIntentScanner) (CrawlIntent, error) {
 	return out, nil
 }
 
-func normalizeCrawlIntent(in CrawlIntent) (CrawlIntent, error) {
+func normalizeIntent(in Intent) (Intent, error) {
 	in.OrgID = maxInt64(in.OrgID, 0)
 	if in.OrgID <= 0 {
 		return in, fmt.Errorf("org_id is required for recurring crawl intent")
@@ -464,12 +481,12 @@ func normalizeCrawlIntent(in CrawlIntent) (CrawlIntent, error) {
 		in.MaxItems = maxCrawlMaxItems
 	}
 	if strings.TrimSpace(in.Name) == "" {
-		in.Name = deriveCrawlIntentName(in)
+		in.Name = deriveIntentName(in)
 	}
 	if in.NextRunAt.IsZero() {
 		in.NextRunAt = time.Now().UTC().Add(time.Duration(in.IntervalMinutes) * time.Minute)
 	}
-	in.DedupHash = crawlIntentDedupHash(in)
+	in.DedupHash = intentDedupHash(in)
 	in.Enabled = true
 	return in, nil
 }
@@ -492,7 +509,7 @@ func normalizeIntentKeywords(values []string) []string {
 	return out
 }
 
-func crawlIntentDedupHash(in CrawlIntent) string {
+func intentDedupHash(in Intent) string {
 	keywords := append([]string(nil), in.Keywords...)
 	sort.Strings(keywords)
 	sum := sha256.Sum256([]byte(fmt.Sprintf(
@@ -507,7 +524,7 @@ func crawlIntentDedupHash(in CrawlIntent) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func deriveCrawlIntentName(in CrawlIntent) string {
+func deriveIntentName(in Intent) string {
 	if in.SourceLabel != "" && in.SourceLabel != "prompt_url" && in.SourceLabel != "group_search" {
 		return in.SourceLabel
 	}

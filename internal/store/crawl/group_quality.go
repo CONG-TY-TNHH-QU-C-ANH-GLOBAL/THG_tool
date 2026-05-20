@@ -1,4 +1,4 @@
-package store
+package crawl
 
 import "github.com/thg/scraper/internal/models"
 
@@ -23,7 +23,9 @@ func (s *Store) UpsertGroupQuality(q *models.GroupQuality) error {
 	return err
 }
 
-// GetGroupQuality returns the quality record for a group, if it exists.
+// GetGroupQuality returns the quality record for a group, if it
+// exists. JOIN is intra-domain (group_quality ↔ groups — both crawl-
+// owned), so no cross-domain projection annotation required.
 func (s *Store) GetGroupQuality(groupID int64) (*models.GroupQuality, error) {
 	var q models.GroupQuality
 	var scoredAt, lastPostAt string
@@ -45,7 +47,8 @@ func (s *Store) GetGroupQuality(groupID int64) (*models.GroupQuality, error) {
 	return &q, nil
 }
 
-// GetQualityGroupsForDomain returns usable groups for a job domain category.
+// GetQualityGroupsForDomain returns usable groups for a job domain
+// category. Intra-domain JOIN (groups ↔ group_quality).
 func (s *Store) GetQualityGroupsForDomain(category string) ([]models.Group, error) {
 	rows, err := s.db.Query(`
 		SELECT g.id, g.platform, g.name, g.url, g.active, g.join_state,

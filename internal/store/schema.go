@@ -1,3 +1,4 @@
+// Domain: infra (see internal/store/DOMAINS.md)
 package store
 
 // schemaBootstrapVersion is the marker version migrate() writes at
@@ -12,7 +13,7 @@ package store
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 3
+const schemaBootstrapVersion = 7
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
@@ -408,10 +409,54 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN lease_expiry DATETIME`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_lease ON outbound_messages(status, lease_expiry) WHERE status = 'sending'`)
+
+	// Outbound state taxonomy split (schema v4 — PR-1).
+	//
+	// Two new columns replace the single-dimension `status` enum:
+	//
+	//   execution_state       — planned | executing | finished | expired
+	//                           (transport lifecycle, mutable state machine)
+	//   verification_outcome  — verified_success | context_drift | rate_limited
+	//                           | blocked | captcha | shadow_rejected
+	//                           | execution_failed
+	//                           (post-DOM observation; NULL until finished)
+	//
+	// Rationale: the old `status` column conflated transport with
+	// verification. Splitting lets analytics aggregate independently
+	// ("execution funnel" vs "verification mix") and lets PR-2's
+	// engagement ledger gate cleanly on
+	// (execution_state='finished' AND verification_outcome='verified_success')
+	// instead of grepping a free-form status string.
+	//
+	// Backfill from legacy status:
+	//   draft, approved → planned, NULL
+	//   sending         → executing, NULL
+	//   sent            → finished, verified_success
+	//   failed/rejected → finished, execution_failed (specifics lost)
+	//   expired         → expired, NULL
+	//
+	// The legacy `status` column is kept in sync at write time for
+	// the transition window (any old reader still sees a usable value).
+	// Once all readers consume the new columns it can be dropped.
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'planned'`)
+	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN verification_outcome TEXT`)
+	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'planned',    verification_outcome = NULL                WHERE status IN ('draft','approved') AND execution_state = 'planned'`)
+	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'executing',  verification_outcome = NULL                WHERE status = 'sending'`)
+	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'finished',   verification_outcome = 'verified_success'  WHERE status = 'sent'`)
+	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'finished',   verification_outcome = 'execution_failed'  WHERE status IN ('failed','rejected')`)
+	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'expired',    verification_outcome = NULL                WHERE status = 'expired'`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_exec_state ON outbound_messages(org_id, execution_state)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_verify_outcome ON outbound_messages(org_id, verification_outcome)`)
+	// Rebuild the lease index to key off execution_state instead of legacy status string.
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_exec_lease ON outbound_messages(execution_state, lease_expiry) WHERE execution_state = 'executing'`)
 	s.db.Exec(`UPDATE outbound_messages
 		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_org_status ON outbound_messages(org_id, status, type)`)
+	// idx_outbound_org_status was keyed off the legacy `status` column.
+	// PR-2 V2 (schema v7) drops it because the column is gone — readers
+	// query on execution_state instead, which has its own index.
+	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_org_status`)
+	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_lease`)
 	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created ON prompt_logs(org_id, created_at DESC)`)
@@ -430,9 +475,13 @@ func (s *Store) migrate() error {
 	// layer. Sent / failed / rejected rows excluded so historical sends don't
 	// block legitimate retries. See project_distributed_coordination.md.
 	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_active_target`)
+	// Unique index for active outbound dedup. Keyed off execution_state
+	// (planned/executing = "in flight") rather than the legacy status
+	// string — the autonomous-first model has no draft state, and the
+	// new column is the authoritative one for in-flight semantics.
 	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_active_target
 		ON outbound_messages(org_id, account_id, type, target_url)
-		WHERE status IN ('draft','approved','sending')`)
+		WHERE execution_state IN ('planned','executing')`)
 
 	// Coordination Plane PR-1: Action Ledger.
 	// Records every outbound action attempted, by which account, on which
@@ -496,6 +545,79 @@ func (s *Store) migrate() error {
 		ON execution_attempts(org_id, account_id, started_at DESC)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_ledger
 		ON execution_attempts(action_ledger_id, started_at DESC)`)
+
+	// PR-2 (V2 staged refactor 2026-05-20): extend execution_attempts to
+	// double as the outbound state-transition ledger. Each Claim / Finalize
+	// / Reset appends a row in the same tx as the outbound_messages
+	// CAS UPDATE — the audit trail is additive (best-effort), and the
+	// row-level UPDATE on outbound_messages.execution_state remains the
+	// authoritative concurrency primitive. See specs/V2_OUTBOUND_REFACTOR_DESIGN.md.
+	//
+	//   transition_type     — 'plan' | 'claim' | 'finalize' | 'reset'.
+	//                         Old outcome-only rows default to 'finalize'
+	//                         so historical semantics are preserved.
+	//   execution_id        — per-claim idempotency token, carried through
+	//                         the ledger for full audit trail (the
+	//                         authoritative copy lives on outbound_messages).
+	//   resulting_state     — denormalized snapshot of the state AFTER this
+	//                         transition (planned | executing | finished | expired).
+	//   resulting_outcome   — denormalized snapshot of verification_outcome
+	//                         (only meaningful when transition_type='finalize').
+	//   lease_expiry        — read-only mirror of the executing-row lease.
+	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN transition_type TEXT NOT NULL DEFAULT 'finalize'`)
+	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN resulting_state TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN resulting_outcome TEXT`)
+	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN lease_expiry DATETIME`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_latest
+		ON execution_attempts(outbound_id, started_at DESC)`)
+
+	// PR-2: action_policies — replaces hardcoded msgType == "inbox" /
+	// "comment" checks in canQueueOutboundTx. Each row defines coordination
+	// rules for an action type (dedup scope, block predicates, cooldown,
+	// conversation gate). Lookup resolves org_id-specific row first, falls
+	// back to the global default (org_id = 0). Domain-agnostic — new action
+	// types are added by inserting a row, not editing dedup code.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS action_policies (
+		id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+		org_id               INTEGER NOT NULL,
+		action_type          TEXT    NOT NULL,
+		dedup_scope          TEXT    NOT NULL DEFAULT 'per_account',
+		block_on_planned     INTEGER NOT NULL DEFAULT 0,
+		block_on_executing   INTEGER NOT NULL DEFAULT 1,
+		cooldown_seconds     INTEGER NOT NULL DEFAULT 86400,
+		conversation_aware   INTEGER NOT NULL DEFAULT 0,
+		created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at           DATETIME,
+		UNIQUE(org_id, action_type)
+	)`)
+	// Seed defaults that replicate the current hardcoded behaviour:
+	//   - planned rows always block re-enqueue (regardless of action type) —
+	//     the pre-PR-2 inline code branched on
+	//     `execState == 'planned' OR execState == 'executing'` for every
+	//     msgType, so block_on_planned MUST be 1 here too.
+	//   - inbox uses workspace-wide scope (cross-account spam prevention)
+	//     and the conversation-aware gate (lead-replied / closed / awaiting).
+	//   - all action types share a 24h cooldown for finished rows; the
+	//     comment-specific "always block finished" semantics fall out of
+	//     the cooldown being longer than any realistic re-enqueue window.
+	// INSERT OR IGNORE keeps re-runs / production restarts idempotent —
+	// if a row for (0, 'comment') already exists, we don't clobber an
+	// admin override.
+	s.db.Exec(`INSERT OR IGNORE INTO action_policies
+		(org_id, action_type, dedup_scope, block_on_planned, block_on_executing, cooldown_seconds, conversation_aware)
+		VALUES
+		(0, 'comment',      'per_account', 1, 1, 86400, 0),
+		(0, 'inbox',        'workspace',   1, 1, 86400, 1),
+		(0, 'group_post',   'per_account', 1, 1, 86400, 0),
+		(0, 'profile_post', 'per_account', 1, 1, 86400, 0)`)
+	// v6 backfill: an earlier draft of the seed used block_on_planned=0
+	// for inbox/group_post/profile_post which lost parity with the
+	// pre-PR-2 hardcoded behaviour (planned rows blocked re-enqueue for
+	// every type). Force the global defaults back to the correct
+	// block_on_planned=1 — does NOT touch admin overrides (org_id > 0).
+	s.db.Exec(`UPDATE action_policies SET block_on_planned = 1
+		WHERE org_id = 0 AND action_type IN ('comment','inbox','group_post','profile_post')`)
 
 	// Watchpoint B — Prompt Routing Observability. Persistent record of
 	// the orchestrator's routing reasoning for every prompt: which route
@@ -1033,6 +1155,19 @@ func (s *Store) migrate() error {
 		ON knowledge_feedback(org_id, occurred_at DESC)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_retrieval
 		ON knowledge_feedback(org_id, retrieval_id)`)
+
+	// Schema v7 (PR-2 V2 cleanup, 2026-05-21): drop the legacy `status`
+	// column from outbound_messages. By this point of the bootstrap,
+	// execution_state + verification_outcome have been backfilled from
+	// the historical `status` values (v4 backfill block earlier in
+	// this function), and every reader has been migrated off `Status`.
+	//
+	// SQLite >= 3.35 supports `ALTER TABLE DROP COLUMN` directly. On
+	// older builds we'd need the create+copy+rename dance — but the
+	// project pins `modernc.org/sqlite` which embeds a current SQLite,
+	// so the direct DROP is safe. The IF EXISTS clause keeps the
+	// statement idempotent for already-migrated DBs.
+	s.db.Exec(`ALTER TABLE outbound_messages DROP COLUMN status`)
 
 	// Marker row written AFTER every other DDL. The fast-path probe
 	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears

@@ -1,6 +1,8 @@
+// Domain: coordination (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
@@ -161,9 +163,9 @@ func (s *Store) ListActionLedger(ctx context.Context, orgID int64, actionType, t
 			&e.AccountID, &e.OutboundID, &performedAt, &cooldownUntil, &e.Outcome, &e.Reason); err != nil {
 			return nil, err
 		}
-		e.PerformedAt = parseSQLiteTime(performedAt)
+		e.PerformedAt = dbutil.ParseSQLiteTime(performedAt)
 		if cooldownUntil != "" {
-			e.CooldownUntil = parseSQLiteTime(cooldownUntil)
+			e.CooldownUntil = dbutil.ParseSQLiteTime(cooldownUntil)
 		}
 		out = append(out, e)
 	}

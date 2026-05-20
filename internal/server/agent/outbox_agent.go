@@ -56,8 +56,8 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 	// 10-min fallback only applies to legacy rows (lease_expiry IS
 	// NULL). New claims get a per-row lease so this global window is
 	// no longer the primary stale-detection knob.
-	_ = h.db.ResetStaleSendingOutboundForOrg(orgID, 10*time.Minute)
-	candidates, err := h.db.GetOutboundByStatusForOrg(orgID, string(models.OutboundApproved), limit*4)
+	_ = h.db.ResetStaleExecutingForOrg(orgID, 10*time.Minute)
+	candidates, err := h.db.GetOutboundByExecutionStateForOrg(orgID, models.ExecPlanned, "", limit*4)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -79,11 +79,11 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 		if !ownsStream {
 			continue
 		}
-		claim, err := h.db.ClaimApprovedOutboundForOrg(orgID, msg.ID, workerID, 0)
+		claim, err := h.db.ClaimPlannedOutboundForOrg(orgID, msg.ID, workerID, 0)
 		if err != nil || claim == nil {
 			continue
 		}
-		msg.Status = models.OutboundSending
+		msg.ExecutionState = models.ExecExecuting
 		msg.ExecutionID = claim.ExecutionID
 		// Activity feed: execution_started — the autonomous-first
 		// vocabulary makes "extension claimed and is about to mutate
@@ -122,25 +122,11 @@ func (h *Handler) agentOutboxSent(c *fiber.Ctx) error {
 	_ = c.BodyParser(&report)
 
 	outcome, proof := runtime.ClassifyExtensionReport(report)
-	// Translate verified outcome → outbound terminal status. Success-class
-	// outcomes (dom_verified / optimistic_success / duplicate_blocked)
-	// stay marked Sent; failure-class outcomes flip to Failed even though
-	// the extension hit the /sent endpoint. The verifier's classification
-	// supersedes the endpoint name.
-	terminalStatus := models.OutboundSent
-	if !models.IsSuccessOutcome(outcome) {
-		terminalStatus = models.OutboundFailed
-	}
-
-	// Terminal-state CAS gated on execution_id. This is the
-	// load-bearing invariant for SW-restart safety: even if the same
-	// /sent callback fires twice (network retry, content-script-side
-	// direct callback after SW respawn), only the FIRST report that
-	// holds the row's current execution_id finalizes. Replays return
-	// idempotent-OK (no double execution_attempts row, no double
-	// ledger update, no double risk-signal application); stale tokens
-	// return 409 so the operator dashboard can surface the drift.
-	resolution, err := h.finalizeOutbound(c, orgID, id, report, terminalStatus, outcome, proof)
+	// PR-1: terminal pair (state, outcome) instead of a single status.
+	// The verifier's classification supersedes the endpoint name —
+	// even though /sent fires, a non-success outcome lands the row in
+	// finished/<non-verified> per TerminalFromOutcome.
+	resolution, err := h.finalizeOutbound(c, orgID, id, report, outcome, proof)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -169,9 +155,8 @@ func (h *Handler) agentOutboxFailed(c *fiber.Ctx) error {
 	_ = c.BodyParser(&report)
 
 	outcome, proof := runtime.ClassifyExtensionReport(report)
-	// Same execution_id-gated CAS pathway as agentOutboxSent — the
-	// only difference is the terminal status defaults to Failed.
-	resolution, err := h.finalizeOutbound(c, orgID, id, report, models.OutboundFailed, outcome, proof)
+	// Same execution_id-gated CAS pathway as agentOutboxSent.
+	resolution, err := h.finalizeOutbound(c, orgID, id, report, outcome, proof)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -205,7 +190,7 @@ func (f *finalizeResolution) write(c *fiber.Ctx) error {
 //     matches OR row's execution_id is empty for legacy rows). A
 //     replayed callback hitting an already-terminal row returns
 //     idempotent-OK; a callback whose execution_id no longer matches
-//     the row (because ResetStaleSendingOutboundForOrg lease-evicted
+//     the row (because ResetStaleExecutingForOrg lease-evicted
 //     it and a new claim issued a fresh token) returns 409 stale.
 //
 //  3. SIDE EFFECTS ARE COMMITTED ONLY ON FIRST-WIN:
@@ -223,7 +208,6 @@ func (h *Handler) finalizeOutbound(
 	c *fiber.Ctx,
 	orgID, id int64,
 	report runtime.ExtensionExecutionReport,
-	terminalStatus models.OutboundStatus,
 	outcome models.ExecutionOutcome,
 	proof runtime.VerifierProof,
 ) (*finalizeResolution, error) {
@@ -241,11 +225,15 @@ func (h *Handler) finalizeOutbound(
 	// success-class outcomes to ContextDrift if target_url/page_url_after
 	// entity ids mismatch.
 	outcome, proof = runtime.EnforceTargetIdentity(outcome, proof, msg.TargetURL, msg.Type)
-	if !models.IsSuccessOutcome(outcome) {
-		terminalStatus = models.OutboundFailed
-	}
 
-	finalized, currentStatus, currentExecID, err := h.db.FinalizeOutboundAttempt(ctx, orgID, id, report.ExecutionID, terminalStatus)
+	// PR-1 dual-column terminal pair: (state, verification_outcome).
+	// TerminalFromOutcome is the single mapping from the rich
+	// execution_attempts taxonomy onto the outbound row's two new
+	// columns. ExecExpired only applies for ExecutionRetryExhausted
+	// — every other terminal carries some observation.
+	terminalState, terminalOutcome := models.TerminalFromOutcome(outcome)
+
+	finalized, currentState, currentOutcome, currentExecID, err := h.db.FinalizeOutboundAttempt(ctx, orgID, id, report.ExecutionID, terminalState, terminalOutcome)
 	if err != nil {
 		return nil, err
 	}
@@ -260,13 +248,15 @@ func (h *Handler) finalizeOutbound(
 				"org_id", orgID, "outbound_id", id,
 				"submitted_execution_id", report.ExecutionID,
 				"current_execution_id", currentExecID,
-				"current_status", currentStatus,
+				"current_state", currentState,
+				"current_outcome", currentOutcome,
 			)
 			return &finalizeResolution{
 				HTTPStatus: 409,
 				Body: fiber.Map{
 					"error":                "stale execution_id",
-					"current_status":       string(currentStatus),
+					"current_state":        string(currentState),
+					"current_outcome":      string(currentOutcome),
 					"current_execution_id": currentExecID,
 				},
 			}, nil
@@ -275,14 +265,16 @@ func (h *Handler) finalizeOutbound(
 		// Return success-shaped response WITHOUT replaying side effects.
 		slog.InfoContext(ctx, "exec-verify: idempotent replay",
 			"org_id", orgID, "outbound_id", id,
-			"execution_id", report.ExecutionID, "current_status", currentStatus,
+			"execution_id", report.ExecutionID,
+			"current_state", currentState, "current_outcome", currentOutcome,
 		)
 		return &finalizeResolution{
 			HTTPStatus: 200,
 			Body: fiber.Map{
-				"status":     string(currentStatus),
-				"outcome":    string(outcome),
-				"idempotent": true,
+				"execution_state":      string(currentState),
+				"verification_outcome": string(currentOutcome),
+				"outcome":              string(outcome),
+				"idempotent":           true,
 			},
 		}, nil
 	}
@@ -347,18 +339,22 @@ func (h *Handler) finalizeOutbound(
 		}
 	}
 
-	if terminalStatus == models.OutboundSent {
-		system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, models.OutboundSent)
+	// PR-2 V2: notification now consumes the (state, outcome) pair
+	// directly — no legacy OutboundStatus translation. The single-source-
+	// of-truth predicate IsVerifiedSuccess gates the verified/failed event
+	// fork inside NotifyOutboundStatusDetail.
+	if models.IsVerifiedSuccess(terminalState, terminalOutcome) {
+		system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, terminalState, terminalOutcome)
 	} else {
-		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, models.OutboundFailed, string(outcome))
+		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, terminalState, terminalOutcome, string(outcome))
 	}
 
 	return &finalizeResolution{
 		HTTPStatus: 200,
 		Body: fiber.Map{
-			"status":     string(terminalStatus),
-			"outcome":    string(outcome),
-			"attempt_id": attemptID,
+			"execution_state":      string(terminalState),
+			"verification_outcome": string(outcome),
+			"attempt_id":           attemptID,
 		},
 	}, nil
 }

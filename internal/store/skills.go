@@ -1,6 +1,8 @@
+// Domain: prompts (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
@@ -203,7 +205,7 @@ func (s *Store) ListRecentSkillExecutions(ctx context.Context, orgID int64, limi
 			return nil, err
 		}
 		e.Success = success != 0
-		e.At = parseSQLiteTime(createdAt)
+		e.At = dbutil.ParseSQLiteTime(createdAt)
 		out = append(out, e)
 	}
 	return out, rows.Err()

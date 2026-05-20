@@ -1,3 +1,4 @@
+// Domain: crawl (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -5,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+
+	"github.com/thg/scraper/internal/store/crawl"
 	"time"
 )
 
@@ -12,10 +15,10 @@ func newCrawlIntentTestStore(t *testing.T) *Store {
 	return newSharedStore(t, "intents.db")
 }
 
-func seedIntent(t *testing.T, db *Store, orgID int64) CrawlIntent {
+func seedIntent(t *testing.T, db *Store, orgID int64) crawl.Intent {
 	t.Helper()
 	ctx := context.Background()
-	intent, err := db.UpsertCrawlIntent(ctx, CrawlIntent{
+	intent, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
 		OrgID:           orgID,
 		AccountID:       1,
 		Prompt:          "find buyers",
@@ -37,8 +40,8 @@ func seedIntent(t *testing.T, db *Store, orgID int64) CrawlIntent {
 func TestUpsertCrawlIntent_NewIntentIsActive(t *testing.T) {
 	db := newCrawlIntentTestStore(t)
 	intent := seedIntent(t, db, 1)
-	if intent.Status != CrawlIntentStatusActive {
-		t.Errorf("Status = %q, want %q", intent.Status, CrawlIntentStatusActive)
+	if intent.Status != crawl.IntentStatusActive {
+		t.Errorf("Status = %q, want %q", intent.Status, crawl.IntentStatusActive)
 	}
 	if !intent.Enabled {
 		t.Errorf("Enabled = false, want true (legacy mirror of active)")
@@ -55,18 +58,18 @@ func TestSetCrawlIntentStatus_Transitions(t *testing.T) {
 		status      string
 		wantEnabled bool
 	}{
-		{CrawlIntentStatusPaused, false},
-		{CrawlIntentStatusActive, true},
-		{CrawlIntentStatusArchived, false},
-		{CrawlIntentStatusFailed, false},
-		{CrawlIntentStatusCooldown, false},
+		{crawl.IntentStatusPaused, false},
+		{crawl.IntentStatusActive, true},
+		{crawl.IntentStatusArchived, false},
+		{crawl.IntentStatusFailed, false},
+		{crawl.IntentStatusCooldown, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.status, func(t *testing.T) {
-			if err := db.SetCrawlIntentStatus(ctx, intent.OrgID, intent.ID, tc.status); err != nil {
+			if err := db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, tc.status); err != nil {
 				t.Fatalf("SetCrawlIntentStatus(%q): %v", tc.status, err)
 			}
-			got, err := db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+			got, err := db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 			if err != nil {
 				t.Fatalf("readback: %v", err)
 			}
@@ -83,7 +86,7 @@ func TestSetCrawlIntentStatus_Transitions(t *testing.T) {
 func TestSetCrawlIntentStatus_RejectsInvalid(t *testing.T) {
 	db := newCrawlIntentTestStore(t)
 	intent := seedIntent(t, db, 1)
-	err := db.SetCrawlIntentStatus(context.Background(), intent.OrgID, intent.ID, "nonsense")
+	err := db.Crawl().SetIntentStatus(context.Background(), intent.OrgID, intent.ID, "nonsense")
 	if err == nil {
 		t.Fatal("expected error for invalid status")
 	}
@@ -91,7 +94,7 @@ func TestSetCrawlIntentStatus_RejectsInvalid(t *testing.T) {
 
 func TestSetCrawlIntentStatus_UnknownIntent(t *testing.T) {
 	db := newCrawlIntentTestStore(t)
-	err := db.SetCrawlIntentStatus(context.Background(), 1, 999999, CrawlIntentStatusPaused)
+	err := db.Crawl().SetIntentStatus(context.Background(), 1, 999999, crawl.IntentStatusPaused)
 	if !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("want sql.ErrNoRows for missing intent, got %v", err)
 	}
@@ -105,11 +108,11 @@ func TestClaimDueCrawlIntents_OnlyActive(t *testing.T) {
 	active := seedIntent(t, db, 1)
 	// Make a paused, archived, and failed intent each.
 	for status, sourceTag := range map[string]string{
-		CrawlIntentStatusPaused:   "paused-source",
-		CrawlIntentStatusArchived: "archived-source",
-		CrawlIntentStatusFailed:   "failed-source",
+		crawl.IntentStatusPaused:   "paused-source",
+		crawl.IntentStatusArchived: "archived-source",
+		crawl.IntentStatusFailed:   "failed-source",
 	} {
-		intent, err := db.UpsertCrawlIntent(ctx, CrawlIntent{
+		intent, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
 			OrgID:           1,
 			AccountID:       1,
 			Intent:          "facebook_crawl",
@@ -123,12 +126,12 @@ func TestClaimDueCrawlIntents_OnlyActive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("upsert %s: %v", status, err)
 		}
-		if err := db.SetCrawlIntentStatus(ctx, intent.OrgID, intent.ID, status); err != nil {
+		if err := db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, status); err != nil {
 			t.Fatalf("transition to %s: %v", status, err)
 		}
 	}
 
-	claimed, err := db.ClaimDueCrawlIntents(ctx, time.Now().UTC(), 10)
+	claimed, err := db.Crawl().ClaimDueIntents(ctx, time.Now().UTC(), 10)
 	if err != nil {
 		t.Fatalf("ClaimDueCrawlIntents: %v", err)
 	}
@@ -147,12 +150,12 @@ func TestUpsertCrawlIntent_ArchivedStickyOnReprompt(t *testing.T) {
 	intent := seedIntent(t, db, 1)
 
 	// User archives the intent.
-	if err := db.SetCrawlIntentStatus(ctx, intent.OrgID, intent.ID, CrawlIntentStatusArchived); err != nil {
+	if err := db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, crawl.IntentStatusArchived); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 
 	// Re-prompting (same dedup_hash) should NOT un-archive.
-	reprompted, err := db.UpsertCrawlIntent(ctx, CrawlIntent{
+	reprompted, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
 		OrgID:           1,
 		AccountID:       1,
 		Prompt:          "find buyers",
@@ -167,16 +170,16 @@ func TestUpsertCrawlIntent_ArchivedStickyOnReprompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-upsert: %v", err)
 	}
-	if reprompted.Status != CrawlIntentStatusArchived {
+	if reprompted.Status != crawl.IntentStatusArchived {
 		t.Errorf("Status = %q after re-prompt, want %q (archived must be sticky)",
-			reprompted.Status, CrawlIntentStatusArchived)
+			reprompted.Status, crawl.IntentStatusArchived)
 	}
 
 	// Re-prompting a PAUSED intent reactivates it.
-	if err := db.SetCrawlIntentStatus(ctx, intent.OrgID, intent.ID, CrawlIntentStatusPaused); err != nil {
+	if err := db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, crawl.IntentStatusPaused); err != nil {
 		t.Fatalf("transition to paused: %v", err)
 	}
-	reprompted2, err := db.UpsertCrawlIntent(ctx, CrawlIntent{
+	reprompted2, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
 		OrgID:           1,
 		AccountID:       1,
 		Prompt:          "find buyers",
@@ -191,9 +194,9 @@ func TestUpsertCrawlIntent_ArchivedStickyOnReprompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-upsert paused: %v", err)
 	}
-	if reprompted2.Status != CrawlIntentStatusActive {
+	if reprompted2.Status != crawl.IntentStatusActive {
 		t.Errorf("Status = %q after re-prompt of paused, want %q",
-			reprompted2.Status, CrawlIntentStatusActive)
+			reprompted2.Status, crawl.IntentStatusActive)
 	}
 }
 
@@ -204,20 +207,20 @@ func TestMarkCrawlIntentRunResult_SecondErrorMarksFailed(t *testing.T) {
 	intent := seedIntent(t, db, 1)
 
 	// First error — still active (no auto-disable on first failure).
-	if err := db.MarkCrawlIntentRunResult(ctx, intent.ID, "task-1", "transient: timeout"); err != nil {
+	if err := db.Crawl().MarkIntentRunResult(ctx, intent.ID, "task-1", "transient: timeout"); err != nil {
 		t.Fatalf("first error: %v", err)
 	}
-	got, _ := db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
-	if got.Status != CrawlIntentStatusActive {
+	got, _ := db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	if got.Status != crawl.IntentStatusActive {
 		t.Errorf("after 1st error: status = %q, want active (no auto-disable on first failure)", got.Status)
 	}
 
 	// Second consecutive error — transitions to failed.
-	if err := db.MarkCrawlIntentRunResult(ctx, intent.ID, "task-2", "still failing"); err != nil {
+	if err := db.Crawl().MarkIntentRunResult(ctx, intent.ID, "task-2", "still failing"); err != nil {
 		t.Fatalf("second error: %v", err)
 	}
-	got, _ = db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
-	if got.Status != CrawlIntentStatusFailed {
+	got, _ = db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	if got.Status != crawl.IntentStatusFailed {
 		t.Errorf("after 2nd error: status = %q, want failed", got.Status)
 	}
 	if got.Enabled {
@@ -235,29 +238,29 @@ func TestAdvanceCrawlIntentCursor_OnlyMovesForward(t *testing.T) {
 	newer := old.Add(30 * time.Minute)
 
 	// First advance — sets cursor (was empty).
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "fb_post_1", old); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "fb_post_1", old); err != nil {
 		t.Fatalf("first advance: %v", err)
 	}
-	got, _ := db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	got, _ := db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 	if got.CursorLastPostID != "fb_post_1" || !got.CursorLastPostAt.Equal(old) {
 		t.Fatalf("after 1st advance: got id=%q at=%v", got.CursorLastPostID, got.CursorLastPostAt)
 	}
 
 	// Older post — must NOT regress the cursor.
 	older := old.Add(-30 * time.Minute)
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "fb_post_old", older); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "fb_post_old", older); err != nil {
 		t.Fatalf("advance with older: %v", err)
 	}
-	got, _ = db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	got, _ = db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 	if got.CursorLastPostID != "fb_post_1" {
 		t.Errorf("cursor regressed: id=%q, want fb_post_1 (older post must not win)", got.CursorLastPostID)
 	}
 
 	// Newer post — must advance.
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "fb_post_2", newer); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "fb_post_2", newer); err != nil {
 		t.Fatalf("advance with newer: %v", err)
 	}
-	got, _ = db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	got, _ = db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 	if got.CursorLastPostID != "fb_post_2" || !got.CursorLastPostAt.Equal(newer) {
 		t.Errorf("after newer advance: id=%q at=%v, want fb_post_2 / %v", got.CursorLastPostID, got.CursorLastPostAt, newer)
 	}
@@ -269,13 +272,13 @@ func TestAdvanceCrawlIntentCursor_DegradedNoTimestamp(t *testing.T) {
 	ctx := context.Background()
 	intent := seedIntent(t, db, 1)
 
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "first", time.Time{}); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "first", time.Time{}); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "second", time.Time{}); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "second", time.Time{}); err != nil {
 		t.Fatalf("second: %v", err)
 	}
-	got, _ := db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	got, _ := db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 	if got.CursorLastPostID != "second" {
 		t.Errorf("degraded last-call-wins: cursor = %q, want second", got.CursorLastPostID)
 	}
@@ -288,13 +291,13 @@ func TestAdvanceCrawlIntentCursor_EmptyPostIDNoop(t *testing.T) {
 	intent := seedIntent(t, db, 1)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "real_id", now); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "real_id", now); err != nil {
 		t.Fatalf("seed cursor: %v", err)
 	}
-	if err := db.AdvanceCrawlIntentCursor(ctx, intent.ID, "   ", now.Add(time.Hour)); err != nil {
+	if err := db.Crawl().AdvanceIntentCursor(ctx, intent.ID, "   ", now.Add(time.Hour)); err != nil {
 		t.Fatalf("empty advance: %v", err)
 	}
-	got, _ := db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	got, _ := db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 	if got.CursorLastPostID != "real_id" {
 		t.Errorf("empty post id must not clobber cursor; got %q", got.CursorLastPostID)
 	}
@@ -308,10 +311,10 @@ func TestUpdateCrawlIntentCursor_Advances(t *testing.T) {
 
 	postID := "fb_post_12345"
 	postAt := time.Now().UTC().Truncate(time.Second)
-	if err := db.UpdateCrawlIntentCursor(ctx, intent.ID, postID, postAt); err != nil {
+	if err := db.Crawl().UpdateIntentCursor(ctx, intent.ID, postID, postAt); err != nil {
 		t.Fatalf("UpdateCrawlIntentCursor: %v", err)
 	}
-	got, err := db.getCrawlIntentByHash(ctx, intent.OrgID, intent.DedupHash)
+	got, err := db.Crawl().GetIntentByHash(ctx, intent.OrgID, intent.DedupHash)
 	if err != nil {
 		t.Fatalf("readback: %v", err)
 	}

@@ -1,3 +1,4 @@
+// Domain: coordination (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -73,6 +74,10 @@ func (s *Store) ReconcileEngagement(ctx context.Context, orgID int64) (*Reconcil
 	// the ledger says succeeded but the attempt has a different
 	// outcome. The subquery picks the latest attempt per outbound_id
 	// so a successful retry after a failed attempt is preserved.
+	//
+	// tenant-ok: reconciler is admin-only and DELIBERATELY spans orgs
+	// when orgID==0 (system-wide weekly job). When orgID>0 the org_id
+	// filter is appended below.
 	query := `
 		WITH latest_attempt AS (
 			SELECT outbound_id, outcome, failure_reason

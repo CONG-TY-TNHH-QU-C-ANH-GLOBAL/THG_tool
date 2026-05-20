@@ -1,3 +1,4 @@
+// Domain: app (see internal/store/DOMAINS.md)
 package store
 
 import (

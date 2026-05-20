@@ -1,6 +1,8 @@
+// Domain: knowledge (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -177,8 +179,8 @@ func (s *Store) QueryNearestVectors(ctx context.Context, orgID int64, queryVecto
 		a.Payload = json.RawMessage(payloadRaw)
 		_ = json.Unmarshal([]byte(tagsRaw), &a.Tags)
 		a.Metrics.LastRetrievedAt = optionalSQLiteTime(lastRetrRaw)
-		a.CreatedAt = parseSQLiteTime(createdAtRaw)
-		a.UpdatedAt = parseSQLiteTime(updatedAtRaw)
+		a.CreatedAt = dbutil.ParseSQLiteTime(createdAtRaw)
+		a.UpdatedAt = dbutil.ParseSQLiteTime(updatedAtRaw)
 		out = append(out, retrieval.VectorHit{AssetID: a.ID, Distance: distance, Asset: &a})
 	}
 	return out, rows.Err()

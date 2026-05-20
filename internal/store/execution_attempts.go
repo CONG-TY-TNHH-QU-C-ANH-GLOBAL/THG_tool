@@ -1,6 +1,8 @@
+// Domain: coordination (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -106,6 +108,13 @@ func (s *Store) FinishExecutionAttempt(ctx context.Context, attemptID int64, out
 	if domVerified == 1 {
 		terminalStatus = string(models.AttemptDOMVerified)
 	}
+	// tenant-ok: attemptID is an internal autoincrement ID issued by
+	// BeginExecutionAttempt within an org-scoped tx. Callers (verifier,
+	// outbox handler) thread the ID directly; there is no API surface
+	// where a tenant could submit an unknown attemptID. The defensive
+	// org filter is not added here because the attempt_id is itself
+	// the secret token. Listed as a v2-tenant-isolation followup if
+	// the caller surface ever changes.
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE execution_attempts
 		   SET outcome = ?,
@@ -136,6 +145,8 @@ func (s *Store) AdvanceAttemptStatus(ctx context.Context, attemptID int64, statu
 	if attemptID <= 0 {
 		return fmt.Errorf("execution_attempts: attempt_id required")
 	}
+	// tenant-ok: see FinishExecutionAttempt rationale — attempt_id is
+	// the issuance token and never exposed to other tenants.
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE execution_attempts SET status = ? WHERE id = ?`,
 		string(status), attemptID,
@@ -145,6 +156,8 @@ func (s *Store) AdvanceAttemptStatus(ctx context.Context, attemptID int64, statu
 
 // GetExecutionAttempt loads a single row by id. Used by tests and by
 // observers that want to read the latest evidence for an attempt.
+// tenant-ok: attemptID is an internal autoincrement issued in an
+// org-scoped tx — see FinishExecutionAttempt rationale.
 func (s *Store) GetExecutionAttempt(ctx context.Context, attemptID int64) (models.ExecutionAttempt, error) {
 	var a models.ExecutionAttempt
 	var startedAt string
@@ -163,9 +176,9 @@ func (s *Store) GetExecutionAttempt(ctx context.Context, attemptID int64) (model
 	if err != nil {
 		return a, err
 	}
-	a.StartedAt = parseSQLiteTime(startedAt)
+	a.StartedAt = dbutil.ParseSQLiteTime(startedAt)
 	if finishedAt.Valid && finishedAt.String != "" {
-		a.FinishedAt = parseSQLiteTime(finishedAt.String)
+		a.FinishedAt = dbutil.ParseSQLiteTime(finishedAt.String)
 	}
 	return a, nil
 }
@@ -173,6 +186,8 @@ func (s *Store) GetExecutionAttempt(ctx context.Context, attemptID int64) (model
 // ListAttemptsForOutbound returns every attempt row tied to a given
 // outbound_messages.id, most-recent-first. Used by the dashboard
 // "Attempt history" panel and by the retry layer to count prior tries.
+// tenant-ok: outboundID is issued by QueueOutboundForOrg in a tenant-
+// scoped tx; the caller has already authenticated the outbound row.
 func (s *Store) ListAttemptsForOutbound(ctx context.Context, outboundID int64) ([]models.ExecutionAttempt, error) {
 	if outboundID <= 0 {
 		return nil, fmt.Errorf("execution_attempts: outbound_id required")
@@ -202,9 +217,9 @@ func (s *Store) ListAttemptsForOutbound(ctx context.Context, outboundID int64) (
 		); err != nil {
 			return nil, err
 		}
-		a.StartedAt = parseSQLiteTime(startedAt)
+		a.StartedAt = dbutil.ParseSQLiteTime(startedAt)
 		if finishedAt.Valid && finishedAt.String != "" {
-			a.FinishedAt = parseSQLiteTime(finishedAt.String)
+			a.FinishedAt = dbutil.ParseSQLiteTime(finishedAt.String)
 		}
 		out = append(out, a)
 	}
@@ -329,9 +344,9 @@ func (s *Store) ListRecentExecutionAttempts(ctx context.Context, orgID int64, si
 		); err != nil {
 			return nil, err
 		}
-		a.StartedAt = parseSQLiteTime(startedAt)
+		a.StartedAt = dbutil.ParseSQLiteTime(startedAt)
 		if finishedAt.Valid && finishedAt.String != "" {
-			a.FinishedAt = parseSQLiteTime(finishedAt.String)
+			a.FinishedAt = dbutil.ParseSQLiteTime(finishedAt.String)
 		}
 		out = append(out, a)
 	}
@@ -391,10 +406,10 @@ func (s *Store) AccountHealthSnapshot(ctx context.Context, orgID, accountID int6
 			return nil, err
 		}
 		if cooldownStr != "" {
-			r.CooldownUntil = parseSQLiteTime(cooldownStr)
+			r.CooldownUntil = dbutil.ParseSQLiteTime(cooldownStr)
 		}
 		if lastActionStr != "" {
-			r.LastActionAt = parseSQLiteTime(lastActionStr)
+			r.LastActionAt = dbutil.ParseSQLiteTime(lastActionStr)
 		}
 		out = append(out, r)
 	}

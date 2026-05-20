@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/thg/scraper/internal/store"
+
+	"github.com/thg/scraper/internal/store/crawl"
 )
 
 const fileUploadDir = "data/files"
@@ -26,7 +27,7 @@ var allowedMimes = map[string]bool{
 
 func (h *Handler) autoflowListFiles(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	files, err := h.deps.DB.GetPrivateFiles(orgID)
+	files, err := h.deps.DB.Crawl().GetPrivateFiles(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -66,14 +67,14 @@ func (h *Handler) autoflowUploadFile(c *fiber.Ctx) error {
 	if err := c.SaveFile(fh, dest); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "save error"})
 	}
-	rec := &store.PrivateFile{
+	rec := &crawl.PrivateFile{
 		OrgID:     orgID,
 		Name:      fh.Filename,
 		Path:      dest,
 		SizeBytes: fh.Size,
 		MimeType:  mime,
 	}
-	id, err := h.deps.DB.InsertPrivateFile(rec)
+	id, err := h.deps.DB.Crawl().InsertPrivateFile(rec)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -85,7 +86,7 @@ func (h *Handler) autoflowUploadFile(c *fiber.Ctx) error {
 
 func (h *Handler) refreshPrivateFilesContext(orgID int64) {
 	key := orgContextKey(orgID, "private_files_summary")
-	files, err := h.deps.DB.GetPrivateFiles(orgID)
+	files, err := h.deps.DB.Crawl().GetPrivateFiles(orgID)
 	if err != nil {
 		return
 	}
@@ -116,7 +117,7 @@ func (h *Handler) autoflowDeleteFile(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	files, _ := h.deps.DB.GetPrivateFiles(orgID)
+	files, _ := h.deps.DB.Crawl().GetPrivateFiles(orgID)
 	var path string
 	for _, f := range files {
 		if f.ID == fileID {
@@ -127,7 +128,7 @@ func (h *Handler) autoflowDeleteFile(c *fiber.Ctx) error {
 	if path != "" {
 		_ = os.Remove(path)
 	}
-	if err := h.deps.DB.DeletePrivateFile(fileID, orgID); err != nil {
+	if err := h.deps.DB.Crawl().DeletePrivateFile(fileID, orgID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	h.refreshPrivateFilesContext(orgID)

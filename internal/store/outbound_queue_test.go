@@ -1,3 +1,4 @@
+// Domain: outbound (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -31,7 +32,7 @@ func TestQueueOutboundForOrgGoesStraightToApproved(t *testing.T) {
 		TargetURL: "https://facebook.com/p/1",
 		Content:   "hello",
 		AIModel:   "agent",
-	}, true /* requestedAuto, no-op now */, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
@@ -40,8 +41,8 @@ func TestQueueOutboundForOrgGoesStraightToApproved(t *testing.T) {
 	}
 	// Autonomous-first: no approval gate. Even without any
 	// outbound_mode policy set, the row lands at approved.
-	if res.Status != models.OutboundApproved {
-		t.Fatalf("expected approved (planned) under autonomous-first; got %q", res.Status)
+	if res.ExecutionState != models.ExecPlanned {
+		t.Fatalf("expected approved (planned) under autonomous-first; got %q", res.ExecutionState)
 	}
 }
 
@@ -61,16 +62,16 @@ func TestQueueOutboundForOrgIgnoresLegacyOptInPolicy(t *testing.T) {
 		TargetURL: "https://facebook.com/u/1",
 		Content:   "hi",
 		AIModel:   "agent",
-	}, false, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
-	if res.Status != models.OutboundApproved {
-		t.Fatalf("legacy outbound_mode=draft must NOT downgrade in autonomous-first; got %q", res.Status)
+	if res.ExecutionState != models.ExecPlanned {
+		t.Fatalf("legacy outbound_mode=draft must NOT downgrade in autonomous-first; got %q", res.ExecutionState)
 	}
 }
 
-func TestClaimApprovedOutboundForOrgMovesToSendingOnce(t *testing.T) {
+func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	db := newTestStore(t)
 	if err := db.SetContext("org:1:outbound_mode", "auto"); err != nil {
 		t.Fatal(err)
@@ -83,11 +84,11 @@ func TestClaimApprovedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 		TargetURL: "https://facebook.com/p/claim",
 		Content:   "hi",
 		AIModel:   "agent",
-	}, true, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
-	claim, err := db.ClaimApprovedOutboundForOrg(1, res.ID, "worker-a", 0)
+	claim, err := db.ClaimPlannedOutboundForOrg(1, res.ID, "worker-a", 0)
 	if err != nil {
 		t.Fatalf("claim failed: %v", err)
 	}
@@ -101,13 +102,13 @@ func TestClaimApprovedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.Status != models.OutboundSending {
-		t.Fatalf("expected sending after claim, got %q", msg.Status)
+	if msg.ExecutionState != models.ExecExecuting {
+		t.Fatalf("expected executing after claim, got %q", msg.ExecutionState)
 	}
 	if msg.ExecutionID != claim.ExecutionID {
 		t.Fatalf("stored execution_id %q != issued %q", msg.ExecutionID, claim.ExecutionID)
 	}
-	if _, err := db.ClaimApprovedOutboundForOrg(1, res.ID, "worker-b", 0); err == nil {
+	if _, err := db.ClaimPlannedOutboundForOrg(1, res.ID, "worker-b", 0); err == nil {
 		t.Fatal("expected second claim to fail")
 	}
 	dup, err := db.QueueOutboundForOrg(&models.OutboundMessage{
@@ -118,7 +119,7 @@ func TestClaimApprovedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 		TargetURL: "https://facebook.com/p/claim",
 		Content:   "duplicate",
 		AIModel:   "agent",
-	}, true, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,13 +145,13 @@ func TestQueueOutboundForOrgIgnoresGlobalAutoCommentMode(t *testing.T) {
 		AccountID: 7,
 		TargetURL: "https://facebook.com/p/2",
 		Content:   "hi",
-	}, true, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
 	// Autonomous-first: status is always approved (planned).
-	if res.Status != models.OutboundApproved {
-		t.Fatalf("queue must land at approved regardless of legacy keys; got %q", res.Status)
+	if res.ExecutionState != models.ExecPlanned {
+		t.Fatalf("queue must land at approved regardless of legacy keys; got %q", res.ExecutionState)
 	}
 }
 
@@ -160,14 +161,14 @@ func TestQueueOutboundForOrgBlocksDuplicateActiveTarget(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: 7, TargetURL: "https://facebook.com/p/dup", Content: "x",
 	}
-	if _, err := db.QueueOutboundForOrg(first, false, time.Hour); err != nil {
+	if _, err := db.QueueOutboundForOrg(first, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: 7, TargetURL: "https://facebook.com/p/dup", Content: "y",
-	}, false, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +202,7 @@ func TestQueueOutboundForOrgConcurrentRaceLastResortUnique(t *testing.T) {
 			results[idx], errs[idx] = db.QueueOutboundForOrg(&models.OutboundMessage{
 				OrgID: 2, Type: "comment", Platform: models.PlatformFacebook,
 				AccountID: 9, TargetURL: target, Content: "race",
-			}, false, time.Hour)
+			}, time.Hour)
 		}(i)
 	}
 	wg.Wait()
@@ -234,12 +235,12 @@ func queueApprovedRow(t *testing.T, db *Store, orgID int64, target string) int64
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: orgID, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: 7, TargetURL: target, Content: "hi", AIModel: "agent",
-	}, true, time.Hour)
+	}, time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}
-	if res.Status != models.OutboundApproved {
-		t.Fatalf("expected approved status, got %q", res.Status)
+	if res.ExecutionState != models.ExecPlanned {
+		t.Fatalf("expected approved status, got %q", res.ExecutionState)
 	}
 	return res.ID
 }
@@ -249,11 +250,11 @@ func TestClaimIssuesUniqueExecutionIDAndLease(t *testing.T) {
 	id1 := queueApprovedRow(t, db, 11, "https://facebook.com/p/idem-1")
 	id2 := queueApprovedRow(t, db, 11, "https://facebook.com/p/idem-2")
 
-	c1, err := db.ClaimApprovedOutboundForOrg(11, id1, "worker", 0)
+	c1, err := db.ClaimPlannedOutboundForOrg(11, id1, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim id1: %v", err)
 	}
-	c2, err := db.ClaimApprovedOutboundForOrg(11, id2, "worker", 0)
+	c2, err := db.ClaimPlannedOutboundForOrg(11, id2, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim id2: %v", err)
 	}
@@ -272,19 +273,19 @@ func TestFinalizeOutboundAttempt_FirstWin(t *testing.T) {
 	db := newSharedStore(t, "outbound_finalize_firstwin.db")
 	id := queueApprovedRow(t, db, 12, "https://facebook.com/p/win")
 
-	claim, err := db.ClaimApprovedOutboundForOrg(12, id, "worker", 0)
+	claim, err := db.ClaimPlannedOutboundForOrg(12, id, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	finalized, status, execID, err := db.FinalizeOutboundAttempt(context.Background(), 12, id, claim.ExecutionID, models.OutboundSent)
+	finalized, state, outcome, execID, err := db.FinalizeOutboundAttempt(context.Background(), 12, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 	if !finalized {
-		t.Fatalf("first finalize must succeed; got finalized=false status=%q execID=%q", status, execID)
+		t.Fatalf("first finalize must succeed; got finalized=false state=%q outcome=%q execID=%q", state, outcome, execID)
 	}
-	if status != models.OutboundSent || execID != claim.ExecutionID {
-		t.Fatalf("unexpected finalize return: status=%q execID=%q", status, execID)
+	if state != models.ExecFinished || outcome != models.VerifVerifiedSuccess || execID != claim.ExecutionID {
+		t.Fatalf("unexpected finalize return: state=%q outcome=%q execID=%q", state, outcome, execID)
 	}
 }
 
@@ -296,25 +297,25 @@ func TestFinalizeOutboundAttempt_IdempotentReplay(t *testing.T) {
 	db := newSharedStore(t, "outbound_finalize_replay.db")
 	id := queueApprovedRow(t, db, 13, "https://facebook.com/p/replay")
 
-	claim, err := db.ClaimApprovedOutboundForOrg(13, id, "worker", 0)
+	claim, err := db.ClaimPlannedOutboundForOrg(13, id, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	// First win.
-	finalized, _, _, err := db.FinalizeOutboundAttempt(context.Background(), 13, id, claim.ExecutionID, models.OutboundSent)
+	finalized, _, _, _, err := db.FinalizeOutboundAttempt(context.Background(), 13, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil || !finalized {
 		t.Fatalf("first finalize must succeed (finalized=%v err=%v)", finalized, err)
 	}
 	// Replay with SAME execution_id.
-	finalized, status, execID, err := db.FinalizeOutboundAttempt(context.Background(), 13, id, claim.ExecutionID, models.OutboundSent)
+	finalized, state, outcome, execID, err := db.FinalizeOutboundAttempt(context.Background(), 13, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("replay finalize: %v", err)
 	}
 	if finalized {
 		t.Fatal("replay must NOT re-finalize")
 	}
-	if status != models.OutboundSent {
-		t.Fatalf("replay must report current status=sent; got %q", status)
+	if state != models.ExecFinished || outcome != models.VerifVerifiedSuccess {
+		t.Fatalf("replay must report current (state=finished outcome=verified_success); got state=%q outcome=%q", state, outcome)
 	}
 	if execID != claim.ExecutionID {
 		t.Fatalf("replay must report current execution_id=%q; got %q", claim.ExecutionID, execID)
@@ -328,7 +329,7 @@ func TestFinalizeOutboundAttempt_StaleExecutionID(t *testing.T) {
 	db := newSharedStore(t, "outbound_finalize_stale.db")
 	id := queueApprovedRow(t, db, 14, "https://facebook.com/p/stale")
 
-	claim1, err := db.ClaimApprovedOutboundForOrg(14, id, "worker-a", 0)
+	claim1, err := db.ClaimPlannedOutboundForOrg(14, id, "worker-a", 0)
 	if err != nil {
 		t.Fatalf("first claim: %v", err)
 	}
@@ -336,11 +337,11 @@ func TestFinalizeOutboundAttempt_StaleExecutionID(t *testing.T) {
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET lease_expiry = datetime('now', '-1 minute') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force lease expiry: %v", err)
 	}
-	if err := db.ResetStaleSendingOutboundForOrg(14, time.Minute); err != nil {
+	if err := db.ResetStaleExecutingForOrg(14, time.Minute); err != nil {
 		t.Fatalf("reset stale: %v", err)
 	}
 	// Re-claim — issues a NEW execution_id.
-	claim2, err := db.ClaimApprovedOutboundForOrg(14, id, "worker-b", 0)
+	claim2, err := db.ClaimPlannedOutboundForOrg(14, id, "worker-b", 0)
 	if err != nil {
 		t.Fatalf("re-claim: %v", err)
 	}
@@ -349,7 +350,7 @@ func TestFinalizeOutboundAttempt_StaleExecutionID(t *testing.T) {
 	}
 	// Now the FIRST executor (worker-a) finally reports — but its
 	// execution_id is the OLD one. Must NOT finalize.
-	finalized, _, execIDNow, err := db.FinalizeOutboundAttempt(context.Background(), 14, id, claim1.ExecutionID, models.OutboundSent)
+	finalized, _, _, execIDNow, err := db.FinalizeOutboundAttempt(context.Background(), 14, id, claim1.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("stale finalize: %v", err)
 	}
@@ -371,7 +372,7 @@ func TestFinalizeOutboundAttempt_LegacyEmptyToken(t *testing.T) {
 
 	// Simulate a legacy-shaped sending row (claimed before execution_id
 	// existed): claim through the new path then strip the token.
-	if _, err := db.ClaimApprovedOutboundForOrg(15, id, "legacy", 0); err != nil {
+	if _, err := db.ClaimPlannedOutboundForOrg(15, id, "legacy", 0); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET execution_id = '' WHERE id = ?`, id); err != nil {
@@ -379,16 +380,16 @@ func TestFinalizeOutboundAttempt_LegacyEmptyToken(t *testing.T) {
 	}
 
 	// Extension reports with NO execution_id (legacy build). CAS treats
-	// empty + empty as a status-only check.
-	finalized, status, _, err := db.FinalizeOutboundAttempt(context.Background(), 15, id, "", models.OutboundSent)
+	// empty + empty as a state-only check.
+	finalized, state, outcome, _, err := db.FinalizeOutboundAttempt(context.Background(), 15, id, "", models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("legacy finalize: %v", err)
 	}
 	if !finalized {
 		t.Fatal("legacy empty-token finalize must succeed")
 	}
-	if status != models.OutboundSent {
-		t.Fatalf("legacy finalize must set status=sent; got %q", status)
+	if state != models.ExecFinished || outcome != models.VerifVerifiedSuccess {
+		t.Fatalf("legacy finalize must set finished/verified_success; got state=%q outcome=%q", state, outcome)
 	}
 }
 
@@ -399,7 +400,7 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	db := newSharedStore(t, "outbound_reset_lease.db")
 	id := queueApprovedRow(t, db, 16, "https://facebook.com/p/lease")
 
-	if _, err := db.ClaimApprovedOutboundForOrg(16, id, "worker", time.Hour); err != nil {
+	if _, err := db.ClaimPlannedOutboundForOrg(16, id, "worker", time.Hour); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	// Push claimed_at WAY into the past — under legacy semantics this
@@ -407,30 +408,30 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET claimed_at = datetime('now', '-1 hour') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force old claimed_at: %v", err)
 	}
-	if err := db.ResetStaleSendingOutboundForOrg(16, time.Minute); err != nil {
+	if err := db.ResetStaleExecutingForOrg(16, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	row, err := db.GetOutboundForOrg(16, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if row.Status != models.OutboundSending {
-		t.Fatalf("unexpired lease must protect from reset; got status=%q", row.Status)
+	if row.ExecutionState != models.ExecExecuting {
+		t.Fatalf("unexpired lease must protect from reset; got state=%q", row.ExecutionState)
 	}
 
 	// Now force lease expiry; reset should fire.
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET lease_expiry = datetime('now', '-1 minute') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force lease expiry: %v", err)
 	}
-	if err := db.ResetStaleSendingOutboundForOrg(16, time.Minute); err != nil {
+	if err := db.ResetStaleExecutingForOrg(16, time.Minute); err != nil {
 		t.Fatalf("reset 2: %v", err)
 	}
 	row, err = db.GetOutboundForOrg(16, id)
 	if err != nil {
 		t.Fatalf("get 2: %v", err)
 	}
-	if row.Status != models.OutboundApproved {
-		t.Fatalf("expired lease must reset to approved; got status=%q", row.Status)
+	if row.ExecutionState != models.ExecPlanned {
+		t.Fatalf("expired lease must reset to planned; got state=%q", row.ExecutionState)
 	}
 	if row.ExecutionID != "" {
 		t.Fatalf("reset must clear execution_id; got %q", row.ExecutionID)

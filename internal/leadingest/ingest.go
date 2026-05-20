@@ -463,7 +463,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			postID = ExtractFacebookPostID(in.PrimaryURL)
 		}
 		if postID != "" {
-			if cErr := deps.LegacyDB.AdvanceCrawlIntentCursor(ctx, deps.IntentID, postID, in.PostedAt); cErr != nil {
+			if cErr := deps.LegacyDB.Crawl().AdvanceIntentCursor(ctx, deps.IntentID, postID, in.PostedAt); cErr != nil {
 				slog.WarnContext(ctx, "advance crawl intent cursor failed",
 					"intent_id", deps.IntentID, "post_id", postID, "error", cErr)
 			}

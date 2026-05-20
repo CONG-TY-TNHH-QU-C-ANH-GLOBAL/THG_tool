@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
-import { deleteAllOutboundPosts, deleteOutbox, getOutbox, OutboundMessage } from '../../services/outboxService';
+import { deleteAllOutboundPosts, deleteOutbox, getOutbox, type OutboundMessage } from '../../services/outboxService';
 
 interface PostingViewProps { orgId: string; isAdmin: boolean; }
 
 // AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): no
-// draft/approve gate. Filter only by execution-lifecycle state.
+// draft/approve gate. PR-1 (verified-state-centric): filter reads
+// the (execution_state, verification_outcome) pair directly.
 type PostFilter = 'all' | 'planned' | 'executing' | 'verified' | 'failed';
 
 const FILTERS: { label: string; value: PostFilter }[] = [
@@ -16,30 +17,51 @@ const FILTERS: { label: string; value: PostFilter }[] = [
   { label: 'Thất bại', value: 'failed' },
 ];
 
-function matchesPostFilter(status: string, filter: PostFilter): boolean {
+function matchesPostFilter(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>, filter: PostFilter): boolean {
+  const state = msg.execution_state;
+  const outcome = msg.verification_outcome ?? '';
   switch (filter) {
     case 'all':
       return true;
     case 'planned':
-      return status === 'approved';
+      return state === 'planned';
     case 'executing':
-      return status === 'sending';
+      return state === 'executing';
     case 'verified':
-      return status === 'sent';
+      return state === 'finished' && outcome === 'verified_success';
     case 'failed':
-      return status === 'failed' || status === 'rejected';
+      return state === 'expired' || (state === 'finished' && outcome !== 'verified_success' && outcome !== '');
   }
 }
 
-function postStatusLabel(status: string): string {
-  switch (status) {
-    case 'approved': return 'ĐÃ LÊN KẾ HOẠCH';
-    case 'sending':  return 'ĐANG THỰC THI';
-    case 'sent':     return 'ĐÃ XÁC NHẬN';
-    case 'failed':   return 'THẤT BẠI';
-    case 'rejected': return 'TỪ CHỐI';
-    default:         return status.toUpperCase();
+function postStatusLabel(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>): string {
+  const state = msg.execution_state;
+  const outcome = msg.verification_outcome ?? '';
+  if (state === 'planned')   return 'ĐÃ LÊN KẾ HOẠCH';
+  if (state === 'executing') return 'ĐANG THỰC THI';
+  if (state === 'expired')   return 'HẾT HẠN';
+  if (state === 'finished') {
+    switch (outcome) {
+      case 'verified_success': return 'ĐÃ XÁC NHẬN';
+      case 'context_drift':    return 'SAI MỤC TIÊU';
+      case 'rate_limited':     return 'BỊ GIỚI HẠN';
+      case 'blocked':          return 'BỊ CHẶN';
+      case 'captcha':          return 'CẦN XỬ LÝ THỦ CÔNG';
+      case 'shadow_rejected':  return 'BỊ FB ẨN';
+      case 'execution_failed': return 'LỖI THỰC THI';
+      default:                 return 'THẤT BẠI';
+    }
   }
+  return String(state).toUpperCase();
+}
+
+function postStatusTag(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>): string {
+  const state = msg.execution_state;
+  const outcome = msg.verification_outcome ?? '';
+  if (state === 'finished' && outcome === 'verified_success') return 'tag tag-ok';
+  if (state === 'executing') return 'tag tag-warm';
+  if (state === 'planned') return 'tag tag-cold';
+  return 'tag tag-hot';
 }
 
 export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
@@ -95,7 +117,7 @@ export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
     }
   };
 
-  const filtered = filter === 'all' ? messages : messages.filter(m => matchesPostFilter(m.status, filter));
+  const filtered = filter === 'all' ? messages : messages.filter(m => matchesPostFilter(m, filter));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -154,8 +176,8 @@ export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
                 </span>
                 <span className="mono" style={{ color: 'var(--text-faint)', fontSize: 11 }}>{m.created_at?.slice(0, 10)}</span>
                 <div style={{ flex: 1 }} />
-                <span className={`tag ${m.status === 'sending' ? 'tag-warm' : m.status === 'sent' ? 'tag-ok' : m.status === 'approved' ? 'tag-cold' : 'tag-hot'}`}>
-                  {postStatusLabel(m.status)}
+                <span className={postStatusTag(m)}>
+                  {postStatusLabel(m)}
                 </span>
               </div>
               <p style={{ color: 'var(--text)', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', flex: 1 }}>

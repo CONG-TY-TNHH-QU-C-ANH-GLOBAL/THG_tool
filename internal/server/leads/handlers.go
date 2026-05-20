@@ -344,7 +344,7 @@ func getPosts(deps Deps) fiber.Handler {
 		limit, _ := strconv.Atoi(c.Query("limit", "50"))
 		offset, _ := strconv.Atoi(c.Query("offset", "0"))
 		orgID, _ := c.Locals("org_id").(int64)
-		posts, err := deps.DB.GetRecentPosts(limit, offset, orgID)
+		posts, err := deps.DB.Crawl().GetRecentPosts(limit, offset, orgID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -359,7 +359,7 @@ func deletePost(deps Deps) fiber.Handler {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 		}
-		if err := deps.DB.DeletePost(id); err != nil {
+		if err := deps.DB.Crawl().DeletePost(id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})
@@ -369,7 +369,7 @@ func deletePost(deps Deps) fiber.Handler {
 // deleteAllPosts handles DELETE /api/posts/all
 func deleteAllPosts(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		count, err := deps.DB.DeleteAllPosts()
+		count, err := deps.DB.Crawl().DeleteAllPosts()
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -382,7 +382,7 @@ func deleteAllPosts(deps Deps) fiber.Handler {
 func getGroups(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
-		groups, err := deps.DB.GetAllGroups(orgID)
+		groups, err := deps.DB.Crawl().GetAllGroups(orgID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -410,7 +410,7 @@ func addGroup(deps Deps) fiber.Handler {
 			Active:    true,
 			JoinState: "none",
 		}
-		id, err := deps.DB.AddGroup(group)
+		id, err := deps.DB.Crawl().AddGroup(group)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -431,7 +431,7 @@ func toggleGroup(deps Deps) fiber.Handler {
 		if err := c.BodyParser(&req); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 		}
-		if err := deps.DB.ToggleGroup(id, req.Active); err != nil {
+		if err := deps.DB.Crawl().ToggleGroup(id, req.Active); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"status": "updated"})
@@ -445,7 +445,7 @@ func deleteGroup(deps Deps) fiber.Handler {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 		}
-		if err := deps.DB.DeleteGroup(id); err != nil {
+		if err := deps.DB.Crawl().DeleteGroup(id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"status": "deleted"})

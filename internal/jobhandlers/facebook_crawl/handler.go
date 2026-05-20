@@ -268,7 +268,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				if src.Type == "facebook_search" {
 					seen[item.ID] = true
 					if h.ctxStore != nil && item.SourceURL != "" {
-						_, _ = h.ctxStore.AddGroup(&models.Group{
+						_, _ = h.ctxStore.Crawl().AddGroup(&models.Group{
 							OrgID:     task.OrgID,
 							Platform:  models.PlatformFacebook,
 							Name:      textutil.FirstNonEmpty(item.AuthorName, item.SourceURL),

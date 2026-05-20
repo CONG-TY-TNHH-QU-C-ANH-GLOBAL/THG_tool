@@ -209,30 +209,36 @@ func TestIsLedgerOutcomeVerifiedTouch(t *testing.T) {
 }
 
 // TerminalFromOutcome maps the rich verifier taxonomy to the
-// autonomous OutboundStatus on finalize. Pin the mapping so the
-// dashboard's per-failure-type drill-down stays correct as new
-// outcomes are added.
+// (ExecutionState, VerificationOutcome) pair on the outbound row.
+// Pin the mapping so the dashboard's per-failure-type drill-down
+// stays correct as new outcomes are added.
 func TestTerminalFromOutcome(t *testing.T) {
-	cases := map[ExecutionOutcome]OutboundStatus{
-		ExecutionDOMVerified:         OutboundVerifiedSuccess,
-		ExecutionOptimisticSuccess:   OutboundVerifiedSuccess,
-		ExecutionDuplicateBlocked:    OutboundVerifiedSuccess,
-		ExecutionContextDrift:        OutboundContextDrift,
-		ExecutionRedirectedFeed:      OutboundContextDrift,
-		ExecutionBlocked:             OutboundBlocked,
-		ExecutionRateLimited:         OutboundRateLimited,
-		ExecutionRetryExhausted:      OutboundExpired,
-		ExecutionShadowRejected:      OutboundVerifiedFailure,
-		ExecutionCaptcha:             OutboundVerifiedFailure,
-		ExecutionSoftFail:            OutboundVerifiedFailure,
-		ExecutionHardFail:            OutboundVerifiedFailure,
-		ExecutionVerificationTimeout: OutboundVerifiedFailure,
-		ExecutionComposerFailed:      OutboundVerifiedFailure,
+	type want struct {
+		state   ExecutionState
+		outcome VerificationOutcome
 	}
-	for outcome, want := range cases {
+	cases := map[ExecutionOutcome]want{
+		ExecutionDOMVerified:         {ExecFinished, VerifVerifiedSuccess},
+		ExecutionOptimisticSuccess:   {ExecFinished, VerifVerifiedSuccess},
+		ExecutionDuplicateBlocked:    {ExecFinished, VerifVerifiedSuccess},
+		ExecutionContextDrift:        {ExecFinished, VerifContextDrift},
+		ExecutionRedirectedFeed:      {ExecFinished, VerifContextDrift},
+		ExecutionBlocked:             {ExecFinished, VerifBlocked},
+		ExecutionRateLimited:         {ExecFinished, VerifRateLimited},
+		ExecutionRetryExhausted:      {ExecExpired, ""},
+		ExecutionShadowRejected:      {ExecFinished, VerifShadowRejected},
+		ExecutionCaptcha:             {ExecFinished, VerifCaptcha},
+		ExecutionSoftFail:            {ExecFinished, VerifExecutionFailed},
+		ExecutionHardFail:            {ExecFinished, VerifExecutionFailed},
+		ExecutionVerificationTimeout: {ExecFinished, VerifExecutionFailed},
+		ExecutionComposerFailed:      {ExecFinished, VerifExecutionFailed},
+	}
+	for outcome, w := range cases {
 		t.Run(string(outcome), func(t *testing.T) {
-			if got := TerminalFromOutcome(outcome); got != want {
-				t.Errorf("TerminalFromOutcome(%s) = %s, want %s", outcome, got, want)
+			gotState, gotOutcome := TerminalFromOutcome(outcome)
+			if gotState != w.state || gotOutcome != w.outcome {
+				t.Errorf("TerminalFromOutcome(%s) = (%s, %s), want (%s, %s)",
+					outcome, gotState, gotOutcome, w.state, w.outcome)
 			}
 		})
 	}

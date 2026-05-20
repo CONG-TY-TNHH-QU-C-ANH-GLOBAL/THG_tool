@@ -2,7 +2,8 @@ package crawl
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/thg/scraper/internal/store"
+
+	crawlstore "github.com/thg/scraper/internal/store/crawl"
 )
 
 // Routes registers crawl intent endpoints.
@@ -16,7 +17,7 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Put("/crawl-intents/:id/enabled", adminOnly, setIntentEnabled(deps))
 	// Explicit state-transition endpoints. status is the source of truth.
 	// See project_scheduled_intelligence.md gap #4.
-	group.Post("/crawl-intents/:id/pause", adminOnly, transitionIntent(deps, store.CrawlIntentStatusPaused))
-	group.Post("/crawl-intents/:id/resume", adminOnly, transitionIntent(deps, store.CrawlIntentStatusActive))
-	group.Post("/crawl-intents/:id/archive", adminOnly, transitionIntent(deps, store.CrawlIntentStatusArchived))
+	group.Post("/crawl-intents/:id/pause", adminOnly, transitionIntent(deps, crawlstore.IntentStatusPaused))
+	group.Post("/crawl-intents/:id/resume", adminOnly, transitionIntent(deps, crawlstore.IntentStatusActive))
+	group.Post("/crawl-intents/:id/archive", adminOnly, transitionIntent(deps, crawlstore.IntentStatusArchived))
 }

@@ -1,3 +1,4 @@
+// Domain: leads (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -48,7 +49,7 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/B", Content: "alice was here",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestLeadEngagement_FailedAttemptsAreNotTouches(t *testing.T) {
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: acc, TargetURL: "https://facebook.com/post/fail-target", Content: "anybody home",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}
@@ -164,7 +165,7 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 	inboxRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: bobAccID, TargetURL: "https://facebook.com/profile/C", Content: "hi",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("inbox queue: %v", err)
 	}
@@ -172,7 +173,7 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 	commentRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: bobAccID, TargetURL: "https://facebook.com/post/C?cmt=42", Content: "reply",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("comment queue: %v", err)
 	}
@@ -211,7 +212,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	otherRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 2, Type: "comment", Platform: "facebook",
 		AccountID: otherAccID, TargetURL: "https://facebook.com/post/D", Content: "other org",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("other org queue: %v", err)
 	}
@@ -219,7 +220,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	aliceRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/D", Content: "alice org1",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("alice queue: %v", err)
 	}
@@ -261,7 +262,7 @@ func TestLeadEngagement_Batch(t *testing.T) {
 	alphaRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/Alpha", Content: "x",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue alpha: %v", err)
 	}
@@ -269,7 +270,7 @@ func TestLeadEngagement_Batch(t *testing.T) {
 	betaRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/profile/Beta", Content: "y",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue beta inbox: %v", err)
 	}
@@ -314,7 +315,7 @@ func TestLeadEngagement_BatchNoCrossLeadBleed(t *testing.T) {
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/100", Content: "for 100",
-	}, false, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue 100: %v", err)
 	}

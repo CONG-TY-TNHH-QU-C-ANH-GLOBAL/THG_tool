@@ -1,6 +1,8 @@
+// Domain: knowledge (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -268,8 +270,8 @@ func scanKnowledgeSource(r scanRow) (*sources.Source, error) {
 		LastSyncAt: optionalSQLiteTime(lastSyncRaw),
 	}
 	src.LastAssetCount = assetCount
-	src.CreatedAt = parseSQLiteTime(createdAtRaw)
-	src.UpdatedAt = parseSQLiteTime(updatedAtRaw)
+	src.CreatedAt = dbutil.ParseSQLiteTime(createdAtRaw)
+	src.UpdatedAt = dbutil.ParseSQLiteTime(updatedAtRaw)
 	return &src, nil
 }
 
@@ -293,7 +295,7 @@ func optionalSQLiteTime(v sql.NullString) *time.Time {
 	if !v.Valid || strings.TrimSpace(v.String) == "" {
 		return nil
 	}
-	t := parseSQLiteTime(v.String)
+	t := dbutil.ParseSQLiteTime(v.String)
 	if t.IsZero() {
 		return nil
 	}

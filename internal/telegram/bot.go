@@ -267,7 +267,7 @@ func (b *Bot) handleAddGroup(c tele.Context) error {
 		JoinState: "none",
 	}
 
-	id, err := b.db.AddGroup(group)
+	id, err := b.db.Crawl().AddGroup(group)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi thêm group: %v", err))
 	}
@@ -276,7 +276,7 @@ func (b *Bot) handleAddGroup(c tele.Context) error {
 }
 
 func (b *Bot) handleListGroups(c tele.Context) error {
-	groups, err := b.db.GetAllGroups(b.orgID)
+	groups, err := b.db.Crawl().GetAllGroups(b.orgID)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}

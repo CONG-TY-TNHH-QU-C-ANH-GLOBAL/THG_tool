@@ -1,4 +1,4 @@
-package store
+package crawl
 
 import (
 	"database/sql"
@@ -36,6 +36,12 @@ func (s *Store) AddGroup(g *models.Group) (int64, error) {
 }
 
 // GroupExistsByURL checks if a group with the given URL already exists.
+//
+// tenant-ok: this query intentionally spans tenants — a URL is a
+// global crawl-target identity, not an org-owned resource. Callers
+// use this to decide "have we ever attempted to crawl this URL on
+// the platform?" before scheduling. If org-scoped existence is
+// required, the caller must add the org_id filter.
 func (s *Store) GroupExistsByURL(url string) bool {
 	var id int64
 	err := s.db.QueryRow(`SELECT id FROM groups WHERE url = ? LIMIT 1`, url).Scan(&id)
@@ -43,6 +49,10 @@ func (s *Store) GroupExistsByURL(url string) bool {
 }
 
 // GetActiveGroups returns all active groups for a platform.
+//
+// tenant-ok: cross-tenant aggregate read used by the crawler binary's
+// scheduler pass which fans out platform-wide. Org filtering is
+// applied downstream when the per-org crawl_intent fires.
 func (s *Store) GetActiveGroups(platform models.Platform) ([]models.Group, error) {
 	rows, err := s.db.Query(
 		`SELECT id, platform, name, url, active, join_state, COALESCE(last_scan, ''), created_at FROM groups WHERE active = 1 AND platform = ? ORDER BY last_scan ASC`,
@@ -55,7 +65,8 @@ func (s *Store) GetActiveGroups(platform models.Platform) ([]models.Group, error
 	return scanGroupRows(rows)
 }
 
-// GetAllGroups returns groups scoped to an org. orgID=0 returns all.
+// GetAllGroups returns groups scoped to an org. orgID=0 returns all
+// (admin-only callers; HTTP handlers always pass a positive org).
 func (s *Store) GetAllGroups(orgID int64) ([]models.Group, error) {
 	q := `SELECT id, COALESCE(org_id,1), platform, name, url, active, join_state, COALESCE(last_scan, ''), created_at FROM groups`
 	var args []any

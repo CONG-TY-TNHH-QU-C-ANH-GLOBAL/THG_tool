@@ -1,3 +1,13 @@
+// Domain: knowledge (see internal/store/DOMAINS.md)
+//
+// Note 2026-05-21 (Phase 3 of STORE_SUBPACKAGE_REFACTOR): this file
+// was reassigned from `crawl` → `knowledge` after audit. The
+// `data_sources` table is a LEGACY pre-Knowledge-OS connector
+// registry; consumers are agent_brain / skills / autoflow handlers,
+// not the crawl scheduler. Co-locating with the knowledge domain
+// matches the architectural intent. Stays in top-level store/ for
+// now; will be folded into the knowledge subpackage when that domain
+// extracts (Phase 4) or deprecated in favour of `knowledge_sources`.
 package store
 
 import (

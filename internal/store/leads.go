@@ -1,3 +1,4 @@
+// Domain: leads (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -125,7 +126,23 @@ func (s *Store) GetLeads(score string, limit, offset int) ([]models.Lead, error)
 	return s.GetLeadsFiltered(score, "", limit, offset, 0)
 }
 
-// GetLeadsFiltered returns leads filtered by score, niche, and org. orgID=0 returns all.
+// GetLeadsFiltered returns leads filtered by score, niche, and org.
+// orgID=0 returns all.
+//
+// tenant-ok: cross-domain projection (leads -> crawl). The
+// `LEFT JOIN posts p ON l.source_id = p.id` reads the posts table,
+// which moved into the crawl subpackage in Phase 3. The JOIN stays
+// here as raw SQL per Q4 of STORE_SUBPACKAGE_REFACTOR (document +
+// defer cross-domain projection fixes). The org_id correlation on
+// the embedded EXISTS subquery (leads -> outbound) closes the
+// cross-tenant signal leak found in PR-2.
+//
+// tenant-ok: cross-domain projection (leads -> outbound). The
+// EXISTS subquery checks outbound_messages for delivery state.
+// NOTE: this query references `om.status = 'sent'` which no longer
+// exists post-PR-2 (the column was dropped in schema v7). This is a
+// pre-existing runtime bug unrelated to Phase 3 — track separately
+// and fix in a leads-domain PR (Phase 8).
 func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID int64) ([]models.Lead, error) {
 	query := `SELECT l.id, COALESCE(l.org_id,0), l.source_type, l.source_id,
 	           COALESCE(NULLIF(l.source_url, ''), p.url, '') as source_url,
@@ -134,7 +151,11 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	           l.author_role, l.pain_point, l.ai_reasoning, COALESCE(NULLIF(l.niche,''),'logistics'),
 	           COALESCE(NULLIF(l.thread_role,''),'intent_originator'),
 	           l.classified_at, l.created_at,
-	           EXISTS(SELECT 1 FROM outbound_messages om WHERE om.target_url = COALESCE(NULLIF(l.source_url,''),p.url,'') AND om.type='comment' AND om.status = 'sent') as commented
+	           EXISTS(SELECT 1 FROM outbound_messages om
+	                   WHERE om.target_url = COALESCE(NULLIF(l.source_url,''),p.url,'')
+	                     AND om.type='comment'
+	                     AND om.status = 'sent'
+	                     AND om.org_id = l.org_id) as commented
 	          FROM leads l LEFT JOIN posts p ON l.source_id = p.id`
 	if orgID > 0 {
 		query += ` LEFT JOIN groups g ON p.group_id = g.id`

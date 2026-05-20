@@ -260,83 +260,39 @@ type Stats struct {
 	AvgScanDuration int       `json:"avg_scan_duration"`
 }
 
-// OutboundStatus represents the lifecycle state of an outbound message.
-//
-// The autonomous-verified-execution model (project goal, May-2026)
-// replaces the human-approval-flow lifecycle with a verified-only
-// lifecycle. The legacy constants below remain as the on-disk wire
-// format for backward compatibility during rollout; the new semantic
-// names map to the same wire values for now (see
-// AutonomousLifecycleOf / TerminalFromOutcome) so DB rows do not need
-// a backfill. Once all callers read through the autonomous names, the
-// legacy ones become deprecated aliases.
-type OutboundStatus string
-
-const (
-	OutboundDraft    OutboundStatus = "draft"    // AI drafted, awaiting approval (legacy approval-flow remnant)
-	OutboundApproved OutboundStatus = "approved" // Approved, ready to send (legacy)
-	OutboundSending  OutboundStatus = "sending"  // Claimed by a Chrome Extension, currently executing
-	OutboundSent     OutboundStatus = "sent"     // Successfully sent
-	OutboundRejected OutboundStatus = "rejected" // Rejected by user (legacy approval-flow remnant)
-	OutboundFailed   OutboundStatus = "failed"   // Send failed
-)
-
-// Autonomous-verified-execution lifecycle (project goal, May-2026).
-//
-// Replaces draft/approved/sent/failed naming with terms that describe
-// what the system actually observed, not what an operator did. The
-// values intentionally COINCIDE with the legacy ones on the wire so
-// existing rows keep working — these are aliases, not new strings,
-// until a future PR migrates the column.
-//
-// Mapping:
-//   OutboundPlanned          ← was draft/approved (autonomous-first
-//                              has no human approval gate; both
-//                              pre-execution states collapse to one)
-//   OutboundExecuting        ← was sending
-//   OutboundVerifiedSuccess  ← was sent (BUT only when actually
-//                              DOM-verified; finalizeOutbound now
-//                              gates on that)
-//   OutboundVerifiedFailure  ← was failed (for definitive failures)
-//   OutboundContextDrift     — NEW: wrong-post drift caught by
-//                              EnforceTargetIdentity. Distinct from
-//                              generic failed so dashboards can show
-//                              the drift KPI separately.
-//   OutboundBlocked          — NEW: FB rate / spam banner observed.
-//   OutboundRateLimited      — NEW: 429-class platform reject.
-//   OutboundExpired          — NEW: lease expired before any executor
-//                              finished. Distinct from failed because
-//                              we never got DOM proof either way.
-//
-// Callers writing terminals SHOULD use TerminalFromOutcome to pick
-// the right autonomous value from the rich ExecutionOutcome taxonomy.
-const (
-	OutboundPlanned         OutboundStatus = "approved" // alias of legacy approved during rollout
-	OutboundExecuting       OutboundStatus = "sending"  // alias of legacy sending during rollout
-	OutboundVerifiedSuccess OutboundStatus = "sent"     // alias of legacy sent (DOM-verified per finalizeOutbound)
-	OutboundVerifiedFailure OutboundStatus = "failed"   // alias of legacy failed (generic failure)
-	OutboundContextDrift    OutboundStatus = "failed"   // collapsed onto failed in the on-disk column for now; reason holds the drift detail
-	OutboundBlocked         OutboundStatus = "failed"
-	OutboundRateLimited     OutboundStatus = "failed"
-	OutboundExpired         OutboundStatus = "failed"
-)
+// The OutboundStatus type + OutboundApproved/Sending/Sent/Failed
+// constants were removed in PR-2 (V2 staged refactor 2026-05-20). All
+// callers consume ExecutionState + VerificationOutcome directly. See
+// internal/models/outbound_state.go.
 
 // OutboundMessage represents an auto-comment or auto-inbox message.
+//
+// Lifecycle is tracked across two orthogonal columns:
+//
+//	ExecutionState        — transport lifecycle (planned/executing/finished/expired)
+//	VerificationOutcome   — post-DOM observation (verified_success/context_drift/
+//	                        rate_limited/blocked/captcha/shadow_rejected/
+//	                        execution_failed); NULL while planned/executing/expired
+//
+// PR-2 V2: the legacy `Status` field was removed. All callers consume
+// the two columns above; the DB `status` column is dropped by the
+// schema v7 migration.
 type OutboundMessage struct {
-	ID         int64          `json:"id" db:"id"`
-	OrgID      int64          `json:"org_id" db:"org_id"`
-	Type       string         `json:"type" db:"type"` // comment, inbox
-	Platform   Platform       `json:"platform" db:"platform"`
-	AccountID  int64          `json:"account_id" db:"account_id"`
-	TargetURL  string         `json:"target_url" db:"target_url"`   // post URL or messenger URL
-	TargetName string         `json:"target_name" db:"target_name"` // post author or inbox recipient
-	Content    string         `json:"content" db:"content"`         // message content
-	Context    string         `json:"context" db:"context"`         // original post/lead content for reference
-	ImagePath  string         `json:"image_path" db:"image_path"`   // local path of company image to attach
-	Status     OutboundStatus `json:"status" db:"status"`
-	AIModel    string         `json:"ai_model" db:"ai_model"` // model used to generate
-	SentAt     time.Time      `json:"sent_at" db:"sent_at"`
-	CreatedAt  time.Time      `json:"created_at" db:"created_at"`
+	ID                  int64               `json:"id" db:"id"`
+	OrgID               int64               `json:"org_id" db:"org_id"`
+	Type                string              `json:"type" db:"type"` // comment, inbox
+	Platform            Platform            `json:"platform" db:"platform"`
+	AccountID           int64               `json:"account_id" db:"account_id"`
+	TargetURL           string              `json:"target_url" db:"target_url"`   // post URL or messenger URL
+	TargetName          string              `json:"target_name" db:"target_name"` // post author or inbox recipient
+	Content             string              `json:"content" db:"content"`         // message content
+	Context             string              `json:"context" db:"context"`         // original post/lead content for reference
+	ImagePath           string              `json:"image_path" db:"image_path"`   // local path of company image to attach
+	ExecutionState      ExecutionState      `json:"execution_state" db:"execution_state"`
+	VerificationOutcome VerificationOutcome `json:"verification_outcome,omitempty" db:"verification_outcome"`
+	AIModel             string              `json:"ai_model" db:"ai_model"` // model used to generate
+	SentAt              time.Time           `json:"sent_at" db:"sent_at"`
+	CreatedAt           time.Time           `json:"created_at" db:"created_at"`
 	// ExecutionID is the per-attempt idempotency token issued at claim
 	// time. The executor MUST echo this back on /sent or /failed; the
 	// server's terminal-state CAS gates on a match. Empty string =

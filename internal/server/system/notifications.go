@@ -76,7 +76,7 @@ func stageLabelVN(stage string) string {
 
 const notifierPrefix = "[Trợ lý THG]"
 
-func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, accountID, id int64, typ string, status models.OutboundStatus) {
+func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, accountID, id int64, typ string, state models.ExecutionState) {
 	stateEN := "planned for autonomous execution"
 	stateVN := "đã lên kế hoạch thực thi tự động"
 	labelEN := "Facebook outbound"
@@ -103,7 +103,7 @@ func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, account
 	// The new vocabulary lets dashboards and the AI planner project
 	// "what actually happened to this customer" without re-parsing
 	// payloads.
-	RecordDashboardAutomationEvent(db, orgID, accountID, userMsg, models.ExecutionEventPlanned, fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, id, typ, status), true)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userMsg, models.ExecutionEventPlanned, fmt.Sprintf(`{"id":%d,"type":%q,"execution_state":%q}`, id, typ, state), true)
 	if notifier != nil {
 		notifier(userMsg)
 	}
@@ -114,7 +114,7 @@ func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, account
 // execution_planned: planned == "intent recorded"; started ==
 // "extension is now mutating the live DOM".
 //
-// callers: agentGetOutbox right after ClaimApprovedOutboundForOrg
+// callers: agentGetOutbox right after ClaimPlannedOutboundForOrg
 // succeeds.
 func NotifyExecutionStarted(db *store.Store, orgID, accountID, outboundID int64, executionID string, typ string) {
 	if db == nil {
@@ -127,11 +127,11 @@ func NotifyExecutionStarted(db *store.Store, orgID, accountID, outboundID int64,
 		fmt.Sprintf(`{"id":%d,"type":%q,"execution_id":%q}`, outboundID, typ, executionID), true)
 }
 
-func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int64, status models.OutboundStatus) {
-	NotifyOutboundStatusDetail(db, notifier, orgID, id, status, "")
+func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int64, state models.ExecutionState, outcome models.VerificationOutcome) {
+	NotifyOutboundStatusDetail(db, notifier, orgID, id, state, outcome, "")
 }
 
-func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, id int64, status models.OutboundStatus, detail string) {
+func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, id int64, state models.ExecutionState, outcome models.VerificationOutcome, detail string) {
 	if db == nil {
 		return
 	}
@@ -143,15 +143,18 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	if len(detail) > 240 {
 		detail = detail[:240]
 	}
-	// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): the
-	// status emission splits on success vs failure so dashboards can
-	// project "did the customer hear from us?" without parsing the
-	// payload. status == sent on the wire still means DOM-verified
-	// because finalizeOutbound only writes that value when the
-	// verifier confirmed.
-	verified := status == models.OutboundSent
-	logText := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, status, msg.TargetName)
-	userText := fmt.Sprintf("%s Facebook %s #%d trạng thái: %s. Đối tượng: %s", notifierPrefix, msg.Type, msg.ID, status, msg.TargetName)
+	// PR-2 V2: the emission splits on the (state, outcome) pair so
+	// dashboards can project "did the customer hear from us?" without
+	// parsing the payload. verified == finished + verified_success,
+	// computed via the single-source-of-truth predicate
+	// IsVerifiedSuccess.
+	verified := models.IsVerifiedSuccess(state, outcome)
+	statusLabel := string(state)
+	if outcome != "" {
+		statusLabel = string(state) + "/" + string(outcome)
+	}
+	logText := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, statusLabel, msg.TargetName)
+	userText := fmt.Sprintf("%s Facebook %s #%d trạng thái: %s. Đối tượng: %s", notifierPrefix, msg.Type, msg.ID, statusLabel, msg.TargetName)
 	if detail != "" {
 		logText += fmt.Sprintf(". Detail: %s", detail)
 		userText += fmt.Sprintf(". Chi tiet: %s", detail)
@@ -161,7 +164,7 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	if verified {
 		eventName = models.ExecutionEventVerified
 	}
-	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, eventName, fmt.Sprintf(`{"id":%d,"type":%q,"status":%q,"detail":%q,"verified":%t}`, msg.ID, msg.Type, status, detail, verified), verified)
+	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, eventName, fmt.Sprintf(`{"id":%d,"type":%q,"execution_state":%q,"verification_outcome":%q,"detail":%q,"verified":%t}`, msg.ID, msg.Type, state, outcome, detail, verified), verified)
 	if notifier != nil {
 		notifier(userText)
 	}

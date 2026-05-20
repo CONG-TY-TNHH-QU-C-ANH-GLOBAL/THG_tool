@@ -123,7 +123,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			Content:    content,
 			Context:    lead.Content,
 			AIModel:    "agent",
-		}, requestedAuto, 24*time.Hour)
+		}, 24*time.Hour)
 		if err != nil {
 			return "", err
 		}
@@ -139,7 +139,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			continue
 		}
 		queued++
-		if result.Status == models.OutboundApproved {
+		if result.ExecutionState == models.ExecPlanned {
 			approvedCount++
 		}
 		// Stage outcome: queue success. The downstream browser-execution
@@ -252,7 +252,7 @@ func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGene
 		targets = append(targets, u)
 	} else {
 		orgID := argInt64(args, "org_id")
-		groups, err := db.GetAllGroups(orgID)
+		groups, err := db.Crawl().GetAllGroups(orgID)
 		if err != nil {
 			return "", err
 		}
@@ -338,7 +338,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 			TargetURL: target,
 			Content:   strings.TrimSpace(content),
 			AIModel:   "agent",
-		}, requestedAuto, 24*time.Hour)
+		}, 24*time.Hour)
 		if err != nil {
 			return "", err
 		}
@@ -347,7 +347,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 			continue
 		}
 		queued++
-		if result.Status == models.OutboundApproved {
+		if result.ExecutionState == models.ExecPlanned {
 			approvedCount++
 		}
 	}

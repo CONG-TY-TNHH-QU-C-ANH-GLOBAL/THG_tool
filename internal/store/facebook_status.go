@@ -1,3 +1,4 @@
+// Domain: identities (see internal/store/DOMAINS.md)
 package store
 
 type FacebookStatusSummary struct {

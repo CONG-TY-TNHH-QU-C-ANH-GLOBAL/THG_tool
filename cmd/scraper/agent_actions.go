@@ -65,7 +65,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			if name == "" {
 				name = u
 			}
-			id, err := db.AddGroup(&models.Group{
+			id, err := db.Crawl().AddGroup(&models.Group{
 				OrgID:     argInt64(args, "org_id"),
 				Platform:  detectPlatformFromURL(u),
 				Name:      name,

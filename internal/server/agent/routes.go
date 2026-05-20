@@ -83,8 +83,10 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Post("/outbox/draft", h.draftOutbound)
 	group.Delete("/outbox/comments/all", adminOnly, h.deleteAllOutboundComments)
 	group.Delete("/outbox/posts/all", adminOnly, h.deleteAllOutboundPosts)
-	group.Put("/outbox/:id/approve", h.approveOutbound)
-	group.Put("/outbox/:id/reject", h.rejectOutbound)
+	// /outbox/:id/approve and /outbox/:id/reject were removed in the
+	// autonomous-first refactor (May-2026). The system no longer has
+	// a human-approval gate — every queued outbound is planned and
+	// executes when an account is available.
 	group.Put("/outbox/:id/content", h.editOutbound)
 	group.Delete("/outbox/:id", h.deleteOutbound)
 }

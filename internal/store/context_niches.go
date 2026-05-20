@@ -1,3 +1,4 @@
+// Domain: leads (see internal/store/DOMAINS.md)
 package store
 
 import "github.com/thg/scraper/internal/models"
@@ -80,40 +81,12 @@ func (s *Store) DeleteNiche(slug string) error {
 	return err
 }
 
-// HasSentComment returns true if a comment has been successfully sent to the given post URL.
-func (s *Store) HasSentComment(postURL string) bool {
-	var count int
-	s.db.QueryRow(
-		`SELECT COUNT(*) FROM outbound_messages WHERE type = 'comment' AND target_url = ? AND status = 'sent'`,
-		postURL,
-	).Scan(&count)
-	return count > 0
-}
-
-// HasContactedCandidate returns true if we already sent a comment_reply or inbox
-// to this candidate (identified by their profile URL) in a previous run.
-// This is the cross-run dedup check for the recruitment pipeline.
-func (s *Store) HasContactedCandidate(authorURL string) bool {
-	var count int
-	s.db.QueryRow(
-		`SELECT COUNT(*) FROM outbound_messages
-		 WHERE type IN ('comment_reply', 'inbox')
-		   AND (target_url = ? OR context LIKE '%author_url=' || ? || '%')
-		   AND status NOT IN ('failed', 'rejected')`,
-		authorURL, authorURL,
-	).Scan(&count)
-	return count > 0
-}
-
-// DeleteAllOutboundComments deletes all outbound comment messages (to allow re-commenting).
-func (s *Store) DeleteAllOutboundComments() (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM outbound_messages WHERE type = 'comment'`)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return n, nil
-}
+// HasSentComment / HasContactedCandidate / HasSentInbox /
+// DeleteAllOutboundComments were removed in PR-2 (V2 tenant isolation).
+// All four were non-org-scoped reads/writes of outbound_messages —
+// cross-tenant leaks — and audit found ZERO callers anywhere in the
+// codebase. Use the ForOrg dedup gate via Store.CheckDedupTx /
+// canQueueOutboundTx instead.
 
 // DeleteAllOutboundCommentsForOrg deletes comment outbox rows only for one tenant.
 func (s *Store) DeleteAllOutboundCommentsForOrg(orgID int64) (int64, error) {
@@ -140,12 +113,3 @@ func (s *Store) DeleteAllOutboundPostsForOrg(orgID int64) (int64, error) {
 	return n, nil
 }
 
-// HasSentInbox checks whether an inbox message has been sent to authorURL.
-func (s *Store) HasSentInbox(authorURL string) bool {
-	var count int
-	s.db.QueryRow(
-		`SELECT COUNT(*) FROM outbound_messages WHERE type='inbox' AND target_url=? AND status='sent'`,
-		authorURL,
-	).Scan(&count)
-	return count > 0
-}

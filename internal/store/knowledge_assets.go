@@ -1,6 +1,8 @@
+// Domain: knowledge (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -178,7 +180,7 @@ func (s *Store) UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*ass
 				payload     = excluded.payload,
 				updated_at  = CURRENT_TIMESTAMP`,
 			a.OrgID, a.SourceID, a.ExternalID, string(a.Type), a.Title, a.Description,
-			string(tagsJSON), string(payload), string(a.State), boolToInt(a.Pinned), a.Boost,
+			string(tagsJSON), string(payload), string(a.State), dbutil.BoolToInt(a.Pinned), a.Boost,
 		)
 		if err != nil {
 			return nil, err
@@ -207,7 +209,7 @@ func (s *Store) UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*ass
 		        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		RETURNING id`,
 		a.OrgID, a.SourceID, string(a.Type), a.Title, a.Description,
-		string(tagsJSON), string(payload), string(a.State), boolToInt(a.Pinned), a.Boost,
+		string(tagsJSON), string(payload), string(a.State), dbutil.BoolToInt(a.Pinned), a.Boost,
 	)
 	if err != nil {
 		return nil, err
@@ -231,7 +233,7 @@ func (s *Store) SetKnowledgeAssetState(ctx context.Context, assetID, orgID int64
 
 // SetKnowledgeAssetPinned is the operator-write for the pinned flag.
 func (s *Store) SetKnowledgeAssetPinned(ctx context.Context, assetID, orgID int64, pinned bool) error {
-	return s.updateAssetField(ctx, assetID, orgID, "pinned", boolToInt(pinned))
+	return s.updateAssetField(ctx, assetID, orgID, "pinned", dbutil.BoolToInt(pinned))
 }
 
 // SetKnowledgeAssetBoost is the operator-write for the boost slider.
@@ -350,14 +352,11 @@ func scanKnowledgeAsset(r scanRow) (*assets.Asset, error) {
 		a.Tags = []string{}
 	}
 	a.Metrics.LastRetrievedAt = optionalSQLiteTime(lastRetrRaw)
-	a.CreatedAt = parseSQLiteTime(createdAtRaw)
-	a.UpdatedAt = parseSQLiteTime(updatedAtRaw)
+	a.CreatedAt = dbutil.ParseSQLiteTime(createdAtRaw)
+	a.UpdatedAt = dbutil.ParseSQLiteTime(updatedAtRaw)
 	return &a, nil
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
+// boolToInt moved to dbutil.BoolToInt in Phase 1 of
+// STORE_SUBPACKAGE_REFACTOR. Callers in this file now use
+// dbutil.BoolToInt.

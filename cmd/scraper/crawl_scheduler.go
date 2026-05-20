@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/textutil"
 )
@@ -23,7 +24,7 @@ func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *j
 		if !isRecurringCrawlSource(src) {
 			continue
 		}
-		intent, err := db.UpsertCrawlIntent(ctx, store.CrawlIntent{
+		intent, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
 			OrgID:           task.OrgID,
 			AccountID:       task.AccountID,
 			Name:            textutil.FirstNonEmpty(argString(args, "name"), argString(args, "query")),
@@ -80,7 +81,7 @@ func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *job
 
 func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *jobs.Store) error {
 	now := time.Now().UTC()
-	intents, err := db.ClaimDueCrawlIntents(ctx, now, 10)
+	intents, err := db.Crawl().ClaimDueIntents(ctx, now, 10)
 	if err != nil {
 		return err
 	}
@@ -94,7 +95,7 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 		taskID := recurringCrawlTaskID(intent.ID, now, intent.IntervalMinutes)
 		if accountID <= 0 {
 			errMsg := "no ready Facebook account for recurring crawl"
-			_ = db.MarkCrawlIntentRunResult(ctx, intent.ID, taskID, errMsg)
+			_ = db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg)
 			log.Printf("[CrawlIntent] skipped intent=%d org=%d: %s", intent.ID, intent.OrgID, errMsg)
 			continue
 		}
@@ -120,7 +121,7 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 		if submitErr != nil {
 			errMsg = submitErr.Error()
 		}
-		if err := db.MarkCrawlIntentRunResult(ctx, intent.ID, taskID, errMsg); err != nil {
+		if err := db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg); err != nil {
 			log.Printf("[CrawlIntent] mark result failed intent=%d: %v", intent.ID, err)
 		}
 		if submitErr != nil {

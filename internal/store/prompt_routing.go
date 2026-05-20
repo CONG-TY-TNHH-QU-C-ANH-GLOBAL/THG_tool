@@ -1,6 +1,8 @@
+// Domain: prompts (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -170,7 +172,7 @@ func (s *Store) RecentPromptRouting(ctx context.Context, orgID int64, since time
 			return nil, err
 		}
 		r.Success = success != 0
-		r.CreatedAt = parseSQLiteTime(createdAt).Format(time.RFC3339)
+		r.CreatedAt = dbutil.ParseSQLiteTime(createdAt).Format(time.RFC3339)
 		fillDecisionFields(&r, decision)
 		out = append(out, r)
 	}

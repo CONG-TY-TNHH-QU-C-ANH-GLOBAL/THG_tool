@@ -1,3 +1,4 @@
+// Domain: coordination (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -24,7 +25,7 @@ func TestQueueOutbound_PerAccountAmplificationAllowed(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: postURL, Content: "Alice's take",
 	}
-	resAlice, err := db.QueueOutboundForOrg(alice, false, 24*time.Hour)
+	resAlice, err := db.QueueOutboundForOrg(alice, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("alice queue: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestQueueOutbound_PerAccountAmplificationAllowed(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 20, TargetURL: postURL, Content: "Bob's take",
 	}
-	resBob, err := db.QueueOutboundForOrg(bob, false, 24*time.Hour)
+	resBob, err := db.QueueOutboundForOrg(bob, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("bob queue: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestQueueOutbound_SameAccountDuplicateBlocked(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: postURL, Content: "first",
 	}
-	if _, err := db.QueueOutboundForOrg(first, false, 24*time.Hour); err != nil {
+	if _, err := db.QueueOutboundForOrg(first, 24*time.Hour); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 
@@ -66,7 +67,7 @@ func TestQueueOutbound_SameAccountDuplicateBlocked(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: postURL, Content: "second",
 	}
-	res, err := db.QueueOutboundForOrg(second, false, 24*time.Hour)
+	res, err := db.QueueOutboundForOrg(second, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestQueueOutbound_InboxIsCrossAccountStrict(t *testing.T) {
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: 10, TargetURL: leadProfile, Content: "Hi from Alice",
 	}
-	if _, err := db.QueueOutboundForOrg(alice, false, 24*time.Hour); err != nil {
+	if _, err := db.QueueOutboundForOrg(alice, 24*time.Hour); err != nil {
 		t.Fatalf("alice inbox: %v", err)
 	}
 
@@ -96,7 +97,7 @@ func TestQueueOutbound_InboxIsCrossAccountStrict(t *testing.T) {
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: 20, TargetURL: leadProfile, Content: "Hi from Bob",
 	}
-	res, err := db.QueueOutboundForOrg(bob, false, 24*time.Hour)
+	res, err := db.QueueOutboundForOrg(bob, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("bob inbox: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestQueueOutbound_RecordsLedger(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: postURL, Content: "x",
 	}
-	res, err := db.QueueOutboundForOrg(msg, false, 24*time.Hour)
+	res, err := db.QueueOutboundForOrg(msg, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}

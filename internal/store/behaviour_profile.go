@@ -1,6 +1,8 @@
+// Domain: coordination (see internal/store/DOMAINS.md)
 package store
 
 import (
+	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
@@ -17,11 +19,9 @@ import (
 // not contend with profile-management writes. See
 // feedback_behaviour_profile_design.md.
 
-// utcDayKey is the canonical "what day are the *_today counters tracking?"
-// string. Always UTC, always YYYY-MM-DD.
-func utcDayKey(t time.Time) string {
-	return t.UTC().Format("2006-01-02")
-}
+// utcDayKey (the canonical UTC day-key formatter for *_today counters)
+// moved to dbutil.UTCDayKey in Phase 1 of STORE_SUBPACKAGE_REFACTOR.
+// Callers in this file now use dbutil.UTCDayKey.
 
 // GetAccountBehaviourProfile returns the static behaviour profile for an
 // account, or nil if none is registered. Missing-profile means the queue
@@ -48,8 +48,8 @@ func (s *Store) GetAccountBehaviourProfile(ctx context.Context, accountID int64)
 	}
 	p.TrustLevel = models.NormalizeTrustLevel(trust)
 	p.WorkspaceRole = models.WorkspaceRole(role)
-	p.CreatedAt = parseSQLiteTime(createdAt)
-	p.UpdatedAt = parseSQLiteTime(updatedAt)
+	p.CreatedAt = dbutil.ParseSQLiteTime(createdAt)
+	p.UpdatedAt = dbutil.ParseSQLiteTime(updatedAt)
 	return &p, nil
 }
 
@@ -121,13 +121,13 @@ func (s *Store) GetAccountRuntimeState(ctx context.Context, accountID int64) (mo
 		return models.AccountRuntimeState{}, err
 	}
 	if cooldown != "" {
-		r.CooldownUntil = parseSQLiteTime(cooldown)
+		r.CooldownUntil = dbutil.ParseSQLiteTime(cooldown)
 	}
 	if lastAction != "" {
-		r.LastActionAt = parseSQLiteTime(lastAction)
+		r.LastActionAt = dbutil.ParseSQLiteTime(lastAction)
 	}
-	r.UpdatedAt = parseSQLiteTime(updatedAt)
-	today := utcDayKey(time.Now())
+	r.UpdatedAt = dbutil.ParseSQLiteTime(updatedAt)
+	today := dbutil.UTCDayKey(time.Now())
 	if r.CountersDay != today {
 		r.CountersDay = today
 		r.CommentsToday = 0
@@ -172,7 +172,7 @@ func incrementRuntimeCounterTx(tx *sql.Tx, orgID, accountID int64, action string
 	if col == "" || accountID <= 0 {
 		return nil
 	}
-	today := utcDayKey(time.Now())
+	today := dbutil.UTCDayKey(time.Now())
 
 	// Try a same-day increment first (fast path).
 	res, err := tx.Exec(
@@ -269,7 +269,7 @@ func (s *Store) ApplyRiskSignal(ctx context.Context, orgID, accountID int64, sig
 		`INSERT INTO account_runtime_state (account_id, org_id, counters_day, updated_at)
 		 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT(account_id) DO NOTHING`,
-		accountID, orgID, utcDayKey(time.Now()),
+		accountID, orgID, dbutil.UTCDayKey(time.Now()),
 	); err != nil {
 		return err
 	}
@@ -304,7 +304,7 @@ func (s *Store) SetAccountCooldown(ctx context.Context, orgID, accountID int64, 
 		 ON CONFLICT(account_id) DO UPDATE SET
 			cooldown_until = excluded.cooldown_until,
 			updated_at     = CURRENT_TIMESTAMP`,
-		accountID, orgID, utcDayKey(time.Now()), arg,
+		accountID, orgID, dbutil.UTCDayKey(time.Now()), arg,
 	); err != nil {
 		return err
 	}

@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+
 	"github.com/thg/scraper/internal/store"
+	crawlstore "github.com/thg/scraper/internal/store/crawl"
 )
 
 // Deps holds dependencies needed by crawl intent handlers.
@@ -34,7 +36,7 @@ var facebookURLRe = regexp.MustCompile(`(?i)^https?://(www\.|m\.)?facebook\.com/
 func listIntents(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
-		intents, err := deps.DB.ListCrawlIntentsForOrg(c.Context(), orgID, 100)
+		intents, err := deps.DB.Crawl().ListIntentsForOrg(c.Context(), orgID, 100)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -55,7 +57,7 @@ func setIntentEnabled(deps Deps) fiber.Handler {
 		if err := c.BodyParser(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 		}
-		if err := deps.DB.SetCrawlIntentEnabled(c.Context(), orgID, id, body.Enabled); err != nil {
+		if err := deps.DB.Crawl().SetIntentEnabled(c.Context(), orgID, id, body.Enabled); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
 			}
@@ -97,7 +99,7 @@ func createIntent(deps Deps) fiber.Handler {
 			return c.Status(400).JSON(fiber.Map{"error": "source_url phải là một URL facebook.com hợp lệ"})
 		}
 
-		active, err := deps.DB.CountActiveCrawlIntentsForOrg(c.Context(), orgID)
+		active, err := deps.DB.Crawl().CountActiveIntentsForOrg(c.Context(), orgID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -116,7 +118,7 @@ func createIntent(deps Deps) fiber.Handler {
 		// the next tick (≤1 min) instead of waiting a full interval — gives
 		// users instant feedback after submitting the form. Re-normalize
 		// inside UpsertCrawlIntent only fires when NextRunAt is zero.
-		intent, err := deps.DB.UpsertCrawlIntent(c.Context(), store.CrawlIntent{
+		intent, err := deps.DB.Crawl().UpsertIntent(c.Context(), crawlstore.Intent{
 			OrgID:           orgID,
 			AccountID:       body.AccountID,
 			Name:            body.Name,
@@ -143,11 +145,11 @@ func createIntent(deps Deps) fiber.Handler {
 		// Archived is sticky inside UpsertCrawlIntent — re-POSTing the same
 		// URL on an archived row keeps it archived. We treat re-submission
 		// as explicit user intent to reactivate.
-		if intent.Status == store.CrawlIntentStatusArchived {
-			if err := deps.DB.SetCrawlIntentStatus(c.Context(), orgID, intent.ID, store.CrawlIntentStatusActive); err != nil {
+		if intent.Status == crawlstore.IntentStatusArchived {
+			if err := deps.DB.Crawl().SetIntentStatus(c.Context(), orgID, intent.ID, crawlstore.IntentStatusActive); err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 			}
-			intent.Status = store.CrawlIntentStatusActive
+			intent.Status = crawlstore.IntentStatusActive
 			intent.Enabled = true
 		}
 
@@ -165,7 +167,7 @@ func transitionIntent(deps Deps, targetStatus string) fiber.Handler {
 		if err != nil || id <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
 		}
-		if err := deps.DB.SetCrawlIntentStatus(c.Context(), orgID, id, targetStatus); err != nil {
+		if err := deps.DB.Crawl().SetIntentStatus(c.Context(), orgID, id, targetStatus); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
 			}

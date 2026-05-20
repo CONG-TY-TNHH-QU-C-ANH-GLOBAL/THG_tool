@@ -204,31 +204,24 @@ const (
 	ExecutionEventFailed   = "execution_failed"
 )
 
-// TerminalFromOutcome maps a rich ExecutionOutcome to the autonomous
-// OutboundStatus it should land in. Centralised so the finalize path
-// and any future bulk-reclassifier agree on the rule.
+// TerminalFromOutcome maps a rich ExecutionOutcome onto the
+// (ExecutionState, VerificationOutcome) pair the finalize path should
+// land. PR-1 split: this is the single bridge between the rich
+// execution_attempts taxonomy and the 2-column outbound_messages
+// taxonomy. The store-layer finalize path calls into this to write
+// both columns atomically.
 //
-// The function returns the SEMANTIC name (OutboundContextDrift,
-// OutboundRateLimited, etc.) — currently those all alias to the
-// legacy "failed" on the wire, so the storage layer can keep its
-// existing column unchanged. Once the DB migrates to discrete
-// values, this function is the one place to update.
-func TerminalFromOutcome(o ExecutionOutcome) OutboundStatus {
-	if IsSuccessOutcome(o) {
-		return OutboundVerifiedSuccess
+// ExecExpired is returned ONLY for ExecutionRetryExhausted — that
+// outcome explicitly means "we gave up retrying, never reached a
+// verified DOM observation". Every other terminal outcome carries
+// some kind of observation, so ExecFinished is the correct state
+// and the verification_outcome column captures the detail.
+func TerminalFromOutcome(o ExecutionOutcome) (ExecutionState, VerificationOutcome) {
+	if o == ExecutionRetryExhausted {
+		return ExecExpired, ""
 	}
-	switch o {
-	case ExecutionContextDrift, ExecutionRedirectedFeed:
-		return OutboundContextDrift
-	case ExecutionBlocked:
-		return OutboundBlocked
-	case ExecutionRateLimited:
-		return OutboundRateLimited
-	case ExecutionRetryExhausted:
-		return OutboundExpired
-	default:
-		return OutboundVerifiedFailure
-	}
+	outcome, _ := VerifyOutcomeFromExecution(o)
+	return ExecFinished, outcome
 }
 
 // IsLedgerOutcomeVerifiedTouch is the single source of truth for

@@ -1,12 +1,14 @@
+// Domain: app (see internal/store/DOMAINS.md)
 package store
 
 import "github.com/thg/scraper/internal/models"
 
-// ResetOrphanedOutbounds sets any 'approved' outbound messages to 'failed' on startup.
-func (s *Store) ResetOrphanedOutbounds() error {
-	_, err := s.db.Exec(`UPDATE outbound_messages SET status = 'failed' WHERE status = 'approved'`)
-	return err
-}
+// ResetOrphanedOutbounds was a single-tenant legacy startup hook that
+// flipped every approved (planned) outbound to failed on boot. PR-2
+// (V2 staged refactor 2026-05-20) removed it: under the autonomous-
+// first model, planned rows must RESUME after restart, not be marked
+// failed. Stale executing rows are reclaimed per-org via the lease
+// mechanism in [Store.ResetStaleExecutingForOrg].
 
 // GetStats returns dashboard statistics in a single read transaction for consistency.
 func (s *Store) GetStats() (*models.Stats, error) {

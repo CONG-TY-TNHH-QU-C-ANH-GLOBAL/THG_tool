@@ -1,3 +1,4 @@
+// Domain: infra (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -9,15 +10,54 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/store/crawl"
+	"github.com/thg/scraper/internal/store/dbutil"
+	"github.com/thg/scraper/internal/store/outbound"
+
 	_ "modernc.org/sqlite"
 )
 
 // Store provides database access for the scraper system.
+//
+// Subpackage composition (as domains extract per STORE_SUBPACKAGE_REFACTOR):
+//
+//   - [outbound.Store] (Phase 2, 2026-05-21) — owns outbound_messages,
+//     action_policies, execution_attempts ledger. Legacy top-level
+//     bridge wrappers (QueueOutboundForOrg, …) delegate to it; new
+//     code MUST use [Store.Outbound()].
+//   - [crawl.Store] (Phase 3, 2026-05-21) — owns org_crawl_intents,
+//     groups, group_quality, posts, comments, private_files. NO
+//     bridge wrappers — clean-cut migration moved all callers to
+//     [Store.Crawl()] directly.
 type Store struct {
 	db      *sql.DB
-	dialect Dialect // never nil after New; set during boot based on driver
-	encKey  string  // AES-256-GCM key for sensitive fields; empty = no encryption
+	dialect dbutil.Dialect // never nil after New; set during boot based on driver
+	encKey  string         // AES-256-GCM key for sensitive fields; empty = no encryption
+
+	// outbound owns outbound_messages + action_policies + the queue/
+	// claim/finalize/reset state machine + the execution_attempts
+	// transition ledger writes. Cross-domain hooks (action_ledger,
+	// behaviour caps, conversation gate) are wired below via
+	// [installOutboundHooks].
+	outbound *outbound.Store
+
+	// crawl owns the crawl pipeline tables (intents, groups,
+	// group_quality, posts, comments, private_files). No Hooks —
+	// crawl has zero cross-domain writes by audit. Wired via
+	// [installCrawlStore].
+	crawl *crawl.Store
 }
+
+// Outbound exposes the outbound-domain subpackage handle. New code
+// MUST use this rather than the legacy bridge methods on *Store.
+func (s *Store) Outbound() *outbound.Store { return s.outbound }
+
+// Crawl exposes the crawl-domain subpackage handle. All crawl
+// callers (~25 sites across cmd/scraper, internal/server/crawl,
+// internal/server/leads, internal/leadingest, internal/telegram,
+// internal/jobhandlers) reach it via this accessor — there are no
+// top-level bridge wrappers for crawl.
+func (s *Store) Crawl() *crawl.Store { return s.crawl }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -87,13 +127,15 @@ func newSQLite(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	s := &Store{db: db, dialect: sqliteDialect{}}
+	s := &Store{db: db, dialect: dbutil.NewSQLiteDialect()}
 	if err := s.migrate(); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+	s.installOutboundHooks()
+	s.crawl = crawl.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
@@ -109,7 +151,7 @@ func newSQLite(dbPath string) (*Store, error) {
 // Driver registration happens via a build tag in postgres_driver.go
 // — keeps the standard build from depending on pgx unless PG is wanted.
 func newPostgres(dsn string) (*Store, error) {
-	db, err := sql.Open(postgresDriverName, dsn)
+	db, err := sql.Open(dbutil.PostgresDriverName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
@@ -120,7 +162,7 @@ func newPostgres(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	s := &Store{db: db, dialect: postgresDialect{}}
+	s := &Store{db: db, dialect: dbutil.NewPostgresDialect()}
 	// On a brand-new PG DB, s.migrate() (the SQLite-style baseline)
 	// would fail because its DDL is SQLite-flavour. The PG baseline
 	// MUST land via a 0001 migration file. Until that file exists,
@@ -134,6 +176,8 @@ func newPostgres(dsn string) (*Store, error) {
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+	s.installOutboundHooks()
+	s.crawl = crawl.NewStore(s.db, s.dialect)
 	return s, nil
 }
 

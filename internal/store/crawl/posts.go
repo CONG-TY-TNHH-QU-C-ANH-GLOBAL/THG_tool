@@ -1,4 +1,4 @@
-package store
+package crawl
 
 import (
 	"crypto/sha256"
@@ -21,7 +21,9 @@ func (s *Store) InsertPost(p *models.Post) (int64, error) {
 	return res.LastInsertId()
 }
 
-// GetRecentPosts returns recent posts with pagination. orgID=0 returns all.
+// GetRecentPosts returns recent posts with pagination. orgID=0 returns
+// all (admin-only callers; HTTP handlers always pass a positive org).
+// Intra-domain JOIN (posts ↔ groups, both crawl-owned).
 func (s *Store) GetRecentPosts(limit, offset int, orgID int64) ([]models.Post, error) {
 	q := `SELECT p.id, p.platform, p.group_id, p.group_name, p.url, p.author, p.author_url, p.author_avatar, p.content, p.images, p.reactions, p.comments, p.posted_at, p.scraped_at, p.dedup_hash
 		 FROM posts p`
@@ -51,12 +53,20 @@ func (s *Store) GetRecentPosts(limit, offset int, orgID int64) ([]models.Post, e
 }
 
 // DeletePost removes a post by ID.
+//
+// tenant-ok: the call site (admin / HTTP handler) is responsible for
+// org-scope verification before invoking. Posts are crawler-platform
+// data identified by global id.
 func (s *Store) DeletePost(postID int64) error {
 	_, err := s.db.Exec(`DELETE FROM posts WHERE id = ?`, postID)
 	return err
 }
 
 // DeleteAllPosts removes all posts and keeps groups.
+//
+// tenant-ok: admin-only blunt operation, no tenant scope by design.
+// Caller is responsible for invoking only from authenticated admin
+// flows.
 func (s *Store) DeleteAllPosts() (int64, error) {
 	result, err := s.db.Exec(`DELETE FROM posts`)
 	if err != nil {
@@ -78,7 +88,8 @@ func (s *Store) InsertComment(c *models.Comment) (int64, error) {
 	return res.LastInsertId()
 }
 
-// InsertPostsBatch inserts a slice of posts from an agent result, skipping duplicates.
+// InsertPostsBatch inserts a slice of posts from an agent result,
+// skipping duplicates.
 func (s *Store) InsertPostsBatch(posts []models.Post) (int, error) {
 	saved := 0
 	for i := range posts {

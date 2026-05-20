@@ -69,7 +69,7 @@ func (h *Handler) draftOutbound(c *fiber.Ctx) error {
 		TargetName: req.TargetName,
 		Content:    req.Content,
 		Context:    req.Context,
-	}, req.Auto, 24*time.Hour)
+	}, 24*time.Hour)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -81,11 +81,14 @@ func (h *Handler) draftOutbound(c *fiber.Ctx) error {
 		})
 	}
 
-	if queueRes.Status == models.OutboundApproved && h.wsHub != nil {
+	if queueRes.ExecutionState == models.ExecPlanned && h.wsHub != nil {
 		h.wsHub.NotifyOutboxReady(1)
 	}
-	system.NotifyOutboundQueued(h.db, h.notifier, orgID, req.AccountID, queueRes.ID, req.Type, queueRes.Status)
-	return c.Status(201).JSON(fiber.Map{"message_id": queueRes.ID, "status": queueRes.Status})
+	system.NotifyOutboundQueued(h.db, h.notifier, orgID, req.AccountID, queueRes.ID, req.Type, queueRes.ExecutionState)
+	return c.Status(201).JSON(fiber.Map{
+		"message_id":      queueRes.ID,
+		"execution_state": string(queueRes.ExecutionState),
+	})
 }
 
 // requireOutboundOwnerRow loads an outbound message and verifies the caller
@@ -108,44 +111,6 @@ func (h *Handler) requireOutboundOwnerRow(c *fiber.Ctx, orgID, userID int64, rol
 		return nil, err
 	}
 	return msg, nil
-}
-
-func (h *Handler) approveOutbound(c *fiber.Ctx) error {
-	orgID := c.Locals("org_id").(int64)
-	userID, _ := c.Locals("user_id").(int64)
-	role, _ := c.Locals("user_role").(string)
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
-	}
-	if _, err := h.requireOutboundOwnerRow(c, orgID, userID, role, id); err != nil {
-		return err
-	}
-	if err := h.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundApproved); err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
-	}
-	if h.wsHub != nil {
-		h.wsHub.NotifyOutboxReady(1)
-	}
-	system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, models.OutboundApproved)
-	return c.JSON(fiber.Map{"status": "approved", "message": "Đã duyệt! Tin nhắn sẽ được gửi tự động."})
-}
-
-func (h *Handler) rejectOutbound(c *fiber.Ctx) error {
-	orgID := c.Locals("org_id").(int64)
-	userID, _ := c.Locals("user_id").(int64)
-	role, _ := c.Locals("user_role").(string)
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
-	}
-	if _, err := h.requireOutboundOwnerRow(c, orgID, userID, role, id); err != nil {
-		return err
-	}
-	if err := h.db.UpdateOutboundStatusForOrg(orgID, id, models.OutboundRejected); err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
-	}
-	return c.JSON(fiber.Map{"status": "rejected"})
 }
 
 func (h *Handler) editOutbound(c *fiber.Ctx) error {
