@@ -237,6 +237,20 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 		args = append(args, u)
 	}
 
+	// VERIFIED-ONLY projection. The autonomous-verified-execution
+	// model (project goal, May-2026) makes "Đã chạm" (touched) state
+	// derive ONLY from action_ledger rows whose outcome made it all
+	// the way to a verified success. Pre-this-change, the projection
+	// pulled every ledger row regardless of outcome — queued
+	// attempts, redirected_feed failures, context_drift aborts, and
+	// rate_limited rejects all rendered as "touched" because the
+	// downstream DeriveBadge only counted len(entries)>0. That's the
+	// bug behind the screenshot: lead #51 received `redirected_feed`
+	// outcome yet the dashboard still showed "ĐÃ CHẠM".
+	//
+	// The SQL filter is the primary fix. DeriveBadge also defensively
+	// filters in case a future caller bypasses this query and feeds
+	// raw entries to the badge logic.
 	query := `
 		SELECT al.target_url,
 		       COALESCE(a.id, 0)                  AS account_id,
@@ -250,6 +264,7 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 		  LEFT JOIN accounts a ON a.id = al.account_id
 		  LEFT JOIN users    u ON u.id = a.assigned_user_id
 		 WHERE al.org_id = ?
+		   AND al.outcome = 'succeeded'
 		   AND al.target_url IN (` + placeholders + `)
 		 ORDER BY al.performed_at DESC`
 

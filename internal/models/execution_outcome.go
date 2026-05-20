@@ -178,6 +178,86 @@ func LedgerOutcomeAlias(o ExecutionOutcome) string {
 	return "failed"
 }
 
+// Activity feed event names (project goal, May-2026). The legacy
+// system_outbound_queued / system_outbound_status / etc. events lump
+// every state transition into a single bucket. The autonomous-verified
+// model splits them into four distinct events so the operator-replay
+// UI and the AI planner can read them apart:
+//
+//   ExecutionEventPlanned   — outbound row inserted in planned state
+//                             (was: "queued" / "drafted" / "approved").
+//   ExecutionEventStarted   — extension claimed the row and began the
+//                             execute path (was: status flip to
+//                             "sending").
+//   ExecutionEventVerified  — DOM verifier confirmed the action
+//                             actually landed at the intended target.
+//                             This is the ONLY event that promotes a
+//                             lead to "touched".
+//   ExecutionEventFailed    — any non-verified terminal (verified_failure,
+//                             context_drift, blocked, rate_limited,
+//                             expired). The specific reason is in the
+//                             event payload's failure_reason field.
+const (
+	ExecutionEventPlanned  = "execution_planned"
+	ExecutionEventStarted  = "execution_started"
+	ExecutionEventVerified = "execution_verified"
+	ExecutionEventFailed   = "execution_failed"
+)
+
+// TerminalFromOutcome maps a rich ExecutionOutcome to the autonomous
+// OutboundStatus it should land in. Centralised so the finalize path
+// and any future bulk-reclassifier agree on the rule.
+//
+// The function returns the SEMANTIC name (OutboundContextDrift,
+// OutboundRateLimited, etc.) — currently those all alias to the
+// legacy "failed" on the wire, so the storage layer can keep its
+// existing column unchanged. Once the DB migrates to discrete
+// values, this function is the one place to update.
+func TerminalFromOutcome(o ExecutionOutcome) OutboundStatus {
+	if IsSuccessOutcome(o) {
+		return OutboundVerifiedSuccess
+	}
+	switch o {
+	case ExecutionContextDrift, ExecutionRedirectedFeed:
+		return OutboundContextDrift
+	case ExecutionBlocked:
+		return OutboundBlocked
+	case ExecutionRateLimited:
+		return OutboundRateLimited
+	case ExecutionRetryExhausted:
+		return OutboundExpired
+	default:
+		return OutboundVerifiedFailure
+	}
+}
+
+// IsLedgerOutcomeVerifiedTouch is the single source of truth for
+// "does this action_ledger row count as a verified customer touch?".
+//
+// The autonomous-verified-execution model (see project goal,
+// May-2026) mandates that lead engagement state mutates ONLY after a
+// DOM-verified success. Anything else — queued, failed,
+// context_drift, blocked, rate_limited, skipped — is NOT a touch;
+// the customer was never contacted by us.
+//
+// Callers that surface "Đã chạm" / engagement badges, dedupe by
+// touched-lead, or feed verified-only state into the AI planner
+// MUST gate on this predicate. The Lead Engagement projection in
+// internal/store/lead_engagement.go filters its SQL on this; the
+// DeriveBadge function in lead_engagement.go also re-filters as
+// defense in depth.
+//
+// Returns true ONLY for "succeeded". Note that the rich
+// ExecutionOutcome taxonomy collapses through LedgerOutcomeAlias —
+// dom_verified / optimistic_success / duplicate_blocked all map to
+// "succeeded" here, which is the right behaviour: duplicate_blocked
+// means the comment already existed, optimistic_success has partial
+// proof, and dom_verified is the strongest signal — all three
+// represent a real touch from the customer's point of view.
+func IsLedgerOutcomeVerifiedTouch(outcome string) bool {
+	return outcome == "succeeded"
+}
+
 // ExecutionAttempt mirrors one row of execution_attempts. The store layer
 // constructs/serialises these; verifier callers fill out the Outcome +
 // Evidence fields after the post-submit observation.

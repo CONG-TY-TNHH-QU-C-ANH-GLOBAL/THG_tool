@@ -72,10 +72,19 @@ const DefaultFollowupWindow = 24 * time.Hour
 //
 // Rules (order matters — first match wins):
 //   1. Thread closed/converted → closed.
-//   2. No entries                → priority.
-//   3. Latest entry < protected window → protected.
-//   4. Latest action was inbox + thread awaiting reply + < followup window → followup_pending.
+//   2. No VERIFIED-TOUCH entries → priority.
+//   3. Latest verified-touch entry < protected window → protected.
+//   4. Latest verified-touch action was inbox + thread awaiting reply
+//      + < followup window → followup_pending.
 //   5. Otherwise → visible.
+//
+// VERIFIED-TOUCH filter: per the autonomous-verified-execution model
+// (project goal, May-2026), only entries whose ledger outcome is
+// IsLedgerOutcomeVerifiedTouch == true count toward the badge. Queued,
+// failed, context_drift, blocked, and rate_limited entries are
+// FILTERED OUT here even though the SQL projection upstream already
+// filters them — defense in depth so a future caller wiring DeriveBadge
+// against an unfiltered slice cannot silently regress the invariant.
 func DeriveBadge(entries []LeadEngagement, threadStatus string, threadAwaitingReply bool, now time.Time, protectedWindow, followupWindow time.Duration) LeadEngagementBadge {
 	if protectedWindow <= 0 {
 		protectedWindow = DefaultProtectedWindow
@@ -86,10 +95,11 @@ func DeriveBadge(entries []LeadEngagement, threadStatus string, threadAwaitingRe
 	if threadStatus == "closed" || threadStatus == "converted" {
 		return LeadBadgeClosed
 	}
-	if len(entries) == 0 {
+	verified := filterVerifiedTouches(entries)
+	if len(verified) == 0 {
 		return LeadBadgePriority
 	}
-	latest := entries[0]
+	latest := verified[0]
 	if now.Sub(latest.PerformedAt) < protectedWindow {
 		return LeadBadgeProtected
 	}
@@ -97,4 +107,21 @@ func DeriveBadge(entries []LeadEngagement, threadStatus string, threadAwaitingRe
 		return LeadBadgeFollowupPending
 	}
 	return LeadBadgeVisible
+}
+
+// filterVerifiedTouches retains only entries that represent a real
+// customer touch — i.e. action_ledger rows whose outcome was
+// "succeeded". Backed by IsLedgerOutcomeVerifiedTouch so the rule is
+// single-sourced.
+func filterVerifiedTouches(entries []LeadEngagement) []LeadEngagement {
+	if len(entries) == 0 {
+		return entries
+	}
+	out := make([]LeadEngagement, 0, len(entries))
+	for _, e := range entries {
+		if IsLedgerOutcomeVerifiedTouch(e.Outcome) {
+			out = append(out, e)
+		}
+	}
+	return out
 }

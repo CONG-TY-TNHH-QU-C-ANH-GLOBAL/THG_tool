@@ -260,16 +260,65 @@ type Stats struct {
 	AvgScanDuration int       `json:"avg_scan_duration"`
 }
 
-// OutboundStatus represents the approval state of an outbound message.
+// OutboundStatus represents the lifecycle state of an outbound message.
+//
+// The autonomous-verified-execution model (project goal, May-2026)
+// replaces the human-approval-flow lifecycle with a verified-only
+// lifecycle. The legacy constants below remain as the on-disk wire
+// format for backward compatibility during rollout; the new semantic
+// names map to the same wire values for now (see
+// AutonomousLifecycleOf / TerminalFromOutcome) so DB rows do not need
+// a backfill. Once all callers read through the autonomous names, the
+// legacy ones become deprecated aliases.
 type OutboundStatus string
 
 const (
-	OutboundDraft    OutboundStatus = "draft"    // AI drafted, awaiting approval
-	OutboundApproved OutboundStatus = "approved" // Approved, ready to send
+	OutboundDraft    OutboundStatus = "draft"    // AI drafted, awaiting approval (legacy approval-flow remnant)
+	OutboundApproved OutboundStatus = "approved" // Approved, ready to send (legacy)
 	OutboundSending  OutboundStatus = "sending"  // Claimed by a Chrome Extension, currently executing
 	OutboundSent     OutboundStatus = "sent"     // Successfully sent
-	OutboundRejected OutboundStatus = "rejected" // Rejected by user
+	OutboundRejected OutboundStatus = "rejected" // Rejected by user (legacy approval-flow remnant)
 	OutboundFailed   OutboundStatus = "failed"   // Send failed
+)
+
+// Autonomous-verified-execution lifecycle (project goal, May-2026).
+//
+// Replaces draft/approved/sent/failed naming with terms that describe
+// what the system actually observed, not what an operator did. The
+// values intentionally COINCIDE with the legacy ones on the wire so
+// existing rows keep working — these are aliases, not new strings,
+// until a future PR migrates the column.
+//
+// Mapping:
+//   OutboundPlanned          ← was draft/approved (autonomous-first
+//                              has no human approval gate; both
+//                              pre-execution states collapse to one)
+//   OutboundExecuting        ← was sending
+//   OutboundVerifiedSuccess  ← was sent (BUT only when actually
+//                              DOM-verified; finalizeOutbound now
+//                              gates on that)
+//   OutboundVerifiedFailure  ← was failed (for definitive failures)
+//   OutboundContextDrift     — NEW: wrong-post drift caught by
+//                              EnforceTargetIdentity. Distinct from
+//                              generic failed so dashboards can show
+//                              the drift KPI separately.
+//   OutboundBlocked          — NEW: FB rate / spam banner observed.
+//   OutboundRateLimited      — NEW: 429-class platform reject.
+//   OutboundExpired          — NEW: lease expired before any executor
+//                              finished. Distinct from failed because
+//                              we never got DOM proof either way.
+//
+// Callers writing terminals SHOULD use TerminalFromOutcome to pick
+// the right autonomous value from the rich ExecutionOutcome taxonomy.
+const (
+	OutboundPlanned         OutboundStatus = "approved" // alias of legacy approved during rollout
+	OutboundExecuting       OutboundStatus = "sending"  // alias of legacy sending during rollout
+	OutboundVerifiedSuccess OutboundStatus = "sent"     // alias of legacy sent (DOM-verified per finalizeOutbound)
+	OutboundVerifiedFailure OutboundStatus = "failed"   // alias of legacy failed (generic failure)
+	OutboundContextDrift    OutboundStatus = "failed"   // collapsed onto failed in the on-disk column for now; reason holds the drift detail
+	OutboundBlocked         OutboundStatus = "failed"
+	OutboundRateLimited     OutboundStatus = "failed"
+	OutboundExpired         OutboundStatus = "failed"
 )
 
 // OutboundMessage represents an auto-comment or auto-inbox message.

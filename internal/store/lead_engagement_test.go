@@ -56,6 +56,14 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 		t.Fatalf("queue should allow: %+v", res.Decision)
 	}
 
+	// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): the lead
+	// is NOT touched until the action verifies. Queue alone leaves the
+	// ledger row at outcome="queued", which the engagement projection
+	// filters out. Advance to verified before asserting engagement.
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("mark verified: %v", err)
+	}
+
 	state, err := db.GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement: %v", err)
@@ -73,12 +81,68 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 	if got.Action != "comment" {
 		t.Errorf("action = %q, want comment", got.Action)
 	}
-	// Just queued → badge=protected (within 15min window).
+	// Verified within 15 min → protected.
 	if state.Badge != models.LeadBadgeProtected {
 		t.Errorf("badge = %s, want protected", state.Badge)
 	}
 	if state.LastEngagedBy != "Alice" {
 		t.Errorf("last_engaged_by = %q, want Alice", state.LastEngagedBy)
+	}
+}
+
+// THE BUG (project goal, May-2026): pre-this-fix, a comment whose
+// execution failed (redirected_feed, context_drift, blocked) still
+// rendered "ĐÃ CHẠM" on the dashboard because GetLeadEngagement
+// pulled ALL ledger rows regardless of outcome. The fix filters the
+// projection to outcome='succeeded'. This test pins the new semantic.
+func TestLeadEngagement_FailedAttemptsAreNotTouches(t *testing.T) {
+	db := newEngagementTestStore(t)
+	ctx := context.Background()
+
+	uid := seedUser(t, db, 1, "Worker")
+	acc := seedAccount(t, db, 1, "Worker FB", uid)
+	leadID := seedLead(t, db, 1, "https://facebook.com/post/fail-target", "https://facebook.com/profile/X", "")
+
+	// 1) Queue the action — ledger row lands at outcome='queued'.
+	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: 1, Type: "comment", Platform: "facebook",
+		AccountID: acc, TargetURL: "https://facebook.com/post/fail-target", Content: "anybody home",
+	}, false, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+
+	// At this point engagement should be UNTOUCHED — the action is still
+	// in-flight, no verification has happened.
+	state, err := db.GetLeadEngagement(ctx, 1, leadID)
+	if err != nil {
+		t.Fatalf("GetLeadEngagement (queued): %v", err)
+	}
+	if state.Badge != models.LeadBadgePriority {
+		t.Fatalf("queued-only must keep lead as priority (untouched); got badge=%s", state.Badge)
+	}
+	if len(state.Entries) != 0 {
+		t.Fatalf("queued-only must return 0 verified entries; got %d", len(state.Entries))
+	}
+
+	// 2) Action fails (redirected_feed → ledger outcome='failed').
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "failed", "redirected_feed"); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	// Lead is STILL untouched. The screenshot bug must not recur.
+	state, err = db.GetLeadEngagement(ctx, 1, leadID)
+	if err != nil {
+		t.Fatalf("GetLeadEngagement (failed): %v", err)
+	}
+	if state.Badge != models.LeadBadgePriority {
+		t.Fatalf("failed attempt MUST NOT promote lead to touched; got badge=%s", state.Badge)
+	}
+	if len(state.Entries) != 0 {
+		t.Fatalf("failed attempt MUST NOT surface as engagement entry; got %d entries", len(state.Entries))
+	}
+	if state.LastEngagedBy != "" {
+		t.Errorf("failed attempt must not record last_engaged_by; got %q", state.LastEngagedBy)
 	}
 }
 
@@ -97,18 +161,27 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 		"https://facebook.com/post/C?cmt=42")
 
 	// Inbox on the author_url.
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	inboxRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: bobAccID, TargetURL: "https://facebook.com/profile/C", Content: "hi",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("inbox queue: %v", err)
 	}
 	// Comment on the secondary_url (rare but supported).
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	commentRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: bobAccID, TargetURL: "https://facebook.com/post/C?cmt=42", Content: "reply",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("comment queue: %v", err)
+	}
+	// Mark BOTH verified — autonomous-verified-execution invariant.
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, inboxRes.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify inbox: %v", err)
+	}
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, commentRes.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify comment: %v", err)
 	}
 
 	state, err := db.GetLeadEngagement(ctx, 1, leadID)
@@ -135,18 +208,29 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/D", "https://facebook.com/profile/D", "")
 
 	// Org 2 engages the same URL — must NOT bleed into org 1's view.
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	otherRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 2, Type: "comment", Platform: "facebook",
 		AccountID: otherAccID, TargetURL: "https://facebook.com/post/D", Content: "other org",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("other org queue: %v", err)
 	}
 	// Org 1 also engages.
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	aliceRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/D", Content: "alice org1",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("alice queue: %v", err)
+	}
+	// Both VERIFY — autonomous-verified-execution invariant. The org
+	// boundary still applies on the SELECT, so org 2's verified row
+	// must NOT show in org 1's view.
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 2, otherRes.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify other org: %v", err)
+	}
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, aliceRes.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify alice: %v", err)
 	}
 
 	state, err := db.GetLeadEngagement(ctx, 1, leadID)
@@ -174,18 +258,27 @@ func TestLeadEngagement_Batch(t *testing.T) {
 	leadBeta := seedLead(t, db, 1, "https://facebook.com/post/Beta", "https://facebook.com/profile/Beta", "")
 	leadGamma := seedLead(t, db, 1, "https://facebook.com/post/Gamma", "https://facebook.com/profile/Gamma", "")
 
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	alphaRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/Alpha", Content: "x",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("queue alpha: %v", err)
 	}
 	// Beta has TWO actions; Gamma has zero.
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	betaRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/profile/Beta", Content: "y",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("queue beta inbox: %v", err)
+	}
+	// Verify both — autonomous-verified-execution invariant.
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, alphaRes.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify alpha: %v", err)
+	}
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, betaRes.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify beta: %v", err)
 	}
 
 	got, err := db.GetLeadEngagementsBatch(ctx, 1, []int64{leadAlpha, leadBeta, leadGamma})
@@ -218,11 +311,15 @@ func TestLeadEngagement_BatchNoCrossLeadBleed(t *testing.T) {
 	leadOne := seedLead(t, db, 1, "https://facebook.com/post/100", "https://facebook.com/profile/100", "")
 	leadTwo := seedLead(t, db, 1, "https://facebook.com/post/200", "https://facebook.com/profile/200", "")
 
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/100", Content: "for 100",
-	}, false, 24*time.Hour); err != nil {
+	}, false, 24*time.Hour)
+	if err != nil {
 		t.Fatalf("queue 100: %v", err)
+	}
+	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified by test"); err != nil {
+		t.Fatalf("verify 100: %v", err)
 	}
 
 	states, err := db.GetLeadEngagementsBatch(ctx, 1, []int64{leadOne, leadTwo})
