@@ -1,19 +1,46 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, RefreshCw, Trash2, X } from 'lucide-react';
-import { approveOutbox, deleteAllOutboundPosts, deleteOutbox, getOutbox, OutboundMessage, rejectOutbox } from '../../services/outboxService';
+import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
+import { deleteAllOutboundPosts, deleteOutbox, getOutbox, OutboundMessage } from '../../services/outboxService';
 
 interface PostingViewProps { orgId: string; isAdmin: boolean; }
 
-type PostFilter = 'all' | 'sent' | 'draft' | 'approved' | 'failed' | 'rejected';
+// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): no
+// draft/approve gate. Filter only by execution-lifecycle state.
+type PostFilter = 'all' | 'planned' | 'executing' | 'verified' | 'failed';
 
 const FILTERS: { label: string; value: PostFilter }[] = [
   { label: 'Tất cả', value: 'all' },
-  { label: 'Draft', value: 'draft' },
-  { label: 'Đã duyệt', value: 'approved' },
-  { label: 'Đã gửi', value: 'sent' },
-  { label: 'Lỗi', value: 'failed' },
-  { label: 'Từ chối', value: 'rejected' },
+  { label: 'Đã lên kế hoạch', value: 'planned' },
+  { label: 'Đang thực thi', value: 'executing' },
+  { label: 'Đã xác nhận', value: 'verified' },
+  { label: 'Thất bại', value: 'failed' },
 ];
+
+function matchesPostFilter(status: string, filter: PostFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'planned':
+      return status === 'approved';
+    case 'executing':
+      return status === 'sending';
+    case 'verified':
+      return status === 'sent';
+    case 'failed':
+      return status === 'failed' || status === 'rejected';
+  }
+}
+
+function postStatusLabel(status: string): string {
+  switch (status) {
+    case 'approved': return 'ĐÃ LÊN KẾ HOẠCH';
+    case 'sending':  return 'ĐANG THỰC THI';
+    case 'sent':     return 'ĐÃ XÁC NHẬN';
+    case 'failed':   return 'THẤT BẠI';
+    case 'rejected': return 'TỪ CHỐI';
+    default:         return status.toUpperCase();
+  }
+}
 
 export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
@@ -37,11 +64,9 @@ export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
 
   useEffect(() => { load(); }, []);
 
-  const transition = async (id: number, action: 'approve' | 'reject' | 'delete') => {
+  const transition = async (id: number, action: 'delete') => {
     setMsg('');
     try {
-      if (action === 'approve') await approveOutbox(id);
-      if (action === 'reject') await rejectOutbox(id);
       if (action === 'delete') await deleteOutbox(id);
       await load();
     } catch (err) {
@@ -70,7 +95,7 @@ export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
     }
   };
 
-  const filtered = filter === 'all' ? messages : messages.filter(m => m.status === filter);
+  const filtered = filter === 'all' ? messages : messages.filter(m => matchesPostFilter(m.status, filter));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -129,8 +154,8 @@ export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
                 </span>
                 <span className="mono" style={{ color: 'var(--text-faint)', fontSize: 11 }}>{m.created_at?.slice(0, 10)}</span>
                 <div style={{ flex: 1 }} />
-                <span className={`tag ${m.status === 'draft' ? 'tag-warm' : m.status === 'approved' || m.status === 'sent' ? 'tag-ok' : 'tag-hot'}`}>
-                  {m.status.toUpperCase()}
+                <span className={`tag ${m.status === 'sending' ? 'tag-warm' : m.status === 'sent' ? 'tag-ok' : m.status === 'approved' ? 'tag-cold' : 'tag-hot'}`}>
+                  {postStatusLabel(m.status)}
                 </span>
               </div>
               <p style={{ color: 'var(--text)', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', flex: 1 }}>
@@ -139,16 +164,6 @@ export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
               {m.context && <p style={{ color: 'var(--text-mute)', fontSize: 12, lineHeight: 1.5, marginTop: 12 }}>{m.context.slice(0, 240)}</p>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
                 <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>ACC #{m.account_id}</span>
-                {m.status === 'draft' && (
-                  <>
-                    <button className="btn btn-ghost btn-sm" onClick={() => transition(m.id, 'approve')} style={{ color: 'var(--ok)' }}>
-                      <Check size={12} /> Duyệt
-                    </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => transition(m.id, 'reject')} style={{ color: 'var(--hot)' }}>
-                      <X size={12} /> Từ chối
-                    </button>
-                  </>
-                )}
                 <button className="btn btn-ghost btn-sm" onClick={() => transition(m.id, 'delete')} style={{ color: 'var(--text-mute)' }}>
                   <Trash2 size={12} />
                 </button>

@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ExternalLink, RefreshCw, Trash2, X } from 'lucide-react';
+import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
 import {
-  approveOutbox,
   deleteAllOutboundComments,
   deleteOutbox,
   getOutbox,
   type OutboundMessage,
-  rejectOutbox,
 } from '../../services/outboxService';
 import { useLang } from '../../i18n/useLang';
 
@@ -17,13 +15,40 @@ interface CommentingViewProps {
   isAdmin: boolean;
 }
 
-type CommentFilter = 'all' | 'draft' | 'approved' | 'sent' | 'failed' | 'rejected';
+// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): the
+// human-approval flow is gone. Outbound rows go directly from queue
+// to executor with no draft/approve/reject gate. The filter surface
+// only shows execution lifecycle states:
+//   - planned   (was: approved on the wire — queued, waiting to run)
+//   - executing (was: sending on the wire — extension claimed it)
+//   - verified  (was: sent on the wire — DOM-verified success)
+//   - failed    (everything else: context_drift, blocked, expired …)
+type CommentFilter = 'all' | 'planned' | 'executing' | 'verified' | 'failed';
+
+// matchesFilter maps the on-disk status string onto the autonomous
+// filter band. The wire still uses 'approved' / 'sending' / 'sent' /
+// 'failed' (constants alias on Go side) — when the DB column flips to
+// discrete autonomous values this mapping collapses to direct equality.
+function matchesFilter(status: string, filter: CommentFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'planned':
+      return status === 'approved';
+    case 'executing':
+      return status === 'sending';
+    case 'verified':
+      return status === 'sent';
+    case 'failed':
+      return status === 'failed' || status === 'rejected';
+  }
+}
 
 function statusTag(status: string): string {
   switch (status) {
     case 'sent':
       return 'tag tag-ok';
-    case 'draft':
+    case 'sending':
       return 'tag tag-warm';
     case 'approved':
       return 'tag tag-cold';
@@ -32,6 +57,29 @@ function statusTag(status: string): string {
       return 'tag tag-hot';
     default:
       return 'tag tag-mute';
+  }
+}
+
+// Operator-facing label for a status pill. Replaces the legacy
+// SENT/DRAFT/APPROVED uppercase strings.
+function statusLabel(status: string, lang: 'vi' | 'en'): string {
+  if (lang === 'vi') {
+    switch (status) {
+      case 'approved': return 'ĐÃ LÊN KẾ HOẠCH';
+      case 'sending':  return 'ĐANG THỰC THI';
+      case 'sent':     return 'ĐÃ XÁC NHẬN';
+      case 'failed':   return 'THẤT BẠI';
+      case 'rejected': return 'TỪ CHỐI';
+      default:         return status.toUpperCase();
+    }
+  }
+  switch (status) {
+    case 'approved': return 'PLANNED';
+    case 'sending':  return 'EXECUTING';
+    case 'sent':     return 'VERIFIED';
+    case 'failed':   return 'FAILED';
+    case 'rejected': return 'REJECTED';
+    default:         return status.toUpperCase();
   }
 }
 
@@ -71,13 +119,14 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
     }
   };
 
+  // Autonomous-first filter set. The legacy draft/approved/rejected
+  // bands are gone; what remains is the execution lifecycle.
   const FILTERS: Array<{ label: string; value: CommentFilter }> = [
     { label: tv.filterAll, value: 'all' },
-    { label: tv.filterDraft, value: 'draft' },
-    { label: tv.filterApproved, value: 'approved' },
-    { label: tv.filterSent, value: 'sent' },
-    { label: tv.filterFailed, value: 'failed' },
-    { label: tv.filterRejected, value: 'rejected' },
+    { label: lang === 'vi' ? 'Đã lên kế hoạch' : 'Planned', value: 'planned' },
+    { label: lang === 'vi' ? 'Đang thực thi' : 'Executing', value: 'executing' },
+    { label: lang === 'vi' ? 'Đã xác nhận' : 'Verified', value: 'verified' },
+    { label: lang === 'vi' ? 'Thất bại' : 'Failed', value: 'failed' },
   ];
 
   const load = async () => {
@@ -98,7 +147,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(
-    () => (filter === 'all' ? messages : messages.filter((message) => message.status === filter)),
+    () => (filter === 'all' ? messages : messages.filter((message) => matchesFilter(message.status, filter))),
     [filter, messages],
   );
 
@@ -114,11 +163,12 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
 
   const selectedMessage = filtered.find((message) => message.id === selectedId) ?? null;
 
-  const transition = async (id: number, action: 'approve' | 'reject' | 'delete') => {
+  // The only operator-driven row-level action left is delete. Approve
+  // / reject went away with the draft/approval flow — every queued
+  // outbound runs autonomously.
+  const transition = async (id: number, action: 'delete') => {
     setErrorMsg('');
     try {
-      if (action === 'approve') await approveOutbox(id);
-      if (action === 'reject') await rejectOutbox(id);
       if (action === 'delete') await deleteOutbox(id);
       await load();
     } catch (error) {
@@ -130,7 +180,8 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
   const stats = [
     { label: tv.statSent, value: messages.filter((message) => message.status === 'sent').length },
     { label: tv.statToday, value: messages.filter((message) => message.created_at?.startsWith(today)).length },
-    { label: tv.statPending, value: messages.filter((message) => message.status === 'draft' || message.status === 'approved').length },
+    // statPending now means "planned or executing" — both are pre-terminal autonomous states.
+    { label: tv.statPending, value: messages.filter((message) => message.status === 'approved' || message.status === 'sending').length },
     { label: tv.statTotal, value: messages.length },
   ];
 
@@ -241,7 +292,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <span className="mono" style={{ fontSize: 12, color: 'var(--text-mute)' }}>#{message.account_id}</span>
-                      <span className={statusTag(message.status)}>{message.status.toUpperCase()}</span>
+                      <span className={statusTag(message.status)}>{statusLabel(message.status, lang)}</span>
                     </div>
                     <div style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {message.content || <span style={{ color: 'var(--text-faint)' }}>{tv.emptyValue}</span>}
@@ -272,7 +323,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                       #{selectedMessage.account_id}
                     </div>
                   </div>
-                  <span className={statusTag(selectedMessage.status)}>{selectedMessage.status.toUpperCase()}</span>
+                  <span className={statusTag(selectedMessage.status)}>{statusLabel(selectedMessage.status, lang)}</span>
                 </header>
 
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -304,18 +355,6 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {selectedMessage.status === 'draft' && (
-                      <>
-                        <button type="button" className="btn btn-primary btn-sm" onClick={() => void transition(selectedMessage.id, 'approve')}>
-                          <Check size={13} />
-                          {tv.actionApprove}
-                        </button>
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void transition(selectedMessage.id, 'reject')}>
-                          <X size={13} />
-                          {tv.actionReject}
-                        </button>
-                      </>
-                    )}
                     {selectedMessage.target_url && (
                       <a className="btn btn-ghost btn-sm" href={selectedMessage.target_url} target="_blank" rel="noopener noreferrer">
                         <ExternalLink size={13} />

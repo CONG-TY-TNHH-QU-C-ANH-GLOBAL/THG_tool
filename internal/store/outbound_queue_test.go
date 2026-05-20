@@ -14,7 +14,14 @@ func newTestStore(t *testing.T) *Store {
 	return newSharedStore(t, "outbound.db")
 }
 
-func TestQueueOutboundForOrgDefaultsToDraft(t *testing.T) {
+// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): every
+// queued outbound goes directly to OutboundApproved (planned) — no
+// human-approval draft gate. Pre-this-change the queue defaulted to
+// draft unless the org had outbound_mode='auto'. The legacy
+// outbound_mode policy still exists in context for back-compat but
+// the queue no longer consults it; the requestedAuto argument is a
+// no-op.
+func TestQueueOutboundForOrgGoesStraightToApproved(t *testing.T) {
 	db := newTestStore(t)
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID:     1,
@@ -24,23 +31,26 @@ func TestQueueOutboundForOrgDefaultsToDraft(t *testing.T) {
 		TargetURL: "https://facebook.com/p/1",
 		Content:   "hello",
 		AIModel:   "agent",
-	}, true /* requestedAuto */, time.Hour)
+	}, true /* requestedAuto, no-op now */, time.Hour)
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
 	if !res.Decision.Allowed || res.ID == 0 {
 		t.Fatalf("expected allowed insert, got %+v", res)
 	}
-	// Org has no outbound_mode set → must downgrade to draft even though
-	// the caller asked for auto.
-	if res.Status != models.OutboundDraft {
-		t.Fatalf("expected draft when org not opted-in, got %q", res.Status)
+	// Autonomous-first: no approval gate. Even without any
+	// outbound_mode policy set, the row lands at approved.
+	if res.Status != models.OutboundApproved {
+		t.Fatalf("expected approved (planned) under autonomous-first; got %q", res.Status)
 	}
 }
 
-func TestQueueOutboundForOrgRespectsOptInAuto(t *testing.T) {
+func TestQueueOutboundForOrgIgnoresLegacyOptInPolicy(t *testing.T) {
 	db := newTestStore(t)
-	if err := db.SetContext("org:1:outbound_mode", "auto"); err != nil {
+	// Even if some legacy code sets outbound_mode='draft', the queue
+	// MUST still land at approved — the policy is dead in autonomous-
+	// first mode.
+	if err := db.SetContext("org:1:outbound_mode", "draft"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
@@ -51,12 +61,12 @@ func TestQueueOutboundForOrgRespectsOptInAuto(t *testing.T) {
 		TargetURL: "https://facebook.com/u/1",
 		Content:   "hi",
 		AIModel:   "agent",
-	}, true, time.Hour)
+	}, false, time.Hour)
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
 	if res.Status != models.OutboundApproved {
-		t.Fatalf("expected approved when org opted-in, got %q", res.Status)
+		t.Fatalf("legacy outbound_mode=draft must NOT downgrade in autonomous-first; got %q", res.Status)
 	}
 }
 
@@ -117,11 +127,14 @@ func TestClaimApprovedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	}
 }
 
+// Legacy auto_comment_mode keys are dead under autonomous-first.
+// Every queue lands at approved regardless of whatever stale global
+// state exists, so this test now verifies the new invariant: no
+// global key (auto_comment_mode, org:N:auto_comment_mode, anything)
+// has any effect on the queued status.
 func TestQueueOutboundForOrgIgnoresGlobalAutoCommentMode(t *testing.T) {
 	db := newTestStore(t)
-	// Pre-attack: a stale global key from the legacy code path.
 	_ = db.SetContext("auto_comment_mode", "true")
-	// And the AI tries to flip the org via the same global key.
 	_ = db.SetContext("org:1:auto_comment_mode", "true")
 
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
@@ -135,9 +148,9 @@ func TestQueueOutboundForOrgIgnoresGlobalAutoCommentMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
-	// Only `org:1:outbound_mode == auto` should grant auto execution.
-	if res.Status != models.OutboundDraft {
-		t.Fatalf("legacy auto_comment_mode must NOT enable auto: got %q", res.Status)
+	// Autonomous-first: status is always approved (planned).
+	if res.Status != models.OutboundApproved {
+		t.Fatalf("queue must land at approved regardless of legacy keys; got %q", res.Status)
 	}
 }
 

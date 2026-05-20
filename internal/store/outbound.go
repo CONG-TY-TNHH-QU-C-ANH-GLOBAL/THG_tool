@@ -115,13 +115,18 @@ func (s *Store) queueOutboundForOrgOnce(msg *models.OutboundMessage, requestedAu
 		return OutboundQueueResult{Decision: guard}, nil
 	}
 
-	// Store-layer approval enforcement. Even if the caller asks for auto,
-	// we downgrade to draft when the org has not opted in.
-	autoAllowed := requestedAuto && s.IsAutoOutboundEnabledForOrg(msg.OrgID)
-	status := models.OutboundDraft
-	if autoAllowed {
-		status = models.OutboundApproved
-	}
+	// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): the
+	// system no longer maintains an approval / draft gate. Every
+	// queued outbound flows directly to the planned/executable
+	// state. The legacy outbound_mode='draft' org policy and the
+	// requestedAuto argument are kept on the signature for caller
+	// compatibility during the rollout window but are no longer
+	// consulted — the autonomous-first model treats human approval
+	// as a UX layer that operators can opt into at the dashboard
+	// (e.g. by pausing the executor) rather than a server-side
+	// gate.
+	_ = requestedAuto
+	status := models.OutboundApproved
 	msg.Status = status
 
 	res, err := tx.Exec(

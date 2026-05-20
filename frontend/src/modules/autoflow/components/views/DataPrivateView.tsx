@@ -4,7 +4,6 @@ import { useFiles } from '../../hooks/useFiles';
 import { useDataSources } from '../../hooks/useDataSources';
 import {
   getBusinessContext, saveBusinessContext, type BusinessContext,
-  getOrgPolicy, updateOrgPolicy, type OutboundMode,
   type InferBusinessContextResult, INFERRED_FIELD_KEYS, type InferredFieldKey,
 } from '../../services/settingsService';
 import BusinessMemoryPanel, { type BusinessConfidences } from '../data/BusinessMemoryPanel';
@@ -13,7 +12,9 @@ import DataSourcesPanel from '../data/DataSourcesPanel';
 import DataStatsGrid from '../data/DataStatsGrid';
 import FileUploadPanel from '../data/FileUploadPanel';
 import MagicOmnibox from '../data/MagicOmnibox';
-import OutboundPolicyPanel from '../data/OutboundPolicyPanel';
+// OutboundPolicyPanel removed in May-2026 autonomous-first reframe:
+// the draft/auto policy switch no longer has any meaning — every
+// queued outbound runs autonomously.
 import PrivateFilesTable from '../data/PrivateFilesTable';
 import KnowledgeSourcesPanel from '../knowledge/KnowledgeSourcesPanel';
 
@@ -44,9 +45,9 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
   const [dataSourcesSummary, setDataSourcesSummary] = useState('');
   const [contextMsg, setContextMsg] = useState('');
   const [savingContext, setSavingContext] = useState(false);
-  const [outboundMode, setOutboundMode] = useState<OutboundMode>('draft');
-  const [policyMsg, setPolicyMsg] = useState('');
-  const [savingPolicy, setSavingPolicy] = useState(false);
+  // Outbound mode / approval policy state removed in May-2026
+  // autonomous-first reframe: there is no draft/auto switch any
+  // more. Every queued outbound runs.
   const [confidences, setConfidences] = useState<BusinessConfidences>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [inferSummary, setInferSummary] = useState<string>('');
@@ -71,29 +72,9 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
     return () => { cancelled = true; };
   }, [orgId, files.length]);
 
-  useEffect(() => {
-    let cancelled = false;
-    getOrgPolicy()
-      .then(p => { if (!cancelled) setOutboundMode(p.outbound_mode); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [orgId]);
-
-  const savePolicy = async (next: OutboundMode) => {
-    setSavingPolicy(true);
-    setPolicyMsg('');
-    try {
-      const res = await updateOrgPolicy({ outbound_mode: next });
-      setOutboundMode(res.outbound_mode);
-      setPolicyMsg(res.outbound_mode === 'auto'
-        ? 'Đã bật tự động duyệt — outbound sẽ chạy ngay không qua hàng chờ.'
-        : 'Đã tắt tự động duyệt — mọi outbound vào hàng chờ admin duyệt.');
-    } catch (err) {
-      setPolicyMsg(err instanceof Error ? err.message : 'Không cập nhật được chính sách outbound.');
-    } finally {
-      setSavingPolicy(false);
-    }
-  };
+  // getOrgPolicy / savePolicy removed (May-2026 autonomous-first
+  // reframe). The outbound_mode field is still served by the backend
+  // for back-compat but the UI no longer offers a switch.
 
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
@@ -187,13 +168,6 @@ export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps
       )}
 
       <DataStatsGrid files={files} sources={sources} />
-      <OutboundPolicyPanel
-        mode={outboundMode}
-        message={policyMsg}
-        isSaving={savingPolicy}
-        isAdmin={isAdmin}
-        onChange={savePolicy}
-      />
       <BusinessMemoryPanel
         context={businessContext}
         message={contextMsg}

@@ -12,7 +12,7 @@ package store
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 2
+const schemaBootstrapVersion = 3
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
