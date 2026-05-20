@@ -85,6 +85,12 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 		}
 		msg.Status = models.OutboundSending
 		msg.ExecutionID = claim.ExecutionID
+		// Activity feed: execution_started — the autonomous-first
+		// vocabulary makes "extension claimed and is about to mutate
+		// the live DOM" a distinct event from "intent was queued"
+		// (execution_planned) and from terminal events
+		// (execution_verified / execution_failed).
+		system.NotifyExecutionStarted(h.db, orgID, msg.AccountID, msg.ID, claim.ExecutionID, msg.Type)
 		msgs = append(msgs, msg)
 	}
 	return c.JSON(fiber.Map{"messages": msgs, "count": len(msgs)})

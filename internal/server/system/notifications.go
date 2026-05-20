@@ -77,12 +77,8 @@ func stageLabelVN(stage string) string {
 const notifierPrefix = "[Trợ lý THG]"
 
 func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, accountID, id int64, typ string, status models.OutboundStatus) {
-	stateEN := "draft waiting for approval"
-	stateVN := "bản nháp chờ duyệt"
-	if status == models.OutboundApproved {
-		stateEN = "approved for Chrome Extension execution"
-		stateVN = "đã duyệt và chờ Chrome Extension thực thi"
-	}
+	stateEN := "planned for autonomous execution"
+	stateVN := "đã lên kế hoạch thực thi tự động"
 	labelEN := "Facebook outbound"
 	labelVN := "Hành động Facebook"
 	switch typ {
@@ -96,13 +92,39 @@ func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, account
 		labelEN = "Facebook posting"
 		labelVN = "Bài đăng Facebook"
 	}
-	logMsg := fmt.Sprintf("[THG Agent] %s #%d queued as %s. Org #%d, account #%d.", labelEN, id, stateEN, orgID, accountID)
+	logMsg := fmt.Sprintf("[THG Agent] %s #%d %s. Org #%d, account #%d.", labelEN, id, stateEN, orgID, accountID)
 	userMsg := fmt.Sprintf("%s %s #%d %s. Org #%d, account #%d.", notifierPrefix, labelVN, id, stateVN, orgID, accountID)
 	log.Printf("[Outbound] %s", logMsg)
-	RecordDashboardAutomationEvent(db, orgID, accountID, userMsg, "system_outbound_queued", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, id, typ, status), true)
+	// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): emit
+	// the four-event taxonomy that distinguishes planned / started /
+	// verified / failed. Pre-this-change there were only two event
+	// names — system_outbound_queued at queue and system_outbound_status
+	// at terminal — and "status" lumped success and failure together.
+	// The new vocabulary lets dashboards and the AI planner project
+	// "what actually happened to this customer" without re-parsing
+	// payloads.
+	RecordDashboardAutomationEvent(db, orgID, accountID, userMsg, models.ExecutionEventPlanned, fmt.Sprintf(`{"id":%d,"type":%q,"status":%q}`, id, typ, status), true)
 	if notifier != nil {
 		notifier(userMsg)
 	}
+}
+
+// NotifyExecutionStarted is emitted when the Chrome Extension claims
+// an outbound row and begins the execute path. Distinct from
+// execution_planned: planned == "intent recorded"; started ==
+// "extension is now mutating the live DOM".
+//
+// callers: agentGetOutbox right after ClaimApprovedOutboundForOrg
+// succeeds.
+func NotifyExecutionStarted(db *store.Store, orgID, accountID, outboundID int64, executionID string, typ string) {
+	if db == nil {
+		return
+	}
+	logMsg := fmt.Sprintf("[THG Agent] outbound #%d execution_started org=%d account=%d exec=%s", outboundID, orgID, accountID, executionID)
+	userMsg := fmt.Sprintf("%s Hành động Facebook #%d bắt đầu thực thi. Org #%d, account #%d.", notifierPrefix, outboundID, orgID, accountID)
+	log.Printf("[Outbound] %s", logMsg)
+	RecordDashboardAutomationEvent(db, orgID, accountID, userMsg, models.ExecutionEventStarted,
+		fmt.Sprintf(`{"id":%d,"type":%q,"execution_id":%q}`, outboundID, typ, executionID), true)
 }
 
 func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int64, status models.OutboundStatus) {
@@ -121,6 +143,13 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	if len(detail) > 240 {
 		detail = detail[:240]
 	}
+	// AUTONOMOUS-VERIFIED-EXECUTION (project goal, May-2026): the
+	// status emission splits on success vs failure so dashboards can
+	// project "did the customer hear from us?" without parsing the
+	// payload. status == sent on the wire still means DOM-verified
+	// because finalizeOutbound only writes that value when the
+	// verifier confirmed.
+	verified := status == models.OutboundSent
 	logText := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, status, msg.TargetName)
 	userText := fmt.Sprintf("%s Facebook %s #%d trạng thái: %s. Đối tượng: %s", notifierPrefix, msg.Type, msg.ID, status, msg.TargetName)
 	if detail != "" {
@@ -128,7 +157,11 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 		userText += fmt.Sprintf(". Chi tiet: %s", detail)
 	}
 	log.Printf("[Outbound] %s", logText)
-	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, "system_outbound_status", fmt.Sprintf(`{"id":%d,"type":%q,"status":%q,"detail":%q}`, msg.ID, msg.Type, status, detail), status != models.OutboundFailed)
+	eventName := models.ExecutionEventFailed
+	if verified {
+		eventName = models.ExecutionEventVerified
+	}
+	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, eventName, fmt.Sprintf(`{"id":%d,"type":%q,"status":%q,"detail":%q,"verified":%t}`, msg.ID, msg.Type, status, detail, verified), verified)
 	if notifier != nil {
 		notifier(userText)
 	}
