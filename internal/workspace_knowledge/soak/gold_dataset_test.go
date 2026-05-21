@@ -43,7 +43,7 @@ func TestGoldDataset_CIGate(t *testing.T) {
 		}
 	}
 
-	searcher := hybrid.New(db)
+	searcher := hybrid.New(db.Knowledge())
 
 	runQuery := func(orgID int64, p GoldPrompt) ([]string, []*assets.Asset, error) {
 		hits, _, err := searcher.TopKWithTrace(ctx, orgID, p.Text, retrieval.SearchFilter{}, 5)

@@ -23,7 +23,7 @@ func (s *stubIngestor) Sync(_ context.Context, _ *sources.Source, _ AssetWriter)
 	return s.result, s.err
 }
 
-// recordingHealth captures every UpdateKnowledgeSourceHealth call.
+// recordingHealth captures every UpdateSourceHealth call.
 type recordingHealth struct {
 	mu    sync.Mutex
 	calls []recordedHealth
@@ -36,7 +36,7 @@ type recordedHealth struct {
 	lastAssetCount int
 }
 
-func (r *recordingHealth) UpdateKnowledgeSourceHealth(_ context.Context, sourceID, orgID int64, h sources.Health, lastAssetCount int) error {
+func (r *recordingHealth) UpdateSourceHealth(_ context.Context, sourceID, orgID int64, h sources.Health, lastAssetCount int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, recordedHealth{sourceID, orgID, h, lastAssetCount})

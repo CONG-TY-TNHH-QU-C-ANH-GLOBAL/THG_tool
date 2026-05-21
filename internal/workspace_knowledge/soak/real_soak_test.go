@@ -175,7 +175,7 @@ func TestRealSoak_ConcurrentLoad(t *testing.T) {
 	// Now fire concurrent retrievals. Use the hybrid searcher (no
 	// per-query embedding HTTP) so this test measures pure store
 	// contention, not embedder-server bandwidth.
-	searcher := hybrid.New(db)
+	searcher := hybrid.New(db.Knowledge())
 	const concurrency = 8
 	const queriesPerWorker = 25
 
@@ -278,7 +278,7 @@ func TestRealSoak_TenantIsolationUnderLoad(t *testing.T) {
 	}
 
 	// Fire concurrent retrievals across orgs.
-	searcher := hybrid.New(db)
+	searcher := hybrid.New(db.Knowledge())
 	prompts := RealisticLeads()
 	var wg sync.WaitGroup
 	var leaks atomic.Int64
@@ -369,16 +369,16 @@ func TestRealSoak_StaleTimeBackdating(t *testing.T) {
 			`UPDATE knowledge_assets SET last_retrieved_at = DATETIME('now', '-5 days') WHERE id = ?`, id)
 	}
 
-	stale, err := db.CountStaleKnowledgeAssetsForOrg(ctx, h.OrgID, 30)
+	stale, err := db.Knowledge().CountStaleAssetsForOrg(ctx, h.OrgID, 30)
 	if err != nil {
-		t.Fatalf("CountStaleKnowledgeAssetsForOrg: %v", err)
+		t.Fatalf("CountStaleAssetsForOrg: %v", err)
 	}
 	if stale != 5 {
 		t.Errorf("expected 5 stale assets (>30d); got %d", stale)
 	}
 
 	// Boundary: change threshold to 90 days — no asset should be stale.
-	staleNinety, _ := db.CountStaleKnowledgeAssetsForOrg(ctx, h.OrgID, 90)
+	staleNinety, _ := db.Knowledge().CountStaleAssetsForOrg(ctx, h.OrgID, 90)
 	if staleNinety != 0 {
 		t.Errorf("expected 0 stale at 90d threshold; got %d", staleNinety)
 	}

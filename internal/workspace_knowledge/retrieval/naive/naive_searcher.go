@@ -43,7 +43,7 @@ import (
 // AssetLister is the narrow store surface the searcher needs.
 // *store.Store satisfies this; tests provide a fake.
 type AssetLister interface {
-	ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
+	ListAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
 }
 
 // Searcher implements retrieval.Searcher.
@@ -95,7 +95,7 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 		OrderBy: assets.OrderDefault,
 		Limit:   candidateLimit(k),
 	}
-	candidates, err := s.Lister.ListKnowledgeAssetsForOrg(ctx, orgID, listFilter)
+	candidates, err := s.Lister.ListAssetsForOrg(ctx, orgID, listFilter)
 	if err != nil {
 		return nil, trace, err
 	}

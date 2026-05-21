@@ -1,5 +1,4 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
 	"context"
@@ -9,10 +8,10 @@ import (
 
 // Workspace Knowledge OS — Production Soak (PR-4) observability surface.
 //
-// This file extends knowledge_replay.go with the metrics the soak
-// dashboard needs to validate retrieval quality BEFORE the team
-// builds orchestration on top. The metrics are computed from
-// knowledge_events + knowledge_assets aggregates — no new tables.
+// This file extends replay.go with the metrics the soak dashboard
+// needs to validate retrieval quality BEFORE the team builds
+// orchestration on top. The metrics are computed from knowledge_events
+// + knowledge_assets aggregates — no new tables.
 //
 // What the soak dashboard answers (goal directive PR-4 §1):
 //
@@ -21,23 +20,23 @@ import (
 //   - zero-hit rate          (retrievals with empty selected / total)
 //   - avg semantic score     (mean of Selected.Breakdown.Semantic when > 0)
 //   - avg budget drop        (AssemblyBudget.DroppedByCap mean)
-//   - stale asset count      (already in KnowledgeStats)
+//   - stale asset count      (already in Stats)
 //   - compliance blocks      (RejectGovernance count / period)
 //   - embedding model drift  (distinct model versions / period)
 //
 // Cost telemetry (§6) lives separately in knowledge_events
 // `event_type='embedding_batch'` rows — already there from PR-1.
 
-// KnowledgeSoakMetrics is the soak-dashboard payload. Aggregates over
-// a recent window (default 24h) so dashboards can show "what's the
-// system doing right now" without scanning the entire history.
-type KnowledgeSoakMetrics struct {
+// SoakMetrics is the soak-dashboard payload. Aggregates over a recent
+// window (default 24h) so dashboards can show "what's the system
+// doing right now" without scanning the entire history.
+type SoakMetrics struct {
 	WindowHours        int     `json:"window_hours"`
 	TotalRetrievals    int     `json:"total_retrievals"`
-	HitRate            float64 `json:"hit_rate"`               // 0..1
-	ZeroHitRate        float64 `json:"zero_hit_rate"`          // 0..1
-	FallbackRate       float64 `json:"fallback_rate"`          // 0..1
-	AvgSemanticScore   float64 `json:"avg_semantic_score"`     // mean of non-zero
+	HitRate            float64 `json:"hit_rate"`           // 0..1
+	ZeroHitRate        float64 `json:"zero_hit_rate"`      // 0..1
+	FallbackRate       float64 `json:"fallback_rate"`      // 0..1
+	AvgSemanticScore   float64 `json:"avg_semantic_score"` // mean of non-zero
 	AvgBudgetDropped   float64 `json:"avg_budget_dropped"`
 	AvgEstimatedTokens float64 `json:"avg_estimated_tokens"`
 	ComplianceBlocks   int     `json:"compliance_blocks"`
@@ -48,25 +47,21 @@ type KnowledgeSoakMetrics struct {
 	EmbeddingModels         []string `json:"embedding_models"`
 }
 
-// GetKnowledgeSoakMetricsForOrg aggregates the last `windowHours` of
-// retrieval events into the soak dashboard shape. Default 24h.
+// GetSoakMetricsForOrg aggregates the last `windowHours` of retrieval
+// events into the soak dashboard shape. Default 24h.
 //
 // This is a read-only diagnostic call. Computes from knowledge_events
 // (retrieval rows) plus knowledge_assets aggregates. No write side
 // effects.
-func (s *Store) GetKnowledgeSoakMetricsForOrg(ctx context.Context, orgID int64, windowHours int) (*KnowledgeSoakMetrics, error) {
+func (s *Store) GetSoakMetricsForOrg(ctx context.Context, orgID int64, windowHours int) (*SoakMetrics, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_soak: org_id required")
+		return nil, fmt.Errorf("knowledge: org_id required")
 	}
 	if windowHours <= 0 {
 		windowHours = 24
 	}
-	out := &KnowledgeSoakMetrics{WindowHours: windowHours}
+	out := &SoakMetrics{WindowHours: windowHours}
 
-	// Build the time window predicate per dialect. The pattern matches
-	// CountStaleKnowledgeAssetsForOrg's approach.
-	windowExpr := s.dialect.IntervalDaysExpr(0) // placeholder
-	_ = windowExpr
 	// Dialect-specific "now minus N hours" — both SQLite and PG accept
 	// these syntaxes. We compose inline because IntervalDaysExpr only
 	// supports day-granularity; the soak window is hours.
@@ -83,19 +78,19 @@ func (s *Store) GetKnowledgeSoakMetricsForOrg(ctx context.Context, orgID int64, 
 	q := `SELECT data_json FROM knowledge_events
 	       WHERE org_id = ? AND event_type = ?
 	         AND occurred_at >= ` + sinceClause
-	rows, err := s.QueryContext(ctx, q, orgID, eventTypeRetrieval)
+	rows, err := s.queryContext(ctx, q, orgID, eventTypeRetrieval)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var (
-		semanticCount   int
-		semanticTotal   float64
-		droppedCount    int
-		droppedTotal    float64
-		tokensCount     int
-		tokensTotal     float64
+		semanticCount int
+		semanticTotal float64
+		droppedCount  int
+		droppedTotal  float64
+		tokensCount   int
+		tokensTotal   float64
 	)
 
 	for rows.Next() {
@@ -126,10 +121,6 @@ func (s *Store) GetKnowledgeSoakMetricsForOrg(ctx context.Context, orgID int64, 
 		}
 		out.TotalRetrievals++
 
-		// Hit / zero-hit categorisation.
-		if len(parsed.Trace.Selected) == 0 {
-			// zero-hit case
-		}
 		// Fallback rate: any fallback_primary_* reason counts as fallback.
 		for reason := range parsed.Trace.TotalByReason {
 			if reason == "fallback_primary_error" || reason == "fallback_primary_timeout" || reason == "fallback_primary_empty" {
@@ -157,11 +148,6 @@ func (s *Store) GetKnowledgeSoakMetricsForOrg(ctx context.Context, orgID int64, 
 		// Compliance blocks: sum of ComplianceDropped + governance rejections.
 		out.ComplianceBlocks += parsed.Budget.ComplianceDropped
 		out.ComplianceBlocks += parsed.Trace.TotalByReason["governance_drop"]
-
-		// Hit-rate accumulation
-		if len(parsed.Trace.Selected) > 0 {
-			// counts as a hit; computed below as out.HitRate / total
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -178,7 +164,7 @@ func (s *Store) GetKnowledgeSoakMetricsForOrg(ctx context.Context, orgID int64, 
 		zeroQ := `SELECT data_json FROM knowledge_events
 		           WHERE org_id = ? AND event_type = ?
 		             AND occurred_at >= ` + sinceClause
-		zrows, err := s.QueryContext(ctx, zeroQ, orgID, eventTypeRetrieval)
+		zrows, err := s.queryContext(ctx, zeroQ, orgID, eventTypeRetrieval)
 		if err == nil {
 			var zeros int
 			for zrows.Next() {
@@ -213,7 +199,7 @@ func (s *Store) GetKnowledgeSoakMetricsForOrg(ctx context.Context, orgID int64, 
 	}
 
 	// Embedding model drift (§4).
-	mrows, err := s.QueryContext(ctx, `
+	mrows, err := s.queryContext(ctx, `
 		SELECT DISTINCT embedding_model_version
 		  FROM knowledge_assets
 		 WHERE org_id = ? AND embedding_model_version <> ''`, orgID)

@@ -1,4 +1,4 @@
-package knowledge
+﻿package knowledge
 
 import (
 	"encoding/json"
@@ -35,7 +35,7 @@ func (h *handler) listSources(c *fiber.Ctx) error {
 		}
 	}
 
-	list, err := h.deps.DB.ListKnowledgeSourcesForOrg(c.Context(), orgID, filter)
+	list, err := h.deps.DB.Knowledge().ListSourcesForOrg(c.Context(), orgID, filter)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -46,7 +46,7 @@ func (h *handler) listSources(c *fiber.Ctx) error {
 }
 
 // createSourceBody is the wire shape for POST /knowledge/sources.
-// The connection_config is opaque from this handler's perspective —
+// The connection_config is opaque from this handler's perspective â€”
 // the adapter behind the chosen Type validates it on first sync.
 type createSourceBody struct {
 	Type             string          `json:"type"`
@@ -87,14 +87,14 @@ func (h *handler) createSource(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	created, err := h.deps.DB.UpsertKnowledgeSource(c.Context(), src)
+	created, err := h.deps.DB.Knowledge().UpsertSource(c.Context(), src)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
 
-// updateSourceBody is a partial-update body — every field is optional;
+// updateSourceBody is a partial-update body â€” every field is optional;
 // the handler only touches fields the caller sent. ConnectionConfig
 // is opaque-replaced as a whole (no JSON-Patch semantics) because
 // adapter-specific merge logic does not belong in HTTP.
@@ -114,7 +114,7 @@ func (h *handler) updateSource(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid source id"})
 	}
 
-	existing, err := h.deps.DB.GetKnowledgeSource(c.Context(), id, orgID)
+	existing, err := h.deps.DB.Knowledge().GetSource(c.Context(), id, orgID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "source not found"})
 	}
@@ -138,7 +138,7 @@ func (h *handler) updateSource(c *fiber.Ctx) error {
 	if err := existing.Validate(); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
-	updated, err := h.deps.DB.UpsertKnowledgeSource(c.Context(), existing)
+	updated, err := h.deps.DB.Knowledge().UpsertSource(c.Context(), existing)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -154,7 +154,7 @@ func (h *handler) deleteSource(c *fiber.Ctx) error {
 	if err != nil || id <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid source id"})
 	}
-	deleted, err := h.deps.DB.DeleteKnowledgeSourceForOrg(c.Context(), id, orgID)
+	deleted, err := h.deps.DB.Knowledge().DeleteSourceForOrg(c.Context(), id, orgID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -168,13 +168,13 @@ func (h *handler) deleteSource(c *fiber.Ctx) error {
 // adapter behind the source's Type runs end-to-end (paginated fetch,
 // per-item extract, asset upsert) and the handler returns the
 // SyncResult inline. Long-running syncs should move to a background
-// queue in a later PR — v1 holds the request open so operators see
+// queue in a later PR â€” v1 holds the request open so operators see
 // the outcome in one click.
 //
 // Errors from the adapter are translated to HTTP:
-//   - permanent → 4xx body with detail
-//   - recoverable → 502 body with retry hint
-//   - context cancel → 504
+//   - permanent â†’ 4xx body with detail
+//   - recoverable â†’ 502 body with retry hint
+//   - context cancel â†’ 504
 func (h *handler) syncSource(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
@@ -189,21 +189,21 @@ func (h *handler) syncSource(c *fiber.Ctx) error {
 	if err != nil || id <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid source id"})
 	}
-	src, err := h.deps.DB.GetKnowledgeSource(c.Context(), id, orgID)
+	src, err := h.deps.DB.Knowledge().GetSource(c.Context(), id, orgID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "source not found"})
 	}
 
 	res, syncErr := h.deps.Dispatcher.Run(c.Context(), src)
 
-	// We always return the SyncResult — operators want to see partial
+	// We always return the SyncResult â€” operators want to see partial
 	// progress even on a failed sync (the dispatcher already wrote
 	// successful rows to the store before the error surfaced).
 	body := fiber.Map{"result": res}
 	if syncErr != nil {
 		body["error"] = syncErr.Error()
-		// Recoverable → 502 (upstream blip, retry later);
-		// Permanent → 422 (config/auth/schema problem, operator must act).
+		// Recoverable â†’ 502 (upstream blip, retry later);
+		// Permanent â†’ 422 (config/auth/schema problem, operator must act).
 		// The dispatcher already persisted the source's health row
 		// before returning, so the UI reflects the failure regardless.
 		status := fiber.StatusBadGateway

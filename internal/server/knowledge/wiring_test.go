@@ -25,14 +25,14 @@ import (
 )
 
 // fakeAssetStore satisfies ingestion.AssetStore. Captures every
-// UpsertKnowledgeAsset call so tests can assert on what the adapter
-// produced after the full Dispatcher → AssetWriter → AssetStore path.
+// UpsertAsset call so tests can assert on what the adapter produced
+// after the full Dispatcher → AssetWriter → AssetStore path.
 type fakeAssetStore struct {
 	mu       sync.Mutex
 	upserted []*assets.Asset
 }
 
-func (f *fakeAssetStore) UpsertKnowledgeAsset(_ context.Context, a *assets.Asset) (*assets.Asset, error) {
+func (f *fakeAssetStore) UpsertAsset(_ context.Context, a *assets.Asset) (*assets.Asset, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	cp := *a
@@ -55,7 +55,7 @@ type fakeHealth struct {
 	called int
 }
 
-func (f *fakeHealth) UpdateKnowledgeSourceHealth(_ context.Context, _, _ int64, h sources.Health, _ int) error {
+func (f *fakeHealth) UpdateSourceHealth(_ context.Context, _, _ int64, h sources.Health, _ int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.last = h

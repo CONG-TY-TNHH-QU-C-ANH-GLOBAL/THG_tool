@@ -1,4 +1,4 @@
-package org
+﻿package org
 
 import (
 	"database/sql"
@@ -16,7 +16,7 @@ import (
 // internal/store/knowledge_replay.go and MUST match the UI types.
 //
 // Authorization: every method reads the caller's org_id from the
-// tenant_ready middleware-populated c.Locals — there is no way to
+// tenant_ready middleware-populated c.Locals â€” there is no way to
 // pass an arbitrary orgID. A user in org A always sees org A's
 // events, never another tenant's, regardless of headers.
 
@@ -24,7 +24,7 @@ import (
 //
 // Query params:
 //   - limit  (optional, default 25, max 100): page size
-//   - before (optional): pagination cursor — pass the smallest
+//   - before (optional): pagination cursor â€” pass the smallest
 //                        occurred_at from the previous page
 func (h *Handler) listKnowledgeEvents(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -35,7 +35,7 @@ func (h *Handler) listKnowledgeEvents(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "25"))
 	before := c.Query("before", "")
 
-	events, err := h.deps.DB.ListKnowledgeReplayEventsForOrg(c.Context(), orgID, before, limit)
+	events, err := h.deps.DB.Knowledge().ListReplayEventsForOrg(c.Context(), orgID, before, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -55,7 +55,7 @@ func (h *Handler) listKnowledgeEvents(c *fiber.Ctx) error {
 //
 // Returns the full retrieval event including its trace, budget, and
 // (if any) outcome. 404 when the retrieval does not exist or belongs
-// to another org — these are observably identical to prevent
+// to another org â€” these are observably identical to prevent
 // cross-tenant probing.
 func (h *Handler) getKnowledgeEvent(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -66,7 +66,7 @@ func (h *Handler) getKnowledgeEvent(c *fiber.Ctx) error {
 	if retrievalID == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "retrieval_id required"})
 	}
-	ev, err := h.deps.DB.GetKnowledgeReplayEvent(c.Context(), orgID, retrievalID)
+	ev, err := h.deps.DB.Knowledge().GetReplayEvent(c.Context(), orgID, retrievalID)
 	if err == sql.ErrNoRows {
 		return c.Status(404).JSON(fiber.Map{"error": "not found"})
 	}
@@ -88,12 +88,12 @@ func (h *Handler) listSourceSyncs(c *fiber.Ctx) error {
 	// The source_id parameter is currently unused by the store query
 	// (ListRecentSyncsForOrg returns org-wide history). When per-
 	// source sync filtering is added to the store layer, this handler
-	// passes the id verbatim — capturing it here keeps the URL
+	// passes the id verbatim â€” capturing it here keeps the URL
 	// shape stable across that change.
 	_ = c.Params("source_id")
 	limit, _ := strconv.Atoi(c.Query("limit", "25"))
 
-	syncs, err := h.deps.DB.ListRecentSyncsForOrg(c.Context(), orgID, limit)
+	syncs, err := h.deps.DB.Knowledge().ListRecentSyncsForOrg(c.Context(), orgID, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -110,7 +110,7 @@ func (h *Handler) getKnowledgeStats(c *fiber.Ctx) error {
 	if orgID == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
 	}
-	stats, err := h.deps.DB.GetKnowledgeStatsForOrg(c.Context(), orgID)
+	stats, err := h.deps.DB.Knowledge().GetStatsForOrg(c.Context(), orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -135,7 +135,7 @@ func (h *Handler) getKnowledgeSoak(c *fiber.Ctx) error {
 	if windowHours <= 0 || windowHours > 720 {
 		windowHours = 24
 	}
-	metrics, err := h.deps.DB.GetKnowledgeSoakMetricsForOrg(c.Context(), orgID, windowHours)
+	metrics, err := h.deps.DB.Knowledge().GetSoakMetricsForOrg(c.Context(), orgID, windowHours)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

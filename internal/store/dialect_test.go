@@ -1,4 +1,4 @@
-// Domain: infra (see internal/store/DOMAINS.md)
+﻿// Domain: infra (see internal/store/DOMAINS.md)
 package store
 
 import (
@@ -7,10 +7,10 @@ import (
 )
 
 // The Store wrapper methods must thread Rebind correctly. The hot
-// path is ExecContext / QueryContext / InsertReturningID — each must
+// path is ExecContext / QueryContext / InsertReturningID â€” each must
 // apply Rebind exactly once.
 func TestStoreWrappers_AutoRebindOnSQLite(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newSharedStore(t, "dialect.db")
 	ctx := context.Background()
 
 	// Just exercise a wrapper end-to-end on the existing schema; if
@@ -36,11 +36,11 @@ func TestStoreWrappers_AutoRebindOnSQLite(t *testing.T) {
 
 // InsertReturningID on SQLite returns the new row's ID via RETURNING.
 // Asserts that SQLite >= 3.35 (required for RETURNING) is what the
-// embedded modernc/sqlite driver actually provides — failures here
+// embedded modernc/sqlite driver actually provides â€” failures here
 // surface as a clear "near RETURNING: syntax error" not a silent
 // wrong-id bug.
 func TestStore_InsertReturningID_SQLite(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newSharedStore(t, "dialect.db")
 	ctx := context.Background()
 	id, err := db.InsertReturningID(ctx,
 		`INSERT INTO knowledge_sources
@@ -56,7 +56,7 @@ func TestStore_InsertReturningID_SQLite(t *testing.T) {
 }
 
 // isPostgresDSN distinguishes PG from SQLite file paths. The detector
-// is the boot-time branch that decides which driver to load — getting
+// is the boot-time branch that decides which driver to load â€” getting
 // it wrong means dev callers accidentally get a PG driver requested
 // (and fail), or prod operators accidentally get SQLite.
 func TestIsPostgresDSN(t *testing.T) {
@@ -91,7 +91,7 @@ func TestIsPostgresDSN(t *testing.T) {
 // metadata migration introduced in PR-1 Embedding Foundation). Second
 // call must be a no-op (idempotent).
 func TestMigrator_RecordsBaselineOnceForLegacySchema(t *testing.T) {
-	db := newKnowledgeTestStore(t) // store.New already ran migrations
+	db := newSharedStore(t, "dialect.db") // store.New already ran migrations
 	ctx := context.Background()
 
 	v1, err := db.CurrentSchemaVersion(ctx)
@@ -99,7 +99,7 @@ func TestMigrator_RecordsBaselineOnceForLegacySchema(t *testing.T) {
 		t.Fatalf("CurrentSchemaVersion: %v", err)
 	}
 	// Baseline must be at least 1. As new migrations land in
-	// migrations/, this number grows — assert >= 1 rather than pinning
+	// migrations/, this number grows â€” assert >= 1 rather than pinning
 	// a fixed value so the test stays stable across PRs.
 	if v1 < 1 {
 		t.Errorf("baseline should be recorded (version >= 1); got %d", v1)

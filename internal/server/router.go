@@ -212,9 +212,9 @@ func (s *Server) registerRoutes() {
 	ingestRegistry.Register(rest_json.New())
 	knowledgeDispatcher := &ingestion.Dispatcher{
 		Registry: ingestRegistry,
-		Health:   s.db,
+		Health:   s.db.Knowledge(),
 		WriterFactory: func(src *wsksources.Source) ingestion.AssetWriter {
-			return ingestion.NewStoreAssetWriter(s.db, src)
+			return ingestion.NewStoreAssetWriter(s.db.Knowledge(), src)
 		},
 	}
 	serverknowledge.Routes(r, serverknowledge.Deps{

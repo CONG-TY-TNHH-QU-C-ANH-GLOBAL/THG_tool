@@ -16,7 +16,7 @@ type fakeAssetStore struct {
 	err error
 }
 
-func (f *fakeAssetStore) UpsertKnowledgeAsset(_ context.Context, a *assets.Asset) (*assets.Asset, error) {
+func (f *fakeAssetStore) UpsertAsset(_ context.Context, a *assets.Asset) (*assets.Asset, error) {
 	clone := *a
 	f.got = &clone
 	if f.err != nil {

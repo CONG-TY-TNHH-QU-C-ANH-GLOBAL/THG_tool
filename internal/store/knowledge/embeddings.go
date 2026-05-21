@@ -1,5 +1,4 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
 	"context"
@@ -16,7 +15,7 @@ import (
 //
 // These methods are the narrow store surface the embedding worker
 // (workspace_knowledge/embedding.Worker) consumes. The worker holds
-// only a PendingStore interface (declared in worker.go); *store.Store
+// only a PendingStore interface (declared in worker.go); *knowledge.Store
 // satisfies it by implementing the four methods below.
 //
 // SQLite vs Postgres:
@@ -65,7 +64,7 @@ func (s *Store) ListPendingEmbeddings(ctx context.Context, limit int) ([]embeddi
 	       WHERE embedding_status = ?
 	       ORDER BY id DESC
 	       LIMIT ?`
-	rows, err := s.QueryContext(ctx, q, "pending", limit)
+	rows, err := s.queryContext(ctx, q, "pending", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -98,17 +97,17 @@ func (s *Store) ListPendingEmbeddings(ctx context.Context, limit int) ([]embeddi
 // vector column — not the asset's current state.
 func (s *Store) UpdateEmbeddingSuccess(ctx context.Context, assetID, orgID int64, vector []float32, modelVersion, inputHash string) error {
 	if assetID <= 0 || orgID <= 0 {
-		return fmt.Errorf("knowledge_embeddings: ids required")
+		return fmt.Errorf("knowledge: ids required")
 	}
 	if modelVersion == "" {
-		return fmt.Errorf("knowledge_embeddings: model_version required")
+		return fmt.Errorf("knowledge: model_version required")
 	}
 
 	switch s.dialect.Name() {
 	case "postgres":
 		// PG path: vector + metadata in one statement.
 		// pgvector accepts the array-literal form `'[1.0, 2.0, ...]'::vector`.
-		_, err := s.ExecContext(ctx, `
+		_, err := s.execContext(ctx, `
 			UPDATE knowledge_assets
 			   SET embedding              = ?::vector,
 			       embedding_status       = 'generated',
@@ -125,7 +124,7 @@ func (s *Store) UpdateEmbeddingSuccess(ctx context.Context, assetID, orgID int64
 		// SQLite path: metadata only. The vector has no destination
 		// here — workers running against SQLite are typically test or
 		// local-dev runs that just want to exercise the state machine.
-		_, err := s.ExecContext(ctx, `
+		_, err := s.execContext(ctx, `
 			UPDATE knowledge_assets
 			   SET embedding_status       = 'generated',
 			       embedding_model_version = ?,
@@ -147,7 +146,7 @@ func (s *Store) UpdateEmbeddingSuccess(ctx context.Context, assetID, orgID int64
 // errMsg is truncated to keep the column bounded.
 func (s *Store) RecordEmbeddingAttempt(ctx context.Context, assetID, orgID int64, errMsg string, maxAttempts int) error {
 	if assetID <= 0 || orgID <= 0 {
-		return fmt.Errorf("knowledge_embeddings: ids required")
+		return fmt.Errorf("knowledge: ids required")
 	}
 	if maxAttempts <= 0 {
 		maxAttempts = 3
@@ -162,7 +161,7 @@ func (s *Store) RecordEmbeddingAttempt(ctx context.Context, assetID, orgID int64
 	// practice, and (b) over-counting attempts errs toward sooner
 	// failure marking, which is the safe direction.
 	var current int
-	if err := s.QueryRowContext(ctx,
+	if err := s.queryRowContext(ctx,
 		`SELECT embedding_attempts FROM knowledge_assets WHERE id = ? AND org_id = ?`,
 		assetID, orgID,
 	).Scan(&current); err != nil {
@@ -176,7 +175,7 @@ func (s *Store) RecordEmbeddingAttempt(ctx context.Context, assetID, orgID int64
 	if newAttempts >= maxAttempts {
 		newStatus = "failed"
 	}
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		UPDATE knowledge_assets
 		   SET embedding_attempts   = ?,
 		       embedding_status     = ?,
@@ -193,9 +192,9 @@ func (s *Store) RecordEmbeddingAttempt(ctx context.Context, assetID, orgID int64
 // during incident recovery.
 func (s *Store) ResetEmbeddingFailures(ctx context.Context, orgID int64) (int64, error) {
 	if orgID <= 0 {
-		return 0, fmt.Errorf("knowledge_embeddings: org_id required")
+		return 0, fmt.Errorf("knowledge: org_id required")
 	}
-	res, err := s.ExecContext(ctx, `
+	res, err := s.execContext(ctx, `
 		UPDATE knowledge_assets
 		   SET embedding_status   = 'pending',
 		       embedding_attempts = 0,
@@ -224,9 +223,9 @@ type EmbeddingStats struct {
 // operator-dashboard counters.
 func (s *Store) GetEmbeddingStatsForOrg(ctx context.Context, orgID int64) (*EmbeddingStats, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_embeddings: org_id required")
+		return nil, fmt.Errorf("knowledge: org_id required")
 	}
-	rows, err := s.QueryContext(ctx, `
+	rows, err := s.queryContext(ctx, `
 		SELECT embedding_status, COUNT(*)
 		  FROM knowledge_assets
 		 WHERE org_id = ?
@@ -258,8 +257,8 @@ func (s *Store) GetEmbeddingStatsForOrg(ctx context.Context, orgID int64) (*Embe
 
 // markEmbeddingPendingIfTextChanged is the post-Upsert hook that
 // flips embedding_status to 'pending' when the asset's text content
-// changed since the last embedding. It runs after UpsertKnowledgeAsset
-// has persisted the new fields; the comparison is done in SQL via
+// changed since the last embedding. It runs after UpsertAsset has
+// persisted the new fields; the comparison is done in SQL via
 // `WHERE embedding_input_hash <> ?`, so the no-change case is a
 // zero-row UPDATE.
 //
@@ -304,8 +303,8 @@ func (s *Store) markEmbeddingPendingIfTextChanged(ctx context.Context, a *assets
 		q += ` AND source_id = ? AND external_id = ?`
 		args = append(args, a.SourceID, a.ExternalID)
 	}
-	if _, err := s.ExecContext(ctx, q, args...); err != nil {
-		log.Printf("[knowledge_embeddings] hash-update failed for org=%d asset=%d: %v", a.OrgID, a.ID, err)
+	if _, err := s.execContext(ctx, q, args...); err != nil {
+		log.Printf("[knowledge] hash-update failed for org=%d asset=%d: %v", a.OrgID, a.ID, err)
 	}
 }
 

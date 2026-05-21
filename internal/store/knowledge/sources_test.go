@@ -1,5 +1,4 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+﻿package knowledge_test
 
 import (
 	"context"
@@ -11,9 +10,6 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
 
-func newKnowledgeTestStore(t *testing.T) *Store {
-	return newSharedStore(t, "knowledge.db")
-}
 
 func newTestSource(orgID int64, label string, typ sources.SourceType) *sources.Source {
 	return &sources.Source{
@@ -32,13 +28,13 @@ func newTestSource(orgID int64, label string, typ sources.SourceType) *sources.S
 // Get. This is the basic happy-path that proves the schema + scanner
 // agree on column order.
 func TestUpsertKnowledgeSource_RoundTrip(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
 	src := newTestSource(1, "Main Catalog", sources.SourceShopify)
 	src.SyncPolicy = sources.SyncDaily
 
-	saved, err := db.UpsertKnowledgeSource(ctx, src)
+	saved, err := db.UpsertSource(ctx, src)
 	if err != nil {
 		t.Fatalf("UpsertKnowledgeSource: %v", err)
 	}
@@ -49,7 +45,7 @@ func TestUpsertKnowledgeSource_RoundTrip(t *testing.T) {
 		t.Error("CreatedAt should be set by SQL CURRENT_TIMESTAMP")
 	}
 
-	got, err := db.GetKnowledgeSource(ctx, saved.ID, 1)
+	got, err := db.GetSource(ctx, saved.ID, 1)
 	if err != nil {
 		t.Fatalf("GetKnowledgeSource: %v", err)
 	}
@@ -69,19 +65,19 @@ func TestUpsertKnowledgeSource_RoundTrip(t *testing.T) {
 
 // Cross-org leak guard: GetKnowledgeSource against a foreign org must
 // return sql.ErrNoRows, NOT a permission-denied error. This makes
-// foreign-org rows observably indistinguishable from missing rows —
+// foreign-org rows observably indistinguishable from missing rows â€”
 // the design-doc invariant #1.
 func TestGetKnowledgeSource_ForeignOrgIsNotFound(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
-	saved, err := db.UpsertKnowledgeSource(ctx, newTestSource(1, "Org-1 Source", sources.SourceCSV))
+	saved, err := db.UpsertSource(ctx, newTestSource(1, "Org-1 Source", sources.SourceCSV))
 	if err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
 
-	// Same ID, different org — must look like "not found."
-	_, err = db.GetKnowledgeSource(ctx, saved.ID, 2)
+	// Same ID, different org â€” must look like "not found."
+	_, err = db.GetSource(ctx, saved.ID, 2)
 	if err != sql.ErrNoRows {
 		t.Errorf("foreign org read should return sql.ErrNoRows; got %v", err)
 	}
@@ -91,10 +87,10 @@ func TestGetKnowledgeSource_ForeignOrgIsNotFound(t *testing.T) {
 // foreign org's row must NOT mutate it, even if the caller passes the
 // correct ID. The WHERE org_id = ? clause is the gate.
 func TestUpsertKnowledgeSource_CannotUpdateForeignOrg(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
-	saved, err := db.UpsertKnowledgeSource(ctx, newTestSource(1, "Org-1 Original", sources.SourceCSV))
+	saved, err := db.UpsertSource(ctx, newTestSource(1, "Org-1 Original", sources.SourceCSV))
 	if err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -103,13 +99,13 @@ func TestUpsertKnowledgeSource_CannotUpdateForeignOrg(t *testing.T) {
 	hostile := *saved
 	hostile.OrgID = 2
 	hostile.Label = "HIJACKED"
-	_, err = db.UpsertKnowledgeSource(ctx, &hostile)
+	_, err = db.UpsertSource(ctx, &hostile)
 	if err != sql.ErrNoRows {
 		t.Errorf("foreign-org update should return sql.ErrNoRows; got %v", err)
 	}
 
 	// The original row must be untouched.
-	again, err := db.GetKnowledgeSource(ctx, saved.ID, 1)
+	again, err := db.GetSource(ctx, saved.ID, 1)
 	if err != nil {
 		t.Fatalf("re-read: %v", err)
 	}
@@ -121,21 +117,21 @@ func TestUpsertKnowledgeSource_CannotUpdateForeignOrg(t *testing.T) {
 // Cross-org leak guard: DeleteKnowledgeSourceForOrg against a foreign
 // org's source must NOT delete it.
 func TestDeleteKnowledgeSource_CannotDeleteForeignOrg(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
-	saved, err := db.UpsertKnowledgeSource(ctx, newTestSource(1, "Org-1", sources.SourceWebsite))
+	saved, err := db.UpsertSource(ctx, newTestSource(1, "Org-1", sources.SourceWebsite))
 	if err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
 
-	_, err = db.DeleteKnowledgeSourceForOrg(ctx, saved.ID, 2)
+	_, err = db.DeleteSourceForOrg(ctx, saved.ID, 2)
 	if err != sql.ErrNoRows {
 		t.Errorf("foreign-org delete should return sql.ErrNoRows; got %v", err)
 	}
 
 	// Org-1's row survives.
-	if _, err := db.GetKnowledgeSource(ctx, saved.ID, 1); err != nil {
+	if _, err := db.GetSource(ctx, saved.ID, 1); err != nil {
 		t.Errorf("org-1 row should survive foreign-org delete attempt; got %v", err)
 	}
 }
@@ -143,20 +139,20 @@ func TestDeleteKnowledgeSource_CannotDeleteForeignOrg(t *testing.T) {
 // ListKnowledgeSourcesForOrg returns ONLY rows owned by orgID. Two
 // orgs with similarly-labelled sources must not see each other.
 func TestListKnowledgeSourcesForOrg_TenantScope(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
-	if _, err := db.UpsertKnowledgeSource(ctx, newTestSource(1, "Org-1 Shopify", sources.SourceShopify)); err != nil {
+	if _, err := db.UpsertSource(ctx, newTestSource(1, "Org-1 Shopify", sources.SourceShopify)); err != nil {
 		t.Fatalf("upsert org-1: %v", err)
 	}
-	if _, err := db.UpsertKnowledgeSource(ctx, newTestSource(1, "Org-1 CSV", sources.SourceCSV)); err != nil {
+	if _, err := db.UpsertSource(ctx, newTestSource(1, "Org-1 CSV", sources.SourceCSV)); err != nil {
 		t.Fatalf("upsert org-1 #2: %v", err)
 	}
-	if _, err := db.UpsertKnowledgeSource(ctx, newTestSource(2, "Org-2 Shopify", sources.SourceShopify)); err != nil {
+	if _, err := db.UpsertSource(ctx, newTestSource(2, "Org-2 Shopify", sources.SourceShopify)); err != nil {
 		t.Fatalf("upsert org-2: %v", err)
 	}
 
-	list1, err := db.ListKnowledgeSourcesForOrg(ctx, 1, sources.ListFilter{})
+	list1, err := db.ListSourcesForOrg(ctx, 1, sources.ListFilter{})
 	if err != nil {
 		t.Fatalf("list org-1: %v", err)
 	}
@@ -169,7 +165,7 @@ func TestListKnowledgeSourcesForOrg_TenantScope(t *testing.T) {
 		}
 	}
 
-	list2, err := db.ListKnowledgeSourcesForOrg(ctx, 2, sources.ListFilter{})
+	list2, err := db.ListSourcesForOrg(ctx, 2, sources.ListFilter{})
 	if err != nil {
 		t.Fatalf("list org-2: %v", err)
 	}
@@ -180,19 +176,19 @@ func TestListKnowledgeSourcesForOrg_TenantScope(t *testing.T) {
 
 // UpdateKnowledgeSourceHealth must not be reachable via UpsertKnowledgeSource.
 // Even if the operator sends a struct with Health.Status="error", the
-// Upsert UPDATE path leaves health alone — so an operator editing the
+// Upsert UPDATE path leaves health alone â€” so an operator editing the
 // label cannot accidentally mark the source healthy.
 func TestUpsertKnowledgeSource_DoesNotTouchHealth(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
-	saved, err := db.UpsertKnowledgeSource(ctx, newTestSource(1, "Original", sources.SourceCSV))
+	saved, err := db.UpsertSource(ctx, newTestSource(1, "Original", sources.SourceCSV))
 	if err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
 	// Ingestor reports a real failure.
 	at := time.Now()
-	if err := db.UpdateKnowledgeSourceHealth(ctx, saved.ID, 1,
+	if err := db.UpdateSourceHealth(ctx, saved.ID, 1,
 		sources.Health{Status: sources.HealthError, Message: "401 Unauthorized", LastSyncAt: &at},
 		0,
 	); err != nil {
@@ -206,11 +202,11 @@ func TestUpsertKnowledgeSource_DoesNotTouchHealth(t *testing.T) {
 	edit.Label = "Renamed"
 	edit.Health.Status = sources.HealthHealthy
 	edit.Health.Message = ""
-	if _, err := db.UpsertKnowledgeSource(ctx, &edit); err != nil {
+	if _, err := db.UpsertSource(ctx, &edit); err != nil {
 		t.Fatalf("Upsert update: %v", err)
 	}
 
-	got, err := db.GetKnowledgeSource(ctx, saved.ID, 1)
+	got, err := db.GetSource(ctx, saved.ID, 1)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -229,7 +225,7 @@ func TestUpsertKnowledgeSource_DoesNotTouchHealth(t *testing.T) {
 // Validate is the boundary gate: malformed sources must be rejected
 // at the repository, not silently coerced.
 func TestUpsertKnowledgeSource_RejectsInvalid(t *testing.T) {
-	db := newKnowledgeTestStore(t)
+	db := newKnowledgeStore(t, "sources.db")
 	ctx := context.Background()
 
 	cases := []struct {
@@ -247,7 +243,7 @@ func TestUpsertKnowledgeSource_RejectsInvalid(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			src := newTestSource(1, "ok", sources.SourceCSV)
 			tc.mut(src)
-			if _, err := db.UpsertKnowledgeSource(ctx, src); err == nil {
+			if _, err := db.UpsertSource(ctx, src); err == nil {
 				t.Errorf("expected validation error for %s; got nil", tc.name)
 			}
 		})

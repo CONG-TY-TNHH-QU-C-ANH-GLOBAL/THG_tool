@@ -7,15 +7,15 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
 
-// AssetStore is the narrow subset of *store.Store an ingestor writer
+// AssetStore is the narrow subset of *knowledge.Store an ingestor writer
 // needs. Defined here (not on the store side) so this package compiles
 // without importing internal/store — keeps the dependency arrow
 // pointing the right way: store → workspace_knowledge, never reverse.
 //
-// The production wiring uses *store.Store directly because it
+// The production wiring uses *knowledge.Store directly because it
 // satisfies this interface; tests pass a fake.
 type AssetStore interface {
-	UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*assets.Asset, error)
+	UpsertAsset(ctx context.Context, a *assets.Asset) (*assets.Asset, error)
 }
 
 // NewStoreAssetWriter returns an AssetWriter bound to one specific
@@ -55,6 +55,6 @@ func (w *storeAssetWriter) Write(ctx context.Context, a *assets.Asset) error {
 	}
 	a.OrgID = w.orgID
 	a.SourceID = w.sourceID
-	_, err := w.store.UpsertKnowledgeAsset(ctx, a)
+	_, err := w.store.UpsertAsset(ctx, a)
 	return err
 }

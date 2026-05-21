@@ -2,103 +2,46 @@
 package store
 
 import (
-	"io"
-	"os"
-	"path/filepath"
-	"sync"
 	"testing"
+
+	"github.com/thg/scraper/internal/store/storetest"
 )
 
-// Shared schema template for the `internal/store` test package.
+// bootstrapStore is the storetest Bootstrap binding for this test
+// binary: opens a fresh SQLite file, runs migrations via store.New(),
+// and closes the handle so the file becomes the schema template.
 //
-// Why: migrate() runs ~150 idempotent DDL statements. Under the race
-// detector + modernc.org/sqlite each Exec is ~5–10ms because the
-// libc-emulated pthread primitives serialise heavily. The `internal/store`
-// package has ~110 tests; running migrate() per test burned the full
-// 120s CI budget and hung the runner (panic: test timed out after 2m0s
-// inside _pthreadMutexEnter during a fresh migrate).
-//
-// Fix: build ONE migrated SQLite file at first call, then copy it into
-// each test's TempDir. store.migrate() detects the schema and
-// short-circuits via schemaAlreadyApplied. The cumulative migrate cost
-// drops from O(N tests × 150 DDLs) to O(1 × 150 DDLs + N file copies).
-//
-// The template lives in os.TempDir (NOT t.TempDir of the first caller)
-// because t.TempDir is scoped to that one test — subsequent tests would
-// lose access when the first test ends. We rely on the OS to clean up
-// the template directory; on Linux CI the runner wipes /tmp at job
-// end.
-var (
-	templateOnce sync.Once
-	templatePath string
-	templateErr  error
-)
-
-// schemaTemplatePath returns the path to a SQLite file with the full
-// store schema already migrated. Safe for concurrent callers; the
-// migrate runs exactly once.
-func schemaTemplatePath(t *testing.T) string {
-	t.Helper()
-	templateOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "store-schema-template-*")
-		if err != nil {
-			templateErr = err
-			return
-		}
-		path := filepath.Join(dir, "template.db")
-		db, err := New(path)
-		if err != nil {
-			templateErr = err
-			return
-		}
-		if err := db.Close(); err != nil {
-			templateErr = err
-			return
-		}
-		templatePath = path
-	})
-	if templateErr != nil {
-		t.Fatalf("schema template: %v", templateErr)
+// Per-binary binding pattern: see internal/store/storetest/storetest.go
+// package doc. Every subpackage test binary defines its own three-line
+// equivalent. The actual template-copy machinery is single-sourced in
+// storetest.
+func bootstrapStore(path string) error {
+	db, err := New(path)
+	if err != nil {
+		return err
 	}
-	return templatePath
+	return db.Close()
 }
 
-// newSharedStore returns a fresh *Store seeded with the package schema
-// template. The DB file lives in t.TempDir so it is auto-cleaned with
-// the test. Use this instead of `New(filepath.Join(t.TempDir(), ...))`
-// in test helpers — same behaviour, 100x faster under -race.
+// newSharedStore returns a fresh *Store seeded with the migrated
+// schema template. The DB file lives in t.TempDir so it is
+// auto-cleaned with the test. 100x faster than running migrate() per
+// test under the race detector (see storetest doc for the pthread
+// rationale).
 //
-// `name` is the desired filename inside t.TempDir (e.g. "knowledge.db").
-// Tests should keep using unique names per call so failure diagnostics
-// reference a sensible path.
+// Kept under this name as a convenience for the 15+ existing test
+// files that already call newSharedStore. New callers in subpackage
+// tests (package knowledge_test, future coordination_test, …) build
+// their own thin wrappers in their own *_test.go — see
+// internal/store/knowledge/testing_helpers_test.go for the canonical
+// shape.
 func newSharedStore(t *testing.T, name string) *Store {
 	t.Helper()
-	src := schemaTemplatePath(t)
-	dst := filepath.Join(t.TempDir(), name)
-	if err := copyTemplateFile(src, dst); err != nil {
-		t.Fatalf("copy schema template to %s: %v", dst, err)
-	}
+	dst := storetest.CopyTemplate(t, bootstrapStore, name)
 	db, err := New(dst)
 	if err != nil {
 		t.Fatalf("open from template: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db
-}
-
-func copyTemplateFile(src, dst string) error {
-	sf, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sf.Close()
-	df, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer df.Close()
-	if _, err := io.Copy(df, sf); err != nil {
-		return err
-	}
-	return df.Sync()
 }

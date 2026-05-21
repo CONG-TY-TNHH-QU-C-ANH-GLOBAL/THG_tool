@@ -30,10 +30,10 @@ type mockSemanticSearcher struct {
 	minSim   float64
 }
 
-// semanticStore is the narrow surface this searcher needs. *store.Store
-// satisfies it.
+// semanticStore is the narrow surface this searcher needs.
+// *knowledge.Store satisfies it.
 type semanticStore interface {
-	ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
+	ListAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
 }
 
 func newMockSemanticSearcher(s semanticStore, e embedding.Embedder) *mockSemanticSearcher {
@@ -69,7 +69,7 @@ func (m *mockSemanticSearcher) TopKWithTrace(ctx context.Context, orgID int64, q
 	// Load approved candidates. The real pgvector path filters at
 	// the SQL level; here we filter in Go since we're operating on
 	// in-memory results.
-	candidates, err := m.store.ListKnowledgeAssetsForOrg(ctx, orgID, assets.ListFilter{
+	candidates, err := m.store.ListAssetsForOrg(ctx, orgID, assets.ListFilter{
 		Types:  filter.Types,
 		States: filter.EffectiveStates(),
 	})

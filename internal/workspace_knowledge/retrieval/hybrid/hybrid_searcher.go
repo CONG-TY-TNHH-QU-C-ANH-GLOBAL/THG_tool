@@ -49,7 +49,7 @@ const SearcherImpl = "hybrid-v1"
 
 // AssetLister is the narrow store surface the searcher needs.
 type AssetLister interface {
-	ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
+	ListAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
 }
 
 // Searcher implements retrieval.Searcher.
@@ -103,7 +103,7 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 		OrderBy: assets.OrderDefault,
 		Limit:   candidateLimit(k),
 	}
-	candidates, err := s.Lister.ListKnowledgeAssetsForOrg(ctx, orgID, listFilter)
+	candidates, err := s.Lister.ListAssetsForOrg(ctx, orgID, listFilter)
 	if err != nil {
 		return nil, trace, err
 	}

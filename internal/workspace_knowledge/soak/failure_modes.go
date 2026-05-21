@@ -42,8 +42,8 @@ func (h *Harness) failureModeA_EmbedderDown(ctx context.Context) FailureModeOutc
 		Description: "Semantic stage fails to embed queries; runtime must fall back to hybrid without empty result.",
 	}
 	broken := &brokenEmbedder{err: errors.New("openai: 503 service unavailable")}
-	semantic := newMockSemanticSearcher(h.Store, broken)
-	hybridS := hybrid.New(h.Store)
+	semantic := newMockSemanticSearcher(h.Store.Knowledge(), broken)
+	hybridS := hybrid.New(h.Store.Knowledge())
 	wrap := fallback.New(semantic, hybridS)
 
 	prompt := h.Prompts[0]
@@ -68,7 +68,7 @@ func (h *Harness) failureModeB_PgvectorUnavailable(ctx context.Context) FailureM
 		Name:        "pgvector extension unavailable",
 		Description: "Capability detection returns false; runtime uses hybrid-only without configuration change.",
 	}
-	wrap := fallback.New(nil, hybrid.New(h.Store))
+	wrap := fallback.New(nil, hybrid.New(h.Store.Knowledge()))
 	prompt := h.Prompts[0]
 	hits, trace, err := wrap.TopKWithTrace(ctx, h.OrgID, prompt.Text, retrieval.SearchFilter{}, h.TopK)
 	if err != nil {
@@ -99,7 +99,7 @@ func (h *Harness) failureModeC_PartialEmbeddings(ctx context.Context, sourceID i
 	// Simulate by querying without first having embedded — semantic
 	// searcher in this soak embeds-on-the-fly, but tests the harder
 	// path of "hybrid alone produces useful results".
-	hybridS := hybrid.New(h.Store)
+	hybridS := hybrid.New(h.Store.Knowledge())
 	prompt := h.Prompts[0]
 	hits, _, _ := hybridS.TopKWithTrace(ctx, h.OrgID, prompt.Text, retrieval.SearchFilter{}, h.TopK)
 	if len(hits) == 0 {
@@ -122,7 +122,7 @@ func (h *Harness) failureModeD_SlowQuery(ctx context.Context) FailureModeOutcome
 		Description: "Semantic stage exceeds timeout wall; fallback engages within bounded latency.",
 	}
 	slow := &slowSearcher{delay: 50 * time.Millisecond, err: context.DeadlineExceeded}
-	hybridS := hybrid.New(h.Store)
+	hybridS := hybrid.New(h.Store.Knowledge())
 	wrap := fallback.New(slow, hybridS)
 
 	prompt := h.Prompts[0]
@@ -162,7 +162,7 @@ func (h *Harness) failureModeE_ZeroAssets(ctx context.Context) FailureModeOutcom
 	}
 	// Use an org ID that has no assets.
 	emptyOrg := int64(99999)
-	hybridS := hybrid.New(h.Store)
+	hybridS := hybrid.New(h.Store.Knowledge())
 	hits, _, err := hybridS.TopKWithTrace(ctx, emptyOrg, "anything", retrieval.SearchFilter{}, 5)
 	if err != nil {
 		out.Verdict = "FAIL"
@@ -189,10 +189,10 @@ func (h *Harness) failureModeF_StaleOnly(ctx context.Context) FailureModeOutcome
 		Name:        "Stale-only catalog",
 		Description: "Catalog assets exist but none retrieved recently; observability surfaces stale count.",
 	}
-	staleCount, err := h.Store.CountStaleKnowledgeAssetsForOrg(ctx, h.OrgID, 30)
+	staleCount, err := h.Store.Knowledge().CountStaleAssetsForOrg(ctx, h.OrgID, 30)
 	if err != nil {
 		out.Verdict = "FAIL"
-		out.Behaviour = "CountStaleKnowledgeAssetsForOrg errored: " + err.Error()
+		out.Behaviour = "CountStaleAssetsForOrg errored: " + err.Error()
 		return out
 	}
 	// We expect 0 stale right after a fresh ingest. The point is the

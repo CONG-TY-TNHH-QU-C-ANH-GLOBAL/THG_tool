@@ -1,5 +1,4 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
 	"context"
@@ -37,10 +36,10 @@ const (
 	eventTypeEmbedding = "embedding_batch"
 )
 
-// RecordKnowledgeSync persists one ingestor-sync event. Satisfies
+// RecordSync persists one ingestor-sync event. Satisfies
 // [observability.Metrics.RecordSync] and the dispatcher's narrower
-// [ingestion.SyncRecorder]; *store.Store satisfies both interfaces.
-func (s *Store) RecordKnowledgeSync(
+// [ingestion.SyncRecorder]; *knowledge.Store satisfies both interfaces.
+func (s *Store) RecordSync(
 	ctx context.Context,
 	orgID int64,
 	sourceType sources.SourceType,
@@ -59,7 +58,7 @@ func (s *Store) RecordKnowledgeSync(
 		"errors":          errs,
 	}
 	data, _ := json.Marshal(payload)
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_events
 			(org_id, event_type, source_type, data_json, duration_ms)
 		VALUES (?, ?, ?, ?, ?)`,
@@ -69,13 +68,13 @@ func (s *Store) RecordKnowledgeSync(
 		// Telemetry is best-effort. A failed metric write must NOT
 		// affect the sales action. We log to stderr via the package
 		// logger so the surface is still observable.
-		fmt.Printf("[knowledge_events] record sync org=%d: %v\n", orgID, err)
+		fmt.Printf("[knowledge] record sync org=%d: %v\n", orgID, err)
 	}
 }
 
-// RecordKnowledgeRetrieval persists one retrieval event. retrievalID
-// is the join key with the eventual outcome event.
-func (s *Store) RecordKnowledgeRetrieval(
+// RecordRetrieval persists one retrieval event. retrievalID is the
+// join key with the eventual outcome event.
+func (s *Store) RecordRetrieval(
 	ctx context.Context,
 	orgID int64,
 	retrievalID, query string,
@@ -108,28 +107,27 @@ func (s *Store) RecordKnowledgeRetrieval(
 		"generated_action": generatedAction,
 	}
 	data, _ := json.Marshal(payload)
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_events
 			(org_id, event_type, retrieval_id, query, data_json)
 		VALUES (?, ?, ?, ?, ?)`,
 		orgID, eventTypeRetrieval, retrievalID, query, string(data),
 	)
 	if err != nil {
-		fmt.Printf("[knowledge_events] record retrieval org=%d: %v\n", orgID, err)
+		fmt.Printf("[knowledge] record retrieval org=%d: %v\n", orgID, err)
 	}
 }
 
-// RecordKnowledgeRetrievalWithTrace is the explainability-aware
-// variant. It persists the full [retrieval.Trace] and
-// [retrieval.AssemblyBudget] in the data_json column. The Operator
-// Replay UI's expand-row view reads this back through
-// ListKnowledgeRetrievalEvents.
+// RecordRetrievalWithTrace is the explainability-aware variant. It
+// persists the full [retrieval.Trace] and [retrieval.AssemblyBudget]
+// in the data_json column. The Operator Replay UI's expand-row view
+// reads this back through ListRetrievalEvents.
 //
-// Schema-wise this is the SAME table as RecordKnowledgeRetrieval —
-// data_json is opaque to the store, so growing the trace shape is
-// schemaless. The retrieval_id field is critical: it is the join key
-// with the eventual outcome event recorded by RecordKnowledgeOutcome.
-func (s *Store) RecordKnowledgeRetrievalWithTrace(
+// Schema-wise this is the SAME table as RecordRetrieval — data_json
+// is opaque to the store, so growing the trace shape is schemaless.
+// The retrieval_id field is critical: it is the join key with the
+// eventual outcome event recorded by RecordOutcome.
+func (s *Store) RecordRetrievalWithTrace(
 	ctx context.Context,
 	orgID int64,
 	retrievalID, query, generatedAction string,
@@ -145,14 +143,14 @@ func (s *Store) RecordKnowledgeRetrievalWithTrace(
 		"generated_action": generatedAction,
 	}
 	data, _ := json.Marshal(payload)
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_events
 			(org_id, event_type, retrieval_id, query, data_json)
 		VALUES (?, ?, ?, ?, ?)`,
 		orgID, eventTypeRetrieval, retrievalID, truncateQueryForStore(query), string(data),
 	)
 	if err != nil {
-		fmt.Printf("[knowledge_events] record retrieval with trace org=%d: %v\n", orgID, err)
+		fmt.Printf("[knowledge] record retrieval with trace org=%d: %v\n", orgID, err)
 	}
 }
 
@@ -167,10 +165,10 @@ func truncateQueryForStore(q string) string {
 	return q[:maxQueryColLen] + "…"
 }
 
-// RecordKnowledgeOutcome closes the loop on a previously-recorded
-// retrieval event. outcome is one of "approved" | "sent" | "rejected"
-// | "failed" | "converted" (free-form; the UI groups them).
-func (s *Store) RecordKnowledgeOutcome(
+// RecordOutcome closes the loop on a previously-recorded retrieval
+// event. outcome is one of "approved" | "sent" | "rejected" |
+// "failed" | "converted" (free-form; the UI groups them).
+func (s *Store) RecordOutcome(
 	ctx context.Context,
 	orgID int64,
 	retrievalID, outcome string,
@@ -179,14 +177,14 @@ func (s *Store) RecordKnowledgeOutcome(
 		return
 	}
 	payload, _ := json.Marshal(map[string]any{"outcome": outcome})
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_events
 			(org_id, event_type, retrieval_id, data_json)
 		VALUES (?, ?, ?, ?)`,
 		orgID, eventTypeOutcome, retrievalID, string(payload),
 	)
 	if err != nil {
-		fmt.Printf("[knowledge_events] record outcome org=%d retrieval=%q: %v\n", orgID, retrievalID, err)
+		fmt.Printf("[knowledge] record outcome org=%d retrieval=%q: %v\n", orgID, retrievalID, err)
 		return
 	}
 
@@ -198,7 +196,7 @@ func (s *Store) RecordKnowledgeOutcome(
 	if outcome != "sent" && outcome != "converted" {
 		return
 	}
-	rows, err := s.QueryContext(ctx, `
+	rows, err := s.queryContext(ctx, `
 		SELECT data_json FROM knowledge_events
 		 WHERE org_id = ? AND retrieval_id = ? AND event_type = ?
 		 LIMIT 1`,
@@ -227,7 +225,7 @@ func (s *Store) RecordKnowledgeOutcome(
 		if h.AssetID == 0 {
 			continue
 		}
-		_, _ = s.ExecContext(ctx, `
+		_, _ = s.execContext(ctx, `
 			UPDATE knowledge_assets
 			   SET conversion_count_30d = conversion_count_30d + 1
 			 WHERE id = ? AND org_id = ?`,
@@ -238,8 +236,8 @@ func (s *Store) RecordKnowledgeOutcome(
 
 // --- Analytics helpers (for the Operator Replay UI + dashboards) ---
 
-// KnowledgeSyncSummary is one row in the "recent syncs" panel.
-type KnowledgeSyncSummary struct {
+// SyncSummary is one row in the "recent syncs" panel.
+type SyncSummary struct {
 	SourceType     string `json:"source_type"`
 	AssetsSeen     int    `json:"assets_seen"`
 	AssetsCreated  int    `json:"assets_created"`
@@ -252,14 +250,14 @@ type KnowledgeSyncSummary struct {
 
 // ListRecentSyncsForOrg returns the last `limit` sync events for the
 // org, newest first. Used by the Sources panel "sync history" drawer.
-func (s *Store) ListRecentSyncsForOrg(ctx context.Context, orgID int64, limit int) ([]KnowledgeSyncSummary, error) {
+func (s *Store) ListRecentSyncsForOrg(ctx context.Context, orgID int64, limit int) ([]SyncSummary, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_events: org_id required")
+		return nil, fmt.Errorf("knowledge: org_id required")
 	}
 	if limit <= 0 {
 		limit = 25
 	}
-	rows, err := s.QueryContext(ctx, `
+	rows, err := s.queryContext(ctx, `
 		SELECT source_type, data_json, duration_ms, occurred_at
 		  FROM knowledge_events
 		 WHERE org_id = ? AND event_type = ?
@@ -269,7 +267,7 @@ func (s *Store) ListRecentSyncsForOrg(ctx context.Context, orgID int64, limit in
 		return nil, err
 	}
 	defer rows.Close()
-	out := make([]KnowledgeSyncSummary, 0, limit)
+	out := make([]SyncSummary, 0, limit)
 	for rows.Next() {
 		var (
 			sourceType, blob, occurredAt string
@@ -287,7 +285,7 @@ func (s *Store) ListRecentSyncsForOrg(ctx context.Context, orgID int64, limit in
 			Err                                      int `json:"errors"`
 		}
 		_ = json.Unmarshal([]byte(blob), &parsed)
-		out = append(out, KnowledgeSyncSummary{
+		out = append(out, SyncSummary{
 			SourceType:     sourceType,
 			AssetsSeen:     parsed.AssetsSeen,
 			AssetsCreated:  parsed.AssetsCreated,
@@ -317,30 +315,30 @@ func (s *Store) RecordEmbeddingBatch(ctx context.Context, batchSize, succeeded, 
 		"failed":      failed,
 		"recoverable": recoverable,
 	})
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_events
 			(org_id, event_type, data_json, duration_ms)
 		VALUES (?, ?, ?, ?)`,
 		0, eventTypeEmbedding, string(payload), durationMs,
 	)
 	if err != nil {
-		fmt.Printf("[knowledge_events] record embedding_batch: %v\n", err)
+		fmt.Printf("[knowledge] record embedding_batch: %v\n", err)
 	}
 }
 
-// CountStaleKnowledgeAssetsForOrg returns the number of assets that
-// have not been retrieved in `daysIdle` days. The Sources panel uses
-// this to highlight catalogs that may need cleanup. An asset never
-// retrieved (last_retrieved_at IS NULL) is NOT stale by this
-// definition — it might be brand new. Only assets with a prior
-// retrieval that has gone quiet count.
+// CountStaleAssetsForOrg returns the number of assets that have not
+// been retrieved in `daysIdle` days. The Sources panel uses this to
+// highlight catalogs that may need cleanup. An asset never retrieved
+// (last_retrieved_at IS NULL) is NOT stale by this definition — it
+// might be brand new. Only assets with a prior retrieval that has
+// gone quiet count.
 //
 // Cross-dialect: the interval expression differs between SQLite and
 // Postgres (see POSTGRES_COMPAT_PLAN.md risk R8). Routed through the
 // dialect helper so the same Go code compiles to either SQL form.
-func (s *Store) CountStaleKnowledgeAssetsForOrg(ctx context.Context, orgID int64, daysIdle int) (int, error) {
+func (s *Store) CountStaleAssetsForOrg(ctx context.Context, orgID int64, daysIdle int) (int, error) {
 	if orgID <= 0 {
-		return 0, fmt.Errorf("knowledge_events: org_id required")
+		return 0, fmt.Errorf("knowledge: org_id required")
 	}
 	if daysIdle <= 0 {
 		daysIdle = 30
@@ -350,8 +348,8 @@ func (s *Store) CountStaleKnowledgeAssetsForOrg(ctx context.Context, orgID int64
 		 WHERE org_id = ?
 		   AND last_retrieved_at IS NOT NULL
 		   AND last_retrieved_at < %s`, s.dialect.IntervalDaysExpr(daysIdle))
-	// s.QueryRowContext already rebinds — don't double-Rebind.
-	row := s.QueryRowContext(ctx, q, orgID)
+	// queryRowContext rebinds — don't double-Rebind.
+	row := s.queryRowContext(ctx, q, orgID)
 	var n int
 	if err := row.Scan(&n); err != nil {
 		return 0, err

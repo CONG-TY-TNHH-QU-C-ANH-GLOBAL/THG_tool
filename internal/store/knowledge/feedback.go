@@ -1,5 +1,4 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
 	"context"
@@ -89,16 +88,16 @@ type FeedbackEvent struct {
 // privilege-escalation problem, not a knowledge-injection problem.)
 func (s *Store) RecordFeedback(ctx context.Context, ev FeedbackEvent) error {
 	if ev.OrgID <= 0 {
-		return errors.New("knowledge_feedback: org_id required")
+		return errors.New("knowledge: org_id required")
 	}
 	if !ev.Kind.IsKnown() {
-		return fmt.Errorf("knowledge_feedback: unknown kind %q", ev.Kind)
+		return fmt.Errorf("knowledge: unknown feedback kind %q", ev.Kind)
 	}
 	dataJSON := string(ev.Data)
 	if dataJSON == "" {
 		dataJSON = "{}"
 	}
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_feedback
 			(org_id, user_id, retrieval_id, asset_id, kind, data_json)
 		VALUES (?, ?, ?, ?, ?, ?)`,
@@ -113,12 +112,12 @@ func (s *Store) RecordFeedback(ctx context.Context, ev FeedbackEvent) error {
 // the auto-training feedback loop G10 forbids.
 func (s *Store) ListFeedbackForOrg(ctx context.Context, orgID int64, limit int) ([]FeedbackEvent, error) {
 	if orgID <= 0 {
-		return nil, errors.New("knowledge_feedback: org_id required")
+		return nil, errors.New("knowledge: org_id required")
 	}
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := s.QueryContext(ctx, `
+	rows, err := s.queryContext(ctx, `
 		SELECT id, org_id, user_id, retrieval_id, asset_id, kind, data_json, occurred_at
 		  FROM knowledge_feedback
 		 WHERE org_id = ?
@@ -145,16 +144,16 @@ func (s *Store) ListFeedbackForOrg(ctx context.Context, orgID int64, limit int) 
 // FeedbackRollup is the aggregate the Operator Replay dashboard
 // shows: "how does this org rate AI-generated comments lately?"
 type FeedbackRollup struct {
-	OrgID       int64                  `json:"org_id"`
-	Window      string                 `json:"window"`
-	TotalEvents int                    `json:"total_events"`
-	ByKind      map[FeedbackKind]int   `json:"by_kind"`
+	OrgID       int64                `json:"org_id"`
+	Window      string               `json:"window"`
+	TotalEvents int                  `json:"total_events"`
+	ByKind      map[FeedbackKind]int `json:"by_kind"`
 }
 
 // GetFeedbackRollupForOrg aggregates feedback events over a window.
 func (s *Store) GetFeedbackRollupForOrg(ctx context.Context, orgID int64, days int) (*FeedbackRollup, error) {
 	if orgID <= 0 {
-		return nil, errors.New("knowledge_feedback: org_id required")
+		return nil, errors.New("knowledge: org_id required")
 	}
 	if days <= 0 {
 		days = 30
@@ -162,7 +161,7 @@ func (s *Store) GetFeedbackRollupForOrg(ctx context.Context, orgID int64, days i
 	q := `SELECT kind, COUNT(*) FROM knowledge_feedback
 	       WHERE org_id = ? AND occurred_at >= ` + s.dialect.IntervalDaysExpr(days) + `
 	       GROUP BY kind`
-	rows, err := s.QueryContext(ctx, q, orgID)
+	rows, err := s.queryContext(ctx, q, orgID)
 	if err != nil {
 		return nil, err
 	}

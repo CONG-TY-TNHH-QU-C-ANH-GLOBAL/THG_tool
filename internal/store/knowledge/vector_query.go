@@ -1,13 +1,12 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 
+	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
 )
@@ -71,7 +70,7 @@ func (s *Store) HasPGVector(ctx context.Context) bool {
 // dialect is not Postgres or the pgvector extension is missing.
 // The pgvector Searcher inspects this and lets the fallback layer
 // reroute to hybrid.
-var ErrVectorUnavailable = fmt.Errorf("knowledge_vector: pgvector not available")
+var ErrVectorUnavailable = fmt.Errorf("knowledge: pgvector not available")
 
 // QueryNearestVectors runs a tenant-scoped ANN search. Returns up to
 // k assets ordered by cosine distance ASC (closest first).
@@ -88,10 +87,10 @@ var ErrVectorUnavailable = fmt.Errorf("knowledge_vector: pgvector not available"
 // pgvector Searcher's VectorStore interface without an adapter.
 func (s *Store) QueryNearestVectors(ctx context.Context, orgID int64, queryVector []float32, modelVersion string, filter retrieval.VectorFilter, k int) ([]retrieval.VectorHit, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_vector: org_id required")
+		return nil, fmt.Errorf("knowledge: org_id required")
 	}
 	if len(queryVector) == 0 {
-		return nil, fmt.Errorf("knowledge_vector: empty query vector")
+		return nil, fmt.Errorf("knowledge: empty query vector")
 	}
 	if k <= 0 {
 		return nil, nil
@@ -146,7 +145,7 @@ func (s *Store) QueryNearestVectors(ctx context.Context, orgID int64, queryVecto
 	vecLit := pgVectorLiteral(queryVector)
 	args = append(args, vecLit, vecLit, k)
 
-	rows, err := s.QueryContext(ctx, q, args...)
+	rows, err := s.queryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

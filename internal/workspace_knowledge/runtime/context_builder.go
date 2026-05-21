@@ -25,12 +25,12 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval/pgvector"
 )
 
-// AssetLister is the store surface the searcher needs. *store.Store
-// satisfies this; tests use a fake. We re-declare it here (rather
-// than import retrieval/naive's version) so this package compiles
-// against any Searcher implementation.
+// AssetLister is the store surface the searcher needs.
+// *knowledge.Store satisfies this; tests use a fake. We re-declare
+// it here (rather than import retrieval/naive's version) so this
+// package compiles against any Searcher implementation.
 type AssetLister interface {
-	ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
+	ListAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error)
 }
 
 // VectorCapableStore is the EXTENDED store surface needed for the
@@ -44,17 +44,17 @@ type VectorCapableStore interface {
 }
 
 // RetrievalRecorder is the optional Phase-D observability surface.
-// Provided by *store.Store when metrics are wired; tests pass nil
+// Provided by *knowledge.Store when metrics are wired; tests pass nil
 // (the builder is no-op when nil).
 type RetrievalRecorder interface {
-	IncrementKnowledgeAssetRetrieval(ctx context.Context, assetID, orgID int64) error
+	IncrementAssetRetrieval(ctx context.Context, assetID, orgID int64) error
 }
 
 // TraceRecorder persists the explainability trace of a retrieval.
-// The Operator Replay UI reads back through ListKnowledgeRetrievals.
-// *store.Store satisfies this via RecordKnowledgeRetrievalWithTrace.
+// The Operator Replay UI reads back through ListReplayEventsForOrg.
+// *knowledge.Store satisfies this via RecordRetrievalWithTrace.
 type TraceRecorder interface {
-	RecordKnowledgeRetrievalWithTrace(
+	RecordRetrievalWithTrace(
 		ctx context.Context,
 		orgID int64,
 		retrievalID, query, generatedAction string,
@@ -201,13 +201,13 @@ func (b *Builder) BuildForLeadWithTrace(ctx context.Context, orgID int64, leadTe
 			if h.Asset == nil {
 				continue
 			}
-			if err := b.Recorder.IncrementKnowledgeAssetRetrieval(ctx, h.Asset.ID, orgID); err != nil {
+			if err := b.Recorder.IncrementAssetRetrieval(ctx, h.Asset.ID, orgID); err != nil {
 				log.Printf("[knowledge.BuildForLead] increment retrieval id=%d: %v", h.Asset.ID, err)
 			}
 		}
 	}
 	if b.TraceRec != nil {
-		b.TraceRec.RecordKnowledgeRetrievalWithTrace(ctx, orgID, retrievalID, leadText, generatedAction, trace, budget)
+		b.TraceRec.RecordRetrievalWithTrace(ctx, orgID, retrievalID, leadText, generatedAction, trace, budget)
 	}
 
 	if strings.TrimSpace(baseContext) == "" {

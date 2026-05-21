@@ -114,7 +114,7 @@ func (h *Harness) Run(ctx context.Context) (*Report, error) {
 		if a.State == "" {
 			a.State = assets.StateApproved
 		}
-		saved, err := h.Store.UpsertKnowledgeAsset(ctx, a)
+		saved, err := h.Store.Knowledge().UpsertAsset(ctx, a)
 		if err != nil {
 			report.Notes = append(report.Notes, fmt.Sprintf("ingest %s: %v", fx.ExternalID, err))
 			continue
@@ -128,7 +128,7 @@ func (h *Harness) Run(ctx context.Context) (*Report, error) {
 	}
 
 	// --- Step 2: Run embedding pipeline ---
-	worker := embedding.NewWorker(h.Store, h.Embedder)
+	worker := embedding.NewWorker(h.Store.Knowledge(), h.Embedder)
 	worker.BatchSize = 32
 	// Drain the pending queue. Loop until idle (or safety cap).
 	for range 50 {
@@ -141,7 +141,7 @@ func (h *Harness) Run(ctx context.Context) (*Report, error) {
 			break
 		}
 	}
-	stats, err := h.Store.GetEmbeddingStatsForOrg(ctx, h.OrgID)
+	stats, err := h.Store.Knowledge().GetEmbeddingStatsForOrg(ctx, h.OrgID)
 	if err == nil {
 		report.EmbeddingsGenerated = stats.Generated
 		report.EmbeddingsPending = stats.Pending
@@ -153,14 +153,14 @@ func (h *Harness) Run(ctx context.Context) (*Report, error) {
 	// pgvector pathway using a deterministic semantic searcher that
 	// queries the same ClusteredEmbedder. This is the realistic-soak
 	// compromise: full pipeline behaviour, no external dependency.
-	hybridSearcher := hybrid.New(h.Store)
+	hybridSearcher := hybrid.New(h.Store.Knowledge())
 	var primarySearcher retrieval.Searcher
 	switch h.SearcherVariant {
 	case "hybrid":
 		primarySearcher = hybridSearcher
 	case "rrf":
 		// Compose RRF over hybrid + the mock semantic searcher.
-		semantic := newMockSemanticSearcher(h.Store, h.Embedder)
+		semantic := newMockSemanticSearcher(h.Store.Knowledge(), h.Embedder)
 		primarySearcher = rrf.New(hybridSearcher, semantic)
 	default:
 		return report, fmt.Errorf("soak: unknown SearcherVariant %q", h.SearcherVariant)
@@ -207,7 +207,7 @@ func (h *Harness) setupSource(ctx context.Context) (int64, error) {
 	// Lazy import of sources types to avoid bloating the imports
 	// list; use json.RawMessage for the config blob.
 	cfgJSON := json.RawMessage(`{"description":"soak harness source"}`)
-	src, err := h.Store.UpsertKnowledgeSource(ctx, mustValidSoakSource(h.OrgID, cfgJSON))
+	src, err := h.Store.Knowledge().UpsertSource(ctx, mustValidSoakSource(h.OrgID, cfgJSON))
 	if err != nil {
 		return 0, err
 	}
@@ -228,7 +228,7 @@ func (h *Harness) runOnePrompt(ctx context.Context, searcher retrieval.Searcher,
 	// trust" criterion. The retrieval_id is generated per call so
 	// the events table sees realistic identifiers.
 	retrievalID := newSoakRetrievalID()
-	h.Store.RecordKnowledgeRetrievalWithTrace(ctx, h.OrgID, retrievalID, prompt.Text, "soak_query", trace, retrieval.AssemblyBudget{
+	h.Store.Knowledge().RecordRetrievalWithTrace(ctx, h.OrgID, retrievalID, prompt.Text, "soak_query", trace, retrieval.AssemblyBudget{
 		AssembledProducts: len(hits),
 	})
 
@@ -350,7 +350,7 @@ func (h *Harness) computePrecisionAtK(hits []retrieval.Hit, intentTags []string)
 // existing ListKnowledgeReplayEventsForOrg path.
 func (h *Harness) measureReplayHealth(ctx context.Context) ReplayHealth {
 	rh := ReplayHealth{}
-	events, err := h.Store.ListKnowledgeReplayEventsForOrg(ctx, h.OrgID, "", 100)
+	events, err := h.Store.Knowledge().ListReplayEventsForOrg(ctx, h.OrgID, "", 100)
 	if err != nil {
 		return rh
 	}
@@ -385,12 +385,12 @@ func (h *Harness) measureStale(ctx context.Context) StaleMetrics {
 	s := StaleMetrics{
 		TotalAssets: len(h.Catalog),
 	}
-	if stale, err := h.Store.CountStaleKnowledgeAssetsForOrg(ctx, h.OrgID, 30); err == nil {
+	if stale, err := h.Store.Knowledge().CountStaleAssetsForOrg(ctx, h.OrgID, 30); err == nil {
 		s.StalePast30d = stale
 	}
-	// Never-retrieved vs. fresh: derive from KnowledgeStats (which
-	// counts retrieval_count_30d > 0 vs == 0).
-	if ks, err := h.Store.GetKnowledgeStatsForOrg(ctx, h.OrgID); err == nil {
+	// Never-retrieved vs. fresh: derive from Stats (which counts
+	// retrieval_count_30d > 0 vs == 0).
+	if ks, err := h.Store.Knowledge().GetStatsForOrg(ctx, h.OrgID); err == nil {
 		s.NeverRetrieved = ks.TotalAssets - len(ks.TopRetrieved)
 	}
 	return s

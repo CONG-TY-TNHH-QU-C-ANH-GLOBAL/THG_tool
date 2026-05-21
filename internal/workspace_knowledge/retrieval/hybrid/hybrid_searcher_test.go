@@ -15,7 +15,7 @@ type fakeLister struct {
 	all []*assets.Asset
 }
 
-func (f *fakeLister) ListKnowledgeAssetsForOrg(_ context.Context, _ int64, filter assets.ListFilter) ([]*assets.Asset, error) {
+func (f *fakeLister) ListAssetsForOrg(_ context.Context, _ int64, filter assets.ListFilter) ([]*assets.Asset, error) {
 	if len(filter.States) == 0 {
 		return f.all, nil
 	}

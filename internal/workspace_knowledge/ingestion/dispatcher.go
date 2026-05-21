@@ -1,4 +1,4 @@
-package ingestion
+﻿package ingestion
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
 
-// Registry maps SourceType → Ingestor. Concrete ingestors register
+// Registry maps SourceType â†’ Ingestor. Concrete ingestors register
 // themselves at boot time; the dispatcher looks one up per Sync call.
 //
 // Registry is safe for concurrent reads; writes happen at boot only.
-// Re-registering an existing type panics — having two implementations
+// Re-registering an existing type panics â€” having two implementations
 // for the same type is a programmer error, not a runtime condition.
 type Registry struct {
 	mu sync.RWMutex
@@ -41,7 +41,7 @@ func (r *Registry) Register(i Ingestor) {
 }
 
 // Lookup returns the ingestor for typ or (nil, false). The boolean
-// is the explicit "not registered" branch — per
+// is the explicit "not registered" branch â€” per
 // feedback_no_implicit_business_meaning.md, callers never compare
 // against nil to decide registration.
 func (r *Registry) Lookup(typ sources.SourceType) (Ingestor, bool) {
@@ -66,16 +66,16 @@ func (r *Registry) Types() []sources.SourceType {
 
 // HealthRecorder is the dispatcher's dependency on the persistence
 // side. Defined here as an interface so the dispatcher does not import
-// internal/store directly — *store.Store satisfies this contract.
+// internal/store directly â€” *knowledge.Store satisfies this contract.
 type HealthRecorder interface {
-	UpdateKnowledgeSourceHealth(ctx context.Context, sourceID, orgID int64, h sources.Health, lastAssetCount int) error
+	UpdateSourceHealth(ctx context.Context, sourceID, orgID int64, h sources.Health, lastAssetCount int) error
 }
 
 // Dispatcher runs Sync for one source: look up the ingestor, hand it
 // an AssetWriter bound to the source, record the outcome on the source
 // row, and translate the SyncResult into a health status.
 //
-// The dispatcher is stateless — instances can be reused across syncs
+// The dispatcher is stateless â€” instances can be reused across syncs
 // and across orgs. Concurrency is the caller's responsibility (the
 // scheduler may run N syncs in parallel; each holds its own context).
 type Dispatcher struct {
@@ -93,7 +93,7 @@ type Dispatcher struct {
 
 // SyncRecorder is the subset of observability.Metrics the dispatcher
 // needs. Defined here to avoid the import cycle (observability
-// imports retrieval which imports assets — and the dispatcher does
+// imports retrieval which imports assets â€” and the dispatcher does
 // too, so a separate narrow interface keeps the graph clean).
 type SyncRecorder interface {
 	RecordSync(ctx context.Context, orgID int64, sourceType sources.SourceType, assetsSeen, assetsCreated, assetsUpdated, assetsRejected int, durationMs int64, errs int)
@@ -104,9 +104,9 @@ type SyncRecorder interface {
 // the ingestor produced.
 //
 // Errors from the ingestor are translated into the source's
-// health_status: recoverable → stale (re-try later), permanent →
+// health_status: recoverable â†’ stale (re-try later), permanent â†’
 // error (operator action required). Auth errors are surfaced as
-// needs_auth when the ingestor wraps them appropriately — see the
+// needs_auth when the ingestor wraps them appropriately â€” see the
 // docs on individual ingestors.
 func (d *Dispatcher) Run(ctx context.Context, src *sources.Source) (SyncResult, error) {
 	if d.Registry == nil || d.Health == nil || d.WriterFactory == nil {
@@ -125,16 +125,16 @@ func (d *Dispatcher) Run(ctx context.Context, src *sources.Source) (SyncResult, 
 			Message:    fmt.Sprintf("no ingestor registered for type %q", src.Type),
 			LastSyncAt: &now,
 		}
-		_ = d.Health.UpdateKnowledgeSourceHealth(ctx, src.ID, src.OrgID, h, src.LastAssetCount)
+		_ = d.Health.UpdateSourceHealth(ctx, src.ID, src.OrgID, h, src.LastAssetCount)
 		return SyncResult{}, fmt.Errorf("ingestion: no ingestor for type %q", src.Type)
 	}
 
 	// Mark the source as syncing for the duration of the call. This
 	// is a fact: any concurrent reader sees the in-flight state and
-	// the UI animates a spinner. We swallow the marker-write error —
+	// the UI animates a spinner. We swallow the marker-write error â€”
 	// failing to mark "syncing" is not worth aborting the actual sync.
 	beforeMsg := src.Health.Message
-	_ = d.Health.UpdateKnowledgeSourceHealth(ctx, src.ID, src.OrgID, sources.Health{
+	_ = d.Health.UpdateSourceHealth(ctx, src.ID, src.OrgID, sources.Health{
 		Status:     sources.HealthSyncing,
 		Message:    beforeMsg,
 		LastSyncAt: src.Health.LastSyncAt,
@@ -147,7 +147,7 @@ func (d *Dispatcher) Run(ctx context.Context, src *sources.Source) (SyncResult, 
 
 	// Decide the post-sync health.
 	finalHealth := healthFromOutcome(res, syncErr, d.now())
-	if err := d.Health.UpdateKnowledgeSourceHealth(ctx, src.ID, src.OrgID, finalHealth, res.AssetsSeen); err != nil {
+	if err := d.Health.UpdateSourceHealth(ctx, src.ID, src.OrgID, finalHealth, res.AssetsSeen); err != nil {
 		// Persisting health is best-effort; the sync itself happened.
 		// We surface the persistence failure in the returned error
 		// so the scheduler can decide whether to alert.
@@ -173,13 +173,13 @@ func (d *Dispatcher) Run(ctx context.Context, src *sources.Source) (SyncResult, 
 // this sync result imply?". Kept as a pure function so it is testable
 // in isolation. The mapping:
 //
-//	syncErr nil      → healthy (or stale if partial errors)
-//	syncErr recoverable → stale (re-try later)
-//	syncErr permanent   → error (operator action required)
+//	syncErr nil      â†’ healthy (or stale if partial errors)
+//	syncErr recoverable â†’ stale (re-try later)
+//	syncErr permanent   â†’ error (operator action required)
 func healthFromOutcome(res SyncResult, err error, now time.Time) sources.Health {
 	at := now
 	if err == nil {
-		// Success — but if some rows were rejected, that's a partial
+		// Success â€” but if some rows were rejected, that's a partial
 		// success the operator should see. We surface it as the message
 		// rather than as a status change.
 		h := sources.Health{Status: sources.HealthHealthy, LastSyncAt: &at}
@@ -196,7 +196,7 @@ func healthFromOutcome(res SyncResult, err error, now time.Time) sources.Health 
 			LastSyncAt: &at,
 		}
 	}
-	// Permanent or unwrapped — treat as a hard error.
+	// Permanent or unwrapped â€” treat as a hard error.
 	return sources.Health{
 		Status:     sources.HealthError,
 		Message:    truncate(err.Error(), 240),
@@ -215,5 +215,5 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return s[:n] + "â€¦"
 }

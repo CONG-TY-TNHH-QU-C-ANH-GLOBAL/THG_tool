@@ -1,8 +1,6 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
 
@@ -33,31 +32,31 @@ import (
 //     statements. A re-sync from an ingestor MUST NOT clobber an
 //     operator's hide/pin choice.
 
-// GetKnowledgeSource returns a single source owned by orgID, or
-// (nil, sql.ErrNoRows) if no such row exists OR the row belongs to a
+// GetSource returns a single source owned by orgID, or (nil,
+// sql.ErrNoRows) if no such row exists OR the row belongs to a
 // different org. Callers should treat both cases identically.
-func (s *Store) GetKnowledgeSource(ctx context.Context, sourceID, orgID int64) (*sources.Source, error) {
+func (s *Store) GetSource(ctx context.Context, sourceID, orgID int64) (*sources.Source, error) {
 	if sourceID <= 0 || orgID <= 0 {
 		return nil, sql.ErrNoRows
 	}
-	row := s.QueryRowContext(ctx, knowledgeSourceSelect+`
+	row := s.queryRowContext(ctx, sourceSelect+`
 		WHERE id = ? AND org_id = ?`, sourceID, orgID)
-	src, err := scanKnowledgeSource(row)
+	src, err := scanSource(row)
 	if err == sql.ErrNoRows {
 		return nil, sql.ErrNoRows
 	}
 	return src, err
 }
 
-// ListKnowledgeSourcesForOrg returns every source the org has
-// configured, ordered by creation time descending (newest first —
-// matches the Sources panel default sort).
-func (s *Store) ListKnowledgeSourcesForOrg(ctx context.Context, orgID int64, filter sources.ListFilter) ([]*sources.Source, error) {
+// ListSourcesForOrg returns every source the org has configured,
+// ordered by creation time descending (newest first — matches the
+// Sources panel default sort).
+func (s *Store) ListSourcesForOrg(ctx context.Context, orgID int64, filter sources.ListFilter) ([]*sources.Source, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_sources: org_id is required")
+		return nil, fmt.Errorf("knowledge: org_id is required")
 	}
 	args := []any{orgID}
-	q := knowledgeSourceSelect + ` WHERE org_id = ?`
+	q := sourceSelect + ` WHERE org_id = ?`
 
 	if len(filter.Types) > 0 {
 		q += ` AND type IN (` + placeholders(len(filter.Types)) + `)`
@@ -73,14 +72,14 @@ func (s *Store) ListKnowledgeSourcesForOrg(ctx context.Context, orgID int64, fil
 	}
 	q += ` ORDER BY created_at DESC`
 
-	rows, err := s.QueryContext(ctx, q, args...)
+	rows, err := s.queryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]*sources.Source, 0, 8)
 	for rows.Next() {
-		src, err := scanKnowledgeSource(rows)
+		src, err := scanSource(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -89,15 +88,14 @@ func (s *Store) ListKnowledgeSourcesForOrg(ctx context.Context, orgID int64, fil
 	return out, rows.Err()
 }
 
-// UpsertKnowledgeSource inserts a new source row (when ID == 0) or
-// updates the operator-controlled fields of an existing one (label,
-// type, connection_config, sync_policy). It does NOT touch
-// health_status / health_message / last_sync_at — those flow through
-// UpdateKnowledgeSourceHealth so an operator-edit never clobbers a
-// fresh sync result.
+// UpsertSource inserts a new source row (when ID == 0) or updates the
+// operator-controlled fields of an existing one (label, type,
+// connection_config, sync_policy). It does NOT touch health_status /
+// health_message / last_sync_at — those flow through UpdateSourceHealth
+// so an operator-edit never clobbers a fresh sync result.
 //
 // Returns the persisted source with ID, CreatedAt, UpdatedAt filled.
-func (s *Store) UpsertKnowledgeSource(ctx context.Context, src *sources.Source) (*sources.Source, error) {
+func (s *Store) UpsertSource(ctx context.Context, src *sources.Source) (*sources.Source, error) {
 	if err := src.Validate(); err != nil {
 		return nil, err
 	}
@@ -105,7 +103,7 @@ func (s *Store) UpsertKnowledgeSource(ctx context.Context, src *sources.Source) 
 	if src.ID == 0 {
 		// RETURNING-based INSERT is the cross-dialect pattern that
 		// works on both SQLite (>=3.35) and PG. See risk R1.
-		id, err := s.InsertReturningID(ctx, `
+		id, err := s.insertReturningID(ctx, `
 			INSERT INTO knowledge_sources
 				(org_id, type, label, connection_config, sync_policy,
 				 health_status, health_message, last_sync_at, last_sync_asset_count,
@@ -119,11 +117,11 @@ func (s *Store) UpsertKnowledgeSource(ctx context.Context, src *sources.Source) 
 		if err != nil {
 			return nil, err
 		}
-		return s.GetKnowledgeSource(ctx, id, src.OrgID)
+		return s.GetSource(ctx, id, src.OrgID)
 	}
 	// Update path: org_id is part of the WHERE so a misrouted update
 	// against a foreign row silently affects 0 rows.
-	res, err := s.ExecContext(ctx, `
+	res, err := s.execContext(ctx, `
 		UPDATE knowledge_sources
 		   SET type              = ?,
 		       label             = ?,
@@ -143,22 +141,22 @@ func (s *Store) UpsertKnowledgeSource(ctx context.Context, src *sources.Source) 
 		// observably identical to the caller, by design.
 		return nil, sql.ErrNoRows
 	}
-	return s.GetKnowledgeSource(ctx, src.ID, src.OrgID)
+	return s.GetSource(ctx, src.ID, src.OrgID)
 }
 
-// UpdateKnowledgeSourceHealth is the only write path for the
-// health_* columns. The ingestor runtime calls this after every sync
-// attempt. lastAssetCount is the count the ingestor observed; it is
-// cached on the source row so the Sources panel can show "47 assets"
-// without scanning the assets table.
-func (s *Store) UpdateKnowledgeSourceHealth(ctx context.Context, sourceID, orgID int64, h sources.Health, lastAssetCount int) error {
+// UpdateSourceHealth is the only write path for the health_* columns.
+// The ingestor runtime calls this after every sync attempt.
+// lastAssetCount is the count the ingestor observed; it is cached on
+// the source row so the Sources panel can show "47 assets" without
+// scanning the assets table.
+func (s *Store) UpdateSourceHealth(ctx context.Context, sourceID, orgID int64, h sources.Health, lastAssetCount int) error {
 	if sourceID <= 0 || orgID <= 0 {
-		return fmt.Errorf("knowledge_sources: source_id and org_id are required")
+		return fmt.Errorf("knowledge: source_id and org_id are required")
 	}
 	if !h.Status.IsKnown() {
-		return errors.New("knowledge_sources: unknown health status: " + string(h.Status))
+		return errors.New("knowledge: unknown health status: " + string(h.Status))
 	}
-	res, err := s.ExecContext(ctx, `
+	res, err := s.execContext(ctx, `
 		UPDATE knowledge_sources
 		   SET health_status         = ?,
 		       health_message        = ?,
@@ -179,15 +177,20 @@ func (s *Store) UpdateKnowledgeSourceHealth(ctx context.Context, sourceID, orgID
 	return nil
 }
 
-// DeleteKnowledgeSourceForOrg removes a source and cascades to all
-// assets it produced. The deletion runs in a transaction so a partial
-// failure (source row gone, assets stranded) is impossible.
+// DeleteSourceForOrg removes a source and cascades to all assets it
+// produced. The deletion runs in a transaction so a partial failure
+// (source row gone, assets stranded) is impossible.
 //
 // Returns the count of assets that were removed alongside the source,
 // so callers can audit the blast radius before logging.
-func (s *Store) DeleteKnowledgeSourceForOrg(ctx context.Context, sourceID, orgID int64) (assetsDeleted int64, err error) {
+//
+// L3 note: knowledge owns its own transaction here. Phase 4 audit
+// found zero cross-package writers that need to thread an external
+// *sql.Tx through this path; if that changes, lift the tx parameter
+// rather than reintroducing a parent-managed transaction wrapper.
+func (s *Store) DeleteSourceForOrg(ctx context.Context, sourceID, orgID int64) (assetsDeleted int64, err error) {
 	if sourceID <= 0 || orgID <= 0 {
-		return 0, fmt.Errorf("knowledge_sources: source_id and org_id are required")
+		return 0, fmt.Errorf("knowledge: source_id and org_id are required")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -201,7 +204,7 @@ func (s *Store) DeleteKnowledgeSourceForOrg(ctx context.Context, sourceID, orgID
 	// Cascade explicitly so we can return the count. ON DELETE CASCADE
 	// at the SQL level would hide this from the caller.
 	res, err := tx.ExecContext(ctx,
-		`DELETE FROM knowledge_assets WHERE source_id = ? AND org_id = ?`,
+		s.dialect.Rebind(`DELETE FROM knowledge_assets WHERE source_id = ? AND org_id = ?`),
 		sourceID, orgID,
 	)
 	if err != nil {
@@ -209,7 +212,7 @@ func (s *Store) DeleteKnowledgeSourceForOrg(ctx context.Context, sourceID, orgID
 	}
 	assetsDeleted, _ = res.RowsAffected()
 	res, err = tx.ExecContext(ctx,
-		`DELETE FROM knowledge_sources WHERE id = ? AND org_id = ?`,
+		s.dialect.Rebind(`DELETE FROM knowledge_sources WHERE id = ? AND org_id = ?`),
 		sourceID, orgID,
 	)
 	if err != nil {
@@ -228,7 +231,7 @@ func (s *Store) DeleteKnowledgeSourceForOrg(ctx context.Context, sourceID, orgID
 
 // --- internals ---
 
-const knowledgeSourceSelect = `
+const sourceSelect = `
 	SELECT id, org_id, type, label, connection_config, sync_policy,
 	       health_status, health_message, last_sync_at, last_sync_asset_count,
 	       created_at, updated_at
@@ -241,7 +244,7 @@ type scanRow interface {
 	Scan(dest ...any) error
 }
 
-func scanKnowledgeSource(r scanRow) (*sources.Source, error) {
+func scanSource(r scanRow) (*sources.Source, error) {
 	var (
 		src           sources.Source
 		typ           string

@@ -52,9 +52,9 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// a full Trace + Budget recorded under a retrievalID we thread into
 	// the outcome event when the message is queued. Replay UI joins on
 	// retrievalID to show "this lead → these assets → this outcome".
-	knowledgeBuilder := knowledgeRuntime.NewBuilder(db)
-	knowledgeBuilder.Recorder = db
-	knowledgeBuilder.TraceRec = db
+	knowledgeBuilder := knowledgeRuntime.NewBuilder(db.Knowledge())
+	knowledgeBuilder.Recorder = db.Knowledge()
+	knowledgeBuilder.TraceRec = db.Knowledge()
 	template := argString(args, "template")
 	queued, skipped := 0, 0
 	approvedCount := 0
@@ -134,7 +134,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			// shows "retrieved → drafted → rejected (reason)" instead
 			// of leaving the retrieval event dangling.
 			if retrievalID != "" {
-				db.RecordKnowledgeOutcome(ctx, orgID, retrievalID, "rejected")
+				db.Knowledge().RecordOutcome(ctx, orgID, retrievalID, "rejected")
 			}
 			continue
 		}
@@ -147,7 +147,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// against the same retrievalID — that's where image attachments
 		// (Phase E) and DOM verification land.
 		if retrievalID != "" {
-			db.RecordKnowledgeOutcome(ctx, orgID, retrievalID, "queued")
+			db.Knowledge().RecordOutcome(ctx, orgID, retrievalID, "queued")
 		}
 	}
 

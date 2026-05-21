@@ -16,7 +16,7 @@ type fakeLister struct {
 	gotOrgID     int64
 }
 
-func (f *fakeLister) ListKnowledgeAssetsForOrg(_ context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error) {
+func (f *fakeLister) ListAssetsForOrg(_ context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error) {
 	f.gotFilter = filter
 	f.gotOrgID = orgID
 	// Apply state filter so tests can use fakeLister like the real one

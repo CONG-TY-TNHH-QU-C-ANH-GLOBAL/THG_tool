@@ -1,5 +1,4 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
 	"context"
@@ -28,14 +27,14 @@ import (
 // EmbeddingCostBatch captures one batch of embedding work. The
 // embedding worker calls this AFTER a Tick completes.
 type EmbeddingCostBatch struct {
-	OrgID         int64
-	SourceID      int64  // 0 = source attribution unavailable (legacy / direct ingest)
-	BatchSize     int
-	Succeeded     int
-	Failed        int
-	TokensServed  int    // populated when the embedder reports usage (OpenAI does)
-	DurationMs    int64
-	Recoverable   bool
+	OrgID        int64
+	SourceID     int64 // 0 = source attribution unavailable (legacy / direct ingest)
+	BatchSize    int
+	Succeeded    int
+	Failed       int
+	TokensServed int // populated when the embedder reports usage (OpenAI does)
+	DurationMs   int64
+	Recoverable  bool
 }
 
 // RecordEmbeddingCost is the per-org, per-source cost-recording
@@ -57,14 +56,14 @@ func (s *Store) RecordEmbeddingCost(ctx context.Context, batch EmbeddingCostBatc
 		"recoverable":   batch.Recoverable,
 		"source_id":     batch.SourceID,
 	})
-	_, err := s.ExecContext(ctx, `
+	_, err := s.execContext(ctx, `
 		INSERT INTO knowledge_events
 			(org_id, event_type, data_json, duration_ms)
 		VALUES (?, ?, ?, ?)`,
 		batch.OrgID, eventTypeEmbedding, string(payload), batch.DurationMs,
 	)
 	if err != nil {
-		fmt.Printf("[knowledge_cost] record cost org=%d source=%d: %v\n", batch.OrgID, batch.SourceID, err)
+		fmt.Printf("[knowledge] record cost org=%d source=%d: %v\n", batch.OrgID, batch.SourceID, err)
 	}
 }
 
@@ -72,13 +71,13 @@ func (s *Store) RecordEmbeddingCost(ctx context.Context, batch EmbeddingCostBatc
 // 30-day window matches conversion-count semantics on knowledge_assets
 // so dashboards present consistent windows everywhere.
 type OrgEmbeddingCost struct {
-	OrgID            int64                       `json:"org_id"`
-	BatchCount30d    int                         `json:"batch_count_30d"`
-	TokensServed30d  int64                       `json:"tokens_served_30d"`
-	SucceededAssets  int                         `json:"succeeded_assets"`
-	FailedAssets     int                         `json:"failed_assets"`
-	EstimatedUSD30d  float64                     `json:"estimated_usd_30d"`
-	BySource         map[string]int64            `json:"by_source"` // source_id (as string) → tokens
+	OrgID           int64            `json:"org_id"`
+	BatchCount30d   int              `json:"batch_count_30d"`
+	TokensServed30d int64            `json:"tokens_served_30d"`
+	SucceededAssets int              `json:"succeeded_assets"`
+	FailedAssets    int              `json:"failed_assets"`
+	EstimatedUSD30d float64          `json:"estimated_usd_30d"`
+	BySource        map[string]int64 `json:"by_source"` // source_id (as string) → tokens
 }
 
 // pricePerMillionTokens is the operator-configurable rate. Defaults
@@ -92,13 +91,13 @@ const pricePerMillionTokens = 0.02
 // from request handlers.
 func (s *Store) GetOrgEmbeddingCost(ctx context.Context, orgID int64) (*OrgEmbeddingCost, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_cost: org_id required")
+		return nil, fmt.Errorf("knowledge: org_id required")
 	}
 	since := s.dialect.IntervalDaysExpr(30)
 	q := `SELECT data_json, duration_ms FROM knowledge_events
 	       WHERE org_id = ? AND event_type = ?
 	         AND occurred_at >= ` + since
-	rows, err := s.QueryContext(ctx, q, orgID, eventTypeEmbedding)
+	rows, err := s.queryContext(ctx, q, orgID, eventTypeEmbedding)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +149,7 @@ func (s *Store) ListOrgsByEmbeddingCost(ctx context.Context, limit int) ([]OrgEm
 	       WHERE event_type = ?
 	         AND org_id > 0
 	         AND occurred_at >= ` + since
-	rows, err := s.QueryContext(ctx, q, eventTypeEmbedding)
+	rows, err := s.queryContext(ctx, q, eventTypeEmbedding)
 	if err != nil {
 		return nil, err
 	}

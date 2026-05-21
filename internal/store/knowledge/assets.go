@@ -1,8 +1,6 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-package store
+package knowledge
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/security"
 )
@@ -31,28 +30,28 @@ import (
 //     filter is honored verbatim — because the retrieval-engine layer
 //     is the right place to enforce "approved-only by default."
 
-// GetKnowledgeAsset returns one asset owned by orgID, or sql.ErrNoRows.
-func (s *Store) GetKnowledgeAsset(ctx context.Context, assetID, orgID int64) (*assets.Asset, error) {
+// GetAsset returns one asset owned by orgID, or sql.ErrNoRows.
+func (s *Store) GetAsset(ctx context.Context, assetID, orgID int64) (*assets.Asset, error) {
 	if assetID <= 0 || orgID <= 0 {
 		return nil, sql.ErrNoRows
 	}
-	row := s.QueryRowContext(ctx, knowledgeAssetSelect+`
+	row := s.queryRowContext(ctx, assetSelect+`
 		WHERE id = ? AND org_id = ?`, assetID, orgID)
-	asset, err := scanKnowledgeAsset(row)
+	asset, err := scanAsset(row)
 	if err == sql.ErrNoRows {
 		return nil, sql.ErrNoRows
 	}
 	return asset, err
 }
 
-// ListKnowledgeAssetsForOrg returns assets matching the filter. Org
-// isolation is implicit on the repository receiver — there is no way
-// to call this method for a tenant other than orgID.
-func (s *Store) ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error) {
+// ListAssetsForOrg returns assets matching the filter. Org isolation
+// is implicit on the repository receiver — there is no way to call
+// this method for a tenant other than orgID.
+func (s *Store) ListAssetsForOrg(ctx context.Context, orgID int64, filter assets.ListFilter) ([]*assets.Asset, error) {
 	if orgID <= 0 {
-		return nil, fmt.Errorf("knowledge_assets: org_id is required")
+		return nil, fmt.Errorf("knowledge: org_id is required")
 	}
-	q := knowledgeAssetSelect + ` WHERE org_id = ?`
+	q := assetSelect + ` WHERE org_id = ?`
 	args := []any{orgID}
 
 	if len(filter.Types) > 0 {
@@ -93,14 +92,14 @@ func (s *Store) ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filt
 		}
 	}
 
-	rows, err := s.QueryContext(ctx, q, args...)
+	rows, err := s.queryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]*assets.Asset, 0, 16)
 	for rows.Next() {
-		a, err := scanKnowledgeAsset(rows)
+		a, err := scanAsset(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -109,11 +108,11 @@ func (s *Store) ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filt
 	return out, rows.Err()
 }
 
-// UpsertKnowledgeAsset is the ingestor-side write. It writes the
-// ingestor-controlled columns (type, title, description, tags,
-// payload, external_id) and intentionally does NOT touch the
-// operator-controlled columns (state, pinned, boost) or the
-// system-controlled columns (metrics, retrieval counters).
+// UpsertAsset is the ingestor-side write. It writes the ingestor-
+// controlled columns (type, title, description, tags, payload,
+// external_id) and intentionally does NOT touch the operator-
+// controlled columns (state, pinned, boost) or the system-controlled
+// columns (metrics, retrieval counters).
 //
 // Idempotency: when (org_id, source_id, external_id) already exists,
 // it does an UPDATE. The uq_knowledge_assets_idem partial index makes
@@ -122,16 +121,17 @@ func (s *Store) ListKnowledgeAssetsForOrg(ctx context.Context, orgID int64, filt
 // Assets without a stable external_id (empty string) are excluded
 // from the unique index — the ingestor must compute and pass
 // [assets.ContentFingerprint] in that case to get idempotency.
-func (s *Store) UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*assets.Asset, error) {
+func (s *Store) UpsertAsset(ctx context.Context, a *assets.Asset) (*assets.Asset, error) {
 	if err := a.Validate(); err != nil {
 		return nil, err
 	}
 	// First, validate that the source exists and belongs to this org.
 	// Without this, a hostile caller could plant an asset under a
-	// source_id that belongs to another org.
-	src, err := s.GetKnowledgeSource(ctx, a.SourceID, a.OrgID)
+	// source_id that belongs to another org. Intra-domain check
+	// (knowledge_sources is knowledge-owned).
+	src, err := s.GetSource(ctx, a.SourceID, a.OrgID)
 	if err != nil {
-		return nil, fmt.Errorf("knowledge_assets: source not found or foreign-org: %w", err)
+		return nil, fmt.Errorf("knowledge.UpsertAsset: source not found or foreign-org: %w", err)
 	}
 	_ = src // existence is what we care about; src not needed further
 
@@ -162,7 +162,7 @@ func (s *Store) UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*ass
 	if a.ExternalID != "" {
 		// Idempotent path. ON CONFLICT touches only ingestor fields;
 		// state/pinned/boost/metrics remain whatever they were.
-		_, err := s.ExecContext(ctx, `
+		_, err := s.execContext(ctx, `
 			INSERT INTO knowledge_assets
 				(org_id, source_id, external_id, type, title, description,
 				 tags, payload, state, pinned, boost,
@@ -194,12 +194,12 @@ func (s *Store) UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*ass
 		s.markEmbeddingPendingIfTextChanged(ctx, a, assets.NormalizeTags(tags))
 		// Re-read so we return the persisted state, including merged
 		// CreatedAt and the actual UpdatedAt the DB stamped.
-		return s.getKnowledgeAssetByExternalID(ctx, a.OrgID, a.SourceID, a.ExternalID)
+		return s.getAssetByExternalID(ctx, a.OrgID, a.SourceID, a.ExternalID)
 	}
 	// Insert-only path for assets without a stable ID. Caller is
-	// responsible for deduping (typically via ContentFingerprint
-	// stored as external_id, in which case this branch is dead code).
-	id, err := s.InsertReturningID(ctx, `
+	// responsible for deduping (typically via ContentFingerprint stored
+	// as external_id, in which case this branch is dead code).
+	id, err := s.insertReturningID(ctx, `
 		INSERT INTO knowledge_assets
 			(org_id, source_id, external_id, type, title, description,
 			 tags, payload, state, pinned, boost,
@@ -218,27 +218,26 @@ func (s *Store) UpsertKnowledgeAsset(ctx context.Context, a *assets.Asset) (*ass
 	// ID; reuse it for the hash UPDATE.
 	a.ID = id
 	s.markEmbeddingPendingIfTextChanged(ctx, a, assets.NormalizeTags(tags))
-	return s.GetKnowledgeAsset(ctx, id, a.OrgID)
+	return s.GetAsset(ctx, id, a.OrgID)
 }
 
-// SetKnowledgeAssetState is the operator-write for state transitions.
-// Returns sql.ErrNoRows if the asset doesn't exist or belongs to a
-// different org.
-func (s *Store) SetKnowledgeAssetState(ctx context.Context, assetID, orgID int64, state assets.AssetState) error {
+// SetAssetState is the operator-write for state transitions. Returns
+// sql.ErrNoRows if the asset doesn't exist or belongs to a different org.
+func (s *Store) SetAssetState(ctx context.Context, assetID, orgID int64, state assets.AssetState) error {
 	if !state.IsKnown() {
-		return errors.New("knowledge_assets: unknown state: " + string(state))
+		return errors.New("knowledge.SetAssetState: unknown state: " + string(state))
 	}
 	return s.updateAssetField(ctx, assetID, orgID, "state", string(state))
 }
 
-// SetKnowledgeAssetPinned is the operator-write for the pinned flag.
-func (s *Store) SetKnowledgeAssetPinned(ctx context.Context, assetID, orgID int64, pinned bool) error {
+// SetAssetPinned is the operator-write for the pinned flag.
+func (s *Store) SetAssetPinned(ctx context.Context, assetID, orgID int64, pinned bool) error {
 	return s.updateAssetField(ctx, assetID, orgID, "pinned", dbutil.BoolToInt(pinned))
 }
 
-// SetKnowledgeAssetBoost is the operator-write for the boost slider.
-// Boost is clamped to [0, 100] before persisting.
-func (s *Store) SetKnowledgeAssetBoost(ctx context.Context, assetID, orgID int64, boost int) error {
+// SetAssetBoost is the operator-write for the boost slider. Boost is
+// clamped to [0, 100] before persisting.
+func (s *Store) SetAssetBoost(ctx context.Context, assetID, orgID int64, boost int) error {
 	if boost < 0 {
 		boost = 0
 	}
@@ -248,13 +247,13 @@ func (s *Store) SetKnowledgeAssetBoost(ctx context.Context, assetID, orgID int64
 	return s.updateAssetField(ctx, assetID, orgID, "boost", boost)
 }
 
-// IncrementKnowledgeAssetRetrieval is the L7 metric hook. Called from
-// the retrieval engine after a Hit was used by the agent runtime.
-func (s *Store) IncrementKnowledgeAssetRetrieval(ctx context.Context, assetID, orgID int64) error {
+// IncrementAssetRetrieval is the L7 metric hook. Called from the
+// retrieval engine after a Hit was used by the agent runtime.
+func (s *Store) IncrementAssetRetrieval(ctx context.Context, assetID, orgID int64) error {
 	if assetID <= 0 || orgID <= 0 {
-		return fmt.Errorf("knowledge_assets: ids required")
+		return fmt.Errorf("knowledge.IncrementAssetRetrieval: ids required")
 	}
-	res, err := s.ExecContext(ctx, `
+	res, err := s.execContext(ctx, `
 		UPDATE knowledge_assets
 		   SET retrieval_count_30d = retrieval_count_30d + 1,
 		       last_retrieved_at   = CURRENT_TIMESTAMP
@@ -269,14 +268,14 @@ func (s *Store) IncrementKnowledgeAssetRetrieval(ctx context.Context, assetID, o
 	return nil
 }
 
-// DeleteKnowledgeAssetsForSource removes every asset that belongs to
-// the given source. Used during source-disconnect and during test
-// cleanup. Returns the number of rows deleted so callers can audit.
-func (s *Store) DeleteKnowledgeAssetsForSource(ctx context.Context, sourceID, orgID int64) (int64, error) {
+// DeleteAssetsForSource removes every asset that belongs to the given
+// source. Used during source-disconnect and during test cleanup.
+// Returns the number of rows deleted so callers can audit.
+func (s *Store) DeleteAssetsForSource(ctx context.Context, sourceID, orgID int64) (int64, error) {
 	if sourceID <= 0 || orgID <= 0 {
-		return 0, fmt.Errorf("knowledge_assets: ids required")
+		return 0, fmt.Errorf("knowledge.DeleteAssetsForSource: ids required")
 	}
-	res, err := s.ExecContext(ctx,
+	res, err := s.execContext(ctx,
 		`DELETE FROM knowledge_assets WHERE source_id = ? AND org_id = ?`,
 		sourceID, orgID,
 	)
@@ -289,7 +288,7 @@ func (s *Store) DeleteKnowledgeAssetsForSource(ctx context.Context, sourceID, or
 
 // --- internals ---
 
-const knowledgeAssetSelect = `
+const assetSelect = `
 	SELECT id, org_id, source_id, external_id, type, title, description,
 	       tags, payload, state, pinned, boost,
 	       retrieval_count_30d, conversion_count_30d, last_retrieved_at,
@@ -298,7 +297,7 @@ const knowledgeAssetSelect = `
 
 func (s *Store) updateAssetField(ctx context.Context, assetID, orgID int64, column string, value any) error {
 	if assetID <= 0 || orgID <= 0 {
-		return fmt.Errorf("knowledge_assets: ids required")
+		return fmt.Errorf("knowledge: ids required")
 	}
 	// column is an internal allowlist constant from this package; never
 	// user-supplied. Documented here so a future contributor doesn't try
@@ -306,7 +305,7 @@ func (s *Store) updateAssetField(ctx context.Context, assetID, orgID int64, colu
 	q := fmt.Sprintf(`UPDATE knowledge_assets
 		SET %s = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND org_id = ?`, column)
-	res, err := s.ExecContext(ctx, q, value, assetID, orgID)
+	res, err := s.execContext(ctx, q, value, assetID, orgID)
 	if err != nil {
 		return err
 	}
@@ -317,14 +316,14 @@ func (s *Store) updateAssetField(ctx context.Context, assetID, orgID int64, colu
 	return nil
 }
 
-func (s *Store) getKnowledgeAssetByExternalID(ctx context.Context, orgID, sourceID int64, extID string) (*assets.Asset, error) {
-	row := s.QueryRowContext(ctx, knowledgeAssetSelect+`
+func (s *Store) getAssetByExternalID(ctx context.Context, orgID, sourceID int64, extID string) (*assets.Asset, error) {
+	row := s.queryRowContext(ctx, assetSelect+`
 		WHERE org_id = ? AND source_id = ? AND external_id = ?`,
 		orgID, sourceID, extID)
-	return scanKnowledgeAsset(row)
+	return scanAsset(row)
 }
 
-func scanKnowledgeAsset(r scanRow) (*assets.Asset, error) {
+func scanAsset(r scanRow) (*assets.Asset, error) {
 	var (
 		a            assets.Asset
 		typ          string
@@ -356,7 +355,3 @@ func scanKnowledgeAsset(r scanRow) (*assets.Asset, error) {
 	a.UpdatedAt = dbutil.ParseSQLiteTime(updatedAtRaw)
 	return &a, nil
 }
-
-// boolToInt moved to dbutil.BoolToInt in Phase 1 of
-// STORE_SUBPACKAGE_REFACTOR. Callers in this file now use
-// dbutil.BoolToInt.

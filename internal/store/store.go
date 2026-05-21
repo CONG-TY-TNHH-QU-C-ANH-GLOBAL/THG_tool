@@ -12,6 +12,7 @@ import (
 
 	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store/dbutil"
+	"github.com/thg/scraper/internal/store/knowledge"
 	"github.com/thg/scraper/internal/store/outbound"
 
 	_ "modernc.org/sqlite"
@@ -29,6 +30,12 @@ import (
 //     groups, group_quality, posts, comments, private_files. NO
 //     bridge wrappers — clean-cut migration moved all callers to
 //     [Store.Crawl()] directly.
+//   - [knowledge.Store] (Phase 4, 2026-05-21) — owns knowledge_sources,
+//     knowledge_assets, knowledge_events, knowledge_feedback,
+//     knowledge_assets.embedding_* metadata. Clean-cut migration
+//     (zero cross-domain writes by audit, ≤6 callers per method);
+//     method names dropped the redundant `Knowledge` prefix. Reach
+//     via [Store.Knowledge()]; no bridge wrappers.
 type Store struct {
 	db      *sql.DB
 	dialect dbutil.Dialect // never nil after New; set during boot based on driver
@@ -46,6 +53,12 @@ type Store struct {
 	// crawl has zero cross-domain writes by audit. Wired via
 	// [installCrawlStore].
 	crawl *crawl.Store
+
+	// knowledge owns the Workspace Knowledge OS tables: sources,
+	// assets, embeddings metadata, events, feedback, replay/soak
+	// reads, vector queries, and cost rollups. No Hooks — knowledge
+	// has zero cross-domain writes by audit (Phase 4, 2026-05-21).
+	knowledge *knowledge.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -58,6 +71,12 @@ func (s *Store) Outbound() *outbound.Store { return s.outbound }
 // internal/jobhandlers) reach it via this accessor — there are no
 // top-level bridge wrappers for crawl.
 func (s *Store) Crawl() *crawl.Store { return s.crawl }
+
+// Knowledge exposes the knowledge-domain subpackage handle. All
+// knowledge callers (across cmd/scraper, internal/workspace_knowledge,
+// internal/server, and internal/runtime) reach it via this accessor —
+// there are no top-level bridge wrappers for knowledge.
+func (s *Store) Knowledge() *knowledge.Store { return s.knowledge }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -136,6 +155,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	}
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
+	s.knowledge = knowledge.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
@@ -178,6 +198,7 @@ func newPostgres(dsn string) (*Store, error) {
 	}
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
+	s.knowledge = knowledge.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
