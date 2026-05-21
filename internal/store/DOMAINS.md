@@ -23,6 +23,7 @@
 | **crawl** | `internal/store/crawl/` | `s.Crawl()` | extracted (Phase 3, 2026-05-21) — clean-cut, no wrappers |
 | **knowledge** | `internal/store/knowledge/` | `s.Knowledge()` | extracted (Phase 4, 2026-05-21) — clean-cut, no wrappers, tests in subpackage |
 | **coordination** | `internal/store/coordination/` | `s.Coordination()` | extracted (Phase 5B, 2026-05-21) — clean-cut, no wrappers. Cross-package writes from outbound flow via Hooks closure pattern. |
+| **prompts** | `internal/store/prompts/` | `s.Prompts()` | extracted (Phase 9, 2026-05-22) — clean-cut, no wrappers. Schema bootstrap exposes `prompts.Migrate(db *sql.DB)` for the pre-subpackage-construction call from `Store.migrate`. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |

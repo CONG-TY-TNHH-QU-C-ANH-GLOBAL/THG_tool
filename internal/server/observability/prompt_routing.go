@@ -42,7 +42,7 @@ func promptRoutingDistribution(deps Deps) fiber.Handler {
 			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
 		}
 		hours, since := promptRoutingHoursWindow(c)
-		buckets, err := deps.DB.PromptRoutingDistribution(c.UserContext(), orgID, since)
+		buckets, err := deps.DB.Prompts().PromptRoutingDistribution(c.UserContext(), orgID, since)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -71,7 +71,7 @@ func promptRoutingRecent(deps Deps) fiber.Handler {
 		}
 		hours, since := promptRoutingHoursWindow(c)
 		limit, _ := strconv.Atoi(c.Query("limit", "100"))
-		rows, err := deps.DB.RecentPromptRouting(c.UserContext(), orgID, since, limit)
+		rows, err := deps.DB.Prompts().RecentPromptRouting(c.UserContext(), orgID, since, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -97,7 +97,7 @@ func promptRoutingConflicts(deps Deps) fiber.Handler {
 			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
 		}
 		hours, since := promptRoutingHoursWindow(c)
-		conflicts, err := deps.DB.PromptRoutingConflictCandidates(c.UserContext(), orgID, since, deps.PromptIsSelfSufficient)
+		conflicts, err := deps.DB.Prompts().PromptRoutingConflictCandidates(c.UserContext(), orgID, since, deps.PromptIsSelfSufficient)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -135,7 +135,7 @@ func promptRoutingMissingSignals(deps Deps) fiber.Handler {
 			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
 		}
 		hours, since := promptRoutingHoursWindow(c)
-		buckets, err := deps.DB.MissingSignalDistribution(c.UserContext(), orgID, since)
+		buckets, err := deps.DB.Prompts().MissingSignalDistribution(c.UserContext(), orgID, since)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

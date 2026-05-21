@@ -1,5 +1,5 @@
 // Domain: prompts (see internal/store/DOMAINS.md)
-package store
+package prompts
 
 import (
 	"database/sql"

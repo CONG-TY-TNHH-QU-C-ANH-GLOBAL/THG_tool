@@ -98,7 +98,7 @@ func setEnabled(deps Deps, enabled bool) fiber.Handler {
 		if orgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "org context required"})
 		}
-		if err := deps.DB.SetOrgSkillEnabled(c.Context(), orgID, skillID, enabled, userID); err != nil {
+		if err := deps.DB.Prompts().SetOrgSkillEnabled(c.Context(), orgID, skillID, enabled, userID); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"id": skillID, "enabled": enabled})
@@ -119,7 +119,7 @@ func executions(deps Deps) fiber.Handler {
 		if limit <= 0 || limit > 200 {
 			limit = 50
 		}
-		rows, err := deps.DB.ListRecentSkillExecutions(c.Context(), orgID, limit)
+		rows, err := deps.DB.Prompts().ListRecentSkillExecutions(c.Context(), orgID, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

@@ -42,7 +42,7 @@ func (h *Handler) aiHistory(c *fiber.Ctx) error {
 		limit = 20
 	}
 	orgID, _ := c.Locals("org_id").(int64)
-	history, err := h.db.GetPromptHistoryForOrg(orgID, limit)
+	history, err := h.db.Prompts().GetPromptHistoryForOrg(orgID, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -55,7 +55,7 @@ func (h *Handler) aiDeleteHistoryItem(c *fiber.Ctx) error {
 	if err != nil || id <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid history id"})
 	}
-	if err := h.db.DeletePromptLogForOrg(orgID, id); err != nil {
+	if err := h.db.Prompts().DeletePromptLogForOrg(orgID, id); err != nil {
 		if err == sql.ErrNoRows {
 			return c.Status(404).JSON(fiber.Map{"error": "history item not found"})
 		}
@@ -66,7 +66,7 @@ func (h *Handler) aiDeleteHistoryItem(c *fiber.Ctx) error {
 
 func (h *Handler) aiDeleteHistory(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	deleted, err := h.db.DeleteAllPromptLogsForOrg(orgID)
+	deleted, err := h.db.Prompts().DeleteAllPromptLogsForOrg(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

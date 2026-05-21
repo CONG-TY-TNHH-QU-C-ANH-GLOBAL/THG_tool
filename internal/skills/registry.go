@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/prompts"
 )
 
 // Registry is the runtime catalog of every skill the system knows
@@ -80,7 +81,7 @@ func (r *Registry) EnabledFor(ctx context.Context, db *store.Store, orgID int64)
 	if db == nil || orgID <= 0 {
 		return defaultBlueprint(all)
 	}
-	overrides, err := store.LoadOrgSkillOverrides(ctx, db, orgID)
+	overrides, err := prompts.LoadOrgSkillOverrides(ctx, db.Prompts(), orgID)
 	if err != nil || len(overrides) == 0 {
 		return defaultBlueprint(all)
 	}
@@ -222,7 +223,7 @@ func recordExecution(ctx context.Context, env Env, skillID string, args map[stri
 	if runErr != nil {
 		errMsg = runErr.Error()
 	}
-	return store.RecordSkillExecution(ctx, env.DB, store.SkillExecution{
+	return prompts.RecordSkillExecution(ctx, env.DB.Prompts(), prompts.SkillExecution{
 		OrgID:    env.OrgID,
 		UserID:   env.UserID,
 		Source:   env.Source,

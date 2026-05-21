@@ -1,18 +1,25 @@
 // Domain: prompts (see internal/store/DOMAINS.md)
-package store
+package prompts
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
-// migrateSkills creates the org_skills + skill_executions tables. Called
-// from Store.migrate. Idempotent — safe to run on every boot.
-func (s *Store) migrateSkills() error {
+// Migrate creates the org_skills + skill_executions tables. Called
+// from the parent store's schema bootstrap BEFORE the prompts.Store
+// instance is constructed (NewStore happens after migrate), so this
+// is a package-level helper that takes a raw *sql.DB rather than a
+// method on Store. Idempotent — safe to run on every boot.
+//
+// Phase 9: exported (was unexported `migrateSkills` method) for the
+// cross-package boundary.
+func Migrate(db *sql.DB) error {
 	stmts := []string{
 		// Per-org enablement of skills. A row's absence means "use the
 		// skill's DefaultEnabled value"; an explicit row overrides.
@@ -46,7 +53,7 @@ func (s *Store) migrateSkills() error {
 			ON skill_executions(skill_id, created_at DESC)`,
 	}
 	for _, stmt := range stmts {
-		if _, err := s.db.Exec(stmt); err != nil {
+		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("skills migrate: %w (stmt: %s)", err, stmt)
 		}
 	}
@@ -64,7 +71,7 @@ func LoadOrgSkillOverrides(ctx context.Context, db *Store, orgID int64) (map[str
 	if db == nil || orgID <= 0 {
 		return nil, nil
 	}
-	rows, err := db.db.QueryContext(ctx,
+	rows, err := db.DB().QueryContext(ctx,
 		`SELECT skill_id, enabled FROM org_skills WHERE org_id = ?`, orgID)
 	if err != nil {
 		return nil, err

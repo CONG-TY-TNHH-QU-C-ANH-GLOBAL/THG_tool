@@ -1,14 +1,15 @@
 // Domain: prompts (see internal/store/DOMAINS.md)
-package store
+package prompts
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // Watchpoint B — Prompt Routing Observability store queries.

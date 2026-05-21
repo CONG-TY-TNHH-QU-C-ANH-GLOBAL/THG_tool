@@ -1,6 +1,8 @@
 // Domain: infra (see internal/store/DOMAINS.md)
 package store
 
+import "github.com/thg/scraper/internal/store/prompts"
+
 // schemaBootstrapVersion is the marker version migrate() writes at
 // the end of a successful run. Bump this any time migrate()'s body
 // changes (new table, new column, anything an existing production DB
@@ -1019,8 +1021,10 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE organizations ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''`)
 
 	// Phase 6: open-prompt agent — org_skills (per-org enablement) and
-	// skill_executions (audit trail). Idempotent.
-	if err := s.migrateSkills(); err != nil {
+	// skill_executions (audit trail). Idempotent. Lives in the prompts
+	// subpackage (Phase 9, 2026-05-22) but runs here because schema
+	// bootstrap precedes subpackage construction.
+	if err := prompts.Migrate(s.db); err != nil {
 		return err
 	}
 

@@ -52,7 +52,7 @@ func RecordDashboardAutomationEvent(db *store.Store, orgID, accountID int64, mes
 	if db == nil || orgID <= 0 {
 		return
 	}
-	if err := db.InsertSystemPromptLog(orgID, accountID, message, action, args, success); err != nil {
+	if err := db.Prompts().InsertSystemPromptLog(orgID, accountID, message, action, args, success); err != nil {
 		log.Printf("[AutomationEvent] could not record dashboard event org=%d account=%d action=%s: %v", orgID, accountID, action, err)
 	}
 }

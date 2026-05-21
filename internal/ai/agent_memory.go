@@ -45,7 +45,7 @@ func (a *Agent) learnFromPrompt(prompt string) {
 // Fully driven by BusinessProfile — no hardcoded niche strings.
 
 func (a *Agent) getFewShotExamples(prompt string) []models.AIMemory {
-	memories, err := a.db.GetRelevantMemories(20)
+	memories, err := a.db.Prompts().GetRelevantMemories(20)
 	if err != nil || len(memories) == 0 {
 		return nil
 	}
@@ -141,14 +141,14 @@ func (a *Agent) logPrompt(orgID, accountID int64, source, prompt, response, acti
 		Success:             success,
 		RoutingDecisionJSON: decision.ToJSON(),
 	}
-	_ = a.db.InsertPromptLog(pl)
+	_ = a.db.Prompts().InsertPromptLog(pl)
 }
 
 func (a *Agent) updateMemory(prompt, action, args string) {
 	hash := promptHash(prompt)
-	existing, err := a.db.GetMemoryByHash(hash)
+	existing, err := a.db.Prompts().GetMemoryByHash(hash)
 	if err == nil && existing != nil {
-		_ = a.db.UpdateMemoryUsage(existing.ID, true)
+		_ = a.db.Prompts().UpdateMemoryUsage(existing.ID, true)
 	} else {
 		mem := &models.AIMemory{
 			PromptHash:  hash,
@@ -159,7 +159,7 @@ func (a *Agent) updateMemory(prompt, action, args string) {
 			UseCount:    1,
 			SuccessRate: 1.0,
 		}
-		_ = a.db.InsertMemory(mem)
+		_ = a.db.Prompts().InsertMemory(mem)
 	}
 }
 

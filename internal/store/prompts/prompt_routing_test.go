@@ -1,5 +1,5 @@
 // Domain: prompts (see internal/store/DOMAINS.md)
-package store
+package prompts_test
 
 import (
 	"context"
@@ -8,13 +8,15 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/prompts"
 )
 
-func newRoutingTestStore(t *testing.T) *Store {
-	return newSharedStore(t, "routing.db")
+func newRoutingTestStore(t *testing.T) *prompts.Store {
+	_, p := newPromptsStore(t, "routing.db")
+	return p
 }
 
-func seedRouting(t *testing.T, db *Store, orgID int64, action, decisionJSON, prompt string) {
+func seedRouting(t *testing.T, db *prompts.Store, orgID int64, action, decisionJSON, prompt string) {
 	t.Helper()
 	if err := db.InsertPromptLog(&models.PromptLog{
 		OrgID:               orgID,
@@ -35,7 +37,6 @@ func TestPromptRoutingDistribution_GroupsAndBoundsTime(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
 
-	// 3 deterministic self-sufficient + 2 brain ask-user + 1 legacy.
 	det := `{"route":"deterministic","reason_code":"self_sufficient_prompt"}`
 	ask := `{"route":"brain","reason_code":"brain_ask_user"}`
 	for i := 0; i < 3; i++ {
@@ -44,7 +45,7 @@ func TestPromptRoutingDistribution_GroupsAndBoundsTime(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		seedRouting(t, db, 1, "brain_ask_user", ask, "find me leads")
 	}
-	seedRouting(t, db, 1, "chat", "", "hello") // legacy → "{}"
+	seedRouting(t, db, 1, "chat", "", "hello")
 
 	buckets, err := db.PromptRoutingDistribution(ctx, 1, time.Now().Add(-time.Hour))
 	if err != nil {
@@ -70,8 +71,6 @@ func TestPromptRoutingDistribution_GroupsAndBoundsTime(t *testing.T) {
 	}
 }
 
-// Distribution must be org-scoped. Org bleed on a dashboard endpoint is
-// a security regression, not a UI bug.
 func TestPromptRoutingDistribution_OrgScoped(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
@@ -81,7 +80,7 @@ func TestPromptRoutingDistribution_OrgScoped(t *testing.T) {
 	}
 	org1, _ := db.PromptRoutingDistribution(ctx, 1, time.Now().Add(-time.Hour))
 	org2, _ := db.PromptRoutingDistribution(ctx, 2, time.Now().Add(-time.Hour))
-	sum := func(bs []PromptRoutingBucket) int {
+	sum := func(bs []prompts.PromptRoutingBucket) int {
 		s := 0
 		for _, b := range bs {
 			s += b.Count
@@ -93,8 +92,6 @@ func TestPromptRoutingDistribution_OrgScoped(t *testing.T) {
 	}
 }
 
-// Recent feed must parse the routing_decision_json into structured fields
-// the dashboard renders without client-side JSON parsing.
 func TestRecentPromptRouting_ParsesDecision(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
@@ -123,17 +120,13 @@ func TestRecentPromptRouting_ParsesDecision(t *testing.T) {
 	}
 }
 
-// False-positive conflict heuristic: deterministic dispatch followed
-// within 5 min by a retry/cancel prompt from the same account.
 func TestPromptRoutingConflictCandidates_FalsePositive(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
-	// Seed deterministic row, then a follow-up "wrong" prompt.
 	det := `{"route":"deterministic","reason_code":"self_sufficient_prompt"}`
 	seedRouting(t, db, 1, "scrape_group", det, "crawl 50 in https://fb.com/groups/X")
-	// Sleep 1s so created_at strictly orders newer.
 	time.Sleep(1100 * time.Millisecond)
-	seedRouting(t, db, 1, "chat", "", "huỷ đi, sai rồi") // retry pattern
+	seedRouting(t, db, 1, "chat", "", "huỷ đi, sai rồi")
 
 	conflicts, err := db.PromptRoutingConflictCandidates(ctx, 1, time.Now().Add(-time.Hour), nil)
 	if err != nil {
@@ -150,20 +143,14 @@ func TestPromptRoutingConflictCandidates_FalsePositive(t *testing.T) {
 	}
 }
 
-// False-negative conflict heuristic: brain ask-back, but the predicate
-// says the prompt was actually self-sufficient.
 func TestPromptRoutingConflictCandidates_FalseNegative(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
-	// Seed a brain ask-back on a prompt that IS self-sufficient (URL +
-	// crawl verb + count). The injected predicate returns true.
 	askDecision := `{"route":"brain","reason_code":"brain_ask_user","missing_signals":["target"]}`
 	seedRouting(t, db, 1, "brain_ask_user", askDecision,
 		"crawl 50 posts in https://facebook.com/groups/12345 looking for POD")
 
 	selfSufficient := func(prompt string) bool {
-		// Mock predicate: any prompt with "crawl" + "facebook.com/groups/"
-		// is treated as self-sufficient for this test.
 		return strings.Contains(prompt, "crawl") && strings.Contains(prompt, "facebook.com/groups/")
 	}
 
@@ -182,8 +169,6 @@ func TestPromptRoutingConflictCandidates_FalseNegative(t *testing.T) {
 	}
 }
 
-// Without a self-sufficient predicate, false-negative detection is
-// disabled (graceful — false-positive still works).
 func TestPromptRoutingConflictCandidates_NilPredicate_FalseNegativeDisabled(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
@@ -201,16 +186,11 @@ func TestPromptRoutingConflictCandidates_NilPredicate_FalseNegativeDisabled(t *t
 	}
 }
 
-// MissingSignalDistribution should only count ask-back rows; deterministic
-// dispatches don't count as ambiguity even if they happen to lack a
-// market hint.
 func TestMissingSignalDistribution_OnlyAskBacks(t *testing.T) {
 	db := newRoutingTestStore(t)
 	ctx := context.Background()
-	// One ask-back with missing_signals=[source,target] — should count.
 	askDecision := `{"route":"brain","reason_code":"brain_ask_user","missing_signals":["source","target"]}`
 	seedRouting(t, db, 1, "brain_ask_user", askDecision, "tìm khách cho mình")
-	// One deterministic dispatch — should NOT count even if MissingSignals exists.
 	detDecision := `{"route":"deterministic","reason_code":"self_sufficient_prompt","missing_signals":["market"]}`
 	seedRouting(t, db, 1, "scrape_group", detDecision, "crawl 50 in https://fb.com/groups/X")
 

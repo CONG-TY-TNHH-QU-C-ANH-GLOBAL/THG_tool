@@ -15,6 +15,7 @@ import (
 	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/store/knowledge"
 	"github.com/thg/scraper/internal/store/outbound"
+	"github.com/thg/scraper/internal/store/prompts"
 
 	_ "modernc.org/sqlite"
 )
@@ -69,6 +70,11 @@ type Store struct {
 	// CheckCapsTx, RecordTransitionTx) — coordination itself imports
 	// no peer domain per L1 + [[feedback_no_bidirectional_domain_knowledge]].
 	coordination *coordination.Store
+
+	// prompts owns prompt_logs + ai_memory + scan_logs +
+	// prompt_routing observability + org_skills/skill_executions.
+	// Phase 9 clean-cut extraction (2026-05-22). No bridge wrappers.
+	prompts *prompts.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -92,6 +98,10 @@ func (s *Store) Knowledge() *knowledge.Store { return s.knowledge }
 // New code MUST use this accessor; the Phase 5B extraction did not
 // introduce top-level bridge wrappers.
 func (s *Store) Coordination() *coordination.Store { return s.coordination }
+
+// Prompts exposes the prompts-domain subpackage handle. Phase 9
+// clean-cut extraction (2026-05-22) — no top-level bridge wrappers.
+func (s *Store) Prompts() *prompts.Store { return s.prompts }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -172,6 +182,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
+	s.prompts = prompts.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
@@ -216,6 +227,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
+	s.prompts = prompts.NewStore(s.db, s.dialect)
 	return s, nil
 }
 

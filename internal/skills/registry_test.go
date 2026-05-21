@@ -75,10 +75,10 @@ func TestRegistryRespectsOrgOverrides(t *testing.T) {
 	r.Register(sampleSkill("beta", false))
 
 	// Org 1: explicitly enable beta and disable alpha.
-	if err := db.SetOrgSkillEnabled(context.Background(), 1, "beta", true, 0); err != nil {
+	if err := db.Prompts().SetOrgSkillEnabled(context.Background(), 1, "beta", true, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetOrgSkillEnabled(context.Background(), 1, "alpha", false, 0); err != nil {
+	if err := db.Prompts().SetOrgSkillEnabled(context.Background(), 1, "alpha", false, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,7 +102,7 @@ func TestRegistryExecuteRecordsAudit(t *testing.T) {
 		t.Fatalf("unexpected result: %+v", res)
 	}
 
-	rows, err := db.ListRecentSkillExecutions(context.Background(), 1, 10)
+	rows, err := db.Prompts().ListRecentSkillExecutions(context.Background(), 1, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestRegistryExecuteRefusesDisabledSkill(t *testing.T) {
 	r := NewRegistry()
 	r.Register(sampleSkill("alpha", true))
 
-	if err := db.SetOrgSkillEnabled(context.Background(), 5, "alpha", false, 0); err != nil {
+	if err := db.Prompts().SetOrgSkillEnabled(context.Background(), 5, "alpha", false, 0); err != nil {
 		t.Fatal(err)
 	}
 	env := Env{DB: db, OrgID: 5, Source: "test"}
@@ -127,7 +127,7 @@ func TestRegistryExecuteRefusesDisabledSkill(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when running a disabled skill")
 	}
-	rows, _ := db.ListRecentSkillExecutions(context.Background(), 5, 10)
+	rows, _ := db.Prompts().ListRecentSkillExecutions(context.Background(), 5, 10)
 	if len(rows) != 1 || rows[0].Success {
 		t.Fatalf("expected one failed audit row, got %+v", rows)
 	}
