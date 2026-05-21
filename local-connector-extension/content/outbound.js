@@ -456,6 +456,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   async function executeComment(content, targetUrl = '', executionId = '') {
     await dismissBlockingOverlays();
 
+    // LIFECYCLE INSTRUMENTATION — captured at every stage so the
+    // failure note + DevTools console reveal where the flow broke.
+    // Without this, `redirected_feed` masked the actual stage that
+    // failed (gate-1 fail on a feed page registered as "redirected"
+    // even though the real issue was "FB never loaded the post URL").
+    // See project_runtime_control_plane memory: this is a precursor
+    // to EXP-1 typed events; structured as proof.notes prefix for now.
+    const navAtEntry = location.href || '';
+    console.log('[THG outbound.executeComment] start',
+      { target_url: targetUrl, landed_at_entry: navAtEntry, execution_id: executionId });
+
     // Pre-submit DOM snapshot (count + dup check) so the proof builder
     // can compute count_increased and duplicate without relying on the
     // executor's own beliefs.
@@ -518,8 +529,13 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         pollMs: 200,
       });
       if (!targetScope) {
+        const landed = location.href || '';
+        console.warn('[THG outbound.executeComment] gate1 FAIL',
+          { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed, nav_at_entry: navAtEntry });
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_1_no_article_or_unstable: target id=' + abbreviate(targetPostId) + ' did not settle (article+permalink+comment-button stable 500ms) within 8s');
+          'identity_gate_1_no_article_or_unstable: target id=' + abbreviate(targetPostId) +
+          ' landed_at=' + landed + ' nav_at_entry=' + navAtEntry +
+          ' did not settle (article+permalink+comment-button stable 500ms) within 8s');
       }
     }
     const searchRoot = targetScope || document;
@@ -546,8 +562,11 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       const refreshed = findTargetArticle(targetPostId);
       scope = refreshed || targetScope;
       if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+        const landed = location.href || '';
+        console.warn('[THG outbound.executeComment] gate2 FAIL post-click swap',
+          { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId));
+          'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed);
       }
     } else {
       scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
@@ -563,15 +582,24 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         // Re-verify after the scroll — article references may have gone
         // stale, and the React tree may have rotated.
         if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+          const landed = location.href || '';
+          console.warn('[THG outbound.executeComment] gate2b FAIL scroll swap',
+            { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
           return commentResult(false, 'context_drift', null, ctx,
-            'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId));
+            'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed);
         }
         editor = findCommentEditor(scope);
       } else {
         editor = findCommentEditor(scope) || findCommentEditor(document);
       }
     }
-    if (!editor) return commentResult(false, 'comment_box_not_found', null, ctx);
+    if (!editor) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeComment] comment_box_not_found',
+        { target_id: targetPostId, landed_at_fail: landed });
+      return commentResult(false, 'comment_box_not_found', null, ctx,
+        'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') + ' landed_at=' + landed);
+    }
 
     // Checkpoint 3 — pre-type. The editor we are about to type into
     // must still belong to the target article. This is the LAST line
@@ -580,8 +608,12 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (targetPostId) {
       const editorArticle = editor.closest('[role="article"], [role="dialog"]');
       if (!editorArticle || extractArticleCanonicalEntityId(editorArticle) !== targetPostId) {
+        const landed = location.href || '';
+        const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '<no-enclosing-article>';
+        console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',
+          { target_id: targetPostId, editor_scope_id: editorScopeID, landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId));
+          'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed);
       }
     }
 
