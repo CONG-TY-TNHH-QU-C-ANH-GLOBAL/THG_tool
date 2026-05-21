@@ -121,6 +121,22 @@ func (s *Store) installOutboundHooks() {
 		IncrementCounter: func(tx *sql.Tx, orgID, accountID int64, msgType string) {
 			_ = incrementRuntimeCounterTx(tx, orgID, accountID, msgType)
 		},
+		RecordTransition: func(ctx context.Context, tx *sql.Tx, in outbound.RecordTransitionInput) {
+			// Unpack the carrier struct into primitives so the
+			// coordination writer takes no peer-domain types. After
+			// Phase 5B (coordination extraction) this closure will call
+			// s.coordination.RecordExecutionTransition(...) with the
+			// same primitives — the wiring point is the only place that
+			// imports both domains.
+			s.recordExecutionTransitionTx(ctx, tx,
+				in.OutboundID, in.OrgID, in.AccountID,
+				in.TargetURL, in.ActionType, in.Attempt,
+				in.Status, in.Outcome, in.FailureReason, in.EvidenceJSON,
+				in.DOMVerified, in.NetworkVerified,
+				in.TransitionType, in.ExecutionID,
+				in.ResultingState, in.ResultingOutcome, in.LeaseExpiry,
+			)
+		},
 	})
 }
 

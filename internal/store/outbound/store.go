@@ -96,6 +96,19 @@ type Hooks struct {
 	//
 	// tenant-ok: cross-domain projection (outbound -> coordination).
 	IncrementCounter func(tx *sql.Tx, orgID, accountID int64, msgType string)
+
+	// RecordTransition writes one row to execution_attempts when an
+	// outbound state-machine method (queue, claim, finalize, reset)
+	// commits. Implemented by the coordination domain — execution_attempts
+	// is the runtime-truth ledger coordination owns (DOMAINS.md §2.4).
+	// Best-effort: outbound logs failures and continues; the row-level
+	// CAS on outbound_messages remains the authoritative concurrency
+	// control. See specs/PHASE_5A_COORDINATION_AUDIT.md §4.2 — this hook
+	// replaces a previous direct INSERT outbound did against the
+	// execution_attempts table (Decouple-2, 2026-05-21).
+	//
+	// tenant-ok: cross-domain projection (outbound -> coordination).
+	RecordTransition func(ctx context.Context, tx *sql.Tx, input RecordTransitionInput)
 }
 
 // NewStore constructs an outbound store with the given DB, dialect,

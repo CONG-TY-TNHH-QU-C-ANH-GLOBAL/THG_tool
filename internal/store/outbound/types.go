@@ -1,6 +1,7 @@
 package outbound
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/thg/scraper/internal/models"
@@ -89,3 +90,34 @@ const (
 	TransitionFinalize TransitionType = "finalize"
 	TransitionReset    TransitionType = "reset"
 )
+
+// RecordTransitionInput is the carrier shape for [Hooks.RecordTransition].
+// Outbound builds this from its internal transitionInput at the hook
+// boundary; the hook owner (coordination domain, today wired in
+// outbound_aliases.go) translates these fields into the cross-dialect
+// INSERT against execution_attempts.
+//
+// Fields are pre-converted to primitive/string form so the receiving
+// coordination writer takes no peer-domain types. Symmetric to the
+// CapsDecision pattern (Decouple-1): outbound owns the input shape;
+// coordination receives primitives. See specs/PHASE_5A_COORDINATION_AUDIT.md
+// §4.2 for the cycle-avoidance rationale.
+type RecordTransitionInput struct {
+	OutboundID       int64
+	OrgID            int64
+	AccountID        int64
+	TargetURL        string
+	ActionType       string
+	Attempt          int
+	Status           string // pre-converted from models.AttemptStatus
+	Outcome          string // pre-converted from models.ExecutionOutcome
+	FailureReason    string
+	EvidenceJSON     string
+	DOMVerified      bool
+	NetworkVerified  bool
+	TransitionType   string // pre-converted from outbound.TransitionType
+	ExecutionID      string
+	ResultingState   string // pre-converted from models.ExecutionState
+	ResultingOutcome string // pre-converted from models.VerificationOutcome
+	LeaseExpiry      sql.NullTime
+}
