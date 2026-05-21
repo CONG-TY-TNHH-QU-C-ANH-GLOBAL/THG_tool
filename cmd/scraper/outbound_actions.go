@@ -327,16 +327,40 @@ func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGe
 	// Persist the resolved+owner-checked account_id so queueFacebookPostTargets
 	// uses it instead of resolving again.
 	args["account_id"] = accountID
-	target := argString(args, "profile_url")
-	if target == "" && accountID > 0 {
-		if acc, err := db.GetAccountForOrg(accountID, orgID); err == nil && acc != nil {
-			target = textutil.FirstNonEmpty(acc.FBProfileURL, "https://www.facebook.com/me")
-		}
-	}
-	if target == "" {
-		target = "https://www.facebook.com/me"
+	target, skipReason := resolveProfilePostTarget(db.GetAccountForOrg, orgID, accountID, argString(args, "profile_url"))
+	if skipReason != "" {
+		return fmt.Sprintf("queued_profile_post=0 skipped=1 mode=skipped reasons=map[%s:1]", skipReason), nil
 	}
 	return queueFacebookPostTargets(ctx, db, msgGen, args, "profile_post", []string{target}, notify)
+}
+
+// accountFetcher captures the subset of *store.Store that
+// resolveProfilePostTarget needs. Function-typed (not interface) so
+// tests can pass a closure without standing up the full store.
+type accountFetcher func(accountID, orgID int64) (*models.Account, error)
+
+// resolveProfilePostTarget picks the explicit profile_url first, then
+// falls back to the account's FBProfileURL when account lookup
+// succeeds. Returns ("", "no_profile_url_resolved") when neither
+// resolves — the caller MUST refuse to queue rather than implicitly
+// post to /me. Dropping the /me fallback per outbound-audit #5
+// closed deterministic-boundary leak: /me resolves per-logged-in
+// account, so multi-account ops could cross-post identities silently.
+func resolveProfilePostTarget(fetch accountFetcher, orgID, accountID int64, requestedURL string) (string, string) {
+	if t := strings.TrimSpace(requestedURL); t != "" {
+		return t, ""
+	}
+	if accountID <= 0 || fetch == nil {
+		return "", "no_profile_url_resolved"
+	}
+	acc, err := fetch(accountID, orgID)
+	if err != nil || acc == nil {
+		return "", "no_profile_url_resolved"
+	}
+	if t := strings.TrimSpace(acc.FBProfileURL); t != "" {
+		return t, ""
+	}
+	return "", "no_profile_url_resolved"
 }
 
 func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, msgType string, targets []string, notify func(string)) (string, error) {

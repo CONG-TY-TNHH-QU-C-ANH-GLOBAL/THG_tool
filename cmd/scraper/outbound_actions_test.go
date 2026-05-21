@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
@@ -145,6 +146,116 @@ func TestResolveOutboundTargetURL(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveProfilePostTarget(t *testing.T) {
+	okFetcher := func(profileURL string) accountFetcher {
+		return func(accountID, orgID int64) (*models.Account, error) {
+			return &models.Account{ID: accountID, OrgID: orgID, FBProfileURL: profileURL}, nil
+		}
+	}
+	errFetcher := func(accountID, orgID int64) (*models.Account, error) {
+		return nil, errSentinel
+	}
+	nilFetcher := func(accountID, orgID int64) (*models.Account, error) {
+		return nil, nil
+	}
+
+	tests := []struct {
+		name         string
+		fetch        accountFetcher
+		orgID        int64
+		accountID    int64
+		requestedURL string
+		wantURL      string
+		wantReason   string
+	}{
+		{
+			name:         "explicit profile_url wins",
+			fetch:        okFetcher("https://www.facebook.com/account.profile"),
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "https://www.facebook.com/explicit",
+			wantURL:      "https://www.facebook.com/explicit",
+		},
+		{
+			name:         "explicit profile_url with whitespace trimmed",
+			fetch:        nil,
+			orgID:        7,
+			accountID:    0,
+			requestedURL: "  https://www.facebook.com/explicit  ",
+			wantURL:      "https://www.facebook.com/explicit",
+		},
+		{
+			name:         "falls back to account FBProfileURL when no explicit",
+			fetch:        okFetcher("https://www.facebook.com/account.profile"),
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "",
+			wantURL:      "https://www.facebook.com/account.profile",
+		},
+		{
+			name:         "no explicit, no account — refuses (no /me fallback)",
+			fetch:        okFetcher("https://www.facebook.com/account.profile"),
+			orgID:        7,
+			accountID:    0,
+			requestedURL: "",
+			wantReason:   "no_profile_url_resolved",
+		},
+		{
+			name:         "no explicit, account lookup errors — refuses",
+			fetch:        errFetcher,
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "",
+			wantReason:   "no_profile_url_resolved",
+		},
+		{
+			name:         "no explicit, account not found — refuses",
+			fetch:        nilFetcher,
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "",
+			wantReason:   "no_profile_url_resolved",
+		},
+		{
+			name:         "no explicit, account has empty FBProfileURL — refuses (no /me)",
+			fetch:        okFetcher(""),
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "",
+			wantReason:   "no_profile_url_resolved",
+		},
+		{
+			name:         "no explicit, account has whitespace FBProfileURL — refuses",
+			fetch:        okFetcher("   "),
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "",
+			wantReason:   "no_profile_url_resolved",
+		},
+		{
+			name:         "nil fetcher with valid account ID — refuses",
+			fetch:        nil,
+			orgID:        7,
+			accountID:    42,
+			requestedURL: "",
+			wantReason:   "no_profile_url_resolved",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, gotReason := resolveProfilePostTarget(tt.fetch, tt.orgID, tt.accountID, tt.requestedURL)
+			if gotURL != tt.wantURL {
+				t.Errorf("url = %q, want %q", gotURL, tt.wantURL)
+			}
+			if gotReason != tt.wantReason {
+				t.Errorf("reason = %q, want %q", gotReason, tt.wantReason)
+			}
+		})
+	}
+}
+
+var errSentinel = fmt.Errorf("sentinel fetch error")
 
 func TestCanonicalGroupPostURLFromFBIDs(t *testing.T) {
 	tests := []struct {
