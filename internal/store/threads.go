@@ -45,6 +45,44 @@ func (s *Store) CreateThreadForOrg(orgID, leadID int64, platform, profileURL, pr
 	return id, nil
 }
 
+// SeedThreadForOrg creates a thread row at lead-ingest time with NULL
+// last_outbound_at — distinct from CreateThreadForOrg which is called
+// post-send and stamps CURRENT_TIMESTAMP. The seed gives downstream
+// projections (lead engagement state, badge derivation) a thread row
+// to read even before the first outbound action lands.
+//
+// Idempotent (INSERT OR IGNORE on the unique idx_thread_org_profile).
+// Re-seeding the same (org, profile) is a no-op, preserving the original
+// row's lead_id / profile_name attribution. Returns the resulting thread
+// id (existing or newly created).
+//
+// Note on concurrent-first-send protection: this seed alone does NOT
+// close the cross-account concurrent-first-send slip described in
+// project_outbound_audit_findings #3. The conversation gate currently
+// only triggers cooldown when last_outbound_at is non-zero. A follow-up
+// gate-rule change (treating "thread initiated + active outbound from
+// another account to same profile" as a coordination block) is needed
+// to fully close that gap. See PR-B commit body.
+func (s *Store) SeedThreadForOrg(orgID, leadID int64, platform, profileURL, profileName, niche string) (int64, error) {
+	if orgID <= 0 || strings.TrimSpace(profileURL) == "" {
+		return 0, nil
+	}
+	res, err := s.db.Exec(
+		`INSERT OR IGNORE INTO conversation_threads
+		   (org_id, lead_id, platform, profile_url, profile_name, niche, status)
+		 VALUES (?, ?, ?, ?, ?, ?, 'initiated')`,
+		orgID, leadID, platform, profileURL, profileName, niche,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, _ := res.LastInsertId()
+	if id == 0 {
+		s.db.QueryRow(`SELECT id FROM conversation_threads WHERE org_id = ? AND profile_url = ?`, orgID, profileURL).Scan(&id)
+	}
+	return id, nil
+}
+
 // GetThreadByProfile returns the thread for a profile URL, or nil if none.
 func (s *Store) GetThreadByProfile(profileURL string) (*models.ConversationThread, error) {
 	var t models.ConversationThread

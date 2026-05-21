@@ -444,11 +444,26 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			ThreadRole:   threadRole,
 			ClassifiedAt: time.Now().UTC(),
 		}
-		if _, err := deps.LegacyDB.InsertLead(legacy); err != nil {
+		leadID, err := deps.LegacyDB.InsertLead(legacy)
+		if err != nil {
 			// Non-fatal: task_leads is the source of truth; legacy mirror is
 			// best-effort for the existing dashboard.
 			slog.WarnContext(ctx, "legacy lead mirror failed",
 				"task_id", in.TaskID, "org_id", in.OrgID, "error", err)
+		}
+
+		// Seed conversation_threads at ingest time so lead-engagement
+		// projection (badges, thread state) sees a row before the first
+		// outbound action. Idempotent (INSERT OR IGNORE on
+		// idx_thread_org_profile), best-effort — seed failure must not
+		// fail the lead pipeline. See SeedThreadForOrg doc + PR-B in
+		// stabilization plan for the cross-account concurrent-first-send
+		// gate-rule follow-up that completes outbound audit #3.
+		if profile := strings.TrimSpace(in.AuthorProfileURL); profile != "" {
+			if _, sErr := deps.LegacyDB.SeedThreadForOrg(in.OrgID, leadID, string(models.PlatformFacebook), profile, strings.TrimSpace(in.AuthorName), ""); sErr != nil {
+				slog.WarnContext(ctx, "thread seed failed",
+					"task_id", in.TaskID, "org_id", in.OrgID, "profile_url", profile, "error", sErr)
+			}
 		}
 	}
 	out.Inserted = true
