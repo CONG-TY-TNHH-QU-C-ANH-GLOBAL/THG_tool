@@ -57,6 +57,14 @@ const ADMIN_TABS: NavItem[] = [
 const STAFF_TABS: NavItem[] = [
   { id: 'leads', Icon: Users },
   { id: 'chat', Icon: Bot },
+  // Sales/staff users own their FB accounts (see AccountOwnerAllowed in
+  // internal/server/agent/account_guard). They need browser access to
+  // initialize/manage their own automation session. Backend already
+  // enforces ownership on action endpoints — sales can only start/stop
+  // sessions on accounts they own — so the panel is safe to expose.
+  // Shared-battlefield: sales see all accounts as context, action only
+  // their own. See feedback_shared_battlefield_not_crm.
+  { id: 'browser', Icon: Globe },
   { id: 'inbox', Icon: MessageSquare },
 ];
 
