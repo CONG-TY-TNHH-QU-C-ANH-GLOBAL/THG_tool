@@ -133,6 +133,48 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     try {
       await THGFacebookState.waitForTabReady(state.tab.id, 20000);
       await THGShared.delay(1200);
+
+      // POST-NAVIGATION URL VERIFICATION.
+      //
+      // Critical safety check that the crawl path (commands.js
+      // navigateAndVerify) already enforces, but the outbox path was
+      // missing: confirm the tab actually settled on the target URL
+      // before letting the content-script gates try to find the
+      // article. Facebook can redirect a deep-link navigation
+      // (chrome.tabs.update to /groups/<g>/posts/<p>/) to a feedish
+      // surface (group home, /home.php) when:
+      //   - the account has a soft anti-automation flag
+      //   - the post moderation pending / restricted for this account
+      //   - FB's session triggered a checkpoint
+      //   - direct deep-link navigation without referrer/user-gesture
+      //     fingerprint pattern got intercepted
+      // Without this check the content-script's identity_gate_1 sits
+      // through the full 8s stable-wait timeout on the WRONG page and
+      // proof.js then masks the failure as 'redirected_feed' without
+      // ever surfacing the navigation mismatch — exactly the
+      // operator-frustrating symptom seen during the May-2026
+      // diagnostic loop. Returning early here costs ~5ms instead of
+      // ~8s and gives the operator-replay UI a clean, specific note.
+      const liveTab = await chrome.tabs.get(state.tab.id).catch(() => null);
+      const liveURL = (liveTab && liveTab.url) ? String(liveTab.url) : '';
+      if (liveURL && !urlsMatchSameDestination(liveURL, targetUrl)) {
+        console.warn('[THGOutbox] navigation redirected before content-script dispatch',
+          { target_url: targetUrl, actual_url: liveURL });
+        return {
+          ok: false,
+          error: 'navigation_redirected',
+          proof: {
+            success: false,
+            failure_reason: 'redirected_feed',
+            page_url_after: liveURL,
+            notes: 'outbox.navigation_redirected: target_url=' + targetUrl +
+                   ' actual=' + liveURL +
+                   ' (FB navigation diverged before content-script could run gate-1)',
+            execution_id: String(message.execution_id || ''),
+          },
+        };
+      }
+
       try {
         return await chrome.tabs.sendMessage(state.tab.id, { type: 'thg_execute_outbound', message });
       } catch {
@@ -141,6 +183,25 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       }
     } finally {
       releaseTabLock();
+    }
+  }
+
+  // urlsMatchSameDestination compares two FB URLs for "same target
+  // post/profile/page" semantics. Uses pathname only (query params and
+  // hash strip out tracking/comment-deeplinks). Trailing slashes
+  // normalized. Mirrors sameFacebookDestination in facebook-state.js
+  // but kept local to outbox.js so the safety check stays self-
+  // contained inside the outbox module.
+  function urlsMatchSameDestination(actual, expected) {
+    try {
+      const a = new URL(actual);
+      const b = new URL(expected);
+      if (a.hostname !== b.hostname) return false;
+      const ap = a.pathname.replace(/\/+$/, '');
+      const bp = b.pathname.replace(/\/+$/, '');
+      return ap === bp;
+    } catch {
+      return false;
     }
   }
 
