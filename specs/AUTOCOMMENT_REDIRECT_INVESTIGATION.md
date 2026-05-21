@@ -1,0 +1,183 @@
+# Auto-Comment `redirected_feed` Investigation
+
+**Status**: Open. Root cause unconfirmed. Code-side investigation exhausted; awaiting user-side verification cycle.
+
+**Owner**: Operator (founder). Claude cannot satisfy the verification gate from current context.
+
+**Date opened**: 2026-05-21.
+
+---
+
+## Symptom (verified)
+
+When the operator runs `comment_all_leads` in their workspace's copilot:
+
+```
+✅ comment_all_leads → queued_comment=1 skipped=9 mode=approved_auto
+                       reasons=map[missing_post_permalink:9]
+SYSTEM ▸ [Trợ lý THG] Facebook comment #53 trạng thái:
+        finished/context_drift. Đối tượng: Anonymous participant.
+        Chi tiet: redirected_feed
+```
+
+Operator confirmed via direct browser inspection:
+- All lead URLs open to the correct FB post when navigated manually (Test A baseline).
+- Comments do NOT appear on the target posts (Test A negative).
+- Account #49 IS a verified member of the affected group `1312868109620530` (Test B).
+- Extension visibly never types or submits during the automation flow.
+
+---
+
+## Definitively fixed in this session
+
+### 1. URL routing bug — `missing_post_permalink` for photo-format leads
+
+- **Commits**: `1083e4c` (pre-session), `47b669c` (this session)
+- **Mechanism**: Extension crawler's `postPermalink()` Tier 3 regex `[?&]fbid=\d+` was matching photo viewer anchors (`/photo/?fbid=PHOTO_FBID`) before the legitimate `/posts/<p>/` Tier 4 anchor. Photo URLs went into `lead.source_url`, but FB's photo viewer fbid is the photo's id, not the parent post's. Server's `isCommentableFacebookPostURL` correctly rejects `/photo/?fbid=` (only accepts the legacy `/photo.php?fbid=`), producing the `missing_post_permalink` skip.
+- **Fix**: Three changes in `crawl.js` — `postPermalink::isCandidate` excludes `/photo/` and `/photo.php`; `extractPostFBID` skips `?fbid=` extraction on photo paths; new clause extracts the real parent post fbid from `set=gm.<post_fbid>` and the group fbid from `idorvanity=<group_fbid>`. Photo-anchor-only articles now still surface a real canonical post URL.
+- **Verification path**: re-crawl, query `leads.source_url` — should show `/groups/<g>/posts/<p>/` or `/groups/<g>/permalink/<p>/`, never `/photo/`.
+
+### 2. Sales role missing browser tab
+
+- **Commit**: `e2243eb`
+- **Mechanism**: `FacebookWorkspaceApp::STAFF_TABS` did not include `browser`, so sales-role users could not initialize their own browser workspace despite owning their own FB accounts (per `AccountOwnerAllowed`).
+- **Fix**: Added `browser` to `STAFF_TABS`. Backend ownership checks already enforce that sales users can only action their own accounts. Per `feedback_shared_battlefield_not_crm`: sales sees all accounts as battlefield context, actions only their own.
+
+---
+
+## Root cause hypotheses for `redirected_feed` — UNCONFIRMED
+
+The remaining bug produces `finished/context_drift, detail=redirected_feed` and matches the operator's observation that the extension never types. Four hypotheses; tracking which is true requires Step 1 data.
+
+### H1 — FB redirects deep-link navigation on bot-fingerprint
+
+The strongest hypothesis. Operator's `chrome.tabs.update` to `/groups/<g>/posts/<p>/` lands on `/groups/<g>/` or `/home.php` because Facebook's anti-automation heuristic flags the navigation (no user-gesture referrer, background/minimized window, etc.). Content script then runs on a feedish page, `waitUntilTargetArticleStable` polls for 8s without finding the target article, gate-1 fails, and `proof.js::isFeedishURL(page_url_after)` masks the gate-1 failure as `redirected_feed`.
+
+**Code-side defense shipped against H1**:
+- `c0ce159` — outbox post-navigation URL verification. Catches the redirect at ~5ms instead of wasting 8s in gate-1 timeout. Emits explicit `outbox.navigation_redirected: target_url=X actual=Y` note instead of the generic `redirected_feed`.
+- `b93b783` — outbox now forces window restore + tab focus during navigation, mirroring the crawl path's already-production-proven pattern. Reduces probability that FB's "background tab" anti-bot signal fires.
+- `8209178` — URL matcher harmonized with crawl-path `tabUrlMatchesExpected` (lenient subpath rule). Eliminates false-positive regression risk from `c0ce159`'s original strict matcher.
+
+If H1 is true and these fixes are sufficient → `redirected_feed` goes away. If H1 is true and these fixes are insufficient → operator sees `outbox.navigation_redirected` notes in diagnostic — meaning fix needs to go deeper (e.g., navigate to group home first then click post link DOM to mimic human flow).
+
+### H2 — Account #49 under FB shadow restriction on engagement
+
+FB has soft-restricted account #49 specifically for engagement actions (comment/react/share) on group posts, while still allowing read/browse. Direct deep-link to a post URL → FB intercepts → redirects user to feed because "this account isn't allowed to comment right now."
+
+**Distinguishing signal**: every recent comment attempt by account #49 fails with redirect, but other accounts in the same workspace succeed.
+
+**No code-side fix** — would require account rotation or wait period for FB to clear the restriction. Diagnostic surface (`GET /api/superadmin/accounts/49/diagnostic`) shows pattern via the `attempts[]` history.
+
+### H3 — Post-level audience restriction
+
+Specific posts in the group have audience settings excluding account #49 (e.g., "Friends only", "Specific members", admin-only). Founder's personal browser sees the post (because founder is admin/friend); account #49 navigating to the same URL gets redirected because the post isn't visible to them.
+
+**Distinguishing signal**: account #49 manually browsing to the post URL in extension's persistent Chrome profile gets the same redirect → confirms H3. Account #49 sees the post fine when manually browsing → refutes H3, points back to H1/H2/H4.
+
+**No code-side fix** — UX consideration: maybe surface "post not viewable to this account" as a separate skip reason at server side before queueing.
+
+### H4 — Chrome extension CDP/automation fingerprint detected
+
+FB's anti-bot stack detects Chrome DevTools Protocol attachment, content script injection patterns, navigator.webdriver flags, or similar fingerprints. Once detected, FB applies session-level restrictions including deep-link engagement redirects.
+
+**Distinguishing signal**: account #49 logged into a fresh Chrome profile (no extension attached) navigates to post URLs successfully and can comment manually; same account #49 inside extension's persistent profile fails.
+
+**No surgical code-side fix** — full remediation requires deep extension hardening (stealth plugins, fingerprint normalization, navigation pacing). Significant scope.
+
+---
+
+## What user must execute to break the diagnostic loop
+
+One sequence, ~2 minutes:
+
+1. **Reload extension** in Chrome (`chrome://extensions/` → reload icon; full Chrome restart for safety).
+2. **POST `/api/superadmin/accounts/49/reset-risk`** — clears risk_score/recent_failures/cooldown so behaviour caps don't block new attempts. Endpoint shipped in `ac7d642`.
+3. **Trigger `comment_all_leads`** via copilot.
+4. **GET `/api/superadmin/accounts/49/diagnostic`** — endpoint shipped in `ac7d642`. Returns parsed `attempts[]` with `notes`, `page_url_after`, `dom_snippet` extracted from `evidence_json`.
+5. **Paste `attempts[0]` content** back into the investigation thread.
+
+The instrumentation patches (`3c17f1a` content-script gates + `c0ce159` outbox layer + `ac7d642` server slog) ensure the diagnostic response carries the exact `landed_at` URL at the moment of failure. The pattern match table below gives deterministic next steps.
+
+---
+
+## Diagnostic decision table
+
+| `attempts[0].notes` content | Outcome | Next code action |
+|---|---|---|
+| Empty + outcome=`dom_verified` + node_matched=true | ✅ **Bug fixed**. Comment posted successfully. | Close investigation. Verify with 2-3 more leads. Flip outbound_mode=auto via Settings UI (`aea772c`). |
+| `outbox.navigation_redirected: target_url=<post> actual=<feed/group home>` | **H1 confirmed but candidate fixes insufficient.** FB redirect happens despite foreground tab + window. | Deeper fix: navigate to group home → wait for SPA → find + click the target post link DOM (human-flow simulation). Not direct `chrome.tabs.update` to post URL. |
+| `identity_gate_1_no_article_or_unstable: ... landed_at=<post URL>` (matches target) | Page LOADED post correctly but article DOM never stable for 500ms within 8s. | Tune `waitUntilTargetArticleStable` — extend timeout to 15s, relax stableMs to 200ms, OR accept any-ready-once-in-window. |
+| `identity_gate_2_post_click_swap` or `identity_gate_2b_scroll_swap` or `identity_gate_3_editor_drift`, with `landed_at` on target | Article matched initially, identity drifted mid-flow (React re-mount). | Stability handling tuneup in respective gate. |
+| `landed_at=<post URL>` but `dom_snippet` contains "Content unavailable" / "Nội dung không có sẵn" | **H3 confirmed.** Post-level audience restriction for account #49. | Server-side: add `post_not_viewable` skip reason BEFORE queueing (preflight check). User-side: switch account for restricted-audience posts. |
+| All recent attempts (last 20) show same failure regardless of post | **H2 confirmed.** Account-level shadow restriction. | Pause account #49 24-48h, verify FB account state manually, possibly switch accounts. |
+| Notes contain mixed outcomes (some success, some `redirected_feed`) | Intermittent — likely H4 timing or FB rolling A/B test. | Investigate per-attempt timing patterns. Possibly H4 fingerprint remediation. |
+
+---
+
+## Code shipped this session (9 commits)
+
+```
+8209178 outbox: harmonize URL matcher with crawl-path tabUrlMatchesExpected
+2060e45 Tests: extractEvidenceField parser (13 edge cases)
+aea772c FE Settings: outbound automation mode toggle (Step 5 UI prep)
+b93b783 outbox: foreground tab + window during navigation (H1 fix #2)
+c0ce159 outbox: verify tab URL matches target after navigation (H1 fix #1)
+ac7d642 Server diagnostic surface (Step 1 receiver + Step 3 endpoint + slog)
+e2243eb FE: sales role browser tab (orthogonal fix)
+3c17f1a Extension comment executor: landed_url instrumentation
+47b669c Crawler: extract post fbid from set=gm.X (URL routing fix #2)
+```
+
+Plus `1083e4c` (pre-session) — crawler exclude photo URLs from candidate selection.
+
+All commits independently defensible. None speculate beyond the H1 hypothesis tier. Step 5 UI ships regardless of bug outcome (user explicitly requested auto-mode toggle). Tests and harmonization shipped to reduce risk in already-landed candidates.
+
+---
+
+## What would need to ship next, depending on Step 1 outcome
+
+### If H1 confirmed insufficient by candidate fixes
+
+Replace direct `chrome.tabs.update` with human-flow simulation:
+1. Navigate to `https://www.facebook.com/groups/<g>/` (group home)
+2. `waitForTabReady` + settle
+3. Inject content script that finds an anchor matching the target post URL, scrolls to it, dispatches `clickLikeUser` on the anchor
+4. Wait for the post page to render in-tab (FB SPA's history.pushState path)
+5. Proceed with existing gate-1 logic
+
+Scope: ~80 LOC in extension. New content-script function `navigateToPostViaGroupClick`. Modifies `executeInFacebookTab` to use it instead of `chrome.tabs.update` for comment-type actions.
+
+### If H3 confirmed
+
+Add server-side preflight that queries FB graph/web for post visibility before queueing. Alternatively (lower cost): accept the failure mode, add `post_not_viewable_to_account` to the failure_reason taxonomy, suppress risk_score increment for this specific outcome (it's not the account's fault).
+
+Scope: ~30 LOC server + extension proof shape update.
+
+### If H4 confirmed
+
+Larger initiative. Out of scope for this investigation thread. Track as separate epic.
+
+---
+
+## Locked discipline boundaries applied
+
+- **`[[feedback_extraction_is_not_redesign]]`** (debug variant) — no speculative refactors during diagnosis. Why every candidate fix here is bounded to the strongest hypothesis (H1).
+- **`[[project_runtime_control_plane]]`** — no CRUD-tab dashboard for execution_attempts. Why the diagnostic endpoint is single-purpose, not a tab.
+- **`[[feedback_governance_self_limits]]`** — no proliferation of new memory files. Why this investigation lives as a specs/ doc, not 5 new memories.
+- **`[[feedback_freeze_abstraction]]`** — no new interfaces or DI layers. Why the diagnostic endpoint hits concrete `*sql.DB`.
+
+---
+
+## Resume protocol
+
+When operator returns with `attempts[0]` content from `GET /api/superadmin/accounts/49/diagnostic`:
+
+1. Match the `notes` against the Diagnostic Decision Table above.
+2. Identify confirmed hypothesis.
+3. Ship the corresponding "Next code action" from the table.
+4. POST `/api/superadmin/accounts/49/reset-risk`.
+5. Re-trigger `comment_all_leads`, verify outcome shifts to `dom_verified`.
+6. Founder flips outbound_mode=auto via Settings UI.
+7. Close this investigation; archive doc to `specs/done/` or delete.
+
+If 5+ days elapse without resume, recommend re-reading this doc end-to-end before continuing — context decays.
