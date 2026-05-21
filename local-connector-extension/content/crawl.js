@@ -19,10 +19,17 @@ var THGContentCrawl = (() => {
     // resolve back to any post — repair pipelines synthesize invalid
     // canonical permalinks and the server rejects them at comment time.
     // Skip the `?fbid=` extraction step when the path is photo-shaped.
-    const isPhotoURL = /\/photo[\/.]/.test(url);
+    const isPhotoURL = /\/photo(\/|\.|\?|$)/.test(url);
     let m = url.match(/\/permalink\/(\d+)/);
     if (m) return m[1];
     m = url.match(/story_fbid=(\d+)/);
+    if (m) return m[1];
+    // `set=gm.X` — Facebook's group-media link parameter. The `gm.` prefix
+    // marks the value as the PARENT POST fbid attached to a photo viewer
+    // URL. This is how photo-only article anchors still surface a real
+    // post id — without this clause, photo URLs leave post_fbid empty and
+    // the inbound source_url falls back to the group shell.
+    m = url.match(/[?&]set=gm\.(\d+)/);
     if (m) return m[1];
     if (!isPhotoURL) {
       m = url.match(/[?&]fbid=(\d+)/);
@@ -35,8 +42,16 @@ var THGContentCrawl = (() => {
 
   function extractGroupFBID(url) {
     if (!url) return '';
-    const m = url.match(/\/groups\/(\d+)/);
-    return m ? m[1] : '';
+    // Path form `/groups/{id}/...` — canonical when navigation is on a
+    // group surface.
+    let m = url.match(/\/groups\/(\d+)/);
+    if (m) return m[1];
+    // `idorvanity={id}` — Facebook's group id query param on photo viewer
+    // URLs (paired with `set=gm.X` for the post fbid). Lets us reconstruct
+    // the canonical permalink even when the crawler only saw a photo anchor.
+    m = url.match(/[?&]idorvanity=(\d+)/);
+    if (m) return m[1];
+    return '';
   }
 
   // Build a canonical post permalink from the IDs we already extracted.
@@ -66,7 +81,7 @@ var THGContentCrawl = (() => {
   // the URL otherwise looked commentable. Reject upstream instead.
   function looksLikePostURL(u) {
     if (!u) return false;
-    if (/\/photo[\/.]/.test(u)) return false;
+    if (/\/photo(\/|\.|\?|$)/.test(u)) return false;
     return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|[?&]fbid=/.test(u);
   }
 
@@ -84,8 +99,9 @@ var THGContentCrawl = (() => {
       // Photo viewer URLs match Tier 3 (?fbid=) but their fbid is the
       // photo's, not the post's. Excluding them here lets the tier scan
       // fall through to /posts/ (Tier 4) or /permalink/ (Tier 1) for
-      // the real canonical post URL.
-      if (href.includes('/photo/') || href.includes('/photo.php')) return false;
+      // the real canonical post URL. Catch all FB photo URL variants:
+      // /photo/, /photo.php, and bare /photo?... (no trailing slash).
+      if (/\/photo(\/|\.|\?|$)/.test(href)) return false;
       return true;
     };
     const tiers = [
