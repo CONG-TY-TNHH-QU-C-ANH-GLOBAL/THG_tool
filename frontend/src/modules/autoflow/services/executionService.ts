@@ -84,3 +84,69 @@ export async function getAccountHealth(accountId?: number): Promise<AccountHealt
   const q = accountId && accountId > 0 ? `?account_id=${accountId}` : '';
   return get<AccountHealthResponse>(`/observability/execution/account-health${q}`);
 }
+
+// ── PR-E: stuck-state observation surfaces ──────────────────────────────────
+
+// One outbound row stuck in planned/executing with no execution_attempts.
+export interface GapRow {
+  outbound_id: number;
+  org_id: number;
+  account_id: number;
+  action_type: string;
+  target_url: string;
+  execution_state: string;
+  created_at: string;
+  lease_expiry?: string;
+  age_seconds: number;
+}
+export interface GapResponse {
+  older_than_minutes: number;
+  threshold: string;
+  rows: GapRow[];
+  count: number;
+}
+
+// One (hour, outcome) point on per-account outcome timeseries.
+export interface TimeseriesPoint {
+  bucket: string;
+  outcome: string;
+  count: number;
+}
+export interface TimeseriesResponse {
+  account_id: number;
+  window_hours: number;
+  since: string;
+  buckets: TimeseriesPoint[];
+  count: number;
+}
+
+// One ledger row whose outcome disagrees with the latest attempt outcome.
+export interface ReconcileRow {
+  ledger_id: number;
+  org_id: number;
+  account_id: number;
+  outbound_id: number;
+  action_type: string;
+  target_url: string;
+  performed_at: string;
+  ledger_outcome: string;
+  attempt_outcome: string;
+}
+export interface ReconcileResponse {
+  window_hours: number;
+  since: string;
+  rows: ReconcileRow[];
+  count: number;
+}
+
+export async function getStuckOutbound(olderThanMinutes = 10, limit = 50): Promise<GapResponse> {
+  return get<GapResponse>(`/observability/execution/gap-detection?older_than_minutes=${olderThanMinutes}&limit=${limit}`);
+}
+
+export async function getAccountTimeseries(accountId: number, hours = 72): Promise<TimeseriesResponse> {
+  return get<TimeseriesResponse>(`/observability/execution/account-timeseries?account_id=${accountId}&hours=${hours}`);
+}
+
+export async function getLedgerReconcile(hours = 24, limit = 100): Promise<ReconcileResponse> {
+  return get<ReconcileResponse>(`/observability/execution/ledger-reconcile?hours=${hours}&limit=${limit}`);
+}

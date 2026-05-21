@@ -40,6 +40,10 @@ func Routes(group fiber.Router, deps Deps) {
 	exec.Get("/distribution", executionDistribution(deps))
 	exec.Get("/recent", executionRecent(deps))
 	exec.Get("/account-health", executionAccountHealth(deps))
+	// Stabilization PR-E: stuck-state observation surfaces.
+	exec.Get("/gap-detection", executionGapDetection(deps))
+	exec.Get("/account-timeseries", executionAccountTimeseries(deps))
+	exec.Get("/ledger-reconcile", executionLedgerReconcile(deps))
 
 	// Watchpoint B — prompt routing observability.
 	pr := group.Group("/observability/prompt-routing")

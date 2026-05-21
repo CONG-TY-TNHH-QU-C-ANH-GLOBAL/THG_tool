@@ -13,7 +13,7 @@
  * already in the verified substrate.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { theme } from '../../constants/styles';
 import { useExecutionReality } from '../../hooks/useExecutionReality';
-import type { ExecutionAttemptRow, OutcomeBucket } from '../../services/executionService';
+import type { ExecutionAttemptRow, OutcomeBucket, GapRow, ReconcileRow } from '../../services/executionService';
+import { getStuckOutbound, getLedgerReconcile } from '../../services/executionService';
 
 interface ExecutionRealityViewProps { orgId: string; isAdmin: boolean }
 
@@ -556,6 +557,12 @@ export default function ExecutionRealityView(_: ExecutionRealityViewProps) {
               )}
             </section>
 
+            {/* PR-E: Stuck-state panels — gap detection, ledger reconcile.
+                Lazy-fetched when the drill-down is opened so the default
+                Health Dashboard view stays light. */}
+            <StuckOutboundPanel />
+            <LedgerReconcilePanel hours={hours} />
+
             {/* Account table */}
             <section style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 12, padding: 16 }}>
               <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
@@ -621,6 +628,141 @@ export default function ExecutionRealityView(_: ExecutionRealityViewProps) {
           remove it before the next iteration). */}
       <span style={{ display: 'none' }}><AlertTriangle size={1} /></span>
     </div>
+  );
+}
+
+// StuckOutboundPanel surfaces outbound rows in planned/executing with NO
+// matching execution_attempts row older than 10 minutes — "leads queued
+// but never executed." Lazy-fetched on mount; manual refresh button.
+function StuckOutboundPanel() {
+  const [rows, setRows] = useState<GapRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const load = () => {
+    setLoading(true); setErr(null);
+    getStuckOutbound(10, 50)
+      .then(r => setRows(r.rows ?? []))
+      .catch(e => setErr(e?.message ?? 'failed to load'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+  return (
+    <section style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 12, padding: 16 }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Stuck outbound (no attempt &gt; 10m)</h3>
+        <button type="button" onClick={load} disabled={loading} style={{
+          background: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`,
+          fontSize: 11, padding: '3px 8px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
+        }}>
+          {loading ? '...' : 'Refresh'}
+        </button>
+      </header>
+      {err ? (
+        <p style={{ margin: 0, fontSize: 12, color: theme.red }}>{err}</p>
+      ) : rows === null ? (
+        <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>Đang tải…</p>
+      ) : rows.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>Không có outbound nào bị kẹt. Hệ thống đang thực thi đúng nhịp.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                {['outbound', 'account', 'action', 'state', 'age', 'target'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.outbound_id} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
+                  <td style={{ padding: '6px 8px', color: theme.text, fontFamily: 'var(--font-mono)' }}>#{r.outbound_id}</td>
+                  <td style={{ padding: '6px 8px', color: theme.text, fontFamily: 'var(--font-mono)' }}>#{r.account_id}</td>
+                  <td style={{ padding: '6px 8px', color: theme.text }}>{r.action_type}</td>
+                  <td style={{ padding: '6px 8px', color: theme.yellow }}>{r.execution_state}</td>
+                  <td style={{ padding: '6px 8px', color: theme.textMuted }}>{Math.floor(r.age_seconds / 60)}m</td>
+                  <td style={{ padding: '6px 8px', color: theme.textMuted }}>
+                    {r.target_url ? (
+                      <a href={r.target_url} target="_blank" rel="noreferrer" style={{ color: theme.info, textDecoration: 'none' }}>
+                        {shorten(r.target_url)}
+                      </a>
+                    ) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// LedgerReconcilePanel surfaces action_ledger rows marked 'succeeded' whose
+// latest execution_attempts.outcome is in a failure-class bucket — the
+// hallucinated-success rows that corrupt the badge/risk pipeline.
+function LedgerReconcilePanel({ hours }: { hours: number }) {
+  const [rows, setRows] = useState<ReconcileRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const load = () => {
+    setLoading(true); setErr(null);
+    getLedgerReconcile(hours, 100)
+      .then(r => setRows(r.rows ?? []))
+      .catch(e => setErr(e?.message ?? 'failed to load'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, [hours]);
+  return (
+    <section style={{ background: 'var(--bg-elev)', border: '1px solid var(--line)', borderRadius: 12, padding: 16 }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 13, color: theme.text }}>Ledger hallucinated success ({hours}h)</h3>
+        <button type="button" onClick={load} disabled={loading} style={{
+          background: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`,
+          fontSize: 11, padding: '3px 8px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
+        }}>
+          {loading ? '...' : 'Refresh'}
+        </button>
+      </header>
+      {err ? (
+        <p style={{ margin: 0, fontSize: 12, color: theme.red }}>{err}</p>
+      ) : rows === null ? (
+        <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>Đang tải…</p>
+      ) : rows.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 12, color: theme.textFaint }}>Không có hallucinated success — ledger đang khớp với verified outcome.</p>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                {['when', 'outbound', 'account', 'action', 'ledger said', 'verifier said', 'target'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: theme.textMuted, fontWeight: 600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.ledger_id} style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
+                  <td style={{ padding: '6px 8px', color: theme.textMuted, whiteSpace: 'nowrap' }}>{formatRelative(r.performed_at)}</td>
+                  <td style={{ padding: '6px 8px', color: theme.text, fontFamily: 'var(--font-mono)' }}>#{r.outbound_id}</td>
+                  <td style={{ padding: '6px 8px', color: theme.text, fontFamily: 'var(--font-mono)' }}>#{r.account_id}</td>
+                  <td style={{ padding: '6px 8px', color: theme.text }}>{r.action_type}</td>
+                  <td style={{ padding: '6px 8px', color: theme.green }}>{r.ledger_outcome}</td>
+                  <td style={{ padding: '6px 8px', color: theme.red }}>{r.attempt_outcome}</td>
+                  <td style={{ padding: '6px 8px', color: theme.textMuted }}>
+                    {r.target_url ? (
+                      <a href={r.target_url} target="_blank" rel="noreferrer" style={{ color: theme.info, textDecoration: 'none' }}>
+                        {shorten(r.target_url)}
+                      </a>
+                    ) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

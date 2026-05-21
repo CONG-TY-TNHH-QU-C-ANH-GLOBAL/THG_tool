@@ -368,6 +368,196 @@ type AccountHealthRow struct {
 	InboxToday     int       `json:"inbox_today"`
 }
 
+// GapDetectionRow surfaces one outbound row that is stuck — sitting in
+// planned/executing for longer than the threshold AND has zero matching
+// execution_attempts rows. Either the executor crashed before BeginAttempt
+// fired, or the lease holder vanished. Either way the operator needs to
+// see the row to decide reset vs cancel.
+type GapDetectionRow struct {
+	OutboundID     int64     `json:"outbound_id"`
+	OrgID          int64     `json:"org_id"`
+	AccountID      int64     `json:"account_id"`
+	ActionType     string    `json:"action_type"`
+	TargetURL      string    `json:"target_url"`
+	ExecutionState string    `json:"execution_state"`
+	CreatedAt      time.Time `json:"created_at"`
+	LeaseExpiry    time.Time `json:"lease_expiry,omitempty"`
+	AgeSeconds     int       `json:"age_seconds"`
+}
+
+// GapDetection returns outbound rows in {planned, executing} that have
+// NO matching execution_attempts row AND were created more than
+// olderThan ago. The "no attempt row" predicate is the gap: if the
+// executor merely failed verification, an attempts row with a failure
+// outcome would exist. A missing row means the executor never even
+// reached BeginAttempt — true stuck state. Bounded by `limit`.
+func (s *Store) GapDetection(ctx context.Context, orgID int64, olderThan time.Time, limit int) ([]GapDetectionRow, error) {
+	if orgID <= 0 {
+		return nil, fmt.Errorf("gap_detection: org_id required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT om.id, om.org_id, om.account_id, om.type, om.target_url,
+		        om.execution_state, om.created_at,
+		        COALESCE(om.lease_expiry, '')
+		   FROM outbound_messages om
+		  WHERE om.org_id = ?
+		    AND om.execution_state IN ('planned','executing')
+		    AND om.created_at < ?
+		    AND NOT EXISTS (SELECT 1 FROM execution_attempts ea WHERE ea.outbound_id = om.id)
+		  ORDER BY om.created_at ASC
+		  LIMIT ?`,
+		orgID, olderThan.UTC().Format("2006-01-02 15:04:05"), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	now := time.Now().UTC()
+	var out []GapDetectionRow
+	for rows.Next() {
+		var r GapDetectionRow
+		var createdAt, leaseExpiry string
+		if err := rows.Scan(&r.OutboundID, &r.OrgID, &r.AccountID, &r.ActionType, &r.TargetURL,
+			&r.ExecutionState, &createdAt, &leaseExpiry); err != nil {
+			return nil, err
+		}
+		r.CreatedAt = dbutil.ParseSQLiteTime(createdAt)
+		if leaseExpiry != "" {
+			r.LeaseExpiry = dbutil.ParseSQLiteTime(leaseExpiry)
+		}
+		if !r.CreatedAt.IsZero() {
+			r.AgeSeconds = int(now.Sub(r.CreatedAt).Seconds())
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// TimeseriesBucket is one (hour, outcome) point on the per-account
+// outcome timeseries used by the Account Fleet Health drill-down.
+// Bucket is RFC3339 hour boundary (e.g. 2026-05-21T14:00:00Z).
+type TimeseriesBucket struct {
+	Bucket  string `json:"bucket"`
+	Outcome string `json:"outcome"`
+	Count   int    `json:"count"`
+}
+
+// AccountOutcomeTimeseries returns hourly-bucketed outcome counts for
+// one account over the requested window. Empty buckets are omitted —
+// the dashboard fills the gaps when rendering. Excludes still-pending
+// attempts (outcome=''). Per project_runtime_control_plane EXP-3
+// scaled down: per-account view, not full Account Fleet table.
+func (s *Store) AccountOutcomeTimeseries(ctx context.Context, orgID, accountID int64, since time.Time) ([]TimeseriesBucket, error) {
+	if orgID <= 0 {
+		return nil, fmt.Errorf("account_timeseries: org_id required")
+	}
+	if accountID <= 0 {
+		return nil, fmt.Errorf("account_timeseries: account_id required")
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT strftime('%Y-%m-%dT%H:00:00Z', started_at) AS bucket,
+		        outcome,
+		        COUNT(*) AS n
+		   FROM execution_attempts
+		  WHERE org_id = ? AND account_id = ? AND started_at >= ? AND outcome != ''
+		  GROUP BY bucket, outcome
+		  ORDER BY bucket ASC`,
+		orgID, accountID, since.UTC().Format("2006-01-02 15:04:05"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TimeseriesBucket
+	for rows.Next() {
+		var b TimeseriesBucket
+		if err := rows.Scan(&b.Bucket, &b.Outcome, &b.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// ReconcileMismatchRow surfaces an action_ledger row whose outcome
+// disagrees with the latest execution_attempt outcome for the same
+// outbound_id. Most-common mismatch the dashboard wants to expose:
+// ledger says 'succeeded' but the verifier classified the attempt as
+// shadow_rejected / blocked / captcha / rate_limited — i.e. the
+// ledger is HALLUCINATING success that didn't actually land.
+type ReconcileMismatchRow struct {
+	LedgerID       int64     `json:"ledger_id"`
+	OrgID          int64     `json:"org_id"`
+	AccountID      int64     `json:"account_id"`
+	OutboundID     int64     `json:"outbound_id"`
+	ActionType     string    `json:"action_type"`
+	TargetURL      string    `json:"target_url"`
+	PerformedAt    time.Time `json:"performed_at"`
+	LedgerOutcome  string    `json:"ledger_outcome"`
+	AttemptOutcome string    `json:"attempt_outcome"`
+}
+
+// LedgerReconcileMismatches surfaces action_ledger rows where the
+// ledger.outcome='succeeded' but the LATEST execution_attempts.outcome
+// for the same outbound_id is NOT in the success set
+// (dom_verified | optimistic_success | duplicate_blocked). These are
+// the hallucinated-success rows that corrupt the badge / risk / orchestrator
+// downstream consumers warned about in project_execution_verification.
+//
+// Latest attempt is picked by MAX(id) (autoincrement, monotonic) per
+// outbound_id, avoiding correlated subqueries.
+func (s *Store) LedgerReconcileMismatches(ctx context.Context, orgID int64, since time.Time, limit int) ([]ReconcileMismatchRow, error) {
+	if orgID <= 0 {
+		return nil, fmt.Errorf("ledger_reconcile: org_id required")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT al.id, al.org_id, al.account_id, al.outbound_id,
+		        al.action_type, al.target_url, al.performed_at,
+		        al.outcome AS ledger_outcome, ea.outcome AS attempt_outcome
+		   FROM action_ledger al
+		   JOIN execution_attempts ea
+		     ON ea.outbound_id = al.outbound_id
+		    AND ea.id = (SELECT MAX(id) FROM execution_attempts WHERE outbound_id = al.outbound_id)
+		  WHERE al.org_id = ?
+		    AND al.performed_at >= ?
+		    AND al.outbound_id > 0
+		    AND al.outcome = 'succeeded'
+		    AND ea.outcome NOT IN ('dom_verified','optimistic_success','duplicate_blocked','')
+		  ORDER BY al.performed_at DESC
+		  LIMIT ?`,
+		orgID, since.UTC().Format("2006-01-02 15:04:05"), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReconcileMismatchRow
+	for rows.Next() {
+		var r ReconcileMismatchRow
+		var performedAt string
+		if err := rows.Scan(&r.LedgerID, &r.OrgID, &r.AccountID, &r.OutboundID,
+			&r.ActionType, &r.TargetURL, &performedAt,
+			&r.LedgerOutcome, &r.AttemptOutcome); err != nil {
+			return nil, err
+		}
+		r.PerformedAt = dbutil.ParseSQLiteTime(performedAt)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // AccountHealthSnapshot returns the live behaviour-profile state for
 // every account in the org (or one specific account when accountID > 0).
 // LEFT JOIN means accounts without a profile row still appear with

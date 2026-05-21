@@ -138,6 +138,125 @@ func executionRecent(deps Deps) fiber.Handler {
 	}
 }
 
+// executionGapDetection serves GET /api/observability/execution/gap-detection.
+// Surfaces outbound_messages stuck in planned/executing with no matching
+// execution_attempts row — the executor crashed before BeginAttempt or
+// the lease holder vanished. Operators see "leads queued but never
+// executed" without writing SQL.
+//
+// Default threshold = 10 min (anything younger than that is plausibly
+// still-in-flight). Override with ?older_than_minutes=N (clamped 1..1440).
+// Default limit = 50, max 500.
+//
+// Response: { older_than_minutes, threshold, rows: [...], count }
+func executionGapDetection(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+		}
+		minutes, _ := strconv.Atoi(c.Query("older_than_minutes", "10"))
+		if minutes < 1 {
+			minutes = 10
+		}
+		if minutes > 1440 {
+			minutes = 1440
+		}
+		limit, _ := strconv.Atoi(c.Query("limit", "50"))
+		threshold := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute)
+
+		stuck, err := deps.DB.GapDetection(c.UserContext(), orgID, threshold, limit)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{
+			"older_than_minutes": minutes,
+			"threshold":          threshold.Format(time.RFC3339),
+			"rows":               stuck,
+			"count":              len(stuck),
+		})
+	}
+}
+
+// executionAccountTimeseries serves
+// GET /api/observability/execution/account-timeseries?account_id=X&hours=72.
+// Returns hourly-bucketed outcome counts for one account over the window.
+// Pairs with /account-health: the snapshot says "this account is poisoned
+// right now", the timeseries shows "since when, and what's the outcome
+// shape over time."
+//
+// Required: account_id > 0. Default hours=72, max 168.
+func executionAccountTimeseries(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+		}
+		accountID, _ := strconv.ParseInt(c.Query("account_id", "0"), 10, 64)
+		if accountID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "account_id required"})
+		}
+		hours, _ := strconv.Atoi(c.Query("hours", "72"))
+		if hours <= 0 {
+			hours = 72
+		}
+		if hours > 168 {
+			hours = 168
+		}
+		since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+
+		buckets, err := deps.DB.AccountOutcomeTimeseries(c.UserContext(), orgID, accountID, since)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{
+			"account_id":   accountID,
+			"window_hours": hours,
+			"since":        since.Format(time.RFC3339),
+			"buckets":      buckets,
+			"count":        len(buckets),
+		})
+	}
+}
+
+// executionLedgerReconcile serves
+// GET /api/observability/execution/ledger-reconcile?hours=24.
+// Surfaces action_ledger rows where ledger.outcome='succeeded' but the
+// latest execution_attempts.outcome for the same outbound_id is in a
+// failure-class bucket — i.e. the ledger hallucinated success. This is
+// the badge/risk/orchestrator corruption pathway warned about in
+// project_execution_verification.
+//
+// Default hours=24, max 168. Default limit=100, max 500.
+func executionLedgerReconcile(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+		}
+		hours, _ := strconv.Atoi(c.Query("hours", "24"))
+		if hours <= 0 {
+			hours = 24
+		}
+		if hours > 168 {
+			hours = 168
+		}
+		limit, _ := strconv.Atoi(c.Query("limit", "100"))
+		since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+
+		mismatches, err := deps.DB.LedgerReconcileMismatches(c.UserContext(), orgID, since, limit)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{
+			"window_hours": hours,
+			"since":        since.Format(time.RFC3339),
+			"rows":         mismatches,
+			"count":        len(mismatches),
+		})
+	}
+}
+
 // executionAccountHealth serves GET /api/observability/execution/account-health.
 // Per-account behaviour-profile + runtime snapshot. Pair with /distribution
 // to answer "is this account being soft-blocked?" — risk_score going up

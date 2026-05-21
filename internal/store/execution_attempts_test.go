@@ -353,3 +353,225 @@ func TestAccountHealthSnapshot_SingleAccountFilter(t *testing.T) {
 		t.Errorf("filter to account 200 failed: %+v", rows)
 	}
 }
+
+// ── PR-E: stuck-state observation queries ────────────────────────────────────
+
+// insertOutboundDirect bypasses the canonical write path so tests can
+// plant rows with arbitrary timestamps + states. Production code goes
+// through QueueOutboundForOrg; these tests need control over created_at.
+func insertOutboundDirect(t *testing.T, db *Store, orgID, accountID int64, msgType, targetURL, execState string, createdAt time.Time) int64 {
+	t.Helper()
+	ts := createdAt.UTC().Format("2006-01-02 15:04:05")
+	res, err := db.db.Exec(
+		`INSERT INTO outbound_messages
+		   (org_id, type, platform, account_id, target_url, content, status, execution_state, created_at)
+		 VALUES (?, ?, 'facebook', ?, ?, 'test content', 'draft', ?, ?)`,
+		orgID, msgType, accountID, targetURL, execState, ts,
+	)
+	if err != nil {
+		t.Fatalf("insert outbound: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func TestGapDetection_SurfacesStuckOutboundWithNoAttempts(t *testing.T) {
+	db := newAttemptsTestStore(t)
+	ctx := context.Background()
+	const orgID = int64(99)
+	now := time.Now().UTC()
+
+	stuckID := insertOutboundDirect(t, db, orgID, 1, "comment", "https://fb.com/groups/1/posts/stuck", "planned", now.Add(-30*time.Minute))
+	healthyID := insertOutboundDirect(t, db, orgID, 1, "comment", "https://fb.com/groups/1/posts/healthy", "planned", now.Add(-30*time.Minute))
+	freshID := insertOutboundDirect(t, db, orgID, 1, "comment", "https://fb.com/groups/1/posts/fresh", "planned", now.Add(-2*time.Minute))
+	finishedID := insertOutboundDirect(t, db, orgID, 1, "comment", "https://fb.com/groups/1/posts/finished", "finished", now.Add(-30*time.Minute))
+
+	_, err := db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
+		OrgID:      orgID,
+		OutboundID: healthyID,
+		AccountID:  1,
+		TargetURL:  "https://fb.com/groups/1/posts/healthy",
+		ActionType: "comment",
+		Attempt:    1,
+	})
+	if err != nil {
+		t.Fatalf("attempt for healthy: %v", err)
+	}
+
+	rows, err := db.GapDetection(ctx, orgID, now.Add(-10*time.Minute), 50)
+	if err != nil {
+		t.Fatalf("GapDetection: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 stuck row, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].OutboundID != stuckID {
+		t.Errorf("stuck id = %d, want %d (healthy=%d fresh=%d finished=%d)",
+			rows[0].OutboundID, stuckID, healthyID, freshID, finishedID)
+	}
+	if rows[0].AgeSeconds < 60 {
+		t.Errorf("age_seconds = %d, expected at least 60s for a 30-min-old row", rows[0].AgeSeconds)
+	}
+}
+
+func TestGapDetection_TenantScoped(t *testing.T) {
+	db := newAttemptsTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	insertOutboundDirect(t, db, 1, 1, "comment", "https://fb.com/a", "planned", now.Add(-30*time.Minute))
+	insertOutboundDirect(t, db, 2, 1, "comment", "https://fb.com/b", "planned", now.Add(-30*time.Minute))
+
+	rows, err := db.GapDetection(ctx, 1, now.Add(-10*time.Minute), 50)
+	if err != nil {
+		t.Fatalf("GapDetection: %v", err)
+	}
+	if len(rows) != 1 || rows[0].OrgID != 1 {
+		t.Errorf("tenant scoping failed: %+v", rows)
+	}
+}
+
+func TestAccountOutcomeTimeseries_BucketsByHour(t *testing.T) {
+	db := newAttemptsTestStore(t)
+	ctx := context.Background()
+	const orgID = int64(5)
+	const accountID = int64(77)
+
+	// Three attempts, two with same outcome to verify count aggregation.
+	for i, outcome := range []models.ExecutionOutcome{
+		models.ExecutionDOMVerified,
+		models.ExecutionDOMVerified,
+		models.ExecutionShadowRejected,
+	} {
+		id, err := db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
+			OrgID:      orgID,
+			OutboundID: int64(500 + i),
+			AccountID:  accountID,
+			TargetURL:  "https://fb.com/x",
+			ActionType: "comment",
+			Attempt:    1,
+		})
+		if err != nil {
+			t.Fatalf("Begin %d: %v", i, err)
+		}
+		if err := db.FinishExecutionAttempt(ctx, id, outcome, "", VerificationEvidence{}); err != nil {
+			t.Fatalf("Finish %d: %v", i, err)
+		}
+	}
+
+	buckets, err := db.AccountOutcomeTimeseries(ctx, orgID, accountID, time.Now().UTC().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("AccountOutcomeTimeseries: %v", err)
+	}
+	counts := map[string]int{}
+	for _, b := range buckets {
+		counts[b.Outcome] += b.Count
+	}
+	if counts[string(models.ExecutionDOMVerified)] != 2 {
+		t.Errorf("dom_verified count = %d, want 2; buckets=%+v", counts[string(models.ExecutionDOMVerified)], buckets)
+	}
+	if counts[string(models.ExecutionShadowRejected)] != 1 {
+		t.Errorf("shadow_rejected count = %d, want 1", counts[string(models.ExecutionShadowRejected)])
+	}
+}
+
+func TestAccountOutcomeTimeseries_RequiresAccountID(t *testing.T) {
+	db := newAttemptsTestStore(t)
+	if _, err := db.AccountOutcomeTimeseries(context.Background(), 1, 0, time.Now()); err == nil {
+		t.Fatal("expected error when account_id missing")
+	}
+}
+
+func TestLedgerReconcileMismatches_FlagsHallucinatedSuccess(t *testing.T) {
+	db := newAttemptsTestStore(t)
+	ctx := context.Background()
+	const orgID = int64(11)
+	const accountID = int64(22)
+
+	// Three outbound + attempt + ledger combos:
+	//   (a) ledger=succeeded + attempt=dom_verified         → aligned, not surfaced
+	//   (b) ledger=succeeded + attempt=shadow_rejected      → mismatch, surfaced
+	//   (c) ledger=succeeded + attempt=blocked              → mismatch, surfaced
+	setups := []struct {
+		outboundID int64
+		outcome    models.ExecutionOutcome
+	}{
+		{outboundID: 1001, outcome: models.ExecutionDOMVerified},
+		{outboundID: 1002, outcome: models.ExecutionShadowRejected},
+		{outboundID: 1003, outcome: models.ExecutionBlocked},
+	}
+	for _, s := range setups {
+		id, err := db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
+			OrgID:      orgID,
+			OutboundID: s.outboundID,
+			AccountID:  accountID,
+			TargetURL:  "https://fb.com/p",
+			ActionType: "comment",
+			Attempt:    1,
+		})
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		if err := db.FinishExecutionAttempt(ctx, id, s.outcome, "", VerificationEvidence{}); err != nil {
+			t.Fatalf("Finish: %v", err)
+		}
+		if _, err := db.RecordActionLedger(ctx, ActionLedgerEntry{
+			OrgID:      orgID,
+			ActionType: "comment",
+			TargetURL:  "https://fb.com/p",
+			AccountID:  accountID,
+			OutboundID: s.outboundID,
+			Outcome:    LedgerOutcomeSucceeded,
+		}); err != nil {
+			t.Fatalf("RecordActionLedger: %v", err)
+		}
+	}
+
+	mismatches, err := db.LedgerReconcileMismatches(ctx, orgID, time.Now().UTC().Add(-1*time.Hour), 50)
+	if err != nil {
+		t.Fatalf("LedgerReconcileMismatches: %v", err)
+	}
+	if len(mismatches) != 2 {
+		t.Fatalf("want 2 mismatches, got %d: %+v", len(mismatches), mismatches)
+	}
+	got := map[int64]string{}
+	for _, m := range mismatches {
+		got[m.OutboundID] = m.AttemptOutcome
+		if m.LedgerOutcome != LedgerOutcomeSucceeded {
+			t.Errorf("ledger_outcome = %q, want succeeded", m.LedgerOutcome)
+		}
+	}
+	if got[1002] != string(models.ExecutionShadowRejected) {
+		t.Errorf("outbound 1002 attempt outcome = %q, want shadow_rejected", got[1002])
+	}
+	if got[1003] != string(models.ExecutionBlocked) {
+		t.Errorf("outbound 1003 attempt outcome = %q, want blocked", got[1003])
+	}
+	if _, found := got[1001]; found {
+		t.Error("outbound 1001 (dom_verified) should NOT be flagged as mismatch")
+	}
+}
+
+func TestLedgerReconcileMismatches_TenantScoped(t *testing.T) {
+	db := newAttemptsTestStore(t)
+	ctx := context.Background()
+
+	for _, orgID := range []int64{1, 2} {
+		id, _ := db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
+			OrgID: orgID, OutboundID: 5000 + orgID, AccountID: 1, TargetURL: "https://fb.com/p", ActionType: "comment", Attempt: 1,
+		})
+		_ = db.FinishExecutionAttempt(ctx, id, models.ExecutionShadowRejected, "", VerificationEvidence{})
+		_, _ = db.RecordActionLedger(ctx, ActionLedgerEntry{
+			OrgID: orgID, ActionType: "comment", TargetURL: "https://fb.com/p",
+			AccountID: 1, OutboundID: 5000 + orgID, Outcome: LedgerOutcomeSucceeded,
+		})
+	}
+
+	rows, err := db.LedgerReconcileMismatches(ctx, 1, time.Now().UTC().Add(-1*time.Hour), 50)
+	if err != nil {
+		t.Fatalf("LedgerReconcileMismatches: %v", err)
+	}
+	if len(rows) != 1 || rows[0].OrgID != 1 {
+		t.Errorf("tenant scoping failed: %+v", rows)
+	}
+}
