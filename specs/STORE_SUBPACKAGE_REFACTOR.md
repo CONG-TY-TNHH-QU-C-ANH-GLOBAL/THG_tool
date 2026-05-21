@@ -367,3 +367,44 @@ Trên `staged_evolution_over_big_bang` rule:
 4. **Phase 3+ defer until each domain proves needs** — không pre-extract.
 
 **Không recommend** big-bang extraction of all 10 domains trong 1 wave. Vi phạm staged_evolution_over_big_bang rule.
+
+---
+
+## 14. Migration log (what shipped)
+
+This section is the historical record. For current package locations + ownership see [DOMAINS.md](../internal/store/DOMAINS.md). For binding rules, see the four locks (L1-L4) in §0 plus the memory files referenced there.
+
+### Phase 0 — DOMAINS.md ownership map (2026-05-21)
+
+Added `// Domain: <name>` headers to every file in `internal/store/`. Created `internal/store/DOMAINS.md` as the navigation index. Zero code moves. Validated the domain partitioning before any extraction.
+
+### Phase 1 — dbutil/ extraction (2026-05-21)
+
+Moved `parseSQLiteTime`, `retryOnBusy`, `boolToInt`, dialect abstraction → `internal/store/dbutil/`. Cross-package helper imports now resolve to `dbutil.ParseSQLiteTime`, `dbutil.BoolToInt`, etc. ~30 callsites migrated. No bridge wrappers (clean-cut).
+
+### Phase 2 — outbound/ extraction (2026-05-21)
+
+Moved 9 outbound files → `internal/store/outbound/`. Bridge wrappers in top-level `outbound_aliases.go` preserve the 14+ external callers' API as transition shims. **L2 lock**: no new top-level wrappers may be added; new code calls `s.Outbound().Foo()` directly. Tests stay at top-level (`outbound_queue_test.go`, `outbound_transition_test.go`) for internal package access.
+
+### Phase 3 — crawl/ extraction (2026-05-21)
+
+Moved 6 crawl files → `internal/store/crawl/`. Clean-cut migration; no bridge wrappers. ~25 callers migrated to `s.Crawl().XxX()`. Test `crawl_intents_test.go` stays at top-level (uses unexported `getCrawlIntentByHash`).
+
+### Phase 4 — knowledge/ extraction (2026-05-21)
+
+Moved 9 knowledge files → `internal/store/knowledge/`. Methods renamed to drop redundant `Knowledge` prefix (`GetKnowledgeAsset` → `GetAsset`, etc.). Zero cross-domain writes by audit; no Hooks struct needed. Tests moved into subpackage as `package knowledge_test` (external) — 6 integration test files + 1 internal-package unit test.
+
+Sub-deliverable: **`internal/store/storetest/`** created as shared test infrastructure. Schema-template trick lives there exactly once; per-subpackage tests consume it via bootstrap-injection (`func(path) error`). Pattern locked for every future extraction — see [[feedback_storetest_scaling_pattern]]. Pattern is the cycle-free way to extract test infra: `storetest` never imports `store`, so `store/*_test.go` can import `storetest` without creating a test-binary cycle.
+
+### Phase 5+ pending
+
+- **Phase 5 — coordination/** — high-risk. Core runtime substrate (action_ledger + execution_attempts + behaviour_profile + engagement_reconcile). Watch list in [[project_coordination_phase_risks]]: cross-package tx threading, hidden ownership of execution_state, no fake abstractions during extraction.
+- **Phase 6 — identities/**, **Phase 7 — connectors/**, **Phase 8 — leads + threads/**, **Phase 9 — prompts/**, **Phase 11 — app/** — defer until each domain proves needs.
+
+Subpackage contract (binding for every Phase 5+ extraction): see [DOMAINS.md §3](../internal/store/DOMAINS.md#3-subpackage-contract).
+
+### Cross-cutting locks added on the way
+
+- **2026-05-21 — No bidirectional domain knowledge** ([[feedback_no_bidirectional_domain_knowledge]]). Downstream consumes upstream via projections/contracts only. Upstream never imports downstream runtime semantics. Critical for the coordination phase.
+- **2026-05-21 — Subpackage contract** ([[feedback_subpackage_contract]]). 9-point checklist every `internal/store/<domain>/` must satisfy. Codified in DOMAINS.md §3.
+- **2026-05-21 — storetest scaling pattern** ([[feedback_storetest_scaling_pattern]]). Single source of truth for schema bootstrap. Bootstrap-injection breaks the test cycle. 5-line binding per subpackage, never duplicate.

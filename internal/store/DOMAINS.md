@@ -1,304 +1,238 @@
 # `internal/store/` — Domain Ownership Index
 
-**Phase 0 of [STORE_SUBPACKAGE_REFACTOR](../../specs/STORE_SUBPACKAGE_REFACTOR.md)**
-**Status**: docs-only ownership map. No code moves in Phase 0. File headers are tagged with their domain (see `// Domain:` comment at the top of each `.go` file).
-**Last full audit**: 2026-05-21 — 89 files, 22,949 LOC, 13 domains.
+**Status**: living doc — describes code-as-of-now, not history. Migration phases, audit findings, and roadmap live in [specs/STORE_SUBPACKAGE_REFACTOR.md](../../specs/STORE_SUBPACKAGE_REFACTOR.md). Per-phase rationale stays in that doc + memory; this file is the day-to-day navigation map.
+
+**Last verified**: 2026-05-21 (Phase 4 knowledge extraction complete).
 
 ## How to use this index
 
-- **Adding a new file to `internal/store/`**: pick a domain from §2 and put `// Domain: <name>` as the first non-package-doc comment. If no domain fits, propose a new bucket in PR review BEFORE writing code.
-- **Adding a new domain**: not in `internal/store/` directly. Per the [V2.5 precedent](../../specs/STORE_SUBPACKAGE_REFACTOR.md#6-new-v25-features-should-be-born-as-subpackages), new domains (templates, telegram, copilot, reputation, ...) must be born as `internal/store/<domain>/` subpackages from day 1.
-- **Renaming / moving a file across domains**: update both the file's `// Domain:` header AND this index in the same PR.
-
-## Reading order if you're new
-
-1. **infra** (5 files) — Store struct, schema bootstrap, migration framework. Start here to understand the DB layout.
-2. **dbutil** (7 files) — pure helpers everyone calls (`parseSQLiteTime`, `retryOnBusy`, dialects). No business logic.
-3. **users** (2 files) — tenant root (`users`, `organizations`). Every other domain assumes orgID exists here.
-4. **outbound** (9 files) — execution machinery, just refactored (PR-1 + PR-2). Reference shape for future subpackages.
-5. **coordination** (8 files) — `action_ledger`, `execution_attempts`, behaviour profile, engagement reconcile.
-6. Other domains as needed.
+- **Adding a new file**: extracted subpackages → put in `internal/store/<domain>/`. Top-level domains → keep in top-level + add `// Domain: <name>` header. New domains (templates, telegram, copilot, ...) MUST ship as subpackages from day 1.
+- **Importing from a domain**: cross-domain access goes through the parent `Store` accessor: `s.Outbound().Foo()`, `s.Knowledge().Bar()`, etc. No reaching into peers' internals.
+- **Adding tests**: subpackage tests live in `package <domain>_test` and consume `storetest.CopyTemplate` (see §3.9). Top-level tests use `newSharedStore` (same trick under the hood).
 
 ---
 
-## 1. Dependency direction (locked by [feedback-store-subpackage-locks](../../../../C:/Users/ACER/.claude/projects/d--THG-THG-sale/memory/feedback_store_subpackage_locks.md) **L1**)
+## 1. Quick navigation
 
-When extraction happens, packages depend on each other **foundational → upward only**. No cycles. Current direction:
+| Domain | Location | Accessor | Status |
+|--------|----------|----------|--------|
+| **infra** | `internal/store/` | `store.New(...)` | always top-level (composition root) |
+| **dbutil** | `internal/store/dbutil/` | `dbutil.NewSQLiteDialect()` | extracted (Phase 1, 2026-05-21) |
+| **storetest** | `internal/store/storetest/` | `storetest.CopyTemplate(...)` | extracted 2026-05-21 (test infra) |
+| **outbound** | `internal/store/outbound/` | `s.Outbound()` | extracted (Phase 2, 2026-05-21) — bridge wrappers in `outbound_aliases.go` (L2 expiry: no new wrappers) |
+| **crawl** | `internal/store/crawl/` | `s.Crawl()` | extracted (Phase 3, 2026-05-21) — clean-cut, no wrappers |
+| **knowledge** | `internal/store/knowledge/` | `s.Knowledge()` | extracted (Phase 4, 2026-05-21) — clean-cut, no wrappers, tests in subpackage |
+| users | `internal/store/` | direct methods | top-level (foundational, may stay) |
+| coordination | `internal/store/` | direct methods | top-level (Phase 5 candidate — see [[project_coordination_phase_risks]]) |
+| leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
+| identities | `internal/store/` | direct methods | top-level (Phase 6) |
+| connectors | `internal/store/` | direct methods | top-level (Phase 7) |
+| threads | `internal/store/` | direct methods | top-level (Phase 8) |
+| prompts | `internal/store/` | direct methods | top-level (Phase 9) |
+| app | `internal/store/` | direct methods | top-level (Phase 11 — heterogeneous bucket) |
+
+---
+
+## 2. Dependency direction (locked invariant L1)
 
 ```
-            dbutil  ←  EVERYTHING
-              ↑
-           infra (Store, schema)
-              ↑
-           users (tenant root)
-              ↑
-        ┌─────┴─────┐
-   coordination  identities  threads  prompts
-        ↑           ↑          ↑        ↑
-        └─────┬─────┴──────────┴────────┘
+                       dbutil  ←  EVERYTHING
+                          ↑
+                    infra (Store, schema, migrations)
+                          ↑
+                       users (tenant root)
+                          ↑
+       ┌────────────┬─────┴──────┬──────────┬──────────┐
+   coordination  identities    threads    prompts     app
+       ↑              ↑           ↑          ↑
+       └──────┬───────┘
               │
-        ┌─────┼──────────┐
-     leads  outbound   crawl
-        ↑               ↑
-        └──── knowledge ┘   (knowledge mostly self-contained; few cross-imports)
-        
-                  app (misc — usually depends on most other domains)
-                  
-                  connectors (Chrome extension bridge — depends on identities + outbound)
+       ┌──────┼──────┐
+     leads  outbound  crawl
+       ↑                ↑
+       └─── knowledge ──┘
+
+   connectors (Chrome extension bridge) ← depends on identities + outbound
+   storetest ← store (test-only; bootstrap-injection prevents prod cycle)
 ```
 
-**Rule**: a domain X may import a domain Y only if Y sits **strictly below** X in the diagram above. Same-level imports forbidden (would risk cycles). When in doubt: don't import.
+### 2.1 Strict-below rule
+
+Domain X may import domain Y **only if Y sits strictly below X** in the diagram. Same-level imports are forbidden (cycle risk). Go's compiler catches cycles, but the design must not require them.
+
+### 2.2 No bidirectional domain knowledge (locked 2026-05-21)
+
+Per [[feedback_no_bidirectional_domain_knowledge]]: downstream domains consume upstream via **projections / contracts** ONLY. Upstream MUST NOT import downstream runtime semantics.
+
+| Allowed | Forbidden |
+|---------|-----------|
+| outbound imports coordination's `ActionLedger` type to write entries | coordination imports outbound's `OutboundMessage` type |
+| leads' engagement projection joins outbound rows (documented `// tenant-ok` SQL) | outbound's runtime queries leads.engagement_state |
+| knowledge writes its own events table | knowledge reads outbound/coordination internals |
+
+Cross-domain reads in SQL (`leads JOIN outbound_messages`) are accepted as projections — **flagged with `// tenant-ok: cross-domain projection (X -> Y)`** so reviewers can audit blast radius. Cross-domain *writes* require explicit Hooks struct + design-doc justification.
+
+### 2.3 storetest is one-way
+
+`storetest` imports `store` for its `Bootstrap` injection consumers — but it is a TEST-ONLY package (regular package, not `_test.go`, but never linked into production binaries). Production code MUST NOT import storetest. See [[feedback_storetest_scaling_pattern]].
+
+### 2.4 Truth ownership matrix (locked 2026-05-21)
+
+Each runtime "truth" has exactly **one** canonical owner. Every other place that mentions the truth is a projection (read-only view, derived in SQL or by re-computation). Writes to a truth go through the owner's API only.
+
+| Truth | Canonical Owner (table → domain) | Allowed Writers | Projection Consumers (read-only) |
+|-------|----------------------------------|-----------------|----------------------------------|
+| action history | `action_ledger` → coordination | coordination methods only (callable from outbound queue/finalize, reconcile) | leads engagement projection (`// tenant-ok` SQL), badges, reputation snapshots |
+| execution verification | `execution_attempts` → coordination | coordination methods only (called from outbound finalize path) | engagement projection, ledger replay UI |
+| behavioural runtime counters | `account_behaviour_runtime` → coordination | coordination's `IncrementRuntimeCounter` (called from outbound queue) | outbound dedup gate (cap check) |
+| engagement correction | revocation events into `action_ledger` → coordination/reconcile | reconcile only (emits engagement_revoked events; never UPDATE/DELETE existing rows) | leads engagement projection re-derivation |
+| outbound execution state | `outbound_messages.execution_state` → outbound | outbound state machine (queue, claim, finalize, lease) | NA — only outbound queries it. The cross-domain projection is `verification_outcome`, derived from execution_attempts. |
+| lead engagement projection | `leads.engagement_state` (derived) → leads | leads projection logic (SQL derives from action_ledger + execution_attempts) | dashboards, UI badges |
+| knowledge retrieval events | `knowledge_events` (retrieval rows) → knowledge | knowledge.RecordRetrievalWithTrace | replay UI, soak metrics |
+| embedding state | `knowledge_assets.embedding_*` columns → knowledge | knowledge.embedding worker | retrieval rerank, soak drift detection |
+
+**Rules implied by the matrix:**
+
+1. Coordination owns runtime truth. Outbound and leads are PROJECTIONS over coordination's tables. Per §2.2, coordination does NOT read outbound/leads back.
+2. Reconcile is the ONLY author of revocation events. Reconcile lives INSIDE coordination — not a separate domain — so the action_ledger append-only invariant remains single-source.
+3. Every cross-domain SQL JOIN crossing these ownership lines requires a `// tenant-ok: cross-domain projection (<owner> -> <consumer>)` annotation. Reviewer audit gate.
+4. New truths must be added to this matrix BEFORE the schema migration that introduces them lands. Adding a truth post-hoc invites silent ownership drift.
+
+If a cell becomes contested (two writers, or owner unclear), the runtime is broken. Resolve ownership in a design-doc PR before merging any code that exercises the contested truth.
 
 ---
 
-## 2. The 13 domains
+## 3. Subpackage contract (binding for every extraction)
 
-### **dbutil** — Pure DB helpers (7 files, 533 LOC)
-Lowest layer. No business logic. No `*Store` methods. Everyone imports.
+Every `internal/store/<domain>/` package MUST satisfy all nine:
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| clear_db_test.go | 18 | Test util: clears DB tables for testing |
-| dedup.go | 13 | Pure hash helper: compound dedup hash generation |
-| dialect.go | 150 | DB dialect abstraction (SQLite/Postgres placeholder/time/interval differences) |
-| dialect_postgres.go | 51 | Postgres dialect implementation |
-| dialect_sqlite.go | 45 | SQLite dialect implementation |
-| dialect_test.go | 188 | Tests dialect rebind + interval expressions on both drivers |
-| postgres_driver.go | 26 | Pure constant: postgres driver name |
-| sqlite.go | 75 | Pure helpers: parseSQLiteTime, isSQLiteBusy detection, retryOnBusy logic |
+1. **Single entry point** — exports `Store` struct + `NewStore(db *sql.DB, dialect dbutil.Dialect) *Store`. No package-level globals.
+2. **Tenant isolation** — every public SQL query filters by `org_id = ?` (verified by `scripts/check_tenant_isolation.sh`). No exceptions; even superadmin queries take orgID.
+3. **Dependency direction** — imports `internal/store/dbutil` + lower domains only. Never the parent `store` package. Compile-time enforcement.
+4. **Tx threading** — opens its own tx for intra-domain cascades. Accepts external `*sql.Tx` ONLY when cross-package writers exist and the threading is audited (locked L3). Never silently opens nested transactions.
+5. **No abstraction theater** — concrete `*sql.DB` + dialect. No repository interfaces, no DI container, no plugin/event-bus, no service locator (locked L4).
+6. **Interface threshold** — define an interface only when ≥2 production implementations exist. Test-only fakes go in `package <pkg>_test`, not the production package.
+7. **Public API only** — handlers reach the subpackage via the `Store.<Xxx>()` accessor. Subpackage methods that need to be reachable MUST be exported; nothing leaks through unexported types.
+8. **Cross-domain writes documented** — every write that touches another domain's table requires a `// tenant-ok: cross-domain projection (<src> -> <dst>)` comment + design-doc entry. Reviewer's checklist.
+9. **External tests via storetest** — tests live in `internal/store/<domain>/` as `package <domain>_test`. Schema bootstrap via `storetest.CopyTemplate` (5-line binding per binary, never duplicate the template trick).
 
-**Phase 1 target**: extract to `internal/store/dbutil/` (this PR).
+Reference implementation: **knowledge/** (Phase 4). Every future extraction should match its shape.
 
 ---
 
-### **infra** — Store struct + schema + migrator (5 files, 1,641 LOC)
-Foundational. Owns the `*Store` struct, DB connection, schema bootstrap, migrations.
+## 4. Domain definitions
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| backup.go | 90 | Auto-backup scheduler: daily SQLite backups, 7-day retention |
-| migrator.go | 270 | Schema migration runner: version registry, baseline detection |
-| schema.go | 1184 | Legacy schema bootstrap: 150+ CREATE TABLE (idempotent) |
-| schema_migrate_test.go | 88 | Tests migration runner state tracking |
-| schema_template_test.go | 103 | Tests schema template compilation + marker version |
-| store.go | 200 | Store struct, NewStore bootstrapper, dialect selection, Close |
+### **infra** — Composition root (top-level, always)
 
-**Stays in top-level `internal/store/`** even after full subpackage extraction. This is the composition root.
+`store.New(...)`, schema bootstrap, migrations, backup, encryption key. Owns the `*Store` struct. Subpackages compose under it via accessor methods.
 
----
+Key files: `store.go`, `schema.go`, `migrator.go`, `backup.go`, `dialect.go` (top-level shim), `helpers.go`.
 
-### **users** — Tenant root (2 files, 551 LOC)
-Auth + organizations. Foundational because every other domain assumes `org_id` and `user_id` exist here.
+### **dbutil** — Pure DB helpers (`internal/store/dbutil/`)
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| organization.go | 129 | Org CRUD: create, get by ID/domain, plan tier, account limits |
-| users.go | 422 | User CRUD + auth: email lookup, token hashing, login tracking |
+Cross-cutting utilities every package needs: `ParseSQLiteTime`, `BoolToInt`, dialect abstraction (SQLite vs Postgres). Lowest layer; everything imports.
 
----
+### **storetest** — Shared test infrastructure (`internal/store/storetest/`)
 
-### **outbound** — Execution machinery (9 files + 2 tests, 1,766 LOC)
-Recently refactored (PR-1 + PR-2 of V2 outbound work). Reference shape for future subpackage extractions.
+Schema-template trick (sync.Once compile + per-test copy). Consumed by every subpackage's integration tests via bootstrap-injection. Single source of truth — never duplicate per subpackage. See [[feedback_storetest_scaling_pattern]].
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| action_policy.go | 200 | Action type policies (dedup scope, cooldown, blocking rules) |
-| outbound.go | 113 | Shell: `OutboundGuardDecision` + cross-cutting guards |
-| outbound_claim.go | 148 | Claim path: planned→executing, execution_id token, lease |
-| outbound_dedup.go | 296 | Dedup gate: per-account / workspace cooldown, daily limits |
-| outbound_edit.go | 49 | Content edits + delete: planned-state mutations only |
-| outbound_finalize.go | 145 | Terminal CAS: executing→finished/expired, verification outcome |
-| outbound_lease.go | 128 | Lease eviction: reset stale executing rows |
-| outbound_query.go | 212 | Read-side: get/list/count/scan helpers, org-scoped |
-| outbound_queue.go | 198 | Write-side: InsertOutboundMessage, QueueOutboundForOrg |
-| outbound_queue_test.go | 438 | Tests queue gates + dedup + autonomous-first |
-| outbound_transition.go | 147 | Audit transitions: plan/claim/finalize/reset rows |
-| outbound_transition_test.go | 350 | Tests transition recording + state machine |
+### **outbound** — Execution machinery (`internal/store/outbound/`)
 
-**Phase 2 target**: extract to `internal/store/outbound/` (next PR).
+V2 outbound state taxonomy (execution_state ⊥ verification_outcome). Action policies, queue/claim/finalize/lease/dedup state machine, transition audit. Tests in `internal/store/outbound_*_test.go` (top-level, internal access) — Phase 2 fallback.
 
----
+Bridge wrappers in `outbound_aliases.go` exist as L2 transition shims. **No new wrappers per L2 lock.** New code calls `s.Outbound().Foo()` directly.
 
-### **coordination** — "What happened + was it verified" plane (4 files + 4 tests, 2,011 LOC)
-Action_ledger + execution_attempts + behaviour_profile + engagement reconciliation. Sits below outbound (outbound depends on it for behaviour caps + ledger writes).
+### **crawl** — Crawl pipeline (`internal/store/crawl/`)
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| action_ledger.go | 233 | Coordination Plane ledger: records every action attempt |
-| action_ledger_test.go | 194 | Tests action ledger writes + outcome tracking |
-| behaviour_profile.go | 330 | Account behavior profiles: trust levels, caps, runtime counters |
-| behaviour_profile_test.go | 304 | Tests behavior profile caps + day-rollover |
-| engagement_reconcile.go | 183 | Repair false-positive "touched" states on action_ledger |
-| engagement_reconcile_test.go | 191 | Tests engagement reconciliation |
-| execution_attempts.go | 415 | Audit ledger for execution: transitions + DOM evidence |
-| execution_attempts_test.go | 354 | Tests execution audit trail + transition state machine |
+CrawlIntent scheduler (recurring crawl plans), groups + group_quality, posts (with dedup), private_files. Clean-cut extraction; no top-level wrappers. Test stays in top-level (`crawl_intents_test.go`) per Phase 3 fallback (uses unexported `getCrawlIntentByHash`).
 
-**Phase 5 target** (per design doc; not in this PR).
+### **knowledge** — Workspace Knowledge OS (`internal/store/knowledge/`)
 
----
+Layered architecture: sources (L1) → assets (L3) → embeddings (L2.5) → vector queries (L4) → events / feedback / replay / soak / cost (L7). Methods dropped the redundant `Knowledge` prefix on extraction (`GetKnowledgeAsset` → `GetAsset`). Zero cross-domain writes by audit; no Hooks struct needed.
 
-### **leads** — Lead pipeline (4 files + 2 tests, 1,509 LOC)
-Lead CRUD + classification + engagement projection + niches. Has cross-domain SQL projection into outbound (per [STORE_SUBPACKAGE_REFACTOR §7.1](../../specs/STORE_SUBPACKAGE_REFACTOR.md#71-exists-sub-projection) — documented as `// tenant-ok: cross-domain projection`).
+Tests in subpackage as `package knowledge_test` (external) + `pgvector_literal_test.go` as `package knowledge` (internal — tests unexported `pgVectorLiteral`).
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| classification_log.go | 199 | AI classification audit trail: kept/rejected/error per crawl |
-| context_niches.go | 114 | User context settings: key-value for lead niche configuration |
-| lead_engagement.go | 380 | Lead engagement projection from action_ledger + execution_attempts |
-| lead_engagement_test.go | 380 | Tests engagement state logic + visibility |
-| leads.go | 418 | Lead CRUD: classify, query, repair source URLs |
-| leads_repair_test.go | 132 | Tests lead source URL repair logic |
+### **users** — Tenant root (top-level)
 
-**Phase 8 target** (deferred — cross-domain coupling).
+Auth + organizations. Foundational; every other domain assumes `org_id` and `user_id` resolve here.
 
----
+Files: `organization.go`, `users.go`.
 
-### **knowledge** — Knowledge OS internal store (10 files + 6 tests, 4,528 LOC)
-Biggest domain. Layered architecture: sources → assets → embeddings → vector queries → events/feedback/replay/soak. Mostly self-contained; minimal cross-imports.
+### **coordination** — "What happened + was it verified" plane (top-level)
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| knowledge_assets.go | 363 | Layer 3: asset CRUD, org isolation, state filtering |
-| knowledge_assets_test.go | 410 | Tests asset CRUD + state transitions |
-| knowledge_cost.go | 201 | Cost accounting: embedding batch costs per source |
-| knowledge_embeddings.go | 336 | Layer 2.5: embedding state machine, pending queue |
-| knowledge_embeddings_test.go | 233 | Tests embedding state machinery |
-| knowledge_events.go | 359 | Layer 7: event recording (sync, retrieval, outcome) |
-| knowledge_events_test.go | 150 | Tests event recording + retrieval |
-| knowledge_feedback.go | 195 | Goal G10: append-only human feedback |
-| knowledge_replay.go | 304 | Operator Replay: read-side retrieval timeline |
-| knowledge_replay_test.go | 171 | Tests replay queries + outcome tracking |
-| knowledge_soak.go | 231 | Soak metrics: hit rate, fallback rate, scoring |
-| knowledge_soak_test.go | 134 | Tests soak metrics + aggregation |
-| knowledge_sources.go | 309 | Layer 1: source CRUD, re-sync idempotence |
-| knowledge_sources_test.go | 254 | Tests source CRUD + state isolation |
-| knowledge_vector_query.go | 185 | Layer 4: pgvector ANN queries (tenant-scoped) |
-| data_sources.go | 111 | Legacy pre-Knowledge-OS connector registry. Reassigned from crawl 2026-05-21 — consumed by agent_brain / skills / autoflow handlers. Will be folded into knowledge_sources or deprecated in a future PR. |
+action_ledger + execution_attempts + behaviour_profile + engagement_reconcile. The runtime-truth substrate. **High-risk extraction** — see [[project_coordination_phase_risks]] before starting.
 
-**Phase 4 target**.
+Files: `action_ledger.go`, `behaviour_profile.go`, `engagement_reconcile.go`, `execution_attempts.go` (+ tests).
 
----
+### **leads** — Lead pipeline (top-level)
 
-### **crawl** — Crawl pipeline (6 files + 1 test, 1,289 LOC)
-Market intelligence crawl: intents, posts, groups, quality, data sources, private files.
+Lead CRUD + classification + engagement projection + niches. Has cross-domain SQL projection into outbound (`EXISTS(SELECT FROM outbound_messages ...)`) — documented `// tenant-ok: cross-domain projection (outbound -> leads)`. See [STORE_SUBPACKAGE_REFACTOR §7.1](../../specs/STORE_SUBPACKAGE_REFACTOR.md).
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| crawl_intents.go | 549 | Recurring crawl plans: scheduling, status, execution |
-| crawl_intents_test.go | 327 | Tests crawl intent lifecycle |
-| group_quality.go | 162 | Group quality scoring: relevance, professionalism |
-| groups.go | 105 | Crawl target groups: add, query, dedup by URL |
-| posts.go | 101 | Crawl posts: insert with dedup, query recent |
-| private_files.go | 45 | Private knowledge files for crawl (org-scoped) |
+Files: `classification_log.go`, `context_niches.go`, `lead_engagement.go`, `leads.go` (+ tests).
 
-**Note 2026-05-21**: `data_sources.go` was reassigned from crawl → **knowledge** domain during Phase 3 audit. The `data_sources` table is a legacy pre-Knowledge-OS connector registry consumed by agent_brain / skills / autoflow handlers, not by the crawl scheduler. Co-locating with the knowledge domain matches the architectural intent even though the table predates the Knowledge OS layered design.
+### **identities** — FB account lifecycle (top-level)
 
-**Phase 3 target** (cleanest second extraction).
-
----
-
-### **identities** — FB account lifecycle (5 files + 2 tests, 1,088 LOC)
 FB accounts, sessions, agent tokens, browser identity. Foundational for outbound (behaviour caps require account state).
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| accounts.go | 345 | FB account lifecycle: add, get, query + encryption |
-| accounts_identity_test.go | 71 | Tests identity account lookups + multi-org isolation |
-| accounts_rbac_test.go | 75 | Tests account RBAC + assignment |
-| agent_tokens.go | 326 | Browser agent tokens: identity, capabilities |
-| facebook_status.go | 25 | FB status summary: connected, group count, daily leads |
-| session_status.go | 84 | Browser session status enum |
-| sessions.go | 130 | Chrome extension browser session lifecycle |
+Files: `accounts.go`, `agent_tokens.go`, `facebook_status.go`, `session_status.go`, `sessions.go` (+ tests).
 
-**Phase 6 target**.
+### **connectors** — Chrome extension bridge (top-level)
 
----
-
-### **connectors** — Chrome extension bridge (5 files, 653 LOC)
 Extension command bus + pairing + ownership + selector cache.
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| connector_commands.go | 199 | Chrome extension command queue |
-| connector_ownership.go | 48 | Validates agent ownership of account stream |
-| connector_pairing.go | 172 | Extension pairing code generation + lifecycle |
-| connector_streams.go | 143 | Extension screenshot persistence + state tracking |
-| selector_cache.go | 91 | CSS/XPath selector cache: LLM-discovered selectors |
+Files: `connector_commands.go`, `connector_ownership.go`, `connector_pairing.go`, `connector_streams.go`, `selector_cache.go`.
 
-**Phase 7 target**.
+### **threads** — Inbox / conversations (top-level)
 
----
+Conversation threads: CRUD + last_outbound tracking. Single file — extraction bundled with leads.
 
-### **threads** — Inbox / conversations (1 file, 291 LOC)
+Files: `threads.go`.
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| threads.go | 291 | Conversation threads: CRUD + last_outbound tracking |
+### **prompts** — AI prompt machinery (top-level)
 
-**Phase 8 target** (bundles with leads).
+Prompt memory, routing analysis, skill executions.
 
----
+Files: `prompt_memory.go`, `prompt_routing.go`, `skills.go` (+ tests).
 
-### **prompts** — AI prompt machinery (3 files + 1 test, 826 LOC)
-Prompt memory, routing analysis, skills.
+### **app** — Misc application concerns (top-level, heterogeneous)
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| prompt_memory.go | 181 | Prompt audit: scan logs, inbox messages, routing decisions |
-| prompt_routing.go | 419 | Orchestrator observability: conflict candidates, ask-back |
-| prompt_routing_test.go | 233 | Tests routing heuristic detection |
-| skills.go | 224 | Skill execution machinery: org_skills, skill_executions |
+Tasks, KPI, learning, media, pricing, careers, stats, browser fingerprints. Last extraction candidate; will likely split rather than extract whole.
 
-**Phase 9 target**.
+Files: `app_store.go`, `career_jobs.go`, `identities.go` (NOTE: different from `identities/`-domain `accounts.go` — browser fingerprints lift here for now), `kpi.go`, `learning.go`, `media_assets.go`, `price_items.go`, `stats.go`.
+
+### Legacy / cross-domain residue
+
+- `data_sources.go` — pre-Knowledge-OS connector registry. Reassigned to knowledge domain in Phase 3 audit; physically stays in top-level until folded into knowledge or deprecated.
 
 ---
 
-### **app** — Misc application concerns (8 files, 1,096 LOC)
-Tasks, KPI, learning, media, pricing, careers, stats, browser fingerprints.
+## 5. New domains policy (V2.5 precedent — locked)
 
-| File | LOC | What it does |
-|------|-----|--------------|
-| app_store.go | 410 | Task execution + task-derived leads (AppTask, TaskLead) |
-| career_jobs.go | 78 | HR playbook legacy: job postings |
-| identities.go | 104 | Browser identity fingerprints (AppStore): UA, screen, WebGL |
-| kpi.go | 107 | Staff KPI tracking: conversations, conversions, points |
-| learning.go | 152 | Adaptive weights + feedback outcomes |
-| media_assets.go | 123 | Company image asset library |
-| price_items.go | 75 | Pricing intelligence: service name, price, unit |
-| stats.go | 36 | Dashboard stats aggregation (legacy) |
-
-**Phase 11 target** (last — heterogeneous bucket).
-
----
-
-## 3. New domains (V2.5 precedent — locked)
-
-Per [feedback-store-subpackage-locks](../../../../C:/Users/ACER/.claude/projects/d--THG-THG-sale/memory/feedback_store_subpackage_locks.md) **mandate**: every new domain ships as `internal/store/<domain>/` from day 1. NO new files in top-level `internal/store/`.
+Per [[feedback_store_subpackage_locks]] **mandate**: every new domain ships as `internal/store/<domain>/` from day 1. **NO new files in top-level `internal/store/`** for greenfield domains.
 
 Planned (per [TEMPLATE_TELEGRAM_COPILOT_PLAN](../../specs/TEMPLATE_TELEGRAM_COPILOT_PLAN.md)):
 
-- `internal/store/templates/` — `saved_templates`, `broadcast_campaigns`, `broadcast_targets`
-- `internal/store/telegram/` — `org_telegram_bots`, `telegram_link_tokens`
-- `internal/store/copilot/` — `agent_sessions`, `agent_messages`, `agent_session_channels`
-- `internal/store/reputation/` — `account_reputation_snapshots`
+- `internal/store/templates/` — saved_templates, broadcast_campaigns, broadcast_targets
+- `internal/store/telegram/` — org_telegram_bots, telegram_link_tokens
+- `internal/store/copilot/` — agent_sessions, agent_messages, agent_session_channels
+- `internal/store/reputation/` — account_reputation_snapshots
+
+Each MUST conform to §3 subpackage contract.
 
 ---
 
-## 4. File counts (verification)
+## 6. File counts (verification, 2026-05-21)
 
-| Domain | Files | LOC |
-|--------|------:|----:|
-| dbutil | 7 | 533 |
-| infra | 5 | 1,641 |
-| users | 2 | 551 |
-| outbound | 12 | 2,066 |
-| coordination | 8 | 2,011 |
-| leads | 6 | 1,509 |
-| knowledge | 15 | 4,528 |
-| crawl | 7 | 1,289 |
-| identities | 7 | 1,088 |
-| connectors | 5 | 653 |
-| threads | 1 | 291 |
-| prompts | 4 | 826 |
-| app | 8 | 1,096 |
-| **TOTAL** | **89** | **22,949** ✓ |
+Extracted subpackages:
+
+| Subpackage | Production files | Test files | Production LOC |
+|------------|-----------------:|-----------:|---------------:|
+| dbutil | 4 | 1 | 351 |
+| storetest | 1 | 0 | 165 |
+| outbound | 11 | 0 (tests at top-level) | 1,478 |
+| crawl | 6 | 0 (test at top-level) | 1,066 |
+| knowledge | 10 | 8 | 2,551 |
+
+Top-level remaining: **56 `.go` files** (production + tests) across infra, users, coordination, leads, identities, connectors, threads, prompts, app, plus subpackage-test-fallback files (outbound_*_test.go, crawl_intents_test.go).
+
+For per-phase migration history + audit findings see [specs/STORE_SUBPACKAGE_REFACTOR.md](../../specs/STORE_SUBPACKAGE_REFACTOR.md).
