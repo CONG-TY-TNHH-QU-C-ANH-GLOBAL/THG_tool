@@ -114,8 +114,31 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     if (String(message.type || '').toLowerCase() === 'comment' && !isCommentableFacebookPostUrl(targetUrl)) {
       throw new Error('comment_target_not_post_permalink');
     }
-    let state = await THGFacebookState.ensureFacebookTabVisible(targetUrl);
+    // Mirror the crawl path's foreground-navigation pattern
+    // (commands.js::openCrawlTab). Direct deep-link navigation
+    // (chrome.tabs.update on a background/minimized FB tab) is one of
+    // the patterns Facebook's anti-automation heuristics correlate
+    // with bot traffic — the SPA can throttle background-tab render
+    // work via requestAnimationFrame suspension, and FB's referrer/
+    // user-gesture fingerprint differs for background updates. Forcing
+    // focus=true makes the tab + window active during navigation,
+    // matching how the crawl path already operates and giving the FB
+    // SPA the same lifecycle signals a human-clicked link produces.
+    // This is independent of (and complementary to) the post-
+    // navigation URL verification below.
+    let state = await THGFacebookState.ensureFacebookTabVisible(targetUrl, { focus: true });
     if (!state.tab?.id) throw new Error('Facebook tab is not ready');
+    if (state.tab.windowId) {
+      try {
+        const win = await chrome.windows.get(state.tab.windowId).catch(() => null);
+        if (win && win.state === 'minimized') {
+          await chrome.windows.update(state.tab.windowId, { state: 'normal', focused: true }).catch(() => {});
+          await THGShared.delay(600);
+        } else {
+          await chrome.windows.update(state.tab.windowId, { focused: true }).catch(() => {});
+        }
+      } catch { /* best effort */ }
+    }
 
     // PRIORITY A — per-tab execution lock at the BACKGROUND layer.
     // Defense-in-depth alongside the content-script-level lock in
