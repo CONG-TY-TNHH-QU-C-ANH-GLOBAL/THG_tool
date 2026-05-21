@@ -210,19 +210,30 @@ var THGOutbox = globalThis.THGOutbox || (() => {
   }
 
   // urlsMatchSameDestination compares two FB URLs for "same target
-  // post/profile/page" semantics. Uses pathname only (query params and
-  // hash strip out tracking/comment-deeplinks). Trailing slashes
-  // normalized. Mirrors sameFacebookDestination in facebook-state.js
-  // but kept local to outbox.js so the safety check stays self-
-  // contained inside the outbox module.
+  // post/profile/page" semantics. Mirrors the crawl path's already-
+  // production-proven matcher in commands.js::tabUrlMatchesExpected:
+  // pathname-based (drops query + hash), trailing-slash normalized,
+  // and LENIENT on subpath — `got` matches if it equals `want` OR
+  // starts with `want + "/"`. The startsWith branch handles FB's
+  // common post-navigation URL embellishments:
+  //   want = /groups/X/posts/Y
+  //   tab  = /groups/X/posts/Y/comment/Z      (FB scrolls to comment)
+  //   tab  = /groups/X/posts/Y                (no comment focus)
+  //   tab  = /groups/X/posts/Y/?modal=true    (modal variant)
+  // All three are "same target post" semantically — failing the
+  // outbox safety check on /comment/Z would cause false-positive
+  // navigation_redirected outcomes when the comment actually landed
+  // and FB just deep-linked to the new comment. Strict exact-pathname
+  // (what c0ce159 originally shipped) would have caused this regression.
   function urlsMatchSameDestination(actual, expected) {
     try {
       const a = new URL(actual);
       const b = new URL(expected);
       if (a.hostname !== b.hostname) return false;
-      const ap = a.pathname.replace(/\/+$/, '');
-      const bp = b.pathname.replace(/\/+$/, '');
-      return ap === bp;
+      const got = a.pathname.replace(/\/+$/, '');
+      const want = b.pathname.replace(/\/+$/, '');
+      if (!want || !got) return false;
+      return got === want || got.startsWith(want + '/');
     } catch {
       return false;
     }
