@@ -92,7 +92,24 @@ const (
 func (s *Store) installOutboundHooks() {
 	s.outbound = outbound.NewStore(s.db, s.dialect, outbound.Hooks{
 		BehaviourCheck: func(tx *sql.Tx, accountID int64, msgType string) (outbound.GuardDecision, error) {
-			return s.checkBehaviourCapsTx(tx, accountID, msgType)
+			// Adapter boundary: coordination returns CapsDecision (a
+			// primitive that does NOT import outbound types — see
+			// behaviour_caps_check.go for the rationale). This closure
+			// converts it into outbound.GuardDecision shape.
+			// CooldownUntil maps to LastOutboundAt for back-compat with
+			// the existing GuardDecision consumer; the receiving layer
+			// has always overloaded LastOutboundAt to carry "cooldown
+			// expiry" for the account_cooldown_active reason. Preserving
+			// that exact mapping is Decouple-1's mechanical guarantee.
+			decision, err := s.checkBehaviourCapsTx(tx, accountID, msgType)
+			if err != nil {
+				return outbound.GuardDecision{}, err
+			}
+			return outbound.GuardDecision{
+				Allowed:        decision.Allowed,
+				Reason:         decision.Reason,
+				LastOutboundAt: decision.CooldownUntil,
+			}, nil
 		},
 		ConversationGate: func(ctx context.Context, orgID int64, targetURL, profileURL string, cooldown time.Duration) (outbound.GuardDecision, error) {
 			return s.conversationGateForOutbound(ctx, orgID, targetURL, profileURL, cooldown)

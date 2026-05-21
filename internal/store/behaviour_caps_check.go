@@ -7,8 +7,38 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/store/dbutil"
-	"github.com/thg/scraper/internal/store/outbound"
 )
+
+// CapsDecision is the coordination-domain primitive returned by
+// [Store.checkBehaviourCapsTx]. It carries the cap-check result in a
+// shape that does NOT reference any peer domain — the outbound layer's
+// hook adapter (outbound_aliases.go::installOutboundHooks) converts
+// this into [outbound.GuardDecision] at its boundary.
+//
+// Why a coordination-local type: coordination is BELOW outbound in the
+// dependency graph (DOMAINS.md §2). When the coordination subpackage
+// is extracted (Phase 5B), it cannot import outbound — that would be
+// the bidirectional-knowledge violation locked in
+// [[feedback_no_bidirectional_domain_knowledge]]. Decouple-1
+// (2026-05-21) introduced this primitive as pre-work so the 5B move is
+// mechanical.
+//
+// Field semantics:
+//
+//   - Allowed: whether the action passes the cap check.
+//   - Reason: short tag — "ok" | "account_cooldown_active" |
+//     "daily_limit_exceeded" | "risk_ceiling_exceeded". Stable strings
+//     consumed by the outbound dedup/queue layer for telemetry.
+//   - CooldownUntil: zero unless Reason == "account_cooldown_active";
+//     when set, carries the wall-clock instant after which the cap
+//     would re-allow the action. Outbound's adapter maps this into
+//     GuardDecision.LastOutboundAt for back-compat with the existing
+//     consumer shape.
+type CapsDecision struct {
+	Allowed       bool
+	Reason        string
+	CooldownUntil time.Time
+}
 
 // checkBehaviourCapsTx runs the Coordination Plane PR-2 enforcement
 // layer against an open queue transaction. Reasons returned:
@@ -23,26 +53,27 @@ import (
 // Phase 2 of STORE_SUBPACKAGE_REFACTOR: this function lives at the
 // top-level store package and is wired into [outbound.Hooks.BehaviourCheck]
 // at construction time (see outbound_aliases.go::installOutboundHooks).
-// When coordination is extracted as its own subpackage (Phase 5), this
+// When coordination is extracted as its own subpackage (Phase 5B), this
 // function moves into `internal/store/coordination/` and the hook
-// continues to point at it via the same closure indirection.
+// continues to point at it via the same closure indirection. The
+// outbound adapter handles the CapsDecision -> GuardDecision conversion.
 //
 // tenant-ok: cross-domain projection (outbound -> coordination). The
 // account_runtime_state table is owned by the coordination domain;
 // outbound queries it only via this injected hook.
-func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string) (outbound.GuardDecision, error) {
+func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDecision, error) {
 	caps, _, err := s.ResolveAccountCaps(context.Background(), accountID)
 	if err != nil {
-		return outbound.GuardDecision{}, err
+		return CapsDecision{}, err
 	}
 
 	// Single round-trip: read every column the cap decision needs in
 	// one SELECT, then apply day-rollover + cap check in Go.
 	var (
-		countersDay                                                    string
+		countersDay                                                   string
 		commentsToday, inboxToday, groupPostsToday, profilePostsToday int
-		riskScore                                                      float64
-		cooldownUntilStr                                               string
+		riskScore                                                     float64
+		cooldownUntilStr                                              string
 	)
 	err = tx.QueryRow(
 		`SELECT counters_day, comments_today, inbox_today, group_posts_today,
@@ -52,22 +83,22 @@ func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string
 	).Scan(&countersDay, &commentsToday, &inboxToday, &groupPostsToday,
 		&profilePostsToday, &riskScore, &cooldownUntilStr)
 	if err != nil && err != sql.ErrNoRows {
-		return outbound.GuardDecision{}, err
+		return CapsDecision{}, err
 	}
 
 	if cooldownUntilStr != "" {
 		until := dbutil.ParseSQLiteTime(cooldownUntilStr)
 		if !until.IsZero() && time.Now().UTC().Before(until.UTC()) {
-			return outbound.GuardDecision{
-				Allowed:        false,
-				Reason:         "account_cooldown_active",
-				LastOutboundAt: until,
+			return CapsDecision{
+				Allowed:       false,
+				Reason:        "account_cooldown_active",
+				CooldownUntil: until,
 			}, nil
 		}
 	}
 
 	if caps.RiskScoreCeiling > 0 && riskScore >= caps.RiskScoreCeiling {
-		return outbound.GuardDecision{Allowed: false, Reason: "risk_ceiling_exceeded"}, nil
+		return CapsDecision{Allowed: false, Reason: "risk_ceiling_exceeded"}, nil
 	}
 
 	if col := counterColumnForAction(msgType); col != "" {
@@ -87,10 +118,10 @@ func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string
 				}
 			}
 			if counter >= cap {
-				return outbound.GuardDecision{Allowed: false, Reason: "daily_limit_exceeded"}, nil
+				return CapsDecision{Allowed: false, Reason: "daily_limit_exceeded"}, nil
 			}
 		}
 	}
 
-	return outbound.GuardDecision{Allowed: true, Reason: "ok"}, nil
+	return CapsDecision{Allowed: true, Reason: "ok"}, nil
 }
