@@ -86,9 +86,18 @@ the production UI and must not be reintroduced.
 - Explicit auto/execution mode is allowed only for an org/campaign/prompt that
   asks for it. Even then, outbound must pass org-scoped dedup, cooldown, and
   conversation-thread guardrails before entering `approved` outbox state.
-- AI must treat inbox as customer-service state, not one-shot blasting: if a
-  lead replied, answer the latest reply with thread context; if they have not
-  replied, do not keep sending repeated inbox messages inside the cooldown.
+- AI must treat inbox CHANNEL DISCIPLINE as customer-service-style, not
+  one-shot blasting: if a lead replied, answer the latest reply with thread
+  context; if they have not replied, do not keep sending repeated inbox
+  messages inside the cooldown.
+- First-touch outreach via the `inbox_all_leads` skill IS sales semantics —
+  it defaults to `score_filter=hot` to target qualified, never-contacted
+  leads. The customer-service discipline above applies AFTER first-touch:
+  the `awaiting_reply_cooldown` gate prevents repeat sends on the same
+  thread. Customer-service reply-to-inbound-message uses a different code
+  path (thread with `last_inbound_at > last_outbound_at` is gated as
+  `lead_replied=Allowed`, so the operator can respond, but the bulk skill
+  itself is not a CS triage tool).
 - If Facebook shows login wall/checkpoint, return `human_required`.
 - Do not generate AI images. Only use real user-uploaded files/images.
 - External business data connectors must be org-scoped, read-only by default,

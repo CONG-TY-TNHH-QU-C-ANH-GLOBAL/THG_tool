@@ -131,13 +131,13 @@ func registerBuiltinSkills(reg *skills.Registry, deps builtinSkillDeps) {
 
 	reg.Register(&skills.Skill{
 		ID:             "inbox_all_leads",
-		Title:          "Inbox hàng loạt cho leads đủ tiêu chí",
-		Description:    "Queue inbox outreach cho mọi lead đã classify, có thread state + cooldown + approval.",
+		Title:          "Inbox hàng loạt cho leads đủ tiêu chí (first-touch sales)",
+		Description:    "First-touch SALES outreach (không phải customer-service follow-up): queue inbox cho mọi lead đã classify đạt `score_filter` (mặc định `hot`). Áp dụng thread state + cooldown + approval. Customer-service reply trên thread đã có inbound message phải dùng skill khác — `awaiting_reply_cooldown` của conversation gate sẽ chặn lặp lại trên cùng thread.",
 		Category:       skills.CategoryInbox,
 		Outbound:       true,
 		DefaultEnabled: true,
 		Parameters: []skills.SkillParam{
-			{Name: "score_filter", Type: "enum", Enum: []string{"hot", "warm", "cold", "all"}, Description: "Lead score filter; mặc định hot"},
+			{Name: "score_filter", Type: "enum", Enum: []string{"hot", "warm", "cold", "all"}, Description: "Lead score filter; mặc định hot (first-touch sales). Đặt 'all' chỉ khi explicit sales blast."},
 			{Name: "account_id", Type: "int"},
 			{Name: "auto", Type: "bool"},
 		},
