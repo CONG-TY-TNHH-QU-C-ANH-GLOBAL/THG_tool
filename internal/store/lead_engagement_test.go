@@ -61,7 +61,7 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 	// is NOT touched until the action verifies. Queue alone leaves the
 	// ledger row at outcome="queued", which the engagement projection
 	// filters out. Advance to verified before asserting engagement.
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("mark verified: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestLeadEngagement_FailedAttemptsAreNotTouches(t *testing.T) {
 	}
 
 	// 2) Action fails (redirected_feed → ledger outcome='failed').
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "failed", "redirected_feed"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "failed", "redirected_feed"); err != nil {
 		t.Fatalf("mark failed: %v", err)
 	}
 
@@ -178,10 +178,10 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 		t.Fatalf("comment queue: %v", err)
 	}
 	// Mark BOTH verified — autonomous-verified-execution invariant.
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, inboxRes.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, inboxRes.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify inbox: %v", err)
 	}
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, commentRes.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, commentRes.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify comment: %v", err)
 	}
 
@@ -227,10 +227,10 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	// Both VERIFY — autonomous-verified-execution invariant. The org
 	// boundary still applies on the SELECT, so org 2's verified row
 	// must NOT show in org 1's view.
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 2, otherRes.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 2, otherRes.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify other org: %v", err)
 	}
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, aliceRes.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, aliceRes.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify alice: %v", err)
 	}
 
@@ -275,10 +275,10 @@ func TestLeadEngagement_Batch(t *testing.T) {
 		t.Fatalf("queue beta inbox: %v", err)
 	}
 	// Verify both — autonomous-verified-execution invariant.
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, alphaRes.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, alphaRes.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify alpha: %v", err)
 	}
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, betaRes.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, betaRes.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify beta: %v", err)
 	}
 
@@ -319,7 +319,7 @@ func TestLeadEngagement_BatchNoCrossLeadBleed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("queue 100: %v", err)
 	}
-	if _, err := db.MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified by test"); err != nil {
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified by test"); err != nil {
 		t.Fatalf("verify 100: %v", err)
 	}
 

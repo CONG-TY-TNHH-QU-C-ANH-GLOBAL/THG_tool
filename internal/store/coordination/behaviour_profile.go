@@ -1,8 +1,7 @@
 // Domain: coordination (see internal/store/DOMAINS.md)
-package store
+package coordination
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // Coordination Plane PR-2: Per-Account Behaviour Profile substrate.
@@ -167,7 +167,10 @@ func counterColumnForAction(action string) string {
 // Best-effort: errors are returned so the caller can decide whether to
 // fail the surrounding tx, but the design treats counter loss as
 // acceptable (queue success is the source of truth, ledger is additive).
-func incrementRuntimeCounterTx(tx *sql.Tx, orgID, accountID int64, action string) error {
+//
+// Phase 5B: exported (was incrementRuntimeCounterTx) for the hooks
+// closure pattern. Package-level function — no Store state required.
+func IncrementCounterTx(tx *sql.Tx, orgID, accountID int64, action string) error {
 	col := counterColumnForAction(action)
 	if col == "" || accountID <= 0 {
 		return nil

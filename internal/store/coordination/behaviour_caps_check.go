@@ -1,5 +1,5 @@
 // Domain: coordination (see internal/store/DOMAINS.md)
-package store
+package coordination
 
 import (
 	"context"
@@ -61,7 +61,10 @@ type CapsDecision struct {
 // tenant-ok: cross-domain projection (outbound -> coordination). The
 // account_runtime_state table is owned by the coordination domain;
 // outbound queries it only via this injected hook.
-func (s *Store) checkBehaviourCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDecision, error) {
+//
+// Phase 5B: exported as CheckCapsTx (was checkBehaviourCapsTx) because
+// the hooks closure now lives across the package boundary.
+func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDecision, error) {
 	caps, _, err := s.ResolveAccountCaps(context.Background(), accountID)
 	if err != nil {
 		return CapsDecision{}, err

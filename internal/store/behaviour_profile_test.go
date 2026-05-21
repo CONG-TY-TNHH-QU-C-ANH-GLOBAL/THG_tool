@@ -17,7 +17,7 @@ func newBehaviourTestStore(t *testing.T) *Store {
 // preset so a freshly-imported account still has working caps.
 func TestResolveAccountCaps_DefaultsToWarmingWhenAbsent(t *testing.T) {
 	db := newBehaviourTestStore(t)
-	caps, trust, err := db.ResolveAccountCaps(context.Background(), 999)
+	caps, trust, err := db.Coordination().ResolveAccountCaps(context.Background(), 999)
 	if err != nil {
 		t.Fatalf("ResolveAccountCaps: %v", err)
 	}
@@ -46,10 +46,10 @@ func TestUpsertAndGetBehaviourProfile(t *testing.T) {
 		CapsOverride:   `{"comments_per_day": 50}`,
 		Notes:          "warmed account",
 	}
-	if err := db.UpsertAccountBehaviourProfile(ctx, p); err != nil {
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, p); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	got, err := db.GetAccountBehaviourProfile(ctx, 42)
+	got, err := db.Coordination().GetAccountBehaviourProfile(ctx, 42)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestUpsertAndGetBehaviourProfile(t *testing.T) {
 	}
 
 	// Resolver must overlay caps_override on the trusted preset.
-	caps, trust, err := db.ResolveAccountCaps(ctx, 42)
+	caps, trust, err := db.Coordination().ResolveAccountCaps(ctx, 42)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestUpsertAndGetBehaviourProfile(t *testing.T) {
 // A fresh runtime state for an unseen account is zero-valued, not an error.
 func TestGetRuntimeState_MissingReturnsZero(t *testing.T) {
 	db := newBehaviourTestStore(t)
-	r, err := db.GetAccountRuntimeState(context.Background(), 123)
+	r, err := db.Coordination().GetAccountRuntimeState(context.Background(), 123)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestQueueOutbound_IncrementsRuntimeCounter(t *testing.T) {
 
 	// Cold preset has very low caps; use Trusted so the counter test
 	// is independent of cap enforcement.
-	if err := db.UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
 		AccountID: 7, OrgID: 1, TrustLevel: models.TrustTrusted,
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -113,7 +113,7 @@ func TestQueueOutbound_IncrementsRuntimeCounter(t *testing.T) {
 		t.Fatalf("queue must allow first comment: %+v", res.Decision)
 	}
 
-	r, err := db.GetAccountRuntimeState(ctx, 7)
+	r, err := db.Coordination().GetAccountRuntimeState(ctx, 7)
 	if err != nil {
 		t.Fatalf("runtime: %v", err)
 	}
@@ -132,12 +132,12 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 	ctx := context.Background()
 
 	// Use the Cold preset; comments cap is small (3).
-	if err := db.UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
 		AccountID: 9, OrgID: 1, TrustLevel: models.TrustCold,
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	caps, _, _ := db.ResolveAccountCaps(ctx, 9)
+	caps, _, _ := db.Coordination().ResolveAccountCaps(ctx, 9)
 	cap := caps.CommentsPerDay
 	if cap <= 0 {
 		t.Fatalf("expected positive comment cap for cold preset, got %d", cap)
@@ -179,12 +179,12 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 func TestQueueOutbound_AccountCooldownBlocks(t *testing.T) {
 	db := newBehaviourTestStore(t)
 	ctx := context.Background()
-	if err := db.UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
 		AccountID: 11, OrgID: 1, TrustLevel: models.TrustTrusted,
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if err := db.SetAccountCooldown(ctx, 1, 11, time.Now().Add(2*time.Hour)); err != nil {
+	if err := db.Coordination().SetAccountCooldown(ctx, 1, 11, time.Now().Add(2*time.Hour)); err != nil {
 		t.Fatalf("set cooldown: %v", err)
 	}
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
@@ -207,14 +207,14 @@ func TestQueueOutbound_RiskCeilingBlocks(t *testing.T) {
 	db := newBehaviourTestStore(t)
 	ctx := context.Background()
 	// Cold preset has ceiling 0.40; bump risk above it via the writer API.
-	if err := db.UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
 		AccountID: 13, OrgID: 1, TrustLevel: models.TrustCold,
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	// Failure default weight is 0.05; nine failures push past 0.40.
 	for i := 0; i < 9; i++ {
-		if err := db.ApplyRiskSignal(ctx, 1, 13, models.RiskSignalFailure, 0); err != nil {
+		if err := db.Coordination().ApplyRiskSignal(ctx, 1, 13, models.RiskSignalFailure, 0); err != nil {
 			t.Fatalf("signal %d: %v", i, err)
 		}
 	}
@@ -238,18 +238,18 @@ func TestApplyRiskSignal_SuccessLowersScore(t *testing.T) {
 	db := newBehaviourTestStore(t)
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		if err := db.ApplyRiskSignal(ctx, 1, 20, models.RiskSignalFailure, 0); err != nil {
+		if err := db.Coordination().ApplyRiskSignal(ctx, 1, 20, models.RiskSignalFailure, 0); err != nil {
 			t.Fatalf("fail %d: %v", i, err)
 		}
 	}
-	r, _ := db.GetAccountRuntimeState(ctx, 20)
+	r, _ := db.Coordination().GetAccountRuntimeState(ctx, 20)
 	if r.RiskScore <= 0 {
 		t.Fatalf("expected raised risk after failures, got %.3f", r.RiskScore)
 	}
-	if err := db.ApplyRiskSignal(ctx, 1, 20, models.RiskSignalSuccess, 0); err != nil {
+	if err := db.Coordination().ApplyRiskSignal(ctx, 1, 20, models.RiskSignalSuccess, 0); err != nil {
 		t.Fatalf("success: %v", err)
 	}
-	r2, _ := db.GetAccountRuntimeState(ctx, 20)
+	r2, _ := db.Coordination().GetAccountRuntimeState(ctx, 20)
 	if r2.RiskScore >= r.RiskScore {
 		t.Errorf("success signal must lower risk score, before=%.3f after=%.3f", r.RiskScore, r2.RiskScore)
 	}
@@ -274,7 +274,7 @@ func TestRuntimeState_DayRollover(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	r, err := db.GetAccountRuntimeState(ctx, 15)
+	r, err := db.Coordination().GetAccountRuntimeState(ctx, 15)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}

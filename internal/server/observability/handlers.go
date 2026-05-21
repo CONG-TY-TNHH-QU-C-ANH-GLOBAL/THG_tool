@@ -8,7 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 // executionDistribution serves GET /api/observability/execution/distribution.
@@ -33,7 +33,7 @@ func executionDistribution(deps Deps) fiber.Handler {
 		}
 		since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
 
-		buckets, err := deps.DB.ExecutionOutcomeDistribution(c.UserContext(), orgID, since)
+		buckets, err := deps.DB.Coordination().ExecutionOutcomeDistribution(c.UserContext(), orgID, since)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -97,7 +97,7 @@ func executionRecent(deps Deps) fiber.Handler {
 		limit, _ := strconv.Atoi(c.Query("limit", "100"))
 		since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
 
-		attempts, err := deps.DB.ListRecentExecutionAttempts(c.UserContext(), orgID, since, limit)
+		attempts, err := deps.DB.Coordination().ListRecentExecutionAttempts(c.UserContext(), orgID, since, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -165,7 +165,7 @@ func executionGapDetection(deps Deps) fiber.Handler {
 		limit, _ := strconv.Atoi(c.Query("limit", "50"))
 		threshold := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute)
 
-		stuck, err := deps.DB.GapDetection(c.UserContext(), orgID, threshold, limit)
+		stuck, err := deps.DB.Coordination().GapDetection(c.UserContext(), orgID, threshold, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -205,7 +205,7 @@ func executionAccountTimeseries(deps Deps) fiber.Handler {
 		}
 		since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
 
-		buckets, err := deps.DB.AccountOutcomeTimeseries(c.UserContext(), orgID, accountID, since)
+		buckets, err := deps.DB.Coordination().AccountOutcomeTimeseries(c.UserContext(), orgID, accountID, since)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -244,7 +244,7 @@ func executionLedgerReconcile(deps Deps) fiber.Handler {
 		limit, _ := strconv.Atoi(c.Query("limit", "100"))
 		since := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
 
-		mismatches, err := deps.DB.LedgerReconcileMismatches(c.UserContext(), orgID, since, limit)
+		mismatches, err := deps.DB.Coordination().LedgerReconcileMismatches(c.UserContext(), orgID, since, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -277,7 +277,7 @@ func executionAccountHealth(deps Deps) fiber.Handler {
 		}
 		accountID, _ := strconv.ParseInt(c.Query("account_id", "0"), 10, 64)
 
-		rows, err := deps.DB.AccountHealthSnapshot(c.UserContext(), orgID, accountID)
+		rows, err := deps.DB.Coordination().AccountHealthSnapshot(c.UserContext(), orgID, accountID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -286,7 +286,7 @@ func executionAccountHealth(deps Deps) fiber.Handler {
 		// need to know the policy resolver's default. Empty string in the
 		// row → "warming" on the wire.
 		type wireRow struct {
-			store.AccountHealthRow
+			coordination.AccountHealthRow
 			TrustLevel string `json:"trust_level"`
 		}
 		out := make([]wireRow, 0, len(rows))

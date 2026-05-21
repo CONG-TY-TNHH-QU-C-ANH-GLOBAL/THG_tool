@@ -1,8 +1,7 @@
 // Domain: coordination (see internal/store/DOMAINS.md)
-package store
+package coordination
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // VerificationEvidence is the JSON payload the verifier (extension or

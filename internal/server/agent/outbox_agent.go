@@ -9,16 +9,16 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/runtime"
 	"github.com/thg/scraper/internal/server/system"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 // proofToEvidence adapts the runtime verifier's proof shape onto the
-// store's evidence shape. Two types exist (instead of one shared) to
-// avoid an import cycle: runtime cannot import store, and store cannot
-// import runtime. The fields are 1:1 today; if they diverge, this is
-// the seam to translate.
-func proofToEvidence(p runtime.VerifierProof) store.VerificationEvidence {
-	return store.VerificationEvidence{
+// coordination domain's evidence shape. Two types exist (instead of
+// one shared) to avoid an import cycle: runtime cannot import store,
+// and coordination cannot import runtime. The fields are 1:1 today;
+// if they diverge, this is the seam to translate.
+func proofToEvidence(p runtime.VerifierProof) coordination.VerificationEvidence {
+	return coordination.VerificationEvidence{
 		CommentPermalink: p.CommentPermalink,
 		MessageBubbleID:  p.MessageBubbleID,
 		DOMSnippet:       p.DOMSnippet,
@@ -300,7 +300,7 @@ func (h *Handler) finalizeOutbound(
 	}
 
 	// FIRST-WIN PATH — commit side effects exactly once.
-	attemptID, err := h.db.BeginExecutionAttempt(ctx, models.ExecutionAttempt{
+	attemptID, err := h.db.Coordination().BeginExecutionAttempt(ctx, models.ExecutionAttempt{
 		OrgID:      orgID,
 		OutboundID: id,
 		AccountID:  msg.AccountID,
@@ -321,7 +321,7 @@ func (h *Handler) finalizeOutbound(
 				failureReason = string(outcome)
 			}
 		}
-		if err := h.db.FinishExecutionAttempt(ctx, attemptID, outcome, failureReason, proofToEvidence(proof)); err != nil {
+		if err := h.db.Coordination().FinishExecutionAttempt(ctx, attemptID, outcome, failureReason, proofToEvidence(proof)); err != nil {
 			slog.WarnContext(ctx, "exec-verify: finish attempt failed",
 				"attempt_id", attemptID, "outcome", outcome, "error", err)
 		}
@@ -331,13 +331,13 @@ func (h *Handler) finalizeOutbound(
 		if failureReason != "" && failureReason != string(outcome) {
 			ledgerReason = string(outcome) + ":" + failureReason
 		}
-		if _, err := h.db.MarkActionLedgerOutcomeByOutbound(ctx, orgID, id, ledgerOutcome, ledgerReason); err != nil {
+		if _, err := h.db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, orgID, id, ledgerOutcome, ledgerReason); err != nil {
 			slog.WarnContext(ctx, "exec-verify: ledger outcome update failed",
 				"org_id", orgID, "outbound_id", id, "error", err)
 		}
 
 		if sig := models.RiskSignalForOutcome(outcome); sig != "" && msg.AccountID > 0 {
-			if err := h.db.ApplyRiskSignal(ctx, orgID, msg.AccountID, sig, 0); err != nil {
+			if err := h.db.Coordination().ApplyRiskSignal(ctx, orgID, msg.AccountID, sig, 0); err != nil {
 				slog.WarnContext(ctx, "exec-verify: apply risk signal failed",
 					"org_id", orgID, "account_id", msg.AccountID, "signal", sig, "error", err)
 			}

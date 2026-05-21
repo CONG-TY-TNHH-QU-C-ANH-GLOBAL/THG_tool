@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/store/knowledge"
@@ -59,6 +60,15 @@ type Store struct {
 	// reads, vector queries, and cost rollups. No Hooks — knowledge
 	// has zero cross-domain writes by audit (Phase 4, 2026-05-21).
 	knowledge *knowledge.Store
+
+	// coordination owns the runtime-truth substrate: action_ledger,
+	// account_behaviour_profiles + account_behaviour_runtime,
+	// execution_attempts, engagement_reconcile. Phase 5B clean-cut
+	// extraction (2026-05-21). Outbound writes into coordination via
+	// the Hooks closure pattern (RecordLedgerTx, IncrementCounterTx,
+	// CheckCapsTx, RecordTransitionTx) — coordination itself imports
+	// no peer domain per L1 + [[feedback_no_bidirectional_domain_knowledge]].
+	coordination *coordination.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -77,6 +87,11 @@ func (s *Store) Crawl() *crawl.Store { return s.crawl }
 // internal/server, and internal/runtime) reach it via this accessor —
 // there are no top-level bridge wrappers for knowledge.
 func (s *Store) Knowledge() *knowledge.Store { return s.knowledge }
+
+// Coordination exposes the coordination-domain subpackage handle.
+// New code MUST use this accessor; the Phase 5B extraction did not
+// introduce top-level bridge wrappers.
+func (s *Store) Coordination() *coordination.Store { return s.coordination }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -153,6 +168,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+	s.coordination = coordination.NewStore(s.db, s.dialect)
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
@@ -196,6 +212,7 @@ func newPostgres(dsn string) (*Store, error) {
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+	s.coordination = coordination.NewStore(s.db, s.dialect)
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)

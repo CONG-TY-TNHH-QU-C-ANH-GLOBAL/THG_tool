@@ -1,13 +1,14 @@
 // Domain: coordination (see internal/store/DOMAINS.md)
-package store
+package coordination
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"context"
 	"database/sql"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // ActionLedgerEntry records one outbound action attempted by one account on
@@ -55,10 +56,16 @@ func targetTypeFromAction(actionType string) string {
 	}
 }
 
-// recordActionLedgerTx writes a ledger row inside an open transaction. Used by
-// QueueOutboundForOrg so the outbound row and its ledger entry land together.
-// Cooldown <= 0 leaves cooldown_until NULL (planner uses defaults).
-func recordActionLedgerTx(tx *sql.Tx, orgID, accountID int64, actionType, targetURL string, outboundID int64, cooldown time.Duration) error {
+// RecordLedgerTx writes a ledger row inside an open transaction. Used by
+// outbound's queue path via the Hooks closure (see
+// `installOutboundHooks` in `internal/store/outbound_aliases.go`) so the
+// outbound row and its ledger entry land in the same transaction. Cooldown
+// <= 0 leaves cooldown_until NULL (planner uses defaults).
+//
+// Phase 5B: exported (was `recordActionLedgerTx`) because the hooks
+// closure now lives across the package boundary. Package-level function
+// — no Store state required, the caller threads its own tx.
+func RecordLedgerTx(tx *sql.Tx, orgID, accountID int64, actionType, targetURL string, outboundID int64, cooldown time.Duration) error {
 	if orgID <= 0 || strings.TrimSpace(actionType) == "" || strings.TrimSpace(targetURL) == "" {
 		return fmt.Errorf("ledger requires org_id, action_type, target_url")
 	}

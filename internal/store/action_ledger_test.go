@@ -1,4 +1,4 @@
-// Domain: coordination (see internal/store/DOMAINS.md)
+// Domain: outbound × coordination (cross-domain integration; see DOMAINS.md)
 package store
 
 import (
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 func newLedgerTestStore(t *testing.T) *Store {
@@ -126,7 +127,7 @@ func TestQueueOutbound_RecordsLedger(t *testing.T) {
 		t.Fatalf("queue blocked: %+v", res.Decision)
 	}
 
-	entries, err := db.ListActionLedger(context.Background(), 1, "comment", postURL, time.Time{}, 10)
+	entries, err := db.Coordination().ListActionLedger(context.Background(), 1, "comment", postURL, time.Time{}, 10)
 	if err != nil {
 		t.Fatalf("ListActionLedger: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestQueueOutbound_RecordsLedger(t *testing.T) {
 		t.Fatalf("ledger entries = %d, want 1", len(entries))
 	}
 	e := entries[0]
-	if e.AccountID != 10 || e.OutboundID != res.ID || e.Outcome != LedgerOutcomeQueued {
+	if e.AccountID != 10 || e.OutboundID != res.ID || e.Outcome != coordination.LedgerOutcomeQueued {
 		t.Errorf("ledger entry mismatch: %+v", e)
 	}
 	if e.TargetType != "post" {
@@ -150,7 +151,7 @@ func TestActionLedger_RecordAndMarkOutcome(t *testing.T) {
 	db := newLedgerTestStore(t)
 	ctx := context.Background()
 
-	id, err := db.RecordActionLedger(ctx, ActionLedgerEntry{
+	id, err := db.Coordination().RecordActionLedger(ctx, coordination.ActionLedgerEntry{
 		OrgID: 1, ActionType: "group_post",
 		TargetURL: "https://facebook.com/groups/999",
 		AccountID: 7,
@@ -162,14 +163,14 @@ func TestActionLedger_RecordAndMarkOutcome(t *testing.T) {
 		t.Fatal("expected positive id")
 	}
 
-	if err := db.MarkActionLedgerOutcome(ctx, id, LedgerOutcomeSucceeded, "sent ok"); err != nil {
+	if err := db.Coordination().MarkActionLedgerOutcome(ctx, id, coordination.LedgerOutcomeSucceeded, "sent ok"); err != nil {
 		t.Fatalf("MarkActionLedgerOutcome: %v", err)
 	}
-	entries, _ := db.ListActionLedger(ctx, 1, "group_post", "https://facebook.com/groups/999", time.Time{}, 10)
+	entries, _ := db.Coordination().ListActionLedger(ctx, 1, "group_post", "https://facebook.com/groups/999", time.Time{}, 10)
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want 1", len(entries))
 	}
-	if entries[0].Outcome != LedgerOutcomeSucceeded || !strings.Contains(entries[0].Reason, "sent ok") {
+	if entries[0].Outcome != coordination.LedgerOutcomeSucceeded || !strings.Contains(entries[0].Reason, "sent ok") {
 		t.Errorf("outcome/reason not updated: %+v", entries[0])
 	}
 	if entries[0].TargetType != "group" {
@@ -177,19 +178,6 @@ func TestActionLedger_RecordAndMarkOutcome(t *testing.T) {
 	}
 }
 
-func TestTargetTypeFromAction(t *testing.T) {
-	cases := map[string]string{
-		"comment":      "post",
-		"inbox":        "profile",
-		"group_post":   "group",
-		"profile_post": "profile",
-		"COMMENT":      "post",
-		" inbox ":      "profile",
-		"unknown_type": "",
-	}
-	for in, want := range cases {
-		if got := targetTypeFromAction(in); got != want {
-			t.Errorf("targetTypeFromAction(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
+// TestTargetTypeFromAction moved to
+// internal/store/coordination/action_ledger_internal_test.go (package
+// coordination) so the unexported helper stays reachable. Phase 5B.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/outbound"
 )
 
@@ -101,7 +102,7 @@ func (s *Store) installOutboundHooks() {
 			// has always overloaded LastOutboundAt to carry "cooldown
 			// expiry" for the account_cooldown_active reason. Preserving
 			// that exact mapping is Decouple-1's mechanical guarantee.
-			decision, err := s.checkBehaviourCapsTx(tx, accountID, msgType)
+			decision, err := s.coordination.CheckCapsTx(tx, accountID, msgType)
 			if err != nil {
 				return outbound.GuardDecision{}, err
 			}
@@ -116,19 +117,16 @@ func (s *Store) installOutboundHooks() {
 		},
 		RecordActionLedger: func(tx *sql.Tx, orgID, accountID int64, msgType, targetURL string, outboundID int64, cooldown time.Duration) {
 			// Best-effort, errors swallowed (the outbound row is the source of truth).
-			_ = recordActionLedgerTx(tx, orgID, accountID, msgType, targetURL, outboundID, cooldown)
+			_ = coordination.RecordLedgerTx(tx, orgID, accountID, msgType, targetURL, outboundID, cooldown)
 		},
 		IncrementCounter: func(tx *sql.Tx, orgID, accountID int64, msgType string) {
-			_ = incrementRuntimeCounterTx(tx, orgID, accountID, msgType)
+			_ = coordination.IncrementCounterTx(tx, orgID, accountID, msgType)
 		},
 		RecordTransition: func(ctx context.Context, tx *sql.Tx, in outbound.RecordTransitionInput) {
-			// Unpack the carrier struct into primitives so the
-			// coordination writer takes no peer-domain types. After
-			// Phase 5B (coordination extraction) this closure will call
-			// s.coordination.RecordExecutionTransition(...) with the
-			// same primitives — the wiring point is the only place that
-			// imports both domains.
-			s.recordExecutionTransitionTx(ctx, tx,
+			// Unpack the carrier struct into primitives so coordination
+			// stays free of any outbound import. This is the single
+			// wiring point that imports both domains (Phase 5B, 2026-05-21).
+			s.coordination.RecordTransitionTx(ctx, tx,
 				in.OutboundID, in.OrgID, in.AccountID,
 				in.TargetURL, in.ActionType, in.Attempt,
 				in.Status, in.Outcome, in.FailureReason, in.EvidenceJSON,

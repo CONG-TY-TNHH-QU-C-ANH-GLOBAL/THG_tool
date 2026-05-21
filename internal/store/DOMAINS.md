@@ -22,8 +22,8 @@
 | **outbound** | `internal/store/outbound/` | `s.Outbound()` | extracted (Phase 2, 2026-05-21) — bridge wrappers in `outbound_aliases.go` (L2 expiry: no new wrappers) |
 | **crawl** | `internal/store/crawl/` | `s.Crawl()` | extracted (Phase 3, 2026-05-21) — clean-cut, no wrappers |
 | **knowledge** | `internal/store/knowledge/` | `s.Knowledge()` | extracted (Phase 4, 2026-05-21) — clean-cut, no wrappers, tests in subpackage |
+| **coordination** | `internal/store/coordination/` | `s.Coordination()` | extracted (Phase 5B, 2026-05-21) — clean-cut, no wrappers. Cross-package writes from outbound flow via Hooks closure pattern. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
-| coordination | `internal/store/` | direct methods | top-level (Phase 5 candidate — see [[project_coordination_phase_risks]]) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |
 | connectors | `internal/store/` | direct methods | top-level (Phase 7) |
@@ -158,11 +158,15 @@ Auth + organizations. Foundational; every other domain assumes `org_id` and `use
 
 Files: `organization.go`, `users.go`.
 
-### **coordination** — "What happened + was it verified" plane (top-level)
+### **coordination** — "What happened + was it verified" plane (`internal/store/coordination/`)
 
-action_ledger + execution_attempts + behaviour_profile + engagement_reconcile. The runtime-truth substrate. **High-risk extraction** — see [[project_coordination_phase_risks]] before starting.
+action_ledger + execution_attempts + behaviour_profile + engagement_reconcile + behaviour_caps + execution_transition_writer. The runtime-truth substrate.
 
-Files: `action_ledger.go`, `behaviour_profile.go`, `engagement_reconcile.go`, `execution_attempts.go` (+ tests).
+**Extracted Phase 5B 2026-05-21**. Clean-cut, no bridge wrappers. Cross-package writes from outbound flow through the Hooks closure pattern wired in `installOutboundHooks` (`internal/store/outbound_aliases.go`). Per L1 + [[feedback_no_bidirectional_domain_knowledge]] coordination imports no peer domain — outbound types are unpacked to primitives at the wiring point.
+
+Pre-existing append-only violations (MarkActionLedgerOutcome* + engagement_reconcile UPDATEs) carried as documented debt; the append-only enforcement fix is a follow-up PR per [[feedback_append_only_correction_events]].
+
+Files: `action_ledger.go`, `behaviour_caps_check.go`, `behaviour_profile.go`, `engagement_reconcile.go`, `execution_attempts.go`, `execution_transition_writer.go`, `store.go`. Tests: `action_ledger_internal_test.go` (internal — unexported helper), `engagement_reconcile_test.go`, `execution_attempts_test.go` (external `package coordination_test`), `testing_helpers_test.go` (storetest binding). Cross-domain tests (`action_ledger_test.go`, `behaviour_profile_test.go`) stay at top-level alongside outbound.
 
 ### **leads** — Lead pipeline (top-level)
 

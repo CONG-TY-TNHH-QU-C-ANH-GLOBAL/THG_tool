@@ -1,5 +1,5 @@
 // Domain: coordination (see internal/store/DOMAINS.md)
-package store
+package coordination_test
 
 import (
 	"context"
@@ -7,21 +7,23 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 // ReconcileEngagement repairs historical false-positive "touched"
 // states. These tests pin the rules so a future change cannot
 // silently re-introduce the May-2026 incident.
 
-func newReconcileTestStore(t *testing.T) *Store {
-	return newSharedStore(t, "reconcile_engagement.db")
+func newReconcileTestStore(t *testing.T) *coordination.Store {
+	_, coord := newCoordinationStore(t, "reconcile_engagement.db")
+	return coord
 }
 
 // Helper: seed a ledger row directly (bypassing QueueOutboundForOrg
 // so we control outcome). Returns the inserted id.
-func seedLedgerRow(t *testing.T, db *Store, orgID, outboundID int64, outcome, target string) int64 {
+func seedLedgerRow(t *testing.T, db *coordination.Store, orgID, outboundID int64, outcome, target string) int64 {
 	t.Helper()
-	id, err := db.RecordActionLedger(context.Background(), ActionLedgerEntry{
+	id, err := db.RecordActionLedger(context.Background(), coordination.ActionLedgerEntry{
 		OrgID:       orgID,
 		ActionType:  "comment",
 		TargetType:  "post",
@@ -39,7 +41,7 @@ func seedLedgerRow(t *testing.T, db *Store, orgID, outboundID int64, outcome, ta
 }
 
 // Helper: seed an execution_attempts row with a specific outcome.
-func seedAttemptRow(t *testing.T, db *Store, orgID, outboundID int64, outcome models.ExecutionOutcome, target string) int64 {
+func seedAttemptRow(t *testing.T, db *coordination.Store, orgID, outboundID int64, outcome models.ExecutionOutcome, target string) int64 {
 	t.Helper()
 	id, err := db.BeginExecutionAttempt(context.Background(), models.ExecutionAttempt{
 		OrgID:      orgID,
@@ -53,7 +55,7 @@ func seedAttemptRow(t *testing.T, db *Store, orgID, outboundID int64, outcome mo
 	if err != nil {
 		t.Fatalf("begin attempt: %v", err)
 	}
-	if err := db.FinishExecutionAttempt(context.Background(), id, outcome, string(outcome), VerificationEvidence{}); err != nil {
+	if err := db.FinishExecutionAttempt(context.Background(), id, outcome, string(outcome), coordination.VerificationEvidence{}); err != nil {
 		t.Fatalf("finish attempt: %v", err)
 	}
 	return id
@@ -68,7 +70,7 @@ func TestReconcileEngagement_FlipsBadSucceeded(t *testing.T) {
 	// row says redirected_feed (wrong post). This is what the May-2026
 	// route-mismatch incident left in the DB before
 	// EnforceTargetIdentity existed.
-	seedLedgerRow(t, db, 1, 100, LedgerOutcomeSucceeded, target)
+	seedLedgerRow(t, db, 1, 100, coordination.LedgerOutcomeSucceeded, target)
 	seedAttemptRow(t, db, 1, 100, models.ExecutionRedirectedFeed, target)
 
 	report, err := db.ReconcileEngagement(ctx, 1)
@@ -88,7 +90,7 @@ func TestReconcileEngagement_FlipsBadSucceeded(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
-	if entries[0].Outcome != LedgerOutcomeFailed {
+	if entries[0].Outcome != coordination.LedgerOutcomeFailed {
 		t.Fatalf("ledger outcome should be failed after reconcile, got %q", entries[0].Outcome)
 	}
 	if entries[0].Reason == "" || entries[0].Reason[:len("reconciled:")] != "reconciled:" {
@@ -103,7 +105,7 @@ func TestReconcileEngagement_KeepsGoodSucceeded(t *testing.T) {
 
 	// Ledger says succeeded, attempts confirms it. Reconcile must
 	// NOT touch this row.
-	seedLedgerRow(t, db, 2, 200, LedgerOutcomeSucceeded, target)
+	seedLedgerRow(t, db, 2, 200, coordination.LedgerOutcomeSucceeded, target)
 	seedAttemptRow(t, db, 2, 200, models.ExecutionDOMVerified, target)
 
 	report, err := db.ReconcileEngagement(ctx, 2)
@@ -114,7 +116,7 @@ func TestReconcileEngagement_KeepsGoodSucceeded(t *testing.T) {
 		t.Fatalf("expected 0 corrected, 1 kept; got %+v", report)
 	}
 	entries, _ := db.ListActionLedger(ctx, 2, "", target, time.Time{}, 10)
-	if entries[0].Outcome != LedgerOutcomeSucceeded {
+	if entries[0].Outcome != coordination.LedgerOutcomeSucceeded {
 		t.Fatalf("good row must NOT be downgraded; got %q", entries[0].Outcome)
 	}
 }
@@ -127,7 +129,7 @@ func TestReconcileEngagement_LeavesOrphansAlone(t *testing.T) {
 	// Ledger says succeeded but NO execution_attempts row exists for
 	// this outbound_id (pre-Step 3 historical row). Reconcile cannot
 	// independently verify — leave it alone, count as orphaned.
-	seedLedgerRow(t, db, 3, 300, LedgerOutcomeSucceeded, target)
+	seedLedgerRow(t, db, 3, 300, coordination.LedgerOutcomeSucceeded, target)
 
 	report, err := db.ReconcileEngagement(ctx, 3)
 	if err != nil {
@@ -147,9 +149,9 @@ func TestReconcileEngagement_OrgScoped(t *testing.T) {
 
 	// One bad row in org 4, one bad row in org 5. Reconciling org 4
 	// must NOT touch org 5.
-	seedLedgerRow(t, db, 4, 400, LedgerOutcomeSucceeded, "https://facebook.com/p/o4")
+	seedLedgerRow(t, db, 4, 400, coordination.LedgerOutcomeSucceeded, "https://facebook.com/p/o4")
 	seedAttemptRow(t, db, 4, 400, models.ExecutionContextDrift, "https://facebook.com/p/o4")
-	seedLedgerRow(t, db, 5, 500, LedgerOutcomeSucceeded, "https://facebook.com/p/o5")
+	seedLedgerRow(t, db, 5, 500, coordination.LedgerOutcomeSucceeded, "https://facebook.com/p/o5")
 	seedAttemptRow(t, db, 5, 500, models.ExecutionContextDrift, "https://facebook.com/p/o5")
 
 	report, err := db.ReconcileEngagement(ctx, 4)
@@ -161,7 +163,7 @@ func TestReconcileEngagement_OrgScoped(t *testing.T) {
 	}
 	// Org 5 row unchanged.
 	entries, _ := db.ListActionLedger(ctx, 5, "", "https://facebook.com/p/o5", time.Time{}, 10)
-	if entries[0].Outcome != LedgerOutcomeSucceeded {
+	if entries[0].Outcome != coordination.LedgerOutcomeSucceeded {
 		t.Fatalf("org 5 must NOT be touched; got %q", entries[0].Outcome)
 	}
 }
@@ -171,7 +173,7 @@ func TestReconcileEngagement_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	target := "https://facebook.com/p/recon-idem"
 
-	seedLedgerRow(t, db, 6, 600, LedgerOutcomeSucceeded, target)
+	seedLedgerRow(t, db, 6, 600, coordination.LedgerOutcomeSucceeded, target)
 	seedAttemptRow(t, db, 6, 600, models.ExecutionRedirectedFeed, target)
 
 	first, err := db.ReconcileEngagement(ctx, 6)

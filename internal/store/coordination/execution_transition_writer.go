@@ -1,5 +1,5 @@
 // Domain: coordination (see internal/store/DOMAINS.md)
-package store
+package coordination
 
 import (
 	"context"
@@ -26,11 +26,12 @@ import (
 //
 // tenant-ok: this function is the canonical writer for the
 // execution_attempts table. It is called from outbound's queue/finalize
-// path inside outbound's transaction (passed as tx). When coordination
-// is extracted (Phase 5B), this function moves to
-// internal/store/coordination/ and the hook closure in
-// installOutboundHooks repoints at the new location.
-func (s *Store) recordExecutionTransitionTx(
+// path inside outbound's transaction (passed as tx).
+//
+// Phase 5B (2026-05-21): exported as RecordTransitionTx (was
+// recordExecutionTransitionTx) and now lives on coordination.Store.
+// The hook closure in installOutboundHooks points at this directly.
+func (s *Store) RecordTransitionTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	outboundID, orgID, accountID int64,
