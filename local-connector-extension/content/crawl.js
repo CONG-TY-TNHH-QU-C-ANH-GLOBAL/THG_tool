@@ -13,12 +13,21 @@ var THGContentCrawl = (() => {
   // on the same article, this ordering picks the working one.
   function extractPostFBID(url) {
     if (!url) return '';
+    // Photo viewer URLs (`/photo/?fbid=X` modern, `/photo.php?fbid=X` legacy)
+    // carry the PHOTO's fbid, NOT the parent post's. Matching `?fbid=` on
+    // these URLs poisons lead.post_fbid with a photo id that does not
+    // resolve back to any post — repair pipelines synthesize invalid
+    // canonical permalinks and the server rejects them at comment time.
+    // Skip the `?fbid=` extraction step when the path is photo-shaped.
+    const isPhotoURL = /\/photo[\/.]/.test(url);
     let m = url.match(/\/permalink\/(\d+)/);
     if (m) return m[1];
     m = url.match(/story_fbid=(\d+)/);
     if (m) return m[1];
-    m = url.match(/[?&]fbid=(\d+)/);
-    if (m) return m[1];
+    if (!isPhotoURL) {
+      m = url.match(/[?&]fbid=(\d+)/);
+      if (m) return m[1];
+    }
     m = url.match(/\/posts\/(\d+)/);
     if (m) return m[1];
     return '';
@@ -48,8 +57,16 @@ var THGContentCrawl = (() => {
 
   // True when the URL carries an identifier the dashboard can open as a
   // specific post (not just the group/page feed shell).
+  //
+  // Photo viewer URLs (/photo/?fbid=X, /photo.php?fbid=X) are EXCLUDED
+  // even though they have `?fbid=`. The fbid in those URLs identifies
+  // the photo, not the post; the comment system's identity gates check
+  // article canonical permalink which on a photo viewer page is the
+  // PARENT POST URL (different fbid) → identity_gate failure even if
+  // the URL otherwise looked commentable. Reject upstream instead.
   function looksLikePostURL(u) {
     if (!u) return false;
+    if (/\/photo[\/.]/.test(u)) return false;
     return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|[?&]fbid=/.test(u);
   }
 
@@ -64,6 +81,11 @@ var THGContentCrawl = (() => {
     const isCandidate = (href) => {
       if (!href) return false;
       if (href.includes('/user/') || href.includes('/hashtag/')) return false;
+      // Photo viewer URLs match Tier 3 (?fbid=) but their fbid is the
+      // photo's, not the post's. Excluding them here lets the tier scan
+      // fall through to /posts/ (Tier 4) or /permalink/ (Tier 1) for
+      // the real canonical post URL.
+      if (href.includes('/photo/') || href.includes('/photo.php')) return false;
       return true;
     };
     const tiers = [
