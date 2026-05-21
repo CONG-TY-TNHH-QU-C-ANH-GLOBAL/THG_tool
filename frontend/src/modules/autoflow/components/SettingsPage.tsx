@@ -20,7 +20,10 @@ import {
   getAuditLogs,
   getBillingSummary,
   getOrgBrand,
+  getOrgPolicy,
+  OutboundMode,
   updateOrgBrand,
+  updateOrgPolicy,
   uploadOrgAsset,
   revokeAgentToken,
 } from '../services/settingsService';
@@ -114,6 +117,15 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
 
   const [billing, setBilling] = useState<BillingSummary | null>(null);
 
+  // Outbound automation policy (draft vs auto). draft = approval-required
+  // default per CLAUDE.md hard rule; auto = comments/inbox execute
+  // immediately without human approval. Founder/admin only. Audit logged
+  // on every toggle (backend writes to audit_logs with action
+  // 'org_policy_updated').
+  const [outboundMode, setOutboundMode] = useState<OutboundMode>('draft');
+  const [outboundModeLoading, setOutboundModeLoading] = useState(false);
+  const [outboundModeMsg, setOutboundModeMsg] = useState('');
+
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -127,6 +139,32 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
     if (tokens.status === 'fulfilled') setAgents(tokens.value);
     if (logs.status === 'fulfilled') setAuditLogs(logs.value);
     if (bill.status === 'fulfilled') setBilling(bill.value);
+  };
+
+  const refreshOutboundMode = async () => {
+    try {
+      const policy = await getOrgPolicy();
+      setOutboundMode(policy.outbound_mode);
+    } catch { /* leave default */ }
+  };
+
+  const toggleOutboundMode = async (next: OutboundMode) => {
+    if (!isAdmin || outboundModeLoading || next === outboundMode) return;
+    setOutboundModeLoading(true);
+    setOutboundModeMsg('');
+    try {
+      const updated = await updateOrgPolicy({ outbound_mode: next });
+      setOutboundMode(updated.outbound_mode);
+      setOutboundModeMsg(
+        updated.outbound_mode === 'auto'
+          ? 'Chế độ AUTO bật. Comment / inbox execute ngay không cần duyệt.'
+          : 'Chế độ DRAFT bật. Comment / inbox chờ admin duyệt trên Dashboard.',
+      );
+    } catch (err) {
+      setOutboundModeMsg(err instanceof Error ? err.message : 'Không cập nhật được chế độ.');
+    } finally {
+      setOutboundModeLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -144,6 +182,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
       })
       .catch(() => {});
     refreshAdminData();
+    refreshOutboundMode();
   }, [orgId, isAdmin]);
 
   const saveBrand = async () => {
@@ -356,7 +395,85 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
       )}
 
       {activeTab === 'security' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 480px) 1fr', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Outbound automation policy — founder/admin only. Toggles between
+              draft (approval-required default, CLAUDE.md safety rule) and auto
+              (immediate execution). Backend audit-logs every flip. */}
+          <div style={{ ...cardStyle(), border: `1px solid ${outboundMode === 'auto' ? alpha('#f97316', 48) : theme.border}` }}>
+            <Row style={{ gap: 9, marginBottom: 14 }}>
+              <Zap size={16} color={outboundMode === 'auto' ? '#f97316' : theme.textFaint} />
+              <p style={{ color: theme.text, fontWeight: 600, fontSize: 13 }}>Chế độ outbound automation</p>
+              <span style={{
+                marginLeft: 'auto',
+                padding: '3px 10px',
+                borderRadius: 99,
+                fontSize: 11,
+                fontWeight: 600,
+                background: outboundMode === 'auto' ? '#f97316' : theme.surfaceAlt,
+                color: outboundMode === 'auto' ? '#fff' : theme.textMuted,
+                border: `1px solid ${outboundMode === 'auto' ? '#f97316' : theme.border}`,
+              }}>
+                {outboundMode === 'auto' ? 'AUTO' : 'DRAFT'}
+              </span>
+            </Row>
+            <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>
+              <strong style={{ color: theme.text }}>Draft</strong> (mặc định an toàn): AI tạo comment / inbox và CHỜ admin duyệt trên Dashboard trước khi gửi.{' '}
+              <strong style={{ color: theme.text }}>Auto</strong>: AI execute ngay không cần duyệt thủ công. Behaviour caps + identity gates + verification vẫn fire để bảo vệ account khỏi wrong-target và rate-limit.
+            </p>
+            {!isAdmin ? (
+              <Row style={{ gap: 8, color: theme.textMuted, fontSize: 12 }}>
+                <AlertTriangle size={14} color={theme.yellow} />
+                Chỉ admin / founder workspace mới đổi được chế độ này.
+              </Row>
+            ) : (
+              <Row style={{ gap: 8 }}>
+                <button
+                  onClick={() => void toggleOutboundMode('draft')}
+                  disabled={outboundModeLoading || outboundMode === 'draft'}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: `1px solid ${outboundMode === 'draft' ? theme.primary : theme.border}`,
+                    background: outboundMode === 'draft' ? alpha(theme.primary, 18) : theme.surface,
+                    color: outboundMode === 'draft' ? theme.primaryPale : theme.textMuted,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: outboundModeLoading || outboundMode === 'draft' ? 'default' : 'pointer',
+                    opacity: outboundModeLoading && outboundMode !== 'draft' ? 0.5 : 1,
+                  }}
+                >
+                  Draft (cần duyệt)
+                </button>
+                <button
+                  onClick={() => void toggleOutboundMode('auto')}
+                  disabled={outboundModeLoading || outboundMode === 'auto'}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: `1px solid ${outboundMode === 'auto' ? '#f97316' : theme.border}`,
+                    background: outboundMode === 'auto' ? alpha('#f97316', 24) : theme.surface,
+                    color: outboundMode === 'auto' ? '#fb923c' : theme.textMuted,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: outboundModeLoading || outboundMode === 'auto' ? 'default' : 'pointer',
+                    opacity: outboundModeLoading && outboundMode !== 'auto' ? 0.5 : 1,
+                  }}
+                >
+                  Auto (execute ngay)
+                </button>
+                {outboundModeLoading && (
+                  <RefreshCw size={13} color={theme.textFaint} className="spin" style={{ alignSelf: 'center' }} />
+                )}
+                {outboundModeMsg && (
+                  <span style={{ alignSelf: 'center', color: outboundModeMsg.startsWith('Không') ? theme.red : theme.green, fontSize: 12 }}>
+                    {outboundModeMsg}
+                  </span>
+                )}
+              </Row>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 480px) 1fr', gap: 14 }}>
           <div style={cardStyle()}>
             <Row style={{ gap: 9, marginBottom: 18 }}>
               <KeyRound size={16} color={theme.primaryLight} />
@@ -401,6 +518,7 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                 </div>
               ))
             )}
+          </div>
           </div>
         </div>
       )}
