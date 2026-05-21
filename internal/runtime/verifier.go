@@ -236,7 +236,16 @@ func ClassifyExtensionReport(report ExtensionExecutionReport) (models.ExecutionO
 	}
 	if !report.Success {
 		switch strings.ToLower(strings.TrimSpace(report.FailureReason)) {
-		case "captcha":
+		case "captcha", "checkpoint":
+			// checkpoint = FB identity-verification gate (2FA / "verify
+			// it's you" / locked-out flow). Same outcome class as
+			// captcha — session is held until a human resolves it,
+			// account-level risk signal applies, no retry loop. The
+			// distinct token is preserved on the wire so the extension
+			// proof.notes can carry the diagnostic flavour, but the
+			// classifier collapses both onto ExecutionCaptcha because
+			// downstream (state machine, ledger, risk pipeline) only
+			// branches on outcome, not failure_reason text.
 			return models.ExecutionCaptcha, proof
 		case "rate_limited", "rate_limit":
 			return models.ExecutionRateLimited, proof

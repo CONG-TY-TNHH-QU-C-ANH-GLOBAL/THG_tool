@@ -75,20 +75,60 @@ var THGContentProof = globalThis.THGContentProof || (() => {
     return '';
   }
 
-  // Detect rate-limit / blocked banners in raw page text. Multi-language
-  // because FB localises these (VN/EN combined). Returns the matched code
-  // string ('rate_limited' | 'blocked') so callers can map to FailureReason.
+  // Detect rate-limit / blocked / checkpoint banners in raw page text.
+  // Multi-language because FB localises these (VN/EN combined). Returns
+  // the matched code string ('rate_limited' | 'blocked' | 'checkpoint')
+  // so callers can map to FailureReason.
+  //
+  // The banner taxonomy maps loosely onto the three FB enforcement
+  // surfaces operators have observed:
+  //
+  //   rate_limited — temporal throttle, account fine, retry later
+  //   blocked      — action denied (specific action, post, or
+  //                  account-level restriction)
+  //   checkpoint   — FB wants identity verification / 2FA / CAPTCHA
+  //                  before allowing further interaction; session is
+  //                  effectively held until human resolves it
+  //
+  // Adding banners is additive (new alternations in existing regexes,
+  // OR new groups for new outcome codes). When the source-of-truth
+  // for an emerging FB phrase isn't certain, prefer 'blocked' over
+  // 'rate_limited' — the safe-stop direction.
   function detectPlatformReject() {
     const text = (document.body && document.body.innerText) || '';
-    if (/you('re| are) posting too quickly|too many comments|slow down|sending too many|cham lai|qua nhanh/i.test(text)) {
+
+    // RATE LIMIT — temporal throttle.
+    if (/you('re| are) posting too quickly|too many comments|slow down|sending too many|cham lai|qua nhanh|dang gui qua nhieu/i.test(text)) {
       return 'rate_limited';
     }
-    if (/comment can't be posted|action blocked|you can't comment|comment was removed|khong the binh luan|hanh dong bi chan/i.test(text)) {
+
+    // CHECKPOINT — session-level identity gate. FB intercepts further
+    // interaction until the human resolves the prompt. Detecting this
+    // distinctly from 'blocked' lets the operator dashboard surface
+    // "needs human intervention" instead of "account broken".
+    if (/please verify your identity|confirm your identity|verify it's you|xac minh danh tinh|xac nhan danh tinh|enter the code we sent|nhap ma|account has been locked|tai khoan bi khoa|security check|kiem tra bao mat/i.test(text)) {
+      return 'checkpoint';
+    }
+
+    // ACCOUNT-LEVEL RESTRICTION — FB has soft-restricted the account
+    // from this action class. The exact phrasing varies by FB locale
+    // + restriction type (commenting restriction, group-engagement
+    // restriction, shadow-ban-lite). All map to 'blocked' so the
+    // backend's risk pipeline can apply the appropriate signal.
+    if (/we('ve| have) temporarily (restricted|blocked|limited)|temporarily blocked|you('re| are) temporarily blocked|restricted from (commenting|using this feature|posting)|tam thoi bi (han che|chan|gioi han)|tai khoan (bi|dang bi) (han che|chan|gioi han)|this feature isn'?t available|tinh nang nay (hien )?khong (kha dung|co san)|action unavailable|hanh dong khong kha dung/i.test(text)) {
       return 'blocked';
     }
-    if (/message (was )?not sent|failed to send|couldn't be delivered|tin nhan khong gui duoc|gui khong thanh cong/i.test(text)) {
+
+    // POST-LEVEL / ACTION-LEVEL block — comment specifically refused.
+    if (/comment can't be posted|action blocked|you can't comment|comment was removed|khong the binh luan|binh luan khong duoc dang|hanh dong bi chan|binh luan da bi xoa/i.test(text)) {
       return 'blocked';
     }
+
+    // INBOX / MESSAGE send failure.
+    if (/message (was )?not sent|failed to send|couldn't be delivered|tin nhan khong gui duoc|gui khong thanh cong|khong gui duoc/i.test(text)) {
+      return 'blocked';
+    }
+
     return '';
   }
 
