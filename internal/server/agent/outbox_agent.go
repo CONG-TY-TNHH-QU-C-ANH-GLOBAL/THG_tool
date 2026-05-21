@@ -226,6 +226,26 @@ func (h *Handler) finalizeOutbound(
 	// entity ids mismatch.
 	outcome, proof = runtime.EnforceTargetIdentity(outcome, proof, msg.TargetURL, msg.Type)
 
+	// Diagnostic instrumentation: emit a structured log line for every
+	// non-success terminal so operators can see WHAT the extension did
+	// without having to query execution_attempts.evidence_json. Captures
+	// the proof.notes field which carries the landed_url + gate-fail
+	// detail from the extension's lifecycle gates (see outbound.js patch
+	// 3c17f1a). Precursor to EXP-1 typed events on the Runtime Control
+	// Plane (see project_runtime_control_plane memory).
+	if !models.IsSuccessOutcome(outcome) {
+		slog.WarnContext(ctx, "exec-verify: non-success outcome",
+			"org_id", orgID, "outbound_id", id,
+			"account_id", msg.AccountID,
+			"target_url", msg.TargetURL,
+			"outcome", string(outcome),
+			"failure_reason", report.FailureReason,
+			"page_url_after", proof.PageURLAfter,
+			"notes", proof.Notes,
+			"dom_snippet", proof.DOMSnippet,
+		)
+	}
+
 	// PR-1 dual-column terminal pair: (state, verification_outcome).
 	// TerminalFromOutcome is the single mapping from the rich
 	// execution_attempts taxonomy onto the outbound row's two new

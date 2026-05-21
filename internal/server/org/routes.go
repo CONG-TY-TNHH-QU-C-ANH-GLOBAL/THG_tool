@@ -67,4 +67,11 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly 
 	superAdminGrp.Get("/sessions", h.superAdminSessions)
 	superAdminGrp.Delete("/sessions/:id", h.superAdminTerminateSession)
 	superAdminGrp.Post("/query", h.superAdminQuery)
+	// Single-purpose diagnostic surface for the redirected_feed
+	// investigation. NOT a tab in the CRUD sense — a focused operational
+	// action: "tell me why account X is failing" + "let me reset its
+	// risk after I fix the root cause". See
+	// project_runtime_control_plane memory for the broader EXP track.
+	superAdminGrp.Get("/accounts/:id/diagnostic", h.superAdminAccountDiagnostic)
+	superAdminGrp.Post("/accounts/:id/reset-risk", h.superAdminAccountResetRisk)
 }
