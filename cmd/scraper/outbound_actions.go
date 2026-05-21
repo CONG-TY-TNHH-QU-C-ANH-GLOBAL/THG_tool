@@ -61,19 +61,10 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	skipReasons := map[string]int{}
 	var lastGenErr error
 	for _, lead := range leads {
-		targetURL := strings.TrimSpace(lead.SourceURL)
-		profileURL := strings.TrimSpace(lead.AuthorURL)
-		if msgType == "inbox" {
-			targetURL = profileURL
-		}
-		if targetURL == "" {
+		targetURL, skipReason := resolveOutboundTargetURL(lead, msgType)
+		if skipReason != "" {
 			skipped++
-			skipReasons["missing_target"]++
-			continue
-		}
-		if msgType == "comment" && !isCommentableFacebookPostURL(targetURL) {
-			skipped++
-			skipReasons["missing_post_permalink"]++
+			skipReasons[skipReason]++
 			continue
 		}
 
@@ -208,6 +199,60 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 		limit = 25
 	}
 	return db.GetAutomationLeadsForOrg(orgID, score, limit)
+}
+
+// resolveOutboundTargetURL maps a lead + msgType to the canonical target URL
+// the outbound queue should hit. Returns ("", skipReason) when the lead is
+// not actionable. Branches on SourceType explicitly so unknown values cannot
+// silently fall through to SourceURL (per feedback_deterministic_boundaries).
+//
+// Routing contract (see models.Lead):
+//   - SourceURL is ALWAYS the parent post URL for SourceType in
+//     {post, comment, prompt_target}.
+//   - SecondaryURL is the comment URL (reply-to-comment, future feature).
+//   - For inbox msgType, target is the participant's AuthorURL — SourceURL
+//     is not consulted.
+//
+// PostFBID fallback: if SourceURL is a transient form (photo viewer, share
+// shim) that isCommentableFacebookPostURL rejects but post_fbid is present
+// with a known group, reconstruct the canonical /groups/<g>/posts/<p>/ URL.
+func resolveOutboundTargetURL(lead models.Lead, msgType string) (string, string) {
+	if msgType == "inbox" {
+		if t := strings.TrimSpace(lead.AuthorURL); t != "" {
+			return t, ""
+		}
+		return "", "missing_target"
+	}
+	switch strings.ToLower(strings.TrimSpace(lead.SourceType)) {
+	case "", "post", "comment", "prompt_target":
+		target := strings.TrimSpace(lead.SourceURL)
+		if msgType == "comment" && !isCommentableFacebookPostURL(target) {
+			if rebuilt := canonicalGroupPostURLFromFBIDs(lead.GroupFBID, lead.PostFBID); rebuilt != "" {
+				return rebuilt, ""
+			}
+			return "", "missing_post_permalink"
+		}
+		if target == "" {
+			return "", "missing_target"
+		}
+		return target, ""
+	default:
+		return "", "unrouted_source_type"
+	}
+}
+
+// canonicalGroupPostURLFromFBIDs reconstructs the canonical group-post URL
+// from the routing contract's group_fbid + post_fbid. Returns "" if either
+// is missing. Used only as a fallback when SourceURL fails the commentable
+// check — photo viewer / share shim / story redirect forms still carry the
+// real post_fbid via the crawler's URL repair path.
+func canonicalGroupPostURLFromFBIDs(groupFBID, postFBID string) string {
+	g := strings.TrimSpace(groupFBID)
+	p := strings.TrimSpace(postFBID)
+	if g == "" || p == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://www.facebook.com/groups/%s/posts/%s/", g, p)
 }
 
 func isCommentableFacebookPostURL(raw string) bool {
