@@ -253,6 +253,11 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 	// The SQL filter is the primary fix. DeriveBadge also defensively
 	// filters in case a future caller bypasses this query and feeds
 	// raw entries to the badge logic.
+	//
+	// tenant-ok: cross-domain projection (leads -> coordination). Reads
+	// action_ledger as the source of engagement state. Per truth ownership
+	// matrix (DOMAINS.md §2.4), action_ledger is owned by the coordination
+	// domain; this JOIN is read-only.
 	query := `
 		SELECT al.target_url,
 		       COALESCE(a.id, 0)                  AS account_id,
