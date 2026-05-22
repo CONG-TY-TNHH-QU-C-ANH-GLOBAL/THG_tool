@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/runtime/events"
 )
 
 // newExecutionID generates the per-claim idempotency token. 16
@@ -111,5 +112,20 @@ func (s *Store) Claim(orgID, id int64, workerID string, leaseDuration time.Durat
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+
+	// Typed event: claim succeeded (extension picked up the row).
+	// Closes the diagnostic gap "did the queued row ever reach the
+	// extension?" — without this, a lead that queues but never claims
+	// looks identical to a lead that claims but never finishes.
+	events.Info(ctx, events.OutboundClaimed,
+		events.FieldOrgID, orgID,
+		events.FieldOutboundID, id,
+		events.FieldAccountID, accountID,
+		events.FieldActionType, actionType,
+		events.FieldTargetURL, targetURL,
+		"worker_id", workerID,
+		"execution_id", execID,
+	)
+
 	return &ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
 }

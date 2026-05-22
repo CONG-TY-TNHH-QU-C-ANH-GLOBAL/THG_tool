@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/dbutil"
 )
 
@@ -88,6 +89,16 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 		return QueueResult{}, err
 	}
 	if !guard.Allowed {
+		// Typed event: gate rejected the queue. Closes the diagnostic
+		// gap "why didn't this lead get queued?" — production debug
+		// for autocomment_redirect-class investigations.
+		events.Info(ctx, events.OutboundQueueRejected,
+			events.FieldOrgID, msg.OrgID,
+			events.FieldAccountID, msg.AccountID,
+			events.FieldActionType, string(msg.Type),
+			events.FieldTargetURL, msg.TargetURL,
+			events.FieldReason, guard.Reason,
+		)
 		return QueueResult{Decision: guard}, nil
 	}
 
@@ -138,6 +149,18 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 	if err := tx.Commit(); err != nil {
 		return QueueResult{}, err
 	}
+
+	// Typed event: queue succeeded. Closes the diagnostic gap
+	// "did this lead get queued at all?" — required server-side signal
+	// before any extension claim happens.
+	events.Info(ctx, events.OutboundQueued,
+		events.FieldOrgID, msg.OrgID,
+		events.FieldOutboundID, id,
+		events.FieldAccountID, msg.AccountID,
+		events.FieldActionType, string(msg.Type),
+		events.FieldTargetURL, msg.TargetURL,
+	)
+
 	return QueueResult{
 		ID:             id,
 		ExecutionState: msg.ExecutionState,
