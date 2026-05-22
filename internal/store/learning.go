@@ -1,4 +1,4 @@
-// Domain: app (see internal/store/DOMAINS.md)
+// Domain: app (stays at top-level — uses *AppStore type, not *Store)
 package store
 
 import (

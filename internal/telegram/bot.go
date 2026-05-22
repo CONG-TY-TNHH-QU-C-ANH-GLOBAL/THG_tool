@@ -315,7 +315,7 @@ func (b *Bot) handleStop(c tele.Context) error {
 }
 
 func (b *Bot) handleStats(c tele.Context) error {
-	stats, err := b.db.GetStats()
+	stats, err := b.db.App().GetStats()
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}
@@ -394,7 +394,7 @@ func (b *Bot) handlePhoto(c tele.Context) error {
 		Description:    caption,
 		Category:       category,
 	}
-	id, err := b.db.InsertCompanyImage(img)
+	id, err := b.db.App().InsertCompanyImage(img)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi lưu vào database: %v", err))
 	}
@@ -408,7 +408,7 @@ func (b *Bot) handlePhoto(c tele.Context) error {
 
 	_ = b.db.SetContext("last_image_upload", fmt.Sprintf("id:%d path:%s desc:%s", id, localPath, caption))
 
-	total := b.db.CountCompanyImages()
+	total := b.db.App().CountCompanyImages()
 	reply := fmt.Sprintf("✅ Đã lưu ảnh #%d vào database!\n📁 %s\n📝 Mô tả: %s\n🗂️ Danh mục: %s\n📊 Tổng ảnh: %d",
 		id, localPath, caption, category, total)
 
@@ -424,7 +424,7 @@ func (b *Bot) handlePhoto(c tele.Context) error {
 			log.Printf("[Telegram] Price extraction failed: %v", pErr)
 			reply += fmt.Sprintf("\n\n⚠️ Không đọc được bảng giá từ ảnh: %v", pErr)
 		} else if len(items) > 0 {
-			saved, _ := b.db.InsertPriceItems(items, "image")
+			saved, _ := b.db.App().InsertPriceItems(items, "image")
 			reply += fmt.Sprintf("\n\n💰 Đã học *%d mục giá* từ ảnh! AI sẽ tư vấn đúng giá khi comment/inbox.\nDùng /price để xem bảng giá.", saved)
 		} else {
 			reply += "\n\n⚠️ Không tìm thấy bảng giá trong ảnh. Thử gửi ảnh rõ hơn hoặc nhập text trực tiếp."
@@ -437,7 +437,7 @@ func (b *Bot) handlePhoto(c tele.Context) error {
 
 // handleListImages lists all saved company images.
 func (b *Bot) handleListImages(c tele.Context) error {
-	images, err := b.db.GetCompanyImages(20)
+	images, err := b.db.App().GetCompanyImages(20)
 	if err != nil || len(images) == 0 {
 		return c.Send("📭 Chưa có ảnh nào. Gửi ảnh lên đây để AI lưu và dùng khi comment!")
 	}
@@ -462,7 +462,7 @@ func (b *Bot) handleListImages(c tele.Context) error {
 
 // handlePriceList shows the current learned price list.
 func (b *Bot) handlePriceList(c tele.Context) error {
-	items, err := b.db.GetAllPriceItems()
+	items, err := b.db.App().GetAllPriceItems()
 	if err != nil || len(items) == 0 {
 		return c.Send("📭 Chưa có bảng giá nào. Gửi ảnh bảng giá (caption 'bảng giá') hoặc nhập text:\nVD: \"học bảng giá: Gói A 100k/tháng, Gói B 200k/tháng\"")
 	}

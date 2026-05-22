@@ -1,5 +1,5 @@
 // Domain: app (see internal/store/DOMAINS.md)
-package store
+package app
 
 import "github.com/thg/scraper/internal/models"
 

@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 func (h *Handler) attachProvisionedOrgIfNeeded(user *models.User, ip string) (bool, error) {
@@ -40,7 +41,7 @@ func (h *Handler) completeProvisionedClaim(userID int64, claim *store.Provisione
 			return err
 		}
 	}
-	if err := h.deps.DB.UpsertStaffKPI(userID, claim.OrgID, store.KPIDelta{}); err != nil {
+	if err := h.deps.DB.App().UpsertStaffKPI(userID, claim.OrgID, app.KPIDelta{}); err != nil {
 		return err
 	}
 	_ = h.deps.DB.InsertAuditLog(userID, "provisioned_workspace_claimed", ip,

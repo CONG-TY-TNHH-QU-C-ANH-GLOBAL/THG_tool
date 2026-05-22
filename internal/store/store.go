@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/store/connectors"
 	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/crawl"
@@ -89,6 +90,13 @@ type Store struct {
 	// clean-cut extraction (2026-05-22). encKey is mirrored from
 	// top-level Store at construction + via SetEncryptionKey.
 	identities *identities.Store
+
+	// app owns the heterogeneous *Store-receiver application tables
+	// (career_jobs, kpi, learning, media_assets, price_items, stats).
+	// Phase 11 narrow-scope extraction (2026-05-22) — the legacy
+	// AppStore wrapper at top-level (app_store.go) and its
+	// *AppStore-receiver files stay where they are.
+	app *app.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -124,6 +132,10 @@ func (s *Store) Connectors() *connectors.Store { return s.connectors }
 // Identities exposes the identities-domain subpackage handle. Phase 6
 // clean-cut extraction (2026-05-22) — no top-level bridge wrappers.
 func (s *Store) Identities() *identities.Store { return s.identities }
+
+// App exposes the app-domain subpackage handle. Phase 11 narrow scope
+// (2026-05-22) — no top-level bridge wrappers.
+func (s *Store) App() *app.Store { return s.app }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -207,6 +219,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.prompts = prompts.NewStore(s.db, s.dialect)
 	s.connectors = connectors.NewStore(s.db, s.dialect)
 	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
+	s.app = app.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
@@ -254,6 +267,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.prompts = prompts.NewStore(s.db, s.dialect)
 	s.connectors = connectors.NewStore(s.db, s.dialect)
 	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
+	s.app = app.NewStore(s.db, s.dialect)
 	return s, nil
 }
 

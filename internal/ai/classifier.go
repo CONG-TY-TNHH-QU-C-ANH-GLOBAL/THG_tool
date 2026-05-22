@@ -98,7 +98,7 @@ func (c *Classifier) buildDynamicSystemPrompt() string {
 	// If this is a recruitment business, also inject open jobs for scoring
 	if strings.Contains(strings.ToLower(profile.Industry), "recruit") ||
 		strings.EqualFold(userCtx["active_niche"], "tuyen_dung") {
-		if jobs, err := c.db.GetActiveCareerJobs(); err == nil && len(jobs) > 0 {
+		if jobs, err := c.db.App().GetActiveCareerJobs(); err == nil && len(jobs) > 0 {
 			sb.WriteString("\nOPEN POSITIONS:\n")
 			for _, j := range jobs {
 				line := fmt.Sprintf("- %s", j.Title)

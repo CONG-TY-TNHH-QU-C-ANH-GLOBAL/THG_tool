@@ -52,7 +52,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			}
 			return "da luu mo ta doanh nghiep cho crawler/classifier", nil
 		case "get_stats":
-			stats, err := db.GetStats()
+			stats, err := db.App().GetStats()
 			if err != nil {
 				return "", err
 			}

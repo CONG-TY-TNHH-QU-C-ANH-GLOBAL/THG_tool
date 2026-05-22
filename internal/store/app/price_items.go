@@ -1,5 +1,5 @@
 // Domain: app (see internal/store/DOMAINS.md)
-package store
+package app
 
 import (
 	"fmt"

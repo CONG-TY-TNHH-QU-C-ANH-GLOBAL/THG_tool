@@ -241,7 +241,7 @@ func (h *Handler) billingSummary(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "organization not found"})
 	}
 	accountCount, _ := h.deps.DB.CountAccountsByOrg(orgID)
-	staff, _ := h.deps.DB.GetStaffWithKPI(orgID)
+	staff, _ := h.deps.DB.App().GetStaffWithKPI(orgID)
 	fb := h.deps.DB.Identities().GetFacebookStatusForOrg(orgID)
 	outboxCounts, _ := h.deps.DB.CountOutboundByStatusForOrg(orgID)
 	return c.JSON(fiber.Map{

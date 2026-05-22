@@ -56,7 +56,7 @@ func StreamLogs(c *fiber.Ctx) error {
 // getSentimentStats returns lead analytics: score breakdown, niche distribution, outbound status.
 func SentimentStats(db *store.Store) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		stats, _ := db.GetStats()
+		stats, _ := db.App().GetStats()
 
 		// Sample up to 500 leads to compute niche distribution and score breakdown
 		leads, _ := db.GetLeadsFiltered("", "", 500, 0, 0)

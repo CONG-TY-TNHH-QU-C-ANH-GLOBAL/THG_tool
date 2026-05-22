@@ -11,7 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 const (
@@ -357,7 +357,7 @@ func (h *Handler) createOrgUser(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	_ = h.deps.DB.UpsertStaffKPI(id, targetOrgID, store.KPIDelta{})
+	_ = h.deps.DB.App().UpsertStaffKPI(id, targetOrgID, app.KPIDelta{})
 	adminID, _ := c.Locals("user_id").(int64)
 	h.deps.DB.InsertAuditLog(adminID, "workspace_member_created", c.IP(),
 		fmt.Sprintf(`{"user_id":%d,"org_id":%d,"role":%q}`, id, targetOrgID, req.Role))

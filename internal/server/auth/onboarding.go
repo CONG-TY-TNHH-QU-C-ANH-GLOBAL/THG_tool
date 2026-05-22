@@ -10,6 +10,7 @@ import (
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 // signupUser handles POST /api/auth/signup (public).
@@ -492,7 +493,7 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 	if err := h.deps.DB.MarkInviteUsed(inviteID, userID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "could not complete invite"})
 	}
-	_ = h.deps.DB.UpsertStaffKPI(userID, orgID, store.KPIDelta{})
+	_ = h.deps.DB.App().UpsertStaffKPI(userID, orgID, app.KPIDelta{})
 
 	user, _ = h.deps.DB.GetUserByID(userID)
 	newToken, _ := authpkg.GenerateAccessToken(userID, orgID, user.Email, string(targetRole), h.deps.JWTSecret)

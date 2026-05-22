@@ -124,7 +124,7 @@ func businessContextForOrg(db *store.Store, orgID int64) string {
 			parts = append(parts, item.label+":\n"+value)
 		}
 	}
-	if price := strings.TrimSpace(db.GetPriceListText()); price != "" {
+	if price := strings.TrimSpace(db.App().GetPriceListText()); price != "" {
 		parts = append(parts, price)
 	}
 	if len(parts) == 0 {

@@ -4,12 +4,12 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 func (h *Handler) autoflowGetStaff(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	staff, err := h.deps.DB.GetStaffWithKPI(orgID)
+	staff, err := h.deps.DB.App().GetStaffWithKPI(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -55,7 +55,7 @@ func (h *Handler) autoflowUpdateKPI(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
-	if err := h.deps.DB.UpsertStaffKPI(staffID, orgID, store.KPIDelta{
+	if err := h.deps.DB.App().UpsertStaffKPI(staffID, orgID, app.KPIDelta{
 		Convs:     body.Convs,
 		Converted: body.Converted,
 		Cmts:      body.Cmts,
@@ -69,7 +69,7 @@ func (h *Handler) autoflowUpdateKPI(c *fiber.Ctx) error {
 
 func (h *Handler) autoflowGetKPIConfig(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	cfg, err := h.deps.DB.GetKPIConfig(orgID)
+	cfg, err := h.deps.DB.App().GetKPIConfig(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -98,8 +98,8 @@ func (h *Handler) autoflowUpdateKPIConfig(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
-	existing, _ := h.deps.DB.GetKPIConfig(orgID)
-	cfg := store.KPIConfig{OrgID: orgID, ConvPts: existing.ConvPts, Conv2Pts: existing.Conv2Pts, CmtPts: existing.CmtPts, BonusPts: existing.BonusPts, BonusAmt: existing.BonusAmt, PenPts: existing.PenPts, PenAmt: existing.PenAmt}
+	existing, _ := h.deps.DB.App().GetKPIConfig(orgID)
+	cfg := app.KPIConfig{OrgID: orgID, ConvPts: existing.ConvPts, Conv2Pts: existing.Conv2Pts, CmtPts: existing.CmtPts, BonusPts: existing.BonusPts, BonusAmt: existing.BonusAmt, PenPts: existing.PenPts, PenAmt: existing.PenAmt}
 	if body.ConvPts != nil {
 		cfg.ConvPts = *body.ConvPts
 	}
@@ -121,7 +121,7 @@ func (h *Handler) autoflowUpdateKPIConfig(c *fiber.Ctx) error {
 	if body.PenAmt != nil {
 		cfg.PenAmt = *body.PenAmt
 	}
-	if err := h.deps.DB.UpsertKPIConfig(orgID, cfg); err != nil {
+	if err := h.deps.DB.App().UpsertKPIConfig(orgID, cfg); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true})
