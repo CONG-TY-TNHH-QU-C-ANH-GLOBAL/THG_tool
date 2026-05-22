@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/store/connectors"
 	"github.com/thg/scraper/internal/store/coordination"
@@ -243,6 +244,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
+	s.installRuntimeEventSink()
 	return s, nil
 }
 
@@ -293,7 +295,20 @@ func newPostgres(dsn string) (*Store, error) {
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
+	s.installRuntimeEventSink()
 	return s, nil
+}
+
+// installRuntimeEventSink wires the events.Sink hook to persist every
+// typed runtime event into runtime_events via coordination. Called
+// once at the end of New (after all subpackages exist). Per
+// [[feedback_freeze_abstraction]] this is a function-typed
+// registration, not an interface — the events package never knows
+// about the Store type.
+func (s *Store) installRuntimeEventSink() {
+	events.SetSink(func(ctx context.Context, level, eventName string, attrs []any) {
+		_ = s.coordination.RecordRuntimeEvent(ctx, level, eventName, attrs)
+	})
 }
 
 // isPostgresDSN heuristically detects a Postgres connection string.

@@ -198,16 +198,19 @@ echo
 # Sudden growth = new wrappers introduced (violation).
 # ---------------------------------------------------------------------
 
-echo "[8] Typed event taxonomy — no raw 'event' string literals outside events package"
+echo "[8] Typed event taxonomy — no raw event-name literals outside events package"
 RAW_EVENT_VIOLATIONS=0
-# Match `"event"` immediately followed by a quoted string literal — the
-# legacy ad-hoc pattern. Allow events.go itself (the constants) + tests.
-hits=$(grep -rln "\"event\"\s*,\s*\"" --include="*.go" internal/ cmd/ 2>/dev/null \
+# Match the legacy ad-hoc pattern: `"event"` slog key followed by a
+# DOMAIN.VERB event name string literal (e.g. "outbound.queued"). The
+# narrow regex excludes false positives like fiber's c.Query("event", "")
+# query-parameter name reads. Allow events.go itself + tests.
+hits=$(grep -rlnE '"event"[[:space:]]*,[[:space:]]*"[a-z][a-z_]*\.[a-z_]+"' \
+  --include="*.go" internal/ cmd/ 2>/dev/null \
   | grep -v 'internal/runtime/events/' \
   | grep -v '_test\.go' || true)
 if [ -n "$hits" ]; then
   for f in $hits; do
-    fail "raw \"event\" string literal — use events.Info(ctx, events.<Const>, ...) instead: $f"
+    fail "raw event-name literal — use events.Info(ctx, events.<Const>, ...) instead: $f"
     RAW_EVENT_VIOLATIONS=$((RAW_EVENT_VIOLATIONS + 1))
   done
 fi

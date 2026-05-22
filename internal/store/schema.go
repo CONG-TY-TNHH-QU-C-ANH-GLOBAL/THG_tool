@@ -3,6 +3,7 @@ package store
 
 import (
 	"github.com/thg/scraper/internal/store/connectors"
+	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/prompts"
 )
 
@@ -1028,6 +1029,13 @@ func (s *Store) migrate() error {
 	// subpackage (Phase 9, 2026-05-22) but runs here because schema
 	// bootstrap precedes subpackage construction.
 	if err := prompts.Migrate(s.db); err != nil {
+		return err
+	}
+
+	// Stage 3 T2b (2026-05-22): runtime_events table for the typed
+	// event taxonomy persistence sink. Lives in coordination/ —
+	// schema bootstrap precedes subpackage construction.
+	if err := coordination.InitRuntimeEvents(s.db); err != nil {
 		return err
 	}
 

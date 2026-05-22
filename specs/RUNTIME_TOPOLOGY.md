@@ -381,9 +381,9 @@ For shared vocabulary about where we are and what comes next. Adapted from the u
 2. L2 CI enforcement — `check_topology.sh` (this PR) + wire into ci.yml.
 3. Runtime topology doc — this file.
 4. Replay / Control Plane foundations:
-   - 4a. **Typed slog event taxonomy** — `internal/runtime/events/` package (DONE 2026-05-22). 13 event constants, 2 emit helpers (Info + Warn), retrofit of 3 existing typed-event sites, new emission at the "best-effort hook failure" gap from §5. CI gate §6.8 enforces no raw `"event"` literals outside the package.
-   - 4b. `runtime_events` table + dual-write — persistence so a runtime-feed endpoint can query, not just tail. Schema lands in `internal/store/coordination/`.
-   - 4c. `GET /api/observability/runtime-feed` — SSE or paginated read backing a "live event tail" panel in the dashboard.
+   - 4a. **Typed slog event taxonomy** — `internal/runtime/events/` package (DONE 2026-05-22). 13 event constants, 2 emit helpers (Info + Warn), retrofit of 3 existing typed-event sites, new emission at the "best-effort hook failure" gap from §5. CI gate §6.8 enforces no raw event-name literals outside the package.
+   - 4b. **`runtime_events` table + dual-write** (DONE 2026-05-22). Persistence via `coordination.RecordRuntimeEvent` + `events.SetSink` boot-time registration. Schema lives in `internal/store/coordination/runtime_events.go`. Function-typed sink — no interface (per L4).
+   - 4c. **`GET /api/observability/runtime-feed`** (DONE 2026-05-22). Paginated read backing a live event tail panel. Supports `?hours=1`, `?limit=100`, `?level=warn`, `?event=outbound.queued` filters. Org-scoped + system-wide rows visible.
 5. Semantic cleanup — append-only migration on action_ledger (§4); cross-domain SQL annotations.
 
 Stage 4 will be earned, not designed in advance.
