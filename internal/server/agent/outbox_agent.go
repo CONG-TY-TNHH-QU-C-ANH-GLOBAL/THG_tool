@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/runtime"
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store/coordination"
 )
@@ -338,17 +339,21 @@ func (h *Handler) finalizeOutbound(
 
 		if sig := models.RiskSignalForOutcome(outcome); sig != "" && msg.AccountID > 0 {
 			if err := h.db.Coordination().ApplyRiskSignal(ctx, orgID, msg.AccountID, sig, 0); err != nil {
-				slog.WarnContext(ctx, "exec-verify: apply risk signal failed",
-					"org_id", orgID, "account_id", msg.AccountID, "signal", sig, "error", err)
+				events.Warn(ctx, events.ExecutionHookFailed,
+					events.FieldHook, "ApplyRiskSignal",
+					events.FieldOrgID, orgID,
+					events.FieldAccountID, msg.AccountID,
+					"signal", sig,
+					events.FieldErr, err,
+				)
 			}
 		}
-		slog.InfoContext(ctx, "exec-verify: attempt classified",
-			"event", "execution.verified",
-			"outbound_id", id,
-			"attempt_id", attemptID,
-			"outcome", outcome,
-			"account_id", msg.AccountID,
-			"action_type", msg.Type,
+		events.Info(ctx, events.ExecutionVerified,
+			events.FieldOutboundID, id,
+			events.FieldAttemptID, attemptID,
+			events.FieldOutcome, outcome,
+			events.FieldAccountID, msg.AccountID,
+			events.FieldActionType, msg.Type,
 		)
 	}
 

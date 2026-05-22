@@ -355,7 +355,8 @@ Every binding invariant in this doc maps to a check in `scripts/check_topology.s
 | 5 | execution_attempts INSERTs only in coordination/ | grep `INSERT INTO execution_attempts` outside coordination/ | PASS |
 | 6 | action_ledger append-only (baselined) | count of `UPDATE action_ledger \| DELETE FROM action_ledger` | EXPECTED-FAIL (3 carry-over; baseline 3) |
 | 7 | No downstream business reads of legacy `outbound_messages.status` | grep heuristic | deferred (needs schema-aware check; current heuristic too noisy) |
-| 8 | L2 wrapper count tracking | count of `// Deprecated:` markers in `outbound_aliases.go` | INFO (28 — track only) |
+| 8 | Typed event taxonomy — no raw `"event"` string literals outside `internal/runtime/events/` | grep for `"event"\s*,\s*"<string>"` outside the events package | PASS |
+| 9 | L2 wrapper count tracking | count of `// Deprecated:` markers in `outbound_aliases.go` | INFO (28 — track only) |
 
 Run: `bash scripts/check_topology.sh`. Wired into CI in `.github/workflows/ci.yml` as the `topology` job — runs before tests so topology regressions surface fast.
 
@@ -379,7 +380,10 @@ For shared vocabulary about where we are and what comes next. Adapted from the u
 1. Runtime stabilisation — close stuck-state surfaces (PR-E shipped); maintain green tests through topology PR.
 2. L2 CI enforcement — `check_topology.sh` (this PR) + wire into ci.yml.
 3. Runtime topology doc — this file.
-4. Replay / Control Plane foundations — typed slog event taxonomy + runtime feed surfaces ([[project_runtime_control_plane]] EXP-1).
+4. Replay / Control Plane foundations:
+   - 4a. **Typed slog event taxonomy** — `internal/runtime/events/` package (DONE 2026-05-22). 13 event constants, 2 emit helpers (Info + Warn), retrofit of 3 existing typed-event sites, new emission at the "best-effort hook failure" gap from §5. CI gate §6.8 enforces no raw `"event"` literals outside the package.
+   - 4b. `runtime_events` table + dual-write — persistence so a runtime-feed endpoint can query, not just tail. Schema lands in `internal/store/coordination/`.
+   - 4c. `GET /api/observability/runtime-feed` — SSE or paginated read backing a "live event tail" panel in the dashboard.
 5. Semantic cleanup — append-only migration on action_ledger (§4); cross-domain SQL annotations.
 
 Stage 4 will be earned, not designed in advance.

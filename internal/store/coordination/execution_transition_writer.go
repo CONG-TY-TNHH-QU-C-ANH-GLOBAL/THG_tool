@@ -4,8 +4,8 @@ package coordination
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/dbutil"
 )
 
@@ -75,9 +75,12 @@ func (s *Store) RecordTransitionTx(
 		transitionType, executionID, resultingState, outcomeArg, leaseArg,
 	)
 	if err != nil {
-		slog.WarnContext(ctx, "coordination.recordExecutionTransitionTx: insert failed (best-effort, not load-bearing)",
-			"outbound_id", outboundID, "org_id", orgID,
-			"transition_type", transitionType, "error", err,
+		events.Warn(ctx, events.ExecutionHookFailed,
+			events.FieldHook, "RecordTransitionTx",
+			events.FieldOutboundID, outboundID,
+			events.FieldOrgID, orgID,
+			"transition_type", transitionType,
+			events.FieldErr, err,
 		)
 	}
 }

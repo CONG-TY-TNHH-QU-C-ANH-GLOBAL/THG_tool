@@ -198,7 +198,23 @@ echo
 # Sudden growth = new wrappers introduced (violation).
 # ---------------------------------------------------------------------
 
-echo "[8] L2 wrapper count baseline (track only — do not fail)"
+echo "[8] Typed event taxonomy — no raw 'event' string literals outside events package"
+RAW_EVENT_VIOLATIONS=0
+# Match `"event"` immediately followed by a quoted string literal — the
+# legacy ad-hoc pattern. Allow events.go itself (the constants) + tests.
+hits=$(grep -rln "\"event\"\s*,\s*\"" --include="*.go" internal/ cmd/ 2>/dev/null \
+  | grep -v 'internal/runtime/events/' \
+  | grep -v '_test\.go' || true)
+if [ -n "$hits" ]; then
+  for f in $hits; do
+    fail "raw \"event\" string literal — use events.Info(ctx, events.<Const>, ...) instead: $f"
+    RAW_EVENT_VIOLATIONS=$((RAW_EVENT_VIOLATIONS + 1))
+  done
+fi
+[ "$RAW_EVENT_VIOLATIONS" -eq 0 ] && pass "all event emission uses the typed taxonomy in internal/runtime/events/"
+echo
+
+echo "[9] L2 wrapper count baseline (track only — do not fail)"
 WRAPPER_FILE="internal/store/outbound_aliases.go"
 if [ -f "$WRAPPER_FILE" ]; then
   count=$(grep -c "^// Deprecated:" "$WRAPPER_FILE" 2>/dev/null || echo 0)

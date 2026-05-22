@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/outbound"
 )
@@ -116,16 +117,42 @@ func (s *Store) installOutboundHooks() {
 			return s.conversationGateForOutbound(ctx, orgID, targetURL, profileURL, cooldown)
 		},
 		RecordActionLedger: func(tx *sql.Tx, orgID, accountID int64, msgType, targetURL string, outboundID int64, cooldown time.Duration) {
-			// Best-effort, errors swallowed (the outbound row is the source of truth).
-			_ = coordination.RecordLedgerTx(tx, orgID, accountID, msgType, targetURL, outboundID, cooldown)
+			// Best-effort, errors swallowed (the outbound row is the
+			// source of truth). Failures are emitted as typed events
+			// (events.ExecutionHookFailed) so the Control Plane can
+			// surface them — see specs/RUNTIME_TOPOLOGY.md §5 failure
+			// surface gap fixed by this emission.
+			if err := coordination.RecordLedgerTx(tx, orgID, accountID, msgType, targetURL, outboundID, cooldown); err != nil {
+				events.Warn(context.Background(), events.ExecutionHookFailed,
+					events.FieldHook, "RecordLedgerTx",
+					events.FieldOrgID, orgID,
+					events.FieldAccountID, accountID,
+					events.FieldActionType, msgType,
+					events.FieldOutboundID, outboundID,
+					events.FieldErr, err,
+				)
+			}
 		},
 		IncrementCounter: func(tx *sql.Tx, orgID, accountID int64, msgType string) {
-			_ = coordination.IncrementCounterTx(tx, orgID, accountID, msgType)
+			if err := coordination.IncrementCounterTx(tx, orgID, accountID, msgType); err != nil {
+				events.Warn(context.Background(), events.ExecutionHookFailed,
+					events.FieldHook, "IncrementCounterTx",
+					events.FieldOrgID, orgID,
+					events.FieldAccountID, accountID,
+					events.FieldActionType, msgType,
+					events.FieldErr, err,
+				)
+			}
 		},
 		RecordTransition: func(ctx context.Context, tx *sql.Tx, in outbound.RecordTransitionInput) {
 			// Unpack the carrier struct into primitives so coordination
 			// stays free of any outbound import. This is the single
 			// wiring point that imports both domains (Phase 5B, 2026-05-21).
+			//
+			// RecordTransitionTx is best-effort by design (warn-log on
+			// failure inside the implementation). The hook failure itself
+			// is also surfaced via events.ExecutionHookFailed inside the
+			// implementation's slog.WarnContext path.
 			s.coordination.RecordTransitionTx(ctx, tx,
 				in.OutboundID, in.OrgID, in.AccountID,
 				in.TargetURL, in.ActionType, in.Attempt,

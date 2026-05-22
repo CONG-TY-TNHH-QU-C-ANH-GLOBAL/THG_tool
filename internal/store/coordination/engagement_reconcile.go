@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/runtime/events"
 )
 
 // ReconcileEngagementReport summarises what the reconciliation pass
@@ -172,9 +173,8 @@ func (s *Store) ReconcileEngagement(ctx context.Context, orgID int64) (*Reconcil
 		}
 		rep.LedgerCorrected++
 	}
-	slog.InfoContext(ctx, "reconcile: completed",
-		"event", "engagement.reconcile",
-		"org_id", orgID,
+	events.Info(ctx, events.EngagementReconcile,
+		events.FieldOrgID, orgID,
 		"scanned", rep.LedgerScanned,
 		"corrected", rep.LedgerCorrected,
 		"kept", rep.LedgerKept,

@@ -19,6 +19,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/output"
 	"github.com/thg/scraper/internal/runtime"
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
@@ -252,10 +253,9 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 				// downstream. The `event` key lets log aggregators group
 				// counts by path (anchor_clean | synth_from_fbid | dropped_transient).
 				if item.URLRepairPath != "" {
-					slog.InfoContext(ctx, "crawler url repair",
-						"event", "crawler.url_repair",
+					events.Info(ctx, events.CrawlerURLRepair,
 						"path", item.URLRepairPath,
-						"org_id", task.OrgID,
+						events.FieldOrgID, task.OrgID,
 						"task_id", job.TaskID,
 						"src", src.URL,
 					)
