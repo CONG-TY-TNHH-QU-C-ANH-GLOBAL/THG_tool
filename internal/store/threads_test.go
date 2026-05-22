@@ -12,7 +12,7 @@ func TestSeedThreadForOrg_CreatesRowWithNullOutboundTimestamp(t *testing.T) {
 	const orgID = int64(7)
 	const profileURL = "https://www.facebook.com/profile.42"
 
-	id, err := s.SeedThreadForOrg(orgID, 0, "facebook", profileURL, "Operator Pham", "")
+	id, err := s.Threads().SeedThreadForOrg(orgID, 0, "facebook", profileURL, "Operator Pham", "")
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -20,7 +20,7 @@ func TestSeedThreadForOrg_CreatesRowWithNullOutboundTimestamp(t *testing.T) {
 		t.Fatal("expected non-zero thread id from seed")
 	}
 
-	got, err := s.GetThreadByProfileForOrg(orgID, profileURL)
+	got, err := s.Threads().GetThreadByProfileForOrg(orgID, profileURL)
 	if err != nil {
 		t.Fatalf("get thread: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestSeedThreadForOrg_IdempotentPreservesFirstAttribution(t *testing.T) {
 	const orgID = int64(7)
 	const profileURL = "https://www.facebook.com/profile.99"
 
-	first, err := s.SeedThreadForOrg(orgID, 11, "facebook", profileURL, "First Touch", "logistics")
+	first, err := s.Threads().SeedThreadForOrg(orgID, 11, "facebook", profileURL, "First Touch", "logistics")
 	if err != nil {
 		t.Fatalf("seed first: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestSeedThreadForOrg_IdempotentPreservesFirstAttribution(t *testing.T) {
 		t.Fatal("expected non-zero id on first seed")
 	}
 
-	second, err := s.SeedThreadForOrg(orgID, 99, "facebook", profileURL, "Second Touch", "tuyen_dung")
+	second, err := s.Threads().SeedThreadForOrg(orgID, 99, "facebook", profileURL, "Second Touch", "tuyen_dung")
 	if err != nil {
 		t.Fatalf("seed second: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestSeedThreadForOrg_IdempotentPreservesFirstAttribution(t *testing.T) {
 		t.Errorf("re-seed returned id %d, want %d (idempotent)", second, first)
 	}
 
-	got, err := s.GetThreadByProfileForOrg(orgID, profileURL)
+	got, err := s.Threads().GetThreadByProfileForOrg(orgID, profileURL)
 	if err != nil {
 		t.Fatalf("get thread: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSeedThreadForOrg_ConversationGateAllowsFirstSend(t *testing.T) {
 	const orgID = int64(7)
 	const profileURL = "https://www.facebook.com/profile.gate"
 
-	if _, err := s.SeedThreadForOrg(orgID, 0, "facebook", profileURL, "", ""); err != nil {
+	if _, err := s.Threads().SeedThreadForOrg(orgID, 0, "facebook", profileURL, "", ""); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -106,7 +106,7 @@ func TestSeedThreadForOrg_RejectsEmptyInputs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id, err := s.SeedThreadForOrg(tt.orgID, 0, "facebook", tt.profileURL, "", "")
+			id, err := s.Threads().SeedThreadForOrg(tt.orgID, 0, "facebook", tt.profileURL, "", "")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

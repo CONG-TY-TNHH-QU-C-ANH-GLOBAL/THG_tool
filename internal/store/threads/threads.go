@@ -1,13 +1,13 @@
 // Domain: threads (see internal/store/DOMAINS.md)
-package store
+package threads
 
 import (
-	"github.com/thg/scraper/internal/store/dbutil"
 	"database/sql"
 	"strings"
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // CreateThread creates a new conversation thread for a lead we're outreaching to.

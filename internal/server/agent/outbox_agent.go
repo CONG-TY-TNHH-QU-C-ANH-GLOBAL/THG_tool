@@ -354,8 +354,8 @@ func (h *Handler) finalizeOutbound(
 
 	// Inbox-specific thread bookkeeping — only on actual landing.
 	if models.IsSuccessOutcome(outcome) && msg.Type == "inbox" && msg.TargetURL != "" {
-		if threadID, threadErr := h.db.CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, ""); threadErr == nil {
-			_ = h.db.AddThreadMessage(threadID, "outbound", msg.Content, true)
+		if threadID, threadErr := h.db.Threads().CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, ""); threadErr == nil {
+			_ = h.db.Threads().AddThreadMessage(threadID, "outbound", msg.Content, true)
 		}
 	}
 

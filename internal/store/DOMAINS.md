@@ -27,6 +27,7 @@
 | **connectors** | `internal/store/connectors/` | `s.Connectors()` | extracted (Phase 7, 2026-05-22) — clean-cut, no wrappers. agent_tokens.go reclassified from identities domain (every type + method on it was already connector-domain). Schema bootstrap exposes `connectors.InitSelectorCache(db *sql.DB)` for the pre-construction selector_cache table create. |
 | **identities** | `internal/store/identities/` | `s.Identities()` | extracted (Phase 6, 2026-05-22) — clean-cut, no wrappers. Scope-limited to accounts.go + facebook_status.go (the *Store-receiver files). identities.Store holds its own encKey (mirrored from parent via SetEncryptionKey) so cookie encryption stays in-domain. |
 | **app** | `internal/store/app/` | `s.App()` | extracted (Phase 11 narrow, 2026-05-22) — only the *Store-receiver files (career_jobs, kpi, media_assets, price_items, stats). learning.go + app_store.go + sessions/identities.go (browser fingerprints) stay at top-level because they use the legacy *AppStore wrapper. |
+| **threads** | `internal/store/threads/` | `s.Threads()` | extracted (Phase 8a, 2026-05-22) — single-file clean-cut. conversation_threads + conversation_messages. The conversationGateForOutbound adapter stays at parent store level (top-level) because it composes threads + outbound. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |

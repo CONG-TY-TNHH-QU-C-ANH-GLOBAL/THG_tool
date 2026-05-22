@@ -19,6 +19,7 @@ import (
 	"github.com/thg/scraper/internal/store/knowledge"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
+	"github.com/thg/scraper/internal/store/threads"
 
 	_ "modernc.org/sqlite"
 )
@@ -97,6 +98,10 @@ type Store struct {
 	// AppStore wrapper at top-level (app_store.go) and its
 	// *AppStore-receiver files stay where they are.
 	app *app.Store
+
+	// threads owns conversation_threads + conversation_messages.
+	// Phase 8a clean-cut extraction (2026-05-22).
+	threads *threads.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -136,6 +141,10 @@ func (s *Store) Identities() *identities.Store { return s.identities }
 // App exposes the app-domain subpackage handle. Phase 11 narrow scope
 // (2026-05-22) — no top-level bridge wrappers.
 func (s *Store) App() *app.Store { return s.app }
+
+// Threads exposes the threads-domain subpackage handle. Phase 8a
+// clean-cut extraction (2026-05-22).
+func (s *Store) Threads() *threads.Store { return s.threads }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -220,6 +229,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.connectors = connectors.NewStore(s.db, s.dialect)
 	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
 	s.app = app.NewStore(s.db, s.dialect)
+	s.threads = threads.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
@@ -268,6 +278,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.connectors = connectors.NewStore(s.db, s.dialect)
 	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
 	s.app = app.NewStore(s.db, s.dialect)
+	s.threads = threads.NewStore(s.db, s.dialect)
 	return s, nil
 }
 

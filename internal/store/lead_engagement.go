@@ -176,7 +176,7 @@ func (s *Store) batchThreadStateForLeads(orgID int64, leads []models.Lead) (map[
 	if len(urls) == 0 {
 		return map[string]*models.ConversationThread{}, nil
 	}
-	return s.GetThreadsByProfilesForOrg(orgID, urls)
+	return s.Threads().GetThreadsByProfilesForOrg(orgID, urls)
 }
 
 // threadStateFromBatch is the pure twin of threadStateForLead — same
@@ -312,7 +312,7 @@ func (s *Store) threadStateForLead(orgID int64, lead *models.Lead) (string, bool
 	if url == "" {
 		return "", false
 	}
-	thread, err := s.GetThreadByProfileForOrg(orgID, url)
+	thread, err := s.Threads().GetThreadByProfileForOrg(orgID, url)
 	if err != nil || thread == nil {
 		return "", false
 	}

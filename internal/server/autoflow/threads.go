@@ -11,11 +11,11 @@ import (
 
 func (h *Handler) autoflowListThreads(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	threads, err := h.deps.DB.GetThreadsByOrg(orgID, 100)
+	threads, err := h.deps.DB.Threads().GetThreadsByOrg(orgID, 100)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	unreadCount, err := h.deps.DB.CountThreadUnreadByOrg(orgID)
+	unreadCount, err := h.deps.DB.Threads().CountThreadUnreadByOrg(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -44,15 +44,15 @@ func (h *Handler) autoflowGetMessages(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	ok, err := h.deps.DB.ThreadBelongsToOrg(threadID, orgID)
+	ok, err := h.deps.DB.Threads().ThreadBelongsToOrg(threadID, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	if !ok {
 		return c.Status(404).JSON(fiber.Map{"error": "thread not found"})
 	}
-	_ = h.deps.DB.ClearThreadUnread(threadID)
-	msgs, err := h.deps.DB.GetThreadMessages(threadID)
+	_ = h.deps.DB.Threads().ClearThreadUnread(threadID)
+	msgs, err := h.deps.DB.Threads().GetThreadMessages(threadID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -65,7 +65,7 @@ func (h *Handler) autoflowSendMessage(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	ok, err := h.deps.DB.ThreadBelongsToOrg(threadID, orgID)
+	ok, err := h.deps.DB.Threads().ThreadBelongsToOrg(threadID, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -78,7 +78,7 @@ func (h *Handler) autoflowSendMessage(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil || body.Content == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "content required"})
 	}
-	if err := h.deps.DB.AddThreadMessage(threadID, "outbound", body.Content, false); err != nil {
+	if err := h.deps.DB.Threads().AddThreadMessage(threadID, "outbound", body.Content, false); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(201).JSON(fiber.Map{

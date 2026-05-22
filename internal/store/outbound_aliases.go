@@ -149,7 +149,7 @@ func (s *Store) conversationGateForOutbound(_ context.Context, orgID int64, targ
 	if profileURL == "" {
 		profileURL = targetURL
 	}
-	thread, err := s.GetThreadByProfileForOrg(orgID, profileURL)
+	thread, err := s.Threads().GetThreadByProfileForOrg(orgID, profileURL)
 	if err == sql.ErrNoRows || thread == nil {
 		return outbound.GuardDecision{Allowed: true, Reason: "ok"}, nil
 	}
