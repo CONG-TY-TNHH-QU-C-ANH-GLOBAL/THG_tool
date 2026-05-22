@@ -2,6 +2,8 @@
 
 **Status**: living doc — describes code-as-of-now, not history. Migration phases, audit findings, and roadmap live in [specs/STORE_SUBPACKAGE_REFACTOR.md](../../specs/STORE_SUBPACKAGE_REFACTOR.md). Per-phase rationale stays in that doc + memory; this file is the day-to-day navigation map.
 
+For the **runtime topology** view (same packages, grouped by runtime role, with flow catalogue + truth ownership + append-only boundaries + failure surface + CI enforcement index) see [specs/RUNTIME_TOPOLOGY.md](../../specs/RUNTIME_TOPOLOGY.md). DOMAINS.md is the *spatial* index; RUNTIME_TOPOLOGY.md is the *runtime* index. They describe the same code through different lenses.
+
 **Last verified**: 2026-05-21 (Phase 4 knowledge extraction complete).
 
 ## How to use this index

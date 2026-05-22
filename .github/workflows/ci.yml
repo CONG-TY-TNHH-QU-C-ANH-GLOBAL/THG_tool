@@ -23,6 +23,9 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Runtime topology contract (specs/RUNTIME_TOPOLOGY.md §6)
+        run: bash scripts/check_topology.sh
+
       - name: go vet
         run: go vet ./...
 
