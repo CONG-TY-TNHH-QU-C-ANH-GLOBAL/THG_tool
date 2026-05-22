@@ -159,7 +159,7 @@ func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedA
 	if success {
 		a.updateMemory(prompt, action, actionArgs)
 		if action == "scrape_group" {
-			_ = a.db.SetContext("last_search_intent", prompt)
+			_ = a.db.Leads().SetContext("last_search_intent", prompt)
 		}
 	}
 	return responseText, true
@@ -204,7 +204,7 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 	userContext := a.loadUserContext()
 	if orgID > 0 {
 		for _, key := range orgContextKeysForPrompt() {
-			if v, err := a.db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); err == nil && strings.TrimSpace(v) != "" {
+			if v, err := a.db.Leads().GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); err == nil && strings.TrimSpace(v) != "" {
 				userContext["org_"+key] = strings.TrimSpace(v)
 				userContext[key] = strings.TrimSpace(v)
 			}
@@ -420,7 +420,7 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 		}
 		// Save user's search intent when scraping
 		if actionTaken == "scrape_group" && success {
-			_ = a.db.SetContext("last_search_intent", prompt)
+			_ = a.db.Leads().SetContext("last_search_intent", prompt)
 			log.Printf("[Agent] Saved search intent: %s", prompt)
 		}
 	} else {

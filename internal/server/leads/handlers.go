@@ -47,9 +47,9 @@ func getLeads(deps Deps) fiber.Handler {
 		// production users immediately see extension-crawled results even when the
 		// legacy mirror is empty or delayed.
 		if niche == "" && offset == 0 {
-			leadList, err = deps.DB.GetAutomationLeadsForOrg(orgID, score, limit)
+			leadList, err = deps.DB.Leads().GetAutomationLeadsForOrg(orgID, score, limit)
 		} else {
-			leadList, err = deps.DB.GetLeadsFiltered(score, niche, limit, offset, orgID)
+			leadList, err = deps.DB.Leads().GetLeadsFiltered(score, niche, limit, offset, orgID)
 		}
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -74,12 +74,12 @@ func deleteLead(deps Deps) fiber.Handler {
 		source := strings.ToLower(strings.TrimSpace(c.Query("source", "")))
 		orgID, _ := c.Locals("org_id").(int64)
 		if source == "task_lead" {
-			if err := deps.DB.DeleteTaskLead(orgID, id); err != nil {
+			if err := deps.DB.Leads().DeleteTaskLead(orgID, id); err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 			}
 			return c.JSON(fiber.Map{"ok": true})
 		}
-		if err := deps.DB.DeleteLead(id); err != nil {
+		if err := deps.DB.Leads().DeleteLead(id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})
@@ -144,7 +144,7 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 			profile = &ai.BusinessProfile{}
 		}
 
-		leadList, err := deps.DB.GetLeadsForReclassify(orgID, onlyUnknown, limit)
+		leadList, err := deps.DB.Leads().GetLeadsForReclassify(orgID, onlyUnknown, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -210,7 +210,7 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 			if painPoint == "" {
 				painPoint = lead.PainPoint
 			}
-			if err := deps.DB.UpdateLeadClassification(orgID, lead.ID, score, intentStr, intentStr, painPoint, result.Reason); err != nil {
+			if err := deps.DB.Leads().UpdateLeadClassification(orgID, lead.ID, score, intentStr, intentStr, painPoint, result.Reason); err != nil {
 				log.Printf("[Reclassify] org=%d lead=%d update failed: %v", orgID, lead.ID, err)
 				failed++
 				continue
@@ -243,7 +243,7 @@ func deleteAllLeads(deps Deps) fiber.Handler {
 		if orgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
 		}
-		count, err := deps.DB.DeleteAllLeadsForOrg(orgID, niche)
+		count, err := deps.DB.Leads().DeleteAllLeadsForOrg(orgID, niche)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -271,14 +271,14 @@ func getClassificationsRecent(deps Deps) fiber.Handler {
 		taskID := strings.TrimSpace(c.Query("task_id", ""))
 		decision := strings.TrimSpace(c.Query("decision", ""))
 		limit, _ := strconv.Atoi(c.Query("limit", "50"))
-		entries, err := deps.DB.ListRecentClassifications(c.Context(), orgID, taskID, decision, limit)
+		entries, err := deps.DB.Leads().ListRecentClassifications(c.Context(), orgID, taskID, decision, limit)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		// If filtering by task_id, also surface the rejection-reason breakdown.
 		var breakdown any
 		if taskID != "" {
-			if b, err := deps.DB.SummariseClassifications(c.Context(), orgID, taskID); err == nil {
+			if b, err := deps.DB.Leads().SummariseClassifications(c.Context(), orgID, taskID); err == nil {
 				breakdown = b
 			}
 		}
@@ -293,7 +293,7 @@ func getClassificationsRecent(deps Deps) fiber.Handler {
 // getNiches handles GET /api/niches
 func getNiches(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		niches, err := deps.DB.GetNiches()
+		niches, err := deps.DB.Leads().GetNiches()
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -316,7 +316,7 @@ func addNiche(deps Deps) fiber.Handler {
 			return c.Status(400).JSON(fiber.Map{"error": "slug and name required"})
 		}
 		n := &models.Niche{Slug: req.Slug, Name: req.Name, Emoji: req.Emoji}
-		id, err := deps.DB.InsertNiche(n)
+		id, err := deps.DB.Leads().InsertNiche(n)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -331,7 +331,7 @@ func deleteNiche(deps Deps) fiber.Handler {
 		if slug == "logistics" {
 			return c.Status(400).JSON(fiber.Map{"error": "cannot delete default niche"})
 		}
-		if err := deps.DB.DeleteNiche(slug); err != nil {
+		if err := deps.DB.Leads().DeleteNiche(slug); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"status": "deleted"})

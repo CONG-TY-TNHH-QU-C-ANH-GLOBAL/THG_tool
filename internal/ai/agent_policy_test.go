@@ -23,7 +23,7 @@ func newAgentPolicyTestStore(t *testing.T) *store.Store {
 func TestDeterministicOutboundHonorsOrgAutoPolicy(t *testing.T) {
 	db := newAgentPolicyTestStore(t)
 	const orgID int64 = 42
-	if err := db.SetContext("org:42:outbound_mode", "auto"); err != nil {
+	if err := db.Leads().SetContext("org:42:outbound_mode", "auto"); err != nil {
 		t.Fatal(err)
 	}
 	accountID, err := db.Identities().AddAccount(&models.Account{

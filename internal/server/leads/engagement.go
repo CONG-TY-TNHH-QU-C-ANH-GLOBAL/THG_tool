@@ -27,7 +27,7 @@ func getLeadEngagement(deps Deps) fiber.Handler {
 		if orgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
 		}
-		state, err := deps.DB.GetLeadEngagement(context.Background(), orgID, id)
+		state, err := deps.DB.Leads().GetLeadEngagement(context.Background(), orgID, id)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -64,7 +64,7 @@ func getLeadEngagementsBatch(deps Deps) fiber.Handler {
 			}
 			ids = append(ids, id)
 		}
-		states, err := deps.DB.GetLeadEngagementsBatch(context.Background(), orgID, ids)
+		states, err := deps.DB.Leads().GetLeadEngagementsBatch(context.Background(), orgID, ids)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

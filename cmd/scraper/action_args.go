@@ -95,7 +95,7 @@ func maxItemsFromPrompt(prompt string) int {
 }
 
 func orgContext(db *store.Store, orgID int64, key string) string {
-	value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
+	value, _ := db.Leads().GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
 	return strings.TrimSpace(value)
 }
 

@@ -198,7 +198,7 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 	if limit <= 0 {
 		limit = 25
 	}
-	return db.GetAutomationLeadsForOrg(orgID, score, limit)
+	return db.Leads().GetAutomationLeadsForOrg(orgID, score, limit)
 }
 
 // resolveOutboundTargetURL maps a lead + msgType to the canonical target URL

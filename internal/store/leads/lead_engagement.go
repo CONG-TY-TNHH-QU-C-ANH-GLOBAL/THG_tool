@@ -1,5 +1,5 @@
 // Domain: leads (see internal/store/DOMAINS.md)
-package store
+package leads
 
 import (
 	"github.com/thg/scraper/internal/store/dbutil"

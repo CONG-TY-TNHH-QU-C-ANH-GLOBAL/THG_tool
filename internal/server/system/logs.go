@@ -59,7 +59,7 @@ func SentimentStats(db *store.Store) fiber.Handler {
 		stats, _ := db.App().GetStats()
 
 		// Sample up to 500 leads to compute niche distribution and score breakdown
-		leads, _ := db.GetLeadsFiltered("", "", 500, 0, 0)
+		leads, _ := db.Leads().GetLeadsFiltered("", "", 500, 0, 0)
 
 		nicheCounts := make(map[string]int)
 		scoreCounts := map[string]int{"hot": 0, "warm": 0, "cold": 0, "rejected": 0}

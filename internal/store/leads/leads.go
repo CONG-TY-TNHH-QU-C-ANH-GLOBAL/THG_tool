@@ -1,5 +1,5 @@
 // Domain: leads (see internal/store/DOMAINS.md)
-package store
+package leads
 
 import (
 	"database/sql"

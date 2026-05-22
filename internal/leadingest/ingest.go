@@ -18,6 +18,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/textutil"
 )
 
@@ -296,7 +297,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		// Observability: build a classification_log row for EVERY outcome
 		// (kept, rejected, errored). Without this, rejected posts have no
 		// DB footprint and "why did all 50 posts reject?" is unanswerable.
-		logEntry := store.ClassificationLogEntry{
+		logEntry := leads.ClassificationLogEntry{
 			OrgID:          in.OrgID,
 			TaskID:         in.TaskID,
 			SourceURL:      in.PrimaryURL,
@@ -309,10 +310,10 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		if err != nil {
 			slog.WarnContext(ctx, "universal classify failed; using deterministic score",
 				"task_id", in.TaskID, "org_id", in.OrgID, "error", err)
-			logEntry.Decision = store.ClassificationError
+			logEntry.Decision = leads.ClassificationError
 			logEntry.AIReason = err.Error()
 			if deps.LegacyDB != nil {
-				_ = deps.LegacyDB.RecordClassification(ctx, logEntry)
+				_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
 			}
 		} else if aiResult != nil {
 			// Hard-guard against LLM assigning hot/warm priority to off-target intents
@@ -338,9 +339,9 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 				out.Skipped = "rejected"
 				out.Category = "rejected"
 				out.Signals = append(out.Signals, "ai_intent:"+aiResult.Intent, "ai_reason:"+aiResult.Reason)
-				logEntry.Decision = store.ClassificationRejected
+				logEntry.Decision = leads.ClassificationRejected
 				if deps.LegacyDB != nil {
-					_ = deps.LegacyDB.RecordClassification(ctx, logEntry)
+					_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
 				}
 				return out, nil
 			}
@@ -356,12 +357,12 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 				out.Category = "cold"
 			}
 			if out.Category == "cold" {
-				logEntry.Decision = store.ClassificationCold
+				logEntry.Decision = leads.ClassificationCold
 			} else {
-				logEntry.Decision = store.ClassificationKept
+				logEntry.Decision = leads.ClassificationKept
 			}
 			if deps.LegacyDB != nil {
-				_ = deps.LegacyDB.RecordClassification(ctx, logEntry)
+				_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
 			}
 		}
 	}
@@ -444,7 +445,7 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 			ThreadRole:   threadRole,
 			ClassifiedAt: time.Now().UTC(),
 		}
-		leadID, err := deps.LegacyDB.InsertLead(legacy)
+		leadID, err := deps.LegacyDB.Leads().InsertLead(legacy)
 		if err != nil {
 			// Non-fatal: task_leads is the source of truth; legacy mirror is
 			// best-effort for the existing dashboard.

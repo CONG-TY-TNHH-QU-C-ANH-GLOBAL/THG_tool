@@ -89,7 +89,7 @@ func (p *BusinessProfile) ToPromptBlock() string {
 // LoadProfile builds a BusinessProfile from the user_context table.
 // Reads both new keys (business_industry, business_usp) and legacy keys for backward compat.
 func LoadProfile(db *store.Store) *BusinessProfile {
-	ctx, err := db.GetAllContext()
+	ctx, err := db.Leads().GetAllContext()
 	if err != nil {
 		return &BusinessProfile{}
 	}
@@ -126,13 +126,13 @@ func LoadProfileForOrg(db *store.Store, orgID int64) *BusinessProfile {
 	if db == nil {
 		return &BusinessProfile{}
 	}
-	ctx, err := db.GetAllContext()
+	ctx, err := db.Leads().GetAllContext()
 	if err != nil {
 		ctx = map[string]string{}
 	}
 	if orgID > 0 {
 		for _, key := range businessProfileKeys() {
-			if value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
+			if value, _ := db.Leads().GetContext(fmt.Sprintf("org:%d:%s", orgID, key)); strings.TrimSpace(value) != "" {
 				ctx[key] = strings.TrimSpace(value)
 				if key == "business_profile" {
 					ctx["business_desc"] = strings.TrimSpace(value)
@@ -202,7 +202,7 @@ func (p *BusinessProfile) Save(db *store.Store) error {
 		if v == "" {
 			continue
 		}
-		if err := db.SetContext(k, v); err != nil {
+		if err := db.Leads().SetContext(k, v); err != nil {
 			return err
 		}
 	}
@@ -243,7 +243,7 @@ func (p *BusinessProfile) SaveForOrg(db *store.Store, orgID int64) error {
 		if v == "" {
 			continue
 		}
-		if err := db.SetContext(fmt.Sprintf("org:%d:%s", orgID, k), v); err != nil {
+		if err := db.Leads().SetContext(fmt.Sprintf("org:%d:%s", orgID, k), v); err != nil {
 			return err
 		}
 	}

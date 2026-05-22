@@ -220,7 +220,7 @@ func (b *Bot) handleStatus(c tele.Context) error {
 }
 
 func (b *Bot) handleResults(c tele.Context) error {
-	leads, err := b.db.GetLeadsFiltered("", "", 10, 0, b.orgID)
+	leads, err := b.db.Leads().GetLeadsFiltered("", "", 10, 0, b.orgID)
 	if err != nil {
 		return c.Send(fmt.Sprintf("❌ Lỗi: %v", err))
 	}
@@ -402,11 +402,11 @@ func (b *Bot) handlePhoto(c tele.Context) error {
 	// If caption looks like a comment template, also save it
 	if caption != "" && (strings.Contains(captionLower, "comment") || strings.Contains(captionLower, "bình luận") ||
 		strings.Contains(captionLower, "template") || strings.Contains(captionLower, "mẫu")) {
-		_ = b.db.SetContext("comment_template", caption)
+		_ = b.db.Leads().SetContext("comment_template", caption)
 		log.Printf("[Telegram] Saved comment template from photo caption")
 	}
 
-	_ = b.db.SetContext("last_image_upload", fmt.Sprintf("id:%d path:%s desc:%s", id, localPath, caption))
+	_ = b.db.Leads().SetContext("last_image_upload", fmt.Sprintf("id:%d path:%s desc:%s", id, localPath, caption))
 
 	total := b.db.App().CountCompanyImages()
 	reply := fmt.Sprintf("✅ Đã lưu ảnh #%d vào database!\n📁 %s\n📝 Mô tả: %s\n🗂️ Danh mục: %s\n📊 Tổng ảnh: %d",

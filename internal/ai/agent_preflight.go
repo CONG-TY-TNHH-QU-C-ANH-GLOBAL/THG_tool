@@ -226,7 +226,7 @@ func (a *Agent) captureBusinessCalibrationFromPrompt(orgID int64, userCtx map[st
 		if current := strings.TrimSpace(userCtx[key]); current != "" && len([]rune(current)) > len([]rune(value))*2 {
 			continue
 		}
-		if err := a.db.SetContext(fmt.Sprintf("org:%d:%s", orgID, key), value); err != nil {
+		if err := a.db.Leads().SetContext(fmt.Sprintf("org:%d:%s", orgID, key), value); err != nil {
 			log.Printf("[Agent] save business calibration failed org=%d key=%s: %v", orgID, key, err)
 			continue
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/store/identities"
+	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/store/knowledge"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
@@ -102,6 +103,13 @@ type Store struct {
 	// threads owns conversation_threads + conversation_messages.
 	// Phase 8a clean-cut extraction (2026-05-22).
 	threads *threads.Store
+
+	// leads owns the lead pipeline: leads + lead_engagement projection
+	// + classification_log + context_niches. Phase 8b clean-cut
+	// extraction (2026-05-22). Holds a *threads.Store reference for
+	// the engagement-projection cross-domain reads (per DOMAINS.md §2.2
+	// cross-domain projections via // tenant-ok annotations).
+	leads *leads.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -145,6 +153,10 @@ func (s *Store) App() *app.Store { return s.app }
 // Threads exposes the threads-domain subpackage handle. Phase 8a
 // clean-cut extraction (2026-05-22).
 func (s *Store) Threads() *threads.Store { return s.threads }
+
+// Leads exposes the leads-domain subpackage handle. Phase 8b clean-cut
+// extraction (2026-05-22).
+func (s *Store) Leads() *leads.Store { return s.leads }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -230,6 +242,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
+	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	return s, nil
 }
 
@@ -279,6 +292,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
+	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	return s, nil
 }
 

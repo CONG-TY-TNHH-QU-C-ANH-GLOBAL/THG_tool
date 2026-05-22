@@ -155,7 +155,7 @@ func (h *Handler) deleteOutbound(c *fiber.Ctx) error {
 
 func (h *Handler) deleteAllOutboundComments(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	count, err := h.db.DeleteAllOutboundCommentsForOrg(orgID)
+	count, err := h.db.Leads().DeleteAllOutboundCommentsForOrg(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -165,7 +165,7 @@ func (h *Handler) deleteAllOutboundComments(c *fiber.Ctx) error {
 
 func (h *Handler) deleteAllOutboundPosts(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	count, err := h.db.DeleteAllOutboundPostsForOrg(orgID)
+	count, err := h.db.Leads().DeleteAllOutboundPostsForOrg(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

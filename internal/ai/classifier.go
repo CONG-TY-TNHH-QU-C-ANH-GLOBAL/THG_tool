@@ -53,9 +53,9 @@ func (c *Classifier) ClassifyBatch(ctx context.Context, posts []models.Post) ([]
 
 	// Use business_industry as the niche label; fall back to active_niche for legacy compat
 	activeNiche := ""
-	if n, err := c.db.GetContext("business_industry"); err == nil && n != "" {
+	if n, err := c.db.Leads().GetContext("business_industry"); err == nil && n != "" {
 		activeNiche = n
-	} else if n, err := c.db.GetContext("active_niche"); err == nil && n != "" {
+	} else if n, err := c.db.Leads().GetContext("active_niche"); err == nil && n != "" {
 		activeNiche = n
 	}
 
@@ -74,7 +74,7 @@ func (c *Classifier) ClassifyBatch(ctx context.Context, posts []models.Post) ([]
 
 	// Save leads to database
 	for i := range leads {
-		if _, err := c.db.InsertLead(&leads[i]); err != nil {
+		if _, err := c.db.Leads().InsertLead(&leads[i]); err != nil {
 			log.Printf("[AI] Save lead error: %v", err)
 		}
 	}
@@ -86,7 +86,7 @@ func (c *Classifier) ClassifyBatch(ctx context.Context, posts []models.Post) ([]
 // buildDynamicSystemPrompt creates a classifier prompt from the stored BusinessProfile.
 // Fully generic — works for any industry. No hardcoded niches.
 func (c *Classifier) buildDynamicSystemPrompt() string {
-	userCtx, _ := c.db.GetAllContext()
+	userCtx, _ := c.db.Leads().GetAllContext()
 	profile := ProfileFromContext(userCtx)
 
 	var sb strings.Builder

@@ -210,7 +210,7 @@ func (h *Handler) refreshDataSourcesContext(orgID int64) error {
 		}
 		b.WriteString(fmt.Sprintf("## %s (%s)\n%s\n\n", src.Name, src.Type, src.Summary))
 	}
-	return h.deps.DB.SetContext(orgContextKey(orgID, "data_sources_summary"), strings.TrimSpace(b.String()))
+	return h.deps.DB.Leads().SetContext(orgContextKey(orgID, "data_sources_summary"), strings.TrimSpace(b.String()))
 }
 
 func googleSheetCSVURL(raw string) (string, error) {

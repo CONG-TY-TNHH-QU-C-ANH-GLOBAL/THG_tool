@@ -51,7 +51,7 @@ func TestQueueOutboundForOrgIgnoresLegacyOptInPolicy(t *testing.T) {
 	// Even if some legacy code sets outbound_mode='draft', the queue
 	// MUST still land at approved — the policy is dead in autonomous-
 	// first mode.
-	if err := db.SetContext("org:1:outbound_mode", "draft"); err != nil {
+	if err := db.Leads().SetContext("org:1:outbound_mode", "draft"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
@@ -73,7 +73,7 @@ func TestQueueOutboundForOrgIgnoresLegacyOptInPolicy(t *testing.T) {
 
 func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	db := newTestStore(t)
-	if err := db.SetContext("org:1:outbound_mode", "auto"); err != nil {
+	if err := db.Leads().SetContext("org:1:outbound_mode", "auto"); err != nil {
 		t.Fatal(err)
 	}
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
@@ -135,8 +135,8 @@ func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 // has any effect on the queued status.
 func TestQueueOutboundForOrgIgnoresGlobalAutoCommentMode(t *testing.T) {
 	db := newTestStore(t)
-	_ = db.SetContext("auto_comment_mode", "true")
-	_ = db.SetContext("org:1:auto_comment_mode", "true")
+	_ = db.Leads().SetContext("auto_comment_mode", "true")
+	_ = db.Leads().SetContext("org:1:auto_comment_mode", "true")
 
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID:     1,
@@ -229,7 +229,7 @@ func TestQueueOutboundForOrgConcurrentRaceLastResortUnique(t *testing.T) {
 func queueApprovedRow(t *testing.T, db *Store, orgID int64, target string) int64 {
 	t.Helper()
 	// Org must be in auto mode for the queue to land directly at approved.
-	if err := db.SetContext(fmt.Sprintf("org:%d:outbound_mode", orgID), "auto"); err != nil {
+	if err := db.Leads().SetContext(fmt.Sprintf("org:%d:outbound_mode", orgID), "auto"); err != nil {
 		t.Fatalf("set auto mode: %v", err)
 	}
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{

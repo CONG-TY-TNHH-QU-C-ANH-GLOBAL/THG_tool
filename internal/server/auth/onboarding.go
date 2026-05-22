@@ -170,7 +170,7 @@ func (h *Handler) onboardingSetup(c *fiber.Ctx) error {
 		if value == "" {
 			continue
 		}
-		if err := h.deps.DB.SetContext(fmt.Sprintf("org:%d:%s", orgID, key), value); err != nil {
+		if err := h.deps.DB.Leads().SetContext(fmt.Sprintf("org:%d:%s", orgID, key), value); err != nil {
 			log.Printf("[Onboarding] could not persist profile field %s for org %d: %v", key, orgID, err)
 		}
 	}

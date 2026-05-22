@@ -108,7 +108,7 @@ func (h *Handler) refreshPrivateFilesContext(orgID int64) {
 		}
 		b.WriteString("\n")
 	}
-	_ = h.deps.DB.SetContext(key, strings.TrimSpace(b.String()))
+	_ = h.deps.DB.Leads().SetContext(key, strings.TrimSpace(b.String()))
 }
 
 func (h *Handler) autoflowDeleteFile(c *fiber.Ctx) error {

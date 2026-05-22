@@ -107,14 +107,14 @@ func orgContextKey(orgID int64, name string) string {
 
 func (h *Handler) getBusinessContext(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	files, _ := h.deps.DB.GetContext(orgContextKey(orgID, "private_files_summary"))
-	sources, _ := h.deps.DB.GetContext(orgContextKey(orgID, "data_sources_summary"))
+	files, _ := h.deps.DB.Leads().GetContext(orgContextKey(orgID, "private_files_summary"))
+	sources, _ := h.deps.DB.Leads().GetContext(orgContextKey(orgID, "data_sources_summary"))
 	resp := fiber.Map{
 		"private_files": files,
 		"data_sources":  sources,
 	}
 	for _, key := range businessCalibrationKeys() {
-		value, _ := h.deps.DB.GetContext(orgContextKey(orgID, key))
+		value, _ := h.deps.DB.Leads().GetContext(orgContextKey(orgID, key))
 		resp[key] = value
 	}
 	return c.JSON(resp)
@@ -161,7 +161,7 @@ func (h *Handler) updateBusinessContext(c *fiber.Ctx) error {
 		values["business_profile"] = buildBusinessCalibrationSummary(values)
 	}
 	for _, key := range businessCalibrationKeys() {
-		if err := h.deps.DB.SetContext(orgContextKey(orgID, key), values[key]); err != nil {
+		if err := h.deps.DB.Leads().SetContext(orgContextKey(orgID, key), values[key]); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	}

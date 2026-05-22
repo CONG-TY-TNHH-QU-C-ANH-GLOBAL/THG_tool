@@ -9,7 +9,7 @@ import (
 )
 
 func (a *Agent) loadUserContext() map[string]string {
-	ctx, err := a.db.GetAllContext()
+	ctx, err := a.db.Leads().GetAllContext()
 	if err != nil {
 		return map[string]string{}
 	}
@@ -26,7 +26,7 @@ func (a *Agent) learnFromPrompt(prompt string) {
 	searchKeywords := []string{"tìm", "cào", "quét", "scan", "scrape", "tệp khách", "lead"}
 	for _, kw := range searchKeywords {
 		if strings.Contains(lower, kw) {
-			_ = a.db.SetContext("last_search_intent", prompt)
+			_ = a.db.Leads().SetContext("last_search_intent", prompt)
 			break
 		}
 	}
@@ -35,7 +35,7 @@ func (a *Agent) learnFromPrompt(prompt string) {
 	nicheKeywords := []string{"lĩnh vực", "ngành", "niche", "chuyên về", "kinh doanh", "bán hàng", "dịch vụ"}
 	for _, kw := range nicheKeywords {
 		if strings.Contains(lower, kw) {
-			_ = a.db.SetContext("last_niche_prompt", prompt)
+			_ = a.db.Leads().SetContext("last_niche_prompt", prompt)
 			break
 		}
 	}

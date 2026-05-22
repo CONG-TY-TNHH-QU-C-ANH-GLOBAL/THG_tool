@@ -124,7 +124,7 @@ var fingerprintTmpl = template.Must(template.New("fp").Parse(`
   // ── Canvas noise ───────────────────────────────────────────────────────────
   const _toDataURL = HTMLCanvasElement.prototype.toDataURL;
   HTMLCanvasElement.prototype.toDataURL = function(type, q) {
-    const ctx2d = this.getContext('2d');
+    const ctx2d = this.Leads().GetContext('2d');
     if (ctx2d) {
       const imgd = ctx2d.getImageData(0,0,1,1);
       imgd.data[0] = Math.max(0, imgd.data[0] + Math.floor({{.CanvasNoise}} * 255));

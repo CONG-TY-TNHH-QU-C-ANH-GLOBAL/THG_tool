@@ -21,7 +21,7 @@ func TestLeadEngagement_UntouchedIsPriority(t *testing.T) {
 
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/A", "https://facebook.com/profile/L", "")
 
-	state, err := db.GetLeadEngagement(ctx, 1, leadID)
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 		t.Fatalf("mark verified: %v", err)
 	}
 
-	state, err := db.GetLeadEngagement(ctx, 1, leadID)
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestLeadEngagement_FailedAttemptsAreNotTouches(t *testing.T) {
 
 	// At this point engagement should be UNTOUCHED — the action is still
 	// in-flight, no verification has happened.
-	state, err := db.GetLeadEngagement(ctx, 1, leadID)
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement (queued): %v", err)
 	}
@@ -132,7 +132,7 @@ func TestLeadEngagement_FailedAttemptsAreNotTouches(t *testing.T) {
 	}
 
 	// Lead is STILL untouched. The screenshot bug must not recur.
-	state, err = db.GetLeadEngagement(ctx, 1, leadID)
+	state, err = db.Leads().GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement (failed): %v", err)
 	}
@@ -185,7 +185,7 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 		t.Fatalf("verify comment: %v", err)
 	}
 
-	state, err := db.GetLeadEngagement(ctx, 1, leadID)
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 		t.Fatalf("verify alice: %v", err)
 	}
 
-	state, err := db.GetLeadEngagement(ctx, 1, leadID)
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
 	if err != nil {
 		t.Fatalf("GetLeadEngagement: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestLeadEngagement_Batch(t *testing.T) {
 		t.Fatalf("verify beta: %v", err)
 	}
 
-	got, err := db.GetLeadEngagementsBatch(ctx, 1, []int64{leadAlpha, leadBeta, leadGamma})
+	got, err := db.Leads().GetLeadEngagementsBatch(ctx, 1, []int64{leadAlpha, leadBeta, leadGamma})
 	if err != nil {
 		t.Fatalf("batch: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestLeadEngagement_BatchNoCrossLeadBleed(t *testing.T) {
 		t.Fatalf("verify 100: %v", err)
 	}
 
-	states, err := db.GetLeadEngagementsBatch(ctx, 1, []int64{leadOne, leadTwo})
+	states, err := db.Leads().GetLeadEngagementsBatch(ctx, 1, []int64{leadOne, leadTwo})
 	if err != nil {
 		t.Fatalf("batch: %v", err)
 	}

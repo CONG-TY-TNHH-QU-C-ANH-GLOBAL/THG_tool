@@ -243,7 +243,7 @@ func orgIntelligenceKeywords(db *store.Store, orgID int64) []string {
 	}
 	var combined strings.Builder
 	for _, key := range []string{"business_profile", "business_industry", "services", "target_customers", "target_signals", "markets", "private_files_summary", "data_sources_summary"} {
-		value, err := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
+		value, err := db.Leads().GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
 		if err == nil && strings.TrimSpace(value) != "" {
 			combined.WriteByte(' ')
 			combined.WriteString(value)
@@ -283,7 +283,7 @@ func orgScoringGuidance(db *store.Store, orgID int64) scoring.Guidance {
 		return scoring.Guidance{}
 	}
 	get := func(key string) string {
-		value, _ := db.GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
+		value, _ := db.Leads().GetContext(fmt.Sprintf("org:%d:%s", orgID, key))
 		return strings.TrimSpace(value)
 	}
 	return scoring.Guidance{

@@ -34,7 +34,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 					key = fmt.Sprintf("org:%d:%s", orgID, key)
 				}
 			}
-			if err := db.SetContext(key, value); err != nil {
+			if err := db.Leads().SetContext(key, value); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("da luu context %q", key), nil
@@ -47,7 +47,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			if orgID := argInt64(args, "org_id"); orgID > 0 {
 				key = fmt.Sprintf("org:%d:business_profile", orgID)
 			}
-			if err := db.SetContext(key, desc); err != nil {
+			if err := db.Leads().SetContext(key, desc); err != nil {
 				return "", err
 			}
 			return "da luu mo ta doanh nghiep cho crawler/classifier", nil

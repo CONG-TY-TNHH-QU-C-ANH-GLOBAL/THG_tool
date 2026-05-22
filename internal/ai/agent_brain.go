@@ -276,7 +276,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	if success && firstAction != "" {
 		a.updateMemory(prompt, firstAction, firstArgs)
 		if isCrawlerTool(firstAction) {
-			_ = a.db.SetContext("last_search_intent", prompt)
+			_ = a.db.Leads().SetContext("last_search_intent", prompt)
 		}
 	}
 	return responseText, true

@@ -26,7 +26,7 @@ func normalizeOutboundMode(raw string) string {
 // authenticated workspace member so the UI can render the current state.
 func (h *Handler) getOrgPolicy(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	mode, _ := h.deps.DB.GetContext(orgContextKey(orgID, "outbound_mode"))
+	mode, _ := h.deps.DB.Leads().GetContext(orgContextKey(orgID, "outbound_mode"))
 	return c.JSON(fiber.Map{
 		"outbound_mode": normalizeOutboundMode(mode),
 	})
@@ -43,7 +43,7 @@ func (h *Handler) updateOrgPolicy(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
 	mode := normalizeOutboundMode(body.OutboundMode)
-	if err := h.deps.DB.SetContext(orgContextKey(orgID, "outbound_mode"), mode); err != nil {
+	if err := h.deps.DB.Leads().SetContext(orgContextKey(orgID, "outbound_mode"), mode); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	userID, _ := c.Locals("user_id").(int64)
