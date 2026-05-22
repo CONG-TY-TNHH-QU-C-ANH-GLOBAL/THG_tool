@@ -89,6 +89,14 @@ func (s *Store) DeleteNiche(slug string) error {
 // canQueueOutboundTx instead.
 
 // DeleteAllOutboundCommentsForOrg deletes comment outbox rows only for one tenant.
+//
+// tenant-ok: cross-domain WRITE (leads -> outbound). Admin "clear all
+// comment outbox" operation. Per DOMAINS.md §2.2 cross-domain WRITES
+// should go through an explicit Hooks struct; this is a known
+// topology violation carried over from the pre-Phase-8b world.
+// Tracked for migration alongside the Stage 3 T3 semantic cleanup —
+// the right home for these methods is the outbound subpackage.
+// Single caller: internal/server/agent/outbox_dashboard.go.
 func (s *Store) DeleteAllOutboundCommentsForOrg(orgID int64) (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM outbound_messages WHERE type = 'comment' AND org_id = ?`, orgID)
 	if err != nil {
@@ -101,6 +109,10 @@ func (s *Store) DeleteAllOutboundCommentsForOrg(orgID int64) (int64, error) {
 // DeleteAllOutboundPostsForOrg deletes posting outbox rows (group + profile
 // posts) for one tenant. The Posting dashboard view shows exactly these two
 // types, so "delete all posting" maps to this set.
+//
+// tenant-ok: cross-domain WRITE (leads -> outbound). See
+// DeleteAllOutboundCommentsForOrg for the topology-violation context;
+// these two methods migrate together in the follow-up PR.
 func (s *Store) DeleteAllOutboundPostsForOrg(orgID int64) (int64, error) {
 	res, err := s.db.Exec(
 		`DELETE FROM outbound_messages WHERE type IN ('group_post','profile_post') AND org_id = ?`,

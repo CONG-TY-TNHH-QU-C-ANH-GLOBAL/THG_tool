@@ -309,14 +309,7 @@ The system depends on certain tables being append-only so projections can re-der
 |-------|-----------------|---------------------|
 | `action_ledger` | coordination only, INSERT-only | 3 UPDATE statements: `MarkActionLedgerOutcome`, `MarkActionLedgerOutcomeByOutbound`, `ReconcileEngagement`. The first two are part of the queue→execute lifecycle (outcome flips from 'queued' to 'succeeded'/'failed' on finalize). The third is reconciliation — explicitly should emit `engagement_revoked` events instead. |
 
-**Why we ship the wave with these violations carried forward**: Phase 5B mandate from the user was "preserve byte-for-byte". Fixing the append-only invariant is a semantic change (flip from row-mutation to event-emission) that deserves its own design PR — `specs/APPEND_ONLY_LEDGER_MIGRATION.md` should propose:
-
-1. Add `engagement_revoked` row type (action_type = 'engagement_revoked', target_outbound_id = N).
-2. `MarkActionLedgerOutcomeByOutbound` becomes `RecordOutcomeForOutbound` which INSERTs a `outcome_classified` event.
-3. `ReconcileEngagement` emits `engagement_revoked` instead of UPDATE.
-4. Engagement projection logic re-derives state from event sequence (most-recent-wins by `performed_at`).
-
-That migration is **Stage 3.5** — earned after the topology doc + L2 CI enforcement land. Not blocking on the topology PR.
+**Why we ship the wave with these violations carried forward**: Phase 5B mandate from the user was "preserve byte-for-byte". Fixing the append-only invariant is a semantic change (flip from row-mutation to event-emission). The migration design landed as [specs/APPEND_ONLY_LEDGER_MIGRATION.md](APPEND_ONLY_LEDGER_MIGRATION.md) — 3-PR staged plan (additive schema → reader migration → writer cutover). Implementation is queued; the design itself unblocks Stage 3 §5 because the path forward is documented + reviewable.
 
 **Detection**: §6.4 grep gate tracks `UPDATE action_ledger | DELETE FROM action_ledger` count against a baseline of 3. Any new violation fails CI; lowering the count requires manually dropping the baseline.
 
