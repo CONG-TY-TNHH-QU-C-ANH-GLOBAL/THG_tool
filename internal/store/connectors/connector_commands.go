@@ -1,5 +1,5 @@
 // Domain: connectors (see internal/store/DOMAINS.md)
-package store
+package connectors
 
 import (
 	"database/sql"

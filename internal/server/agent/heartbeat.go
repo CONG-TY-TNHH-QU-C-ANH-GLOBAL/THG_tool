@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	serverorg "github.com/thg/scraper/internal/server/org"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/connectors"
 )
 
 // agentHeartbeat is a lightweight ping for connection health checks.
@@ -44,7 +45,7 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 	if body.Version == "" {
 		body.Version = c.Get("X-Agent-Version")
 	}
-	presence := store.AgentPresence{
+	presence := connectors.AgentPresence{
 		Hostname:          body.Hostname,
 		OS:                body.OS,
 		Version:           body.Version,
@@ -61,7 +62,7 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		ChromeError:       body.ChromeError,
 	}
 	clampPresenceFields(&presence)
-	_ = h.db.UpdateAgentPresence(agentID, presence)
+	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 	return c.JSON(fiber.Map{
 		"status":       "ok",
 		"connector_id": agentID,
@@ -94,7 +95,7 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 	if status == "" {
 		status = browsergateway.StreamChromeNotConnected
 	}
-	presence := store.AgentPresence{
+	presence := connectors.AgentPresence{
 		AssignedAccountID: body.AccountID,
 		CurrentURL:        body.CurrentURL,
 		FBUserID:          body.FBUserID,
@@ -105,7 +106,7 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		ChromeError:       body.ChromeError,
 	}
 	clampPresenceFields(&presence)
-	_ = h.db.UpdateAgentPresence(agentID, presence)
+	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 	if body.AccountID > 0 && orgID > 0 {
 		acc, err := h.db.GetAccountForOrg(body.AccountID, orgID)
 		if err != nil || acc == nil {
@@ -157,7 +158,7 @@ func (h *Handler) agentBrowserTargets(c *fiber.Ctx) error {
 	if _, err := store.NewAppStore(h.db); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	targets, err := h.db.ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID)
+	targets, err := h.db.Connectors().ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -165,7 +166,7 @@ func (h *Handler) agentBrowserTargets(c *fiber.Ctx) error {
 		if err := EnsureAssignedLocalBrowserTarget(h.db, c.Context(), orgID, assignedAccountID); err != nil {
 			log.Printf("[AgentTargets] auto-bootstrap failed org_id=%d agent_id=%d account_id=%d: %v",
 				orgID, agentID, assignedAccountID, err)
-		} else if refreshed, err := h.db.ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID); err == nil {
+		} else if refreshed, err := h.db.Connectors().ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID); err == nil {
 			targets = refreshed
 		}
 	}
@@ -261,10 +262,10 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 	if streamStatus == "" {
 		streamStatus = browsergateway.StreamConnectorOnline
 	}
-	if err := h.db.UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, body.FBDisplayName, body.FBUsername, body.FBProfileURL, streamStatus, body.ChromeError); err != nil {
+	if err := h.db.Connectors().UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, body.FBDisplayName, body.FBUsername, body.FBProfileURL, streamStatus, body.ChromeError); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	presence := store.AgentPresence{
+	presence := connectors.AgentPresence{
 		CurrentURL:    body.CurrentURL,
 		FBUserID:      body.FBUserID,
 		FBDisplayName: body.FBDisplayName,
@@ -274,7 +275,7 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 		ChromeError:   body.ChromeError,
 	}
 	clampPresenceFields(&presence)
-	_ = h.db.UpdateAgentPresence(agentID, presence)
+	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 
 	if err := serverorg.ApplyConnectorIdentity(h.db, c.Context(), serverorg.ConnectorIdentitySnapshot{
 		AccountID:     body.AccountID,
@@ -294,8 +295,8 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 	// Once Facebook login is confirmed, tell the extension to run in background so
 	// the user observes automation via the dashboard BrowserView, not the raw tab.
 	if strings.EqualFold(streamStatus, browsergateway.StreamFacebookLoggedIn) &&
-		!h.db.HasRecentConnectorCommand(orgID, body.AccountID, "window_control", 30*time.Minute) {
-		_, _ = h.db.CreateConnectorCommand(orgID, body.AccountID, agentID, 0, "window_control", `{"action":"minimize"}`)
+		!h.db.Connectors().HasRecentConnectorCommand(orgID, body.AccountID, "window_control", 30*time.Minute) {
+		_, _ = h.db.Connectors().CreateConnectorCommand(orgID, body.AccountID, agentID, 0, "window_control", `{"action":"minimize"}`)
 	}
 
 	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})

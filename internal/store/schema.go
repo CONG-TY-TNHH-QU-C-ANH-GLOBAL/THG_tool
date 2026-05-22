@@ -1,7 +1,10 @@
 // Domain: infra (see internal/store/DOMAINS.md)
 package store
 
-import "github.com/thg/scraper/internal/store/prompts"
+import (
+	"github.com/thg/scraper/internal/store/connectors"
+	"github.com/thg/scraper/internal/store/prompts"
+)
 
 // schemaBootstrapVersion is the marker version migrate() writes at
 // the end of a successful run. Bump this any time migrate()'s body
@@ -902,7 +905,7 @@ func (s *Store) migrate() error {
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_source_url ON leads(source_url) WHERE source_url != ''`)
 
 	// Self-healing selector cache (LLM Vision updates this when FB changes UI)
-	s.initSelectorCache()
+	connectors.InitSelectorCache(s.db)
 
 	// AutoFlow: per-user KPI metrics
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS staff_kpi (

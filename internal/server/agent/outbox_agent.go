@@ -72,7 +72,7 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 		if assignedAccountID > 0 && msg.AccountID != assignedAccountID {
 			continue
 		}
-		ownsStream, err := h.db.ConnectorOwnsAccountStream(orgID, agentID, msg.AccountID)
+		ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, msg.AccountID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

@@ -78,7 +78,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	if acc, err := h.db.GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}
-	ownsStream, err := h.db.ConnectorOwnsAccountStream(orgID, agentID, body.AccountID)
+	ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, body.AccountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

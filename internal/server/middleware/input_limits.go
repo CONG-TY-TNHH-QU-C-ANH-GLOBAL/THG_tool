@@ -3,7 +3,7 @@ package middleware
 import (
 	"strings"
 
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/connectors"
 )
 
 // Connector heartbeat / screenshot / chrome-status payloads come from
@@ -47,7 +47,7 @@ const (
 
 // ClampPresenceFields enforces upper bounds on every connector-supplied field
 // before agent presence is persisted.
-func ClampPresenceFields(p *store.AgentPresence) {
+func ClampPresenceFields(p *connectors.AgentPresence) {
 	p.Hostname = TruncateRune(p.Hostname, limConnectorHostname)
 	p.OS = TruncateRune(p.OS, limConnectorOS)
 	p.Version = TruncateRune(p.Version, limConnectorVersion)

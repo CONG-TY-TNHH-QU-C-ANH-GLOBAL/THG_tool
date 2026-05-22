@@ -1,5 +1,7 @@
-// Domain: identities (see internal/store/DOMAINS.md)
-package store
+// Domain: connectors (see internal/store/DOMAINS.md).
+// Note: reclassified from identities -> connectors in Phase 7
+// (2026-05-22) — every type + method here is connector-domain.
+package connectors
 
 import (
 	"crypto/rand"

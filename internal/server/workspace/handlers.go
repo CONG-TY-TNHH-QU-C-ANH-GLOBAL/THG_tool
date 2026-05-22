@@ -15,6 +15,7 @@ import (
 	serveragent "github.com/thg/scraper/internal/server/agent"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/connectors"
 )
 
 // workspaceList returns all Facebook accounts with their live browser status.
@@ -205,7 +206,7 @@ func (h *Handler) localConnectorAvailabilityForUser(orgID, userID, accountID int
 	if orgID <= 0 {
 		return false, false
 	}
-	connectors, err := h.db.ListLocalConnectors(orgID)
+	connectors, err := h.db.Connectors().ListLocalConnectors(orgID)
 	if err != nil {
 		return false, false
 	}
@@ -225,7 +226,7 @@ func (h *Handler) localConnectorAvailabilityForUser(orgID, userID, accountID int
 	return hasAny, hasOnline
 }
 
-func isDashboardStreamConnector(conn store.AgentToken) bool {
+func isDashboardStreamConnector(conn connectors.AgentToken) bool {
 	if conn.Kind == "extension_connector" || conn.Transport == "chrome_extension" {
 		return true
 	}

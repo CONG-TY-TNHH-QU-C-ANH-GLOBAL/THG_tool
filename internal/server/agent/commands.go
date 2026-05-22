@@ -15,7 +15,7 @@ func (h *Handler) agentConnectorCommands(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
 	}
 	limit := c.QueryInt("limit", 20)
-	commands, err := h.db.ClaimPendingConnectorCommands(orgID, agentID, limit)
+	commands, err := h.db.Connectors().ClaimPendingConnectorCommands(orgID, agentID, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -34,7 +34,7 @@ func (h *Handler) agentConnectorCommandDone(c *fiber.Ctx) error {
 		Error string `json:"error"`
 	}
 	_ = c.BodyParser(&body)
-	if err := h.db.CompleteConnectorCommand(id, agentID, body.Error); err != nil {
+	if err := h.db.Connectors().CompleteConnectorCommand(id, agentID, body.Error); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "command not found"})
 	}
 	return c.JSON(fiber.Map{"status": "ok"})

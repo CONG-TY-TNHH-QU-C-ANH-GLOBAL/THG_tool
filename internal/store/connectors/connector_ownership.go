@@ -1,5 +1,5 @@
 // Domain: connectors (see internal/store/DOMAINS.md)
-package store
+package connectors
 
 // ConnectorOwnsAccountStream reports whether the agent identified by agentID
 // is the legitimate owner of the live browser stream for accountID inside

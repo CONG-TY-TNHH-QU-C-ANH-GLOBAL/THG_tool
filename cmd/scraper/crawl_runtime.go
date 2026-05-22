@@ -101,7 +101,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 }
 
 func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, error) {
-	screen, err := db.GetLatestConnectorScreenshot(orgID, 0)
+	screen, err := db.Connectors().GetLatestConnectorScreenshot(orgID, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -131,7 +131,7 @@ func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task,
 	if task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
 		return "", false, nil
 	}
-	screen, err := db.GetLatestConnectorScreenshot(task.OrgID, task.AccountID)
+	screen, err := db.Connectors().GetLatestConnectorScreenshot(task.OrgID, task.AccountID)
 	if err != nil {
 		return "", true, err
 	}
@@ -228,7 +228,7 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 		return "", fmt.Errorf("marshal connector envelope: %w", envErr)
 	}
 	log.Printf("[ConnectorCrawl] enqueue navigate_to=%s task=%s org=%d account=%d", env.NavigateTo, task.TaskID, task.OrgID, task.AccountID)
-	cmdID, err := db.CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", string(envPayload))
+	cmdID, err := db.Connectors().CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", string(envPayload))
 	if err != nil {
 		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
 		return "", err
@@ -237,7 +237,7 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 }
 
 func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
-	connectors, err := db.ListLocalConnectors(task.OrgID)
+	connectors, err := db.Connectors().ListLocalConnectors(task.OrgID)
 	if err != nil {
 		return 0, err.Error()
 	}

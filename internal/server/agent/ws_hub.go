@@ -8,6 +8,7 @@ import (
 
 	fiberws "github.com/gofiber/websocket/v2"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/connectors"
 )
 
 // ExtClient represents a single connected Chrome Extension instance.
@@ -94,7 +95,7 @@ func (h *WSHub) WSHandler(db *store.Store) func(*fiberws.Conn) {
 		}
 		_ = c.SetReadDeadline(time.Time{})
 
-		tok, err := db.ValidateAgentToken(authMsg.Token)
+		tok, err := db.Connectors().ValidateAgentToken(authMsg.Token)
 		if err != nil || tok == nil {
 			_ = c.WriteJSON(map[string]string{"type": "error", "message": "invalid token"})
 			return
@@ -110,7 +111,7 @@ func (h *WSHub) WSHandler(db *store.Store) func(*fiberws.Conn) {
 		h.register(client)
 		defer h.deregister(client)
 
-		_ = db.UpdateAgentPresence(tok.ID, store.AgentPresence{
+		_ = db.Connectors().UpdateAgentPresence(tok.ID, connectors.AgentPresence{
 			Hostname:          authMsg.Hostname,
 			OS:                authMsg.OS,
 			Version:           authMsg.Version,
@@ -165,9 +166,9 @@ func (h *WSHub) WSHandler(db *store.Store) func(*fiberws.Conn) {
 			if json.Unmarshal(raw, &m) == nil {
 				switch t, _ := m["type"].(string); t {
 				case "pong":
-					_ = db.UpdateAgentHeartbeat(tok.ID, "", "", "")
+					_ = db.Connectors().UpdateAgentHeartbeat(tok.ID, "", "", "")
 				case "status":
-					p := store.AgentPresence{}
+					p := connectors.AgentPresence{}
 					if v, ok := m["current_url"].(string); ok {
 						p.CurrentURL = v
 					}
@@ -177,7 +178,7 @@ func (h *WSHub) WSHandler(db *store.Store) func(*fiberws.Conn) {
 					if v, ok := m["stream_status"].(string); ok {
 						p.StreamStatus = v
 					}
-					_ = db.UpdateAgentPresence(tok.ID, p)
+					_ = db.Connectors().UpdateAgentPresence(tok.ID, p)
 				}
 			}
 		}

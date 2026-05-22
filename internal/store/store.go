@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/store/connectors"
 	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store/dbutil"
@@ -75,6 +76,12 @@ type Store struct {
 	// prompt_routing observability + org_skills/skill_executions.
 	// Phase 9 clean-cut extraction (2026-05-22). No bridge wrappers.
 	prompts *prompts.Store
+
+	// connectors owns the Chrome-extension bridge tables: agent_tokens
+	// (reclassified from identities to connectors in Phase 7),
+	// connector_commands, connector_screenshots, connector_pairing,
+	// selector_cache. Phase 7 clean-cut extraction (2026-05-22).
+	connectors *connectors.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -102,6 +109,10 @@ func (s *Store) Coordination() *coordination.Store { return s.coordination }
 // Prompts exposes the prompts-domain subpackage handle. Phase 9
 // clean-cut extraction (2026-05-22) — no top-level bridge wrappers.
 func (s *Store) Prompts() *prompts.Store { return s.prompts }
+
+// Connectors exposes the connectors-domain subpackage handle. Phase 7
+// clean-cut extraction (2026-05-22) — no top-level bridge wrappers.
+func (s *Store) Connectors() *connectors.Store { return s.connectors }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -183,6 +194,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.crawl = crawl.NewStore(s.db, s.dialect)
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
 	s.prompts = prompts.NewStore(s.db, s.dialect)
+	s.connectors = connectors.NewStore(s.db, s.dialect)
 	return s, nil
 }
 
@@ -228,6 +240,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.crawl = crawl.NewStore(s.db, s.dialect)
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
 	s.prompts = prompts.NewStore(s.db, s.dialect)
+	s.connectors = connectors.NewStore(s.db, s.dialect)
 	return s, nil
 }
 

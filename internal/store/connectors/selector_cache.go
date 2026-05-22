@@ -1,5 +1,5 @@
 // Domain: connectors (see internal/store/DOMAINS.md)
-package store
+package connectors
 
 import (
 	"database/sql"
@@ -18,8 +18,15 @@ type SelectorCache struct {
 	UpdatedAt time.Time
 }
 
-func (s *Store) initSelectorCache() {
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS selector_cache (
+// InitSelectorCache creates the selector_cache table. Called from the
+// parent store's schema bootstrap BEFORE the connectors.Store is
+// constructed, so this is a package-level helper taking *sql.DB.
+// Idempotent.
+//
+// Phase 7: exported (was unexported `initSelectorCache` method) for the
+// cross-package boundary.
+func InitSelectorCache(db *sql.DB) {
+	db.Exec(`CREATE TABLE IF NOT EXISTS selector_cache (
 		id          INTEGER PRIMARY KEY AUTOINCREMENT,
 		action      TEXT NOT NULL,
 		platform    TEXT NOT NULL,

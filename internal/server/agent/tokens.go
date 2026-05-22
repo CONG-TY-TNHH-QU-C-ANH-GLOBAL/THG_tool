@@ -18,7 +18,7 @@ func (h *Handler) agentCreateToken(c *fiber.Ctx) error {
 	}
 	userID, _ := c.Locals("user_id").(int64)
 	orgID, _ := c.Locals("org_id").(int64)
-	id, plain, err := h.db.CreateAgentToken(req.Name, userID, orgID)
+	id, plain, err := h.db.Connectors().CreateAgentToken(req.Name, userID, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -34,7 +34,7 @@ func (h *Handler) agentCreateToken(c *fiber.Ctx) error {
 // GET /api/admin/agent-tokens
 func (h *Handler) agentListTokens(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	tokens, err := h.db.ListAgentTokens(orgID)
+	tokens, err := h.db.Connectors().ListAgentTokens(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -49,7 +49,7 @@ func (h *Handler) agentRevokeToken(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := h.db.RevokeAgentToken(id, orgID); err != nil {
+	if err := h.db.Connectors().RevokeAgentToken(id, orgID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "agent token not found"})
 	}
 	return c.JSON(fiber.Map{"status": "revoked"})

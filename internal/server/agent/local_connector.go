@@ -14,6 +14,7 @@ import (
 	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/connectors"
 )
 
 type LocalConnectorDeps struct {
@@ -51,19 +52,19 @@ func LocalConnectorPairingRoutes(group fiber.Router, deps LocalConnectorDeps, pa
 // GET /api/connectors
 func (h *LocalConnectorHandler) listLocalConnectors(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	connectors, err := h.db.ListLocalConnectors(orgID)
+	conns, err := h.db.Connectors().ListLocalConnectors(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	online := 0
-	for _, conn := range connectors {
+	for _, conn := range conns {
 		if conn.Online {
 			online++
 		}
 	}
 	return c.JSON(fiber.Map{
-		"connectors": connectors,
-		"count":      len(connectors),
+		"connectors": conns,
+		"count":      len(conns),
 		"online":     online,
 	})
 }
@@ -73,11 +74,11 @@ func (h *LocalConnectorHandler) listLocalConnectors(c *fiber.Ctx) error {
 func (h *LocalConnectorHandler) getLocalConnectorScreen(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	accountID := int64(c.QueryInt("account_id", 0))
-	screen, err := h.db.GetLatestConnectorScreenshot(orgID, accountID)
+	screen, err := h.db.Connectors().GetLatestConnectorScreenshot(orgID, accountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	actions, err := h.db.RecentConnectorCommands(orgID, accountID, 8)
+	actions, err := h.db.Connectors().RecentConnectorCommands(orgID, accountID, 8)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -119,19 +120,19 @@ func (h *LocalConnectorHandler) createConnectorInputCommand(c *fiber.Ctx) error 
 		return c.Status(413).JSON(fiber.Map{"error": "input payload is too large"})
 	}
 
-	screen, err := h.db.GetLatestConnectorScreenshot(orgID, req.AccountID)
+	screen, err := h.db.Connectors().GetLatestConnectorScreenshot(orgID, req.AccountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	if screen == nil || screen.AgentID <= 0 {
 		return c.Status(409).JSON(fiber.Map{"error": "local browser stream is not ready for this Facebook account"})
 	}
-	connectors, err := h.db.ListLocalConnectors(orgID)
+	conns, err := h.db.Connectors().ListLocalConnectors(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	inputRelayReady := false
-	for _, connector := range connectors {
+	for _, connector := range conns {
 		if connector.ID == screen.AgentID && connector.Active && localConnectorSupportsInputRelay(connector.CapabilitiesJSON) {
 			inputRelayReady = true
 			break
@@ -143,7 +144,7 @@ func (h *LocalConnectorHandler) createConnectorInputCommand(c *fiber.Ctx) error 
 			"hint":  "reload the latest THG Chrome Extension package, then open the Facebook tab again",
 		})
 	}
-	id, err := h.db.CreateConnectorCommand(orgID, req.AccountID, screen.AgentID, userID, req.Type, string(req.Payload))
+	id, err := h.db.Connectors().CreateConnectorCommand(orgID, req.AccountID, screen.AgentID, userID, req.Type, string(req.Payload))
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -174,7 +175,7 @@ func (h *LocalConnectorHandler) createLocalConnectorPairingCode(c *fiber.Ctx) er
 		}
 	}
 
-	pair, err := h.db.CreateConnectorPairingCode(name, userID, orgID, req.AccountID, 10*time.Minute)
+	pair, err := h.db.Connectors().CreateConnectorPairingCode(name, userID, orgID, req.AccountID, 10*time.Minute)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -219,7 +220,7 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 	if transport == "" {
 		transport = browsergateway.TransportChromeExtension
 	}
-	tok, deviceToken, err := h.db.ClaimConnectorPairingCode(req.Code, store.AgentPresence{
+	tok, deviceToken, err := h.db.Connectors().ClaimConnectorPairingCode(req.Code, connectors.AgentPresence{
 		Hostname:         req.Hostname,
 		OS:               req.OS,
 		Version:          req.Version,
@@ -287,7 +288,7 @@ func (h *LocalConnectorHandler) assignLocalConnectorAccount(c *fiber.Ctx) error 
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
 	}
-	if err := h.db.AssignAgentAccount(int64(id), orgID, req.AccountID); err != nil {
+	if err := h.db.Connectors().AssignAgentAccount(int64(id), orgID, req.AccountID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
 	}
 	if req.AccountID > 0 {
@@ -308,14 +309,14 @@ func (h *LocalConnectorHandler) disconnectLocalConnector(c *fiber.Ctx) error {
 	if err != nil || id <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid connector id"})
 	}
-	connectors, err := h.db.ListLocalConnectors(orgID)
+	conns, err := h.db.Connectors().ListLocalConnectors(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	var found *store.AgentToken
-	for i := range connectors {
-		if connectors[i].ID == int64(id) {
-			found = &connectors[i]
+	var found *connectors.AgentToken
+	for i := range conns {
+		if conns[i].ID == int64(id) {
+			found = &conns[i]
 			break
 		}
 	}
@@ -327,13 +328,13 @@ func (h *LocalConnectorHandler) disconnectLocalConnector(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "you can only disconnect your own device"})
 	}
 	_, _ = store.NewAppStore(h.db)
-	if len(connectors) <= 1 {
-		_ = h.db.StopAllLocalSessionsForOrg(orgID)
+	if len(conns) <= 1 {
+		_ = h.db.Connectors().StopAllLocalSessionsForOrg(orgID)
 	} else {
-		_ = h.db.StopLocalSessionsForConnector(int64(id), orgID)
+		_ = h.db.Connectors().StopLocalSessionsForConnector(int64(id), orgID)
 	}
-	_ = h.db.DeleteConnectorScreenshotsByAgent(int64(id), orgID)
-	if err := h.db.RevokeAgentToken(int64(id), orgID); err != nil {
+	_ = h.db.Connectors().DeleteConnectorScreenshotsByAgent(int64(id), orgID)
+	if err := h.db.Connectors().RevokeAgentToken(int64(id), orgID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
 	}
 	h.db.InsertAuditLog(userID, "local_connector_disconnected", c.IP(), fmt.Sprintf(`{"connector_id":%d}`, id))
