@@ -8,7 +8,7 @@ import (
 )
 
 func (h *Handler) superAdminAccounts(c *fiber.Ctx) error {
-	accounts, err := h.deps.DB.GetAllAccounts(0)
+	accounts, err := h.deps.DB.Identities().GetAllAccounts(0)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -100,7 +100,7 @@ func (h *Handler) superAdminDeleteAccount(c *fiber.Ctx) error {
 	if h.deps.Workspace != nil {
 		h.deps.Workspace.Stop(id)
 	}
-	if err := h.deps.DB.DeleteAccount(id); err != nil {
+	if err := h.deps.DB.Identities().DeleteAccount(id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true})

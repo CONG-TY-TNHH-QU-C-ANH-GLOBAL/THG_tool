@@ -327,7 +327,7 @@ func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGe
 	// Persist the resolved+owner-checked account_id so queueFacebookPostTargets
 	// uses it instead of resolving again.
 	args["account_id"] = accountID
-	target, skipReason := resolveProfilePostTarget(db.GetAccountForOrg, orgID, accountID, argString(args, "profile_url"))
+	target, skipReason := resolveProfilePostTarget(db.Identities().GetAccountForOrg, orgID, accountID, argString(args, "profile_url"))
 	if skipReason != "" {
 		return fmt.Sprintf("queued_profile_post=0 skipped=1 mode=skipped reasons=map[%s:1]", skipReason), nil
 	}
@@ -453,7 +453,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 // false for post / profile_post paths that don't need a logged-in browser.
 func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (int64, error) {
 	if requestedAccountID > 0 {
-		acc, err := db.GetAccountForOrg(requestedAccountID, orgID)
+		acc, err := db.Identities().GetAccountForOrg(requestedAccountID, orgID)
 		if err != nil || acc == nil {
 			return 0, fmt.Errorf("account_id %d not found in org %d", requestedAccountID, orgID)
 		}
@@ -468,13 +468,13 @@ func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, r
 	if userID > 0 {
 		r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
 		if models.IsPlatformRole(r) || r == models.RoleAdmin {
-			candidates, err = db.GetAllAccounts(orgID)
+			candidates, err = db.Identities().GetAllAccounts(orgID)
 		} else {
-			candidates, err = db.GetAccountsForUser(orgID, userID)
+			candidates, err = db.Identities().GetAccountsForUser(orgID, userID)
 		}
 	} else {
 		// Legacy / unauthenticated path: any org account.
-		candidates, err = db.GetAllAccounts(orgID)
+		candidates, err = db.Identities().GetAllAccounts(orgID)
 	}
 	if err != nil {
 		return 0, err

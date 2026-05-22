@@ -108,7 +108,7 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 	if body.AccountID > 0 && orgID > 0 {
-		acc, err := h.db.GetAccountForOrg(body.AccountID, orgID)
+		acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID)
 		if err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
@@ -188,7 +188,7 @@ func browserTargetsHint(h *Handler, orgID, assignedAccountID int64) (string, str
 	if orgID <= 0 {
 		return "no_org", "Chrome Extension chưa được gắn vào workspace nào. Pair lại bằng mã mới từ Browser dashboard."
 	}
-	accounts, _ := h.db.GetAllAccounts(orgID)
+	accounts, _ := h.db.Identities().GetAllAccounts(orgID)
 	hasFacebook := false
 	assignedExists := assignedAccountID <= 0
 	for _, a := range accounts {
@@ -250,7 +250,7 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 		return c.Status(413).JSON(fiber.Map{"error": "screenshot is too large"})
 	}
 
-	acc, err := h.db.GetAccountForOrg(body.AccountID, orgID)
+	acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID)
 	if err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}

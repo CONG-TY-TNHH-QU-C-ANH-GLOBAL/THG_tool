@@ -11,7 +11,7 @@ import (
 
 // RequireAccountForOrg fetches an account scoped to the caller's organization.
 func RequireAccountForOrg(db *store.Store, c *fiber.Ctx, accountID, orgID int64) (*models.Account, error) {
-	acc, err := db.GetAccountForOrg(accountID, orgID)
+	acc, err := db.Identities().GetAccountForOrg(accountID, orgID)
 	if err != nil || acc == nil {
 		return nil, c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
@@ -20,7 +20,7 @@ func RequireAccountForOrg(db *store.Store, c *fiber.Ctx, accountID, orgID int64)
 
 // RequireAccountForOrgWS is the WebSocket-handler variant.
 func RequireAccountForOrgWS(db *store.Store, orgID int64, role string, accountID int64) (*models.Account, bool) {
-	acc, err := db.GetAccount(accountID)
+	acc, err := db.Identities().GetAccount(accountID)
 	if err != nil || acc == nil {
 		return nil, false
 	}
@@ -48,7 +48,7 @@ func AccountOwnerAllowed(acc *models.Account, userID int64, role string) bool {
 // Returns the account and nil on success. On failure, writes a 403/404
 // response and returns a non-nil error the caller should propagate.
 func RequireAccountOwner(db *store.Store, c *fiber.Ctx, accountID, orgID, userID int64, role string) (*models.Account, error) {
-	acc, err := db.GetAccountForOrg(accountID, orgID)
+	acc, err := db.Identities().GetAccountForOrg(accountID, orgID)
 	if err != nil || acc == nil {
 		return nil, c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}

@@ -25,6 +25,7 @@
 | **coordination** | `internal/store/coordination/` | `s.Coordination()` | extracted (Phase 5B, 2026-05-21) — clean-cut, no wrappers. Cross-package writes from outbound flow via Hooks closure pattern. |
 | **prompts** | `internal/store/prompts/` | `s.Prompts()` | extracted (Phase 9, 2026-05-22) — clean-cut, no wrappers. Schema bootstrap exposes `prompts.Migrate(db *sql.DB)` for the pre-subpackage-construction call from `Store.migrate`. |
 | **connectors** | `internal/store/connectors/` | `s.Connectors()` | extracted (Phase 7, 2026-05-22) — clean-cut, no wrappers. agent_tokens.go reclassified from identities domain (every type + method on it was already connector-domain). Schema bootstrap exposes `connectors.InitSelectorCache(db *sql.DB)` for the pre-construction selector_cache table create. |
+| **identities** | `internal/store/identities/` | `s.Identities()` | extracted (Phase 6, 2026-05-22) — clean-cut, no wrappers. Scope-limited to accounts.go + facebook_status.go (the *Store-receiver files). identities.Store holds its own encKey (mirrored from parent via SetEncryptionKey) so cookie encryption stays in-domain. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |

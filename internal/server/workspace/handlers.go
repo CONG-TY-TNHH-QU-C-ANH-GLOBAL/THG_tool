@@ -34,9 +34,9 @@ func (h *Handler) workspaceList(c *fiber.Ctx) error {
 	)
 	r := models.UserRole(role)
 	if models.IsPlatformRole(r) || r == models.RoleAdmin {
-		accounts, err = h.db.GetAllAccounts(orgID)
+		accounts, err = h.db.Identities().GetAllAccounts(orgID)
 	} else {
-		accounts, err = h.db.GetAccountsForUser(orgID, userID)
+		accounts, err = h.db.Identities().GetAccountsForUser(orgID, userID)
 	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -128,7 +128,7 @@ func (h *Handler) workspaceStart(c *fiber.Ctx) error {
 		if err := h.recordLocalBrowserSession(id, orgID, store.SessionStarting, ""); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		_ = h.db.UpdateAccountStatus(id, models.AccountActive)
+		_ = h.db.Identities().UpdateAccountStatus(id, models.AccountActive)
 		return c.JSON(fiber.Map{
 			"status":     "local_starting",
 			"account_id": id,
@@ -157,7 +157,7 @@ func (h *Handler) workspaceStart(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("container start failed: %v", err)})
 	}
 
-	_ = h.db.UpdateAccountStatus(id, models.AccountActive)
+	_ = h.db.Identities().UpdateAccountStatus(id, models.AccountActive)
 	h.recordBrowserSession(id, orgID, inst, "initializing", "")
 	go h.watchWorkspaceReadiness(id, orgID, inst)
 	// Login/checkpoint must remain a VNC-only human flow by default. CDP polling
@@ -287,16 +287,16 @@ func (h *Handler) workspaceNew(c *fiber.Ctx) error {
 		Status:         models.AccountInactive,
 		AssignedUserID: userID,
 	}
-	id, err := h.db.AddAccount(acc)
+	id, err := h.db.Identities().AddAccount(acc)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "create account: " + err.Error()})
 	}
 	if hasOnlineLocalConnector {
 		if err := h.recordLocalBrowserSession(id, orgID, store.SessionStarting, ""); err != nil {
-			_ = h.db.DeleteAccount(id)
+			_ = h.db.Identities().DeleteAccount(id)
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		_ = h.db.UpdateAccountStatus(id, models.AccountActive)
+		_ = h.db.Identities().UpdateAccountStatus(id, models.AccountActive)
 		log.Printf("[Workspace] New local session requested: account %d (%s)", id, name)
 		return c.JSON(fiber.Map{
 			"status":     "local_starting",
@@ -305,18 +305,18 @@ func (h *Handler) workspaceNew(c *fiber.Ctx) error {
 		})
 	}
 	if h.workspace == nil {
-		_ = h.db.DeleteAccount(id)
+		_ = h.db.Identities().DeleteAccount(id)
 		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
 	}
 
 	inst, err := h.workspace.Start(id, name)
 	if err != nil {
-		_ = h.db.DeleteAccount(id)
+		_ = h.db.Identities().DeleteAccount(id)
 		log.Printf("[Workspace] Failed to start new session for account %d: %v", id, err)
 		return c.Status(500).JSON(fiber.Map{"error": "container start failed: " + err.Error()})
 	}
 
-	_ = h.db.UpdateAccountStatus(id, models.AccountActive)
+	_ = h.db.Identities().UpdateAccountStatus(id, models.AccountActive)
 	h.recordBrowserSession(id, orgID, inst, "initializing", "")
 	go h.watchWorkspaceReadiness(id, orgID, inst)
 	// Login/checkpoint must remain a VNC-only human flow by default. CDP polling
@@ -349,7 +349,7 @@ func (h *Handler) workspaceNavigate(c *fiber.Ctx) error {
 func (h *Handler) workspaceSyncSession(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	orgID, _ := c.Locals("org_id").(int64)
-	acc, err := h.db.GetAccountForOrg(id, orgID)
+	acc, err := h.db.Identities().GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
@@ -393,7 +393,7 @@ func (h *Handler) workspaceSyncSession(c *fiber.Ctx) error {
 func (h *Handler) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	orgID, _ := c.Locals("org_id").(int64)
-	acc, err := h.db.GetAccountForOrg(id, orgID)
+	acc, err := h.db.Identities().GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
@@ -441,7 +441,7 @@ func (h *Handler) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		if err := h.persistFacebookBrowserSession(id, orgID, h.workspaceInstanceForAccount(id, acc.Name), fbUserID, cookiesJSON); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-	} else if err := h.db.SetBrowserLoggedIn(id, false); err != nil {
+	} else if err := h.db.Identities().SetBrowserLoggedIn(id, false); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"ok": true, "logged_in": body.LoggedIn, "fb_user_id": fbUserID})
@@ -451,7 +451,7 @@ func (h *Handler) resolveCheckpoint(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID != 0 {
-		if acc, err := h.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
+		if acc, err := h.db.Identities().GetAccountForOrg(id, orgID); err != nil || acc == nil {
 			return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 		}
 	}
@@ -488,7 +488,7 @@ func (h *Handler) listCheckpoints(c *fiber.Ctx) error {
 
 func (h *Handler) getAccounts(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	accounts, err := h.db.GetAllAccounts(orgID)
+	accounts, err := h.db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -536,7 +536,7 @@ func (h *Handler) addAccount(c *fiber.Ctx) error {
 		acc.Status = models.AccountActive
 	}
 
-	id, err := h.db.AddAccount(acc)
+	id, err := h.db.Identities().AddAccount(acc)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -559,12 +559,12 @@ func (h *Handler) updateAccountStatus(c *fiber.Ctx) error {
 	}
 
 	orgID, _ := c.Locals("org_id").(int64)
-	acc, err := h.db.GetAccountForOrg(id, orgID)
+	acc, err := h.db.Identities().GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
 
-	if err := h.db.UpdateAccountStatus(id, models.AccountStatus(req.Status)); err != nil {
+	if err := h.db.Identities().UpdateAccountStatus(id, models.AccountStatus(req.Status)); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -585,11 +585,11 @@ func (h *Handler) updateAccountCookies(c *fiber.Ctx) error {
 	}
 
 	orgID, _ := c.Locals("org_id").(int64)
-	if acc, err := h.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
+	if acc, err := h.db.Identities().GetAccountForOrg(id, orgID); err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
 
-	if err := h.db.UpdateAccountCookies(id, req.CookiesJSON); err != nil {
+	if err := h.db.Identities().UpdateAccountCookies(id, req.CookiesJSON); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -603,11 +603,11 @@ func (h *Handler) deleteAccount(c *fiber.Ctx) error {
 	}
 
 	orgID, _ := c.Locals("org_id").(int64)
-	if acc, err := h.db.GetAccountForOrg(id, orgID); err != nil || acc == nil {
+	if acc, err := h.db.Identities().GetAccountForOrg(id, orgID); err != nil || acc == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
 
-	if err := h.db.DeleteAccount(id); err != nil {
+	if err := h.db.Identities().DeleteAccount(id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 

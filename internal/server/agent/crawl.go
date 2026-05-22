@@ -75,7 +75,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	if body.TaskID == "" || body.AccountID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "task_id and account_id are required"})
 	}
-	if acc, err := h.db.GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
+	if acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}
 	ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, body.AccountID)
@@ -213,7 +213,7 @@ func (h *Handler) agentConnectorCrawlProgress(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "task_id is required"})
 	}
 	if body.AccountID > 0 {
-		if acc, err := h.db.GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
+		if acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
 	}

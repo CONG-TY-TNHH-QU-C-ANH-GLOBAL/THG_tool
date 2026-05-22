@@ -1,5 +1,5 @@
 // Domain: identities (see internal/store/DOMAINS.md)
-package store
+package identities_test
 
 import (
 	"testing"
@@ -10,13 +10,13 @@ import (
 // GetAccountsForUser must filter to a single staff's assigned accounts.
 // Backs the sales-staff account list view per RBAC-1.
 func TestGetAccountsForUser_FiltersToAssigned(t *testing.T) {
-	db := newSharedStore(t, "rbac_accounts.db")
+	_, db := newIdentitiesStore(t, "rbac_accounts.db")
 
 	// Seed 3 accounts: 2 assigned to user 7 (Alice), 1 assigned to user 8 (Bob).
 	seed := []models.Account{
 		{OrgID: 1, Platform: models.PlatformFacebook, Name: "Alice FB 1", AssignedUserID: 7, Status: models.AccountActive},
 		{OrgID: 1, Platform: models.PlatformFacebook, Name: "Alice FB 2", AssignedUserID: 7, Status: models.AccountActive},
-		{OrgID: 1, Platform: models.PlatformFacebook, Name: "Bob FB",     AssignedUserID: 8, Status: models.AccountActive},
+		{OrgID: 1, Platform: models.PlatformFacebook, Name: "Bob FB", AssignedUserID: 8, Status: models.AccountActive},
 	}
 	for i := range seed {
 		if _, err := db.AddAccount(&seed[i]); err != nil {
@@ -65,7 +65,7 @@ func TestGetAccountsForUser_FiltersToAssigned(t *testing.T) {
 }
 
 func TestGetAccountsForUser_InvalidInputs(t *testing.T) {
-	db := newSharedStore(t, "rbac_invalid.db")
+	_, db := newIdentitiesStore(t, "rbac_invalid.db")
 
 	if accs, _ := db.GetAccountsForUser(0, 7); accs != nil {
 		t.Error("org_id=0 must return nil (no leak to other orgs)")

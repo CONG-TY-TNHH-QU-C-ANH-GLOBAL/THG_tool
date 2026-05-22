@@ -153,15 +153,15 @@ func (h *Handler) persistFacebookBrowserSession(accountID, orgID int64, inst *br
 	if fbUserID == "" {
 		return fmt.Errorf("facebook user id is empty")
 	}
-	if err := h.db.SetBrowserLoggedIn(accountID, true, fbUserID); err != nil {
+	if err := h.db.Identities().SetBrowserLoggedIn(accountID, true, fbUserID); err != nil {
 		return err
 	}
 	if cookiesJSON != "" {
-		if err := h.db.UpdateAccountCookies(accountID, cookiesJSON); err != nil {
+		if err := h.db.Identities().UpdateAccountCookies(accountID, cookiesJSON); err != nil {
 			return fmt.Errorf("save cookies failed: %w", err)
 		}
 	}
-	_ = h.db.UpdateAccountStatus(accountID, models.AccountActive)
+	_ = h.db.Identities().UpdateAccountStatus(accountID, models.AccountActive)
 	if appStore, err := store.NewAppStore(h.db); err == nil {
 		sess, err := appStore.GetSession(context.Background(), accountID)
 		if err == nil && sess != nil && sess.Status != "terminated" {
@@ -205,7 +205,7 @@ func (h *Handler) watchWorkspaceLogin(accountID, orgID int64, inst *browserworks
 			if current == nil || current.ContainerID != inst.ContainerID {
 				return
 			}
-			acc, err := h.db.GetAccountForOrg(accountID, orgID)
+			acc, err := h.db.Identities().GetAccountForOrg(accountID, orgID)
 			if err != nil || acc == nil {
 				return
 			}

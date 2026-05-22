@@ -1,14 +1,15 @@
 // Domain: identities (see internal/store/DOMAINS.md)
-package store
+package identities_test
 
 import (
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/identities"
 )
 
 func TestSetAccountFacebookIdentityStoresMetaWithoutEmail(t *testing.T) {
-	db := newSharedStore(t, "identity.db")
+	_, db := newIdentitiesStore(t, "identity.db")
 	id, err := db.AddAccount(&models.Account{
 		OrgID:    1,
 		Platform: models.PlatformFacebook,
@@ -19,7 +20,7 @@ func TestSetAccountFacebookIdentityStoresMetaWithoutEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = db.SetAccountFacebookIdentity(id, "100014197607233", "", FacebookIdentityMeta{
+	err = db.SetAccountFacebookIdentity(id, "100014197607233", "", identities.FacebookIdentityMeta{
 		DisplayName: "David Anh",
 		Username:    "david.anh",
 		ProfileURL:  "https://www.facebook.com/david.anh",
@@ -44,7 +45,7 @@ func TestSetAccountFacebookIdentityStoresMetaWithoutEmail(t *testing.T) {
 }
 
 func TestSetAccountFacebookIdentityRejectsProfileMismatch(t *testing.T) {
-	db := newSharedStore(t, "identity-mismatch.db")
+	_, db := newIdentitiesStore(t, "identity-mismatch.db")
 
 	id, err := db.AddAccount(&models.Account{
 		OrgID:    1,
@@ -55,10 +56,10 @@ func TestSetAccountFacebookIdentityRejectsProfileMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetAccountFacebookIdentity(id, "111", "", FacebookIdentityMeta{DisplayName: "First"}); err != nil {
+	if err := db.SetAccountFacebookIdentity(id, "111", "", identities.FacebookIdentityMeta{DisplayName: "First"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetAccountFacebookIdentity(id, "222", "", FacebookIdentityMeta{DisplayName: "Second"}); err == nil {
+	if err := db.SetAccountFacebookIdentity(id, "222", "", identities.FacebookIdentityMeta{DisplayName: "Second"}); err == nil {
 		t.Fatal("expected profile mismatch error")
 	}
 

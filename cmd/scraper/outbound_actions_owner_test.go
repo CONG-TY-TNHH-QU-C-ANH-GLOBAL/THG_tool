@@ -30,15 +30,15 @@ func TestResolveCallerAccountID(t *testing.T) {
 	//   id=A (Alice, sales, user 7)
 	//   id=B (Bob,   sales, user 8)
 	//   id=C (unassigned)
-	aliceAccID, _ := db.AddAccount(&models.Account{
+	aliceAccID, _ := db.Identities().AddAccount(&models.Account{
 		OrgID: 1, Platform: models.PlatformFacebook, Name: "Alice FB",
 		AssignedUserID: 7, Status: models.AccountActive,
 	})
-	bobAccID, _ := db.AddAccount(&models.Account{
+	bobAccID, _ := db.Identities().AddAccount(&models.Account{
 		OrgID: 1, Platform: models.PlatformFacebook, Name: "Bob FB",
 		AssignedUserID: 8, Status: models.AccountActive,
 	})
-	unassignedID, _ := db.AddAccount(&models.Account{
+	unassignedID, _ := db.Identities().AddAccount(&models.Account{
 		OrgID: 1, Platform: models.PlatformFacebook, Name: "Spare FB",
 		AssignedUserID: 0, Status: models.AccountActive,
 	})

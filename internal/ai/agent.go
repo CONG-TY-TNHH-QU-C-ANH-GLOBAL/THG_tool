@@ -221,7 +221,7 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 		mergeEphemeralCrawlTargeting(userContext, prompt)
 	}
 	// Load accounts for AI account mapping
-	accounts, _ := a.db.GetAllAccounts(orgID)
+	accounts, _ := a.db.Identities().GetAllAccounts(orgID)
 
 	// Over-defensive-gating bug fix: when the prompt is self-sufficient
 	// (URL + crawl verb + max_items OR inferred target signals), bypass the

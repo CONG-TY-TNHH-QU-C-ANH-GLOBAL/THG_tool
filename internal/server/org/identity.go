@@ -7,6 +7,7 @@ import (
 	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/identities"
 )
 
 // ConnectorIdentitySnapshot captures everything the connector knows about the
@@ -42,19 +43,19 @@ func ApplyConnectorIdentity(db *store.Store, ctx context.Context, snap Connector
 
 	loggedIn := strings.EqualFold(stream, browsergateway.StreamFacebookLoggedIn) && strings.TrimSpace(snap.FBUserID) != ""
 	if loggedIn {
-		meta := store.FacebookIdentityMeta{
+		meta := identities.FacebookIdentityMeta{
 			DisplayName: snap.FBDisplayName,
 			Username:    snap.FBUsername,
 			ProfileURL:  snap.FBProfileURL,
 		}
-		if err := db.SetAccountFacebookIdentity(snap.AccountID, snap.FBUserID, normalizeFacebookLoginEmail(snap.LoginEmail), meta); err != nil {
+		if err := db.Identities().SetAccountFacebookIdentity(snap.AccountID, snap.FBUserID, normalizeFacebookLoginEmail(snap.LoginEmail), meta); err != nil {
 			return err
 		}
-		_ = db.UpdateAccountStatus(snap.AccountID, models.AccountActive)
+		_ = db.Identities().UpdateAccountStatus(snap.AccountID, models.AccountActive)
 		return nil
 	}
 	if store.LocalFacebookNotReady(stream) {
-		_ = db.SetBrowserLoggedInState(snap.AccountID, false)
+		_ = db.Identities().SetBrowserLoggedInState(snap.AccountID, false)
 	}
 	return nil
 }

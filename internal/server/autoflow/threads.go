@@ -92,7 +92,7 @@ func (h *Handler) autoflowSendMessage(c *fiber.Ctx) error {
 
 func (h *Handler) autoflowFacebookStatus(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	summary := h.deps.DB.GetFacebookStatusForOrg(orgID)
+	summary := h.deps.DB.Identities().GetFacebookStatusForOrg(orgID)
 	return c.JSON(fiber.Map{
 		"connected":   summary.Connected,
 		"account":     summary.Account,
@@ -242,7 +242,7 @@ func (h *Handler) billingSummary(c *fiber.Ctx) error {
 	}
 	accountCount, _ := h.deps.DB.CountAccountsByOrg(orgID)
 	staff, _ := h.deps.DB.GetStaffWithKPI(orgID)
-	fb := h.deps.DB.GetFacebookStatusForOrg(orgID)
+	fb := h.deps.DB.Identities().GetFacebookStatusForOrg(orgID)
 	outboxCounts, _ := h.deps.DB.CountOutboundByStatusForOrg(orgID)
 	return c.JSON(fiber.Map{
 		"plan_tier":      org.PlanTier,

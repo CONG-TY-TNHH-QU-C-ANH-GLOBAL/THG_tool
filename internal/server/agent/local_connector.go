@@ -107,7 +107,7 @@ func (h *LocalConnectorHandler) createConnectorInputCommand(c *fiber.Ctx) error 
 	if req.AccountID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "account_id is required"})
 	}
-	if acc, err := h.db.GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
+	if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 	}
 	if len(req.Payload) == 0 || string(req.Payload) == "null" {
@@ -170,7 +170,7 @@ func (h *LocalConnectorHandler) createLocalConnectorPairingCode(c *fiber.Ctx) er
 		name = fmt.Sprintf("%s #%d", browsergateway.DefaultChromeConnectorName, userID)
 	}
 	if req.AccountID > 0 {
-		if acc, err := h.db.GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
+		if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
 	}
@@ -284,7 +284,7 @@ func (h *LocalConnectorHandler) assignLocalConnectorAccount(c *fiber.Ctx) error 
 		return c.Status(400).JSON(fiber.Map{"error": "invalid connector id"})
 	}
 	if req.AccountID > 0 {
-		if acc, err := h.db.GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
+		if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
 		}
 	}
@@ -357,7 +357,7 @@ func EnsureAssignedLocalBrowserTarget(db *store.Store, ctx context.Context, orgI
 	if orgID <= 0 || accountID <= 0 {
 		return nil
 	}
-	acc, err := db.GetAccountForOrg(accountID, orgID)
+	acc, err := db.Identities().GetAccountForOrg(accountID, orgID)
 	if err != nil {
 		return err
 	}

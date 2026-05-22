@@ -112,7 +112,7 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, er
 		time.Since(screen.UpdatedAt) <= 5*time.Minute {
 		return screen.AccountID, nil
 	}
-	accounts, err := db.GetAllAccounts(orgID)
+	accounts, err := db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return 0, err
 	}
@@ -244,7 +244,7 @@ func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, strin
 	if len(connectors) == 0 {
 		return 0, "no Chrome Extension connector paired"
 	}
-	acc, _ := db.GetAccountForOrg(task.AccountID, task.OrgID)
+	acc, _ := db.Identities().GetAccountForOrg(task.AccountID, task.OrgID)
 	var reasons []string
 	for _, conn := range connectors {
 		if !conn.Online {

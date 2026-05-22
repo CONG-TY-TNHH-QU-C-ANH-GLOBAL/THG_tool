@@ -14,6 +14,7 @@ import (
 	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store/dbutil"
+	"github.com/thg/scraper/internal/store/identities"
 	"github.com/thg/scraper/internal/store/knowledge"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
@@ -82,6 +83,12 @@ type Store struct {
 	// connector_commands, connector_screenshots, connector_pairing,
 	// selector_cache. Phase 7 clean-cut extraction (2026-05-22).
 	connectors *connectors.Store
+
+	// identities owns the accounts table (FB account identity records
+	// with encrypted cookies) + facebook_status summary. Phase 6
+	// clean-cut extraction (2026-05-22). encKey is mirrored from
+	// top-level Store at construction + via SetEncryptionKey.
+	identities *identities.Store
 }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
@@ -113,6 +120,10 @@ func (s *Store) Prompts() *prompts.Store { return s.prompts }
 // Connectors exposes the connectors-domain subpackage handle. Phase 7
 // clean-cut extraction (2026-05-22) — no top-level bridge wrappers.
 func (s *Store) Connectors() *connectors.Store { return s.connectors }
+
+// Identities exposes the identities-domain subpackage handle. Phase 6
+// clean-cut extraction (2026-05-22) — no top-level bridge wrappers.
+func (s *Store) Identities() *identities.Store { return s.identities }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -195,6 +206,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
 	s.prompts = prompts.NewStore(s.db, s.dialect)
 	s.connectors = connectors.NewStore(s.db, s.dialect)
+	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
 	return s, nil
 }
 
@@ -241,6 +253,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.knowledge = knowledge.NewStore(s.db, s.dialect)
 	s.prompts = prompts.NewStore(s.db, s.dialect)
 	s.connectors = connectors.NewStore(s.db, s.dialect)
+	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
 	return s, nil
 }
 
@@ -302,6 +315,11 @@ func (s *Store) Dialect() Dialect { return s.dialect }
 
 // SetEncryptionKey sets the AES-256-GCM key used to encrypt sensitive DB fields
 // (cookies_json, proxy_url). Must be called before any account operations.
+// Propagates to the identities subpackage so its accounts methods can
+// encrypt without reaching back into the parent.
 func (s *Store) SetEncryptionKey(key string) {
 	s.encKey = key
+	if s.identities != nil {
+		s.identities.SetEncryptionKey(key)
+	}
 }

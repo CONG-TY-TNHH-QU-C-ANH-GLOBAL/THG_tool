@@ -7,6 +7,7 @@ import (
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/identities"
 )
 
 func newAgentPolicyTestStore(t *testing.T) *store.Store {
@@ -25,7 +26,7 @@ func TestDeterministicOutboundHonorsOrgAutoPolicy(t *testing.T) {
 	if err := db.SetContext("org:42:outbound_mode", "auto"); err != nil {
 		t.Fatal(err)
 	}
-	accountID, err := db.AddAccount(&models.Account{
+	accountID, err := db.Identities().AddAccount(&models.Account{
 		OrgID:    orgID,
 		Platform: models.PlatformFacebook,
 		Name:     "Ready Facebook",
@@ -34,7 +35,7 @@ func TestDeterministicOutboundHonorsOrgAutoPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetAccountFacebookIdentity(accountID, "1001", "", store.FacebookIdentityMeta{DisplayName: "Ready Facebook"}); err != nil {
+	if err := db.Identities().SetAccountFacebookIdentity(accountID, "1001", "", identities.FacebookIdentityMeta{DisplayName: "Ready Facebook"}); err != nil {
 		t.Fatal(err)
 	}
 

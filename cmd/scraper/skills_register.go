@@ -337,7 +337,7 @@ func scaffoldFanpageInboxRun(deps builtinSkillDeps) skills.SkillRun {
 		// Smoke test: confirm the org has at least one logged-in account so
 		// the scaffold message reflects whether the live skill could run.
 		if env.OrgID > 0 && deps.db != nil {
-			if accounts, err := deps.db.GetAllAccounts(env.OrgID); err == nil {
+			if accounts, err := deps.db.Identities().GetAllAccounts(env.OrgID); err == nil {
 				ready := 0
 				for _, a := range accounts {
 					if a.Platform == models.PlatformFacebook && a.BrowserLoggedIn && a.Status == models.AccountActive {

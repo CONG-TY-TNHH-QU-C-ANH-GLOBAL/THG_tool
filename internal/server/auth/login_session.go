@@ -116,7 +116,7 @@ func (h *Handler) startLoginSession(c *fiber.Ctx) error {
 		}
 	}
 
-	account, err := h.deps.DB.GetAccount(id)
+	account, err := h.deps.DB.Identities().GetAccount(id)
 	if err != nil || account == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
 	}
@@ -320,10 +320,10 @@ func (h *Handler) captureLoginSession(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "serialization failed"})
 	}
 
-	if err := h.deps.DB.UpdateAccountCookies(id, string(cookiesJSON)); err != nil {
+	if err := h.deps.DB.Identities().UpdateAccountCookies(id, string(cookiesJSON)); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "save failed: " + err.Error()})
 	}
-	_ = h.deps.DB.UpdateAccountStatus(id, models.AccountActive)
+	_ = h.deps.DB.Identities().UpdateAccountStatus(id, models.AccountActive)
 
 	// Kill session
 	sess.cancel()
