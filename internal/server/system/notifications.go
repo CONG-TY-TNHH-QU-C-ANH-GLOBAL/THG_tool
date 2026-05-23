@@ -180,6 +180,10 @@ func crawlExitReasonLabel(reason string) string {
 		return "đã cuộn tiếp nhưng không thấy bài mới"
 	case "pass_exhausted":
 		return "đã hết số vòng cuộn an toàn"
+	case "time_budget_exhausted":
+		return "đã hết thời gian quy định cho phiên crawl (5 phút)"
+	case "cursor_match":
+		return "đã gặp lại bài viết của lượt trước (cursor)"
 	default:
 		return strings.TrimSpace(reason)
 	}
