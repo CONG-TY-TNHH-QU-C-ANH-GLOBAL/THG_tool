@@ -1,6 +1,18 @@
 import type { Metadata } from 'next'
+import { GeistSans } from 'geist/font/sans'
+import { GeistMono } from 'geist/font/mono'
 import './globals.css'
 import { ThemeProvider } from '../components/ThemeProvider'
+
+// The `geist` package (Vercel's official) inlines the font assets at
+// build time so the browser never fetches fonts.googleapis.com at
+// runtime. Keeps the production CSP tight (style-src 'self'
+// 'unsafe-inline' in deploy/nginx.conf) without widening the trust
+// boundary to Google's CDN. The CSS variables flow into tokens.css
+// via --font-sans / --font-mono.
+//
+// Why this package and not next/font/google: Geist isn't shipped via
+// next/font/google in Next 14.2.5 — Vercel distributes it standalone.
 
 export const metadata: Metadata = {
   title: 'AutoFlow | THG',
@@ -9,18 +21,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi" data-density="balanced" suppressHydrationWarning>
-      <head>
-        {/* Geist + Geist Mono are the sole font families per the design
-            system. JetBrains Mono stays as a fallback for code blocks
-            that still benefit from stable OS monospace metrics. */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:ital,wght@0,400;0,500;1,400&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html
+      lang="vi"
+      data-density="balanced"
+      suppressHydrationWarning
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+    >
       <body>
         <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem={false}>
           {children}

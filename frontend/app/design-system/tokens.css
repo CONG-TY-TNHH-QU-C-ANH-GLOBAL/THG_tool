@@ -110,9 +110,16 @@
   /* === TYPE FAMILIES ===
    * Geist + Geist Mono are the ONLY two families. JetBrains Mono kept as
    * fallback for code blocks. The display feel is monospace-led: eyebrow,
-   * field labels, stat values, table heads, filter pills all use mono. */
-  --font-sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+   * field labels, stat values, table heads, filter pills all use mono.
+   *
+   * --font-geist-sans / --font-geist-mono are injected by next/font/google
+   * in app/layout.tsx as classes on <html>. Each variable resolves to a
+   * generated family name pointing at the inlined font asset, so the
+   * browser never fetches fonts.googleapis.com at runtime (keeps the
+   * production CSP tight). The fallback chain after the variable still
+   * triggers if next/font's load fails for any reason. */
+  --font-sans: var(--font-geist-sans), "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* === SEMANTIC TYPE ROLES ===
    * Use as `font: var(--type-h1);` or apply via class names below. */
