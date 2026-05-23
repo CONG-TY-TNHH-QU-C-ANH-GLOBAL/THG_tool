@@ -20,4 +20,9 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Post("/crawl-intents/:id/pause", adminOnly, transitionIntent(deps, crawlstore.IntentStatusPaused))
 	group.Post("/crawl-intents/:id/resume", adminOnly, transitionIntent(deps, crawlstore.IntentStatusActive))
 	group.Post("/crawl-intents/:id/archive", adminOnly, transitionIntent(deps, crawlstore.IntentStatusArchived))
+	// Frequency edit + hard delete. Hard delete is distinct from
+	// archive: the row goes away, not just hidden. Leads already
+	// ingested by the intent are not cascaded — they are org-owned.
+	group.Patch("/crawl-intents/:id/interval", adminOnly, setIntentInterval(deps))
+	group.Delete("/crawl-intents/:id", adminOnly, deleteIntent(deps))
 }

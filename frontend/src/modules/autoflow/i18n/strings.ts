@@ -305,7 +305,14 @@ export interface DashboardStrings {
     pauseCta: string;
     resumeCta: string;
     archiveCta: string;
+    editIntervalCta: string;
+    deleteCta: string;
     confirmArchive: (name: string) => string;
+    confirmDelete: (name: string) => string;
+    promptInterval: (current: number) => string;
+    toastIntervalUpdated: (minutes: number) => string;
+    toastDeleted: (name: string) => string;
+    invalidInterval: string;
     fieldNextRun: string;
     fieldLastRun: string;
     fieldInterval: string;
@@ -612,7 +619,14 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       pauseCta: 'Tạm dừng',
       resumeCta: 'Tiếp tục',
       archiveCta: 'Lưu trữ',
+      editIntervalCta: 'Đổi tần suất',
+      deleteCta: 'Xóa',
       confirmArchive: (name) => `Lưu trữ nhiệm vụ "${name}"? Lịch chạy sẽ ngưng cho tới khi bạn khôi phục.`,
+      confirmDelete: (name) => `Xóa hẳn nhiệm vụ "${name}"? Hành động này KHÔNG thể hoàn tác — dữ liệu lead đã thu thập vẫn giữ lại nhưng nhiệm vụ sẽ biến mất.`,
+      promptInterval: (current) => `Nhập tần suất mới (phút). Hiện tại: ${current}. Tối thiểu 30, tối đa 1440 (24h).`,
+      toastIntervalUpdated: (minutes) => `Đã đổi tần suất sang mỗi ${minutes} phút.`,
+      toastDeleted: (name) => `Đã xóa nhiệm vụ "${name}".`,
+      invalidInterval: 'Tần suất phải là số nguyên hợp lệ.',
       fieldNextRun: 'Lượt kế tiếp',
       fieldLastRun: 'Lượt cuối',
       fieldInterval: 'Tần suất',
@@ -917,7 +931,14 @@ export const STRINGS: Record<Lang, DashboardStrings> = {
       pauseCta: 'Pause',
       resumeCta: 'Resume',
       archiveCta: 'Archive',
+      editIntervalCta: 'Edit frequency',
+      deleteCta: 'Delete',
       confirmArchive: (name) => `Archive mission "${name}"? The schedule stops until you restore it.`,
+      confirmDelete: (name) => `Permanently delete mission "${name}"? This cannot be undone — already-collected leads stay, but the mission itself disappears.`,
+      promptInterval: (current) => `New frequency in minutes. Current: ${current}. Minimum 30, maximum 1440 (24h).`,
+      toastIntervalUpdated: (minutes) => `Frequency updated to every ${minutes} minutes.`,
+      toastDeleted: (name) => `Mission "${name}" deleted.`,
+      invalidInterval: 'Frequency must be a valid integer.',
       fieldNextRun: 'Next run',
       fieldLastRun: 'Last run',
       fieldInterval: 'Frequency',

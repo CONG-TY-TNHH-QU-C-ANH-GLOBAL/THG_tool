@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import {
   archiveMission,
+  deleteMission,
   getCrawlIntents,
   pauseMission,
   resumeMission,
+  updateMissionInterval,
   type CrawlIntent,
 } from '../../services/crawlIntentService';
 import MissionCard from '../missions/MissionCard';
@@ -84,6 +86,27 @@ export default function MissionsView({ orgId, isAdmin }: MissionsViewProps) {
     if (!window.confirm(tm.confirmArchive(intent.name || intent.source_label || intent.source_type))) return;
     void wrap(intent.id, () => archiveMission(intent.id));
   };
+  const handleEditInterval = (intent: CrawlIntent) => {
+    const raw = window.prompt(tm.promptInterval(intent.interval_minutes), String(intent.interval_minutes));
+    if (raw === null) return;
+    const minutes = Number.parseInt(raw.trim(), 10);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      pushToast(tm.invalidInterval, 'error');
+      return;
+    }
+    void wrap(intent.id, async () => {
+      await updateMissionInterval(intent.id, minutes);
+      pushToast(tm.toastIntervalUpdated(minutes), 'ok');
+    });
+  };
+  const handleDelete = (intent: CrawlIntent) => {
+    const label = intent.name || intent.source_label || intent.source_type;
+    if (!window.confirm(tm.confirmDelete(label))) return;
+    void wrap(intent.id, async () => {
+      await deleteMission(intent.id);
+      pushToast(tm.toastDeleted(label), 'ok');
+    });
+  };
 
   const hasIntents = intents.length > 0;
 
@@ -153,6 +176,8 @@ export default function MissionsView({ orgId, isAdmin }: MissionsViewProps) {
               onPause={isAdmin ? handlePause : undefined}
               onResume={isAdmin ? handleResume : undefined}
               onArchive={isAdmin ? handleArchive : undefined}
+              onEditInterval={isAdmin ? handleEditInterval : undefined}
+              onDelete={isAdmin ? handleDelete : undefined}
             />
           ))}
         </div>

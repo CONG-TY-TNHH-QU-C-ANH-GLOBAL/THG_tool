@@ -157,6 +157,53 @@ func createIntent(deps Deps) fiber.Handler {
 	}
 }
 
+// setIntentInterval handles PATCH /crawl-intents/:id/interval. Body:
+// {"interval_minutes": N}. Bounds are enforced inside the store.
+func setIntentInterval(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil || id <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+		}
+		var body struct {
+			IntervalMinutes int `json:"interval_minutes"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		if body.IntervalMinutes <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "interval_minutes phải > 0"})
+		}
+		if err := deps.DB.Crawl().SetIntentInterval(c.Context(), orgID, id, body.IntervalMinutes); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+			}
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "interval_minutes": body.IntervalMinutes})
+	}
+}
+
+// deleteIntent handles DELETE /crawl-intents/:id. Hard delete; the
+// row is removed permanently. Distinct from /archive (soft).
+func deleteIntent(deps Deps) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		orgID, _ := c.Locals("org_id").(int64)
+		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+		if err != nil || id <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+		}
+		if err := deps.DB.Crawl().DeleteIntent(c.Context(), orgID, id); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+			}
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "deleted": true})
+	}
+}
+
 // transitionIntent is the explicit state-transition handler shared by the
 // /pause, /resume, /archive endpoints. The target status is curried by the
 // caller; the body is empty.

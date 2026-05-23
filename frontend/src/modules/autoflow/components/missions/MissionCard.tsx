@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, Pause, Play, Archive } from 'lucide-react';
+import { Clock, Pause, Play, Archive, Pencil, Trash2 } from 'lucide-react';
 import type { CrawlIntent } from '../../services/crawlIntentService';
 import { useLang } from '../../i18n/useLang';
 import type { DashboardStrings } from '../../i18n/strings';
@@ -12,6 +12,8 @@ interface MissionCardProps {
   onPause?: (intent: CrawlIntent) => void;
   onResume?: (intent: CrawlIntent) => void;
   onArchive?: (intent: CrawlIntent) => void;
+  onEditInterval?: (intent: CrawlIntent) => void;
+  onDelete?: (intent: CrawlIntent) => void;
 }
 
 function scheduleLabel(value: string | undefined, tm: DashboardStrings['missionsView'], tc: DashboardStrings['chatView'], locale: string) {
@@ -41,7 +43,7 @@ function statusPill(status: CrawlIntent['status'], tm: DashboardStrings['mission
   }
 }
 
-export default function MissionCard({ intent, variant = 'full', busy, onPause, onResume, onArchive }: MissionCardProps) {
+export default function MissionCard({ intent, variant = 'full', busy, onPause, onResume, onArchive, onEditInterval, onDelete }: MissionCardProps) {
   const { lang, t } = useLang();
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const tm = t.missionsView;
@@ -49,7 +51,7 @@ export default function MissionCard({ intent, variant = 'full', busy, onPause, o
   const isActive = intent.status === 'active';
   const isPaused = intent.status === 'paused';
   const isArchived = intent.status === 'archived';
-  const showActions = variant === 'full' && (onPause || onResume || onArchive);
+  const showActions = variant === 'full' && (onPause || onResume || onArchive || onEditInterval || onDelete);
 
   if (variant === 'compact') {
     return (
@@ -147,9 +149,19 @@ export default function MissionCard({ intent, variant = 'full', busy, onPause, o
               <Play size={12} /> {tm.resumeCta}
             </button>
           )}
+          {onEditInterval && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onEditInterval(intent)} disabled={busy}>
+              <Pencil size={12} /> {tm.editIntervalCta}
+            </button>
+          )}
           {!isArchived && onArchive && (
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => onArchive(intent)} disabled={busy} style={{ color: 'var(--hot)' }}>
               <Archive size={12} /> {tm.archiveCta}
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDelete(intent)} disabled={busy} style={{ color: 'var(--hot)' }}>
+              <Trash2 size={12} /> {tm.deleteCta}
             </button>
           )}
         </div>

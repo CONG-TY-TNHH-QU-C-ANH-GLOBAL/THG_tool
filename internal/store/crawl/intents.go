@@ -257,6 +257,62 @@ func (s *Store) SetIntentStatus(ctx context.Context, orgID, id int64, status str
 	return nil
 }
 
+// SetIntentInterval updates only the schedule frequency on an existing
+// intent. Bounds mirror [normalizeIntent]: [defaultCrawlIntervalMinutes,
+// 24*60]. Also pulls next_run_at earlier when the new interval implies
+// the row should run sooner than its currently-scheduled tick, so the
+// user sees the schedule change reflect in the next tick instead of
+// waiting out the old interval. Returns sql.ErrNoRows if the row does
+// not exist or does not belong to orgID.
+func (s *Store) SetIntentInterval(ctx context.Context, orgID, id int64, minutes int) error {
+	if orgID <= 0 || id <= 0 {
+		return fmt.Errorf("org_id and id are required")
+	}
+	if minutes < defaultCrawlIntervalMinutes {
+		minutes = defaultCrawlIntervalMinutes
+	}
+	if minutes > 24*60 {
+		minutes = 24 * 60
+	}
+	cap := time.Now().UTC().Add(time.Duration(minutes) * time.Minute)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE org_crawl_intents
+		SET interval_minutes = ?,
+		    next_run_at = CASE WHEN next_run_at > ? THEN ? ELSE next_run_at END,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND org_id = ?`,
+		minutes, formatDBTime(cap), formatDBTime(cap), id, orgID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteIntent permanently removes a crawl intent. Distinct from
+// archive: archive keeps the row for audit / future resume; delete
+// drops it. Leads already ingested by the intent are NOT cascaded
+// (they are owned by the org, not the intent). Returns sql.ErrNoRows
+// if the row does not exist or does not belong to orgID.
+func (s *Store) DeleteIntent(ctx context.Context, orgID, id int64) error {
+	if orgID <= 0 || id <= 0 {
+		return fmt.Errorf("org_id and id are required")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM org_crawl_intents WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // UpdateIntentCursor sets the per-intent crawl cursor unconditionally.
 // Callers that want "advance only if newer" semantics should use
 // [Store.AdvanceIntentCursor] instead.

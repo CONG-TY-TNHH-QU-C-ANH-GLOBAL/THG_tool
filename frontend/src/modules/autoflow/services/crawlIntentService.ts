@@ -1,4 +1,4 @@
-import { get, post, put } from './api';
+import { del, get, patch, post, put } from './api';
 
 export interface CrawlIntent {
   id: number;
@@ -64,4 +64,12 @@ export async function archiveMission(id: number): Promise<void> {
 
 export async function setCrawlIntentEnabled(id: number, enabled: boolean): Promise<void> {
   await put(`/crawl-intents/${id}/enabled`, { enabled });
+}
+
+export async function updateMissionInterval(id: number, intervalMinutes: number): Promise<void> {
+  await patch(`/crawl-intents/${id}/interval`, { interval_minutes: intervalMinutes });
+}
+
+export async function deleteMission(id: number): Promise<void> {
+  await del(`/crawl-intents/${id}`);
 }
