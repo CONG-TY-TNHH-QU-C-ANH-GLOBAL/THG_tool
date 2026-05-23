@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/thg/scraper/internal/models"
 )
 
 func (h *Handler) superAdminAccounts(c *fiber.Ctx) error {
@@ -211,7 +213,23 @@ func (h *Handler) superAdminAccountDiagnostic(c *fiber.Ctx) error {
 		   FROM account_runtime_state WHERE account_id = ?`, accountID,
 	).Scan(&b.RiskScore, &b.RecentFailures, &b.CooldownUntil,
 		&b.CommentsToday, &b.InboxToday, &b.GroupPostsToday, &b.CountersDay)
-	b.RiskCeilingHit = b.Ceiling > 0 && b.RiskScore >= b.Ceiling
+	// Compute the EFFECTIVE ceiling the runtime gate actually uses.
+	// The profile-level risk_ceiling override is rarely set (legacy field);
+	// the real ceiling comes from the resolved trust preset (TrustWarming
+	// → 0.60 by default). Reporting only the profile field caused this
+	// surface to show risk_ceiling_hit=false while the runtime was
+	// rejecting every queue with risk_ceiling_exceeded.
+	trust := models.NormalizeTrustLevel(b.TrustLevel)
+	resolvedCaps := models.ResolveBehaviourCaps(trust, "")
+	effectiveCeiling := b.Ceiling
+	if effectiveCeiling <= 0 {
+		effectiveCeiling = resolvedCaps.RiskScoreCeiling
+	}
+	b.Ceiling = effectiveCeiling
+	b.RiskCeilingHit = effectiveCeiling > 0 && b.RiskScore >= effectiveCeiling
+	if b.TrustLevel == "" {
+		b.TrustLevel = string(trust) + " (default)"
+	}
 
 	// 3. Recent execution_attempts with parsed notes (THE diagnostic gold)
 	type attempt struct {
