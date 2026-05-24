@@ -28,6 +28,14 @@ type GuardDecision struct {
 	ExistingID     int64
 	LastOutboundAt time.Time
 	LastInboundAt  time.Time
+	// RiskScore and RiskCeiling are populated ONLY when
+	// Reason == "risk_ceiling_exceeded" (propagated from the coordination
+	// CapsDecision via the BehaviourCheck hook adapter). Surfaced to the
+	// operator-facing telemetry in queueLeadOutreach so the Copilot
+	// response shows "why blocked?" inline instead of forcing the operator
+	// to run the superadmin diagnostic separately.
+	RiskScore   float64
+	RiskCeiling float64
 }
 
 // ClaimResult is what [Store.Claim] returns on a successful claim.

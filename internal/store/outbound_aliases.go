@@ -111,6 +111,8 @@ func (s *Store) installOutboundHooks() {
 				Allowed:        decision.Allowed,
 				Reason:         decision.Reason,
 				LastOutboundAt: decision.CooldownUntil,
+				RiskScore:      decision.RiskScore,
+				RiskCeiling:    decision.RiskCeiling,
 			}, nil
 		},
 		ConversationGate: func(ctx context.Context, orgID int64, targetURL, profileURL string, cooldown time.Duration) (outbound.GuardDecision, error) {

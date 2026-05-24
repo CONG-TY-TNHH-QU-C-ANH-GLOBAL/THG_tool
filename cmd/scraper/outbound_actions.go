@@ -60,6 +60,15 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	approvedCount := 0
 	skipReasons := map[string]int{}
 	var lastGenErr error
+	// riskBlockDetail captures the operator-actionable inputs of the
+	// LAST risk_ceiling_exceeded deny so the response/notification can
+	// surface "account=N risk=X ceiling=Y" inline. Without this the
+	// operator sees only the reason tag and must run the superadmin
+	// diagnostic separately to find out which account + how far over.
+	// All deny iterations in a single run share the resolved accountID
+	// (resolved once above), so capturing the latest value is sufficient.
+	var riskBlockSeen bool
+	var riskBlockRisk, riskBlockCeiling float64
 	for _, lead := range leads {
 		targetURL, skipReason := resolveOutboundTargetURL(lead, msgType)
 		if skipReason != "" {
@@ -121,6 +130,11 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if !result.Decision.Allowed {
 			skipped++
 			skipReasons[result.Decision.Reason]++
+			if result.Decision.Reason == "risk_ceiling_exceeded" && result.Decision.RiskCeiling > 0 {
+				riskBlockSeen = true
+				riskBlockRisk = result.Decision.RiskScore
+				riskBlockCeiling = result.Decision.RiskCeiling
+			}
 			// Record the rejection outcome so the Operator Replay UI
 			// shows "retrieved → drafted → rejected (reason)" instead
 			// of leaving the retrieval event dangling.
@@ -161,8 +175,12 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if lastGenErr != nil {
 		errDetails = fmt.Sprintf(" | Last Error: %v", lastGenErr)
 	}
+	riskDetails := ""
+	if riskBlockSeen {
+		riskDetails = fmt.Sprintf(" risk_block=account=%d,risk_score=%.3f,effective_ceiling=%.3f", accountID, riskBlockRisk, riskBlockCeiling)
+	}
 
-	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s", msgType, queued, skipped, mode, skipReasons, errDetails), nil
+	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s%s", msgType, queued, skipped, mode, skipReasons, riskDetails, errDetails), nil
 }
 
 func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {

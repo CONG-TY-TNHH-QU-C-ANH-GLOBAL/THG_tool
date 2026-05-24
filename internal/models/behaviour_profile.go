@@ -128,6 +128,16 @@ const (
 	RiskSignalRateLimited       RiskSignal = "rate_limited"       // platform surfaced explicit rate-limit copy
 )
 
+// RiskDecayPerHour is the per-idle-hour reduction applied to risk_score
+// by the caps-check path. Prevents the death-spiral where an over-ceiling
+// account can never recover: blocked → no action → no Success signal →
+// risk stays high → still blocked. At 0.02/hour an account at the
+// TrustWarming ceiling (0.60) drops below it after ~10h idle (overnight
+// rest) and reaches 0 after ~30h. Decay applies only on the next gate
+// evaluation, NOT on a timer; an account that never gets queue traffic
+// will not decay, which is fine — the gate is the only consumer.
+const RiskDecayPerHour = 0.02
+
 // SignalWeights is the default impact each signal type has on risk_score.
 // Positive numbers raise risk (toward 1.0), negative numbers lower it.
 // Callers may override per-signal weight; this is just the default table.

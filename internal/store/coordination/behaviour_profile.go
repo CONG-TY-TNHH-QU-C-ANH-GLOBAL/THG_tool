@@ -288,6 +288,66 @@ func (s *Store) ApplyRiskSignal(ctx context.Context, orgID, accountID int64, sig
 	return err
 }
 
+// ApplyRiskDecayTx reduces risk_score by models.RiskDecayPerHour for
+// every full hour since updated_at. Called by CheckCapsTx BEFORE reading
+// the score so a previously-blocked account can recover after enough
+// idle time without operator intervention.
+//
+// Closes the death-spiral: ApplyRiskSignal only LOWERS risk on Success
+// or Reply events, both of which require the account to actually act.
+// Once blocked at the ceiling, the account can never act, so no decay
+// signal ever fires. Time-based decay is the circuit breaker.
+//
+// Idempotent: each call writes a new updated_at, so the next call sees
+// hoursIdle ≈ 0 and short-circuits. No-ops for missing rows, risk<=0,
+// or zero/future updated_at (clock skew).
+//
+// Tenant-ok: account_id is the only key; this function does not cross
+// tenant boundaries.
+func ApplyRiskDecayTx(tx *sql.Tx, accountID int64) error {
+	if accountID <= 0 {
+		return nil
+	}
+	var riskScore float64
+	var updatedAtStr string
+	err := tx.QueryRow(
+		`SELECT risk_score, updated_at FROM account_runtime_state WHERE account_id = ?`,
+		accountID,
+	).Scan(&riskScore, &updatedAtStr)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if riskScore <= 0 {
+		return nil
+	}
+	updatedAt := dbutil.ParseSQLiteTime(updatedAtStr)
+	if updatedAt.IsZero() {
+		return nil
+	}
+	hoursIdle := time.Since(updatedAt).Hours()
+	if hoursIdle <= 0 {
+		return nil
+	}
+	newRisk := riskScore - hoursIdle*models.RiskDecayPerHour
+	if newRisk < 0 {
+		newRisk = 0
+	}
+	if newRisk == riskScore {
+		return nil
+	}
+	_, err = tx.Exec(
+		`UPDATE account_runtime_state
+		    SET risk_score = ?,
+		        updated_at = CURRENT_TIMESTAMP
+		  WHERE account_id = ?`,
+		newRisk, accountID,
+	)
+	return err
+}
+
 // SetAccountCooldown sets the global per-account cooldown_until. Pass a
 // zero time to clear it. Used by the orchestrator when an account hits
 // its risk ceiling or fails a sensitive action.

@@ -38,6 +38,12 @@ type CapsDecision struct {
 	Allowed       bool
 	Reason        string
 	CooldownUntil time.Time
+	// RiskScore and RiskCeiling are populated ONLY when
+	// Reason == "risk_ceiling_exceeded". They expose the gate's inputs so
+	// the operator-facing telemetry can show "why was this blocked?"
+	// without a separate diagnostic round-trip.
+	RiskScore   float64
+	RiskCeiling float64
 }
 
 // checkBehaviourCapsTx runs the Coordination Plane PR-2 enforcement
@@ -67,6 +73,14 @@ type CapsDecision struct {
 func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDecision, error) {
 	caps, _, err := s.ResolveAccountCaps(context.Background(), accountID)
 	if err != nil {
+		return CapsDecision{}, err
+	}
+
+	// Apply time-based decay BEFORE reading risk_score so a previously
+	// over-ceiling account that has been idle long enough recovers without
+	// needing operator reset. Decay only writes when there is something to
+	// decay; missing rows are a no-op.
+	if err := ApplyRiskDecayTx(tx, accountID); err != nil {
 		return CapsDecision{}, err
 	}
 
@@ -101,7 +115,12 @@ func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDe
 	}
 
 	if caps.RiskScoreCeiling > 0 && riskScore >= caps.RiskScoreCeiling {
-		return CapsDecision{Allowed: false, Reason: "risk_ceiling_exceeded"}, nil
+		return CapsDecision{
+			Allowed:     false,
+			Reason:      "risk_ceiling_exceeded",
+			RiskScore:   riskScore,
+			RiskCeiling: caps.RiskScoreCeiling,
+		}, nil
 	}
 
 	if col := counterColumnForAction(msgType); col != "" {
