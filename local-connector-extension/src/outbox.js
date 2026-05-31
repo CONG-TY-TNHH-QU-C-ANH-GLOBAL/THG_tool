@@ -126,38 +126,101 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     }
   }
 
-  // clickPostAnchorInPage is injected via chrome.scripting.executeScript
-  // and runs in the FB tab's page context. It locates an anchor whose
-  // pathname matches the target post path (lenient subpath match,
-  // mirroring urlsMatchSameDestination), scrolls it into view, and
-  // dispatches a real .click() so FB's SPA history.pushState handler
-  // fires the in-tab navigation. Returns {ok, href} on success or
-  // {ok:false, found_count} when no matching anchor exists in the
-  // currently-rendered DOM.
+  // findAndClickPostAnchorInPage is injected via chrome.scripting.executeScript
+  // and runs in the FB tab's page context. It scrolls the group feed N
+  // times to lazy-load posts, then scans anchors with a wide selector net
+  // (FB uses several permalink shapes) and matches by either pathname OR
+  // post-id query parameter. On match: scrollIntoView + .click() so FB's
+  // SPA router fires the in-tab pushState navigation.
+  //
+  // Why scroll-then-scan: 2026-05-31 diagnostic showed `scanned=1 anchors`
+  // on the post-anchor selector immediately after 1.5s SPA settle — way
+  // too few. The group home renders post permalinks incrementally via
+  // virtual scrolling; the freshest posts above the fold may not include
+  // the lead's target post. Scrolling 3–5 times forces FB to mount more
+  // post articles into the DOM.
+  //
+  // Why wide selector net: FB uses at least four permalink anchor shapes
+  // on group feeds:
+  //   1. <a href="/groups/<g>/posts/<p>/">           direct path
+  //   2. <a href="/permalink.php?story_fbid=<p>...">  legacy/external
+  //   3. <a href="?story_fbid=<p>&id=<g>">            query-only on group
+  //   4. <a href="...?multi_permalinks=<p>...">       multi-post links
+  // The original selector (`/posts/`, `/permalink/`) only catches #1. v2
+  // also extracts the post id from the target URL and id-matches against
+  // story_fbid/multi_permalinks query parameters.
   //
   // Must be self-contained — chrome.scripting.executeScript serialises
   // the function source, so no closure references back to module scope.
-  function clickPostAnchorInPage(postPath) {
+  async function findAndClickPostAnchorInPage(postPath) {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const norm = (p) => String(p || '').replace(/\/+$/, '');
     const want = norm(postPath);
-    if (!want) return { ok: false, found_count: 0 };
-    const anchors = Array.from(document.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"]'));
-    for (const a of anchors) {
-      let got = '';
-      try {
-        got = norm(new URL(a.href, location.origin).pathname);
-      } catch {
-        continue;
+    if (!want) return { ok: false, found_count: 0, scrolls: 0, post_id: '' };
+    const idMatch = want.match(/\/(?:posts|permalink)\/(\d+)/);
+    const postId = idMatch ? idMatch[1] : '';
+
+    const selector = [
+      'a[href*="/posts/"]',
+      'a[href*="/permalink/"]',
+      'a[href*="story_fbid="]',
+      'a[href*="multi_permalinks="]',
+    ].join(',');
+
+    function scanOnce() {
+      const anchors = Array.from(document.querySelectorAll(selector));
+      for (const a of anchors) {
+        if (!a.href) continue;
+        let url;
+        try { url = new URL(a.href, location.origin); } catch { continue; }
+        const got = norm(url.pathname);
+        if (got === want || got.startsWith(want + '/')) {
+          return { anchor: a, total: anchors.length };
+        }
+        if (postId) {
+          const q = url.searchParams;
+          if (q.get('story_fbid') === postId ||
+              q.get('multi_permalinks') === postId) {
+            return { anchor: a, total: anchors.length };
+          }
+        }
       }
-      if (got === want || got.startsWith(want + '/')) {
-        try {
-          a.scrollIntoView({ block: 'center', behavior: 'instant' });
-        } catch { /* old Chrome */ }
-        a.click();
-        return { ok: true, href: a.href };
+      return { anchor: null, total: anchors.length };
+    }
+
+    // First scan: maybe the post is already above the fold.
+    let last = scanOnce();
+    if (last.anchor) {
+      try { last.anchor.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch {}
+      last.anchor.click();
+      return { ok: true, href: last.anchor.href, scrolls: 0, matched_count: 1 };
+    }
+
+    // Scroll-then-scan loop. Each scroll triggers FB's virtual scroller
+    // to render the next batch of posts. ~5 cycles (≈3000px each, 800ms
+    // settle) covers a typical group's freshest 30–50 posts without
+    // burning the operator-replay window.
+    const MAX_SCROLLS = 5;
+    for (let i = 1; i <= MAX_SCROLLS; i++) {
+      try {
+        window.scrollBy({ top: 3000, behavior: 'instant' });
+      } catch {
+        window.scrollTo(0, window.scrollY + 3000);
+      }
+      await sleep(800);
+      last = scanOnce();
+      if (last.anchor) {
+        try { last.anchor.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch {}
+        last.anchor.click();
+        return { ok: true, href: last.anchor.href, scrolls: i, matched_count: 1 };
       }
     }
-    return { ok: false, found_count: anchors.length };
+    return {
+      ok: false,
+      found_count: last.total,
+      scrolls: MAX_SCROLLS,
+      post_id: postId,
+    };
   }
 
   // navigateToPostViaGroupClick implements the human-flow navigation
@@ -213,7 +276,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     try {
       const out = await chrome.scripting.executeScript({
         target: { tabId: state.tab.id },
-        func: clickPostAnchorInPage,
+        func: findAndClickPostAnchorInPage,
         args: [postPath],
       });
       clickResult = (out && out[0] && out[0].result) || clickResult;
@@ -229,7 +292,9 @@ var THGOutbox = globalThis.THGOutbox || (() => {
         ok: false,
         landed_at: groupURL,
         notes: 'group_click.post_anchor_not_found: path=' + postPath +
-               ' scanned=' + (clickResult.found_count || 0) + ' anchors in group home DOM',
+               ' post_id=' + (clickResult.post_id || '') +
+               ' scanned=' + (clickResult.found_count || 0) + ' anchors after ' +
+               (clickResult.scrolls || 0) + ' scrolls',
       };
     }
     // Poll the tab URL until FB SPA's pushState completes. Same 10s
