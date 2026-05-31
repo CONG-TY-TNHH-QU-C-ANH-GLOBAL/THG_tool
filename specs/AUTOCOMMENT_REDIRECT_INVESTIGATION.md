@@ -1,6 +1,6 @@
 # Auto-Comment `redirected_feed` Investigation
 
-**Status**: Open. Root cause unconfirmed. Code-side investigation exhausted; awaiting user-side verification cycle.
+**Status**: H1 confirmed (2026-05-31). Candidate fixes (c0ce159 / b93b783 / 8209178) insufficient. Deeper fix shipped: extension `navigateToPostViaGroupClick` (commit pending). Awaiting verification cycle.
 
 **Owner**: Operator (founder). Claude cannot satisfy the verification gate from current context.
 
@@ -45,7 +45,49 @@ Operator confirmed via direct browser inspection:
 
 ---
 
-## Root cause hypotheses for `redirected_feed` — UNCONFIRMED
+## 2026-05-31 — H1 confirmed; deeper fix shipped
+
+Operator triggered `comment_all_leads` after the risk-decay circuit-breaker (commit `6f36dad`) unblocked account #49. 10 leads queued, 10 redirected. `execution_attempts.evidence_json.notes` carried:
+
+```
+2026-05-31 15:19:50  outbox.navigation_redirected:
+                     target_url=.../groups/.../posts/2032847754289225/
+                     actual=https://www.facebook.com/
+
+2026-05-31 15:20:32  identity_gate_1: target id=2032616460979021
+                     landed_at=https://www.facebook.com/
+                     nav_at_entry=https://www.facebook.com/
+                     did not settle within 8s
+(repeats for 4 more attempts, same pattern)
+```
+
+Decision-table match: **H1 confirmed, candidate fixes insufficient.** FB still redirects deep-link nav even with foreground tab + window restore (b93b783) and URL matcher harmonization (8209178).
+
+Shipped fix: `local-connector-extension/src/outbox.js::navigateToPostViaGroupClick`. For `/groups/<g>/posts/<p>/` comment targets the executor now:
+
+1. Navigates to `/groups/<g>/` (group home — FB's anti-automation does NOT redirect this surface).
+2. `waitForTabReady` + 1.5s SPA settle so the post list mounts.
+3. `chrome.scripting.executeScript` injects `clickPostAnchorInPage(postPath)` — finds the anchor whose pathname matches, scrolls into view, dispatches `.click()` so FB's own SPA router (`history.pushState`) handles the in-tab navigation.
+4. Polls tab URL for ≤10s until it matches the target post URL.
+5. Proceeds to existing gate-1 (article stability + composer detection).
+
+Non-group surfaces (profile posts, `/watch`, `/reel`, fb.watch, photo permalinks) keep the direct-nav flow — H1 has not been observed for those URL shapes.
+
+Failure modes the new flow distinguishes (notes payload):
+
+| Failure note prefix | Meaning | Next action if observed |
+|---|---|---|
+| `group_click.group_home_redirected` | Even `/groups/<g>/` got redirected. Account is under stronger restriction than H1 predicts. | Likely H2 (shadow restriction). Pause account, switch. |
+| `group_click.post_anchor_not_found` | Group home loaded but the target post is not visible in the freshly-rendered DOM (lazy-load horizon or post out of feed window). | Tune: scroll N times before scan, OR use group search box to surface the post by id. |
+| `group_click.no_navigation` | Click fired but FB SPA did not advance to the post URL. | FB intercepted the synthetic click. Try `dispatchEvent(new MouseEvent('click', {isTrusted:false, bubbles:true}))` variant; if still fails escalate to H4. |
+| `group_click.inject_failed` | `chrome.scripting.executeScript` rejected. | Check manifest `scripting` permission + tab domain. |
+| `group_click.landed` (ok=true) | Tab now on target post URL, gate-1 runs next. | Watch gate-1 outcome separately. |
+
+Manifest version bumped 0.5.4 → 0.5.5 so the operator knows when to reload the extension.
+
+---
+
+## Root cause hypotheses for `redirected_feed` — UNCONFIRMED (historical, pre-2026-05-31)
 
 The remaining bug produces `finished/context_drift, detail=redirected_feed` and matches the operator's observation that the extension never types. Four hypotheses; tracking which is true requires Step 1 data.
 

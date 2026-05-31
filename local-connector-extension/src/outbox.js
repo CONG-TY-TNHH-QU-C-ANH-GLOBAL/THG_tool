@@ -108,11 +108,207 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     }
   }
 
+  // extractGroupHomeFromPostUrl returns the group-home URL ("/groups/<g>/")
+  // for a group-post URL, or "" for non-group targets (profile posts,
+  // /watch, /reel, fb.watch, photo permalinks). Used to gate the
+  // human-flow navigation path: only group posts go through the
+  // group-home-then-click flow, since the redirect-on-deep-link pattern
+  // documented in AUTOCOMMENT_REDIRECT_INVESTIGATION.md fires specifically
+  // for /groups/<g>/posts/<p>/ deep links.
+  function extractGroupHomeFromPostUrl(targetUrl) {
+    try {
+      const url = new URL(String(targetUrl || '').trim());
+      const m = url.pathname.match(/^\/groups\/([^/]+)\/(posts|permalink)\//);
+      if (!m) return '';
+      return url.origin + '/groups/' + m[1] + '/';
+    } catch {
+      return '';
+    }
+  }
+
+  // clickPostAnchorInPage is injected via chrome.scripting.executeScript
+  // and runs in the FB tab's page context. It locates an anchor whose
+  // pathname matches the target post path (lenient subpath match,
+  // mirroring urlsMatchSameDestination), scrolls it into view, and
+  // dispatches a real .click() so FB's SPA history.pushState handler
+  // fires the in-tab navigation. Returns {ok, href} on success or
+  // {ok:false, found_count} when no matching anchor exists in the
+  // currently-rendered DOM.
+  //
+  // Must be self-contained — chrome.scripting.executeScript serialises
+  // the function source, so no closure references back to module scope.
+  function clickPostAnchorInPage(postPath) {
+    const norm = (p) => String(p || '').replace(/\/+$/, '');
+    const want = norm(postPath);
+    if (!want) return { ok: false, found_count: 0 };
+    const anchors = Array.from(document.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"]'));
+    for (const a of anchors) {
+      let got = '';
+      try {
+        got = norm(new URL(a.href, location.origin).pathname);
+      } catch {
+        continue;
+      }
+      if (got === want || got.startsWith(want + '/')) {
+        try {
+          a.scrollIntoView({ block: 'center', behavior: 'instant' });
+        } catch { /* old Chrome */ }
+        a.click();
+        return { ok: true, href: a.href };
+      }
+    }
+    return { ok: false, found_count: anchors.length };
+  }
+
+  // navigateToPostViaGroupClick implements the human-flow navigation
+  // pattern prescribed by AUTOCOMMENT_REDIRECT_INVESTIGATION.md H1
+  // decision table when candidate fixes (c0ce159 URL verify, b93b783
+  // foreground tab, 8209178 matcher harmonization) proved insufficient:
+  // direct chrome.tabs.update to /groups/<g>/posts/<p>/ keeps being
+  // redirected to / by FB's anti-automation heuristic. Group home
+  // (/groups/<g>/) is a frequently-visited human surface and rarely
+  // gets the redirect, so we navigate there first, then dispatch a
+  // real click on the post anchor in-DOM. The click goes through FB's
+  // own SPA router (history.pushState), bypassing the deep-link
+  // redirect path entirely.
+  //
+  // Returns { ok, landed_at, notes, tab? }. On ok=true the tab is on
+  // the target post URL with DOM settled; caller proceeds to gate-1.
+  // On ok=false the notes string carries the diagnostic line that
+  // execution_attempts.evidence_json.notes will record.
+  async function navigateToPostViaGroupClick(targetUrl, message) {
+    const groupHome = extractGroupHomeFromPostUrl(targetUrl);
+    if (!groupHome) return { ok: false, notes: 'group_click.not_a_group_post', landed_at: '' };
+    let state = await THGFacebookState.ensureFacebookTabVisible(groupHome, { focus: true });
+    if (!state.tab?.id) return { ok: false, notes: 'group_click.tab_not_ready', landed_at: '' };
+    if (state.tab.windowId) {
+      try {
+        const win = await chrome.windows.get(state.tab.windowId).catch(() => null);
+        if (win && win.state === 'minimized') {
+          await chrome.windows.update(state.tab.windowId, { state: 'normal', focused: true }).catch(() => {});
+          await THGShared.delay(600);
+        } else {
+          await chrome.windows.update(state.tab.windowId, { focused: true }).catch(() => {});
+        }
+      } catch { /* best effort */ }
+    }
+    await THGFacebookState.waitForTabReady(state.tab.id, 20000).catch(() => {});
+    // SPA settle: group home renders its post list incrementally via
+    // virtual scrolling. 1.5s is empirically the lower bound where the
+    // 5–10 freshest posts are mounted in DOM; tighter and the anchor
+    // scan will miss posts that haven't lazy-loaded yet.
+    await THGShared.delay(1500);
+    const groupTab = await chrome.tabs.get(state.tab.id).catch(() => null);
+    const groupURL = (groupTab && groupTab.url) ? String(groupTab.url) : '';
+    if (!groupURL || !urlsMatchSameDestination(groupURL, groupHome)) {
+      return {
+        ok: false,
+        landed_at: groupURL,
+        notes: 'group_click.group_home_redirected: target=' + groupHome + ' actual=' + groupURL,
+      };
+    }
+    let postPath = '';
+    try { postPath = new URL(targetUrl).pathname; } catch { postPath = ''; }
+    let clickResult = { ok: false, found_count: 0 };
+    try {
+      const out = await chrome.scripting.executeScript({
+        target: { tabId: state.tab.id },
+        func: clickPostAnchorInPage,
+        args: [postPath],
+      });
+      clickResult = (out && out[0] && out[0].result) || clickResult;
+    } catch (err) {
+      return {
+        ok: false,
+        landed_at: groupURL,
+        notes: 'group_click.inject_failed: ' + (err && err.message ? err.message : String(err)),
+      };
+    }
+    if (!clickResult.ok) {
+      return {
+        ok: false,
+        landed_at: groupURL,
+        notes: 'group_click.post_anchor_not_found: path=' + postPath +
+               ' scanned=' + (clickResult.found_count || 0) + ' anchors in group home DOM',
+      };
+    }
+    // Poll the tab URL until FB SPA's pushState completes. Same 10s
+    // budget the gate-1 stable-wait uses; we want to fail fast if the
+    // click did not produce in-tab navigation.
+    const started = Date.now();
+    while (Date.now() - started < 10000) {
+      await THGShared.delay(300);
+      const liveTab = await chrome.tabs.get(state.tab.id).catch(() => null);
+      const liveURL = (liveTab && liveTab.url) ? String(liveTab.url) : '';
+      if (liveURL && urlsMatchSameDestination(liveURL, targetUrl)) {
+        // Article must finish mounting before gate-1 polls for the
+        // composer. 800ms matches the existing post-navigation settle
+        // delay in the direct-nav flow.
+        await THGShared.delay(800);
+        return { ok: true, landed_at: liveURL, tab: liveTab, notes: 'group_click.landed: clicked=' + (clickResult.href || '') };
+      }
+    }
+    const finalTab = await chrome.tabs.get(state.tab.id).catch(() => null);
+    const finalURL = (finalTab && finalTab.url) ? String(finalTab.url) : '';
+    return {
+      ok: false,
+      landed_at: finalURL,
+      notes: 'group_click.no_navigation: clicked=' + (clickResult.href || '') +
+             ' but tab URL stayed at ' + finalURL + ' (target=' + targetUrl + ')',
+    };
+  }
+
   async function executeInFacebookTab(message) {
     const targetUrl = targetUrlForMessage(message);
     if (!targetUrl) throw new Error('outbox target URL is empty');
     if (String(message.type || '').toLowerCase() === 'comment' && !isCommentableFacebookPostUrl(targetUrl)) {
       throw new Error('comment_target_not_post_permalink');
+    }
+    // GROUP-POST COMMENT PATH — human-flow navigation.
+    //
+    // For /groups/<g>/posts/<p>/ targets we skip the direct
+    // chrome.tabs.update flow entirely and use the group-home-then-
+    // click pattern (navigateToPostViaGroupClick). The May-2026
+    // diagnostic loop in AUTOCOMMENT_REDIRECT_INVESTIGATION.md confirmed
+    // H1 — direct deep-link navigation gets redirected to / by FB's
+    // anti-automation heuristic regardless of the foreground-tab /
+    // URL-verify defenses shipped in c0ce159, b93b783, 8209178.
+    // The group-home click goes through FB's SPA router which is the
+    // human-flow that does NOT trigger the redirect.
+    //
+    // Non-group surfaces (/watch, /reel, profile posts, fb.watch,
+    // photo permalinks) keep the direct-nav flow — H1 has not been
+    // observed there and group-home isn't applicable.
+    const groupHome = extractGroupHomeFromPostUrl(targetUrl);
+    if (groupHome && String(message.type || '').toLowerCase() === 'comment') {
+      const nav = await navigateToPostViaGroupClick(targetUrl, message);
+      if (!nav.ok) {
+        return {
+          ok: false,
+          error: 'navigation_redirected',
+          proof: {
+            success: false,
+            failure_reason: 'redirected_feed',
+            page_url_after: nav.landed_at || '',
+            notes: nav.notes,
+            execution_id: String(message.execution_id || ''),
+          },
+        };
+      }
+      const releaseTabLock = acquireTabExecutionLock(nav.tab.id);
+      if (!releaseTabLock) {
+        throw new Error('tab_busy_executing');
+      }
+      try {
+        try {
+          return await chrome.tabs.sendMessage(nav.tab.id, { type: 'thg_execute_outbound', message });
+        } catch {
+          await THGShared.injectContentScripts(nav.tab.id);
+          return await chrome.tabs.sendMessage(nav.tab.id, { type: 'thg_execute_outbound', message });
+        }
+      } finally {
+        releaseTabLock();
+      }
     }
     // Mirror the crawl path's foreground-navigation pattern
     // (commands.js::openCrawlTab). Direct deep-link navigation
