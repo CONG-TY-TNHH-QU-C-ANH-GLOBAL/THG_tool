@@ -3,6 +3,7 @@ package agent
 import (
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -12,6 +13,31 @@ import (
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store/coordination"
 )
+
+// notificationDetail selects the most diagnostic string to surface in the
+// operator's failure notification (the `Chi tiet:` line in chat/Telegram).
+//
+// proof.Notes carries the extension's GRANULAR path/gate prefix
+// (path2.article_not_found_in_feed, path2.group_home_nav_failed,
+// outbox.crawler_nav_failed, …) plus landed_url — enough to bucket a failure
+// from a single run. We prefer it so the failure is self-explanatory in chat
+// without opening the diagnostic endpoint. The data path that feeds it is
+// overwrite-free: ClassifyExtensionReport copies report.Notes verbatim (it
+// only fills Notes on success-WITHOUT-proof, never on a failure), and
+// EnforceTargetIdentity only APPENDS (" · entity-drift …"), never replaces.
+//
+// report.FailureReason then string(outcome) are last-resort fallbacks only —
+// coarse labels that cannot distinguish path from gate (redirected_feed vs
+// context_drift), so they are used solely when no note survived.
+func notificationDetail(proof runtime.VerifierProof, report runtime.ExtensionExecutionReport, outcome models.ExecutionOutcome) string {
+	if d := strings.TrimSpace(proof.Notes); d != "" {
+		return d
+	}
+	if d := strings.TrimSpace(report.FailureReason); d != "" {
+		return d
+	}
+	return string(outcome)
+}
 
 // proofToEvidence adapts the runtime verifier's proof shape onto the
 // coordination domain's evidence shape. Two types exist (instead of
@@ -371,7 +397,10 @@ func (h *Handler) finalizeOutbound(
 	if models.IsVerifiedSuccess(terminalState, terminalOutcome) {
 		system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, terminalState, terminalOutcome)
 	} else {
-		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, terminalState, terminalOutcome, string(outcome))
+		// Surface the extension's GRANULAR diagnostic note directly in the
+		// operator's chat (see notificationDetail for the overwrite-free
+		// data-path contract).
+		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, terminalState, terminalOutcome, notificationDetail(proof, report, outcome))
 	}
 
 	return &finalizeResolution{

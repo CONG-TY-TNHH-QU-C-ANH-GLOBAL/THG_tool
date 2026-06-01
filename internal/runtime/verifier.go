@@ -251,6 +251,17 @@ func ClassifyExtensionReport(report ExtensionExecutionReport) (models.ExecutionO
 			return models.ExecutionRateLimited, proof
 		case "blocked", "post_deleted", "muted":
 			return models.ExecutionBlocked, proof
+		case "message_request_folder":
+			// Inbox: the bubble rendered on the sender side, but FB routes
+			// the message to the recipient's message-requests/pending folder
+			// because the two accounts are not connected. The recipient may
+			// never open it, so this is NOT a verified touch — it must not
+			// promote the lead to protected/followup_pending. shadow_rejected
+			// is the correct class ("appeared to go through, real delivery
+			// unconfirmed"); the granular reason rides proof.Notes. Mapped
+			// explicitly (rather than relying on the default fall-through) so
+			// this is a documented, intentional classification.
+			return models.ExecutionShadowRejected, proof
 		case "redirect", "redirected_feed", "feed_escape":
 			return models.ExecutionRedirectedFeed, proof
 		case "composer_failed", "composer":

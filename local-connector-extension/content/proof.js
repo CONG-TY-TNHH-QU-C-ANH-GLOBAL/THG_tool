@@ -335,6 +335,27 @@ var THGContentProof = globalThis.THGContentProof || (() => {
     return /\/messages\/|\/t\//.test(u);
   }
 
+  // detectMessageRequestState — SENDER-side heuristic for "this message
+  // landed in the recipient's Message Requests / pending folder, not their
+  // main inbox". This is the silent-non-delivery case: when the executing
+  // account and the recipient are NOT connected, Facebook renders the
+  // outgoing bubble normally (so node_matched + bubble_fresh would otherwise
+  // promote the attempt to dom_verified — a false "verified touch" that
+  // wrongly marks the lead protected/followup_pending), yet the recipient
+  // may never open the request folder.
+  //
+  // We key off the notice the SENDER does see ("… will get your message
+  // request", "Tin nhắn chờ", "sẽ chỉ nhận được … trong phần Tin nhắn chờ",
+  // etc.). Best-effort + heuristic: FB's sender-side copy varies by locale
+  // and is not always shown. A MISS degrades to prior behaviour; a HIT
+  // downgrades to shadow_rejected with the matched phrase recorded in notes
+  // so the operator can refine this phrase list from real failures.
+  function detectMessageRequestState() {
+    const text = (document.body && document.body.innerText) || '';
+    const m = text.match(/message requests?|will (get|receive) your (message )?request|sent a message request|isn'?t receiving messages|can'?t receive (your )?messages?|you can only send (one|1) message|tin nhan cho|tin nhắn chờ|yeu cau tin nhan|yêu cầu tin nhắn|se chi nhan duoc|sẽ chỉ nhận được|chua ket noi voi|chưa kết nối với|khong nhan duoc tin nhan|không nhận được tin nhắn/i);
+    return m ? m[0] : '';
+  }
+
   function buildInboxProof({ ok, errorCode, content, preBubbleHash }) {
     const proof = emptyProof();
     proof.page_url_after = window.location.href || '';
@@ -358,6 +379,20 @@ var THGContentProof = globalThis.THGContentProof || (() => {
     if (!ok) {
       proof.failure_reason = mapInboxErrorReason(errorCode);
       proof.notes = errorCode || '';
+      return proof;
+    }
+
+    // SENDER-side message-request guard. A bubble may have rendered, but if
+    // FB tells us the recipient will only get this as a pending request, the
+    // contact is NOT a verified touch — refuse to promote to dom_verified so
+    // the LeadEngagement projection does not mark the lead protected.
+    // failure_reason is unmapped on the backend → ExecutionShadowRejected
+    // (the safe non-success class); the granular reason rides proof.notes.
+    const requestState = detectMessageRequestState();
+    if (requestState) {
+      proof.failure_reason = 'message_request_folder';
+      proof.success = false;
+      proof.notes = 'inbox.message_request_folder: bubble rendered but recipient appears non-connected — delivered to message-requests/pending folder (matched: ' + requestState + ')';
       return proof;
     }
 

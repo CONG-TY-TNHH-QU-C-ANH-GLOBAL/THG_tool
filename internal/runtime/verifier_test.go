@@ -85,6 +85,11 @@ func TestClassifyExtensionReport_FailureReasonMapping(t *testing.T) {
 		{"transient", models.ExecutionSoftFail},
 		{"network", models.ExecutionSoftFail},
 		{"context_drift", models.ExecutionContextDrift},
+		// Inbox message-request folder: sender-side bubble rendered but
+		// recipient is non-connected. Must NOT be a success-class outcome
+		// (would falsely promote the lead to protected); maps to the safe
+		// shadow_rejected class.
+		{"message_request_folder", models.ExecutionShadowRejected},
 		// Unknown — never silently default to success-class.
 		{"who_knows", models.ExecutionShadowRejected},
 		{"", models.ExecutionShadowRejected},
@@ -97,6 +102,27 @@ func TestClassifyExtensionReport_FailureReasonMapping(t *testing.T) {
 		if out != c.want {
 			t.Errorf("FailureReason=%q → %q; want %q", c.reason, out, c.want)
 		}
+	}
+}
+
+// B1: a message-request-folder inbox delivery must NOT be treated as a
+// verified touch (else the lead is wrongly marked protected/followup), and
+// the granular diagnostic note must survive into proof.Notes so it reaches
+// the operator's chat (A1 end-to-end contract).
+func TestClassifyExtensionReport_MessageRequestFolder_NotSuccess(t *testing.T) {
+	out, proof := ClassifyExtensionReport(ExtensionExecutionReport{
+		Success:       false,
+		FailureReason: "message_request_folder",
+		Notes:         "inbox.message_request_folder: bubble rendered but recipient appears non-connected (matched: Tin nhắn chờ)",
+	})
+	if out != models.ExecutionShadowRejected {
+		t.Errorf("message_request_folder → %q; want shadow_rejected", out)
+	}
+	if models.IsSuccessOutcome(out) {
+		t.Errorf("message_request_folder must not be a success outcome (would falsely mark the lead as a verified touch)")
+	}
+	if proof.Notes == "" || !strings.Contains(proof.Notes, "message_request_folder") {
+		t.Errorf("granular note dropped; got proof.Notes=%q", proof.Notes)
 	}
 }
 
