@@ -200,6 +200,75 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     return result;
   }
 
+  // ─── STAGE 0 PROBE helpers (specs plan: Locate→Execute→Verify rebuild) ───
+  // isHomeOrFeedUrl detects the redirect-to-home/feed landing that is the
+  // signature of FB rejecting our automated navigation.
+  function isHomeOrFeedUrl(raw) {
+    try {
+      const u = new URL(String(raw || ''));
+      const p = u.pathname.replace(/\/+$/, '');
+      if (p === '' || p === '/home.php' || p === '/feed') return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  // isLoginOrCheckpointUrl detects a login wall / identity checkpoint — these
+  // map to human_required, not a navigation failure.
+  function isLoginOrCheckpointUrl(raw) {
+    const s = String(raw || '').toLowerCase();
+    return s.includes('/login') || s.includes('checkpoint') ||
+      s.includes('two_step') || s.includes('/recover');
+  }
+
+  // probeCommentNavigation implements STAGE 0 (the gate): it tests Rung 1 of
+  // the navigation ladder — does a focused, IN-SESSION navigation of an
+  // ESTABLISHED logged-in FB tab to the post permalink survive FB's redirect?
+  // It NEVER comments. It establishes a logged-in tab at home first (so we are
+  // never fresh-tab-ing straight to a deep URL — that is the redirect trigger),
+  // then navigates that same tab in-session to target_url (the permalink), and
+  // reports where it landed via proof.notes (surfaced in operator chat by A1).
+  //
+  // failure_reason='soft_fail' on purpose: a probe must NOT poison the account
+  // risk profile and MUST stay retryable so the operator can re-probe freely.
+  async function probeCommentNavigation(message, targetUrl) {
+    const execId = String(message.execution_id || '');
+    const probe = (notes) => ({
+      ok: false,
+      error: 'nav_probe',
+      proof: { success: false, failure_reason: 'soft_fail', page_url_after: '', notes, execution_id: execId },
+    });
+
+    // Step 1: establish/reuse a logged-in FB tab at home (in-session base).
+    const home = await THGFacebookState.ensureFacebookTabVisible(THGShared.FACEBOOK_HOME, { focus: true });
+    if (!home || !home.fbUserId) {
+      return probe('c.nav_probe: not_logged_in (no c_user) — open Facebook and log in, then retry');
+    }
+
+    // Step 2: navigate that SAME established tab in-session to the permalink.
+    const liveState = await THGFacebookState.ensureFacebookTabVisible(targetUrl, { focus: true });
+    const tabId = liveState && liveState.tab && liveState.tab.id;
+    let landed = (liveState && liveState.currentUrl) || '';
+    try {
+      const t = await chrome.tabs.get(tabId);
+      if (t && t.url) landed = t.url;
+    } catch { /* keep currentUrl */ }
+
+    const targetId = extractPostIdFromTargetUrl(targetUrl);
+    const redirected = isHomeOrFeedUrl(landed);
+    const login = isLoginOrCheckpointUrl(landed);
+    const identityOk = !redirected && !login && !!targetId && landed.indexOf(targetId) !== -1;
+    return probe(
+      'c.nav_probe: target=' + targetUrl +
+      ' landed_at=' + landed +
+      ' target_id=' + (targetId || '?') +
+      ' identity_ok=' + identityOk +
+      ' redirected=' + redirected +
+      ' login_or_checkpoint=' + login +
+      ' (Rung1 focused in-session nav to permalink; no comment typed)'
+    );
+  }
+
   // executeInFacebookTab navigates the FB tab to the target URL and
   // dispatches the outbound command into the page-context content script.
   //
@@ -233,6 +302,17 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     const msgType = String(message.type || '').toLowerCase();
     if (msgType === 'comment' && !isCommentableFacebookPostUrl(targetUrl)) {
       throw new Error('comment_target_not_post_permalink');
+    }
+
+    // ─── STAGE 0 GATE ───────────────────────────────────────────────────
+    // Until the navigation probe confirms Rung 1 works, ALL comment actions
+    // run the probe (navigate the focused in-session tab to the permalink and
+    // report where it lands) instead of attempting delivery. No comment is
+    // typed. Read the result in chat via proof.notes (A1). Replace this block
+    // with the real Locate→Execute→Verify path (Stage 1) once the probe lands
+    // on the permalink. The Path-2 code below is dormant during Stage 0.
+    if (msgType === 'comment') {
+      return await probeCommentNavigation(message, targetUrl);
     }
 
     // PATH 2 routing: group-post comments take the feed-context flow
