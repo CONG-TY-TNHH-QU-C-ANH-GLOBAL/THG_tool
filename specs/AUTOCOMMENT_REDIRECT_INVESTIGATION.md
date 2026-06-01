@@ -1,6 +1,6 @@
 # Auto-Comment `redirected_feed` Investigation
 
-**Status**: 2026-06-01 — Group-click strategy abandoned. Switched comment outbox to reuse the crawler's `navigateAndVerify` helper (chrome.tabs.create + 3 retries + URL verify). Awaiting verification cycle.
+**Status**: 2026-06-01 (afternoon) — Crawler-pattern nav (a2d022c) verified post DID load briefly but FB silently redirects between navigateAndVerify success and content-script handler entry. Switched to **Path 2: comment in group feed** — open `/groups/<g>/` (proven non-redirected), locate target article in feed DOM by post_id, comment inline. Never navigate `/posts/`. Manifest 0.5.8.1000. Awaiting verification cycle.
 
 **Owner**: Operator (founder). Claude cannot satisfy the verification gate from current context.
 
@@ -45,7 +45,57 @@ Operator confirmed via direct browser inspection:
 
 ---
 
-## 2026-06-01 — Group-click abandoned; comment outbox now uses crawler's navigation helper
+## 2026-06-01 (afternoon) — Path 2: comment in group feed (no permalink nav at all)
+
+The crawler-pattern fix (a2d022c) addressed the chrome.tabs.update→create distinction but failed in a NEW way:
+
+```
+outbox#78  redirected_feed
+  notes: identity_gate_1_no_article_or_unstable
+         target id=2031780854395915
+         landed_at=https://www.facebook.com/
+         nav_at_entry=https://www.facebook.com/
+         did not settle within 8s
+```
+
+Operator observed the tab DID load the post briefly (visual confirmation), then content script's `nav_at_entry` reported `/`. Sequence:
+
+```
+T=0    chrome.tabs.create(post_url)
+T=1-3s post page renders, operator sees it visually
+T=5s   navigateAndVerify URL check → matches post → OK
+T=5.x  chrome.tabs.sendMessage fires
+T=5.x  FB silent-redirects tab to /
+T=5.x  content-script handler entry: location.href = /
+T=13.x gate-1 polls 8s on / → fails → emits redirected_feed
+```
+
+Operator confirmed account #49 has NO Facebook-side restriction (manual commenting works normally), which rules out H2 (account shadow). H1 manifests differently than expected — FB allows the navigation but kicks the tab back to `/` during the ~hundreds-of-ms window between URL verify and content-script handler entry.
+
+**Path 2 hypothesis**: FB's anti-bot heuristic detects content-script execution at the permalink page surface specifically. Group home (`/groups/<g>/`) has been navigated reliably by the crawler for months with content-script always injected — that surface does NOT trigger the redirect. By finding the target article IN the feed DOM (the article body IS rendered on group home for fresh posts) and commenting from there, we avoid the permalink surface entirely.
+
+**Shipped (commit pending)**:
+
+- [local-connector-extension/content/outbound.js](../local-connector-extension/content/outbound.js) — added `executeCommentInFeed(message)` as sibling to existing `executeComment`. Reuses ALL existing utilities (`waitUntilTargetArticleStable`, `findTargetArticle`, `extractArticleCanonicalEntityId`, comment-button finder, `findCommentEditor`, gate-2 + gate-3 identity checks, `setEditableText`, `findSubmitButtons`, `commentResult`). Only new behaviour: scroll-then-search loop (up to 8 scrolls × 2.5s waitUntilTargetArticleStable each = ~25s max) to handle articles below the initial fold.
+- [local-connector-extension/content/bridge.js](../local-connector-extension/content/bridge.js) — added `thg_comment_in_group_feed` to MUTATING_COMMAND_TYPES + onMessage routing.
+- [local-connector-extension/src/outbox.js](../local-connector-extension/src/outbox.js) — added `extractGroupHomeFromPostUrl`, `extractPostIdFromTargetUrl`, `executeInGroupFeed(message, targetUrl, groupHome)`. Branch in `executeInFacebookTab`: comments to `/groups/<g>/posts/<p>/` route through Path 2; non-group surfaces (/watch, /reel, profile posts, fb.watch, photo permalinks) keep the direct-nav crawler pattern.
+- [local-connector-extension/manifest.json](../local-connector-extension/manifest.json) — 0.5.7 → 0.5.8.
+
+Diagnostic taxonomy (operator-facing notes prefix):
+
+| Note prefix | Stage | Next action if it appears |
+|---|---|---|
+| `path2.group_home_nav_failed` | navigateAndVerify to /groups/<g>/ failed 3× | Even crawler-surface restricted. Strong escalation signal — GraphQL becomes next track. |
+| `path2.article_not_found_in_feed` | gate-1 timed out across 8 scrolls | Post is too old/deep in feed. Tune scroll budget or add group search-box fallback. |
+| `path2.article_found_but_comment_button_missing` | article found but no Comment button in scope | DOM shape changed OR account restricted from commenting on this post specifically |
+| `path2.identity_gate_2_post_click_swap` | post-click modal opened on different post | FB's lazy click resolution swap — rare race. |
+| `path2.identity_gate_3_editor_drift` | editor's enclosing scope canonical id mismatched at pre-type | Same as gate-3 on permalink path. |
+| `path2.article_found_comment_opened_submit_failed` | typed OK, submit click + enter both failed to clear editor | FB blocking submit specifically — strong fingerprint signal. |
+| `path2.comment_success` | terminal success | ✅ Close investigation. |
+
+**Validation gate**: If Path 2 still fails consistently with `path2.article_found_but_comment_button_missing` or `path2.article_found_comment_opened_submit_failed`, we have strong evidence FB is detecting content-script execution itself regardless of nav surface → GraphQL API is the next investigation track. If Path 2 hits `comment_success`, the entire redirect-on-permalink class of bugs is sidestepped and we can close the investigation.
+
+## 2026-06-01 — Group-click abandoned; comment outbox now uses crawler's navigation helper (later superseded by Path 2)
 
 Group-click v1 (`f2645e6`) + v2 (`63def8a` wide selector + scroll-then-scan) shipped to bypass H1's deep-link redirect. Both failed in distinct ways:
 

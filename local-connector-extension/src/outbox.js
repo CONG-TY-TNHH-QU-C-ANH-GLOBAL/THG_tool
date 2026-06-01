@@ -108,6 +108,98 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     }
   }
 
+  // extractGroupHomeFromPostUrl returns "/groups/<g>/" for a group-post
+  // URL, or "" for non-group targets. Used to gate the Path 2 group-feed
+  // flow: only group posts route through it. Profile posts / /watch /
+  // /reel / fb.watch / photo permalinks keep the direct-nav crawler
+  // pattern (executeInFacebookTab below) since FB's redirect-on-deep-link
+  // behaviour is specific to /groups/<g>/posts/<p>/ targets.
+  function extractGroupHomeFromPostUrl(targetUrl) {
+    try {
+      const url = new URL(String(targetUrl || '').trim());
+      const m = url.pathname.match(/^\/groups\/([^/]+)\/(posts|permalink)\//);
+      if (!m) return '';
+      return url.origin + '/groups/' + m[1] + '/';
+    } catch {
+      return '';
+    }
+  }
+
+  function extractPostIdFromTargetUrl(targetUrl) {
+    try {
+      const url = new URL(String(targetUrl || '').trim());
+      const m = url.pathname.match(/\/(?:posts|permalink)\/(\d+)/);
+      return m ? m[1] : '';
+    } catch {
+      return '';
+    }
+  }
+
+  // executeInGroupFeed implements Path 2 (commit pending 2026-06-01):
+  // navigate to /groups/<g>/ (group home — proven non-redirected) and
+  // dispatch the new content-script command 'thg_comment_in_group_feed'.
+  // The content-script handler (THGContentOutbound.executeCommentInFeed)
+  // scrolls the feed to find the target article by post_id, then comments
+  // from feed context. We never load /groups/<g>/posts/<p>/.
+  //
+  // Why a separate function from executeInFacebookTab: outbox.js stays
+  // a thin router. Per-flow setup (target_url → group_home derivation,
+  // post_id extraction, group_feed message type) lives here; tab
+  // lifecycle (lock, sendMessage, cleanup) mirrors the sibling exactly.
+  //
+  // If Path 2 still fails while operating entirely from group feed
+  // context, that's strong evidence FB is detecting content-script
+  // execution itself regardless of nav surface — at which point we'd
+  // escalate to GraphQL API as the next investigation track.
+  async function executeInGroupFeed(message, targetUrl, groupHomeUrl) {
+    const postId = extractPostIdFromTargetUrl(targetUrl);
+    let crawlInfo;
+    try {
+      crawlInfo = await THGCommands.navigateAndVerify(groupHomeUrl);
+    } catch (err) {
+      return {
+        ok: false,
+        error: 'navigation_redirected',
+        proof: {
+          success: false,
+          failure_reason: 'redirected_feed',
+          page_url_after: '',
+          notes: 'path2.group_home_nav_failed: target_group=' + groupHomeUrl +
+                 ' err=' + (err && err.message ? err.message : String(err)) +
+                 ' (crawler-pattern navigateAndVerify exhausted 3 retries to group home — ' +
+                 'if this triggers consistently, even the proven crawler nav surface is restricted for this account)',
+          execution_id: String(message.execution_id || ''),
+        },
+      };
+    }
+    const tabId = crawlInfo.tab && crawlInfo.tab.id;
+    if (!tabId) throw new Error('Facebook tab is not ready after navigateAndVerify');
+
+    const releaseTabLock = acquireTabExecutionLock(tabId);
+    if (!releaseTabLock) {
+      await chrome.tabs.remove(tabId).catch(() => {});
+      throw new Error('tab_busy_executing');
+    }
+
+    const payload = { ...message, post_id: postId };
+    let result;
+    try {
+      try {
+        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_comment_in_group_feed', message: payload });
+      } catch {
+        await THGShared.injectContentScripts(tabId);
+        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_comment_in_group_feed', message: payload });
+      }
+    } finally {
+      releaseTabLock();
+      await chrome.tabs.remove(tabId).catch(() => {});
+      if (crawlInfo.shouldReminimize && crawlInfo.crawlWinId) {
+        await chrome.windows.update(crawlInfo.crawlWinId, { state: 'minimized' }).catch(() => {});
+      }
+    }
+    return result;
+  }
+
   // executeInFacebookTab navigates the FB tab to the target URL and
   // dispatches the outbound command into the page-context content script.
   //
@@ -138,8 +230,23 @@ var THGOutbox = globalThis.THGOutbox || (() => {
   async function executeInFacebookTab(message) {
     const targetUrl = targetUrlForMessage(message);
     if (!targetUrl) throw new Error('outbox target URL is empty');
-    if (String(message.type || '').toLowerCase() === 'comment' && !isCommentableFacebookPostUrl(targetUrl)) {
+    const msgType = String(message.type || '').toLowerCase();
+    if (msgType === 'comment' && !isCommentableFacebookPostUrl(targetUrl)) {
       throw new Error('comment_target_not_post_permalink');
+    }
+
+    // PATH 2 routing: group-post comments take the feed-context flow
+    // (navigate to /groups/<g>/, find article by post_id, comment inline)
+    // instead of the permalink-page flow that keeps hitting FB's silent
+    // redirect-back-to-/. Non-group surfaces (/watch, /reel, profile
+    // posts, fb.watch, photo permalinks) keep the direct-nav crawler
+    // pattern below — H1's permalink-redirect signal has only been
+    // observed on /groups/<g>/posts/<p>/ targets.
+    if (msgType === 'comment') {
+      const groupHome = extractGroupHomeFromPostUrl(targetUrl);
+      if (groupHome) {
+        return await executeInGroupFeed(message, targetUrl, groupHome);
+      }
     }
 
     let crawlInfo;

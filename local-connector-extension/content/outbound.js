@@ -782,6 +782,226 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return proof ? { ...base, proof } : base;
   }
 
+  // executeCommentInFeed is Path 2's content-script entry point. The
+  // background-side outbox flow (src/outbox.js::executeInGroupFeed) has
+  // already navigated the tab to /groups/<g>/ (group home — a surface
+  // proven non-redirected for account #49) and verified the URL. Now we
+  // find the target post's article element IN THE FEED DOM by post_id,
+  // then comment from feed context. We NEVER load /groups/<g>/posts/<p>/.
+  //
+  // Why this exists: the permalink-page path (executeComment above) keeps
+  // landing on `/` because FB silently redirects the tab during the small
+  // window between navigateAndVerify success and content-script handler
+  // entry. User confirmed account #49 has no FB-side restriction (manual
+  // commenting works) — so the redirect is triggered by our deep-link
+  // automation pattern. Group home + feed-DOM article-find bypasses the
+  // entire permalink surface, sidestepping the redirect entirely.
+  //
+  // Reuses existing utilities: findTargetArticle, articleIsReadyForComment,
+  // waitUntilTargetArticleStable (with extended timeout for scroll
+  // discovery), commentButton/editor/submit finders, gates 2 + 3, and
+  // commentResult. The only NEW behaviour is scroll-then-search to locate
+  // articles that are below the initial fold in the group's feed.
+  //
+  // Diagnostic taxonomy (notes-field prefix → matches Path 2 spec):
+  //   path2.article_not_found_in_feed             — gate-1 (feed-aware) timed out
+  //   path2.article_found_but_comment_button_missing — gate-1 passed, no Comment btn in scope
+  //   path2.article_found_comment_opened_submit_failed — typed OK, submit click did not clear editor
+  //   path2.comment_success                       — terminal success
+  async function executeCommentInFeed(message) {
+    const content = String(message?.content || '').trim();
+    if (!content) return { ok: false, error: 'outbox_content_empty' };
+    if (content.length > 3000) return { ok: false, error: 'outbox_content_too_long' };
+    const targetUrl = String(message?.target_url || message?.targetUrl || '').trim();
+    const executionId = String(message?.execution_id || message?.executionId || '').trim();
+    const explicitPostId = String(message?.post_id || message?.postId || '').trim();
+    const targetPostId = explicitPostId || extractPostIdFromUrl(targetUrl);
+    if (!targetPostId) {
+      return {
+        ok: false,
+        error: 'comment_target_not_post_permalink',
+        proof: {
+          success: false,
+          failure_reason: 'context_drift',
+          page_url_after: location.href || '',
+          notes: 'path2.no_post_id: target_url=' + targetUrl,
+          execution_id: executionId,
+        },
+      };
+    }
+
+    await dismissBlockingOverlays();
+    const navAtEntry = location.href || '';
+    console.log('[THG outbound.executeCommentInFeed] start',
+      { target_url: targetUrl, target_post_id: targetPostId, landed_at_entry: navAtEntry, execution_id: executionId });
+
+    const proof = THGContentProof || null;
+    const fbUID = proof?.currentFBUserID() || '';
+    const preCount = proof ? proof.snapshotCommentCount() : 0;
+    const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
+    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
+
+    // GATE-1 (feed-aware): scroll-then-wait until article materializes
+    // and is stable. Group home renders posts incrementally via virtual
+    // scroller; the lead's target post may be 5–30 posts deep. We
+    // alternate short waitUntilTargetArticleStable attempts with scroll
+    // pulses so FB's React mounts the article into DOM before we look.
+    const MAX_SCROLLS = 8;
+    const PER_ATTEMPT_TIMEOUT_MS = 2500;
+    let targetScope = null;
+    let scrollsDone = 0;
+    for (let i = 0; i <= MAX_SCROLLS; i++) {
+      targetScope = await waitUntilTargetArticleStable(targetPostId, {
+        timeoutMs: PER_ATTEMPT_TIMEOUT_MS,
+        stableMs: 500,
+        pollMs: 200,
+      });
+      if (targetScope) break;
+      if (i === MAX_SCROLLS) break;
+      try {
+        window.scrollBy({ top: 1800, behavior: 'instant' });
+      } catch {
+        window.scrollTo(0, window.scrollY + 1800);
+      }
+      scrollsDone++;
+      await wait(700);
+    }
+    if (!targetScope) {
+      const landed = location.href || '';
+      const articlesSeen = document.querySelectorAll('[role="article"]').length;
+      console.warn('[THG outbound.executeCommentInFeed] article_not_found_in_feed',
+        { target_post_id: targetPostId, scrolls: scrollsDone, articles_in_dom: articlesSeen, landed });
+      return commentResult(false, 'context_drift', null, ctx,
+        'path2.article_not_found_in_feed: target id=' + abbreviate(targetPostId) +
+        ' scrolls=' + scrollsDone +
+        ' articles_in_dom=' + articlesSeen +
+        ' nav_at_entry=' + navAtEntry +
+        ' landed_at=' + landed +
+        ' (article+permalink+comment-button stable 500ms never observed across ' +
+        (MAX_SCROLLS + 1) + ' attempts of ' + PER_ATTEMPT_TIMEOUT_MS + 'ms each)');
+    }
+
+    // Scroll target into view so FB doesn't unmount it as we click.
+    try { targetScope.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch {}
+    await wait(400);
+
+    // Find Comment button inside the article scope (NOT document-wide
+    // — feed has many articles, document-wide would click the wrong one).
+    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const buttons = Array.from(targetScope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const commentButton = buttons.find(el => {
+      const label = labelOf(el);
+      return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
+    });
+    if (!commentButton) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeCommentInFeed] article_found_but_comment_button_missing',
+        { target_post_id: targetPostId, scanned_buttons: buttons.length, landed });
+      return commentResult(false, 'comment_box_not_found', null, ctx,
+        'path2.article_found_but_comment_button_missing: target id=' + abbreviate(targetPostId) +
+        ' scanned_buttons=' + buttons.length +
+        ' landed_at=' + landed +
+        ' (article in feed but no Comment button matched label keys ' + JSON.stringify(commentKeys) + ')');
+    }
+    clickLikeUser(commentButton);
+    await wait(900);
+
+    // GATE-2 (post-click identity): click may have opened a modal (often
+    // anchored to document.body) OR expanded inline. Either is fine, but
+    // we must re-verify the resolved scope still belongs to targetPostId.
+    let scope;
+    const refreshed = findTargetArticle(targetPostId);
+    scope = refreshed || targetScope;
+    if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeCommentInFeed] gate2_swap',
+        { target_post_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed });
+      return commentResult(false, 'context_drift', null, ctx,
+        'path2.identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) +
+        ' landed_at=' + landed);
+    }
+
+    let editor = findCommentEditor(scope);
+    if (!editor) {
+      // Scroll a touch + re-find. Same recovery executeComment uses.
+      window.scrollBy({ top: 420, behavior: 'smooth' });
+      await wait(900);
+      const refreshed2 = findTargetArticle(targetPostId);
+      scope = refreshed2 || targetScope;
+      if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+        const landed = location.href || '';
+        return commentResult(false, 'context_drift', null, ctx,
+          'path2.identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) +
+          ' landed_at=' + landed);
+      }
+      editor = findCommentEditor(scope);
+    }
+    if (!editor) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeCommentInFeed] comment_box_not_found_post_click',
+        { target_post_id: targetPostId, landed });
+      return commentResult(false, 'comment_box_not_found', null, ctx,
+        'path2.article_found_but_comment_button_missing: target id=' + abbreviate(targetPostId) +
+        ' landed_at=' + landed +
+        ' (Comment button clicked but no editable composer materialized in scope)');
+    }
+
+    // GATE-3 (pre-type editor scope): mirror executeComment's last-line-
+    // of-defence check. Without this, a stray modal from a different
+    // article could capture our text.
+    const editorArticle = editor.closest('[role="article"], [role="dialog"]');
+    if (!editorArticle || extractArticleCanonicalEntityId(editorArticle) !== targetPostId) {
+      const landed = location.href || '';
+      const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '<no-enclosing-article>';
+      console.warn('[THG outbound.executeCommentInFeed] gate3_editor_drift',
+        { target_post_id: targetPostId, editor_scope_id: editorScopeID, landed });
+      return commentResult(false, 'context_drift', null, ctx,
+        'path2.identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) +
+        ' landed_at=' + landed);
+    }
+
+    if (!setEditableText(editor, content)) {
+      return commentResult(false, 'comment_text_insert_failed', null, ctx,
+        'path2.comment_text_insert_failed: target id=' + abbreviate(targetPostId));
+    }
+    const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
+    if (!inserted) {
+      return commentResult(false, 'comment_text_not_confirmed', null, ctx,
+        'path2.comment_text_not_confirmed: target id=' + abbreviate(targetPostId));
+    }
+
+    const submitButtons = findSubmitButtons(editor, [commentButton]);
+    for (const submit of submitButtons) {
+      if (submit && clickLikeUser(submit)) {
+        const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
+        if (cleared) {
+          await wait(700);
+          return commentResult(true, '', 'sent_comment_button',
+            { ...ctx, /* attach success note via 5th arg below */ },
+            'path2.comment_success: target id=' + abbreviate(targetPostId) + ' via=submit_button');
+        }
+      }
+      await wait(400);
+    }
+
+    if (pressEnter(editor)) {
+      const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
+      if (cleared) {
+        await wait(700);
+        return commentResult(true, '', 'sent_comment_enter', ctx,
+          'path2.comment_success: target id=' + abbreviate(targetPostId) + ' via=enter_key');
+      }
+    }
+
+    return commentResult(false,
+      submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found',
+      null, ctx,
+      'path2.article_found_comment_opened_submit_failed: target id=' + abbreviate(targetPostId) +
+      ' submit_candidates=' + submitButtons.length +
+      ' typed=' + content.length + 'chars' +
+      ' (text inserted into editor but submit click + enter both did not clear editor within 7s)');
+  }
+
   async function executeOutbound(message) {
     const content = String(message?.content || '').trim();
     if (!content) return { ok: false, error: 'outbox_content_empty' };
@@ -806,6 +1026,6 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
 
-  return { executeOutbound };
+  return { executeOutbound, executeCommentInFeed };
 })();
 globalThis.THGContentOutbound = THGContentOutbound;
