@@ -303,6 +303,52 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     return result;
   }
 
+  // deliverCommentViaRung2 — REAL delivery on the confirmed Rung-2 navigation.
+  // Establish a stable, logged-in home tab (the in-SPA click base), then hand
+  // the whole nav+comment to the content script (the click MUST happen in-page).
+  // The user's visible tab is reused and never closed (observability).
+  async function deliverCommentViaRung2(message, targetUrl) {
+    const execId = String(message.execution_id || '');
+    const fail = (failure_reason, notes) => ({
+      ok: false,
+      error: failure_reason,
+      proof: { success: false, failure_reason, page_url_after: '', notes, execution_id: execId },
+    });
+
+    const home = await THGFacebookState.ensureFacebookTabVisible(THGShared.FACEBOOK_HOME, { focus: true });
+    if (!home || !home.fbUserId) {
+      return fail('soft_fail', 'c.locate.not_logged_in: open Facebook and log in, then retry');
+    }
+    // Account safety (dormant until backend adds account_fb_user_id; no-op when absent).
+    const wantUid = String(message.account_fb_user_id || message.fb_user_id || '').trim();
+    if (wantUid && wantUid !== String(home.fbUserId)) {
+      return fail('soft_fail',
+        'c.locate.wrong_account: logged-in c_user=' + home.fbUserId +
+        ' != action account fb_user_id=' + wantUid + ' (switch the Facebook tab to the correct account)');
+    }
+    const tabId = home.tab && home.tab.id;
+    if (!tabId) return fail('soft_fail', 'c.locate.no_fb_tab');
+
+    // The content script does: Rung-2 click-nav → wait for permalink → executeComment.
+    const releaseTabLock = acquireTabExecutionLock(tabId);
+    if (!releaseTabLock) {
+      throw new Error('tab_busy_executing');
+    }
+    let result;
+    try {
+      try {
+        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_comment_via_rung2', message });
+      } catch {
+        await THGShared.injectContentScripts(tabId);
+        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_comment_via_rung2', message });
+      }
+    } finally {
+      releaseTabLock();
+      // Visible tab — do NOT close or minimize (observability + ready for next action).
+    }
+    return result;
+  }
+
   // probeRung2 (background half) — does the Rung-2 in-SPA click navigation
   // reach AND HOLD on the permalink? This catches the LATE redirect that
   // fooled the Stage-0 background-read probe (which measured during the brief
@@ -396,16 +442,15 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       throw new Error('comment_target_not_post_permalink');
     }
 
-    // ─── RUNG-2 PROBE ───────────────────────────────────────────────────
-    // Rung 1 (programmatic top-level nav) is DEAD: it lands on the permalink
-    // for ~1s then FB redirects to / (the Stage-0 probe's GREEN was a false
-    // positive — it read the URL too early). Before building delivery on
-    // Rung 2 (in-SPA click nav), probe whether a genuine anchor click reaches
-    // AND HOLDS on the permalink. No comment typed. deliverCommentViaPermalink
-    // (Rung-1 delivery) is retained but dormant — it will be re-pointed at the
-    // Rung-2 nav once the probe confirms it holds.
+    // ─── STAGE 1 — Option C delivery on the CONFIRMED Rung-2 navigation ──
+    // The Rung-2 probe confirmed (reached_and_held=true over 4s) that a genuine
+    // anchor click → FB's in-SPA router reaches and HOLDS on the permalink,
+    // where programmatic top-level nav (Rung 1) is bounced to /. Delivery now
+    // rides that: content script click-navigates in-SPA to the permalink, then
+    // runs executeComment on the held page. Dormant: deliverCommentViaPermalink
+    // (Rung-1) and probeRung2 (the probe) — removed in Stage 2 cleanup.
     if (msgType === 'comment') {
-      return await probeRung2(message, targetUrl);
+      return await deliverCommentViaRung2(message, targetUrl);
     }
 
     // PATH 2 routing (DORMANT — superseded by deliverCommentViaPermalink):

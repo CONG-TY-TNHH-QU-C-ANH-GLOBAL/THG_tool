@@ -18,7 +18,7 @@ globalThis.THGContentBridgeInstalled = true;
 // stale-out the meta tab state during a 20–30s outbound execution
 // for no safety benefit. Mutate-class types are listed explicitly
 // below so the lock surface is auditable.
-const MUTATING_COMMAND_TYPES = new Set(['thg_execute_outbound', 'thg_execute_command', 'thg_comment_in_group_feed']);
+const MUTATING_COMMAND_TYPES = new Set(['thg_execute_outbound', 'thg_execute_command', 'thg_comment_in_group_feed', 'thg_comment_via_rung2']);
 
 // activeMutation is the currently-running mutate-class command's
 // promise, or null when the content script is idle. Stored at the
@@ -93,6 +93,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           if (type === 'thg_comment_in_group_feed') {
             return THGContentOutbound.executeCommentInFeed(message.message || {});
+          }
+          if (type === 'thg_comment_via_rung2') {
+            return THGContentOutbound.executeCommentViaRung2(message.message || {});
           }
           return thgExecuteCommand(message.command || {});
         })();

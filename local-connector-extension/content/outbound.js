@@ -1035,6 +1035,51 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return { ok: true, clicked: true, method, entry_url: entry };
   }
 
+  // executeCommentViaRung2 is the REAL delivery on the confirmed Rung-2
+  // navigation. The probe proved a genuine anchor click → FB's in-SPA router
+  // reaches AND holds on the permalink (no late redirect). So: from the stable
+  // home page the content script started on, click-navigate to the permalink
+  // (in-SPA, gesture-carrying — survives where chrome.tabs.update is bounced),
+  // wait for the URL to land on the post, then hand off to the existing
+  // permalink-page executor (executeComment), whose identity checkpoints +
+  // proof are unchanged. The whole flow is visible in the user's tab.
+  async function executeCommentViaRung2(message) {
+    const content = String(message?.content || '').trim();
+    if (!content) return { ok: false, error: 'outbox_content_empty' };
+    if (content.length > 3000) return { ok: false, error: 'outbox_content_too_long' };
+    const targetUrl = String(message?.target_url || message?.targetUrl || '').trim();
+    const executionId = String(message?.execution_id || message?.executionId || '').trim();
+    const targetId = extractPostIdFromUrl(targetUrl);
+
+    // Rung-2 in-SPA navigation: genuine anchor click → FB router pushState.
+    probeRung2Click({ target_url: targetUrl });
+    // Wait until the in-SPA nav lands on the permalink (URL carries the post id).
+    const landed = await waitFor(
+      () => !!targetId && (location.href || '').indexOf(targetId) !== -1,
+      7000, 200
+    );
+    if (!landed) {
+      return {
+        ok: false,
+        error: 'nav_redirected',
+        proof: {
+          success: false,
+          failure_reason: 'redirected_feed',
+          page_url_after: location.href || '',
+          notes: 'c.rung2.nav_did_not_land: target_id=' + (targetId || '?') +
+            ' landed_at=' + (location.href || '') +
+            ' (in-SPA click nav did not reach the permalink within 7s)',
+          execution_id: executionId,
+        },
+      };
+    }
+    // Settle for the post + composer to render after the in-SPA route change.
+    await wait(900);
+    // Hand off to the permalink-page executor (gate-1 confirms the article,
+    // identity checkpoints + proof unchanged).
+    return executeComment(content, targetUrl, executionId);
+  }
+
   async function executeOutbound(message) {
     const content = String(message?.content || '').trim();
     if (!content) return { ok: false, error: 'outbox_content_empty' };
@@ -1059,6 +1104,6 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
 
-  return { executeOutbound, executeCommentInFeed, probeRung2Click };
+  return { executeOutbound, executeCommentInFeed, probeRung2Click, executeCommentViaRung2 };
 })();
 globalThis.THGContentOutbound = THGContentOutbound;
