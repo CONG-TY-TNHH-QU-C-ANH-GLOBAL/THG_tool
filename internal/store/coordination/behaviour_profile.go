@@ -194,9 +194,19 @@ func IncrementCounterTx(tx *sql.Tx, orgID, accountID int64, action string) error
 		return nil
 	}
 
-	// Slow path: row missing OR counters_day mismatched. Roll counters to
-	// today, set the action's counter to 1, leave non-counter fields
-	// (risk_score, recent_failures, cooldown_until) untouched.
+	// Slow path: row missing OR counters_day mismatched. The DO UPDATE is
+	// ADDITIVE-with-rollover (CASE WHEN) rather than a blind SET = excluded:
+	// when two different actions for the same account both reach the slow path
+	// concurrently at day-rollover (e.g. the day's first comment AND first
+	// inbox), a blind `comments_today = excluded.comments_today` lets the second
+	// upsert overwrite the first's count with 0. The CASE WHEN keeps the
+	// existing same-day value and ADDS the increment, so concurrent first-of-day
+	// upserts compose instead of clobbering. (SQLite serialises writers so this
+	// race needs Postgres to manifest; the CASE WHEN is a no-op difference on
+	// the sequential SQLite path and harmless there.)
+	//   - existing counters_day == today (excluded day): keep existing + delta.
+	//   - existing counters_day != today (stale): 0 + delta → clean rollover.
+	// Non-counter fields (risk_score, recent_failures, cooldown_until) untouched.
 	zero := map[string]int{
 		"comments_today":      0,
 		"inbox_today":         0,
@@ -213,11 +223,15 @@ func IncrementCounterTx(tx *sql.Tx, orgID, accountID int64, action string) error
 		 VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		 ON CONFLICT(account_id) DO UPDATE SET
 			org_id              = excluded.org_id,
+			comments_today      = CASE WHEN account_runtime_state.counters_day = excluded.counters_day
+			                           THEN account_runtime_state.comments_today ELSE 0 END + excluded.comments_today,
+			inbox_today         = CASE WHEN account_runtime_state.counters_day = excluded.counters_day
+			                           THEN account_runtime_state.inbox_today ELSE 0 END + excluded.inbox_today,
+			group_posts_today   = CASE WHEN account_runtime_state.counters_day = excluded.counters_day
+			                           THEN account_runtime_state.group_posts_today ELSE 0 END + excluded.group_posts_today,
+			profile_posts_today = CASE WHEN account_runtime_state.counters_day = excluded.counters_day
+			                           THEN account_runtime_state.profile_posts_today ELSE 0 END + excluded.profile_posts_today,
 			counters_day        = excluded.counters_day,
-			comments_today      = excluded.comments_today,
-			inbox_today         = excluded.inbox_today,
-			group_posts_today   = excluded.group_posts_today,
-			profile_posts_today = excluded.profile_posts_today,
 			last_action_at      = CURRENT_TIMESTAMP,
 			updated_at          = CURRENT_TIMESTAMP`,
 		accountID, orgID, today,

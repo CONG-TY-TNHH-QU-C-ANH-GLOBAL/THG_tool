@@ -398,10 +398,17 @@ func (h *Handler) finalizeOutbound(
 		}
 	}
 
-	// Inbox-specific thread bookkeeping — only on actual landing.
+	// Inbox-specific thread bookkeeping — only on actual landing. Failures are
+	// logged (not swallowed): a dropped thread/message is silent inbox data
+	// loss the operator would otherwise never see explained.
 	if models.IsSuccessOutcome(outcome) && msg.Type == "inbox" && msg.TargetURL != "" {
-		if threadID, threadErr := h.db.Threads().CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, ""); threadErr == nil {
-			_ = h.db.Threads().AddThreadMessage(threadID, "outbound", msg.Content, true)
+		threadID, threadErr := h.db.Threads().CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, "")
+		if threadErr != nil {
+			slog.WarnContext(ctx, "exec-verify: inbox thread create failed",
+				"org_id", orgID, "outbound_id", id, "target", msg.TargetURL, "error", threadErr)
+		} else if err := h.db.Threads().AddThreadMessage(threadID, "outbound", msg.Content, true); err != nil {
+			slog.WarnContext(ctx, "exec-verify: inbox thread message store failed",
+				"org_id", orgID, "outbound_id", id, "thread_id", threadID, "error", err)
 		}
 	}
 

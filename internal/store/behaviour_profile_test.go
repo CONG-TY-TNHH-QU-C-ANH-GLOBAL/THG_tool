@@ -271,6 +271,52 @@ func TestRefundDailyCounter_ActionIsolation(t *testing.T) {
 	}
 }
 
+// IncrementCounterTx slow-path must ROLL OVER stale-day counters (reset to 0)
+// and add only the new action's increment — guarding the CASE WHEN day-rollover
+// fix. (The concurrent-clobber the fix targets needs Postgres to manifest, since
+// SQLite serialises writers; this test pins the rollover semantics the CASE WHEN
+// must preserve, and that non-counter fields survive.)
+func TestIncrementCounter_StaleDayRollsOverOnQueue(t *testing.T) {
+	db := newBehaviourTestStore(t)
+	ctx := context.Background()
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
+		AccountID: 61, OrgID: 1, TrustLevel: models.TrustTrusted,
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// Seed yesterday's counters non-zero (a row untouched since the day rolled).
+	yesterday := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02")
+	if _, err := db.db.Exec(
+		`INSERT INTO account_runtime_state
+			(account_id, org_id, counters_day, comments_today, inbox_today,
+			 group_posts_today, profile_posts_today, risk_score, recent_failures, updated_at)
+		 VALUES (?, ?, ?, 99, 88, 0, 0, 0.3, 4, CURRENT_TIMESTAMP)`,
+		61, 1, yesterday,
+	); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Queue a comment today → slow-path upsert (fast-path misses on stale day).
+	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 61,
+		TargetURL: "https://facebook.com/post/rollover1", Content: "hi",
+	}, 24*time.Hour); err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+
+	r, _ := db.Coordination().GetAccountRuntimeState(ctx, 61)
+	if r.CommentsToday != 1 {
+		t.Fatalf("rollover: comments_today want 1 (reset+1), got %d", r.CommentsToday)
+	}
+	if r.InboxToday != 0 {
+		t.Fatalf("rollover: stale inbox_today must reset to 0, got %d", r.InboxToday)
+	}
+	// Non-counter field must survive the rollover (allow tiny idle-decay).
+	if r.RiskScore <= 0.2 {
+		t.Fatalf("rollover must preserve risk_score (~0.3), got %.3f", r.RiskScore)
+	}
+}
+
 // Setting cooldown_until in the future must block any queue regardless
 // of the daily cap.
 func TestQueueOutbound_AccountCooldownBlocks(t *testing.T) {
