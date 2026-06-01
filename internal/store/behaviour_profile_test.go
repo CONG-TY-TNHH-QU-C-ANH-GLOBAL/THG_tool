@@ -174,6 +174,103 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 	}
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// QUOTA REFUND invariant (2026-06-01): comments_today RESERVES a slot at
+// queue time; a NON-SUCCESS terminal REFUNDS it (failed execution must not
+// consume the business quota). RefundDailyCounter is what the finalize path
+// calls on !IsSuccessOutcome. These tests model the agent's reserve→refund.
+// ─────────────────────────────────────────────────────────────────────
+
+// reserveOneComment queues a comment for a Trusted account (high cap) so the
+// reservation is independent of cap enforcement, and asserts the reservation.
+func reserveOneComment(t *testing.T, db *Store, accountID int64, target string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := db.Coordination().UpsertAccountBehaviourProfile(ctx, &models.AccountBehaviourProfile{
+		AccountID: accountID, OrgID: 1, TrustLevel: models.TrustTrusted,
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: accountID,
+		TargetURL: target, Content: "hi",
+	}, 24*time.Hour)
+	if err != nil || !res.Decision.Allowed {
+		t.Fatalf("reserve queue: err=%v decision=%+v", err, res.Decision)
+	}
+	if r, _ := db.Coordination().GetAccountRuntimeState(ctx, accountID); r.CommentsToday != 1 {
+		t.Fatalf("reserve: comments_today want 1, got %d", r.CommentsToday)
+	}
+}
+
+// A non-success terminal refunds the reservation: 1 → 0.
+func TestRefundDailyCounter_FailedRefundsReservation(t *testing.T) {
+	db := newBehaviourTestStore(t)
+	ctx := context.Background()
+	reserveOneComment(t, db, 51, "https://facebook.com/post/refund1")
+
+	if err := db.Coordination().RefundDailyCounter(ctx, 51, "comment"); err != nil {
+		t.Fatalf("refund: %v", err)
+	}
+	if r, _ := db.Coordination().GetAccountRuntimeState(ctx, 51); r.CommentsToday != 0 {
+		t.Fatalf("after refund: comments_today want 0, got %d", r.CommentsToday)
+	}
+}
+
+// A successful terminal keeps the reservation: the finalize path does NOT call
+// refund on IsSuccessOutcome, so the queued slot stays consumed.
+func TestRefundDailyCounter_SuccessKeepsReservation(t *testing.T) {
+	db := newBehaviourTestStore(t)
+	ctx := context.Background()
+	reserveOneComment(t, db, 52, "https://facebook.com/post/keep1")
+
+	// Success path calls NO refund — assert the reservation persists.
+	if r, _ := db.Coordination().GetAccountRuntimeState(ctx, 52); r.CommentsToday != 1 {
+		t.Fatalf("success keeps reservation: comments_today want 1, got %d", r.CommentsToday)
+	}
+}
+
+// Replay/finalize race must not refund twice below the reservation, and a
+// refund never drives the counter negative.
+func TestRefundDailyCounter_NeverBelowZeroOnReplay(t *testing.T) {
+	db := newBehaviourTestStore(t)
+	ctx := context.Background()
+	reserveOneComment(t, db, 53, "https://facebook.com/post/replay1")
+
+	// Two refunds (a replay that hypothetically slipped past first-win gating).
+	for i := 0; i < 2; i++ {
+		if err := db.Coordination().RefundDailyCounter(ctx, 53, "comment"); err != nil {
+			t.Fatalf("refund #%d: %v", i, err)
+		}
+	}
+	if r, _ := db.Coordination().GetAccountRuntimeState(ctx, 53); r.CommentsToday != 0 {
+		t.Fatalf("double refund must clamp at 0, got %d", r.CommentsToday)
+	}
+	// Refund on an already-zero counter is still a no-op (never negative).
+	if err := db.Coordination().RefundDailyCounter(ctx, 53, "comment"); err != nil {
+		t.Fatalf("refund-on-zero: %v", err)
+	}
+	if r, _ := db.Coordination().GetAccountRuntimeState(ctx, 53); r.CommentsToday != 0 {
+		t.Fatalf("refund on zero must stay 0, got %d", r.CommentsToday)
+	}
+}
+
+// Refund only touches the action's own column — a comment refund must not
+// disturb inbox_today (counter isolation).
+func TestRefundDailyCounter_ActionIsolation(t *testing.T) {
+	db := newBehaviourTestStore(t)
+	ctx := context.Background()
+	reserveOneComment(t, db, 54, "https://facebook.com/post/iso1")
+
+	if err := db.Coordination().RefundDailyCounter(ctx, 54, "comment"); err != nil {
+		t.Fatalf("refund: %v", err)
+	}
+	r, _ := db.Coordination().GetAccountRuntimeState(ctx, 54)
+	if r.CommentsToday != 0 || r.InboxToday != 0 {
+		t.Fatalf("comment refund must not touch inbox; got comments=%d inbox=%d", r.CommentsToday, r.InboxToday)
+	}
+}
+
 // Setting cooldown_until in the future must block any queue regardless
 // of the daily cap.
 func TestQueueOutbound_AccountCooldownBlocks(t *testing.T) {

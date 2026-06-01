@@ -383,6 +383,21 @@ func (h *Handler) finalizeOutbound(
 		)
 	}
 
+	// QUOTA REFUND (invariant 2026-06-01): the *_today counter reserved a slot
+	// at QUEUE time (IncrementCounterTx). A non-success terminal posted nothing,
+	// so refund the slot — failed execution must not consume the business quota
+	// (it stays retryable). FIRST-WIN ONLY: the !finalized replay/stale paths
+	// returned above, so this runs once per terminal and cannot double-refund
+	// (RefundCounterTx's >0 guard is the belt-and-suspenders). Pure quota
+	// accounting — risk/pacing already moved via ApplyRiskSignal and is
+	// untouched here (audit: comments_today is not coupled to risk_score).
+	if !models.IsSuccessOutcome(outcome) && msg.AccountID > 0 {
+		if err := h.db.Coordination().RefundDailyCounter(ctx, msg.AccountID, msg.Type); err != nil {
+			slog.WarnContext(ctx, "exec-verify: quota refund failed",
+				"org_id", orgID, "account_id", msg.AccountID, "action_type", msg.Type, "error", err)
+		}
+	}
+
 	// Inbox-specific thread bookkeeping — only on actual landing.
 	if models.IsSuccessOutcome(outcome) && msg.Type == "inbox" && msg.TargetURL != "" {
 		if threadID, threadErr := h.db.Threads().CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, ""); threadErr == nil {

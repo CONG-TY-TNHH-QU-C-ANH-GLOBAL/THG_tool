@@ -226,6 +226,57 @@ func IncrementCounterTx(tx *sql.Tx, orgID, accountID int64, action string) error
 	return err
 }
 
+// RefundCounterTx reverses ONE same-day reservation made by IncrementCounterTx.
+// The execution finalize path calls it (via RefundDailyCounter) when an action
+// reaches a NON-SUCCESS terminal: the attempt posted nothing, so it must not
+// consume the business quota — failed execution stays retryable.
+//
+// Guards (both make it safe to call more than once — defense in depth against a
+// replay that slips past the finalize first-win gate):
+//   - same-day only (WHERE counters_day = today): if the day already rolled,
+//     the reservation belonged to a prior day's counter (irrelevant to today's
+//     cap), so there is nothing to refund — skip rather than corrupt today.
+//   - never below zero (WHERE <col> > 0): a double-refund, or a refund with no
+//     live reservation, is a no-op.
+//
+// PURE QUOTA ACCOUNTING. Does NOT touch risk_score, recent_failures,
+// cooldown_until, or any pacing/circuit-breaker state — those are owned by
+// ApplyRiskSignal and are independent of the *_today counters.
+func RefundCounterTx(tx *sql.Tx, accountID int64, action string) error {
+	col := counterColumnForAction(action)
+	if col == "" || accountID <= 0 {
+		return nil
+	}
+	today := dbutil.UTCDayKey(time.Now())
+	_, err := tx.Exec(
+		`UPDATE account_runtime_state
+		    SET `+col+` = `+col+` - 1,
+		        updated_at = CURRENT_TIMESTAMP
+		  WHERE account_id = ? AND counters_day = ? AND `+col+` > 0`,
+		accountID, today,
+	)
+	return err
+}
+
+// RefundDailyCounter is the autocommit entry point for callers outside a queue
+// transaction (the execution finalize path). It wraps RefundCounterTx so the
+// quota-reversal SQL has a single source. See RefundCounterTx for the invariant
+// and guards.
+func (s *Store) RefundDailyCounter(ctx context.Context, accountID int64, action string) error {
+	if accountID <= 0 || counterColumnForAction(action) == "" {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := RefundCounterTx(tx, accountID, action); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // ApplyRiskSignal updates risk_score for an account based on a typed
 // signal. The default weight is taken from models.SignalWeights; callers
 // may pass a non-zero customWeight to override the default for one event
