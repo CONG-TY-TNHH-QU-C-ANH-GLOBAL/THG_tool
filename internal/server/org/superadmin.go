@@ -302,12 +302,20 @@ func (h *Handler) superAdminAccountDiagnostic(c *fiber.Ctx) error {
 }
 
 // superAdminAccountResetRisk clears risk_score + recent_failures +
-// cooldown_until for an account. Founder-only. Audit logged.
+// cooldown_until AND the per-day action counters (comments_today etc.) for
+// an account — i.e. a clean runtime-state slate for a fresh diagnostic test.
+// Founder-only. Audit logged.
 //
-// USE WITH DISCIPLINE: resetting risk does NOT fix the underlying cause
-// of past failures. If the redirect bug is unresolved, the cleared
-// account will burn again on next attempt. The reset is for diagnostic
-// loops after the root cause is fixed, not as a recurring patch.
+// Why the daily counters are included: comments_today increments at QUEUE
+// time (internal/store/outbound/queue.go), so a debugging loop that queues
+// many attempts — even ones that fail or are probes and post nothing —
+// exhausts the daily cap and blocks further tests with daily_limit_exceeded.
+// Clearing the counters here lets the operator re-test immediately instead of
+// waiting for the UTC day rollover.
+//
+// USE WITH DISCIPLINE: resetting does NOT fix the underlying cause of past
+// failures. The reset is for diagnostic loops after the root cause is fixed,
+// not as a recurring patch.
 func (h *Handler) superAdminAccountResetRisk(c *fiber.Ctx) error {
 	accountID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || accountID <= 0 {
@@ -317,7 +325,11 @@ func (h *Handler) superAdminAccountResetRisk(c *fiber.Ctx) error {
 		`UPDATE account_runtime_state
 		    SET risk_score = 0,
 		        recent_failures = 0,
-		        cooldown_until = NULL
+		        cooldown_until = NULL,
+		        comments_today = 0,
+		        inbox_today = 0,
+		        group_posts_today = 0,
+		        profile_posts_today = 0
 		  WHERE account_id = ?`, accountID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
