@@ -221,52 +221,86 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       s.includes('two_step') || s.includes('/recover');
   }
 
-  // probeCommentNavigation implements STAGE 0 (the gate): it tests Rung 1 of
-  // the navigation ladder — does a focused, IN-SESSION navigation of an
-  // ESTABLISHED logged-in FB tab to the post permalink survive FB's redirect?
-  // It NEVER comments. It establishes a logged-in tab at home first (so we are
-  // never fresh-tab-ing straight to a deep URL — that is the redirect trigger),
-  // then navigates that same tab in-session to target_url (the permalink), and
-  // reports where it landed via proof.notes (surfaced in operator chat by A1).
+  // deliverCommentViaPermalink implements STAGE 1 — Option C (the TargetLocator):
+  // navigate the user's visible, logged-in FB tab IN-SESSION directly to the
+  // post permalink (the post IS the page), then dispatch the existing
+  // permalink-page executor (executeComment via thg_execute_outbound), which
+  // locates the target article, runs its identity checkpoints (the last-moment
+  // re-assertion), types, and submits. No fresh-tab, no group-home, no
+  // feed-scroll rediscovery.
   //
-  // failure_reason='soft_fail' on purpose: a probe must NOT poison the account
-  // risk profile and MUST stay retryable so the operator can re-probe freely.
-  async function probeCommentNavigation(message, targetUrl) {
+  // The probe (Stage 0) confirmed Rung 1 works: focused in-session nav lands on
+  // the permalink (not redirected to /). This is that nav, now followed by
+  // delivery instead of a probe-only report.
+  //
+  // Locator identity gate (classify landed state before acting):
+  //   login/checkpoint → checkpoint (human required, session held)
+  //   feed/home (/)     → redirected_feed (Rung 1 bounced — escalate to Rung 2)
+  //   permalink         → dispatch the executor
+  async function deliverCommentViaPermalink(message, targetUrl) {
     const execId = String(message.execution_id || '');
-    const probe = (notes) => ({
+    const fail = (failure_reason, notes) => ({
       ok: false,
-      error: 'nav_probe',
-      proof: { success: false, failure_reason: 'soft_fail', page_url_after: '', notes, execution_id: execId },
+      error: failure_reason,
+      proof: { success: false, failure_reason, page_url_after: '', notes, execution_id: execId },
     });
 
-    // Step 1: establish/reuse a logged-in FB tab at home (in-session base).
+    // Establish/reuse a logged-in FB tab at home (in-session base — never
+    // fresh-tab straight to a deep URL; that is the redirect trigger).
     const home = await THGFacebookState.ensureFacebookTabVisible(THGShared.FACEBOOK_HOME, { focus: true });
     if (!home || !home.fbUserId) {
-      return probe('c.nav_probe: not_logged_in (no c_user) — open Facebook and log in, then retry');
+      return fail('soft_fail', 'c.locate.not_logged_in: no c_user — open Facebook and log in, then retry');
+    }
+    // Account safety: if the work item carries the target account's FB uid, it
+    // MUST match the logged-in session, or we would comment from the WRONG
+    // account. Dormant until the backend adds account_fb_user_id to the work
+    // item (Stage 1b); harmless no-op when absent.
+    const wantUid = String(message.account_fb_user_id || message.fb_user_id || '').trim();
+    if (wantUid && wantUid !== String(home.fbUserId)) {
+      return fail('soft_fail',
+        'c.locate.wrong_account: logged-in c_user=' + home.fbUserId +
+        ' != action account fb_user_id=' + wantUid + ' (switch the Facebook tab to the correct account)');
     }
 
-    // Step 2: navigate that SAME established tab in-session to the permalink.
+    // Navigate that SAME established tab in-session to the post permalink.
     const liveState = await THGFacebookState.ensureFacebookTabVisible(targetUrl, { focus: true });
     const tabId = liveState && liveState.tab && liveState.tab.id;
+    if (!tabId) return fail('soft_fail', 'c.locate.no_tab_after_nav: target=' + targetUrl);
     let landed = (liveState && liveState.currentUrl) || '';
     try {
       const t = await chrome.tabs.get(tabId);
       if (t && t.url) landed = t.url;
     } catch { /* keep currentUrl */ }
 
-    const targetId = extractPostIdFromTargetUrl(targetUrl);
-    const redirected = isHomeOrFeedUrl(landed);
-    const login = isLoginOrCheckpointUrl(landed);
-    const identityOk = !redirected && !login && !!targetId && landed.indexOf(targetId) !== -1;
-    return probe(
-      'c.nav_probe: target=' + targetUrl +
-      ' landed_at=' + landed +
-      ' target_id=' + (targetId || '?') +
-      ' identity_ok=' + identityOk +
-      ' redirected=' + redirected +
-      ' login_or_checkpoint=' + login +
-      ' (Rung1 focused in-session nav to permalink; no comment typed)'
-    );
+    if (isLoginOrCheckpointUrl(landed)) {
+      return fail('checkpoint', 'c.locate.login_or_checkpoint: target=' + targetUrl + ' landed_at=' + landed);
+    }
+    if (isHomeOrFeedUrl(landed)) {
+      return fail('redirected_feed',
+        'c.locate.nav_redirected_permalink: target=' + targetUrl + ' landed_at=' + landed +
+        ' (Rung1 focused in-session nav bounced to feed — escalate to Rung 2 in-SPA nav)');
+    }
+
+    // Landed on a (non-feed) permalink page → hand off to the executor.
+    // Per-tab lock guards against a concurrent mutating command on this tab.
+    const releaseTabLock = acquireTabExecutionLock(tabId);
+    if (!releaseTabLock) {
+      throw new Error('tab_busy_executing');
+    }
+    let result;
+    try {
+      try {
+        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_execute_outbound', message });
+      } catch {
+        await THGShared.injectContentScripts(tabId);
+        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_execute_outbound', message });
+      }
+    } finally {
+      releaseTabLock();
+      // Option C: this is the user's visible tab. Do NOT close or minimize it —
+      // observability (north star) + it stays ready for the next action.
+    }
+    return result;
   }
 
   // executeInFacebookTab navigates the FB tab to the target URL and
@@ -304,18 +338,16 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       throw new Error('comment_target_not_post_permalink');
     }
 
-    // ─── STAGE 0 GATE ───────────────────────────────────────────────────
-    // Until the navigation probe confirms Rung 1 works, ALL comment actions
-    // run the probe (navigate the focused in-session tab to the permalink and
-    // report where it lands) instead of attempting delivery. No comment is
-    // typed. Read the result in chat via proof.notes (A1). Replace this block
-    // with the real Locate→Execute→Verify path (Stage 1) once the probe lands
-    // on the permalink. The Path-2 code below is dormant during Stage 0.
+    // ─── STAGE 1 — Option C delivery (deterministic permalink) ──────────
+    // Rung 1 confirmed by the Stage 0 probe: focused in-session nav reaches
+    // the permalink. Comments now navigate directly to target_url (the post
+    // IS the page) and dispatch the permalink-page executor. The Path-2
+    // feed-scroll code below is dormant and removed in Stage 2.
     if (msgType === 'comment') {
-      return await probeCommentNavigation(message, targetUrl);
+      return await deliverCommentViaPermalink(message, targetUrl);
     }
 
-    // PATH 2 routing: group-post comments take the feed-context flow
+    // PATH 2 routing (DORMANT — superseded by deliverCommentViaPermalink):
     // (navigate to /groups/<g>/, find article by post_id, comment inline)
     // instead of the permalink-page flow that keeps hitting FB's silent
     // redirect-back-to-/. Non-group surfaces (/watch, /reel, profile
