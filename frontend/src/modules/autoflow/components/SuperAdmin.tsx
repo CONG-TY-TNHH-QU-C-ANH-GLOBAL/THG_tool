@@ -4,7 +4,7 @@ import { Avatar, Badge, Row } from './ui';
 import { Shield, RefreshCw, Database, Trash2, LogOut } from 'lucide-react';
 import {
   getOrgs, getAccounts, getUsers, getSessions, runQuery,
-  deleteOrg, deleteAccount, deleteUser, terminateSession,
+  deleteOrg, deleteAccount, deleteUser, terminateSession, resetAccountRisk,
   SAOrg, SAAccount, SAUser, SASession, QueryResult,
 } from '../services/superadminService';
 import { useAuthStore } from '../stores/authStore';
@@ -34,6 +34,7 @@ export default function SuperAdmin({ goBack }: SuperAdminProps) {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState('');
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [actionMsg, setActionMsg] = useState('');
 
   useEffect(() => {
     Promise.all([getOrgs(), getAccounts(), getSessions(), getUsers()])
@@ -68,6 +69,22 @@ export default function SuperAdmin({ goBack }: SuperAdminProps) {
     try { await deleteAccount(id); setAccounts(prev => prev.filter(a => a.id !== id)); } catch {}
     setDeleting(null);
   };
+  // Reset runtime health for a diagnostic re-test: clears risk_score,
+  // recent_failures, cooldown_until AND the daily action counters
+  // (comments_today etc.). Founder-only; backend audit-logs it. Non-destructive
+  // (no rows deleted) — safe to run repeatedly while testing outbound.
+  const handleResetAccount = async (id: number) => {
+    if (!confirm(`Reset account #${id}?\nXoá risk_score, recent_failures, cooldown và bộ đếm ngày (comments_today…). Không xoá dữ liệu.`)) return;
+    setDeleting(id);
+    setActionMsg('');
+    try {
+      await resetAccountRisk(id);
+      setActionMsg(`✓ Đã reset account #${id} (risk + daily counters về 0).`);
+    } catch (e) {
+      setActionMsg(`✗ Reset account #${id} thất bại: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setDeleting(null);
+  };
   const handleDeleteUser = async (id: number) => {
     if (!confirm('Xoá user này?')) return;
     setDeleting(id);
@@ -96,6 +113,7 @@ export default function SuperAdmin({ goBack }: SuperAdminProps) {
   const th: React.CSSProperties = { padding: '10px 14px', textAlign: 'left', color: theme.textFaint, fontWeight: 500, fontSize: 12 };
   const td: React.CSSProperties = { padding: '10px 14px', color: theme.text, fontSize: 13, borderBottom: `1px solid ${theme.border}` };
   const delBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', padding: '2px 6px', borderRadius: 4, display: 'flex', alignItems: 'center' };
+  const resetBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: '#fbbf24', padding: '2px 6px', borderRadius: 4, display: 'flex', alignItems: 'center' };
 
   return (
     <div style={{ background: theme.bg, color: theme.text, fontFamily: 'system-ui, sans-serif', minHeight: '100vh' }}>
@@ -140,6 +158,11 @@ export default function SuperAdmin({ goBack }: SuperAdminProps) {
             </button>
           ))}
         </Row>
+
+        {/* Action feedback (reset, etc.) */}
+        {actionMsg && (
+          <p style={{ color: actionMsg.startsWith('✓') ? '#4ade80' : '#f87171', fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
+        )}
 
         {/* Loading */}
         {loading && (
@@ -205,9 +228,14 @@ export default function SuperAdmin({ goBack }: SuperAdminProps) {
                         <td style={td}>{a.browser_logged_in ? <span style={{ color: '#4ade80' }}>✓</span> : <span style={{ color: theme.textFaint }}>-</span>}</td>
                         <td style={{ ...td, color: theme.textFaint }}>{a.created_at.slice(0, 10)}</td>
                         <td style={td}>
-                          <button style={delBtn} disabled={deleting === a.id} onClick={() => void handleDeleteAccount(a.id)}>
-                            <Trash2 size={13} />
-                          </button>
+                          <Row style={{ gap: 2 }}>
+                            <button style={resetBtn} disabled={deleting === a.id} onClick={() => void handleResetAccount(a.id)} title="Reset risk + bộ đếm ngày (để test lại)">
+                              <RefreshCw size={13} />
+                            </button>
+                            <button style={delBtn} disabled={deleting === a.id} onClick={() => void handleDeleteAccount(a.id)} title="Xoá account">
+                              <Trash2 size={13} />
+                            </button>
+                          </Row>
                         </td>
                       </tr>
                     ))}

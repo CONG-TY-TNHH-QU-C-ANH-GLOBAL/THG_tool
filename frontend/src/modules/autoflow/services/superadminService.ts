@@ -12,6 +12,10 @@ export async function getUsers(): Promise<SAUser[]> { const r = await get<{users
 export async function getSessions(): Promise<SASession[]> { const r = await get<{sessions: SASession[]}>('/superadmin/sessions'); return r.sessions ?? []; }
 export async function runQuery(sql: string): Promise<QueryResult> { return post<QueryResult>('/superadmin/query', { sql }); }
 
+export async function resetAccountRisk(id: number): Promise<{ ok: boolean; account_id: number }> {
+  return post<{ ok: boolean; account_id: number }>(`/superadmin/accounts/${id}/reset-risk`, {});
+}
+
 export async function deleteOrg(id: number): Promise<void> { return del(`/superadmin/orgs/${id}`); }
 export async function deleteAccount(id: number): Promise<void> { return del(`/superadmin/accounts/${id}`); }
 export async function deleteUser(id: number): Promise<void> { return del(`/superadmin/users/${id}`); }
