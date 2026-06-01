@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store/dbutil"
 )
 
@@ -91,7 +92,7 @@ func (s *Store) checkExistingRow(
 	orgID, accountID int64,
 	targetURL string,
 ) (GuardDecision, error) {
-	query := `SELECT id, execution_state, COALESCE(sent_at, created_at)
+	query := `SELECT id, execution_state, verification_outcome, COALESCE(sent_at, created_at)
 		FROM outbound_messages
 		WHERE org_id = ? AND type = ? AND target_url = ?
 		  AND execution_state IN ('planned','executing','finished')`
@@ -103,11 +104,12 @@ func (s *Store) checkExistingRow(
 	query += ` ORDER BY created_at DESC LIMIT 1`
 
 	var (
-		existingID int64
-		execState  string
-		createdAt  string
+		existingID   int64
+		execState    string
+		verifOutcome sql.NullString // NULL for planned/executing; set on finished
+		createdAt    string
 	)
-	err := tx.QueryRowContext(ctx, query, args...).Scan(&existingID, &execState, &createdAt)
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&existingID, &execState, &verifOutcome, &createdAt)
 	if err == sql.ErrNoRows {
 		return GuardDecision{Allowed: true, Reason: "ok"}, nil
 	}
@@ -134,10 +136,31 @@ func (s *Store) checkExistingRow(
 			LastOutboundAt: lastAt,
 		}, nil
 	}
-	// Finished rows respect the cooldown window. CooldownSeconds=0
-	// disables the time check entirely.
+	// Finished rows respect the cooldown window ONLY when they represent a
+	// VERIFIED-SUCCESS contact. Invariant (owner-stated 2026-06-01):
+	//   verified-success => cooldown ; failed execution => retryable.
+	// The cooldown models "we already contacted this target", not "we tried
+	// once". A finished-but-failed attempt (context_drift, redirected_feed,
+	// rate_limited, blocked, captcha, shadow_rejected, execution_failed)
+	// delivered nothing, so it must NOT burn the per-target cooldown — the
+	// target stays immediately retryable. Account-level backoff for the
+	// platform-defense failures (rate_limited / blocked / captcha) is the
+	// risk / circuit-breaker system's responsibility (RiskSignalForOutcome),
+	// NOT this per-target dedup gate.
+	//
+	// Single-latest-row is sufficient: a verified-success row blocks ALL
+	// subsequent re-enqueues within the window (this very branch), so a
+	// *newer* failed row cannot appear behind a recent success — if the
+	// latest finished row is a failure, there was genuinely no verified
+	// success in the window. Holds for per_account and workspace scopes.
+	//
+	// CooldownSeconds=0 disables the time check entirely.
 	if execState == "finished" && policy.CooldownSeconds > 0 {
-		if time.Since(lastAt) < time.Duration(policy.CooldownSeconds)*time.Second {
+		verified := models.IsVerifiedSuccess(
+			models.ExecFinished,
+			models.VerificationOutcome(strings.TrimSpace(verifOutcome.String)),
+		)
+		if verified && time.Since(lastAt) < time.Duration(policy.CooldownSeconds)*time.Second {
 			return GuardDecision{
 				Allowed:        false,
 				Reason:         "outbound_cooldown_active",

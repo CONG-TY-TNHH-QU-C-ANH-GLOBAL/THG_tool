@@ -184,6 +184,88 @@ func TestQueueOutboundForOrgBlocksDuplicateActiveTarget(t *testing.T) {
 	}
 }
 
+// Cooldown invariant (owner-stated 2026-06-01): a finished outbound burns the
+// per-target 24h cooldown ONLY when it was a VERIFIED SUCCESS. The cooldown
+// models "we already contacted this target", not "we tried once".
+// See internal/store/outbound/dedup.go checkExistingRow.
+func TestQueueOutbound_VerifiedSuccessTriggersCooldown(t *testing.T) {
+	db := newSharedStore(t, "outbound_cooldown.db")
+	const org, acct = int64(41), int64(7)
+	target := "https://facebook.com/p/cooldown-success"
+
+	first, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
+		AccountID: acct, TargetURL: target, Content: "x",
+	}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := db.ClaimPlannedOutboundForOrg(org, first.ID, "worker-a", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalized, _, _, _, err := db.FinalizeOutboundAttempt(context.Background(), org, first.ID, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess); err != nil || !finalized {
+		t.Fatalf("finalize verified_success: finalized=%v err=%v", finalized, err)
+	}
+
+	dup, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
+		AccountID: acct, TargetURL: target, Content: "y",
+	}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dup.Decision.Allowed {
+		t.Fatal("verified_success within window MUST trigger cooldown (block re-queue) — successful-contact dedup unchanged")
+	}
+	if dup.Decision.Reason != "outbound_cooldown_active" {
+		t.Fatalf("expected outbound_cooldown_active, got %q", dup.Decision.Reason)
+	}
+}
+
+// Failed finished attempts (context_drift / rate_limited / shadow_rejected /
+// execution_failed) delivered nothing, so they must NOT burn the cooldown —
+// the target stays immediately retryable. This is the fix for the
+// "comment_all_leads runs out of leads / can't retry a failed lead" trap: a
+// finished/context_drift comment was previously locking its post for 24h.
+func TestQueueOutbound_FailedFinishedIsRetryable(t *testing.T) {
+	db := newSharedStore(t, "outbound_cooldown_fail.db")
+	const org, acct = int64(42), int64(7)
+	for i, outcome := range []models.VerificationOutcome{
+		models.VerifContextDrift,
+		models.VerifRateLimited,
+		models.VerifShadowRejected,
+		models.VerifExecutionFailed,
+	} {
+		target := fmt.Sprintf("https://facebook.com/p/retryable-%d", i)
+		first, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+			OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
+			AccountID: acct, TargetURL: target, Content: "x",
+		}, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claim, err := db.ClaimPlannedOutboundForOrg(org, first.ID, "worker-a", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if finalized, _, _, _, err := db.FinalizeOutboundAttempt(context.Background(), org, first.ID, claim.ExecutionID, models.ExecFinished, outcome); err != nil || !finalized {
+			t.Fatalf("finalize %s: finalized=%v err=%v", outcome, finalized, err)
+		}
+
+		retry, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+			OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
+			AccountID: acct, TargetURL: target, Content: "y",
+		}, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !retry.Decision.Allowed {
+			t.Fatalf("failed outcome %s must be retryable; got blocked reason=%q", outcome, retry.Decision.Reason)
+		}
+	}
+}
+
 func TestQueueOutboundForOrgConcurrentRaceLastResortUnique(t *testing.T) {
 	// The application-level guard plus the partial UNIQUE index together
 	// must ensure two concurrent QueueOutboundForOrg calls with the same
