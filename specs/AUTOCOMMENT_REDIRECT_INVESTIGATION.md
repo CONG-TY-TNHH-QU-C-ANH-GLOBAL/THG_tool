@@ -1,6 +1,6 @@
 # Auto-Comment `redirected_feed` Investigation
 
-**Status**: H1 confirmed (2026-05-31). Candidate fixes (c0ce159 / b93b783 / 8209178) insufficient. Deeper fix shipped: extension `navigateToPostViaGroupClick` (commit pending). Awaiting verification cycle.
+**Status**: 2026-06-01 — Group-click strategy abandoned. Switched comment outbox to reuse the crawler's `navigateAndVerify` helper (chrome.tabs.create + 3 retries + URL verify). Awaiting verification cycle.
 
 **Owner**: Operator (founder). Claude cannot satisfy the verification gate from current context.
 
@@ -45,7 +45,44 @@ Operator confirmed via direct browser inspection:
 
 ---
 
-## 2026-05-31 — H1 confirmed; deeper fix shipped
+## 2026-06-01 — Group-click abandoned; comment outbox now uses crawler's navigation helper
+
+Group-click v1 (`f2645e6`) + v2 (`63def8a` wide selector + scroll-then-scan) shipped to bypass H1's deep-link redirect. Both failed in distinct ways:
+
+```
+v1: scanned=1 anchors          → narrow selector caught only nav, not post permalinks
+v2: scanned=4-8 anchors after 5 scrolls
+    post_id=2025115625062438 — never matched any anchor in DOM
+```
+
+Modern FB renders group-feed permalink anchors via tracking URLs (`__cft__`, `__tn__`) and defers permalink-href mounting until hover or focus. Selector-based matching is structurally unreliable on this surface.
+
+**User insight that ended the detour**: the crawler navigates FB reliably without redirect. Comparing the two paths surfaced the real difference:
+
+| | Crawler | Comment outbox (old) |
+|---|---|---|
+| Tab creation | `chrome.tabs.create({url, active:true})` | `chrome.tabs.update(tab.id, {url})` |
+| Retry | 3× with close-on-fail | 0 |
+| SPA settle | 5000 ms | 1200 ms |
+
+Hypothesis: FB's anti-bot heuristic fingerprints `chrome.tabs.update` of an existing tab as background-nav (bot-like) and redirects to `/`; `chrome.tabs.create` of a fresh tab is fingerprinted as user-clicked link and is allowed through. The crawler's months of reliable navigation are direct evidence.
+
+**Shipped fix (commit pending)**:
+
+- [local-connector-extension/src/commands.js](../local-connector-extension/src/commands.js) — export `navigateAndVerify` from the THGCommands closure (1 line in the return statement).
+- [local-connector-extension/src/outbox.js](../local-connector-extension/src/outbox.js) — delete the entire group-click implementation (`extractGroupHomeFromPostUrl`, `findAndClickPostAnchorInPage`, `navigateToPostViaGroupClick`, `urlsMatchSameDestination`) and replace `executeInFacebookTab` with a thin wrapper around `THGCommands.navigateAndVerify`. Mirror crawler's cleanup: close the temp tab after the command finishes. Net −240 LOC.
+- [local-connector-extension/manifest.json](../local-connector-extension/manifest.json) — 0.5.6 → 0.5.7 so operator knows when reload is required.
+- [cmd/scraper/outbound_actions.go](../cmd/scraper/outbound_actions.go) — orthogonal max_items wire so `/comment_all_leads với chỉ 1 lead` honours the count the LLM already extracts.
+
+Verification path: operator reloads extension to 0.5.7, runs `/comment_all_leads với chỉ 1 lead`, observes a NEW tab opening with the post URL (not the existing FB tab navigating). Three outcomes:
+
+| `attempts[0].notes` | Meaning | Next |
+|---|---|---|
+| empty + `outcome=dom_verified` | ✅ Fix works | Close investigation |
+| `outbox.crawler_nav_failed: navigate verify failed: expected=<post>` | All 3 retries hit FB redirect even with `chrome.tabs.create` | Escalate to H2 (account #49 shadow-restricted) or H4 (fingerprint) |
+| `identity_gate_1_no_article ... landed_at=<post URL>` (matches target) | Nav succeeded but gate-1 failed on the post page | Tune gate-1 stable-wait / composer detection |
+
+## 2026-05-31 — H1 confirmed; group-click detour shipped (later abandoned)
 
 Operator triggered `comment_all_leads` after the risk-decay circuit-breaker (commit `6f36dad`) unblocked account #49. 10 leads queued, 10 redirected. `execution_attempts.evidence_json.notes` carried:
 

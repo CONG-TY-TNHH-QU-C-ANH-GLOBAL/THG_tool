@@ -214,6 +214,14 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 	}
 	limit := int(argInt64(args, "limit"))
 	if limit <= 0 {
+		// Copilot/agent path: extractMaxItemsFromPrompt parses the natural-
+		// language prompt ("với chỉ 1 lead") and stages the count under
+		// "max_items" in the args bag. Without this fallback the count was
+		// extracted but silently dropped, so /comment_all_leads với chỉ 1
+		// lead pulled the default 25.
+		limit = int(argInt64(args, "max_items"))
+	}
+	if limit <= 0 {
 		limit = 25
 	}
 	return db.Leads().GetAutomationLeadsForOrg(orgID, score, limit)

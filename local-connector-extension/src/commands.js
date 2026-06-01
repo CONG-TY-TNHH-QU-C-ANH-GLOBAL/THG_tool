@@ -236,6 +236,6 @@ var THGCommands = globalThis.THGCommands || (() => {
     }
   }
 
-  return { process };
+  return { process, navigateAndVerify };
 })();
 globalThis.THGCommands = THGCommands;
