@@ -67,6 +67,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
+      // Rung-2 navigation probe: click-navigate toward the permalink and
+      // return immediately (background measures the trajectory). Diagnostic,
+      // non-mutating to FB state (no comment typed) — not lock-gated.
+      if (type === 'thg_nav_probe_rung2') {
+        sendResponse(THGContentOutbound.probeRung2Click(message.message || {}));
+        return;
+      }
+
       // Mutate-class: serialise via activeMutation. A second
       // mutate command arriving while one is in flight is REJECTED
       // immediately — the caller (background outbox) is expected to

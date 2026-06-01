@@ -1002,6 +1002,39 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       ' (text inserted into editor but submit click + enter both did not clear editor within 7s)');
   }
 
+  // probeRung2Click implements the content-script half of the Rung-2 probe.
+  // From a stable, already-loaded FB page (home), it click-navigates toward the
+  // target permalink the way a human clicking a link does — a genuine click on
+  // an anchor whose href is the permalink, which FB's delegated client router
+  // can intercept and turn into an in-SPA history.pushState (NOT a redirect-
+  // eligible top-level load). It returns IMMEDIATELY after the click so the
+  // background can measure the post-click URL trajectory (which survives a
+  // top-load unload, unlike a content-script timer). No comment is typed.
+  function probeRung2Click(message) {
+    const targetUrl = String(message?.target_url || message?.targetUrl || '').trim();
+    const targetId = extractPostIdFromUrl(targetUrl);
+    const entry = location.href || '';
+    let anchor = null;
+    let method = '';
+    if (targetId) {
+      anchor = Array.from(document.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="]'))
+        .find(el => String(el.getAttribute('href') || '').indexOf(targetId) !== -1) || null;
+    }
+    if (anchor) {
+      method = 'existing_anchor';
+    } else {
+      anchor = document.createElement('a');
+      anchor.href = targetUrl;
+      anchor.setAttribute('role', 'link');
+      anchor.textContent = 'thg-nav';
+      anchor.style.cssText = 'position:fixed;left:8px;top:8px;width:12px;height:12px;opacity:0.01;z-index:2147483647;';
+      document.body.appendChild(anchor);
+      method = 'injected_anchor';
+    }
+    clickLikeUser(anchor);
+    return { ok: true, clicked: true, method, entry_url: entry };
+  }
+
   async function executeOutbound(message) {
     const content = String(message?.content || '').trim();
     if (!content) return { ok: false, error: 'outbox_content_empty' };
@@ -1026,6 +1059,6 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
 
-  return { executeOutbound, executeCommentInFeed };
+  return { executeOutbound, executeCommentInFeed, probeRung2Click };
 })();
 globalThis.THGContentOutbound = THGContentOutbound;

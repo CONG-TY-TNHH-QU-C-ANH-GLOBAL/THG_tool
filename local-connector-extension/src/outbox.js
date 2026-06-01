@@ -303,6 +303,64 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     return result;
   }
 
+  // probeRung2 (background half) — does the Rung-2 in-SPA click navigation
+  // reach AND HOLD on the permalink? This catches the LATE redirect that
+  // fooled the Stage-0 background-read probe (which measured during the brief
+  // landing, before FB bounced the tab to /). From a stable logged-in home
+  // tab, it asks the content script to click-navigate to the permalink (a
+  // genuine click FB's router can turn into in-SPA pushState), then samples
+  // the tab URL over ~4s FROM THE BACKGROUND (survives a top-load unload that
+  // would kill a content-script timer). No comment is typed.
+  // failure_reason='soft_fail' → no risk penalty, retryable.
+  async function probeRung2(message, targetUrl) {
+    const execId = String(message.execution_id || '');
+    const targetId = extractPostIdFromTargetUrl(targetUrl);
+    const out = (notes) => ({
+      ok: false,
+      error: 'rung2_probe',
+      proof: { success: false, failure_reason: 'soft_fail', page_url_after: '', notes, execution_id: execId },
+    });
+
+    const home = await THGFacebookState.ensureFacebookTabVisible(THGShared.FACEBOOK_HOME, { focus: true });
+    if (!home || !home.fbUserId) return out('c.rung2_probe: not_logged_in — open Facebook and log in, then retry');
+    const tabId = home.tab && home.tab.id;
+    if (!tabId) return out('c.rung2_probe: no_fb_tab');
+
+    // Ask the content script (on the stable home page) to click-navigate.
+    let clickInfo = null;
+    let clickError = '';
+    try {
+      clickInfo = await chrome.tabs.sendMessage(tabId, { type: 'thg_nav_probe_rung2', message: { target_url: targetUrl } });
+    } catch {
+      try {
+        await THGShared.injectContentScripts(tabId);
+        clickInfo = await chrome.tabs.sendMessage(tabId, { type: 'thg_nav_probe_rung2', message: { target_url: targetUrl } });
+      } catch (e2) {
+        clickError = (e2 && e2.message) || String(e2);
+      }
+    }
+
+    // Measure the post-click URL trajectory from the background.
+    const sampleUrl = async () => {
+      try { const t = await chrome.tabs.get(tabId); return (t && t.url) || ''; } catch { return ''; }
+    };
+    const traj = [];
+    traj.push('t0=' + (await sampleUrl()));
+    await THGShared.delay(1500); traj.push('t1.5=' + (await sampleUrl()));
+    await THGShared.delay(2500); traj.push('t4=' + (await sampleUrl()));
+
+    const landed = await sampleUrl();
+    const reachedHeld = !!targetId && landed.indexOf(targetId) !== -1 && !isHomeOrFeedUrl(landed);
+    const method = (clickInfo && clickInfo.method) || (clickError ? 'unknown(click_msg_failed)' : 'unknown');
+    return out(
+      'c.rung2_probe: target_id=' + (targetId || '?') +
+      ' method=' + method +
+      ' reached_and_held=' + reachedHeld +
+      (clickError ? ' click_msg_error=' + clickError : '') +
+      ' trajectory=[' + traj.join(' | ') + ']'
+    );
+  }
+
   // executeInFacebookTab navigates the FB tab to the target URL and
   // dispatches the outbound command into the page-context content script.
   //
@@ -338,13 +396,16 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       throw new Error('comment_target_not_post_permalink');
     }
 
-    // ─── STAGE 1 — Option C delivery (deterministic permalink) ──────────
-    // Rung 1 confirmed by the Stage 0 probe: focused in-session nav reaches
-    // the permalink. Comments now navigate directly to target_url (the post
-    // IS the page) and dispatch the permalink-page executor. The Path-2
-    // feed-scroll code below is dormant and removed in Stage 2.
+    // ─── RUNG-2 PROBE ───────────────────────────────────────────────────
+    // Rung 1 (programmatic top-level nav) is DEAD: it lands on the permalink
+    // for ~1s then FB redirects to / (the Stage-0 probe's GREEN was a false
+    // positive — it read the URL too early). Before building delivery on
+    // Rung 2 (in-SPA click nav), probe whether a genuine anchor click reaches
+    // AND HOLDS on the permalink. No comment typed. deliverCommentViaPermalink
+    // (Rung-1 delivery) is retained but dormant — it will be re-pointed at the
+    // Rung-2 nav once the probe confirms it holds.
     if (msgType === 'comment') {
-      return await deliverCommentViaPermalink(message, targetUrl);
+      return await probeRung2(message, targetUrl);
     }
 
     // PATH 2 routing (DORMANT — superseded by deliverCommentViaPermalink):
