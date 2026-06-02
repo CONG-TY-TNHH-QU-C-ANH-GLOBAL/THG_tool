@@ -303,11 +303,27 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     return result;
   }
 
+  // sendMutationWithTimeout dispatches a content-script command but NEVER waits
+  // forever. MV3 can silently drop the response (service-worker recycle, or the
+  // content script's message channel closing mid-navigation — the "message
+  // channel closed before a response was received" error). Without a bound, the
+  // background `await chrome.tabs.sendMessage` hangs indefinitely, which freezes
+  // the per-tab execution lock AND the outbox (no completeOutbox ever fires —
+  // the 7-minutes-of-silence symptom). Promise.race guarantees the caller always
+  // reaches a terminal so completeOutbox runs and the row stays retryable.
+  function sendMutationWithTimeout(tabId, payload, timeoutMs) {
+    return Promise.race([
+      chrome.tabs.sendMessage(tabId, payload),
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error('content_script_no_response_' + timeoutMs + 'ms')), timeoutMs)),
+    ]);
+  }
+
   // deliverCommentViaRung2 — REAL delivery on the confirmed Rung-2 navigation.
   // Establish a stable, logged-in home tab (the in-SPA click base), then hand
   // the whole nav+comment to the content script (the click MUST happen in-page).
   // The user's visible tab is reused and never closed (observability).
-  async function deliverCommentViaRung2(message, targetUrl) {
+  async function deliverCommentViaRung2(message) {
     const execId = String(message.execution_id || '');
     const fail = (failure_reason, notes) => ({
       ok: false,
@@ -315,19 +331,31 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       proof: { success: false, failure_reason, page_url_after: '', notes, execution_id: execId },
     });
 
-    const home = await THGFacebookState.ensureFacebookTabVisible(THGShared.FACEBOOK_HOME, { focus: true });
-    if (!home || !home.fbUserId) {
+    // Reuse an EXISTING logged-in FB tab WITHOUT forcing a reload. A full
+    // top-level navigation (the old ensureFacebookTabVisible→HOME) destroys the
+    // tab's main frame mid-operation → "Frame with ID 0 was removed" → the
+    // comment never lands. Only create a tab if none exists. Then bring it
+    // foreground (human-flow) by activating/focusing — NOT navigating it.
+    let state = await THGFacebookState.collectFacebookState();
+    if (!state || !state.tab || !THGShared.isFacebookUrl(state.tab.url)) {
+      state = await THGFacebookState.ensureFacebookTabVisible(THGShared.FACEBOOK_HOME, { focus: true });
+    }
+    if (!state || !state.fbUserId) {
       return fail('soft_fail', 'c.locate.not_logged_in: open Facebook and log in, then retry');
     }
     // Account safety (dormant until backend adds account_fb_user_id; no-op when absent).
     const wantUid = String(message.account_fb_user_id || message.fb_user_id || '').trim();
-    if (wantUid && wantUid !== String(home.fbUserId)) {
+    if (wantUid && wantUid !== String(state.fbUserId)) {
       return fail('soft_fail',
-        'c.locate.wrong_account: logged-in c_user=' + home.fbUserId +
+        'c.locate.wrong_account: logged-in c_user=' + state.fbUserId +
         ' != action account fb_user_id=' + wantUid + ' (switch the Facebook tab to the correct account)');
     }
-    const tabId = home.tab && home.tab.id;
+    const tabId = state.tab && state.tab.id;
     if (!tabId) return fail('soft_fail', 'c.locate.no_fb_tab');
+    // Foreground the tab/window WITHOUT navigating (no reload → no frame churn).
+    try { if (state.tab.windowId) await chrome.windows.update(state.tab.windowId, { state: 'normal', focused: true }); } catch { /* ignore */ }
+    try { await chrome.tabs.update(tabId, { active: true }); } catch { /* ignore */ }
+    await THGShared.delay(500);
 
     // The content script does: Rung-2 click-nav → wait for permalink → executeComment.
     const releaseTabLock = acquireTabExecutionLock(tabId);
@@ -337,11 +365,36 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     let result;
     try {
       try {
-        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_comment_via_rung2', message });
-      } catch {
-        await THGShared.injectContentScripts(tabId);
-        result = await chrome.tabs.sendMessage(tabId, { type: 'thg_comment_via_rung2', message });
+        result = await sendMutationWithTimeout(tabId, { type: 'thg_comment_via_rung2', message }, 75000);
+      } catch (e1) {
+        // Re-inject + resend ONLY when the content script genuinely isn't loaded.
+        // NOT on timeout: a blind resend would click-navigate a SECOND time
+        // (double comment / modal churn). On timeout or any other error, fall
+        // through to a terminal proof below.
+        const m1 = (e1 && e1.message) || String(e1);
+        if (/Receiving end does not exist|Could not establish connection/i.test(m1)) {
+          await THGShared.injectContentScripts(tabId);
+          result = await sendMutationWithTimeout(tabId, { type: 'thg_comment_via_rung2', message }, 75000);
+        } else {
+          throw e1;
+        }
       }
+    } catch (e2) {
+      // Never hang the outbox: turn a lost/timed-out response into a terminal,
+      // retryable, no-risk outcome with a diagnostic note (surfaced in chat).
+      const m2 = (e2 && e2.message) || String(e2);
+      result = {
+        ok: false,
+        error: 'rung2_no_terminal',
+        proof: {
+          success: false,
+          failure_reason: 'soft_fail',
+          page_url_after: '',
+          notes: 'c.rung2.no_terminal_from_content_script: ' + m2 +
+                 ' (content script hung or message channel closed before responding; outbox freed, retryable)',
+          execution_id: execId,
+        },
+      };
     } finally {
       releaseTabLock();
       // Visible tab — do NOT close or minimize (observability + ready for next action).
@@ -450,7 +503,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     // runs executeComment on the held page. Dormant: deliverCommentViaPermalink
     // (Rung-1) and probeRung2 (the probe) — removed in Stage 2 cleanup.
     if (msgType === 'comment') {
-      return await deliverCommentViaRung2(message, targetUrl);
+      return await deliverCommentViaRung2(message);
     }
 
     // PATH 2 routing (DORMANT — superseded by deliverCommentViaPermalink):

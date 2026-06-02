@@ -1051,13 +1051,18 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const executionId = String(message?.execution_id || message?.executionId || '').trim();
     const targetId = extractPostIdFromUrl(targetUrl);
 
+    // Progress logs (visible in the FB tab's DevTools Console) so we can see
+    // exactly how far the flow got even if the background's response is lost.
+    console.log('[THG rung2] start', { target_id: targetId, entry: location.href, execution_id: executionId });
     // Rung-2 in-SPA navigation: genuine anchor click → FB router pushState.
-    probeRung2Click({ target_url: targetUrl });
+    const click = probeRung2Click({ target_url: targetUrl });
+    console.log('[THG rung2] clicked', click);
     // Wait until the in-SPA nav lands on the permalink (URL carries the post id).
     const landed = await waitFor(
       () => !!targetId && (location.href || '').indexOf(targetId) !== -1,
       7000, 200
     );
+    console.log('[THG rung2] nav landed=', landed, 'url=', location.href);
     if (!landed) {
       return {
         ok: false,
@@ -1077,7 +1082,10 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     await wait(900);
     // Hand off to the permalink-page executor (gate-1 confirms the article,
     // identity checkpoints + proof unchanged).
-    return executeComment(content, targetUrl, executionId);
+    console.log('[THG rung2] handing off to executeComment on', location.href);
+    const r = await executeComment(content, targetUrl, executionId);
+    console.log('[THG rung2] executeComment result', r && (r.ok ? 'OK' : (r.error || (r.proof && r.proof.failure_reason))), r && r.proof && r.proof.notes);
+    return r;
   }
 
   async function executeOutbound(message) {
