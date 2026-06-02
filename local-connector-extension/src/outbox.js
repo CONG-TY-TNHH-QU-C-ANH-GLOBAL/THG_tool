@@ -495,29 +495,31 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       throw new Error('comment_target_not_post_permalink');
     }
 
-    // ─── STAGE 1 — Option C delivery on the CONFIRMED Rung-2 navigation ──
-    // The Rung-2 probe confirmed (reached_and_held=true over 4s) that a genuine
-    // anchor click → FB's in-SPA router reaches and HOLDS on the permalink,
-    // where programmatic top-level nav (Rung 1) is bounced to /. Delivery now
-    // rides that: content script click-navigates in-SPA to the permalink, then
-    // runs executeComment on the held page. Dormant: deliverCommentViaPermalink
-    // (Rung-1) and probeRung2 (the probe) — removed in Stage 2 cleanup.
-    if (msgType === 'comment') {
-      return await deliverCommentViaRung2(message);
-    }
-
-    // PATH 2 routing (DORMANT — superseded by deliverCommentViaPermalink):
-    // (navigate to /groups/<g>/, find article by post_id, comment inline)
-    // instead of the permalink-page flow that keeps hitting FB's silent
-    // redirect-back-to-/. Non-group surfaces (/watch, /reel, profile
-    // posts, fb.watch, photo permalinks) keep the direct-nav crawler
-    // pattern below — H1's permalink-redirect signal has only been
-    // observed on /groups/<g>/posts/<p>/ targets.
+    // ─── COMMENT DELIVERY — SINGLE PATH (Path 2: comment in the group feed) ──
+    // Root cause of `c.rung2.no_terminal_from_content_script` (confirmed once
+    // the AI text-generation bug was fixed and a real comment finally reached
+    // execution): the rung2 path had the CONTENT SCRIPT navigate the tab to the
+    // permalink while it was holding the onMessage response channel open. ANY
+    // navigation — successful or redirected — reloads the document and destroys
+    // the very content script awaiting the response, so the channel closes
+    // before a terminal is returned. It is an architectural flaw, not FB
+    // blocking the permalink.
+    //
+    // Path 2 fixes this structurally: the BACKGROUND does the navigation first
+    // (navigateAndVerify to /groups/<g>/ — group HOME, the crawler's proven
+    // surface), THEN sends the comment command to the already-loaded content
+    // script, which only locates the target article by post_id and types — it
+    // never navigates, so its frame survives and a terminal always returns.
+    //
+    // Non-group comment targets (profile posts, /watch, /reel, fb.watch, photo
+    // permalinks) have no group home; they fall through to the generic
+    // crawler-nav path below (background navigates, content script only types).
     if (msgType === 'comment') {
       const groupHome = extractGroupHomeFromPostUrl(targetUrl);
       if (groupHome) {
         return await executeInGroupFeed(message, targetUrl, groupHome);
       }
+      // No group home → fall through to the direct crawler-nav path below.
     }
 
     let crawlInfo;
