@@ -52,23 +52,27 @@ func (s *Store) GetRecentPosts(limit, offset int, orgID int64) ([]models.Post, e
 	return posts, nil
 }
 
-// DeletePost removes a post by ID.
+// DeletePost removes a post by ID, scoped to the owning org.
 //
-// tenant-ok: the call site (admin / HTTP handler) is responsible for
-// org-scope verification before invoking. Posts are crawler-platform
-// data identified by global id.
-func (s *Store) DeletePost(postID int64) error {
-	_, err := s.db.Exec(`DELETE FROM posts WHERE id = ?`, postID)
+// Posts have no org_id column; ownership is derived from the parent group
+// (posts.group_id → groups.org_id). A postID belonging to another tenant is
+// a silent no-op.
+func (s *Store) DeletePost(orgID, postID int64) error {
+	_, err := s.db.Exec(
+		`DELETE FROM posts WHERE id = ? AND group_id IN (SELECT id FROM groups WHERE org_id = ?)`,
+		postID, orgID,
+	)
 	return err
 }
 
-// DeleteAllPosts removes all posts and keeps groups.
-//
-// tenant-ok: admin-only blunt operation, no tenant scope by design.
-// Caller is responsible for invoking only from authenticated admin
-// flows.
-func (s *Store) DeleteAllPosts() (int64, error) {
-	result, err := s.db.Exec(`DELETE FROM posts`)
+// DeleteAllPostsForOrg removes all posts owned by a single tenant and keeps
+// groups. Scoped via the parent group (posts.group_id → groups.org_id) so it
+// never wipes another tenant's posts.
+func (s *Store) DeleteAllPostsForOrg(orgID int64) (int64, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM posts WHERE group_id IN (SELECT id FROM groups WHERE org_id = ?)`,
+		orgID,
+	)
 	if err != nil {
 		return 0, err
 	}

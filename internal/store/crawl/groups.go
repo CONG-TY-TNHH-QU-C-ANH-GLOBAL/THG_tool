@@ -103,14 +103,16 @@ func (s *Store) UpdateGroupLastScan(groupID int64) error {
 	return err
 }
 
-// ToggleGroup activates or deactivates a group.
-func (s *Store) ToggleGroup(groupID int64, active bool) error {
-	_, err := s.db.Exec(`UPDATE groups SET active = ? WHERE id = ?`, active, groupID)
+// ToggleGroup activates or deactivates a group, scoped to the owning org.
+// A groupID belonging to another tenant is a silent no-op.
+func (s *Store) ToggleGroup(orgID, groupID int64, active bool) error {
+	_, err := s.db.Exec(`UPDATE groups SET active = ? WHERE id = ? AND org_id = ?`, active, groupID, orgID)
 	return err
 }
 
-// DeleteGroup removes a group.
-func (s *Store) DeleteGroup(groupID int64) error {
-	_, err := s.db.Exec(`DELETE FROM groups WHERE id = ?`, groupID)
+// DeleteGroup removes a group, scoped to the owning org. A groupID belonging
+// to another tenant is a silent no-op.
+func (s *Store) DeleteGroup(orgID, groupID int64) error {
+	_, err := s.db.Exec(`DELETE FROM groups WHERE id = ? AND org_id = ?`, groupID, orgID)
 	return err
 }

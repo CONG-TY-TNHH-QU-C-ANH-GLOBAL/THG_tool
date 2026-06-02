@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,11 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 )
+
+// nicheSlugRe constrains niche slugs to a URL/filter-safe shape. Slugs flow
+// into query params and lead-filter clauses, so reject anything outside
+// lowercase alphanumerics, hyphen, and underscore.
+var nicheSlugRe = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
 // Deps holds dependencies needed by the leads subpackage handlers.
 //
@@ -73,13 +80,16 @@ func deleteLead(deps Deps) fiber.Handler {
 		}
 		source := strings.ToLower(strings.TrimSpace(c.Query("source", "")))
 		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
 		if source == "task_lead" {
 			if err := deps.DB.Leads().DeleteTaskLead(orgID, id); err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 			}
 			return c.JSON(fiber.Map{"ok": true})
 		}
-		if err := deps.DB.Leads().DeleteLead(id); err != nil {
+		if err := deps.DB.Leads().DeleteLead(orgID, id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})
@@ -312,8 +322,16 @@ func addNiche(deps Deps) fiber.Handler {
 		if err := c.BodyParser(&req); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 		}
+		req.Slug = strings.TrimSpace(req.Slug)
+		req.Name = strings.TrimSpace(req.Name)
 		if req.Slug == "" || req.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "slug and name required"})
+		}
+		if !nicheSlugRe.MatchString(req.Slug) {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid slug: use lowercase letters, digits, '-' or '_' (max 64)"})
+		}
+		if len(req.Name) > 120 {
+			return c.Status(400).JSON(fiber.Map{"error": "name too long (max 120)"})
 		}
 		n := &models.Niche{Slug: req.Slug, Name: req.Name, Emoji: req.Emoji}
 		id, err := deps.DB.Leads().InsertNiche(n)
@@ -359,7 +377,11 @@ func deletePost(deps Deps) fiber.Handler {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 		}
-		if err := deps.DB.Crawl().DeletePost(id); err != nil {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
+		if err := deps.DB.Crawl().DeletePost(orgID, id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"ok": true})
@@ -367,13 +389,24 @@ func deletePost(deps Deps) fiber.Handler {
 }
 
 // deleteAllPosts handles DELETE /api/posts/all
+//
+// Org-scoped: clears only the caller's tenant posts (derived from owned
+// groups). Previously this used the global DeleteAllPosts which wiped every
+// tenant's posts — a multi-tenant data-loss bug, same class as the old
+// DeleteAllLeads issue.
 func deleteAllPosts(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		count, err := deps.DB.Crawl().DeleteAllPosts()
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
+		count, err := deps.DB.Crawl().DeleteAllPostsForOrg(orgID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		log.Printf("[API] Deleted all posts: %d removed", count)
+		userID, _ := c.Locals("user_id").(int64)
+		deps.DB.InsertAuditLog(userID, "delete_posts", c.IP(), fmt.Sprintf(`{"count":%d,"org_id":%d}`, count, orgID))
+		log.Printf("[API] Deleted all posts (org=%d): %d removed", orgID, count)
 		return c.JSON(fiber.Map{"ok": true, "deleted": count})
 	}
 }
@@ -401,7 +434,22 @@ func addGroup(deps Deps) fiber.Handler {
 		if err := c.BodyParser(&req); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 		}
+		req.Name = strings.TrimSpace(req.Name)
+		req.URL = strings.TrimSpace(req.URL)
+		if req.URL == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "url required"})
+		}
+		u, err := url.Parse(req.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid url: must be an http(s) URL"})
+		}
+		if len(req.Name) > 200 {
+			return c.Status(400).JSON(fiber.Map{"error": "name too long (max 200)"})
+		}
 		groupOrgID, _ := c.Locals("org_id").(int64)
+		if groupOrgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
 		group := &models.Group{
 			OrgID:     groupOrgID,
 			Platform:  models.Platform(req.Platform),
@@ -425,13 +473,17 @@ func toggleGroup(deps Deps) fiber.Handler {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 		}
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
 		var req struct {
 			Active bool `json:"active"`
 		}
 		if err := c.BodyParser(&req); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 		}
-		if err := deps.DB.Crawl().ToggleGroup(id, req.Active); err != nil {
+		if err := deps.DB.Crawl().ToggleGroup(orgID, id, req.Active); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"status": "updated"})
@@ -445,7 +497,11 @@ func deleteGroup(deps Deps) fiber.Handler {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 		}
-		if err := deps.DB.Crawl().DeleteGroup(id); err != nil {
+		orgID, _ := c.Locals("org_id").(int64)
+		if orgID <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+		}
+		if err := deps.DB.Crawl().DeleteGroup(orgID, id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"status": "deleted"})

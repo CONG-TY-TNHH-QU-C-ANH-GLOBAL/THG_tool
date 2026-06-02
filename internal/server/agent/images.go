@@ -1,6 +1,14 @@
 package agent
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"path/filepath"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+// imageBaseDir is the only directory agentServeImage is allowed to serve from.
+var imageBaseDir = filepath.Clean("data/images")
 
 // agentServeImage serves a local image file for the agent to download (for comment attachments).
 // GET /api/agent/images?path=data/images/xxx.jpg
@@ -9,9 +17,13 @@ func (h *Handler) agentServeImage(c *fiber.Ctx) error {
 	if relPath == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "path required"})
 	}
-	// Sanitize: only allow paths starting with data/images/
-	if len(relPath) < 12 || relPath[:12] != "data/images/" {
+	// Collapse any "../" segments first, then verify the resolved path is still
+	// confined to data/images/. A raw prefix check (the previous approach) is
+	// bypassable with "data/images/../../etc/passwd"; filepath.Clean resolves
+	// the traversal so the prefix check below is meaningful.
+	clean := filepath.Clean(relPath)
+	if clean != imageBaseDir && !strings.HasPrefix(clean, imageBaseDir+string(filepath.Separator)) {
 		return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 	}
-	return c.SendFile(relPath)
+	return c.SendFile(clean)
 }
