@@ -495,32 +495,20 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       throw new Error('comment_target_not_post_permalink');
     }
 
-    // ─── COMMENT DELIVERY — SINGLE PATH (Path 2: comment in the group feed) ──
-    // Root cause of `c.rung2.no_terminal_from_content_script` (confirmed once
-    // the AI text-generation bug was fixed and a real comment finally reached
-    // execution): the rung2 path had the CONTENT SCRIPT navigate the tab to the
-    // permalink while it was holding the onMessage response channel open. ANY
-    // navigation — successful or redirected — reloads the document and destroys
-    // the very content script awaiting the response, so the channel closes
-    // before a terminal is returned. It is an architectural flaw, not FB
-    // blocking the permalink.
-    //
-    // Path 2 fixes this structurally: the BACKGROUND does the navigation first
-    // (navigateAndVerify to /groups/<g>/ — group HOME, the crawler's proven
-    // surface), THEN sends the comment command to the already-loaded content
-    // script, which only locates the target article by post_id and types — it
-    // never navigates, so its frame survives and a terminal always returns.
-    //
-    // Non-group comment targets (profile posts, /watch, /reel, fb.watch, photo
-    // permalinks) have no group home; they fall through to the generic
-    // crawler-nav path below (background navigates, content script only types).
-    if (msgType === 'comment') {
-      const groupHome = extractGroupHomeFromPostUrl(targetUrl);
-      if (groupHome) {
-        return await executeInGroupFeed(message, targetUrl, groupHome);
-      }
-      // No group home → fall through to the direct crawler-nav path below.
-    }
+    // ─── COMMENT DELIVERY — SINGLE PATH: navigate directly to the post ──
+    // Comments fall straight through to the generic crawler-nav path below:
+    // navigateAndVerify(targetUrl) opens a FRESH tab ON THE POST PERMALINK
+    // using the crawler's proven chrome.tabs.create + retry + settle flow,
+    // then thg_execute_outbound runs executeComment on that loaded page — the
+    // content script only types/submits, it never navigates. That avoids BOTH
+    // dead ends we have now ruled out by telemetry:
+    //   - rung2 `no_terminal_from_content_script`: the content script navigated
+    //     while holding the response channel open → channel closed mid-flow.
+    //   - Path 2 `article_not_found_in_feed`: nav landed on the home feed
+    //     (nav_at_entry=https://www.facebook.com/), not the group, so scrolling
+    //     the feed for the post was a dead end (found 2 articles, never the
+    //     target). Scrolling a feed to rediscover a known post is the wrong
+    //     model — go straight to the permalink instead.
 
     let crawlInfo;
     try {
