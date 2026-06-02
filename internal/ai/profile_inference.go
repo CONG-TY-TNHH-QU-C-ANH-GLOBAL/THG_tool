@@ -258,8 +258,11 @@ func (i *BusinessProfileInferrer) callOpenAI(ctx context.Context, sysPrompt, use
 			{"role": "system", "content": sysPrompt},
 			{"role": "user", "content": userPrompt},
 		},
-		"temperature":     0.2,
 		"response_format": map[string]string{"type": "json_object"},
+	}
+	// Reasoning models (gpt-5*/o*) reject temperature != 1 with HTTP 400.
+	if !isReasoningModel(i.model) {
+		body["temperature"] = 0.2
 	}
 	jsonBody, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))

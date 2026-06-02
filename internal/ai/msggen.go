@@ -583,17 +583,48 @@ func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, sc
 	return json.Unmarshal([]byte(content), out)
 }
 
-func (mg *MessageGenerator) callOpenAI(ctx context.Context, prompt string) (string, error) {
+// isReasoningModel reports whether model is an OpenAI reasoning-class model
+// (o-series or the GPT-5 family). These models reject sampling controls such
+// as temperature != 1 (HTTP 400) and spend hidden reasoning tokens before
+// emitting any output, so callers must omit temperature and budget extra
+// completion tokens.
+func isReasoningModel(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(m, "o1") ||
+		strings.HasPrefix(m, "o3") ||
+		strings.HasPrefix(m, "o4") ||
+		strings.HasPrefix(m, "gpt-5")
+}
+
+// chatCompletionBody builds the /chat/completions request body for a freeform
+// (non-JSON) generation. It is model-aware so the SAME call works on both
+// classic chat models (gpt-4o / gpt-4.1) and reasoning models (gpt-5*, o*):
+//
+//   - temperature is sent ONLY for non-reasoning models. gpt-5* / o* reject
+//     any temperature other than the default 1 with HTTP 400 — that single
+//     line silently failed EVERY comment/inbox/post generation (skip reason
+//     generation_failed) once OPENAI_COMMENT_MODEL defaulted to gpt-5.4,
+//     while classification kept working because it uses the no-temperature
+//     callOpenAIStrictJSON path.
+//   - max_completion_tokens is generous (2000) because reasoning models spend
+//     hidden reasoning tokens first; the old 400 cap could be fully consumed
+//     by reasoning, returning empty content (finish_reason=length).
+func chatCompletionBody(model, prompt string) map[string]any {
 	body := map[string]any{
-		"model": mg.model,
+		"model": model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"temperature": 0.7,
-		"max_completion_tokens":  400,
+		"max_completion_tokens": 2000,
 	}
+	if !isReasoningModel(model) {
+		body["temperature"] = 0.7
+	}
+	return body
+}
 
-	jsonBody, _ := json.Marshal(body)
+func (mg *MessageGenerator) callOpenAI(ctx context.Context, prompt string) (string, error) {
+	jsonBody, _ := json.Marshal(chatCompletionBody(mg.model, prompt))
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", err
@@ -625,5 +656,13 @@ func (mg *MessageGenerator) callOpenAI(ctx context.Context, prompt string) (stri
 	if len(result.Choices) == 0 {
 		return "", fmt.Errorf("no response from OpenAI")
 	}
-	return result.Choices[0].Message.Content, nil
+	content := result.Choices[0].Message.Content
+	if strings.TrimSpace(content) == "" {
+		// Surface empty output as an explicit error instead of returning ""
+		// (which the caller would silently treat as empty_content and skip).
+		// On reasoning models this usually means max_completion_tokens was
+		// consumed by hidden reasoning before any visible text was emitted.
+		return "", fmt.Errorf("empty content from OpenAI (model=%s)", mg.model)
+	}
+	return content, nil
 }

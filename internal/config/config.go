@@ -94,8 +94,11 @@ func Load() *Config {
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS
 		// don't break on the next deploy. Drop the alias once VPS env is updated.
-		OpenAIClassifierModel: getEnv("OPENAI_CLASSIFIER_MODEL", getEnv("OPENAI_MODEL", "gpt-5.4-mini")),
-		OpenAICommentModel:    getEnv("OPENAI_COMMENT_MODEL", "gpt-5.4"),
+		OpenAIClassifierModel: getEnv("OPENAI_CLASSIFIER_MODEL", getEnv("OPENAI_MODEL", "gpt-5.0-mini")),
+		// gpt-5.0 is a reasoning-class model: ai.callOpenAI omits temperature
+		// for it automatically (gpt-5*/o* reject temperature != 1). Override
+		// with OPENAI_COMMENT_MODEL if your account serves a different exact ID.
+		OpenAICommentModel:    getEnv("OPENAI_COMMENT_MODEL", "gpt-5.0"),
 		AgentBrainURL:      getEnv("AGENT_BRAIN_URL", ""),
 		AgentBrainTimeout:  getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
 		APISecret:          getEnv("API_SECRET", ""),

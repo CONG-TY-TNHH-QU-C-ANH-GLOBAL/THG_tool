@@ -143,8 +143,11 @@ func (c *Classifier) callOpenAI(ctx context.Context, sysPrompt, prompt string) (
 			{"role": "system", "content": sysPrompt},
 			{"role": "user", "content": prompt},
 		},
-		"temperature":     0.1,
 		"response_format": map[string]string{"type": "json_object"},
+	}
+	// Reasoning models (gpt-5*/o*) reject temperature != 1 with HTTP 400.
+	if !isReasoningModel(c.model) {
+		body["temperature"] = 0.1
 	}
 
 	jsonBody, _ := json.Marshal(body)
