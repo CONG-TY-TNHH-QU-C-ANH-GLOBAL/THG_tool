@@ -78,6 +78,76 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	return &a, nil
 }
 
+// GetAccountByFacebookIdentity returns the account that owns a Facebook identity
+// in an org, or (nil, nil) when none exists. Backed by the partial unique index
+// uq_accounts_org_fb_identity (one FB identity = one account per org).
+func (s *Store) GetAccountByFacebookIdentity(orgID int64, fbUserID string) (*models.Account, error) {
+	fbUserID = strings.TrimSpace(fbUserID)
+	if orgID <= 0 || fbUserID == "" {
+		return nil, nil
+	}
+	var id int64
+	err := s.db.QueryRow(`SELECT id FROM accounts WHERE org_id = ? AND fb_user_id = ? LIMIT 1`, orgID, fbUserID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetAccount(id)
+}
+
+// ResolveOrCreateAccountForFacebookIdentity is the Organic Sales Network entry
+// point that maps a logged-in Facebook identity to its owning account, creating
+// one owned by ownerUserID on first sight. This replaces the old "force the
+// pre-assigned slot" behaviour: the account is keyed by FB identity, not by a
+// pairing-time slot, so each distinct Facebook login becomes its own account.
+//
+// Returns (account, created, err). created=true when a new row was inserted.
+// Empty fbUserID is a no-op (nil, false, nil) — preserves not-logged-in callers.
+//
+// Race-safe: a concurrent heartbeat reporting the same FB login loses the INSERT
+// to the unique index (PR1) and we re-select the winner — never two accounts.
+// Ownership is NOT changed here (no-steal): an existing row keeps its owner; the
+// caller (heartbeat) decides whether a different-owner match is a conflict.
+func (s *Store) ResolveOrCreateAccountForFacebookIdentity(orgID, ownerUserID int64, fbUserID string, meta FacebookIdentityMeta, email string) (*models.Account, bool, error) {
+	fbUserID = strings.TrimSpace(fbUserID)
+	if orgID <= 0 || fbUserID == "" {
+		return nil, false, nil
+	}
+	if existing, err := s.GetAccountByFacebookIdentity(orgID, fbUserID); err != nil {
+		return nil, false, err
+	} else if existing != nil {
+		return existing, false, nil
+	}
+	meta = normalizeFacebookIdentityMeta(meta)
+	name := meta.DisplayName
+	if name == "" {
+		name = "Facebook " + fbUserID
+	}
+	encCookies, err := auth.Encrypt("", s.encKey)
+	if err != nil {
+		return nil, false, fmt.Errorf("encrypt cookies: %w", err)
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO accounts (org_id, platform, name, email, cookies_json, status, assigned_user_id, browser_logged_in, fb_user_id, fb_display_name, fb_username, fb_profile_url)
+		 VALUES (?, 'facebook', ?, ?, ?, 'active', ?, 1, ?, ?, ?, ?)`,
+		orgID, name, strings.ToLower(strings.TrimSpace(email)), encCookies, ownerUserID, fbUserID, meta.DisplayName, meta.Username, meta.ProfileURL,
+	)
+	if err != nil {
+		// Lost the race to a concurrent create (unique index) → return the winner.
+		if existing, gErr := s.GetAccountByFacebookIdentity(orgID, fbUserID); gErr == nil && existing != nil {
+			return existing, false, nil
+		}
+		return nil, false, err
+	}
+	created, err := s.GetAccountByFacebookIdentity(orgID, fbUserID)
+	if err != nil {
+		return nil, false, err
+	}
+	return created, true, nil
+}
+
 // SetBrowserLoggedIn marks whether an account has successfully logged into Facebook via the dashboard browser.
 func (s *Store) SetBrowserLoggedIn(accountID int64, loggedIn bool, fbUserID ...string) error {
 	v := 0

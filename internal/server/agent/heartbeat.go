@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -12,6 +13,27 @@ import (
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
 )
+
+// auditConnectorIdentity emits the state-change audit logs for a resolved
+// connector identity (create / rebind / conflict) — only on actual change, so a
+// continuous heartbeat does not spam the audit trail. Returns true when the
+// caller should stop (ownership conflict → 409).
+func (h *Handler) auditConnectorIdentity(c *fiber.Ctx, createdBy int64, fbUserID string, res serverorg.ResolvedConnectorIdentity) bool {
+	if res.Conflict {
+		h.db.InsertAuditLog(createdBy, "account_ownership_conflict", c.IP(),
+			fmt.Sprintf(`{"account_id":%d,"fb_user_id":%q,"owner_user_id":%d}`, res.AccountID, fbUserID, res.ConflictOwnerID))
+		return true
+	}
+	if res.Created {
+		h.db.InsertAuditLog(createdBy, "account_auto_created", c.IP(),
+			fmt.Sprintf(`{"account_id":%d,"fb_user_id":%q}`, res.AccountID, fbUserID))
+	}
+	if res.Rebound {
+		h.db.InsertAuditLog(createdBy, "connector_account_rebound", c.IP(),
+			fmt.Sprintf(`{"from_account_id":%d,"to_account_id":%d}`, res.PreviousAccount, res.AccountID))
+	}
+	return false
+}
 
 // agentHeartbeat is a lightweight ping for connection health checks.
 // POST /api/agent/heartbeat
@@ -107,18 +129,13 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
-	if body.AccountID > 0 && orgID > 0 {
-		acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID)
-		if err != nil || acc == nil {
-			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
-		}
-		loggedIn := strings.EqualFold(status, browsergateway.StreamFacebookLoggedIn) && strings.TrimSpace(body.FBUserID) != ""
-		if loggedIn {
-			if errResp := RejectIfFacebookProfileMismatch(h.db, c, c.Context(), acc, body.FBUserID, orgID); errResp != nil {
-				return errResp
-			}
-		}
-		if err := serverorg.ApplyConnectorIdentity(h.db, c.Context(), serverorg.ConnectorIdentitySnapshot{
+	createdBy, _ := c.Locals("agent_created_by").(int64)
+	currentAssigned, _ := c.Locals("agent_assigned_account_id").(int64)
+	if orgID > 0 && (body.AccountID > 0 || strings.TrimSpace(body.FBUserID) != "") {
+		// Organic Sales Network PR2: resolve the logged-in Facebook identity to
+		// its owning account (auto-create owned by the pairing member, rebind the
+		// connector) instead of forcing the extension-reported slot.
+		res, err := serverorg.ResolveConnectorIdentity(h.db, c.Context(), agentID, createdBy, currentAssigned, serverorg.ConnectorIdentitySnapshot{
 			AccountID:     body.AccountID,
 			OrgID:         orgID,
 			StreamStatus:  status,
@@ -129,8 +146,12 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 			FBProfileURL:  body.FBProfileURL,
 			LoginEmail:    body.LoginEmail,
 			ChromeError:   body.ChromeError,
-		}); err != nil {
+		})
+		if err != nil {
 			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+		}
+		if h.auditConnectorIdentity(c, createdBy, body.FBUserID, res) {
+			return c.Status(409).JSON(fiber.Map{"error": "this Facebook account belongs to another member", "reason": "ownership_conflict"})
 		}
 	}
 	return c.JSON(fiber.Map{
@@ -250,19 +271,38 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 		return c.Status(413).JSON(fiber.Map{"error": "screenshot is too large"})
 	}
 
-	acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID)
-	if err != nil || acc == nil {
-		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
-	}
-	if errResp := RejectIfFacebookProfileMismatch(h.db, c, c.Context(), acc, body.FBUserID, orgID); errResp != nil {
-		return errResp
-	}
-
+	createdBy, _ := c.Locals("agent_created_by").(int64)
+	currentAssigned, _ := c.Locals("agent_assigned_account_id").(int64)
 	streamStatus := strings.TrimSpace(body.StreamStatus)
 	if streamStatus == "" {
 		streamStatus = browsergateway.StreamConnectorOnline
 	}
-	if err := h.db.Connectors().UpsertConnectorScreenshot(agentID, orgID, body.AccountID, body.ImageData, body.CurrentURL, body.FBUserID, body.FBDisplayName, body.FBUsername, body.FBProfileURL, streamStatus, body.ChromeError); err != nil {
+	// Resolve the Facebook identity to its owning account (auto-create + rebind,
+	// no-steal) BEFORE storing the screenshot, so the screenshot attaches to the
+	// account that actually owns this FB login — not a stale extension slot.
+	res, err := serverorg.ResolveConnectorIdentity(h.db, c.Context(), agentID, createdBy, currentAssigned, serverorg.ConnectorIdentitySnapshot{
+		AccountID:     body.AccountID,
+		OrgID:         orgID,
+		StreamStatus:  streamStatus,
+		CurrentURL:    body.CurrentURL,
+		FBUserID:      body.FBUserID,
+		FBDisplayName: body.FBDisplayName,
+		FBUsername:    body.FBUsername,
+		FBProfileURL:  body.FBProfileURL,
+		LoginEmail:    body.LoginEmail,
+		ChromeError:   body.ChromeError,
+	})
+	if err != nil {
+		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+	}
+	if h.auditConnectorIdentity(c, createdBy, body.FBUserID, res) {
+		return c.Status(409).JSON(fiber.Map{"error": "this Facebook account belongs to another member", "reason": "ownership_conflict"})
+	}
+	accountID := res.AccountID
+	if accountID <= 0 {
+		accountID = body.AccountID
+	}
+	if err := h.db.Connectors().UpsertConnectorScreenshot(agentID, orgID, accountID, body.ImageData, body.CurrentURL, body.FBUserID, body.FBDisplayName, body.FBUsername, body.FBProfileURL, streamStatus, body.ChromeError); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	presence := connectors.AgentPresence{
@@ -277,26 +317,11 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 
-	if err := serverorg.ApplyConnectorIdentity(h.db, c.Context(), serverorg.ConnectorIdentitySnapshot{
-		AccountID:     body.AccountID,
-		OrgID:         orgID,
-		StreamStatus:  streamStatus,
-		CurrentURL:    body.CurrentURL,
-		FBUserID:      body.FBUserID,
-		FBDisplayName: body.FBDisplayName,
-		FBUsername:    body.FBUsername,
-		FBProfileURL:  body.FBProfileURL,
-		LoginEmail:    body.LoginEmail,
-		ChromeError:   body.ChromeError,
-	}); err != nil {
-		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
-	}
-
 	// Once Facebook login is confirmed, tell the extension to run in background so
 	// the user observes automation via the dashboard BrowserView, not the raw tab.
 	if strings.EqualFold(streamStatus, browsergateway.StreamFacebookLoggedIn) &&
-		!h.db.Connectors().HasRecentConnectorCommand(orgID, body.AccountID, "window_control", 30*time.Minute) {
-		_, _ = h.db.Connectors().CreateConnectorCommand(orgID, body.AccountID, agentID, 0, "window_control", `{"action":"minimize"}`)
+		!h.db.Connectors().HasRecentConnectorCommand(orgID, accountID, "window_control", 30*time.Minute) {
+		_, _ = h.db.Connectors().CreateConnectorCommand(orgID, accountID, agentID, 0, "window_control", `{"action":"minimize"}`)
 	}
 
 	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})
