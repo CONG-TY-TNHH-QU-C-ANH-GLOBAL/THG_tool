@@ -25,6 +25,9 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	h := NewHandler(deps)
 	group.Get("/accounts", h.getAccounts)
 	group.Post("/accounts", h.addAccount)
+	// Deterministic ExecutionContext: per-member Default Account.
+	group.Get("/execution-context", h.getExecutionContext)
+	group.Put("/execution-context", h.setExecutionContext)
 	group.Put("/accounts/:id/status", adminOnly, h.updateAccountStatus)
 	group.Put("/accounts/:id/cookies", adminOnly, h.updateAccountCookies)
 	group.Delete("/accounts/:id", adminOnly, h.deleteAccount)

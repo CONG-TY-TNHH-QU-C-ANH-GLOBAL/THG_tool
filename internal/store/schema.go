@@ -19,7 +19,7 @@ import (
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 9
+const schemaBootstrapVersion = 10
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
@@ -1218,6 +1218,18 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE action_ledger       ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`ALTER TABLE execution_attempts  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_member ON action_ledger(org_id, created_by, performed_at DESC)`)
+
+	// Organic Sales Network PR4 (schema v10): deterministic ExecutionContext.
+	// Each member picks a Default Account; outbound routing resolves
+	// Explicit account_id -> default_account_id -> (exactly 1 owned account) ->
+	// error execution_context_required. NO heuristic / first-logged-in guessing.
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS user_execution_context (
+		org_id             INTEGER NOT NULL,
+		user_id            INTEGER NOT NULL,
+		default_account_id INTEGER NOT NULL DEFAULT 0,
+		updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (org_id, user_id)
+	)`)
 
 	// Marker row written AFTER every other DDL. The fast-path probe
 	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears

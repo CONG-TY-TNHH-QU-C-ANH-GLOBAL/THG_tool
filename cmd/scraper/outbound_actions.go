@@ -514,11 +514,30 @@ func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, r
 		return 0, fmt.Errorf("no Facebook account available for org %d", orgID)
 	}
 	if preferLoggedIn {
+		// Deterministic ExecutionContext (Organic Sales Network): NO heuristic,
+		// NO "first logged-in", NO newest-connector, NO auto-magic default.
+		// Resolution order: explicit account_id (handled above) -> user Default
+		// Account -> exactly-one-owned-account -> error execution_context_required.
+		ownedIDs := make(map[int64]bool, len(candidates))
 		for _, acc := range candidates {
-			if acc.Platform == models.PlatformFacebook && acc.BrowserLoggedIn && acc.Status == models.AccountActive {
-				return acc.ID, nil
+			ownedIDs[acc.ID] = true
+		}
+		if def := db.GetUserDefaultAccount(orgID, userID); def > 0 && ownedIDs[def] {
+			return def, nil
+		}
+		var usable []int64
+		for _, acc := range candidates {
+			if acc.Platform == models.PlatformFacebook && acc.Status == models.AccountActive {
+				usable = append(usable, acc.ID)
 			}
 		}
+		if len(usable) == 1 {
+			return usable[0], nil
+		}
+		if len(usable) == 0 {
+			return 0, fmt.Errorf("execution_context_required: no usable Facebook account — pair a Chrome connector and log into Facebook first")
+		}
+		return 0, fmt.Errorf("execution_context_required: you have %d Facebook accounts — set a Default Account in Settings (or pass account_id)", len(usable))
 	}
 	return candidates[0].ID, nil
 }
