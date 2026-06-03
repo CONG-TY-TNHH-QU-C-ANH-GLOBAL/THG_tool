@@ -3,40 +3,9 @@ package store
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"testing"
 )
-
-// TestBenignMigrationErr pins which legacy-baseline statement errors are
-// tolerated (idempotency) vs which abort the bootstrap (genuine failures).
-func TestBenignMigrationErr(t *testing.T) {
-	benign := []string{
-		"duplicate column name: x",
-		"table foo already exists",
-		"index idx_y already exists",
-		"no such column: status",
-	}
-	for _, m := range benign {
-		if !benignMigrationErr(errors.New(m)) {
-			t.Errorf("expected benign: %q", m)
-		}
-	}
-	genuine := []string{
-		"near \"SELCT\": syntax error",
-		"no such table: accounts",
-		"UNIQUE constraint failed: accounts.id",
-		"disk I/O error",
-	}
-	for _, m := range genuine {
-		if benignMigrationErr(errors.New(m)) {
-			t.Errorf("expected genuine (must abort): %q", m)
-		}
-	}
-	if !benignMigrationErr(nil) {
-		t.Error("nil must be benign")
-	}
-}
 
 // TestApplyMigration_Atomic verifies the runner applies a migration body and its
 // version record ATOMICALLY, and that a failing migration leaves NOTHING behind

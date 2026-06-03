@@ -1,7 +1,10 @@
 # Migrations
 
-This directory holds versioned schema changes that run on top of the
-legacy `s.migrate()` baseline in `schema.go`.
+This directory is the **single source of truth** for the database schema.
+There is no in-code baseline anymore: `schema.go`'s `migrate()` was retired and
+its final frozen schema was dumped mechanically into
+`0001_legacy_baseline__sqlite.up.sql`. Every table, index, and seed row is
+created by a numbered `.up.sql` file applied by the runner (`migrator.go`).
 
 ## Production-grade guarantees (the runner — `migrator.go`)
 
@@ -20,10 +23,12 @@ this is the path that scales to a real (1M-user) Postgres production:
 
 ## FROZEN baseline
 
-`s.migrate()` in `schema.go` is the **frozen legacy SQLite baseline**. Do NOT
-add schema to it and do NOT bump `schemaBootstrapVersion`. ALL new schema
-changes — for both SQLite and Postgres — go in THIS directory as numbered
-`.up.sql` files.
+`0001_legacy_baseline__sqlite.up.sql` is the **frozen SQLite baseline** — a
+mechanical dump of the retired `migrate()` schema (ALTERs folded into the
+final CREATEs, no churn). Do NOT edit it. ALL new schema changes — for both
+SQLite and Postgres — go in THIS directory as new numbered `.up.sql` files
+starting at `0002`. (The Postgres baseline, `0001_*__postgres.up.sql`, is the
+dialect-split sibling for the POSTGRES_COMPAT path.)
 
 ## File naming
 
@@ -31,9 +36,8 @@ changes — for both SQLite and Postgres — go in THIS directory as numbered
 NNNN_short_description[__sqlite|__postgres].up.sql
 ```
 
-- `NNNN` — zero-padded monotonic version (e.g. `0002`). The current
-  baseline is implicitly version 1, so all hand-written migrations
-  start at 0002.
+- `NNNN` — zero-padded monotonic version (e.g. `0002`). Version `0001`
+  is the frozen baseline (per dialect); all new migrations start at `0002`.
 - `short_description` — operator-readable name. Used in boot logs and
   `schema_migrations.name`. Use snake_case.
 - `__sqlite` / `__postgres` — optional dialect filter. Without a

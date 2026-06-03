@@ -132,6 +132,16 @@ func loadMigrations(dialectName string) ([]Migration, error) {
 //
 // Failures here abort store boot. Boot-time migration failures are
 // production incidents — we deliberately do NOT swallow them.
+//
+// TODO(postgres-compat, multi-server): when more than one app instance can
+// boot against the SAME Postgres concurrently, wrap this whole body in a
+// session-level advisory lock (pg_advisory_lock(<const key>)) so only one
+// instance applies migrations while the others wait, then proceed no-op.
+// SQLite is single-writer (file-locked) and single-process here, so no lock
+// is needed today; the per-migration transaction already prevents a torn
+// apply, but two PG instances could still RACE to run the same version and
+// one would fail the unique version insert. The advisory lock makes that
+// boot deterministic instead of a fail-one-retry. Add it with the PG baseline.
 func (s *Store) runMigrations(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, migrationSchema); err != nil {
 		return fmt.Errorf("ensure schema_migrations: %w", err)
@@ -278,7 +288,7 @@ func (s *Store) applyMigration(ctx context.Context, m Migration) error {
 // on (any of) its first non-empty lines — the explicit escape hatch for DDL
 // that cannot run inside a transaction.
 func migrationOptsOutOfTx(sqlText string) bool {
-	for _, line := range strings.Split(sqlText, "\n") {
+	for line := range strings.SplitSeq(sqlText, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

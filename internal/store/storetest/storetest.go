@@ -74,16 +74,16 @@ type Bootstrap func(dbPath string) error
 // Why: migrate() runs ~150 idempotent DDL statements. Under the race
 // detector + modernc.org/sqlite each Exec is ~5–10ms because the
 // libc-emulated pthread primitives serialise heavily. The original
-// internal/store package has ~110 tests; running migrate() per test
-// burned the full 120s CI budget and hung the runner (panic: test
-// timed out after 2m0s inside _pthreadMutexEnter during a fresh
-// migrate).
+// internal/store package has ~110 tests; running the full migration
+// runner per test burned the full 120s CI budget and hung the runner
+// (panic: test timed out after 2m0s inside _pthreadMutexEnter during a
+// fresh bootstrap).
 //
 // Fix: compile ONE migrated SQLite file at first call, then copy it
-// into each test's TempDir. The host store.migrate() detects the
-// schema and short-circuits via schemaAlreadyApplied. The cumulative
-// migrate cost drops from O(N tests × 150 DDLs) to O(1 × 150 DDLs +
-// N file copies).
+// into each test's TempDir. On the copied file every migration version
+// is already recorded in schema_migrations, so the host runMigrations()
+// finds nothing to apply and returns immediately. The cumulative migrate
+// cost drops from O(N tests × 150 DDLs) to O(1 × 150 DDLs + N file copies).
 //
 // The template lives in os.TempDir (NOT t.TempDir of the first
 // caller) because t.TempDir is scoped to that one test — subsequent

@@ -228,9 +228,11 @@ func newSQLite(dbPath string) (*Store, error) {
 	}
 
 	s := &Store{db: db, dialect: dbutil.NewSQLiteDialect()}
-	if err := s.migrate(); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
+	// Schema is built entirely by the migration runner: a fresh DB gets the
+	// 0001_legacy_baseline__sqlite migration (the canonical SQLite schema) plus
+	// any later NNNN migrations. No more in-code migrate() bootstrap — the SQL
+	// lives in internal/store/migrations/ as the single source of truth, applied
+	// transactionally + fail-fast (see migrator.go).
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
@@ -272,16 +274,13 @@ func newPostgres(dsn string) (*Store, error) {
 	}
 
 	s := &Store{db: db, dialect: dbutil.NewPostgresDialect()}
-	// On a brand-new PG DB, s.migrate() (the SQLite-style baseline)
-	// would fail because its DDL is SQLite-flavour. The PG baseline
-	// MUST land via a 0001 migration file. Until that file exists,
-	// store.New(postgres://...) errors clearly — operators get a
-	// migration-missing message, not a confusing schema error.
-	if !s.tableExists(context.Background(), "schema_migrations") {
-		// Run the legacy SQLite migrate for SQLite only; PG must rely
-		// on migrations/0001_baseline__postgres.up.sql (added in PR
-		// that finalizes PG support).
-	}
+	// Schema for BOTH dialects is owned entirely by the migration runner
+	// (internal/store/migrations/*.up.sql) — there is no in-code baseline
+	// anymore. The SQLite baseline lives in 0001_legacy_baseline__sqlite.up.sql;
+	// the Postgres baseline (0001_legacy_baseline__postgres.up.sql) lands with
+	// the POSTGRES_COMPAT effort. On a brand-new PG DB with no PG baseline file
+	// yet, runMigrations applies nothing and the first table access fails
+	// clearly — operators get a migration-missing signal, not a silent half-boot.
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
@@ -330,64 +329,6 @@ func isPostgresDSN(s string) bool {
 // Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
-}
-
-// schemaAlreadyApplied reports whether migrate() finished writing the
-// current-version marker on this DB. Distinct from "any tables exist":
-// the marker is the *last* thing migrate() writes, and its version
-// must match schemaBootstrapVersion (see schema.go) — so an older
-// production DB whose schema lags will fail this probe and re-run
-// migrate(), creating any tables/columns added since.
-//
-// A failed Scan (table missing, no row, wrong version, sqlite error)
-// always returns false → migrate() body runs. Safe by default.
-func (s *Store) schemaAlreadyApplied() bool {
-	var n int
-	row := s.db.QueryRow(
-		`SELECT 1 FROM _schema_bootstrap_marker WHERE version = ?`,
-		schemaBootstrapVersion,
-	)
-	if err := row.Scan(&n); err != nil {
-		return false
-	}
-	return n == 1
-}
-
-// benignMigrationErr reports whether a legacy-baseline statement error is one of
-// the EXPECTED idempotency errors (re-applying a column/table/index that already
-// exists, or touching a column dropped later in the same baseline). SQLite has
-// no `ADD COLUMN IF NOT EXISTS`, so these belt-and-braces statements legitimately
-// error on a DB that already has the column. Everything else (syntax, missing
-// table, constraint violation, disk error) is a GENUINE failure that must abort
-// the bootstrap — not be silently swallowed.
-func benignMigrationErr(err error) bool {
-	if err == nil {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	for _, benign := range []string{
-		"duplicate column name",
-		"already exists",
-		"no such column", // legacy backfills referencing a since-dropped column
-	} {
-		if strings.Contains(msg, benign) {
-			return true
-		}
-	}
-	return false
-}
-
-// schemaMarkerHasAnyRow reports whether the bootstrap marker table exists AND
-// carries at least one version row — i.e. this DB has been bootstrapped before
-// (an UPGRADE), as opposed to a brand-new database. Used by migrate() to gate
-// one-off destructive backfills so a version bump does not re-run them. A fresh
-// DB has no marker table yet, so the query errors and we report false.
-func (s *Store) schemaMarkerHasAnyRow() bool {
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM _schema_bootstrap_marker`).Scan(&n); err != nil {
-		return false
-	}
-	return n > 0
 }
 
 // DB returns the underlying *sql.DB for packages that need direct SQL access
