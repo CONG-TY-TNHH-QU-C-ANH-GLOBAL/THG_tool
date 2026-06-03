@@ -162,6 +162,7 @@ func (h *LocalConnectorHandler) createLocalConnectorPairingCode(c *fiber.Ctx) er
 
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
 	if orgID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
 	}
@@ -169,9 +170,18 @@ func (h *LocalConnectorHandler) createLocalConnectorPairingCode(c *fiber.Ctx) er
 	if name == "" {
 		name = fmt.Sprintf("%s #%d", browsergateway.DefaultChromeConnectorName, userID)
 	}
+	// RBAC (Organic Sales Network): a member may only pre-bind a pairing code to
+	// an account they OWN. Previously this only checked org membership, letting a
+	// sales member create a code bound to another member's account. account_id==0
+	// is allowed — that pairs the connector to the member, and the account is
+	// auto-bound by Facebook identity on first login (PR2).
 	if req.AccountID > 0 {
-		if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
+		acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID)
+		if err != nil || acc == nil {
 			return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+		}
+		if !models.IsAccountOwnerAllowed(acc, userID, role) {
+			return c.Status(403).JSON(fiber.Map{"error": "you do not own this account"})
 		}
 	}
 

@@ -488,7 +488,22 @@ func (h *Handler) listCheckpoints(c *fiber.Ctx) error {
 
 func (h *Handler) getAccounts(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	accounts, err := h.db.Identities().GetAllAccounts(orgID)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
+	// RBAC-1 (Organic Sales Network): execution-layer ownership scoping —
+	// sales staff see ONLY accounts assigned to them; admin / platform see
+	// every account in the org. Mirrors workspaceList; leads stay shared
+	// elsewhere (feedback_shared_battlefield_not_crm). Previously this returned
+	// GetAllAccounts to every role — a cross-member account leak.
+	var (
+		accounts []models.Account
+		err      error
+	)
+	if r := models.UserRole(role); models.IsPlatformRole(r) || r == models.RoleAdmin {
+		accounts, err = h.db.Identities().GetAllAccounts(orgID)
+	} else {
+		accounts, err = h.db.Identities().GetAccountsForUser(orgID, userID)
+	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
