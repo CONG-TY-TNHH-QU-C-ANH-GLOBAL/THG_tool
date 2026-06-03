@@ -3,16 +3,25 @@ import type { KPIConfig } from '../../types';
 import { Avatar, Badge, Row } from '../ui';
 import { alpha, theme, cardStyle, inputStyle, primaryBtn } from '../../constants/styles';
 import { useLeaderboard } from '../../hooks/useLeaderboard';
-import { Trophy, Save } from 'lucide-react';
+import ContributionLeaderboardView from './ContributionLeaderboardView';
+import { Trophy, Save, Award, GitBranch } from 'lucide-react';
 
 interface LeaderboardViewProps { orgId: string; isAdmin: boolean; }
 
 const MEDAL = ['🥇', '🥈', '🥉'];
 
+type LbMode = 'kpi' | 'contrib';
+
+const MODES: { id: LbMode; label: string; Icon: typeof Award }[] = [
+  { id: 'kpi', label: 'KPI điểm', Icon: Award },
+  { id: 'contrib', label: 'Đóng góp thực thi', Icon: GitBranch },
+];
+
 export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps) {
   const { scored, config, updateConfig, isSaving } = useLeaderboard(orgId);
   const [draft, setDraft] = useState<KPIConfig>(config);
   const [editMode, setEditMode] = useState(false);
+  const [mode, setMode] = useState<LbMode>('kpi');
 
   const handleSave = async () => {
     await updateConfig(draft);
@@ -24,7 +33,26 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {top3.length > 0 && (
+      <Row style={{ gap: 6 }}>
+        {MODES.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            onClick={() => setMode(id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 13px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 12,
+              background: mode === id ? theme.primary : theme.surface,
+              color: mode === id ? 'var(--accent-ink)' : theme.textMuted,
+            }}
+          >
+            <Icon size={12} />{label}
+          </button>
+        ))}
+      </Row>
+
+      {mode === 'contrib' && <ContributionLeaderboardView />}
+
+      {mode === 'kpi' && top3.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
           {top3.map((s, i) => (
             <div key={s.id} style={{ ...cardStyle(), textAlign: 'center', position: 'relative', border: i === 0 ? `1px solid ${alpha(theme.primary, 35)}` : `1px solid ${theme.border}` }}>
@@ -52,7 +80,7 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
         </div>
       )}
 
-      {rest.length > 0 && (
+      {mode === 'kpi' && rest.length > 0 && (
         <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -90,7 +118,7 @@ export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps
         </div>
       )}
 
-      {isAdmin && (
+      {mode === 'kpi' && isAdmin && (
         <div style={cardStyle()}>
           <Row style={{ gap: 10, marginBottom: 16 }}>
             <Trophy size={16} color={theme.primaryLight} />

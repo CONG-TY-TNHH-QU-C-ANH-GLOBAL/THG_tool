@@ -4,6 +4,7 @@ import type { ComponentType, CSSProperties } from 'react';
 const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
 const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
 const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
+import DefaultAccountSettings from './DefaultAccountSettings';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { alpha, theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
@@ -40,6 +41,7 @@ import {
   RefreshCw,
   Shield,
   Upload,
+  UserCog,
   UserPlus,
   Users,
   X,
@@ -48,7 +50,7 @@ import {
 
 interface SettingsPageProps { org: Organization; orgId: string; isAdmin: boolean; }
 
-type SettingsTab = 'brand' | 'security' | 'staff' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics';
+type SettingsTab = 'brand' | 'execution' | 'security' | 'staff' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics';
 
 const inputStyle: CSSProperties = baseInputStyle;
 
@@ -58,6 +60,7 @@ const Label = ({ text }: { text: string }) => (
 
 const TABS: { id: SettingsTab; label: string; Icon: ComponentType<{ size?: number | string }> }[] = [
   { id: 'brand', label: 'Thương hiệu', Icon: Palette },
+  { id: 'execution', label: 'Tài khoản mặc định', Icon: UserCog },
   { id: 'security', label: 'Bảo mật', Icon: Shield },
   { id: 'staff', label: 'Nhân viên', Icon: Users },
   { id: 'agents', label: 'AI Agents', Icon: Zap },
@@ -338,6 +341,8 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
           </button>
         ))}
       </div>
+
+      {activeTab === 'execution' && <DefaultAccountSettings />}
 
       {activeTab === 'brand' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
