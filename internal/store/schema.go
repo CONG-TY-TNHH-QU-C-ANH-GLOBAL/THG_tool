@@ -19,7 +19,7 @@ import (
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 7
+const schemaBootstrapVersion = 8
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
@@ -706,6 +706,29 @@ func (s *Store) migrate() error {
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
+	// Organic Sales Network PR1 (schema v8): one Facebook identity = one account
+	// per org. ResolveOrCreateAccountForFacebookIdentity (PR2) relies on this
+	// uniqueness so two concurrent connector heartbeats reporting the same FB
+	// login cannot create two account rows.
+	//
+	// Dedup BEFORE the unique index or CREATE UNIQUE INDEX fails on existing
+	// duplicate-identity rows. Keep MIN(id) per (org_id, fb_user_id); demote the
+	// losers by blanking fb_user_id (NOT deleting — outbound_messages.account_id
+	// and the ledger still FK-reference these ids). Idempotent: after the first
+	// run no group has COUNT(*)>1, so the UPDATE matches nothing.
+	s.db.Exec(`UPDATE accounts SET fb_user_id = '', browser_logged_in = 0, status = 'inactive'
+		WHERE id IN (
+			SELECT a.id FROM accounts a
+			JOIN (
+				SELECT org_id, fb_user_id, MIN(id) AS keep_id
+				FROM accounts WHERE fb_user_id != ''
+				GROUP BY org_id, fb_user_id HAVING COUNT(*) > 1
+			) dup ON a.org_id = dup.org_id AND a.fb_user_id = dup.fb_user_id AND a.id != dup.keep_id
+		)`)
+	// Partial unique index — empty fb_user_id (account "slots" not yet logged in)
+	// are excluded so multiple pending slots can coexist.
+	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_org_fb_identity
+		ON accounts(org_id, fb_user_id) WHERE fb_user_id != ''`)
 	// Org invites: token-based invite links for joining an org
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS org_invites (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
