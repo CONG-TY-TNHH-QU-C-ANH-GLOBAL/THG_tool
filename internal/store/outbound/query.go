@@ -13,7 +13,7 @@ import (
 // read path SELECTs. Centralising it means a schema addition is a
 // single-edit change across every Get* helper.
 const readColumns = `id, COALESCE(org_id,0), type, platform, account_id, target_url, target_name, content, context,
-		COALESCE(image_path,''), execution_state, COALESCE(verification_outcome,''), ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, '')`
+		COALESCE(image_path,''), execution_state, COALESCE(verification_outcome,''), ai_model, COALESCE(sent_at, ''), created_at, COALESCE(execution_id, ''), COALESCE(created_by,0)`
 
 // scanRow parses one row from any query selecting [readColumns] in
 // order. Centralised so adding/reordering a column is a single-edit
@@ -23,7 +23,7 @@ func scanRow(rows *sql.Rows) (*models.OutboundMessage, error) {
 	var sentAt string
 	var verifOutcome string
 	err := rows.Scan(&m.ID, &m.OrgID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-		&m.Content, &m.Context, &m.ImagePath, &m.ExecutionState, &verifOutcome, &m.AIModel, &sentAt, &m.CreatedAt, &m.ExecutionID)
+		&m.Content, &m.Context, &m.ImagePath, &m.ExecutionState, &verifOutcome, &m.AIModel, &sentAt, &m.CreatedAt, &m.ExecutionID, &m.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (s *Store) Get(orgID, id int64) (*models.OutboundMessage, error) {
 		`SELECT `+readColumns+`
 		FROM outbound_messages WHERE id = ? AND org_id = ?`, id, orgID,
 	).Scan(&m.ID, &m.OrgID, &m.Type, &m.Platform, &m.AccountID, &m.TargetURL, &m.TargetName,
-		&m.Content, &m.Context, &m.ImagePath, &m.ExecutionState, &verifOutcome, &m.AIModel, &sentAt, &m.CreatedAt, &m.ExecutionID)
+		&m.Content, &m.Context, &m.ImagePath, &m.ExecutionState, &verifOutcome, &m.AIModel, &sentAt, &m.CreatedAt, &m.ExecutionID, &m.CreatedBy)
 	if err != nil {
 		return nil, err
 	}

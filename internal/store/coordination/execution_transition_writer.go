@@ -34,7 +34,7 @@ import (
 func (s *Store) RecordTransitionTx(
 	ctx context.Context,
 	tx *sql.Tx,
-	outboundID, orgID, accountID int64,
+	outboundID, orgID, accountID, createdBy int64,
 	targetURL, actionType string,
 	attempt int,
 	status, outcome string,
@@ -59,15 +59,15 @@ func (s *Store) RecordTransitionTx(
 
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_attempts
-			(action_ledger_id, outbound_id, org_id, account_id, target_url,
+			(action_ledger_id, outbound_id, org_id, account_id, created_by, target_url,
 			 action_type, attempt, status, outcome, failure_reason, evidence_json,
 			 dom_verified, network_verified, started_at, finished_at,
 			 transition_type, execution_id, resulting_state, resulting_outcome, lease_expiry)
-		VALUES (0, ?, ?, ?, ?,
+		VALUES (0, ?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?,
 			?, ?, CURRENT_TIMESTAMP, CASE WHEN ? = 'finalize' THEN CURRENT_TIMESTAMP ELSE NULL END,
 			?, ?, ?, ?, ?)`,
-		outboundID, orgID, accountID, targetURL,
+		outboundID, orgID, accountID, createdBy, targetURL,
 		actionType, attempt, status,
 		outcome, failureReason, evidence,
 		dbutil.BoolToInt(domVerified), dbutil.BoolToInt(networkVerified),

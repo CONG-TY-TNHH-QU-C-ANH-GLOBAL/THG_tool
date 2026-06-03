@@ -291,6 +291,10 @@ type OutboundMessage struct {
 	ExecutionState      ExecutionState      `json:"execution_state" db:"execution_state"`
 	VerificationOutcome VerificationOutcome `json:"verification_outcome,omitempty" db:"verification_outcome"`
 	AIModel             string              `json:"ai_model" db:"ai_model"` // model used to generate
+	// CreatedBy is the MEMBER (user id) who initiated this execution. Immutable
+	// execution-ownership (Organic Sales Network) — never derived from the
+	// account's current owner. 0 = system / legacy / unattributed.
+	CreatedBy           int64               `json:"created_by" db:"created_by"`
 	SentAt              time.Time           `json:"sent_at" db:"sent_at"`
 	CreatedAt           time.Time           `json:"created_at" db:"created_at"`
 	// ExecutionID is the per-attempt idempotency token issued at claim

@@ -26,9 +26,9 @@ func (s *Store) Insert(msg *models.OutboundMessage) (int64, error) {
 		outcomeArg = string(msg.VerificationOutcome)
 	}
 	result, err := s.db.Exec(
-		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, execution_state, verification_outcome, ai_model)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.ExecutionState, outcomeArg, msg.AIModel,
+		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, execution_state, verification_outcome, ai_model, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.ExecutionState, outcomeArg, msg.AIModel, msg.CreatedBy,
 	)
 	if err != nil {
 		return 0, err
@@ -106,9 +106,9 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 	msg.VerificationOutcome = ""
 
 	res, err := tx.Exec(
-		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, execution_state, verification_outcome, ai_model)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.ExecutionState, msg.AIModel,
+		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, execution_state, verification_outcome, ai_model, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.ExecutionState, msg.AIModel, msg.CreatedBy,
 	)
 	if err != nil {
 		// Likely UNIQUE collision under concurrency — surface as a
@@ -128,7 +128,7 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 	// Cross-domain side effects via Hooks (best-effort).
 	// tenant-ok: cross-domain projection (outbound -> coordination).
 	if s.hooks.RecordActionLedger != nil {
-		s.hooks.RecordActionLedger(tx, msg.OrgID, msg.AccountID, string(msg.Type), msg.TargetURL, id, cooldown)
+		s.hooks.RecordActionLedger(tx, msg.OrgID, msg.AccountID, msg.CreatedBy, string(msg.Type), msg.TargetURL, id, cooldown)
 	}
 	if s.hooks.IncrementCounter != nil {
 		s.hooks.IncrementCounter(tx, msg.OrgID, msg.AccountID, string(msg.Type))
@@ -139,6 +139,7 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 		OutboundID:     id,
 		OrgID:          msg.OrgID,
 		AccountID:      msg.AccountID,
+		CreatedBy:      msg.CreatedBy,
 		TargetURL:      msg.TargetURL,
 		ActionType:     string(msg.Type),
 		Attempt:        1,

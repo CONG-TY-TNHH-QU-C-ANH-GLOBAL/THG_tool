@@ -19,7 +19,7 @@ import (
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 8
+const schemaBootstrapVersion = 9
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
@@ -1206,6 +1206,18 @@ func (s *Store) migrate() error {
 	// so the direct DROP is safe. The IF EXISTS clause keeps the
 	// statement idempotent for already-migrated DBs.
 	s.db.Exec(`ALTER TABLE outbound_messages DROP COLUMN status`)
+
+	// Organic Sales Network PR3 (schema v9): execution ownership is a
+	// first-class, IMMUTABLE dimension. created_by records the MEMBER who
+	// initiated the action — never derived from account_id (an account can
+	// change owner; execution history must not). Attribution / KPI / champion
+	// are projections over (interaction, created_by). 0 = system/legacy.
+	// ALTERs are best-effort idempotent (re-run on an existing column is a
+	// no-op error we ignore); the version bump forces the re-run.
+	s.db.Exec(`ALTER TABLE outbound_messages  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE action_ledger       ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`ALTER TABLE execution_attempts  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_member ON action_ledger(org_id, created_by, performed_at DESC)`)
 
 	// Marker row written AFTER every other DDL. The fast-path probe
 	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears

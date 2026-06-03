@@ -23,6 +23,7 @@ type ActionLedgerEntry struct {
 	TargetType    string // post | profile | group (derived from ActionType)
 	TargetURL     string
 	AccountID     int64
+	CreatedBy     int64 // member who initiated the action (immutable execution ownership); 0 = system
 	OutboundID    int64 // FK to outbound_messages.id; 0 when unattached
 	PerformedAt   time.Time
 	CooldownUntil time.Time
@@ -65,7 +66,7 @@ func targetTypeFromAction(actionType string) string {
 // Phase 5B: exported (was `recordActionLedgerTx`) because the hooks
 // closure now lives across the package boundary. Package-level function
 // — no Store state required, the caller threads its own tx.
-func RecordLedgerTx(tx *sql.Tx, orgID, accountID int64, actionType, targetURL string, outboundID int64, cooldown time.Duration) error {
+func RecordLedgerTx(tx *sql.Tx, orgID, accountID, createdBy int64, actionType, targetURL string, outboundID int64, cooldown time.Duration) error {
 	if orgID <= 0 || strings.TrimSpace(actionType) == "" || strings.TrimSpace(targetURL) == "" {
 		return fmt.Errorf("ledger requires org_id, action_type, target_url")
 	}
@@ -75,11 +76,11 @@ func RecordLedgerTx(tx *sql.Tx, orgID, accountID int64, actionType, targetURL st
 	}
 	_, err := tx.Exec(
 		`INSERT INTO action_ledger
-			(org_id, action_type, target_type, target_url, account_id, outbound_id,
+			(org_id, action_type, target_type, target_url, account_id, created_by, outbound_id,
 			 performed_at, cooldown_until, outcome, reason)
-		 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, '')`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, '')`,
 		orgID, actionType, targetTypeFromAction(actionType), targetURL,
-		accountID, outboundID, cooldownUntil, LedgerOutcomeQueued,
+		accountID, createdBy, outboundID, cooldownUntil, LedgerOutcomeQueued,
 	)
 	return err
 }
@@ -109,11 +110,11 @@ func (s *Store) RecordActionLedger(ctx context.Context, entry ActionLedgerEntry)
 	}
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO action_ledger
-			(org_id, action_type, target_type, target_url, account_id, outbound_id,
+			(org_id, action_type, target_type, target_url, account_id, created_by, outbound_id,
 			 performed_at, cooldown_until, outcome, reason)
-		 VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?)`,
 		entry.OrgID, entry.ActionType, entry.TargetType, entry.TargetURL,
-		entry.AccountID, entry.OutboundID, performedAt, cooldownUntil, entry.Outcome, entry.Reason,
+		entry.AccountID, entry.CreatedBy, entry.OutboundID, performedAt, cooldownUntil, entry.Outcome, entry.Reason,
 	)
 	if err != nil {
 		return 0, err

@@ -118,13 +118,13 @@ func (s *Store) installOutboundHooks() {
 		ConversationGate: func(ctx context.Context, orgID int64, targetURL, profileURL string, cooldown time.Duration) (outbound.GuardDecision, error) {
 			return s.conversationGateForOutbound(ctx, orgID, targetURL, profileURL, cooldown)
 		},
-		RecordActionLedger: func(tx *sql.Tx, orgID, accountID int64, msgType, targetURL string, outboundID int64, cooldown time.Duration) {
+		RecordActionLedger: func(tx *sql.Tx, orgID, accountID, createdBy int64, msgType, targetURL string, outboundID int64, cooldown time.Duration) {
 			// Best-effort, errors swallowed (the outbound row is the
 			// source of truth). Failures are emitted as typed events
 			// (events.ExecutionHookFailed) so the Control Plane can
 			// surface them — see specs/RUNTIME_TOPOLOGY.md §5 failure
 			// surface gap fixed by this emission.
-			if err := coordination.RecordLedgerTx(tx, orgID, accountID, msgType, targetURL, outboundID, cooldown); err != nil {
+			if err := coordination.RecordLedgerTx(tx, orgID, accountID, createdBy, msgType, targetURL, outboundID, cooldown); err != nil {
 				events.Warn(context.Background(), events.ExecutionHookFailed,
 					events.FieldHook, "RecordLedgerTx",
 					events.FieldOrgID, orgID,
@@ -156,7 +156,7 @@ func (s *Store) installOutboundHooks() {
 			// is also surfaced via events.ExecutionHookFailed inside the
 			// implementation's slog.WarnContext path.
 			s.coordination.RecordTransitionTx(ctx, tx,
-				in.OutboundID, in.OrgID, in.AccountID,
+				in.OutboundID, in.OrgID, in.AccountID, in.CreatedBy,
 				in.TargetURL, in.ActionType, in.Attempt,
 				in.Status, in.Outcome, in.FailureReason, in.EvidenceJSON,
 				in.DOMVerified, in.NetworkVerified,

@@ -69,6 +69,7 @@ func (h *Handler) draftOutbound(c *fiber.Ctx) error {
 		TargetName: req.TargetName,
 		Content:    req.Content,
 		Context:    req.Context,
+		CreatedBy:  userID, // immutable execution ownership (Organic Sales Network)
 	}, 24*time.Hour)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})

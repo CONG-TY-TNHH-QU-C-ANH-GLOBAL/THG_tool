@@ -34,9 +34,10 @@ func TestLeadEngagement_UntouchedIsPriority(t *testing.T) {
 }
 
 // One staff (Alice) queues a comment on the lead's source_url. The
-// projection must surface that ledger row with user_name resolved
-// through accounts.assigned_user_id → users.name.
-func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
+// projection must surface that ledger row with user_name resolved through
+// action_ledger.created_by → users.name (Organic Sales Network: attribution
+// is the IMMUTABLE initiating member, not the account's current owner).
+func TestLeadEngagement_ResolvesUserViaCreatedBy(t *testing.T) {
 	db := newEngagementTestStore(t)
 	ctx := context.Background()
 
@@ -45,10 +46,11 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/B", "https://facebook.com/profile/B", "")
 
-	// Use the canonical queue path so the ledger row is real.
+	// Use the canonical queue path so the ledger row is real. CreatedBy is the
+	// member attribution (independent of who the account is assigned to).
 	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
-		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/B", Content: "alice was here",
+		AccountID: aliceAccID, CreatedBy: aliceUserID, TargetURL: "https://facebook.com/post/B", Content: "alice was here",
 	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
@@ -88,6 +90,44 @@ func TestLeadEngagement_ResolvesUserViaAccountAssignment(t *testing.T) {
 	}
 	if state.LastEngagedBy != "Alice" {
 		t.Errorf("last_engaged_by = %q, want Alice", state.LastEngagedBy)
+	}
+}
+
+// PR3 invariant (Organic Sales Network): execution ownership is IMMUTABLE.
+// Reassigning the account to a different member must NOT rewrite who is
+// credited for past actions — attribution rides created_by, not the account's
+// current assigned_user_id.
+func TestLeadEngagement_AttributionImmutableOnAccountReassign(t *testing.T) {
+	db := newEngagementTestStore(t)
+	ctx := context.Background()
+
+	alice := seedUser(t, db, 1, "Alice")
+	bob := seedUser(t, db, 1, "Bob")
+	acc := seedAccount(t, db, 1, "Shared FB", alice)
+	leadID := seedLead(t, db, 1, "https://facebook.com/post/imm", "https://facebook.com/profile/imm", "")
+
+	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: 1, Type: "comment", Platform: "facebook",
+		AccountID: acc, CreatedBy: alice, TargetURL: "https://facebook.com/post/imm", Content: "alice acted",
+	}, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, "succeeded", "verified"); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+
+	// Reassign the account from Alice to Bob AFTER the action.
+	if _, err := db.db.Exec(`UPDATE accounts SET assigned_user_id = ? WHERE id = ?`, bob, acc); err != nil {
+		t.Fatalf("reassign: %v", err)
+	}
+
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
+	if err != nil {
+		t.Fatalf("engagement: %v", err)
+	}
+	if len(state.Entries) != 1 || state.Entries[0].UserID != alice || state.Entries[0].UserName != "Alice" {
+		t.Fatalf("attribution must stay Alice after account reassign to Bob, got %+v", state.Entries)
 	}
 }
 
@@ -211,7 +251,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	// Org 2 engages the same URL — must NOT bleed into org 1's view.
 	otherRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 2, Type: "comment", Platform: "facebook",
-		AccountID: otherAccID, TargetURL: "https://facebook.com/post/D", Content: "other org",
+		AccountID: otherAccID, CreatedBy: otherUserID, TargetURL: "https://facebook.com/post/D", Content: "other org",
 	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("other org queue: %v", err)
@@ -219,7 +259,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	// Org 1 also engages.
 	aliceRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
-		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/D", Content: "alice org1",
+		AccountID: aliceAccID, CreatedBy: aliceUserID, TargetURL: "https://facebook.com/post/D", Content: "alice org1",
 	}, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("alice queue: %v", err)

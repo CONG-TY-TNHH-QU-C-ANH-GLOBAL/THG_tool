@@ -114,6 +114,7 @@ type RecordTransitionInput struct {
 	OutboundID       int64
 	OrgID            int64
 	AccountID        int64
+	CreatedBy        int64
 	TargetURL        string
 	ActionType       string
 	Attempt          int

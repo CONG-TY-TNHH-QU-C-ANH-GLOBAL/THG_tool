@@ -123,6 +123,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			Content:    content,
 			Context:    lead.Content,
 			AIModel:    "agent",
+			CreatedBy:  userID, // immutable execution ownership (Organic Sales Network)
 		}, 24*time.Hour)
 		if err != nil {
 			return "", err
@@ -433,6 +434,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 			TargetURL: target,
 			Content:   strings.TrimSpace(content),
 			AIModel:   "agent",
+			CreatedBy: userID,
 		}, 24*time.Hour)
 		if err != nil {
 			return "", err

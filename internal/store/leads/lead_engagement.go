@@ -258,18 +258,22 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 	// action_ledger as the source of engagement state. Per truth ownership
 	// matrix (DOMAINS.md §2.4), action_ledger is owned by the coordination
 	// domain; this JOIN is read-only.
+	// Attribution uses al.created_by (the IMMUTABLE member who initiated the
+	// action) — NOT account.assigned_user_id, which is mutable and would rewrite
+	// history when an account is reassigned (Organic Sales Network execution
+	// ownership). created_by=0 = system/legacy/unattributed.
 	query := `
 		SELECT al.target_url,
 		       COALESCE(a.id, 0)                  AS account_id,
 		       COALESCE(a.name, '')               AS account_name,
-		       COALESCE(a.assigned_user_id, 0)    AS user_id,
+		       al.created_by                      AS user_id,
 		       COALESCE(u.name, '')               AS user_name,
 		       al.action_type,
 		       al.outcome,
 		       al.performed_at
 		  FROM action_ledger al
 		  LEFT JOIN accounts a ON a.id = al.account_id
-		  LEFT JOIN users    u ON u.id = a.assigned_user_id
+		  LEFT JOIN users    u ON u.id = al.created_by
 		 WHERE al.org_id = ?
 		   AND al.outcome = 'succeeded'
 		   AND al.target_url IN (` + placeholders + `)

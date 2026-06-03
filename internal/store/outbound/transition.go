@@ -15,6 +15,7 @@ type transitionInput struct {
 	OutboundID     int64
 	OrgID          int64
 	AccountID      int64
+	CreatedBy      int64
 	TargetURL      string
 	ActionType     string
 	Attempt        int
@@ -88,6 +89,7 @@ func (s *Store) appendTransition(ctx context.Context, tx *sql.Tx, t transitionIn
 		OutboundID:       t.OutboundID,
 		OrgID:            t.OrgID,
 		AccountID:        t.AccountID,
+		CreatedBy:        t.CreatedBy,
 		TargetURL:        t.TargetURL,
 		ActionType:       t.ActionType,
 		Attempt:          t.Attempt,
