@@ -73,6 +73,7 @@ func (s *Store) GetLeadEngagement(ctx context.Context, orgID, leadID int64) (*mo
 			state.LastEngagedBy = latest.UserName
 			state.LastEngagedAction = latest.Action
 		}
+		state.Champion, state.ActiveContributors = models.DeriveChampion(entries)
 	}
 
 	threadStatus, awaitingReply := s.threadStateForLead(orgID, lead)
@@ -148,6 +149,7 @@ func (s *Store) GetLeadEngagementsBatch(ctx context.Context, orgID int64, leadID
 			state.LastEngagedBy = latest.UserName
 			state.LastEngagedAction = latest.Action
 		}
+		state.Champion, state.ActiveContributors = models.DeriveChampion(state.Entries)
 		threadStatus, awaitingReply := threadStateFromBatch(threadByURL, &l)
 		state.ThreadStatus = threadStatus
 		state.Badge = models.DeriveBadge(state.Entries, threadStatus, awaitingReply, now,

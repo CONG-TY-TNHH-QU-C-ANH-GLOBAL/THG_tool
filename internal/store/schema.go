@@ -19,7 +19,7 @@ import (
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 11
+const schemaBootstrapVersion = 12
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
@@ -1256,6 +1256,15 @@ func (s *Store) migrate() error {
 	// leaderboard work uniformly across FACEBOOK / EMAIL / TELEGRAM / ... Default
 	// 'facebook' keeps every existing row correct (additive, backward-compatible).
 	s.db.Exec(`ALTER TABLE action_ledger ADD COLUMN channel TEXT NOT NULL DEFAULT 'facebook'`)
+
+	// Organic Sales Network PR6 (schema v12): Coordination is POLICY, not an
+	// invariant. coordination_scope is the OPT-IN knob for limiting how many
+	// members/accounts may engage one lead. Default '' = OFF = amplification-
+	// friendly (multiple members/accounts on one lead is VALID — social proof /
+	// authority / campaign). When set, the dedup gate emits a typed reason code
+	// (policy:coordination_scope) so any skip is explainable + observable; it is
+	// NEVER a silent hardcoded cross-member block.
+	s.db.Exec(`ALTER TABLE action_policies ADD COLUMN coordination_scope TEXT NOT NULL DEFAULT ''`)
 
 	// Marker row written AFTER every other DDL. The fast-path probe
 	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears

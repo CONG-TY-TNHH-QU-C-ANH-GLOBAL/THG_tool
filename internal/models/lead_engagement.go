@@ -53,6 +53,40 @@ type LeadEngagementState struct {
 	LastEngagedBy     string              `json:"last_engaged_by"`     // user_name of latest entry; "" if none
 	LastEngagedAction string              `json:"last_engaged_action"` // action of latest entry; "" if none
 	ThreadStatus      string              `json:"thread_status"`       // conversation_threads.status if any (closed/converted/replied/initiated); "" if none
+
+	// Coordination Layer (observability ONLY — Organic Sales Network). Multiple
+	// members engaging one shared lead is VALID (amplification); these fields just
+	// surface "what's happening" so the team self-coordinates by visibility.
+	ActiveContributors []string `json:"active_contributors"` // distinct member names who engaged this lead
+	Champion           string   `json:"champion"`            // top contributor (most verified touches); analytics only, no rights
+}
+
+// DeriveChampion is a pure projection over the engagement entries: it returns
+// the distinct contributor names (most-recent first by first appearance) and the
+// "champion" — the member with the most verified touches on this lead. Champion
+// is ANALYTICS ONLY (Ownership ⊥ Champion): it grants no routing/execution
+// priority and never implies lead ownership. Ties break by earliest contributor.
+func DeriveChampion(entries []LeadEngagement) (champion string, contributors []string) {
+	counts := map[string]int{}
+	order := []string{}
+	for _, e := range entries {
+		name := e.UserName
+		if name == "" {
+			continue
+		}
+		if _, seen := counts[name]; !seen {
+			order = append(order, name)
+		}
+		counts[name]++
+	}
+	best := 0
+	for _, name := range order {
+		if counts[name] > best {
+			best = counts[name]
+			champion = name
+		}
+	}
+	return champion, order
 }
 
 // DefaultProtectedWindow is how recent an engagement must be to mark the
