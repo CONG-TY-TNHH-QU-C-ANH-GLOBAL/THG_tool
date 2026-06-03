@@ -22,10 +22,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	}
 	userID := argInt64(args, "user_id")
 	role := argString(args, "user_role")
-	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), true)
+	// Resolve the campaign-ready ActionContext (Source=manual). The queue path
+	// below consumes only the context, so a future ResolveCampaignActionContext
+	// drops in without touching this code.
+	actx, err := resolveUserActionContext(db, orgID, userID, role, argInt64(args, "account_id"), true)
 	if err != nil {
 		return "", err
 	}
+	accountID := actx.AccountID
 
 	// requestedAuto carries the AI/agent's preference. The store layer
 	// (QueueOutboundForOrg -> IsAutoOutboundEnabledForOrg) is the final
@@ -123,7 +127,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			Content:    content,
 			Context:    lead.Content,
 			AIModel:    "agent",
-			CreatedBy:  userID, // immutable execution ownership (Organic Sales Network)
+			CreatedBy:  actx.InitiatorUserID, // immutable execution ownership (from ActionContext)
 		}, 24*time.Hour)
 		if err != nil {
 			return "", err
@@ -479,6 +483,25 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 // preferLoggedIn rewards the first FB-platform, browser-logged-in, active
 // account in the candidate list (legacy lead-outreach behaviour). Set to
 // false for post / profile_post paths that don't need a logged-in browser.
+// resolveUserActionContext produces the campaign-ready models.ActionContext for
+// a member-initiated (Source=manual) outbound. It wraps the deterministic
+// account resolution; a future resolveCampaignActionContext returns the SAME
+// shape so the execution path stays source-agnostic (campaign is additive).
+// ConnectorID/CampaignID/ExecutionSourceID are left 0 — filled by the future
+// connector-availability + campaign layers.
+func resolveUserActionContext(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (models.ActionContext, error) {
+	accID, err := resolveCallerAccountID(db, orgID, userID, role, requestedAccountID, preferLoggedIn)
+	if err != nil {
+		return models.ActionContext{}, err
+	}
+	return models.ActionContext{
+		OrgID:           orgID,
+		Source:          models.ActionSourceManual,
+		InitiatorUserID: userID,
+		AccountID:       accID,
+	}, nil
+}
+
 func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (int64, error) {
 	if requestedAccountID > 0 {
 		acc, err := db.Identities().GetAccountForOrg(requestedAccountID, orgID)

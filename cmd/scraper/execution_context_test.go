@@ -52,3 +52,33 @@ func TestResolveCallerAccountID_DeterministicContext(t *testing.T) {
 		t.Fatal("setting default to a non-owned account must error")
 	}
 }
+
+// TestResolveUserActionContext checks the campaign-ready ActionContext: a
+// member-initiated resolution yields Source=manual with the immutable
+// InitiatorUserID and the deterministically resolved AccountID.
+func TestResolveUserActionContext(t *testing.T) {
+	db, err := store.New(filepath.Join(t.TempDir(), "actx_test.db"))
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer db.Close()
+
+	const org, member int64 = 1, 7
+	acc, _ := db.Identities().AddAccount(&models.Account{
+		OrgID: org, Platform: models.PlatformFacebook, Name: "FB", AssignedUserID: member, Status: models.AccountActive,
+	})
+
+	actx, err := resolveUserActionContext(db, org, member, "sales", 0, true)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if actx.Source != models.ActionSourceManual {
+		t.Fatalf("source = %q, want manual", actx.Source)
+	}
+	if actx.InitiatorUserID != member || actx.AccountID != acc || actx.OrgID != org {
+		t.Fatalf("context wrong: %+v (want org=%d user=%d acc=%d)", actx, org, member, acc)
+	}
+	if actx.ConnectorID != 0 || actx.CampaignID != 0 {
+		t.Fatalf("connectorless/no-campaign defaults expected, got %+v", actx)
+	}
+}
