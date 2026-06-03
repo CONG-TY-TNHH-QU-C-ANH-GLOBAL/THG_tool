@@ -36,6 +36,20 @@ func (s *Store) migrate() error {
 	if s.schemaAlreadyApplied() {
 		return nil
 	}
+	// freshDB distinguishes a brand-new database from a version-bump UPGRADE.
+	// migrate() re-runs its whole body on every schemaBootstrapVersion bump; the
+	// CREATE-TABLE-IF-NOT-EXISTS and ADD-COLUMN statements are idempotent, but a
+	// handful of ONE-OFF data backfills (e.g. auto-blacklisting legacy groups)
+	// are NOT — re-running them on an upgrade would clobber operator changes
+	// (re-blacklist a group an admin un-blacklisted). Those backfills are gated
+	// behind `freshDB` so they run exactly once, on initial bootstrap.
+	//
+	// On a fresh DB the marker table does not exist yet → the query errors →
+	// freshDB stays true. On an existing DB it has ≥1 row → this is an upgrade.
+	freshDB := true
+	if s.schemaMarkerHasAnyRow() {
+		freshDB = false
+	}
 	schema := `
 	CREATE TABLE IF NOT EXISTS groups (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -841,21 +855,26 @@ func (s *Store) migrate() error {
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_commands_agent ON connector_commands(agent_id, status, id)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_commands_account ON connector_commands(org_id, account_id, status, id)`)
 
-	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches
-	// These are logistics groups that must not be touched by the recruitment pipeline
-	s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
-		SELECT id, 'logistics', 'reject', 1, 'Pre-existing logistics group — auto-blacklisted from recruitment', 0.0
-		FROM groups WHERE id NOT IN (SELECT group_id FROM group_quality)
-		  AND created_at < '2026-04-21T10:00:00Z'
-		ON CONFLICT(group_id) DO UPDATE SET blacklist=1, decision='reject'`)
-	// Also blacklist ALL groups named "Auto-detected" — these are always logistics groups
-	s.db.Exec(`UPDATE group_quality SET blacklist=1, decision='reject', category='logistics',
-		reason='Auto-detected logistics group — blacklisted from recruitment'
-		WHERE group_id IN (SELECT id FROM groups WHERE name = 'Auto-detected')`)
-	s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
-		SELECT id, 'logistics', 'reject', 1, 'Auto-detected logistics group — blacklisted from recruitment', 0.0
-		FROM groups WHERE name = 'Auto-detected' AND id NOT IN (SELECT group_id FROM group_quality)
-		ON CONFLICT(group_id) DO NOTHING`)
+	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches.
+	// ONE-OFF initial cleanup — gated behind freshDB so a schemaBootstrapVersion
+	// bump does NOT re-run it and re-blacklist a group an operator has since
+	// un-blacklisted (the ON CONFLICT DO UPDATE SET blacklist=1 would clobber
+	// the operator's change).
+	if freshDB {
+		s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
+			SELECT id, 'logistics', 'reject', 1, 'Pre-existing logistics group — auto-blacklisted from recruitment', 0.0
+			FROM groups WHERE id NOT IN (SELECT group_id FROM group_quality)
+			  AND created_at < '2026-04-21T10:00:00Z'
+			ON CONFLICT(group_id) DO UPDATE SET blacklist=1, decision='reject'`)
+		// Also blacklist ALL groups named "Auto-detected" — these are always logistics groups
+		s.db.Exec(`UPDATE group_quality SET blacklist=1, decision='reject', category='logistics',
+			reason='Auto-detected logistics group — blacklisted from recruitment'
+			WHERE group_id IN (SELECT id FROM groups WHERE name = 'Auto-detected')`)
+		s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
+			SELECT id, 'logistics', 'reject', 1, 'Auto-detected logistics group — blacklisted from recruitment', 0.0
+			FROM groups WHERE name = 'Auto-detected' AND id NOT IN (SELECT group_id FROM group_quality)
+			ON CONFLICT(group_id) DO NOTHING`)
+	}
 	// Seed default niches
 	s.db.Exec(`INSERT OR IGNORE INTO niches (slug, name, emoji) VALUES ('logistics', 'Logistics & Vận chuyển', '🚛')`)
 	s.db.Exec(`INSERT OR IGNORE INTO niches (slug, name, emoji) VALUES ('tuyen_dung', 'Tuyển dụng', '👔')`)

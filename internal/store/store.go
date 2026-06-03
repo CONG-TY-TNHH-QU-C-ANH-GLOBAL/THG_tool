@@ -353,6 +353,19 @@ func (s *Store) schemaAlreadyApplied() bool {
 	return n == 1
 }
 
+// schemaMarkerHasAnyRow reports whether the bootstrap marker table exists AND
+// carries at least one version row — i.e. this DB has been bootstrapped before
+// (an UPGRADE), as opposed to a brand-new database. Used by migrate() to gate
+// one-off destructive backfills so a version bump does not re-run them. A fresh
+// DB has no marker table yet, so the query errors and we report false.
+func (s *Store) schemaMarkerHasAnyRow() bool {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM _schema_bootstrap_marker`).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
+}
+
 // DB returns the underlying *sql.DB for packages that need direct SQL access
 // (e.g. session.StateMachine, session.CheckpointManager).
 //
