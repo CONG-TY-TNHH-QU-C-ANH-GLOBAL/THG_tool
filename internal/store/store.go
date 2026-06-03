@@ -353,6 +353,30 @@ func (s *Store) schemaAlreadyApplied() bool {
 	return n == 1
 }
 
+// benignMigrationErr reports whether a legacy-baseline statement error is one of
+// the EXPECTED idempotency errors (re-applying a column/table/index that already
+// exists, or touching a column dropped later in the same baseline). SQLite has
+// no `ADD COLUMN IF NOT EXISTS`, so these belt-and-braces statements legitimately
+// error on a DB that already has the column. Everything else (syntax, missing
+// table, constraint violation, disk error) is a GENUINE failure that must abort
+// the bootstrap — not be silently swallowed.
+func benignMigrationErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, benign := range []string{
+		"duplicate column name",
+		"already exists",
+		"no such column", // legacy backfills referencing a since-dropped column
+	} {
+		if strings.Contains(msg, benign) {
+			return true
+		}
+	}
+	return false
+}
+
 // schemaMarkerHasAnyRow reports whether the bootstrap marker table exists AND
 // carries at least one version row — i.e. this DB has been bootstrapped before
 // (an UPGRADE), as opposed to a brand-new database. Used by migrate() to gate

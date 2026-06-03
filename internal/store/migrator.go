@@ -51,11 +51,13 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 type Migration struct {
 	Version int
 	Name    string
-	// SQL is the raw DDL/DML for this migration. Embedded statements
-	// must be self-contained — the runner does not split on `;` or
-	// run inside a transaction (cross-dialect DDL-in-transaction
-	// support is shaky; the migration script is responsible for its
-	// own atomicity decisions).
+	// SQL is the raw DDL/DML for this migration. It may contain multiple
+	// `;`-separated statements (modernc/sqlite + pgx both execute a
+	// multi-statement body in one Exec). By DEFAULT the runner wraps the
+	// whole body + the schema_migrations version record in ONE transaction
+	// (atomic, fail-fast, no half-applied state). A migration that cannot
+	// run inside a transaction — e.g. Postgres `CREATE INDEX CONCURRENTLY`
+	// — opts out by putting `-- migrate:notx` on its first comment line.
 	SQL string
 }
 
@@ -232,24 +234,71 @@ func (s *Store) appliedMigrationVersions(ctx context.Context) (map[int]struct{},
 	return out, rows.Err()
 }
 
+// execer is satisfied by both *sql.DB and *sql.Tx so recordMigrationVersion
+// can run inside or outside a transaction.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// applyMigration runs one migration ATOMICALLY: the migration body and its
+// schema_migrations version record commit together inside a single transaction,
+// or both roll back. This removes the old worst-case (body succeeded but the
+// version record failed → next boot re-runs a non-idempotent migration) and
+// makes a crash mid-migration leave the DB clean (no partial half-state, no
+// version row). Fail-fast — any error aborts boot (boot-time migration failures
+// are production incidents, never swallowed).
+//
+// Opt-out: a migration whose first line is `-- migrate:notx` runs WITHOUT a
+// transaction. This is the escape hatch for operations that cannot run inside a
+// transaction (e.g. Postgres `CREATE INDEX CONCURRENTLY`). modernc/sqlite
+// supports multi-statement Exec and DDL-in-transaction (verified), so SQLite
+// migrations default to transactional.
 func (s *Store) applyMigration(ctx context.Context, m Migration) error {
-	// We deliberately do NOT wrap the migration body in BEGIN/COMMIT.
-	// SQLite supports DDL-in-transaction; PG mostly does but some
-	// operations (e.g. CREATE INDEX CONCURRENTLY) cannot run inside a
-	// transaction. Letting the migration author decide gives them the
-	// real escape hatch.
-	if _, err := s.db.ExecContext(ctx, m.SQL); err != nil {
+	if migrationOptsOutOfTx(m.SQL) {
+		if _, err := s.db.ExecContext(ctx, m.SQL); err != nil {
+			return err
+		}
+		return s.recordMigrationVersion(ctx, s.db, m)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx,
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
+		return err // fail-fast; defer rolls back the partial body
+	}
+	if err := s.recordMigrationVersion(ctx, tx, m); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// migrationOptsOutOfTx reports whether a migration declares `-- migrate:notx`
+// on (any of) its first non-empty lines — the explicit escape hatch for DDL
+// that cannot run inside a transaction.
+func migrationOptsOutOfTx(sqlText string) bool {
+	for _, line := range strings.Split(sqlText, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "--") {
+			if strings.Contains(strings.ToLower(line), "migrate:notx") {
+				return true
+			}
+			continue
+		}
+		return false // first real SQL line — no directive
+	}
+	return false
+}
+
+func (s *Store) recordMigrationVersion(ctx context.Context, ex execer, m Migration) error {
+	if _, err := ex.ExecContext(ctx,
 		s.dialect.Rebind(`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`),
 		m.Version, m.Name, time.Now().UTC(),
 	); err != nil {
-		// Worst-case: migration body succeeded but the version record
-		// failed. The next boot will re-run the migration. Author MUST
-		// write idempotent migrations (CREATE ... IF NOT EXISTS, etc.)
-		// or use explicit guard rails. We surface the error so the
-		// operator notices.
 		return fmt.Errorf("record migration version: %w", err)
 	}
 	return nil

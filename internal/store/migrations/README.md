@@ -3,6 +3,28 @@
 This directory holds versioned schema changes that run on top of the
 legacy `s.migrate()` baseline in `schema.go`.
 
+## Production-grade guarantees (the runner — `migrator.go`)
+
+Every migration here is applied by `runMigrations()` with these properties —
+this is the path that scales to a real (1M-user) Postgres production:
+
+- **Atomic.** The migration body AND its `schema_migrations` version record
+  commit in ONE transaction, or both roll back. No half-applied state; a crash
+  mid-migration leaves the DB clean and the next boot retries.
+- **Fail-fast.** Any error aborts boot and is surfaced — migration failures are
+  production incidents, never swallowed.
+- **Run-once.** Each version is recorded and never re-applied. No re-run, no
+  data clobber. (Contrast the legacy `migrate()` baseline, which historically
+  re-ran its whole body on a version bump — that anti-pattern is RETIRED.)
+- **Dialect-aware.** SQLite + Postgres via `__sqlite` / `__postgres` suffixes.
+
+## FROZEN baseline
+
+`s.migrate()` in `schema.go` is the **frozen legacy SQLite baseline**. Do NOT
+add schema to it and do NOT bump `schemaBootstrapVersion`. ALL new schema
+changes — for both SQLite and Postgres — go in THIS directory as numbered
+`.up.sql` files.
+
 ## File naming
 
 ```
@@ -20,16 +42,16 @@ NNNN_short_description[__sqlite|__postgres].up.sql
 
 ## Authoring rules
 
-1. **Idempotent.** Use `IF NOT EXISTS`. Migration may re-run if the
-   `INSERT INTO schema_migrations` step ever fails — your DDL must
-   tolerate that.
-2. **One statement per `;`.** The runner does NOT split — it hands the
-   full file to `ExecContext`. PostgreSQL accepts multi-statement
-   strings; SQLite (modernc) also does as of recent versions. Verify
-   on both dialects before merging.
-3. **No transaction wrapping.** Some PG operations cannot run inside
-   a transaction (e.g. `CREATE INDEX CONCURRENTLY`). The migration is
-   the author's atomicity decision, not the runner's.
+1. **Idempotent where cheap.** Prefer `IF NOT EXISTS`. Migrations are
+   transactional + run-once, so re-runs are not expected — but defensive
+   idempotency is good hygiene.
+2. **Multi-statement is fine.** The runner hands the full file to one
+   `ExecContext`; modernc/sqlite and pgx both execute multiple `;`-separated
+   statements. Verify on both dialects before merging.
+3. **Transactional by default.** The runner wraps the body + version record in
+   one transaction (atomic, fail-fast). A migration that CANNOT run in a
+   transaction (e.g. Postgres `CREATE INDEX CONCURRENTLY`) opts out with
+   `-- migrate:notx` on its first comment line — and then owns its own atomicity.
 4. **No down migrations.** Restore from backup is the only supported
    rollback. Forward-only schema discipline catches breakage early.
 5. **PG-only features need a `__postgres` variant.** Examples:

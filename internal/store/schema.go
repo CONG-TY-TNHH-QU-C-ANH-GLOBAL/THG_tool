@@ -2,6 +2,8 @@
 package store
 
 import (
+	"fmt"
+
 	"github.com/thg/scraper/internal/store/connectors"
 	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/prompts"
@@ -329,13 +331,25 @@ func (s *Store) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id, created_at DESC);
 	`
 
-	_, err := s.db.Exec(schema)
-	if err != nil {
-		return err
+	// genErr captures the FIRST genuine (non-idempotency) statement failure. The
+	// legacy baseline uses belt-and-braces `ADD COLUMN` / re-CREATE statements
+	// that legitimately error on a DB that already has them (SQLite has no
+	// `ADD COLUMN IF NOT EXISTS`); benignMigrationErr tolerates those. Any OTHER
+	// error (syntax, missing table, constraint) is a real bootstrap failure — we
+	// record it and abort BEFORE writing the success marker, so a half-applied
+	// schema is never mistaken for a completed migration (no more silent
+	// swallowing → false success). The bootstrap stays idempotent, so a crash
+	// (no marker written) simply re-runs cleanly on the next boot.
+	var genErr error
+	mx := func(query string, args ...any) {
+		if _, e := s.db.Exec(query, args...); e != nil && !benignMigrationErr(e) && genErr == nil {
+			genErr = fmt.Errorf("schema bootstrap statement failed: %w", e)
+		}
 	}
+	mx(schema)
 
 	// Multi-tenant: organizations table (each client = one org)
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS organizations (
+	mx(`CREATE TABLE IF NOT EXISTS organizations (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
 		domain TEXT DEFAULT '',
@@ -345,42 +359,42 @@ func (s *Store) migrate() error {
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	// Seed the default "platform" org for existing/bootstrap users
-	s.db.Exec(`INSERT OR IGNORE INTO organizations (id, name, domain, plan_tier, max_accounts) VALUES (1, 'THG Platform', 'thgfulfill.com', 'enterprise', 0)`)
+	mx(`INSERT OR IGNORE INTO organizations (id, name, domain, plan_tier, max_accounts) VALUES (1, 'THG Platform', 'thgfulfill.com', 'enterprise', 0)`)
 	// Add org_id to users (existing users → org 0 = superadmin)
-	s.db.Exec(`ALTER TABLE users ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE users ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
 	// Rename the legacy platform role; old JWTs with superadmin remain accepted by RBAC.
-	s.db.Exec(`UPDATE users SET role = 'founder' WHERE role = 'superadmin' AND COALESCE(org_id,0) = 0`)
+	mx(`UPDATE users SET role = 'founder' WHERE role = 'superadmin' AND COALESCE(org_id,0) = 0`)
 	// Add org_id to accounts (existing accounts → org 1 = default org)
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+	mx(`ALTER TABLE accounts ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
 	// Add org_id to groups
-	s.db.Exec(`ALTER TABLE groups ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+	mx(`ALTER TABLE groups ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
 
 	// Auto-migrate: career_jobs extended fields
-	s.db.Exec(`ALTER TABLE career_jobs ADD COLUMN salary TEXT DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE career_jobs ADD COLUMN priority TEXT DEFAULT 'medium'`)
-	s.db.Exec(`ALTER TABLE career_jobs ADD COLUMN urgency_score INTEGER DEFAULT 50`)
+	mx(`ALTER TABLE career_jobs ADD COLUMN salary TEXT DEFAULT ''`)
+	mx(`ALTER TABLE career_jobs ADD COLUMN priority TEXT DEFAULT 'medium'`)
+	mx(`ALTER TABLE career_jobs ADD COLUMN urgency_score INTEGER DEFAULT 50`)
 	// Auto-migrate: add source_url to leads if missing
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN source_url TEXT DEFAULT ''`)
+	mx(`ALTER TABLE leads ADD COLUMN source_url TEXT DEFAULT ''`)
 	// Auto-migrate: lead routing/context layer — secondary (comment) URL + the
 	// Facebook-side ids. source_type is now load-bearing (no longer hardcoded
 	// to "post" in the ingest pipeline). See project_lead_routing_gap.md.
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN secondary_url TEXT DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN post_fbid TEXT DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN comment_fbid TEXT DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN group_fbid TEXT DEFAULT ''`)
+	mx(`ALTER TABLE leads ADD COLUMN secondary_url TEXT DEFAULT ''`)
+	mx(`ALTER TABLE leads ADD COLUMN post_fbid TEXT DEFAULT ''`)
+	mx(`ALTER TABLE leads ADD COLUMN comment_fbid TEXT DEFAULT ''`)
+	mx(`ALTER TABLE leads ADD COLUMN group_fbid TEXT DEFAULT ''`)
 	// Coordination Plane Phase B: thread role axis. Orthogonal to score —
 	// intent_originator / buyer_responder are leads; supplier_responder /
 	// competitor / noise are not. Legacy rows default to intent_originator
 	// (every pre-Phase-B crawl was a post-sourced lead). See
 	// project_thread_role_architecture.md.
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN thread_role TEXT NOT NULL DEFAULT 'intent_originator'`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_thread_role ON leads(org_id, thread_role)`)
+	mx(`ALTER TABLE leads ADD COLUMN thread_role TEXT NOT NULL DEFAULT 'intent_originator'`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_leads_org_thread_role ON leads(org_id, thread_role)`)
 
 	// Classifier observability: log EVERY AI classify decision (kept AND
 	// rejected) so an admin can answer "why did 50/50 posts get rejected".
 	// Without this table, rejected leads have no DB footprint — the ingest
 	// pipeline returns early on Intent=provider_ad/not_relevant/spam.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS classification_log (
+	mx(`CREATE TABLE IF NOT EXISTS classification_log (
 		id              INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id          INTEGER NOT NULL,
 		task_id         TEXT    NOT NULL DEFAULT '',
@@ -397,13 +411,13 @@ func (s *Store) migrate() error {
 		user_prompt     TEXT    NOT NULL DEFAULT '',
 		created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_classification_log_org_task ON classification_log(org_id, task_id, created_at DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_classification_log_org_decision ON classification_log(org_id, decision, created_at DESC)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_classification_log_org_task ON classification_log(org_id, task_id, created_at DESC)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_classification_log_org_decision ON classification_log(org_id, decision, created_at DESC)`)
 	// Auto-migrate: add image_path to outbound_messages if missing
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN claimed_at DATETIME`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN image_path TEXT DEFAULT ''`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN claimed_at DATETIME`)
 	// Execution lease + idempotency token.
 	//
 	// execution_id  — opaque ID issued when status flips approved → sending.
@@ -426,9 +440,9 @@ func (s *Store) migrate() error {
 	//                 longer lease at claim time without changing global
 	//                 policy. NULL = legacy row (no lease semantics) — old
 	//                 timeout window still applies.
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN lease_expiry DATETIME`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_lease ON outbound_messages(status, lease_expiry) WHERE status = 'sending'`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN lease_expiry DATETIME`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_outbound_lease ON outbound_messages(status, lease_expiry) WHERE status = 'sending'`)
 
 	// Outbound state taxonomy split (schema v4 — PR-1).
 	//
@@ -458,34 +472,34 @@ func (s *Store) migrate() error {
 	// The legacy `status` column is kept in sync at write time for
 	// the transition window (any old reader still sees a usable value).
 	// Once all readers consume the new columns it can be dropped.
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'planned'`)
-	s.db.Exec(`ALTER TABLE outbound_messages ADD COLUMN verification_outcome TEXT`)
-	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'planned',    verification_outcome = NULL                WHERE status IN ('draft','approved') AND execution_state = 'planned'`)
-	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'executing',  verification_outcome = NULL                WHERE status = 'sending'`)
-	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'finished',   verification_outcome = 'verified_success'  WHERE status = 'sent'`)
-	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'finished',   verification_outcome = 'execution_failed'  WHERE status IN ('failed','rejected')`)
-	s.db.Exec(`UPDATE outbound_messages SET execution_state = 'expired',    verification_outcome = NULL                WHERE status = 'expired'`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_exec_state ON outbound_messages(org_id, execution_state)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_verify_outcome ON outbound_messages(org_id, verification_outcome)`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'planned'`)
+	mx(`ALTER TABLE outbound_messages ADD COLUMN verification_outcome TEXT`)
+	mx(`UPDATE outbound_messages SET execution_state = 'planned',    verification_outcome = NULL                WHERE status IN ('draft','approved') AND execution_state = 'planned'`)
+	mx(`UPDATE outbound_messages SET execution_state = 'executing',  verification_outcome = NULL                WHERE status = 'sending'`)
+	mx(`UPDATE outbound_messages SET execution_state = 'finished',   verification_outcome = 'verified_success'  WHERE status = 'sent'`)
+	mx(`UPDATE outbound_messages SET execution_state = 'finished',   verification_outcome = 'execution_failed'  WHERE status IN ('failed','rejected')`)
+	mx(`UPDATE outbound_messages SET execution_state = 'expired',    verification_outcome = NULL                WHERE status = 'expired'`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_outbound_exec_state ON outbound_messages(org_id, execution_state)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_outbound_verify_outcome ON outbound_messages(org_id, verification_outcome)`)
 	// Rebuild the lease index to key off execution_state instead of legacy status string.
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_exec_lease ON outbound_messages(execution_state, lease_expiry) WHERE execution_state = 'executing'`)
-	s.db.Exec(`UPDATE outbound_messages
+	mx(`CREATE INDEX IF NOT EXISTS idx_outbound_exec_lease ON outbound_messages(execution_state, lease_expiry) WHERE execution_state = 'executing'`)
+	mx(`UPDATE outbound_messages
 		SET org_id = COALESCE((SELECT org_id FROM accounts WHERE accounts.id = outbound_messages.account_id), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND account_id > 0`)
 	// idx_outbound_org_status was keyed off the legacy `status` column.
 	// PR-2 V2 (schema v7) drops it because the column is gone — readers
 	// query on execution_state instead, which has its own index.
-	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_org_status`)
-	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_lease`)
-	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created ON prompt_logs(org_id, created_at DESC)`)
+	mx(`DROP INDEX IF EXISTS idx_outbound_org_status`)
+	mx(`DROP INDEX IF EXISTS idx_outbound_lease`)
+	mx(`ALTER TABLE prompt_logs ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE prompt_logs ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created ON prompt_logs(org_id, created_at DESC)`)
 	// Legacy jobs table remains for existing SQLite databases and
 	// historical dashboard data. New connector execution uses
 	// connector_commands, scheduler_jobs, app_tasks and outbound_messages.
-	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE jobs ADD COLUMN claimed_at DATETIME`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_jobs_local_pending ON jobs(execution_mode, status, created_at)`)
+	mx(`ALTER TABLE jobs ADD COLUMN claimed_by TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE jobs ADD COLUMN claimed_at DATETIME`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_jobs_local_pending ON jobs(execution_mode, status, created_at)`)
 	// Coordination Plane PR-1: per-account uniqueness on the dedup index.
 	// Previously (org_id, type, target_url) — too strict, blocked legitimate
 	// amplification (3 accounts commenting on the same viral post). Now
@@ -494,12 +508,12 @@ func (s *Store) migrate() error {
 	// (the spam-cluster case) lives in canQueueOutboundTx at the application
 	// layer. Sent / failed / rejected rows excluded so historical sends don't
 	// block legitimate retries. See project_distributed_coordination.md.
-	s.db.Exec(`DROP INDEX IF EXISTS idx_outbound_active_target`)
+	mx(`DROP INDEX IF EXISTS idx_outbound_active_target`)
 	// Unique index for active outbound dedup. Keyed off execution_state
 	// (planned/executing = "in flight") rather than the legacy status
 	// string — the autonomous-first model has no draft state, and the
 	// new column is the authoritative one for in-flight semantics.
-	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_active_target
+	mx(`CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_active_target
 		ON outbound_messages(org_id, account_id, type, target_url)
 		WHERE execution_state IN ('planned','executing')`)
 
@@ -509,7 +523,7 @@ func (s *Store) migrate() error {
 	// orchestrator + behaviour-profile PRs query this to decide spacing,
 	// account rotation, and rate caps. PR-1 only WRITES; policy reads come
 	// later. See project_distributed_coordination.md priority order.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS action_ledger (
+	mx(`CREATE TABLE IF NOT EXISTS action_ledger (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id INTEGER NOT NULL,
 		action_type TEXT NOT NULL,
@@ -522,15 +536,15 @@ func (s *Store) migrate() error {
 		outcome TEXT NOT NULL DEFAULT 'queued',
 		reason TEXT NOT NULL DEFAULT ''
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_target
+	mx(`CREATE INDEX IF NOT EXISTS idx_action_ledger_target
 		ON action_ledger(org_id, action_type, target_url, performed_at DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_account
+	mx(`CREATE INDEX IF NOT EXISTS idx_action_ledger_account
 		ON action_ledger(org_id, account_id, action_type, performed_at DESC)`)
 	// Coordination Plane PR-4: engagement projection queries match by
 	// (org_id, target_url) WITHOUT action_type, so the action_type-prefixed
 	// index above can only use org_id and has to scan. This index lets the
 	// engagement projection seek directly per URL.
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_engagement
+	mx(`CREATE INDEX IF NOT EXISTS idx_action_ledger_engagement
 		ON action_ledger(org_id, target_url, performed_at DESC)`)
 
 	// Step 3 — Execution Verification (see project_execution_verification.md).
@@ -539,7 +553,7 @@ func (s *Store) migrate() error {
 	// observed REALITY (did the platform accept it? what proof do we have?).
 	// Retries APPEND new rows here, do NOT overwrite — the attempt chain is
 	// itself a coordination signal (retry frequency feeds risk_score).
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS execution_attempts (
+	mx(`CREATE TABLE IF NOT EXISTS execution_attempts (
 		id                INTEGER PRIMARY KEY AUTOINCREMENT,
 		action_ledger_id  INTEGER NOT NULL DEFAULT 0,
 		outbound_id       INTEGER NOT NULL DEFAULT 0,
@@ -557,13 +571,13 @@ func (s *Store) migrate() error {
 		started_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		finished_at       DATETIME
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_outbound
+	mx(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_outbound
 		ON execution_attempts(outbound_id, attempt DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_org_outcome
+	mx(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_org_outcome
 		ON execution_attempts(org_id, outcome, started_at DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_account
+	mx(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_account
 		ON execution_attempts(org_id, account_id, started_at DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_ledger
+	mx(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_ledger
 		ON execution_attempts(action_ledger_id, started_at DESC)`)
 
 	// PR-2 (V2 staged refactor 2026-05-20): extend execution_attempts to
@@ -584,12 +598,12 @@ func (s *Store) migrate() error {
 	//   resulting_outcome   — denormalized snapshot of verification_outcome
 	//                         (only meaningful when transition_type='finalize').
 	//   lease_expiry        — read-only mirror of the executing-row lease.
-	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN transition_type TEXT NOT NULL DEFAULT 'finalize'`)
-	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN resulting_state TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN resulting_outcome TEXT`)
-	s.db.Exec(`ALTER TABLE execution_attempts ADD COLUMN lease_expiry DATETIME`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_latest
+	mx(`ALTER TABLE execution_attempts ADD COLUMN transition_type TEXT NOT NULL DEFAULT 'finalize'`)
+	mx(`ALTER TABLE execution_attempts ADD COLUMN execution_id TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE execution_attempts ADD COLUMN resulting_state TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE execution_attempts ADD COLUMN resulting_outcome TEXT`)
+	mx(`ALTER TABLE execution_attempts ADD COLUMN lease_expiry DATETIME`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_execution_attempts_latest
 		ON execution_attempts(outbound_id, started_at DESC)`)
 
 	// PR-2: action_policies — replaces hardcoded msgType == "inbox" /
@@ -598,7 +612,7 @@ func (s *Store) migrate() error {
 	// conversation gate). Lookup resolves org_id-specific row first, falls
 	// back to the global default (org_id = 0). Domain-agnostic — new action
 	// types are added by inserting a row, not editing dedup code.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS action_policies (
+	mx(`CREATE TABLE IF NOT EXISTS action_policies (
 		id                   INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id               INTEGER NOT NULL,
 		action_type          TEXT    NOT NULL,
@@ -624,7 +638,7 @@ func (s *Store) migrate() error {
 	// INSERT OR IGNORE keeps re-runs / production restarts idempotent —
 	// if a row for (0, 'comment') already exists, we don't clobber an
 	// admin override.
-	s.db.Exec(`INSERT OR IGNORE INTO action_policies
+	mx(`INSERT OR IGNORE INTO action_policies
 		(org_id, action_type, dedup_scope, block_on_planned, block_on_executing, cooldown_seconds, conversation_aware)
 		VALUES
 		(0, 'comment',      'per_account', 1, 1, 86400, 0),
@@ -636,7 +650,7 @@ func (s *Store) migrate() error {
 	// pre-PR-2 hardcoded behaviour (planned rows blocked re-enqueue for
 	// every type). Force the global defaults back to the correct
 	// block_on_planned=1 — does NOT touch admin overrides (org_id > 0).
-	s.db.Exec(`UPDATE action_policies SET block_on_planned = 1
+	mx(`UPDATE action_policies SET block_on_planned = 1
 		WHERE org_id = 0 AND action_type IN ('comment','inbox','group_post','profile_post')`)
 
 	// Watchpoint B — Prompt Routing Observability. Persistent record of
@@ -647,8 +661,8 @@ func (s *Store) migrate() error {
 	// shape can evolve without further migrations. Default '{}' means
 	// "no routing decision recorded yet" — pre-Watchpoint-B rows render
 	// as legacy / unknown on the dashboard.
-	s.db.Exec(`ALTER TABLE prompt_logs ADD COLUMN routing_decision_json TEXT NOT NULL DEFAULT '{}'`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created
+	mx(`ALTER TABLE prompt_logs ADD COLUMN routing_decision_json TEXT NOT NULL DEFAULT '{}'`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_prompt_logs_org_created
 		ON prompt_logs(org_id, created_at DESC)`)
 
 	// Coordination Plane PR-2: per-account behaviour profile substrate.
@@ -660,7 +674,7 @@ func (s *Store) migrate() error {
 	//   trust_level is a POLICY PRESET, not a numeric cap. Concrete daily
 	//   caps + cooldowns are derived from (trust_level, workspace_role) by
 	//   policy.ResolveCaps. Per-account overrides allowed via caps_override.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS account_behaviour_profiles (
+	mx(`CREATE TABLE IF NOT EXISTS account_behaviour_profiles (
 		account_id       INTEGER PRIMARY KEY,
 		org_id           INTEGER NOT NULL DEFAULT 0,
 		trust_level      TEXT    NOT NULL DEFAULT 'warming',
@@ -673,7 +687,7 @@ func (s *Store) migrate() error {
 		created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_behaviour_profile_org
+	mx(`CREATE INDEX IF NOT EXISTS idx_behaviour_profile_org
 		ON account_behaviour_profiles(org_id, trust_level)`)
 
 	// account_runtime_state — high-churn counters (updated on every queue
@@ -688,7 +702,7 @@ func (s *Store) migrate() error {
 	// Contextual cooldowns (same group / same post / same profile) are NOT
 	// stored here — they are derived from action_ledger queries. Only the
 	// global per-account cooldown lives in cooldown_until.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS account_runtime_state (
+	mx(`CREATE TABLE IF NOT EXISTS account_runtime_state (
 		account_id          INTEGER PRIMARY KEY,
 		org_id              INTEGER NOT NULL DEFAULT 0,
 		counters_day        TEXT    NOT NULL DEFAULT '',
@@ -702,24 +716,24 @@ func (s *Store) migrate() error {
 		last_action_at      DATETIME,
 		updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_runtime_state_org
+	mx(`CREATE INDEX IF NOT EXISTS idx_runtime_state_org
 		ON account_runtime_state(org_id, cooldown_until)`)
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_org_score ON leads(org_id, score)`)
+	mx(`ALTER TABLE leads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_leads_org_score ON leads(org_id, score)`)
 	// Auto-migrate: add niche to leads if missing
-	s.db.Exec(`ALTER TABLE leads ADD COLUMN niche TEXT DEFAULT 'logistics'`)
+	mx(`ALTER TABLE leads ADD COLUMN niche TEXT DEFAULT 'logistics'`)
 	// Auto-migrate: add source_url to company_images if missing
-	s.db.Exec(`ALTER TABLE company_images ADD COLUMN source_url TEXT DEFAULT ''`)
+	mx(`ALTER TABLE company_images ADD COLUMN source_url TEXT DEFAULT ''`)
 	// Auto-migrate: add assigned_user_id to accounts (which staff owns this FB account)
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN assigned_user_id INTEGER DEFAULT 0`)
+	mx(`ALTER TABLE accounts ADD COLUMN assigned_user_id INTEGER DEFAULT 0`)
 	// Auto-migrate: execution_mode on jobs — "server" (VPS) or "local" (agent)
-	s.db.Exec(`ALTER TABLE jobs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'server'`)
+	mx(`ALTER TABLE jobs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'server'`)
 	// Auto-migrate: browser_logged_in tracks whether account has logged into Facebook via dashboard browser
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN browser_logged_in INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE accounts ADD COLUMN browser_logged_in INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE accounts ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE accounts ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE accounts ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE accounts ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
 	// Organic Sales Network PR1 (schema v8): one Facebook identity = one account
 	// per org. ResolveOrCreateAccountForFacebookIdentity (PR2) relies on this
 	// uniqueness so two concurrent connector heartbeats reporting the same FB
@@ -730,7 +744,7 @@ func (s *Store) migrate() error {
 	// losers by blanking fb_user_id (NOT deleting — outbound_messages.account_id
 	// and the ledger still FK-reference these ids). Idempotent: after the first
 	// run no group has COUNT(*)>1, so the UPDATE matches nothing.
-	s.db.Exec(`UPDATE accounts SET fb_user_id = '', browser_logged_in = 0, status = 'inactive'
+	mx(`UPDATE accounts SET fb_user_id = '', browser_logged_in = 0, status = 'inactive'
 		WHERE id IN (
 			SELECT a.id FROM accounts a
 			JOIN (
@@ -741,10 +755,10 @@ func (s *Store) migrate() error {
 		)`)
 	// Partial unique index — empty fb_user_id (account "slots" not yet logged in)
 	// are excluded so multiple pending slots can coexist.
-	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_org_fb_identity
+	mx(`CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_org_fb_identity
 		ON accounts(org_id, fb_user_id) WHERE fb_user_id != ''`)
 	// Org invites: token-based invite links for joining an org
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS org_invites (
+	mx(`CREATE TABLE IF NOT EXISTS org_invites (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id     INTEGER NOT NULL,
 		email      TEXT NOT NULL DEFAULT '',
@@ -759,17 +773,17 @@ func (s *Store) migrate() error {
 		email_error TEXT NOT NULL DEFAULT '',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN role TEXT NOT NULL DEFAULT 'sales'`)
-	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN accepted_by INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN email_status TEXT NOT NULL DEFAULT 'pending'`)
-	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN email_sent_at DATETIME`)
-	s.db.Exec(`ALTER TABLE org_invites ADD COLUMN email_error TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_token ON org_invites(token)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email, used_at, expires_at)`)
+	mx(`ALTER TABLE org_invites ADD COLUMN role TEXT NOT NULL DEFAULT 'sales'`)
+	mx(`ALTER TABLE org_invites ADD COLUMN accepted_by INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE org_invites ADD COLUMN email_status TEXT NOT NULL DEFAULT 'pending'`)
+	mx(`ALTER TABLE org_invites ADD COLUMN email_sent_at DATETIME`)
+	mx(`ALTER TABLE org_invites ADD COLUMN email_error TEXT NOT NULL DEFAULT ''`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_org_invites_token ON org_invites(token)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_org_invites_org ON org_invites(org_id)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_org_invites_email ON org_invites(email, used_at, expires_at)`)
 
 	// Connector tokens: Chrome Extension instances authenticate with these tokens.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS agent_tokens (
+	mx(`CREATE TABLE IF NOT EXISTS agent_tokens (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id INTEGER NOT NULL DEFAULT 0,
 		name TEXT NOT NULL,
@@ -782,26 +796,26 @@ func (s *Store) migrate() error {
 		active INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN kind TEXT NOT NULL DEFAULT 'worker'`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN transport TEXT NOT NULL DEFAULT 'poll'`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN assigned_account_id INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '{}'`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN current_url TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN stream_status TEXT NOT NULL DEFAULT 'idle'`)
-	s.db.Exec(`ALTER TABLE agent_tokens ADD COLUMN chrome_error TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`UPDATE agent_tokens
+	mx(`ALTER TABLE agent_tokens ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN kind TEXT NOT NULL DEFAULT 'worker'`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN transport TEXT NOT NULL DEFAULT 'poll'`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN assigned_account_id INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '{}'`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN current_url TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN fb_user_id TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN stream_status TEXT NOT NULL DEFAULT 'idle'`)
+	mx(`ALTER TABLE agent_tokens ADD COLUMN chrome_error TEXT NOT NULL DEFAULT ''`)
+	mx(`UPDATE agent_tokens
 		SET org_id = COALESCE((SELECT org_id FROM users WHERE users.id = agent_tokens.created_by), org_id)
 		WHERE COALESCE(org_id,0) = 0 AND created_by > 0`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_org ON agent_tokens(org_id, active)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_kind ON agent_tokens(org_id, kind, active)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_org ON agent_tokens(org_id, active)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_agent_tokens_kind ON agent_tokens(org_id, kind, active)`)
 
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS connector_pairing_codes (
+	mx(`CREATE TABLE IF NOT EXISTS connector_pairing_codes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id INTEGER NOT NULL,
 		code_hash TEXT NOT NULL UNIQUE,
@@ -813,10 +827,10 @@ func (s *Store) migrate() error {
 		device_token_id INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_pairing_hash ON connector_pairing_codes(code_hash)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_pairing_org ON connector_pairing_codes(org_id, expires_at)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_connector_pairing_hash ON connector_pairing_codes(code_hash)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_connector_pairing_org ON connector_pairing_codes(org_id, expires_at)`)
 
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS connector_screenshots (
+	mx(`CREATE TABLE IF NOT EXISTS connector_screenshots (
 		account_id INTEGER NOT NULL,
 		org_id INTEGER NOT NULL,
 		agent_id INTEGER NOT NULL DEFAULT 0,
@@ -831,14 +845,14 @@ func (s *Store) migrate() error {
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (org_id, account_id)
 	)`)
-	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE connector_screenshots ADD COLUMN chrome_error TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_org ON connector_screenshots(org_id, updated_at)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_agent ON connector_screenshots(agent_id, updated_at)`)
+	mx(`ALTER TABLE connector_screenshots ADD COLUMN fb_display_name TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE connector_screenshots ADD COLUMN fb_username TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE connector_screenshots ADD COLUMN fb_profile_url TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE connector_screenshots ADD COLUMN chrome_error TEXT NOT NULL DEFAULT ''`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_org ON connector_screenshots(org_id, updated_at)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_connector_screenshots_agent ON connector_screenshots(agent_id, updated_at)`)
 
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS connector_commands (
+	mx(`CREATE TABLE IF NOT EXISTS connector_commands (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id INTEGER NOT NULL,
 		account_id INTEGER NOT NULL,
@@ -852,8 +866,8 @@ func (s *Store) migrate() error {
 		claimed_at DATETIME,
 		completed_at DATETIME
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_commands_agent ON connector_commands(agent_id, status, id)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_connector_commands_account ON connector_commands(org_id, account_id, status, id)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_connector_commands_agent ON connector_commands(agent_id, status, id)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_connector_commands_account ON connector_commands(org_id, account_id, status, id)`)
 
 	// Auto-blacklist: pre-existing groups that are NOT from recruitment searches.
 	// ONE-OFF initial cleanup — gated behind freshDB so a schemaBootstrapVersion
@@ -861,28 +875,28 @@ func (s *Store) migrate() error {
 	// un-blacklisted (the ON CONFLICT DO UPDATE SET blacklist=1 would clobber
 	// the operator's change).
 	if freshDB {
-		s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
+		mx(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
 			SELECT id, 'logistics', 'reject', 1, 'Pre-existing logistics group — auto-blacklisted from recruitment', 0.0
 			FROM groups WHERE id NOT IN (SELECT group_id FROM group_quality)
 			  AND created_at < '2026-04-21T10:00:00Z'
 			ON CONFLICT(group_id) DO UPDATE SET blacklist=1, decision='reject'`)
 		// Also blacklist ALL groups named "Auto-detected" — these are always logistics groups
-		s.db.Exec(`UPDATE group_quality SET blacklist=1, decision='reject', category='logistics',
+		mx(`UPDATE group_quality SET blacklist=1, decision='reject', category='logistics',
 			reason='Auto-detected logistics group — blacklisted from recruitment'
 			WHERE group_id IN (SELECT id FROM groups WHERE name = 'Auto-detected')`)
-		s.db.Exec(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
+		mx(`INSERT INTO group_quality (group_id, category, decision, blacklist, reason, final_score)
 			SELECT id, 'logistics', 'reject', 1, 'Auto-detected logistics group — blacklisted from recruitment', 0.0
 			FROM groups WHERE name = 'Auto-detected' AND id NOT IN (SELECT group_id FROM group_quality)
 			ON CONFLICT(group_id) DO NOTHING`)
 	}
 	// Seed default niches
-	s.db.Exec(`INSERT OR IGNORE INTO niches (slug, name, emoji) VALUES ('logistics', 'Logistics & Vận chuyển', '🚛')`)
-	s.db.Exec(`INSERT OR IGNORE INTO niches (slug, name, emoji) VALUES ('tuyen_dung', 'Tuyển dụng', '👔')`)
+	mx(`INSERT OR IGNORE INTO niches (slug, name, emoji) VALUES ('logistics', 'Logistics & Vận chuyển', '🚛')`)
+	mx(`INSERT OR IGNORE INTO niches (slug, name, emoji) VALUES ('tuyen_dung', 'Tuyển dụng', '👔')`)
 	// Backfill: assign leads with missing or unrecognised niche to logistics
-	s.db.Exec(`UPDATE leads SET niche = 'logistics' WHERE niche IS NULL OR niche = '' OR niche NOT IN (SELECT slug FROM niches)`)
+	mx(`UPDATE leads SET niche = 'logistics' WHERE niche IS NULL OR niche = '' OR niche NOT IN (SELECT slug FROM niches)`)
 
 	// Backfill: match old leads (source_url empty) to posts by content
-	s.db.Exec(`UPDATE leads SET source_url = (
+	mx(`UPDATE leads SET source_url = (
 		SELECT p.url FROM posts p WHERE p.content = leads.content AND p.url != '' LIMIT 1
 	), source_id = (
 		SELECT p.id FROM posts p WHERE p.content = leads.content LIMIT 1
@@ -892,7 +906,7 @@ func (s *Store) migrate() error {
 	// the crawler did extract post_fbid + group_fbid. Idempotent — the
 	// pattern guards skip rows that already carry a post identifier.
 	// See project_lead_routing_gap.md (the "Mở bài viết" routing bug).
-	s.db.Exec(`UPDATE leads
+	mx(`UPDATE leads
 		SET source_url = 'https://www.facebook.com/groups/' || group_fbid || '/posts/' || post_fbid || '/'
 		WHERE COALESCE(post_fbid,'')  != ''
 		  AND COALESCE(group_fbid,'') != ''
@@ -902,7 +916,7 @@ func (s *Store) migrate() error {
 		  AND source_url NOT LIKE '%story_fbid=%'
 		  AND source_url NOT LIKE '%multi_permalinks=%'
 		  AND source_url NOT LIKE '%fbid=%'`)
-	s.db.Exec(`UPDATE leads
+	mx(`UPDATE leads
 		SET source_url = 'https://www.facebook.com/permalink.php?story_fbid=' || post_fbid
 		WHERE COALESCE(post_fbid,'')  != ''
 		  AND COALESCE(group_fbid,'') = ''
@@ -914,7 +928,7 @@ func (s *Store) migrate() error {
 		  AND source_url NOT LIKE '%fbid=%'`)
 
 	// Conversation threads: memory across sessions for each lead we're talking to
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS conversation_threads (
+	mx(`CREATE TABLE IF NOT EXISTS conversation_threads (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		lead_id INTEGER DEFAULT 0,
 		platform TEXT NOT NULL DEFAULT 'facebook',
@@ -926,10 +940,10 @@ func (s *Store) migrate() error {
 		last_inbound_at DATETIME,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_profile ON conversation_threads(profile_url)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_thread_status ON conversation_threads(status)`)
+	mx(`CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_profile ON conversation_threads(profile_url)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_thread_status ON conversation_threads(status)`)
 
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS conversation_messages (
+	mx(`CREATE TABLE IF NOT EXISTS conversation_messages (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		thread_id INTEGER NOT NULL,
 		direction TEXT NOT NULL,
@@ -938,20 +952,20 @@ func (s *Store) migrate() error {
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (thread_id) REFERENCES conversation_threads(id)
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_thread ON conversation_messages(thread_id, created_at)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_conv_msg_thread ON conversation_messages(thread_id, created_at)`)
 
 	// Dedup index: prevent inserting same lead for same post twice across scans
-	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedup ON leads(source_type, source_id) WHERE source_id > 0`)
+	mx(`CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedup ON leads(source_type, source_id) WHERE source_id > 0`)
 
 	// Composite indexes for hot-path queries (HasSentComment, HasSentInbox)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_outbound_type_url_status ON outbound_messages(type, target_url, status)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_leads_source_url ON leads(source_url) WHERE source_url != ''`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_outbound_type_url_status ON outbound_messages(type, target_url, status)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_leads_source_url ON leads(source_url) WHERE source_url != ''`)
 
 	// Self-healing selector cache (LLM Vision updates this when FB changes UI)
 	connectors.InitSelectorCache(s.db)
 
 	// AutoFlow: per-user KPI metrics
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS staff_kpi (
+	mx(`CREATE TABLE IF NOT EXISTS staff_kpi (
 		user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 		org_id     INTEGER NOT NULL DEFAULT 1,
 		convs      INTEGER NOT NULL DEFAULT 0,
@@ -960,10 +974,10 @@ func (s *Store) migrate() error {
 		pts        INTEGER NOT NULL DEFAULT 0,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_staff_kpi_org ON staff_kpi(org_id)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_staff_kpi_org ON staff_kpi(org_id)`)
 
 	// AutoFlow: per-org KPI point weights
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS kpi_config (
+	mx(`CREATE TABLE IF NOT EXISTS kpi_config (
 		org_id     INTEGER PRIMARY KEY,
 		conv_pts   INTEGER NOT NULL DEFAULT 10,
 		conv2_pts  INTEGER NOT NULL DEFAULT 50,
@@ -976,7 +990,7 @@ func (s *Store) migrate() error {
 	)`)
 
 	// AutoFlow: org-uploaded private files for AI context
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS private_files (
+	mx(`CREATE TABLE IF NOT EXISTS private_files (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id     INTEGER NOT NULL,
 		name       TEXT NOT NULL,
@@ -985,10 +999,10 @@ func (s *Store) migrate() error {
 		mime_type  TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_private_files_org ON private_files(org_id)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_private_files_org ON private_files(org_id)`)
 
 	// AutoFlow: org-scoped external data sources (Sheets/Drive/other connectors)
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS data_sources (
+	mx(`CREATE TABLE IF NOT EXISTS data_sources (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id        INTEGER NOT NULL,
 		type          TEXT NOT NULL,
@@ -1003,14 +1017,14 @@ func (s *Store) migrate() error {
 		created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_data_sources_org ON data_sources(org_id, type, status)`)
-	s.db.Exec(`ALTER TABLE data_sources ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`)
-	s.db.Exec(`ALTER TABLE data_sources ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_data_sources_org ON data_sources(org_id, type, status)`)
+	mx(`ALTER TABLE data_sources ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'`)
+	mx(`ALTER TABLE data_sources ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`)
 
 	// AutoFlow: org-scoped recurring crawl intents. The first prompt teaches the
 	// segment/source; scheduled runs reuse this deterministic plan without
 	// calling the AI again.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS org_crawl_intents (
+	mx(`CREATE TABLE IF NOT EXISTS org_crawl_intents (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id INTEGER NOT NULL,
 		account_id INTEGER NOT NULL DEFAULT 0,
@@ -1037,34 +1051,34 @@ func (s *Store) migrate() error {
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(org_id, dedup_hash)
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_due ON org_crawl_intents(enabled, next_run_at)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_org ON org_crawl_intents(org_id, enabled)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_due ON org_crawl_intents(enabled, next_run_at)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_org ON org_crawl_intents(org_id, enabled)`)
 	// Field state machine + per-intent crawl cursor.
 	// See project_scheduled_intelligence.md. status is now the source of truth;
 	// enabled is kept synced for legacy queries until removed in a later PR.
-	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`)
-	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_last_post_id TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_last_post_at DATETIME`)
-	s.db.Exec(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_updated_at DATETIME`)
+	mx(`ALTER TABLE org_crawl_intents ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`)
+	mx(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_last_post_id TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_last_post_at DATETIME`)
+	mx(`ALTER TABLE org_crawl_intents ADD COLUMN cursor_updated_at DATETIME`)
 	// One-time backfill: derive status from legacy enabled+last_error.
 	// Idempotent — transitions sync both columns, so legacy enabled=0 rows are
 	// the only matches after the first run.
-	s.db.Exec(`UPDATE org_crawl_intents
+	mx(`UPDATE org_crawl_intents
 		SET status = CASE WHEN last_error != '' THEN 'failed' ELSE 'paused' END
 		WHERE enabled = 0 AND status = 'active'`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_status_due ON org_crawl_intents(status, next_run_at)`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_org_crawl_intents_status_due ON org_crawl_intents(status, next_run_at)`)
 
 	// AutoFlow: extend conversation_threads with org scoping and unread tracking
-	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE conversation_threads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
-	s.db.Exec(`DROP INDEX IF EXISTS idx_thread_profile`)
-	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_org_profile ON conversation_threads(org_id, profile_url)`)
+	mx(`ALTER TABLE conversation_threads ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE conversation_threads ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1`)
+	mx(`DROP INDEX IF EXISTS idx_thread_profile`)
+	mx(`CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_org_profile ON conversation_threads(org_id, profile_url)`)
 
 	// AutoFlow: extend organizations with branding fields
-	s.db.Exec(`ALTER TABLE organizations ADD COLUMN abbr TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE organizations ADD COLUMN color TEXT NOT NULL DEFAULT '#4f46e5'`)
-	s.db.Exec(`ALTER TABLE organizations ADD COLUMN logo_path TEXT NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE organizations ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE organizations ADD COLUMN abbr TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE organizations ADD COLUMN color TEXT NOT NULL DEFAULT '#4f46e5'`)
+	mx(`ALTER TABLE organizations ADD COLUMN logo_path TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE organizations ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''`)
 
 	// Phase 6: open-prompt agent — org_skills (per-org enablement) and
 	// skill_executions (audit trail). Idempotent. Lives in the prompts
@@ -1092,7 +1106,7 @@ func (s *Store) migrate() error {
 	// approved-only retrieval) are enforced by the column layout AND the
 	// indexes below. Adding columns is safe; changing column meaning or
 	// dropping an index will break load-bearing tests.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_sources (
+	mx(`CREATE TABLE IF NOT EXISTS knowledge_sources (
 		id                     INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id                 INTEGER  NOT NULL,
 		type                   TEXT     NOT NULL,
@@ -1106,12 +1120,12 @@ func (s *Store) migrate() error {
 		created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_sources_org
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_sources_org
 		ON knowledge_sources(org_id, health_status)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_sources_sync
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_sources_sync
 		ON knowledge_sources(sync_policy, last_sync_at)`)
 
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_assets (
+	mx(`CREATE TABLE IF NOT EXISTS knowledge_assets (
 		id                    INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id                INTEGER  NOT NULL,
 		source_id             INTEGER  NOT NULL,
@@ -1131,18 +1145,18 @@ func (s *Store) migrate() error {
 		updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (source_id) REFERENCES knowledge_sources(id)
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_state
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_state
 		ON knowledge_assets(org_id, state)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_source
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_source
 		ON knowledge_assets(org_id, source_id)`)
 	// Idempotent-ingest guard: a re-sync of the same source must UPDATE,
 	// not insert. Empty external_id is allowed (e.g. CSV rows without a
 	// stable key) — the partial index excludes those rows so the ingestor
 	// path that hashes the row body remains the source of truth.
-	s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_assets_idem
+	mx(`CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_assets_idem
 		ON knowledge_assets(org_id, source_id, external_id)
 		WHERE external_id != ''`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_pin_boost
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_assets_org_pin_boost
 		ON knowledge_assets(org_id, pinned DESC, boost DESC, retrieval_count_30d DESC)`)
 
 	// Workspace Knowledge OS — Phase D observability.
@@ -1159,7 +1173,7 @@ func (s *Store) migrate() error {
 	// org_id is indexed first because every query is tenant-scoped.
 	// occurred_at DESC second because the Replay UI's default view
 	// is "most recent first."
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_events (
+	mx(`CREATE TABLE IF NOT EXISTS knowledge_events (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id        INTEGER  NOT NULL,
 		event_type    TEXT     NOT NULL,
@@ -1170,9 +1184,9 @@ func (s *Store) migrate() error {
 		duration_ms   INTEGER  NOT NULL DEFAULT 0,
 		occurred_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_events_org_time
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_events_org_time
 		ON knowledge_events(org_id, occurred_at DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_events_retrieval
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_events_retrieval
 		ON knowledge_events(org_id, retrieval_id)`)
 
 	// Workspace Knowledge OS — Goal G10 human-feedback substrate.
@@ -1198,7 +1212,7 @@ func (s *Store) migrate() error {
 	//           "edit" | "rating".
 	//   - data_json carries kind-specific payload (e.g. star rating,
 	//     edit diff) so the schema doesn't churn per feedback type.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_feedback (
+	mx(`CREATE TABLE IF NOT EXISTS knowledge_feedback (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		org_id        INTEGER  NOT NULL,
 		user_id       INTEGER  NOT NULL DEFAULT 0,
@@ -1208,9 +1222,9 @@ func (s *Store) migrate() error {
 		data_json     TEXT     NOT NULL DEFAULT '{}',
 		occurred_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_org_time
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_org_time
 		ON knowledge_feedback(org_id, occurred_at DESC)`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_retrieval
+	mx(`CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_retrieval
 		ON knowledge_feedback(org_id, retrieval_id)`)
 
 	// Schema v7 (PR-2 V2 cleanup, 2026-05-21): drop the legacy `status`
@@ -1224,7 +1238,7 @@ func (s *Store) migrate() error {
 	// project pins `modernc.org/sqlite` which embeds a current SQLite,
 	// so the direct DROP is safe. The IF EXISTS clause keeps the
 	// statement idempotent for already-migrated DBs.
-	s.db.Exec(`ALTER TABLE outbound_messages DROP COLUMN status`)
+	mx(`ALTER TABLE outbound_messages DROP COLUMN status`)
 
 	// Organic Sales Network PR3 (schema v9): execution ownership is a
 	// first-class, IMMUTABLE dimension. created_by records the MEMBER who
@@ -1233,16 +1247,16 @@ func (s *Store) migrate() error {
 	// are projections over (interaction, created_by). 0 = system/legacy.
 	// ALTERs are best-effort idempotent (re-run on an existing column is a
 	// no-op error we ignore); the version bump forces the re-run.
-	s.db.Exec(`ALTER TABLE outbound_messages  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE action_ledger       ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`ALTER TABLE execution_attempts  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
-	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_action_ledger_member ON action_ledger(org_id, created_by, performed_at DESC)`)
+	mx(`ALTER TABLE outbound_messages  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE action_ledger       ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
+	mx(`ALTER TABLE execution_attempts  ADD COLUMN created_by INTEGER NOT NULL DEFAULT 0`)
+	mx(`CREATE INDEX IF NOT EXISTS idx_action_ledger_member ON action_ledger(org_id, created_by, performed_at DESC)`)
 
 	// Organic Sales Network PR4 (schema v10): deterministic ExecutionContext.
 	// Each member picks a Default Account; outbound routing resolves
 	// Explicit account_id -> default_account_id -> (exactly 1 owned account) ->
 	// error execution_context_required. NO heuristic / first-logged-in guessing.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS user_execution_context (
+	mx(`CREATE TABLE IF NOT EXISTS user_execution_context (
 		org_id             INTEGER NOT NULL,
 		user_id            INTEGER NOT NULL,
 		default_account_id INTEGER NOT NULL DEFAULT 0,
@@ -1255,7 +1269,7 @@ func (s *Store) migrate() error {
 	// is the InteractionType; channel records WHERE it happened so attribution /
 	// leaderboard work uniformly across FACEBOOK / EMAIL / TELEGRAM / ... Default
 	// 'facebook' keeps every existing row correct (additive, backward-compatible).
-	s.db.Exec(`ALTER TABLE action_ledger ADD COLUMN channel TEXT NOT NULL DEFAULT 'facebook'`)
+	mx(`ALTER TABLE action_ledger ADD COLUMN channel TEXT NOT NULL DEFAULT 'facebook'`)
 
 	// Organic Sales Network PR6 (schema v12): Coordination is POLICY, not an
 	// invariant. coordination_scope is the OPT-IN knob for limiting how many
@@ -1264,19 +1278,33 @@ func (s *Store) migrate() error {
 	// authority / campaign). When set, the dedup gate emits a typed reason code
 	// (policy:coordination_scope) so any skip is explainable + observable; it is
 	// NEVER a silent hardcoded cross-member block.
-	s.db.Exec(`ALTER TABLE action_policies ADD COLUMN coordination_scope TEXT NOT NULL DEFAULT ''`)
+	mx(`ALTER TABLE action_policies ADD COLUMN coordination_scope TEXT NOT NULL DEFAULT ''`)
 
-	// Marker row written AFTER every other DDL. The fast-path probe
-	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears
-	// only after the bootstrap finishes, so a crash mid-migrate leaves
-	// the marker absent and the next boot re-runs everything. Version
-	// changes (see schemaBootstrapVersion) force a re-run on existing
-	// production DBs whose schema lags.
-	s.db.Exec(`CREATE TABLE IF NOT EXISTS _schema_bootstrap_marker (
+	// FAIL FAST: a GENUINE bootstrap failure must NOT be masked by writing the
+	// success marker. The old behaviour swallowed every error and still marked
+	// success, producing a DB that looked migrated but was half-applied. Benign
+	// idempotency errors are tolerated inside mx; anything else aborts here so
+	// the next boot re-runs the (idempotent) bootstrap cleanly.
+	if genErr != nil {
+		return genErr
+	}
+
+	// Marker row written ONLY after every other DDL succeeded — direct + error-
+	// checked (not via mx). The fast-path probe (schemaAlreadyApplied) reads it;
+	// a crash before this leaves no marker and the next boot re-runs.
+	//
+	// FROZEN BASELINE: do NOT add new schema here and do NOT bump
+	// schemaBootstrapVersion. New schema changes go in internal/store/migrations/
+	// (NNNN_*.up.sql) — applied by the transactional, fail-fast, version-tracked
+	// runMigrations() runner that works on SQLite AND Postgres. See migrator.go.
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS _schema_bootstrap_marker (
 		version    INTEGER PRIMARY KEY,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`)
-	s.db.Exec(`INSERT OR IGNORE INTO _schema_bootstrap_marker (version) VALUES (?)`, schemaBootstrapVersion)
-
+	)`); err != nil {
+		return fmt.Errorf("create bootstrap marker: %w", err)
+	}
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO _schema_bootstrap_marker (version) VALUES (?)`, schemaBootstrapVersion); err != nil {
+		return fmt.Errorf("write bootstrap marker: %w", err)
+	}
 	return nil
 }
