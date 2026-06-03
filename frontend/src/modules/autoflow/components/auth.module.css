@@ -111,6 +111,7 @@
   letter-spacing: -0.03em;
   font-weight: 800;
   max-width: 18ch;
+  color: var(--on-ink); /* explicit: beats global bare-h2 color rule in autoflow.css */
 }
 .sideTitle em { font-style: normal; color: #aab2ff; }
 .sideSub { margin: 16px 0 0; max-width: 40ch; font-size: 14px; line-height: 1.6; color: var(--on-ink-mute); }
