@@ -8,6 +8,13 @@ var THGShared = globalThis.THGShared || (() => {
     'content/meta.js',
     'content/commands.js',
     'content/crawl.js',
+    // proof.js + navreport.js MUST precede outbound.js: it builds DOM proofs
+    // (THGContentProof) and PR8A NavDiagnostics (THGNavReport). They were
+    // previously only in the manifest content_scripts; adding them here keeps
+    // the chrome.scripting re-injection fallback consistent so a re-injected
+    // tab still produces proof + landing telemetry.
+    'content/proof.js',
+    'content/navreport.js',
     'content/outbound.js',
     'content/bridge.js',
     'content.js'

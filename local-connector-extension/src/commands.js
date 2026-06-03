@@ -150,8 +150,15 @@ var THGCommands = globalThis.THGCommands || (() => {
     // Facebook can redirect /groups/<id> to newsfeed when the user is logged
     // out or hits a checkpoint. Retrying without verification would mask that
     // and silently crawl the wrong page.
+    //
+    // PR8A: capture the navigation trace (from/to/duration/attempts + the last
+    // actual landed URL) so the comment executor and the nav-failure path can
+    // report a precise, reproducible reason instead of a bare redirect.
+    const navStart = Date.now();
+    let lastActual = '';
     for (let attempt = 1; attempt <= 3; attempt++) {
       const info = await openCrawlTab(navigateTo);
+      const fromUrl = info.tab?.pendingUrl || info.tab?.url || '';
       try {
         await THGFacebookState.waitForTabReady(info.tab.id);
       } catch {
@@ -159,15 +166,31 @@ var THGCommands = globalThis.THGCommands || (() => {
       }
       await THGShared.delay(5000); // SPA render
       const { tab, matched } = await verifyTabAtExpected(info.tab.id, navigateTo);
+      lastActual = tab?.url || lastActual;
       if (matched) {
-        return { tab: tab || info.tab, shouldReminimize: info.shouldReminimize, crawlWinId: info.crawlWinId };
+        return {
+          tab: tab || info.tab,
+          shouldReminimize: info.shouldReminimize,
+          crawlWinId: info.crawlWinId,
+          navTrace: {
+            from_url: fromUrl,
+            to_url: navigateTo,
+            landed_url: tab?.url || navigateTo,
+            duration_ms: Date.now() - navStart,
+            attempts: attempt,
+          },
+        };
       }
       console.warn(`[THGCommands] navigate verify failed attempt ${attempt}: expected=${navigateTo} actual=${tab?.url || 'unknown'}`);
       // Close failed attempt's tab before retrying so we don't accumulate tabs.
       try { await chrome.tabs.remove(info.tab.id); } catch { /* ignore */ }
       await THGShared.delay(3000);
     }
-    throw new Error(`navigate verify failed: expected=${navigateTo}`);
+    // Surface the last actual landed URL + total duration so the caller can
+    // classify the redirect (feed/home/login/checkpoint) without guessing.
+    const err = new Error(`navigate verify failed: expected=${navigateTo} actual=${lastActual || 'unknown'}`);
+    err.navTrace = { to_url: navigateTo, landed_url: lastActual, duration_ms: Date.now() - navStart, attempts: 3 };
+    throw err;
   }
 
   async function process(target, state) {

@@ -221,6 +221,34 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       s.includes('two_step') || s.includes('/recover');
   }
 
+  // classifyLandingBg is the BACKGROUND-side mirror of content/navreport.js
+  // classifyLanding (the content module is not in scope in the service worker).
+  // Returns the same closed vocabulary as internal/models/nav_diagnostic.go
+  // RedirectClass* so the nav-failure path reports a precise cause.
+  function classifyLandingBg(raw) {
+    const s = String(raw || '');
+    if (!s) return 'unknown';
+    const low = s.toLowerCase();
+    if (/\/login(\/|\.php|$|\?)/.test(low) || low.includes('login.facebook.com')) return 'login';
+    if (low.includes('/checkpoint') || low.includes('two_step') || low.includes('/recover')) return 'checkpoint';
+    let url;
+    try { url = new URL(s); } catch { return 'unknown'; }
+    const host = url.hostname.toLowerCase();
+    const isFB = host === 'facebook.com' || host.endsWith('.facebook.com') ||
+      host === 'fb.watch' || host.endsWith('.fb.watch');
+    if (!isFB) return 'unknown';
+    const path = url.pathname.replace(/\/+$/, '');
+    if (path === '' || path === '/') return 'home';
+    if (path === '/home.php' || path === '/feed' || path === '/feed.php') return 'feed';
+    if (isCommentableFacebookPostUrl(s)) return 'permalink';
+    if (path.startsWith('/photo') || path.startsWith('/marketplace') ||
+      path.startsWith('/events') || path.startsWith('/profile.php') ||
+      path.startsWith('/story.php') || /^\/groups\/[^/]+$/.test(path)) {
+      return 'unsupported_target';
+    }
+    return 'unknown';
+  }
+
   // deliverCommentViaPermalink implements STAGE 1 — Option C (the TargetLocator):
   // navigate the user's visible, logged-in FB tab IN-SESSION directly to the
   // post permalink (the post IS the page), then dispatch the existing
@@ -514,20 +542,47 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     try {
       crawlInfo = await THGCommands.navigateAndVerify(targetUrl);
     } catch (err) {
+      // PR8A: navigateAndVerify exhausted 3 retries — the post permalink never
+      // held (FB redirected every attempt). This is target_not_reached, not the
+      // generic redirected_feed: nothing was ever typed, it is retryable, and it
+      // must not poison the account's risk_score. Classify the last landed URL
+      // so the operator sees the precise cause (feed/home/login/checkpoint).
+      const navTrace = (err && err.navTrace) || {};
+      const landed = navTrace.landed_url || '';
+      const rc = classifyLandingBg(landed);
       return {
         ok: false,
-        error: 'navigation_redirected',
+        error: 'target_not_reached',
         proof: {
           success: false,
-          failure_reason: 'redirected_feed',
-          page_url_after: '',
-          notes: 'outbox.crawler_nav_failed: ' + (err && err.message ? err.message : String(err)),
+          failure_reason: 'target_not_reached',
+          page_url_after: landed,
+          notes: 'outbox.crawler_nav_failed (target_not_reached): redirect_class=' + rc +
+                 ' attempts=' + (navTrace.attempts || 3) + ' duration_ms=' + (navTrace.duration_ms || 0) +
+                 ' · ' + (err && err.message ? err.message : String(err)),
+          nav_diagnostic: {
+            nav_to_url: navTrace.to_url || targetUrl,
+            nav_duration_ms: navTrace.duration_ms || 0,
+            nav_attempts: navTrace.attempts || 3,
+            landed_url: landed,
+            doc_title: '',
+            article_found: false,
+            permalink_found: false,
+            comment_button_found: false,
+            target_post_id: extractPostIdFromTargetUrl(targetUrl),
+            account_id: Number(message.account_id || message.accountId || 0) || 0,
+            redirect_class: rc,
+            stage: 'background_nav_failed',
+          },
           execution_id: String(message.execution_id || ''),
         },
       };
     }
     const tabId = crawlInfo.tab && crawlInfo.tab.id;
     if (!tabId) throw new Error('Facebook tab is not ready after navigateAndVerify');
+    // PR8A: hand the background navigation trace to the content script so the
+    // NavDiagnostic it builds at each gate carries from/to/duration/attempts.
+    message.nav_trace = crawlInfo.navTrace || null;
 
     const releaseTabLock = acquireTabExecutionLock(tabId);
     if (!releaseTabLock) {

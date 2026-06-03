@@ -453,7 +453,58 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return candidates.slice(0, 5);
   }
 
-  async function executeComment(content, targetUrl = '', executionId = '') {
+  // probeCommentGates inspects the live DOM ONCE and reports the three PR8A
+  // pre-comment signals for the target post WITHOUT mutating anything:
+  //   article_found       — a target [role=article] is present
+  //   permalink_found     — that article carries its canonical permalink anchor
+  //   comment_button_found— a Comment/Bình luận button exists in scope
+  // Used to explain a target_not_reached landing ("did we even find the post?").
+  function probeCommentGates(targetPostId) {
+    const out = { articleFound: false, permalinkFound: false, commentButtonFound: false };
+    const article = targetPostId ? findTargetArticle(targetPostId) : null;
+    out.articleFound = !!article;
+    const scope = article || document;
+    if (article) {
+      out.permalinkFound = !!article.querySelector(
+        'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
+      );
+    }
+    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const buttons = Array.from(scope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    out.commentButtonFound = buttons.some(el => {
+      const label = labelOf(el);
+      return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
+    });
+    return out;
+  }
+
+  // navDiagFor assembles the structured NavDiagnostic for the current page
+  // state at a given gate. Pure-ish: reads location/title + caller-supplied
+  // gate booleans + the background nav trace. Returns {} when THGNavReport is
+  // not loaded (defensive — re-injection paths may omit it).
+  function navDiagFor(stage, gates, ctxInfo) {
+    if (!THGNavReport) return null;
+    const landed = location.href || '';
+    return THGNavReport.buildNavDiagnostic({
+      navFromUrl: ctxInfo.navTrace && ctxInfo.navTrace.from_url,
+      navToUrl: (ctxInfo.navTrace && ctxInfo.navTrace.to_url) || ctxInfo.targetUrl,
+      navDurationMs: ctxInfo.navTrace && ctxInfo.navTrace.duration_ms,
+      navAttempts: ctxInfo.navTrace && ctxInfo.navTrace.attempts,
+      landedUrl: landed,
+      docTitle: document.title || '',
+      articleFound: gates.articleFound,
+      permalinkFound: gates.permalinkFound,
+      commentButtonFound: gates.commentButtonFound,
+      targetPostId: ctxInfo.targetPostId,
+      accountId: ctxInfo.accountId,
+      fbUserId: ctxInfo.fbUID,
+      redirectClass: THGNavReport.classifyLanding(landed),
+      stage,
+      domSnapshot: gates.articleFound ? '' : ((document.body && document.body.innerText) || '').slice(0, 2048),
+    });
+  }
+
+  async function executeComment(content, targetUrl = '', executionId = '', opts = {}) {
     await dismissBlockingOverlays();
 
     // LIFECYCLE INSTRUMENTATION — captured at every stage so the
@@ -475,6 +526,13 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const preCount = proof ? proof.snapshotCommentCount() : 0;
     const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
     const ctx = { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
+    // PR8A: immutable context the NavDiagnostic assembler reads at each gate.
+    const targetPostIdEarly = extractPostIdFromUrl(targetUrl);
+    const ctxInfo = {
+      targetUrl, targetPostId: targetPostIdEarly, fbUID,
+      accountId: Number(opts.accountId || 0) || 0,
+      navTrace: opts.navTrace || null,
+    };
 
     // ====================================================================
     // P0 INVARIANT — NO TYPING UNTIL TARGET IDENTITY VERIFIED FIRST
@@ -530,12 +588,27 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       });
       if (!targetScope) {
         const landed = location.href || '';
-        console.warn('[THG outbound.executeComment] gate1 FAIL',
-          { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed, nav_at_entry: navAtEntry });
-        return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_1_no_article_or_unstable: target id=' + abbreviate(targetPostId) +
+        // PR8A — DETERMINISTIC LANDING GATE. Navigate → Wait Article → Verify
+        // Post ID just FAILED: the queued post never became present+stable on
+        // the page. Probe the DOM once to explain why, classify the landing,
+        // and STOP — do NOT type. This is target_not_reached, NOT context_drift
+        // (we never reached an article to drift from) and NOT redirected_feed
+        // (nothing was submitted). Retryable, no risk penalty (see Go side).
+        const gates = probeCommentGates(targetPostId);
+        const navDiag = navDiagFor('gate1_no_article', gates, ctxInfo);
+        const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
+        console.warn('[THG outbound.executeComment] gate1 FAIL target_not_reached',
+          { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
+            nav_at_entry: navAtEntry, redirect_class: rc, gates });
+        return commentResult(false, 'target_not_reached', null, ctx,
+          'identity_gate_1_target_not_reached: target id=' + abbreviate(targetPostId) +
+          ' redirect_class=' + rc +
+          ' article_found=' + gates.articleFound +
+          ' permalink_found=' + gates.permalinkFound +
+          ' comment_button_found=' + gates.commentButtonFound +
           ' landed_at=' + landed + ' nav_at_entry=' + navAtEntry +
-          ' did not settle (article+permalink+comment-button stable 500ms) within 8s');
+          ' did not settle (article+permalink+comment-button stable 500ms) within 8s',
+          navDiag);
       }
     }
     const searchRoot = targetScope || document;
@@ -566,7 +639,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         console.warn('[THG outbound.executeComment] gate2 FAIL post-click swap',
           { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed);
+          'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
+          navDiagFor('gate2_post_click_swap', probeCommentGates(targetPostId), ctxInfo));
       }
     } else {
       scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
@@ -586,7 +660,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
           console.warn('[THG outbound.executeComment] gate2b FAIL scroll swap',
             { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
           return commentResult(false, 'context_drift', null, ctx,
-            'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed);
+            'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
+            navDiagFor('gate2b_scroll_swap', probeCommentGates(targetPostId), ctxInfo));
         }
         editor = findCommentEditor(scope);
       } else {
@@ -598,7 +673,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       console.warn('[THG outbound.executeComment] comment_box_not_found',
         { target_id: targetPostId, landed_at_fail: landed });
       return commentResult(false, 'comment_box_not_found', null, ctx,
-        'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') + ' landed_at=' + landed);
+        'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') + ' landed_at=' + landed,
+        navDiagFor('comment_box_not_found', probeCommentGates(targetPostId), ctxInfo));
     }
 
     // Checkpoint 3 — pre-type. The editor we are about to type into
@@ -613,7 +689,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',
           { target_id: targetPostId, editor_scope_id: editorScopeID, landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed);
+          'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
+          navDiagFor('gate3_editor_drift', probeCommentGates(targetPostId), ctxInfo));
       }
     }
 
@@ -671,12 +748,26 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // ordering. Used by the identity-gate aborts in executeComment to
   // distinguish "no article on page" from "post-click swap" from
   // "editor drift" in the dashboard.
-  function commentResult(ok, errorCode, detail, ctx, notes) {
+  function commentResult(ok, errorCode, detail, ctx, notes, navDiag) {
     const proof = THGContentProof ? THGContentProof.buildCommentProof({
       ok, errorCode, content: ctx.content, userID: ctx.userID, preCount: ctx.preCount, duplicate: ctx.duplicate
     }) : null;
     if (proof && notes) {
       proof.notes = proof.notes ? proof.notes + ' · ' + notes : notes;
+    }
+    // PR8A: attach the structured landing telemetry (persists to evidence_json).
+    if (proof && navDiag) {
+      proof.nav_diagnostic = navDiag;
+    }
+    // PR8A: the pre-type landing gate is AUTHORITATIVE over the proof builder's
+    // post-submit feedish heuristic. When the executor explicitly reports
+    // target_not_reached, force that failure_reason — UNLESS the proof builder
+    // detected a real platform banner (checkpoint / blocked / rate_limited),
+    // which is more specific and keeps precedence. (redirected_feed is the
+    // heuristic we override: pre-type, "bounced to feed" IS target_not_reached.)
+    if (proof && errorCode === 'target_not_reached') {
+      const banner = proof.failure_reason && proof.failure_reason !== 'redirected_feed';
+      if (!banner) proof.failure_reason = 'target_not_reached';
     }
     // Echo the server-issued execution_id back so the backend's
     // terminal-state CAS in store.FinalizeOutboundAttempt can gate on
@@ -1106,7 +1197,14 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // current execution_id; replays and re-claim collisions are
     // rejected there.
     const executionId = String(message?.execution_id || message?.executionId || '').trim();
-    if (type === 'comment') return executeComment(content, targetUrl, executionId);
+    // PR8A: thread the executing account id + the background navigation trace
+    // (from/to/duration, attached by src/outbox.js before sendMessage) into the
+    // comment executor so the NavDiagnostic it builds is complete.
+    const navOpts = {
+      accountId: Number(message?.account_id || message?.accountId || 0) || 0,
+      navTrace: message?.nav_trace || null,
+    };
+    if (type === 'comment') return executeComment(content, targetUrl, executionId, navOpts);
     if (type === 'inbox') return executeInbox(content, executionId);
     if (type === 'group_post' || type === 'profile_post') return executePost(content, executionId);
     return { ok: false, error: `unsupported_outbox_type:${type}` };

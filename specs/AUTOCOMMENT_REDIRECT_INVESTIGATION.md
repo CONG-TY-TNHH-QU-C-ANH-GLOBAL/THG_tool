@@ -1,6 +1,59 @@
 # Auto-Comment `redirected_feed` Investigation
 
-**Status**: 2026-06-02 (evening) — **TWO distinct bugs, now separated. Bug A (AI text) FIXED + verified; Bug B (execution `no_terminal`) re-opened with Path 2 as the structural fix.**
+**Status**: 2026-06-03 — **PR8A Navigation Hardening shipped (manifest 0.5.17).** Stops the fix-and-pray
+loop: instead of another candidate fix to the executor, PR8A makes the failure NAME ITS OWN ROOT CAUSE.
+Awaiting one operator verification cycle to read the new typed telemetry, then decide PR8B from real data.
+
+## 2026-06-03 — PR8A: Navigation Hardening (observability, NOT a fix)
+
+Goal (operator directive): *biến bug từ "context_drift" thành nguyên nhân chính xác và tái hiện được.*
+PR8A does NOT touch the CommentExecutor's typing/submit logic. It adds deterministic landing telemetry +
+a STOP gate so the next failure is precisely classified and reproducible.
+
+**New distinct terminal `finished/target_not_reached`** (was masked as `context_drift`/`redirected_feed`):
+- `models.ExecutionTargetNotReached` + `VerifTargetNotReached`. Fires when Navigate → Wait Article → Verify
+  Post ID fails: the queued post never became present+stable on the page. The executor STOPS before typing.
+- **Retryable, NO risk signal** — a navigation miss is not an account fault (distinct from context_drift /
+  redirected_feed which fire RiskSignalRedirectAnomaly). The account is not poisoned for FB's redirect.
+- `context_drift` is now reserved for its true meaning: an article WAS reached, then identity drifted
+  mid-flow (gates 2/2b/3). `target_not_reached` = never reached an article to drift from.
+
+**Structured `NavDiagnostic` persisted to `execution_attempts.evidence_json`** (typed, not a notes string):
+nav_from_url / nav_to_url / nav_duration_ms / nav_attempts / landed_url / doc_title / article_found /
+permalink_found / comment_button_found / target_post_id / account_id / fb_user_id / redirect_class / stage /
+dom_snapshot. Assembled across both layers (background nav trace + content-script DOM gates).
+
+**Deterministic `redirect_class`** (closed vocabulary, `internal/models/nav_diagnostic.go` +
+`content/navreport.js` `classifyLanding`, mirrored background-side in `outbox.js classifyLandingBg`):
+`permalink | feed | home | login | checkpoint | unsupported_target | unknown`. This is the single field
+that names WHY a nav did not reach the post.
+
+**Where it fires:**
+- Background (`src/outbox.js executeInFacebookTab`): navigateAndVerify exhausted 3 retries → `target_not_reached`
+  with the classified last-landed URL + nav timing. (`src/commands.js navigateAndVerify` now returns/throws a
+  navTrace: from/to/landed/duration/attempts.)
+- Content (`content/outbound.js executeComment` gate 1): nav "succeeded" per URL but the article never
+  rendered (the late-redirect case — FB bounces to `/` between URL-verify and content-script entry) →
+  `target_not_reached` with redirect_class + the three gate booleans, captured BEFORE any typing.
+
+The non-success server log line now carries `redirect_class` / `nav_stage` / `landed_url` directly. The
+superadmin diagnostic endpoint surfaces the full `nav_diagnostic` object (evidence_json is unmarshalled to
+a map there already).
+
+**Verification gate for the operator** (reload extension to 0.5.17, run `comment_all_leads`, read
+`attempts[0].evidence_json.nav_diagnostic.redirect_class`):
+
+| `redirect_class` | Meaning | PR8B next |
+|---|---|---|
+| `home` / `feed` | FB bounced the deep-link nav to the feed (H1 confirmed, decisively). | DOM nav is losing to FB redirect → GraphQL/mobile-permalink track. |
+| `login` / `checkpoint` | Session not authenticated / identity gate. | human_required surface; not a nav bug. |
+| `permalink` + `article_found=false` | Landed on the RIGHT post but the article DOM never rendered/stable. | Tune gate-1 stable-wait; the nav is fine, the wait is too strict. |
+| `unsupported_target` | Target URL is not a commentable post (photo viewer, etc.). | Server-side preflight skip before queueing. |
+| `unknown` | Landed somewhere unclassified — `landed_url` + `dom_snapshot` carry raw evidence. | Extend the classifier from the real URL. |
+
+---
+
+## Prior status (2026-06-02 evening) — TWO distinct bugs, now separated. Bug A (AI text) FIXED + verified; Bug B (execution `no_terminal`) re-opened with Path 2 as the structural fix.
 
 Bug A — auto-comment posted nothing because AI text generation failed: `OPENAI_COMMENT_MODEL` defaulted to a gpt-5 reasoning model and `callOpenAI` sent `temperature: 0.7`, which gpt-5*/o* reject with HTTP 400 → `generation_failed` → lead skipped with empty content (classification kept working because `UniversalClassify` uses the no-temperature strict-JSON path). Fixed: model-aware `chatCompletionBody` omits temperature for reasoning models, raises `max_completion_tokens` 400→2000, errors on empty content; same guard applied to `profile_inference.go` + `classifier.go`; defaults → `gpt-5.0` / `gpt-5.0-mini`. **Verified by operator**: `comment_all_leads` went from `queued_comment=0` to `queued_comment=1 mode=approved_auto`.
 

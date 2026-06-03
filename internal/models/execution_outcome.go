@@ -63,6 +63,17 @@ const (
 	// failure mode (FB redirects on auth/throttle).
 	ExecutionRedirectedFeed ExecutionOutcome = "redirected_feed"
 
+	// ExecutionTargetNotReached — the navigation phase never put the target
+	// post on the page: after navigate + wait-for-article + verify-post-id,
+	// the queued post was NOT present (PR8A landing gate). Distinct from
+	// context_drift (which means we DID reach an article and then identity
+	// drifted) and from redirected_feed (a post-submit redirect). The
+	// executor STOPS before typing — nothing was attempted. RETRYABLE and
+	// carries NO risk signal: the account did nothing wrong; the browser
+	// simply never arrived at the post. The NavDiagnostic.RedirectClass on
+	// the attempt names exactly why (feed/home/login/checkpoint/...).
+	ExecutionTargetNotReached ExecutionOutcome = "target_not_reached"
+
 	// ExecutionVerificationTimeout — DOM verifier ran but couldn't read
 	// the page (chromedp error, eval failure). Distinct from shadow-reject
 	// because we don't actually know the platform's decision.
@@ -129,7 +140,10 @@ func IsSuccessOutcome(o ExecutionOutcome) bool {
 // dig the hole deeper.
 func IsRetryableOutcome(o ExecutionOutcome) bool {
 	switch o {
-	case ExecutionSoftFail, ExecutionVerificationTimeout, ExecutionComposerFailed:
+	case ExecutionSoftFail, ExecutionVerificationTimeout, ExecutionComposerFailed,
+		// target_not_reached is a navigation miss, not a platform rejection —
+		// a fresh nav may well land. Retry-safe (nothing was typed).
+		ExecutionTargetNotReached:
 		return true
 	default:
 		return false
@@ -152,6 +166,12 @@ func RiskSignalForOutcome(o ExecutionOutcome) RiskSignal {
 		return RiskSignalActionRejected
 	case ExecutionRedirectedFeed, ExecutionContextDrift:
 		return RiskSignalRedirectAnomaly
+	case ExecutionTargetNotReached:
+		// Navigation never reached the post — the account neither acted nor
+		// was rejected. Emitting a risk signal here would poison reputation
+		// for a browser/FB navigation problem the account is not responsible
+		// for. Explicit empty (not via default) to document the intent.
+		return ""
 	case ExecutionCaptcha:
 		return RiskSignalCaptcha
 	case ExecutionBlocked:
@@ -294,6 +314,8 @@ func NormalizeExecutionOutcome(s string) ExecutionOutcome {
 		return ExecutionContextDrift
 	case ExecutionRedirectedFeed:
 		return ExecutionRedirectedFeed
+	case ExecutionTargetNotReached:
+		return ExecutionTargetNotReached
 	case ExecutionVerificationTimeout:
 		return ExecutionVerificationTimeout
 	case ExecutionCaptcha:

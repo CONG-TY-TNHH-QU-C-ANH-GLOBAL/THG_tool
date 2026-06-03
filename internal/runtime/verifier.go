@@ -21,6 +21,12 @@ type VerifierProof struct {
 	PageURLAfter     string    `json:"page_url_after,omitempty"`
 	ObservedAt       time.Time `json:"observed_at,omitempty"`
 	Notes            string    `json:"notes,omitempty"`
+	// NavDiagnostic carries the PR8A navigation-hardening telemetry the
+	// Chrome extension captured (nav trace, landing gates, redirect class).
+	// Nil for server-side verifiers and legacy extension builds. Persisted
+	// verbatim into evidence_json so the diagnostic endpoint reads typed
+	// fields instead of grepping notes.
+	NavDiagnostic *models.NavDiagnostic `json:"nav_diagnostic,omitempty"`
 }
 
 // VerifyContext is the input contract for any per-action verifier. The
@@ -230,6 +236,7 @@ func ClassifyExtensionReport(report ExtensionExecutionReport) (models.ExecutionO
 		PageURLAfter:     strings.TrimSpace(report.PageURLAfter),
 		ObservedAt:       time.Now().UTC(),
 		Notes:            strings.TrimSpace(report.Notes),
+		NavDiagnostic:    report.NavDiagnostic, // PR8A: pass landing telemetry through to evidence_json
 	}
 	if report.Duplicate {
 		return models.ExecutionDuplicateBlocked, proof
@@ -270,6 +277,11 @@ func ClassifyExtensionReport(report ExtensionExecutionReport) (models.ExecutionO
 			return models.ExecutionSoftFail, proof
 		case "context_drift":
 			return models.ExecutionContextDrift, proof
+		case "target_not_reached":
+			// PR8A: navigation never reached the post; the executor stopped
+			// before typing. Retryable, no risk signal — the precise cause is
+			// in proof.NavDiagnostic.RedirectClass.
+			return models.ExecutionTargetNotReached, proof
 		default:
 			return models.ExecutionShadowRejected, proof
 		}
@@ -303,6 +315,9 @@ type ExtensionExecutionReport struct {
 	BubbleFresh      bool   `json:"bubble_fresh"`
 	Duplicate        bool   `json:"duplicate"`
 	Notes            string `json:"notes"`
+	// NavDiagnostic is the PR8A navigation-hardening telemetry (nav trace +
+	// landing gates + redirect class). Optional; absent on legacy builds.
+	NavDiagnostic *models.NavDiagnostic `json:"nav_diagnostic,omitempty"`
 	// ExecutionID is the per-attempt idempotency token the server
 	// issued at claim time and the executor MUST echo back. The
 	// terminal-state CAS in store.FinalizeOutboundAttempt requires

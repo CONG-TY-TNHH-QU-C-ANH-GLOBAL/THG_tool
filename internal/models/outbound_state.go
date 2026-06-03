@@ -97,6 +97,15 @@ const (
 	// (selector missing, JS exception, browser crash mid-action). Not
 	// a platform signal — a system fault.
 	VerifExecutionFailed VerificationOutcome = "execution_failed"
+
+	// VerifTargetNotReached — the navigation never put the queued post on
+	// the page (PR8A landing gate). The executor stopped before typing.
+	// Distinct from context_drift: no article was ever reached, so there
+	// was nothing to drift FROM. Surfaces to the operator as
+	// `finished/target_not_reached`; the attempt's NavDiagnostic.RedirectClass
+	// names the precise cause. Engagement event WITHHELD; account reputation
+	// is NOT downgraded (a navigation problem, not an account problem).
+	VerifTargetNotReached VerificationOutcome = "target_not_reached"
 )
 
 // VerifyOutcomeFromExecution maps the rich ExecutionOutcome (from
@@ -112,6 +121,8 @@ func VerifyOutcomeFromExecution(o ExecutionOutcome) (VerificationOutcome, bool) 
 		return VerifVerifiedSuccess, true
 	case ExecutionContextDrift, ExecutionRedirectedFeed:
 		return VerifContextDrift, true
+	case ExecutionTargetNotReached:
+		return VerifTargetNotReached, true
 	case ExecutionRateLimited:
 		return VerifRateLimited, true
 	case ExecutionBlocked:

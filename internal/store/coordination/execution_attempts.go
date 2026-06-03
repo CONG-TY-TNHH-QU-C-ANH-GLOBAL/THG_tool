@@ -39,6 +39,11 @@ type VerificationEvidence struct {
 	// Notes is free-form text from the verifier (e.g. "rate-limit banner
 	// detected on toast", "comment count went 12→13").
 	Notes string `json:"notes,omitempty"`
+	// NavDiagnostic is the PR8A navigation-hardening telemetry (nav trace,
+	// landing gates, redirect class). Persisted as structured JSON so the
+	// superadmin diagnostic endpoint can read typed fields. Nil for
+	// server-side verifiers and legacy extension builds.
+	NavDiagnostic *models.NavDiagnostic `json:"nav_diagnostic,omitempty"`
 }
 
 // BeginExecutionAttempt opens a new execution_attempts row when the

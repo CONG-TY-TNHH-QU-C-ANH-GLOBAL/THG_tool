@@ -272,6 +272,12 @@ var THGContentProof = globalThis.THGContentProof || (() => {
       case 'target_identity_mismatch_post_click':
       case 'target_identity_mismatch_at_typing':
         return 'context_drift';
+      // PR8A: navigation never reached the post (pre-type landing gate). A
+      // distinct terminal from context_drift — see internal/models/
+      // execution_outcome.go ExecutionTargetNotReached. The executor stopped
+      // before typing; retryable, no risk penalty.
+      case 'target_not_reached':
+        return 'target_not_reached';
       default:
         return '';
     }

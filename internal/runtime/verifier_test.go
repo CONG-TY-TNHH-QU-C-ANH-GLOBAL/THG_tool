@@ -85,6 +85,8 @@ func TestClassifyExtensionReport_FailureReasonMapping(t *testing.T) {
 		{"transient", models.ExecutionSoftFail},
 		{"network", models.ExecutionSoftFail},
 		{"context_drift", models.ExecutionContextDrift},
+		// PR8A: navigation never reached the post → distinct terminal.
+		{"target_not_reached", models.ExecutionTargetNotReached},
 		// Inbox message-request folder: sender-side bubble rendered but
 		// recipient is non-connected. Must NOT be a success-class outcome
 		// (would falsely promote the lead to protected); maps to the safe
@@ -102,6 +104,48 @@ func TestClassifyExtensionReport_FailureReasonMapping(t *testing.T) {
 		if out != c.want {
 			t.Errorf("FailureReason=%q → %q; want %q", c.reason, out, c.want)
 		}
+	}
+}
+
+// PR8A: a target_not_reached report must (1) map to the distinct
+// ExecutionTargetNotReached terminal (operator-facing finished/target_not_reached),
+// (2) carry NO risk signal and be retryable (a nav miss, not an account fault),
+// and (3) pass the structured NavDiagnostic through to the proof so it persists
+// into evidence_json with the precise redirect_class.
+func TestClassifyExtensionReport_TargetNotReached_PassesNavDiagnostic(t *testing.T) {
+	nav := &models.NavDiagnostic{
+		NavFromURL:    "https://www.facebook.com/",
+		NavToURL:      "https://www.facebook.com/groups/123/posts/456/",
+		LandedURL:     "https://www.facebook.com/",
+		RedirectClass: models.RedirectClassHome,
+		Stage:         "gate1_no_article",
+		TargetPostID:  "456",
+		ArticleFound:  false,
+	}
+	out, proof := ClassifyExtensionReport(ExtensionExecutionReport{
+		Success:       false,
+		FailureReason: "target_not_reached",
+		NavDiagnostic: nav,
+	})
+	if out != models.ExecutionTargetNotReached {
+		t.Fatalf("outcome = %q; want target_not_reached", out)
+	}
+	if proof.NavDiagnostic == nil || proof.NavDiagnostic.RedirectClass != models.RedirectClassHome {
+		t.Fatalf("NavDiagnostic did not pass through with redirect_class; got %+v", proof.NavDiagnostic)
+	}
+	if models.RiskSignalForOutcome(out) != "" {
+		t.Errorf("target_not_reached must emit NO risk signal; got %q", models.RiskSignalForOutcome(out))
+	}
+	if !models.IsRetryableOutcome(out) {
+		t.Error("target_not_reached must be retryable (nothing was typed)")
+	}
+	if models.IsSuccessOutcome(out) {
+		t.Error("target_not_reached must NOT be a success-class outcome")
+	}
+	// Operator-facing terminal must read finished/target_not_reached.
+	state, vo := models.TerminalFromOutcome(out)
+	if state != models.ExecFinished || vo != models.VerifTargetNotReached {
+		t.Errorf("terminal = %s/%s; want finished/target_not_reached", state, vo)
 	}
 }
 

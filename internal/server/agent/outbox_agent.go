@@ -52,6 +52,7 @@ func proofToEvidence(p runtime.VerifierProof) coordination.VerificationEvidence 
 		PageURLAfter:     p.PageURLAfter,
 		ObservedAt:       p.ObservedAt,
 		Notes:            p.Notes,
+		NavDiagnostic:    p.NavDiagnostic, // PR8A: structured landing telemetry → evidence_json
 	}
 }
 
@@ -261,12 +262,25 @@ func (h *Handler) finalizeOutbound(
 	// 3c17f1a). Precursor to EXP-1 typed events on the Runtime Control
 	// Plane (see project_runtime_control_plane memory).
 	if !models.IsSuccessOutcome(outcome) {
+		// PR8A: when the extension shipped a NavDiagnostic, surface the
+		// classified landing cause (redirect_class + stage + landed_url)
+		// directly in the log line — that is the precise root cause the
+		// investigation needs, not the generic outcome token.
+		redirectClass, navStage, landedURL := "", "", ""
+		if proof.NavDiagnostic != nil {
+			redirectClass = proof.NavDiagnostic.RedirectClass
+			navStage = proof.NavDiagnostic.Stage
+			landedURL = proof.NavDiagnostic.LandedURL
+		}
 		slog.WarnContext(ctx, "exec-verify: non-success outcome",
 			"org_id", orgID, "outbound_id", id,
 			"account_id", msg.AccountID,
 			"target_url", msg.TargetURL,
 			"outcome", string(outcome),
 			"failure_reason", report.FailureReason,
+			"redirect_class", redirectClass,
+			"nav_stage", navStage,
+			"landed_url", landedURL,
 			"page_url_after", proof.PageURLAfter,
 			"notes", proof.Notes,
 			"dom_snippet", proof.DOMSnippet,

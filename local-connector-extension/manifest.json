@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "THG Chrome Extension",
   "description": "Connect a signed-in Facebook tab to a THG workspace for dashboard streaming and automation.",
-  "version": "0.5.16",
+  "version": "0.5.17",
   "action": {
     "default_title": "THG Chrome",
     "default_popup": "popup.html"
@@ -36,6 +36,7 @@
         "content/commands.js",
         "content/crawl.js",
         "content/proof.js",
+        "content/navreport.js",
         "content/outbound.js",
         "content/bridge.js",
         "content.js"
