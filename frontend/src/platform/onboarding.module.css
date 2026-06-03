@@ -1,0 +1,288 @@
+/* THG · Onboarding surfaces — "Refined Enterprise Light"
+ * ------------------------------------------------------
+ * Shared by the Services picker (/services) and the Create-Workspace flow.
+ * These render inside PlatformShell (a slim dark command bar sits above),
+ * so .canvas carries its own light palette and fills the outlet as a clean
+ * light onboarding surface. Mirrors the public landing + auth aesthetic.
+ */
+
+.canvas {
+  --paper:   #f7f7f4;
+  --paper-2: #fdfdfc;
+  --card:    #ffffff;
+  --ink:     #0b1120;
+  --ink-2:   #111a2e;
+  --ink-3:   #1b2740;
+  --line:        rgba(13, 22, 41, 0.09);
+  --line-strong: rgba(13, 22, 41, 0.16);
+  --text:       #0d1426;
+  --text-mute:  #515f79;
+  --text-faint: #8995ab;
+  --accent:      #4f46e5;
+  --accent-2:    #6366f1;
+  --accent-soft: rgba(79, 70, 229, 0.10);
+  --accent-line: rgba(79, 70, 229, 0.22);
+  --accent-glow: rgba(79, 70, 229, 0.35);
+  --live:      #16a34a;
+  --live-soft: rgba(22, 163, 74, 0.12);
+  --amber:     #d97706;
+  --amber-soft: rgba(217, 119, 6, 0.12);
+  --danger:    #e11d48;
+  --danger-soft: rgba(225, 29, 72, 0.09);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background:
+    radial-gradient(48rem 30rem at 92% -10%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(40rem 26rem at -6% 4%, rgba(16, 185, 129, 0.05), transparent 55%),
+    var(--paper);
+  color: var(--text);
+  font-family: var(--font-sans, "Geist", system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 44px 28px 64px; }
+.wrap.narrow { max-width: 760px; }
+
+/* ---- header block ---- */
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent); font-weight: 600;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+.h1 {
+  margin: 14px 0 0;
+  font-size: clamp(26px, 3.2vw, 36px);
+  line-height: 1.12; letter-spacing: -0.03em; font-weight: 800;
+  color: var(--text);
+}
+.h1 .mono {
+  font-family: var(--font-mono); font-weight: 700;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lead { margin: 14px 0 0; max-width: 64ch; font-size: 15px; line-height: 1.62; color: var(--text-mute); }
+.meta { margin: 14px 0 0; font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+
+.back {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--line-strong);
+  border-radius: 999px; padding: 8px 14px 8px 11px; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--text-mute);
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.back:hover { color: var(--text); border-color: var(--text-faint); transform: translateX(-2px); }
+
+/* ---- service grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+  margin-top: 34px;
+}
+.card {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  padding: 22px;
+  text-align: left;
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s var(--ease);
+}
+.cardClickable { cursor: pointer; }
+.cardClickable:hover {
+  transform: translateY(-4px);
+  border-color: var(--line-strong);
+  box-shadow: 0 28px 56px -34px rgba(13, 22, 41, 0.4);
+}
+.cardDim { opacity: 0.72; }
+
+.cardTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.svcIcon {
+  width: 42px; height: 42px; border-radius: 12px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent);
+}
+.svcIcon.muted { background: rgba(13, 22, 41, 0.05); color: var(--text-faint); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: 999px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+.badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badgeLive { background: var(--live-soft); color: var(--live); }
+.badgeSoon { background: rgba(13, 22, 41, 0.05); color: var(--text-faint); border: 1px solid var(--line); }
+.badgeInfo { background: var(--accent-soft); color: var(--accent); }
+.badgeWarn { background: var(--amber-soft); color: var(--amber); }
+
+.cardTitle { margin: 16px 0 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+.cardDesc { margin: 8px 0 0; font-size: 13.5px; line-height: 1.58; color: var(--text-mute); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 8px;
+  background: var(--paper-2); border: 1px solid var(--line);
+  font-size: 11.5px; color: var(--text-mute);
+}
+.chip svg { color: var(--accent); }
+
+.cardFoot { margin-top: auto; padding-top: 20px; }
+.cardNote { font-size: 12px; color: var(--text-faint); }
+
+/* ---- buttons ---- */
+.btnPrimary, .btnGhost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 18px; border-radius: 11px;
+  font: inherit; font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+  cursor: pointer; border: 1px solid transparent;
+  transition: transform 0.15s var(--ease), box-shadow 0.25s var(--ease),
+              background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.btnBlock { width: 100%; }
+.btnSpread { justify-content: space-between; }
+.btnPrimary {
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  color: #fff;
+  box-shadow: 0 10px 24px -12px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.btnPrimary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 16px 30px -14px var(--accent-glow); }
+.btnPrimary:disabled { opacity: 0.55; cursor: default; }
+.btnGhost { background: var(--card); color: var(--text); border-color: var(--line-strong); }
+.btnGhost:hover:not(:disabled) { border-color: var(--text-faint); }
+.btnSm { padding: 9px 14px; font-size: 13px; }
+
+/* ---- invites callout ---- */
+.invites {
+  margin-top: 26px;
+  border: 1px solid var(--accent-line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--accent-soft), rgba(99, 102, 241, 0.02));
+  padding: 18px 20px;
+}
+.invitesHead { display: flex; align-items: center; gap: 8px; }
+.invitesHead span { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; font-weight: 700; color: var(--accent); }
+.inviteRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 0; border-top: 1px solid var(--accent-line);
+  margin-top: 12px;
+}
+.inviteRow b { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
+.inviteRow small { display: block; font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+/* ---- choice card (big tappable) ---- */
+.choice {
+  display: flex; align-items: center; gap: 16px;
+  width: 100%; text-align: left;
+  margin-top: 22px;
+  padding: 20px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--card); cursor: pointer;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.choice:hover { transform: translateY(-3px); border-color: var(--accent-line); box-shadow: 0 24px 48px -32px rgba(79,70,229,0.4); }
+.choiceIcon {
+  flex: none; width: 48px; height: 48px; border-radius: 13px;
+  display: grid; place-items: center;
+  background: linear-gradient(160deg, var(--ink-3), var(--ink)); color: #fff;
+}
+.choice b { display: block; font-size: 15px; font-weight: 700; color: var(--text); }
+.choice small { display: block; font-size: 13px; color: var(--text-mute); margin-top: 3px; line-height: 1.5; }
+
+/* ---- step indicator ---- */
+.steps { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+.stepDot {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint);
+}
+.stepDot i {
+  width: 22px; height: 22px; border-radius: 7px;
+  display: grid; place-items: center; font-weight: 700;
+  background: var(--paper-2); border: 1px solid var(--line); color: var(--text-faint);
+  font-style: normal;
+}
+.stepDot.on i { background: linear-gradient(180deg, var(--accent-2), var(--accent)); color: #fff; border-color: transparent; }
+.stepDot.on { color: var(--text); }
+.stepLine { flex: 1; height: 1px; background: var(--line); max-width: 40px; }
+
+/* ---- type selector (team / personal) ---- */
+.typeGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; }
+.typeCard {
+  text-align: left; padding: 16px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.typeCard:hover { transform: translateY(-2px); }
+.typeCard.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); }
+.typeCard svg { color: var(--text-faint); margin-bottom: 8px; }
+.typeCard.active svg { color: var(--accent); }
+.typeCard b { display: block; font-size: 14px; font-weight: 700; color: var(--text); }
+.typeCard small { display: block; font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+
+/* ---- form ---- */
+.formCard {
+  margin-top: 22px;
+  border: 1px solid var(--line); border-radius: 18px;
+  background: var(--card); padding: 24px;
+}
+.fields { display: grid; gap: 18px; }
+.field { display: grid; gap: 7px; }
+.label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
+.input {
+  width: 100%; padding: 12px 14px;
+  border-radius: 11px; border: 1px solid var(--line-strong);
+  background: var(--paper-2); color: var(--text);
+  font: inherit; font-size: 14.5px;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), background 0.15s var(--ease);
+}
+.input::placeholder { color: var(--text-faint); }
+.input:focus { outline: none; background: var(--card); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+textarea.input { resize: vertical; min-height: 84px; line-height: 1.5; }
+
+/* ---- inline error ---- */
+.error {
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 14px; border-radius: 11px;
+  border: 1px solid rgba(225, 29, 72, 0.3); background: var(--danger-soft);
+  color: #9f1239; font-size: 13px;
+}
+
+/* ---- success state ---- */
+.successWrap { display: grid; place-items: center; min-height: 70vh; padding: 24px; }
+.successCard {
+  max-width: 460px; width: 100%; text-align: center;
+  border: 1px solid var(--line); border-radius: 22px; background: var(--card);
+  padding: 44px 36px;
+  box-shadow: 0 40px 80px -44px rgba(13, 22, 41, 0.4);
+  animation: rise 0.5s var(--ease) both;
+}
+.successIcon {
+  width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 22px;
+  display: grid; place-items: center;
+  background: var(--live-soft); color: var(--live);
+  border: 1px solid rgba(22, 163, 74, 0.35);
+  animation: pop 0.45s var(--ease) both;
+}
+.successCard h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+.successCard p { margin: 12px 0 28px; font-size: 14.5px; line-height: 1.6; color: var(--text-mute); }
+.successCard strong { color: var(--text); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pop  { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 600px) {
+  .typeGrid { grid-template-columns: 1fr; }
+  .wrap { padding: 32px 18px 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .successCard, .successIcon { animation: none; opacity: 1; }
+}

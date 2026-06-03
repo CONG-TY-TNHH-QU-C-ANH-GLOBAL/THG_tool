@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useLang } from '../i18n/useLang';
 import { getMyPendingInvites, acceptInviteToken, type PendingInvite } from '../services/staffService';
 import { facebookWorkspaceIdOf } from '../service';
+import styles from '../../../platform/onboarding.module.css';
 
 type View = 'choice' | 'form';
 
@@ -85,139 +86,131 @@ export default function CreateFacebookWorkspace() {
     }
   }
 
+  // ---------- success ----------
   if (done && createdWorkspaceId) {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', padding: 24, minHeight: '100%' }}>
-        <div className="card" style={{ maxWidth: 440, textAlign: 'center', padding: 40 }}>
-          <div className="auth-success-icon"><Check size={28} /></div>
-          <h2 style={{ fontSize: 24, marginBottom: 8 }}>
-            {lang === 'vi' ? 'Workspace Facebook đã sẵn sàng' : 'Facebook workspace ready'}
-          </h2>
-          <p style={{ color: 'var(--text-mute)', marginBottom: 28 }}>
-            {lang === 'vi'
-              ? <>Workspace <strong style={{ color: 'var(--text)' }}>{orgName}</strong> đã được khởi tạo cho Facebook Automation.</>
-              : <>Workspace <strong style={{ color: 'var(--text)' }}>{orgName}</strong> initialised for Facebook Automation.</>}
-          </p>
-          <button
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%', justifyContent: 'center' }}
-            onClick={() => navigateToWorkspace(createdWorkspaceId)}
-          >
-            {lang === 'vi' ? 'Vào workspace' : 'Open workspace'} <ArrowRight size={14} />
-          </button>
+      <div className={styles.canvas}>
+        <div className={styles.successWrap}>
+          <div className={styles.successCard}>
+            <div className={styles.successIcon}><Check size={30} /></div>
+            <h2>{lang === 'vi' ? 'Workspace Facebook đã sẵn sàng' : 'Facebook workspace ready'}</h2>
+            <p>
+              {lang === 'vi'
+                ? <>Workspace <strong>{orgName}</strong> đã được khởi tạo cho Facebook Automation.</>
+                : <>Workspace <strong>{orgName}</strong> initialised for Facebook Automation.</>}
+            </p>
+            <button
+              className={`${styles.btnPrimary} ${styles.btnBlock}`}
+              onClick={() => navigateToWorkspace(createdWorkspaceId)}
+            >
+              {lang === 'vi' ? 'Vào workspace' : 'Open workspace'} <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // ---------- choice ----------
   if (view === 'choice') {
     return (
-      <div style={{ flex: 1, overflow: 'auto', padding: '32px 24px' }}>
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => router.push('/services')}
-            style={{ marginBottom: 16, gap: 6 }}
-          >
-            <ArrowLeft size={13} /> {lang === 'vi' ? 'Tất cả services' : 'All services'}
+      <div className={styles.canvas}>
+        <div className={`${styles.wrap} ${styles.narrow}`}>
+          <button type="button" className={styles.back} onClick={() => router.push('/services')}>
+            <ArrowLeft size={14} /> {lang === 'vi' ? 'Tất cả dịch vụ' : 'All services'}
           </button>
-          <div className="eyebrow" style={{ marginBottom: 8 }}>
-            <span className="dot" />PLATFORM / FACEBOOK AUTOMATION
+
+          <div className={styles.eyebrow} style={{ marginTop: 22 }}>
+            <span className={styles.dot} />Facebook Automation
           </div>
-          <h1 style={{ fontSize: 28, marginBottom: 6 }}>
+          <h1 className={styles.h1}>
             {lang === 'vi'
-              ? <>Khởi tạo workspace <span className="title-mono">Facebook</span></>
-              : <>Initialise your <span className="title-mono">Facebook</span> workspace</>}
+              ? <>Khởi tạo workspace <span className={styles.mono}>Facebook</span></>
+              : <>Initialise your <span className={styles.mono}>Facebook</span> workspace</>}
           </h1>
-          <p style={{ color: 'var(--text-mute)', marginBottom: 24, fontSize: 14, maxWidth: 600 }}>
+          <p className={styles.lead}>
             {lang === 'vi'
-              ? 'Workspace là không gian vận hành riêng cho service này — chứa account, leads, browser session, và team. Bạn có thể tạo mới hoặc nhận lời mời từ team có sẵn.'
+              ? 'Workspace là không gian vận hành riêng cho dịch vụ này — chứa tài khoản, khách hàng, phiên trình duyệt và đội ngũ. Bạn có thể tạo mới hoặc nhận lời mời từ đội có sẵn.'
               : 'A workspace is the operations space for this service — accounts, leads, browser sessions, and team. Create your own or accept an invite from an existing team.'}
           </p>
 
           {invites.length > 0 && (
-            <div style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 10, padding: 16, marginBottom: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                <Inbox size={14} color="var(--accent)" />
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>
+            <div className={styles.invites}>
+              <div className={styles.invitesHead}>
+                <Inbox size={15} color="var(--accent)" />
+                <span>
                   {lang === 'vi' ? `${invites.length} LỜI MỜI ĐANG CHỜ` : `${invites.length} PENDING INVITE${invites.length > 1 ? 'S' : ''}`}
                 </span>
               </div>
               {invites.map(inv => (
-                <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '8px 0', borderTop: '1px solid var(--line-strong)' }}>
+                <div key={inv.id} className={styles.inviteRow}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>{inv.org_name || `Workspace #${inv.org_id}`}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{lang === 'vi' ? `Vai trò: ${inv.role}` : `Role: ${inv.role}`}</div>
+                    <b>{inv.org_name || `Workspace #${inv.org_id}`}</b>
+                    <small>{lang === 'vi' ? `Vai trò: ${inv.role}` : `Role: ${inv.role}`}</small>
                   </div>
                   <button
                     type="button"
-                    className="btn btn-primary btn-sm"
+                    className={`${styles.btnPrimary} ${styles.btnSm}`}
                     onClick={() => void handleAcceptInvite(inv)}
                     disabled={acceptingId !== null}
                   >
-                    {acceptingId === inv.id ? (lang === 'vi' ? 'Đang nhận…' : 'Accepting…') : (lang === 'vi' ? 'Nhận invite' : 'Accept')}
-                    <ArrowRight size={12} />
+                    {acceptingId === inv.id ? (lang === 'vi' ? 'Đang nhận…' : 'Accepting…') : (lang === 'vi' ? 'Nhận lời mời' : 'Accept')}
+                    <ArrowRight size={13} />
                   </button>
                 </div>
               ))}
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, marginBottom: 14 }}>
-            <button
-              type="button"
-              className="card"
-              onClick={() => setView('form')}
-              style={{ padding: 18, textAlign: 'left', cursor: 'pointer', background: 'var(--bg-elev)', display: 'flex', alignItems: 'center', gap: 14, color: 'var(--text)' }}
-            >
-              <Building2 size={22} color="var(--accent)" />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{lang === 'vi' ? 'Tạo workspace Facebook mới' : 'Create a new Facebook workspace'}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 3 }}>
-                  {lang === 'vi' ? 'Đặt tên, ngành, dịch vụ + tệp khách mục tiêu. Bạn sẽ là admin.' : 'Set name, industry, services & target audience. You become admin.'}
-                </div>
-              </div>
-              <ArrowRight size={16} color="var(--text-faint)" />
-            </button>
-          </div>
+          <button type="button" className={styles.choice} onClick={() => setView('form')}>
+            <span className={styles.choiceIcon}><Building2 size={22} /></span>
+            <span style={{ flex: 1 }}>
+              <b>{lang === 'vi' ? 'Tạo workspace Facebook mới' : 'Create a new Facebook workspace'}</b>
+              <small>
+                {lang === 'vi' ? 'Đặt tên, ngành, dịch vụ & tệp khách mục tiêu. Bạn sẽ là quản trị viên.' : 'Set name, industry, services & target audience. You become admin.'}
+              </small>
+            </span>
+            <ArrowRight size={18} color="var(--text-faint)" />
+          </button>
 
-          {error && <div className="auth-error" style={{ marginBottom: 12 }}>{error}</div>}
+          {error && <div className={styles.error} style={{ marginTop: 14 }}>{error}</div>}
         </div>
       </div>
     );
   }
 
+  // ---------- form ----------
   const typeOptions = [
     { value: 'team' as const, icon: Building2, label: lang === 'vi' ? 'Team / Doanh nghiệp' : 'Team / Business', desc: lang === 'vi' ? 'Nhiều thành viên, quản lý tập trung' : 'Multiple members, central admin' },
-    { value: 'personal' as const, icon: User, label: lang === 'vi' ? 'Cá nhân' : 'Personal', desc: lang === 'vi' ? 'Sử dụng một mình hoặc freelancer' : 'Solo operator or freelancer' },
+    { value: 'personal' as const, icon: User, label: lang === 'vi' ? 'Cá nhân' : 'Personal', desc: lang === 'vi' ? 'Dùng một mình hoặc freelancer' : 'Solo operator or freelancer' },
   ];
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: '32px 24px' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto' }}>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setView('choice')}
-          style={{ marginBottom: 16, gap: 6 }}
-        >
-          <ArrowLeft size={13} /> {lang === 'vi' ? 'Quay lại' : 'Back'}
+    <div className={styles.canvas}>
+      <div className={`${styles.wrap} ${styles.narrow}`}>
+        <button type="button" className={styles.back} onClick={() => setView('choice')}>
+          <ArrowLeft size={14} /> {lang === 'vi' ? 'Quay lại' : 'Back'}
         </button>
 
-        <div className="eyebrow" style={{ marginBottom: 8 }}>
-          <span className="dot" />PLATFORM / FACEBOOK AUTOMATION / {lang === 'vi' ? 'KHỞI TẠO' : 'INITIALISE'}
+        <div className={styles.steps}>
+          <span className={styles.stepDot}><i>1</i>{lang === 'vi' ? 'Chọn loại' : 'Choose type'}</span>
+          <span className={styles.stepLine} />
+          <span className={`${styles.stepDot} ${styles.on}`}><i>2</i>{lang === 'vi' ? 'Định vị doanh nghiệp' : 'Position business'}</span>
         </div>
-        <h1 style={{ fontSize: 26, marginBottom: 6 }}>
+
+        <div className={styles.eyebrow} style={{ marginTop: 22 }}>
+          <span className={styles.dot} />Facebook Automation
+        </div>
+        <h1 className={styles.h1}>
           {lang === 'vi' ? 'Định vị workspace để AI làm đúng việc của bạn' : 'Position your workspace so AI runs your playbook'}
         </h1>
-        <p style={{ color: 'var(--text-mute)', marginBottom: 22, fontSize: 13, maxWidth: 600 }}>
+        <p className={styles.lead}>
           {lang === 'vi'
-            ? 'Càng rõ định vị, classifier + comment + outbound càng đúng tệp. Có thể chỉnh lại sau ở Data Private.'
-            : 'The clearer you are, the better classifier + outbound match your target. Editable later in Data Private.'}
+            ? 'Càng rõ định vị, AI phân loại khách & nhắn tin càng đúng tệp. Bạn có thể chỉnh lại sau trong phần Dữ liệu.'
+            : 'The clearer you are, the better the AI matches your target. Editable later in Data.'}
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+        <div className={styles.typeGrid}>
           {typeOptions.map(opt => {
             const Icon = opt.icon;
             const active = orgType === opt.value;
@@ -226,69 +219,63 @@ export default function CreateFacebookWorkspace() {
                 key={opt.value}
                 type="button"
                 onClick={() => setOrgType(opt.value)}
-                className="card"
-                style={{
-                  padding: 14,
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  background: active ? 'var(--accent-soft)' : 'var(--bg-elev)',
-                  borderColor: active ? 'var(--accent)' : 'var(--line)',
-                  color: 'var(--text)',
-                }}
+                className={`${styles.typeCard} ${active ? styles.active : ''}`}
               >
-                <Icon size={18} style={{ color: active ? 'var(--accent)' : 'var(--text-faint)', marginBottom: 6 }} />
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{opt.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 3 }}>{opt.desc}</div>
+                <Icon size={20} />
+                <b>{opt.label}</b>
+                <small>{opt.desc}</small>
               </button>
             );
           })}
         </div>
 
-        <div className="auth-fields">
-          <label className="field">
-            <span className="field-label">
-              {orgType === 'personal'
-                ? (lang === 'vi' ? 'TÊN BẠN / THƯƠNG HIỆU' : 'YOUR NAME / BRAND')
-                : (lang === 'vi' ? 'TÊN WORKSPACE' : 'WORKSPACE NAME')}
-            </span>
-            <input className="input" placeholder={orgType === 'personal' ? 'Nguyễn Văn A' : 'Công ty TNHH ABC'} value={orgName} onChange={e => setOrgName(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">{lang === 'vi' ? 'NGÀNH / MÔ HÌNH KINH DOANH' : 'INDUSTRY / BUSINESS MODEL'}</span>
-            <input className="input" placeholder={lang === 'vi' ? 'VD: POD, fulfillment, logistics, BĐS, recruitment' : 'e.g. POD, fulfillment, logistics, real estate, recruitment'} value={businessIndustry} onChange={e => setBusinessIndustry(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">{lang === 'vi' ? 'SẢN PHẨM / DỊCH VỤ' : 'PRODUCTS / SERVICES'}</span>
-            <input className="input" placeholder={lang === 'vi' ? 'Bạn cung cấp gì cho khách' : 'What you offer customers'} value={services} onChange={e => setServices(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">{lang === 'vi' ? 'TỆP KHÁCH MỤC TIÊU' : 'TARGET CUSTOMERS'}</span>
-            <input className="input" placeholder={lang === 'vi' ? 'Ai là người bạn muốn tìm trên Facebook' : 'Who you want to find on Facebook'} value={targetCustomers} onChange={e => setTargetCustomers(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">{lang === 'vi' ? 'MÔ TẢ TỰ DO (TUỲ CHỌN)' : 'FREE-FORM DESCRIPTION (OPTIONAL)'}</span>
-            <textarea className="input" rows={3} placeholder={lang === 'vi' ? 'USP, vùng phục vụ, điều cấm với automation…' : 'USP, region, automation guardrails…'} value={businessProfile} onChange={e => setBusinessProfile(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="field-label">{lang === 'vi' ? 'WEBSITE / DOMAIN (TUỲ CHỌN)' : 'WEBSITE / DOMAIN (OPTIONAL)'}</span>
-            <input className="input" placeholder="abc.vn" value={domain} onChange={e => setDomain(e.target.value)} />
-          </label>
+        <div className={styles.formCard}>
+          <div className={styles.fields}>
+            <label className={styles.field}>
+              <span className={styles.label}>
+                {orgType === 'personal'
+                  ? (lang === 'vi' ? 'Tên bạn / Thương hiệu' : 'Your name / Brand')
+                  : (lang === 'vi' ? 'Tên workspace' : 'Workspace name')}
+              </span>
+              <input className={styles.input} placeholder={orgType === 'personal' ? 'Nguyễn Văn A' : 'Công ty TNHH ABC'} value={orgName} onChange={e => setOrgName(e.target.value)} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{lang === 'vi' ? 'Ngành / Mô hình kinh doanh' : 'Industry / Business model'}</span>
+              <input className={styles.input} placeholder={lang === 'vi' ? 'VD: POD, fulfillment, logistics, BĐS, tuyển dụng' : 'e.g. POD, fulfillment, logistics, real estate, recruitment'} value={businessIndustry} onChange={e => setBusinessIndustry(e.target.value)} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{lang === 'vi' ? 'Sản phẩm / Dịch vụ' : 'Products / Services'}</span>
+              <input className={styles.input} placeholder={lang === 'vi' ? 'Bạn cung cấp gì cho khách' : 'What you offer customers'} value={services} onChange={e => setServices(e.target.value)} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{lang === 'vi' ? 'Tệp khách mục tiêu' : 'Target customers'}</span>
+              <input className={styles.input} placeholder={lang === 'vi' ? 'Ai là người bạn muốn tìm trên Facebook' : 'Who you want to find on Facebook'} value={targetCustomers} onChange={e => setTargetCustomers(e.target.value)} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{lang === 'vi' ? 'Mô tả tự do (tuỳ chọn)' : 'Free-form description (optional)'}</span>
+              <textarea className={styles.input} rows={3} placeholder={lang === 'vi' ? 'Lợi thế, vùng phục vụ, điều cấm với automation…' : 'USP, region, automation guardrails…'} value={businessProfile} onChange={e => setBusinessProfile(e.target.value)} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{lang === 'vi' ? 'Website / Domain (tuỳ chọn)' : 'Website / Domain (optional)'}</span>
+              <input className={styles.input} placeholder="abc.vn" value={domain} onChange={e => setDomain(e.target.value)} />
+            </label>
+          </div>
+
+          {error && <div className={styles.error} style={{ marginTop: 16 }}>{error}</div>}
+
+          <button
+            type="button"
+            className={`${styles.btnPrimary} ${styles.btnBlock}`}
+            style={{ marginTop: 18 }}
+            onClick={handleSetup}
+            disabled={loading}
+          >
+            {loading
+              ? (lang === 'vi' ? 'Đang tạo workspace…' : 'Creating workspace…')
+              : (lang === 'vi' ? 'Tạo workspace Facebook' : 'Create Facebook workspace')}
+            <ArrowRight size={16} />
+          </button>
         </div>
-
-        {error && <div className="auth-error" style={{ marginTop: 14 }}>{error}</div>}
-
-        <button
-          type="button"
-          className="btn btn-primary btn-lg"
-          style={{ width: '100%', justifyContent: 'center', marginTop: 18, opacity: loading ? 0.6 : 1 }}
-          onClick={handleSetup}
-          disabled={loading}
-        >
-          {loading
-            ? (lang === 'vi' ? 'Đang tạo workspace…' : 'Creating workspace…')
-            : (lang === 'vi' ? 'Tạo workspace Facebook' : 'Create Facebook workspace')}
-          <ArrowRight size={14} />
-        </button>
       </div>
     </div>
   );
