@@ -19,7 +19,7 @@ import (
 // later to migrate). Without versioning, a fast-path that probes any
 // long-lived table would skip the body and silently leave the newer
 // tables missing, breaking subsequent file migrations.
-const schemaBootstrapVersion = 10
+const schemaBootstrapVersion = 11
 
 // migrate runs the legacy SQLite schema bootstrap: 150+ CREATE TABLE
 // IF NOT EXISTS + ALTER TABLE statements that make a fresh DB usable.
@@ -1249,6 +1249,13 @@ func (s *Store) migrate() error {
 		updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (org_id, user_id)
 	)`)
+
+	// Organic Sales Network PR5 (schema v11): Interaction Events are 2-dimensional
+	// (InteractionType × Channel), NOT Facebook-centric. action_ledger.action_type
+	// is the InteractionType; channel records WHERE it happened so attribution /
+	// leaderboard work uniformly across FACEBOOK / EMAIL / TELEGRAM / ... Default
+	// 'facebook' keeps every existing row correct (additive, backward-compatible).
+	s.db.Exec(`ALTER TABLE action_ledger ADD COLUMN channel TEXT NOT NULL DEFAULT 'facebook'`)
 
 	// Marker row written AFTER every other DDL. The fast-path probe
 	// (schemaAlreadyApplied) reads this; on a fresh DB the row appears

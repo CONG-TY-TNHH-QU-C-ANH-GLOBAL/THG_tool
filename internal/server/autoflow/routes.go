@@ -20,6 +20,8 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 
 	group.Get("/staff", h.autoflowGetStaff)
 	group.Put("/staff/:id/kpi", adminOnly, h.autoflowUpdateKPI)
+	// Attribution Layer: derived contribution leaderboard + champion (created_by).
+	group.Get("/contribution-leaderboard", h.autoflowContributionLeaderboard)
 
 	group.Get("/kpi/config", h.autoflowGetKPIConfig)
 	group.Put("/kpi/config", adminOnly, h.autoflowUpdateKPIConfig)
