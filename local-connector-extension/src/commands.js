@@ -145,7 +145,7 @@ var THGCommands = globalThis.THGCommands || (() => {
     return { tab, matched: tabUrlMatchesExpected(tab.url, expectedUrl) };
   }
 
-  async function navigateAndVerify(navigateTo) {
+  async function navigateAndVerify(navigateTo, opts = {}) {
     // Try up to 3 times: open tab, wait ready, then verify URL matches.
     // Facebook can redirect /groups/<id> to newsfeed when the user is logged
     // out or hits a checkpoint. Retrying without verification would mask that
@@ -154,6 +154,17 @@ var THGCommands = globalThis.THGCommands || (() => {
     // PR8A: capture the navigation trace (from/to/duration/attempts + the last
     // actual landed URL) so the comment executor and the nav-failure path can
     // report a precise, reproducible reason instead of a bare redirect.
+    //
+    // PR8B-Redirect (settleMs): the post-ready settle is configurable. CRAWL
+    // keeps the default 5000ms (the feed needs time to virtual-render). COMMENT
+    // passes a SHORT settle (~800ms) on purpose — ROOT_CAUSE_REPORT proved the
+    // target post loads+stabilises by ~t+2.9s but Facebook's SPA router resets
+    // the tab to the home feed at ~t+8.4s; the old fixed 5000ms settle handed
+    // the content script off at exactly that reset edge, so the comment executor
+    // always entered on home. A short settle hands off inside the stable window
+    // so gate-1 finds the post and types before the reset. gate-1 still polls
+    // for article stability, so a small settle does not risk acting too early.
+    const settleMs = typeof opts.settleMs === 'number' ? opts.settleMs : 5000;
     const navStart = Date.now();
     let lastActual = '';
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -164,7 +175,7 @@ var THGCommands = globalThis.THGCommands || (() => {
       } catch {
         // continue; verifyTabAtExpected will re-check tab state
       }
-      await THGShared.delay(5000); // SPA render
+      await THGShared.delay(settleMs); // SPA render (crawl=5000; comment=short, beats FB reset)
       const { tab, matched } = await verifyTabAtExpected(info.tab.id, navigateTo);
       lastActual = tab?.url || lastActual;
       if (matched) {

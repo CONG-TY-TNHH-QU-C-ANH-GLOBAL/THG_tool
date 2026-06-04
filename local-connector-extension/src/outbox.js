@@ -544,7 +544,12 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     const navWatchStart = Date.now();
     let crawlInfo;
     try {
-      crawlInfo = await THGCommands.navigateAndVerify(targetUrl);
+      // PR8B-Redirect: short settle for the comment path. ROOT_CAUSE_REPORT
+      // (2026-06-04) proved the post is stable ~t+2.9s but FB's SPA router
+      // resets to home ~t+8.4s; the crawler's 5000ms settle handed off at that
+      // exact edge. 800ms hands off inside the stable window so gate-1 types
+      // before the reset. (Crawl keeps the 5000ms default.)
+      crawlInfo = await THGCommands.navigateAndVerify(targetUrl, { settleMs: 800 });
     } catch (err) {
       // PR8A: navigateAndVerify exhausted 3 retries — the post permalink never
       // held (FB redirected every attempt). This is target_not_reached, not the

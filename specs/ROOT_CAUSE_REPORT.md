@@ -1,11 +1,12 @@
 # Facebook Comment Automation — ROOT CAUSE REPORT
 
-> **STATUS: AWAITING EVIDENCE.** This report is a SCAFFOLD. It must NOT be
-> filled from inference. It is populated ONLY from the PR8A Evidence Pack after
-> **≥20 real `comment_all_leads` attempts** have been run and their
-> `execution_attempts.evidence_json` collected. Until the buckets below carry
-> real counts + screenshots, **no PR8B may be designed** (see the gate at the
-> bottom).
+> **STATUS: ROOT CAUSE ESTABLISHED (2026-06-04).** Populated from a real
+> 20-attempt run on org 5 (account 102, group 1312868109620530). Of the 20
+> rows, **7 carry a classified Evidence Pack and ALL 7 are identical: Group A —
+> Redirect Failure**, with the `nav_events` trace naming the culprit as the
+> **Facebook SPA router** (`history.pushState` → home). 13 rows are unclassified
+> (empty outcome — see the caveat). **Dominant root cause = A. Redirect → PR8B
+> direction = `PR8B-Redirect` (chosen).**
 
 - **Owner of the 20-run gate:** Operator (founder). Claude cannot run the live
   browser; it can only read the evidence the runs produce and classify it.
@@ -97,45 +98,127 @@ ORDER BY n DESC;
 
 ---
 
-## Findings — FILL ONLY FROM REAL DATA
+## Findings — from the 2026-06-04 run (org 5 / acct 102 / group 1312868109620530)
 
-> Replace every `?` below from the 20-run query output. Do not estimate.
+Query 1 (phase distribution, last 20 failed):
 
-| Group | Count | % of 20 | Confidence | Representative screenshot | Representative `nav_events` |
-|---|---|---|---|---|---|
-| A. Redirect Failure       | ? | ? | ? | `?` | `?` |
-| B. Gate Failure           | ? | ? | ? | `?` | `?` |
-| C. Composer Failure       | ? | ? | ? | `?` | `?` |
-| D. Typing Failure         | ? | ? | ? | `?` | `?` |
-| E. Verification Failure   | ? | ? | ? | `?` | `?` |
-| (human_required: login/checkpoint) | ? | ? | ? | `?` | — |
-
-**Dominant root cause = `?`** (the single highest-count group).
-
-### For group A (Redirect), the `nav_events` verdict (who pulled the tab to home)
-
-Read the event whose `url` is the home/feed URL:
-
-| `kind` / `qualifiers` | Culprit |
+| `phase` | n |
 |---|---|
-| `committed` + `client_redirect` / `server_redirect` | **Facebook** top-level redirect |
-| `history` | **Facebook SPA router** reset |
-| `committed`, `typed`/`auto_toplevel`, no redirect qualifier | **Our `chrome.tabs` code** |
+| `(empty)` | 13 |
+| `navigation` | 7 |
 
-Fill: `?`
+Of the 7 rows that carry a classified Evidence Pack, **all 7 are identical**:
+`outcome=target_not_reached`, `phase=navigation`, `redirect_class=home`,
+`landed_url=<the post permalink>` (background verified the post DID load),
+`final_url=https://www.facebook.com/` (content script saw home), `article_count=2`
+(the 2 home-feed articles, not the target), `composer_count=0`.
+
+| Group | Count | % of classified | Confidence | Evidence |
+|---|---|---|---|---|
+| **A. Redirect Failure** | **7** | **100%** | **HIGH** | ids 220,217,214,211,208,205,202; screenshot `data/evidence/5/ob102-att211-1780558301.jpg` |
+| B. Gate Failure         | 0 | 0% | — | — |
+| C. Composer Failure     | 0 | 0% | — | — |
+| D. Typing Failure       | 0 | 0% | — | — |
+| E. Verification Failure | 0 | 0% | — | — |
+| (human_required)        | 0 | 0% | — | redirect_class is `home`, never `login`/`checkpoint` |
+| (unclassified — empty)  | 13 | — | — | empty outcome; see caveat below |
+
+**DOMINANT ROOT CAUSE = A. Redirect Failure (7/7 classified, 100%).**
+
+### `nav_events` verdict — WHO pulled the tab to home (id 220)
+
+```
+t+17ms    before     .../posts/2031780854395915/    ← our nav to the POST starts
+t+374ms   committed  link    .../posts/...          ← committed to the POST
+t+670ms   history    link    .../posts/...          ← still on post
+t+2865ms  completed          .../posts/...          ← POST fully loaded (we are ON it)
+t+8447ms  history    link    https://www.facebook.com/   ← FB SPA ROUTER → home
+t+8451ms  history    link    https://www.facebook.com/   ← (again)
+```
+
+| `kind` / `qualifiers` of the home event | Culprit | Present here? |
+|---|---|---|
+| `committed` + `client_redirect`/`server_redirect` | Facebook top-level redirect | ✗ |
+| `history` (onHistoryStateUpdated) | **Facebook SPA router (`history.pushState`)** | ✓ **(t+8447, t+8451)** |
+| `committed` + `typed`/`auto_toplevel` no qualifier | our `chrome.tabs` code | ✗ |
+
+**Verdict: Facebook's own client-side SPA router resets the tab to the home feed
+~8.4 s after the tab opens.** Not an HTTP redirect, not our code.
+
+### The decisive timing finding
+
+The post was present and STABLE from **t+2865 → t+8447 (~5.5 s)** — commenting was
+fully possible in that window. But `commands.js navigateAndVerify` runs a FIXED
+`delay(5000)` before it verifies the URL and hands off to the content script, so
+the comment executor only enters at **~t+8.4 s — exactly when FB resets**. We
+arrive to comment at the precise moment the SPA router pulls the tab to home, so
+gate-1 polls the home feed, never finds the target article, and reports
+`target_not_reached` / `redirect_class=home`. The 5 s settle (tuned for CRAWL
+feed-render) wastes the entire stable window for the COMMENT path.
+
+Two live sub-hypotheses remain, which PR8B-Redirect's first move discriminates:
+- **A1 (timer):** the reset is a ~8 s timer from tab-open, independent of us.
+  Then handing off earlier (inside the stable window) makes the comment land.
+- **A2 (activity-triggered):** the reset is triggered by our content-script
+  activity (its closeness to our ~8.4 s handoff is suspicious). Then handing off
+  earlier moves the reset earlier too — the new `nav_events` would show the
+  `history`→home event right after the (now earlier) handoff. THAT would be the
+  first evidence that DOM automation on the permalink surface is platform-limited
+  → justifies a technology change (m.facebook.com / GraphQL) as PR8C.
+
+### Caveat — 13 unclassified rows (empty outcome)
+
+13 of 20 rows have empty `outcome`/`phase`. They alternate 1-classified : 2-empty,
+which suggests ~3 execution_attempts rows per outbound where only one was
+finalized with evidence. This is a measurement gap, not a competing root cause
+(no row shows gate/composer/typing/submit/verify). Investigate with:
+
+```sql
+SELECT id, outbound_id, status, outcome, attempt,
+       length(evidence_json) AS ev_len, started_at, finished_at
+FROM execution_attempts WHERE action_type='comment' ORDER BY id DESC LIMIT 20;
+```
+
+If the empties are `status='verifying'` rows that never reached
+`FinishExecutionAttempt`, that is an orphaned-attempt cleanup item — tracked
+separately from the delivery root cause.
 
 ---
 
-## PR8B GATE — DO NOT CROSS WITHOUT THE TABLE ABOVE FILLED
+## PR8B — DIRECTION CHOSEN: `PR8B-Redirect`
 
-Per the PR8 mandate, exactly **one** PR8B direction is chosen, and **only after**
-the dominant root cause is established by the real counts above:
+The dominant root cause is **A. Redirect (100% of classified)**, so exactly one
+direction is taken: **PR8B-Redirect**. No other direction is touched (no Gate /
+Composer / Verify work).
 
-- Dominant = **A. Redirect** → `PR8B-Redirect`
-- Dominant = **B. Gate** → `PR8B-Gate`
-- Dominant = **C. Composer** → `PR8B-Composer`
-- Dominant = **E. Verify** → `PR8B-Verify`
+**Why NOT a technology change yet.** The mandate allows a tech change (Playwright /
+GraphQL / m.facebook) ONLY when evidence proves the current technology is
+platform-limited. The evidence here shows a **timing collision** (our fixed 5 s
+settle hands off at the FB reset edge) — fixable WITHIN the current DOM-automation
+stack. A tech change is therefore NOT justified yet. It becomes justified only if
+sub-hypothesis **A2** is confirmed by the next run (reset follows our handoff even
+when handoff moves earlier).
 
-> **No PR8B design appears in this repo until this report's findings table is
-> populated from ≥20 real attempts.** Designing it earlier violates the
-> "Evidence trước Fix" rule.
+### PR8B-Redirect — step 1 (shipped 2026-06-04)
+
+Give the COMMENT path a short settle so the content script enters the post while
+it is still in the stable window (t≈3–4 s), instead of at the ~8.4 s reset edge:
+
+- `commands.js navigateAndVerify(navigateTo, opts)` — new optional `opts.settleMs`
+  (default **5000**, crawler UNCHANGED).
+- `outbox.js executeInFacebookTab` — comment nav passes `{ settleMs: 800 }`, so
+  URL-verify + handoff happen ~4 s earlier. gate-1 then polls the post during the
+  proven-stable window and types before FB's SPA reset.
+
+This is also the **A1/A2 discriminator**: re-run 20 attempts and read `nav_events`.
+- Comment lands (or `nav_events` shows NO `history`→home before our comment) →
+  **A1 (timer) confirmed, root cause fixed.** Close PR8.
+- `nav_events` shows `history`→home again, now right after the earlier handoff →
+  **A2 (activity-triggered) confirmed.** Open **PR8C** for the technology change
+  (m.facebook.com mbasic surface has no SPA router → no pushState reset; or the
+  GraphQL track). Only then is a tech change evidence-backed.
+
+### Verification gate for step 1
+Reload extension (bump pending), run 20 `comment_all_leads`, then re-run
+`scripts/rootcause_query.py` / Query 1 + Query 3. Update this section with the
+new distribution and the A1-vs-A2 verdict.
