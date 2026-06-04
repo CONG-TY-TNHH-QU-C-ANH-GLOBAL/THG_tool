@@ -70,13 +70,43 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     }
   }
 
+  // labelMatchesDismiss tests whether a normalized label names a dismiss
+  // control, using WHOLE-WORD matching — never a raw substring.
+  //
+  // PR8C-Forensics root cause (2026-06-04): the old `label.includes(key)` with
+  // key='ok' matched "facebook" ("faceb-OO-K" contains "ok"), so the top-nav
+  // Facebook LOGO (aria-label="Facebook") was treated as an "OK" dismiss button.
+  // dismissBlockingOverlays then clicked the logo at t+7ms → FB's SPA router
+  // pushState'd the tab to the home feed at t+11ms → every comment failed
+  // target_not_reached/redirect_class=home. The forensic last_op_before_reset
+  // was literally `dispatchEvent click a[role=link][al=Facebook]`. Word-boundary
+  // matching makes "ok" require its own token, so "facebook" no longer matches.
+  function labelMatchesDismiss(label, keys) {
+    return keys.some((key) => {
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp('(^|\\W)' + escaped + '($|\\W)').test(label);
+    });
+  }
+
   async function dismissBlockingOverlays() {
     const labels = ['not now', 'ok', 'close', 'later', 'maybe later', 'remember password', 'de sau', 'luc khac', 'khong phai bay gio'];
-    const candidates = Array.from(document.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible);
+    // Candidates are real button controls only. The old selector included a bare
+    // `[aria-label]`, which matched the top-nav `a[role="link"]` Facebook logo —
+    // a NAVIGATION link, never an overlay-dismiss control. Restricting to
+    // button-shaped elements (role="button" / <button>) excludes nav links and
+    // is the structural half of the PR8C fix (word-boundary matching is the
+    // other half). A real dismiss control is a button, not a link to home.
+    const candidates = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     for (const el of candidates) {
+      // Defense-in-depth: never click an element that navigates (an anchor with
+      // an href, or anything still carrying role="link"). Overlay dismiss never
+      // navigates; a stray match that does would re-introduce the logo bug.
+      const role = norm(el.getAttribute?.('role'));
+      const isNavLink = role === 'link' || (el.tagName === 'A' && !!el.getAttribute?.('href') && role !== 'button');
+      if (isNavLink) continue;
       const label = labelOf(el);
       if (!label) continue;
-      if (labels.some(key => label.includes(key))) {
+      if (labelMatchesDismiss(label, labels)) {
         if (clickLikeUser(el)) {
           await wait(500);
           return 'clicked';

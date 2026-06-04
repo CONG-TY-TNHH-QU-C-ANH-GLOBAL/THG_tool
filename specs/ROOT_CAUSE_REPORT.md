@@ -303,3 +303,55 @@ ORDER BY id DESC LIMIT 1;
 Reload extension to **0.5.21**, run `comment_all_leads`, then run the forensics
 SQL above and paste `last_op_before_reset` + `reset_stack` + `counts`. That names
 the trigger and picks the fix deterministically.
+
+---
+
+## PR8C-Forensics — RESULT (2026-06-04): TRIGGER NAMED. It was OUR code. (fix in 0.5.22)
+
+The forensics SQL returned, unambiguously:
+
+```
+last_op_before_reset : {"t":7,"op":"dispatchEvent","detail":"click a[role=link][al=Facebook]"}
+counts               : {"click":1,"dispatchEvent":7,"innerHTML.get":1,"innerHTML_bytes":5566912,
+                        "innerText.get":61,"innerText_bytes":4879,"querySelectorAll":131}
+push_states          : [ {"t":11,"url":"/","method":"pushState",   stack:<FB router Object.a>},
+                         {"t":15,"url":"/","method":"replaceState", stack:<FB router Object.l>} ]
+reset_stack          : Error at post → history.pushState → Object.a [as pushState]  (FB SPA router)
+```
+
+Read literally:
+- **t+7 ms — OUR content script `clickLikeUser`d `a[role=link][aria-label="Facebook"]`** — the
+  top-nav Facebook **logo** (a link to home). `counts` confirms exactly ONE
+  clickLikeUser (1 `click` + its 7 synthetic `dispatchEvent`s).
+- **t+11 ms — FB's SPA router reacts to that click and `pushState("/")`** — i.e.
+  FB navigated to home **because we clicked the home logo**, exactly as it would
+  for a real user. The `reset_stack` is FB's ordinary history wrapper, NOT an
+  anti-bot / integrity handler.
+
+### Root cause (definitive)
+`dismissBlockingOverlays()` (runs first in `executeComment` to close popups)
+matched dismiss keywords with a raw substring `label.includes(key)`. The key
+**`'ok'` is a substring of `"facebook"`** (faceb-**OO**-K). So the Facebook logo
+(`aria-label="Facebook"`) was classified as an "OK" dismiss button and clicked,
+navigating us to the feed. This is **NOT** A1/A2, **NOT** anti-automation, **NOT**
+a platform limit — it is a two-character substring false-match in our own code.
+
+This is precisely why the technology change was halted: www→mbasic/GraphQL would
+have kept `dismissBlockingOverlays` and **reproduced the bounce**, burning weeks.
+
+### Fix (0.5.22, within-stack — no tech change)
+`content/outbound.js dismissBlockingOverlays`:
+1. **Whole-word matching** (`labelMatchesDismiss`, `(^|\W)key($|\W)`) instead of
+   substring — `"ok"` no longer matches `"facebook"`.
+2. **Button-only candidate set** (`div[role=button], button, a[role=button],
+   span[role=button]`) — drops the bare `[aria-label]` that caught the
+   `a[role=link]` logo.
+3. **Defense-in-depth:** skip any candidate that is a navigation link
+   (`role="link"`, or an `<a href>` without `role="button"`).
+
+### Verification gate (0.5.22)
+Reload to **0.5.22**, run `comment_all_leads`. Expected: the forensic
+`last_op_before_reset` no longer shows the logo click; the tab stays on the post;
+gate-1 finds the article and proceeds past `navigation` into
+`composer`/`typing`/`submit`. Re-run Query 1 — `navigation` should collapse. If a
+real `dom_verified` lands, **PR8 is closed.**
