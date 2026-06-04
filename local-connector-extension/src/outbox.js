@@ -488,6 +488,38 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     );
   }
 
+  // forensicPatchMain is injected into the COMMENT tab's MAIN world (page
+  // context) via chrome.scripting.executeScript before the content script
+  // handoff. PR8C-Forensics: it patches history.pushState/replaceState so when
+  // Facebook resets the tab to the home feed we capture the EXACT timestamp +
+  // FB's own stack trace at the call site, and forwards it to the isolated
+  // content script (content/forensics.js) via window.postMessage. Must be a
+  // self-contained function (it is serialised by executeScript — no closure
+  // refs). Idempotent: guards against double-patch. Passive: always calls the
+  // original; never changes navigation behaviour.
+  function forensicPatchMain() {
+    try {
+      if (window.__thgForensicPatched) return;
+      window.__thgForensicPatched = true;
+      const post = (method, url) => {
+        try {
+          window.postMessage({
+            source: 'THG_FORENSIC_PUSHSTATE',
+            method,
+            url: String(url || location.href),
+            ts: Date.now(),
+            stack: String((new Error()).stack || '').slice(0, 900),
+          }, '*');
+        } catch (_) {}
+      };
+      const op = history.pushState;
+      history.pushState = function (s, t, url) { post('pushState', url); return op.apply(this, arguments); };
+      const or = history.replaceState;
+      history.replaceState = function (s, t, url) { post('replaceState', url); return or.apply(this, arguments); };
+      window.addEventListener('popstate', () => post('popstate', location.href), true);
+    } catch (_) {}
+  }
+
   // executeInFacebookTab navigates the FB tab to the target URL and
   // dispatches the outbound command into the page-context content script.
   //
@@ -601,6 +633,15 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       await chrome.tabs.remove(tabId).catch(() => {});
       throw new Error('tab_busy_executing');
     }
+
+    // PR8C-Forensics: install the MAIN-world history.pushState interceptor
+    // BEFORE handing off to the content script, so the FB reset that fires
+    // ~100ms after our content-script activity is captured with its timestamp +
+    // stack trace. Best-effort (needs Chrome 111+ for world:'MAIN'); a failure
+    // here must never block delivery.
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: forensicPatchMain });
+    } catch (_) { /* forensics injection is best-effort */ }
 
     let result;
     try {

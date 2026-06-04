@@ -218,7 +218,88 @@ This is also the **A1/A2 discriminator**: re-run 20 attempts and read `nav_event
   (m.facebook.com mbasic surface has no SPA router → no pushState reset; or the
   GraphQL track). Only then is a tech change evidence-backed.
 
-### Verification gate for step 1
-Reload extension (bump pending), run 20 `comment_all_leads`, then re-run
-`scripts/rootcause_query.py` / Query 1 + Query 3. Update this section with the
-new distribution and the A1-vs-A2 verdict.
+### Verification gate for step 1 — RESULT (2026-06-04, build 0.5.20): A2 CONFIRMED
+
+Step 1 did NOT change the outcome. Query 1 on 0.5.20 is unchanged: **7 navigation
+/ 0 in any other group** (+13 empty). The faster settle only moved the reset
+earlier — a controlled before/after that settles A1 vs A2:
+
+| | 0.5.19 (settle 5000) id 220 | 0.5.20 (settle 800) id 316 |
+|---|---|---|
+| `completed` | t+2865 | t+4715 |
+| handoff (≈ready+settle) | ≈ t+8365 | ≈ t+6015 |
+| **FB reset → home** (`history`) | t+8447 | t+6162 |
+| **reset − handoff** | **+82 ms** | **+147 ms** |
+
+Moving the handoff −2350 ms moved the reset −2285 ms; the reset fires ~100 ms
+**after** the content-script handoff in BOTH builds. The reset is **triggered by
+our content-script activity on the permalink surface**, not a fixed timer (**A2**).
+Corroborated by the historical baseline: the operator can open these same post
+URLs manually and comment fine — manual works, automation is bounced. ⇒ the www
+permalink DOM-automation surface is platform-limited.
+
+**Conclusion: A2 → open PR8C (technology change), evidence-justified.** Step 1
+stays in (a short comment settle is harmless and correct) but is NOT the fix.
+
+---
+
+## PR8C-Forensics — name the trigger BEFORE any technology change (shipped 2026-06-04, build 0.5.21)
+
+**Technology-change proposals (mbasic / GraphQL / Playwright) are HALTED.** The
+evidence proves FB fires `history.pushState`→home ~100 ms after our content
+script attaches; it does NOT prove WHAT we did triggers it. Changing the surface
+(www→mbasic) while keeping the SAME content-script interaction model (DOM scan,
+synthetic clicks, large innerHTML reads, observers) risks reproducing the bounce
+on the new surface — weeks of refactor for the same failure. Architect ruling:
+identify the exact last operation before the reset, or exhaustively rule the
+content-script interaction model out, FIRST.
+
+### What PR8C-Forensics instruments
+`content/forensics.js` monkey-patches the **isolated world** so EVERY DOM op our
+content script performs in the comment window is timestamped (it does NOT touch
+the page's own MAIN-world calls), and `src/outbox.js` injects a **MAIN-world**
+`history.pushState`/`replaceState` interceptor that captures FB's reset with a
+**stack trace**. Persisted into `evidence_json.nav_diagnostic.forensics`:
+
+| Field | Answers |
+|---|---|
+| `counts` | how many `querySelectorAll` / `querySelector` / `click` / `focus` / `dispatchEvent` / `MutationObserver.observe`; `innerHTML_bytes`, `innerText_bytes` totals |
+| `timeline[]` | the last ~80 ops, each `{t (ms), op, detail}` (selector+result count, target tag) |
+| `push_states[]` | every history mutation with FB's `stack` at the call site |
+| `reset_t_ms` / `reset_stack` | ms to the first home/feed pushState, and FB's stack there |
+| `last_op_before_reset` | **the prime suspect** — our final op at/before the reset |
+
+### Read it (superadmin SQL)
+```sql
+SELECT id,
+  json_extract(evidence_json,'$.nav_diagnostic.forensics.reset_t_ms')            AS reset_ms,
+  json_extract(evidence_json,'$.nav_diagnostic.forensics.last_op_before_reset')  AS last_op,
+  json_extract(evidence_json,'$.nav_diagnostic.forensics.counts')                AS counts,
+  json_extract(evidence_json,'$.nav_diagnostic.forensics.reset_stack')           AS fb_reset_stack,
+  json_extract(evidence_json,'$.nav_diagnostic.forensics.push_states')           AS push_states,
+  json_extract(evidence_json,'$.nav_diagnostic.forensics.timeline')              AS timeline
+FROM execution_attempts
+WHERE action_type='comment' AND outcome='target_not_reached'
+ORDER BY id DESC LIMIT 1;
+```
+
+### How the forensics verdict routes the (still un-chosen) PR8C fix
+- `last_op_before_reset` is a **specific noisy op** (e.g. `dispatchEvent pointerdown`
+  from dismissBlockingOverlays, or a giant `innerHTML.get` from currentFBUserID),
+  and `reset_stack` points at an FB visibility/integrity handler → the trigger is
+  OUR behaviour, not the surface → **quiet-entry fix within the current stack**
+  (strip that op) is the right move, NO tech change.
+- The reset fires with **no preceding content-script op** (`last_op_before_reset`
+  null but reset present), or after only passive reads → the surface bounces
+  automated deep-links regardless of what we do → THAT is the evidence that the
+  www permalink surface is platform-limited → only THEN propose a tech change
+  (mbasic server-rendered surface / GraphQL), with success probabilities.
+
+> **No technology change is designed until the forensics output above is read
+> from a real run.** PR8B-Redirect step 1 (short settle) stays in (harmless), but
+> is confirmed NOT the fix.
+
+### Verification gate
+Reload extension to **0.5.21**, run `comment_all_leads`, then run the forensics
+SQL above and paste `last_op_before_reset` + `reset_stack` + `counts`. That names
+the trigger and picks the fix deterministically.

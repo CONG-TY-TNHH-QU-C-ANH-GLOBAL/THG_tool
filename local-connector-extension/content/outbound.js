@@ -540,6 +540,13 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   }
 
   async function executeComment(content, targetUrl = '', executionId = '', opts = {}) {
+    // PR8C-Forensics: arm the interaction recorder BEFORE the first DOM op
+    // (dismissBlockingOverlays already scans + synthetic-clicks). Every
+    // querySelectorAll / click / focus / dispatchEvent / innerHTML read /
+    // MutationObserver attach our content script performs is now timestamped, so
+    // commentResult can name the last op before FB's home pushState. install()
+    // is a no-op-safe if the module is missing.
+    if (globalThis.THGForensics) THGForensics.install();
     await dismissBlockingOverlays();
 
     // LIFECYCLE INSTRUMENTATION — captured at every stage so the
@@ -810,6 +817,18 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // PR8A: attach the structured landing telemetry (persists to evidence_json).
     if (proof && navDiag) {
       proof.nav_diagnostic = navDiag;
+    }
+    // PR8C-Forensics: fold the content-script interaction timeline (+ the
+    // MAIN-world pushState/stack correlation) into the diagnostic, then disarm.
+    // Only when this executeComment call armed the recorder (executeCommentInFeed
+    // / rung2 paths do not), so the snapshot belongs to this attempt.
+    if (proof && globalThis.THGForensics && THGForensics.isArmed()) {
+      try {
+        const snap = THGForensics.snapshot();
+        proof.nav_diagnostic = proof.nav_diagnostic || {};
+        proof.nav_diagnostic.forensics = snap;
+      } catch (_) { /* forensics must never break delivery */ }
+      THGForensics.uninstall();
     }
     // PR8A: the pre-type landing gate is AUTHORITATIVE over the proof builder's
     // post-submit feedish heuristic. When the executor explicitly reports

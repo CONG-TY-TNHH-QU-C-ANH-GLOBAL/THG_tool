@@ -92,6 +92,15 @@ type NavDiagnostic struct {
 	// capture was unavailable or the attempt succeeded.
 	ScreenshotPath string `json:"screenshot_path,omitempty"`
 
+	// Forensics is the PR8C content-script interaction recorder output: the
+	// timestamped micro-timeline of every DOM op our content script performed in
+	// the comment window, correlated against the MAIN-world history.pushState
+	// reset (with FB's stack trace). It answers "what was the LAST operation our
+	// automation did before Facebook bounced the tab to home" — the question that
+	// must be settled before any technology change. Nil on legacy builds and for
+	// non-comment paths. See content/forensics.js.
+	Forensics *NavForensics `json:"forensics,omitempty"`
+
 	// NavEvents is the chrome.webNavigation trace for the comment tab between
 	// tab-open and the gate evaluation (PR8A.1). It NAMES the source of the
 	// home-redirect: a server_redirect/client_redirect qualifier means FB
@@ -110,6 +119,50 @@ type NavEvent struct {
 	Qualifiers string `json:"qualifiers,omitempty"` // comma-joined transitionQualifiers (server_redirect/client_redirect/forward_back/from_address_bar)
 	Kind       string `json:"kind,omitempty"`       // "committed" (full nav) | "history" (SPA pushState/replaceState)
 	TMs        int    `json:"t_ms,omitempty"`       // ms since the comment tab was opened
+}
+
+// NavForensics is the PR8C-Forensics payload: the timestamped record of the
+// content script's own DOM interaction in the comment window, correlated with
+// the Facebook home-reset pushState. All times are ms relative to EntryTS
+// (the moment executeComment armed the recorder). Assembled by
+// content/forensics.js; persisted verbatim into evidence_json.
+type NavForensics struct {
+	// EntryTS is the wall-clock (Date.now) when the recorder armed — the
+	// content-script handoff moment. All TMs values below are relative to it.
+	EntryTS int64 `json:"entry_ts,omitempty"`
+	// Counts is op → exact total over the window (querySelectorAll, querySelector,
+	// click, focus, dispatchEvent, MutationObserver.observe, innerHTML.get,
+	// innerText.get) plus innerHTML_bytes / innerText_bytes totals. This directly
+	// answers "how many DOM scans / clicks / focuses / how many KB of innerHTML".
+	Counts map[string]int `json:"counts,omitempty"`
+	// Timeline is the last ~80 micro-ops before the snapshot, each with its ms
+	// offset, op name, and a short detail (selector + result count, target tag).
+	Timeline []ForensicEvent `json:"timeline,omitempty"`
+	// PushStates is the MAIN-world history.pushState/replaceState/popstate events
+	// observed in the window, each with FB's stack trace at the call site.
+	PushStates []ForensicPushState `json:"push_states,omitempty"`
+	// ResetTMs is ms from EntryTS to the FIRST home/feed pushState after entry
+	// (0 if none was observed). ResetStack is FB's stack at that reset.
+	ResetTMs   int    `json:"reset_t_ms,omitempty"`
+	ResetStack string `json:"reset_stack,omitempty"`
+	// LastOpBeforeReset is the final content-script op at/before the reset — the
+	// prime suspect for what triggered FB's bounce. Nil if no reset was observed.
+	LastOpBeforeReset *ForensicEvent `json:"last_op_before_reset,omitempty"`
+}
+
+// ForensicEvent is one timestamped content-script DOM operation.
+type ForensicEvent struct {
+	TMs    int    `json:"t"`                // ms since NavForensics.EntryTS
+	Op     string `json:"op"`               // querySelectorAll | click | focus | dispatchEvent | innerHTML.get | ...
+	Detail string `json:"detail,omitempty"` // e.g. "[role=article] →2", "div[role=button] pointerdown"
+}
+
+// ForensicPushState is one MAIN-world history mutation with FB's stack trace.
+type ForensicPushState struct {
+	TMs    int    `json:"t"`                // ms since NavForensics.EntryTS
+	URL    string `json:"url,omitempty"`    // the URL FB navigated to
+	Method string `json:"method,omitempty"` // pushState | replaceState | popstate
+	Stack  string `json:"stack,omitempty"`  // truncated JS stack at the call site (names the FB module)
 }
 
 // RedirectClass constants — the closed vocabulary for NavDiagnostic.RedirectClass.
