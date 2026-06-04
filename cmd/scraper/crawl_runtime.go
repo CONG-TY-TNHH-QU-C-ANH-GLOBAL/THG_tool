@@ -101,6 +101,25 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 }
 
 func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, error) {
+	// PRIMARY: prefer the account an ONLINE, FB-logged-in extension connector is
+	// actually bound to. The dispatcher (pickOnlineConnectorForCrawl) routes by
+	// the connector's assigned_account_id, so the picker MUST agree with it.
+	// Otherwise the picker can choose an account by the stale
+	// accounts.browser_logged_in flag (e.g. #50) that NO online connector serves,
+	// while the live connector is bound to a different account record (e.g. #49) —
+	// and every dispatch then fails with "Chrome Extension is not online for this
+	// account" even though an extension is connected and logged in. That picker↔
+	// dispatcher mismatch was the #49-connector / #50-mission bug. Aligning the
+	// picker here makes auto-resolved crawls target the account that can actually
+	// execute them.
+	if conns, cErr := db.Connectors().ListLocalConnectors(orgID); cErr == nil {
+		for _, c := range conns {
+			if c.Online && c.AssignedAccountID > 0 &&
+				strings.EqualFold(strings.TrimSpace(c.StreamStatus), browsergateway.StreamFacebookLoggedIn) {
+				return c.AssignedAccountID, nil
+			}
+		}
+	}
 	screen, err := db.Connectors().GetLatestConnectorScreenshot(orgID, 0)
 	if err != nil {
 		return 0, err
