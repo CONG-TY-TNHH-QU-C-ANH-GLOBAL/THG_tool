@@ -127,6 +127,53 @@ type Source struct {
 	UpdatedAt time.Time
 }
 
+// MarshalJSON emits the wire shape the frontend (and any HTTP client)
+// consumes: snake_case keys with the Health bundle FLATTENED into
+// health_status / health_message / last_sync_at. Without this the
+// default marshaller used the Go field names (PascalCase) and nested
+// Health, so the frontend's KnowledgeSource read `id`/`last_asset_count`
+// as undefined — which made the Connect-Catalog wizard POST
+// /knowledge/sources/undefined/sync and the server reject it with
+// "invalid source id". Source is only ever marshaled OUT (handler input
+// uses createSourceBody; the store scans columns, never JSON), so a
+// custom marshaller here cannot break an inbound parse.
+//
+// Value receiver so it applies to both Source and *Source (list
+// responses use one, single-source responses the other).
+func (s Source) MarshalJSON() ([]byte, error) {
+	cc := s.ConnectionConfig
+	if len(cc) == 0 {
+		cc = json.RawMessage("null")
+	}
+	return json.Marshal(struct {
+		ID               int64           `json:"id"`
+		OrgID            int64           `json:"org_id"`
+		Type             SourceType      `json:"type"`
+		Label            string          `json:"label"`
+		ConnectionConfig json.RawMessage `json:"connection_config"`
+		SyncPolicy       SyncPolicy      `json:"sync_policy"`
+		HealthStatus     HealthStatus    `json:"health_status"`
+		HealthMessage    string          `json:"health_message"`
+		LastSyncAt       *time.Time      `json:"last_sync_at"`
+		LastAssetCount   int             `json:"last_asset_count"`
+		CreatedAt        time.Time       `json:"created_at"`
+		UpdatedAt        time.Time       `json:"updated_at"`
+	}{
+		ID:               s.ID,
+		OrgID:            s.OrgID,
+		Type:             s.Type,
+		Label:            s.Label,
+		ConnectionConfig: cc,
+		SyncPolicy:       s.SyncPolicy,
+		HealthStatus:     s.Health.Status,
+		HealthMessage:    s.Health.Message,
+		LastSyncAt:       s.Health.LastSyncAt,
+		LastAssetCount:   s.LastAssetCount,
+		CreatedAt:        s.CreatedAt,
+		UpdatedAt:        s.UpdatedAt,
+	})
+}
+
 // Validate enforces the boundary invariants that the schema cannot.
 // Schemas catch type mismatches and NOT NULL; this catches "label is
 // just whitespace," "type is empty," and "config is not parseable
