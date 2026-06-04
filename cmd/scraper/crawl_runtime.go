@@ -139,10 +139,18 @@ func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task,
 		result, err := enqueueConnectorCrawlCommand(ctx, db, task, payload, screen.AgentID)
 		return result, true, err
 	}
+	// connectorReason carries the PRECISE per-connector rejection detail that
+	// pickOnlineConnectorForCrawl computed (assigned to a different account /
+	// fb_user_id mismatch / status=facebook_login_required / none paired). It is
+	// logged AND surfaced in the operator-facing error below — without this the
+	// operator only saw the generic "not online" and could not tell "log in" from
+	// "you're on the wrong FB account" from "this connector belongs to account #X".
+	connectorReason := ""
 	if agentID, reason := pickOnlineConnectorForCrawl(db, task); agentID > 0 {
 		result, err := enqueueConnectorCrawlCommand(ctx, db, task, payload, agentID)
 		return result, true, err
 	} else if reason != "" {
+		connectorReason = reason
 		log.Printf("[ConnectorCrawl] no heartbeat-routable connector org=%d account=%d: %s", task.OrgID, task.AccountID, reason)
 	}
 
@@ -154,7 +162,13 @@ func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task,
 	if sess != nil && sess.CDPPort > 0 && (sess.Status == "idle" || sess.Status == "ready" || sess.Status == "active") {
 		return "", false, nil
 	}
-	return "", true, fmt.Errorf("Facebook account #%d is saved, but THG Chrome Extension is not online for this account yet. Open Browser, pair the Chrome Extension, keep a logged-in Facebook tab open, then send the prompt again", task.AccountID)
+	msg := fmt.Sprintf("Facebook account #%d is saved, but THG Chrome Extension is not online for this account yet. Open Browser, pair the Chrome Extension, keep a logged-in Facebook tab open, then send the prompt again", task.AccountID)
+	if connectorReason != "" {
+		// The precise reason names which of the 5 routing gates failed, so the
+		// operator knows exactly what to fix (log in / switch FB account / pair).
+		msg += " — chi tiết: " + connectorReason
+	}
+	return "", true, fmt.Errorf("%s", msg)
 }
 
 // connectorCrawlEnvelope wraps the full Task JSON with flat top-level hints so
