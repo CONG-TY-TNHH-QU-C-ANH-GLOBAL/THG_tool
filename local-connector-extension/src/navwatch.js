@@ -6,12 +6,20 @@
  * "FB redirect vs our own chrome.tabs code" question with ground truth instead
  * of inference.
  *
- * Per event we keep transitionType + transitionQualifiers + a kind discriminator:
- *   - kind="committed" + qualifiers includes "server_redirect" → FB server 3xx.
- *   - kind="committed" + qualifiers includes "client_redirect" → FB page JS/meta redirect.
- *   - kind="history"   (onHistoryStateUpdated)                  → FB SPA router pushState/replaceState.
- *   - kind="committed" transition "typed"/"auto_toplevel" with NO redirect
- *     qualifier, firing when no FB-initiated nav is expected           → OUR chrome.tabs call.
+ * PR8 nav timeline — all four top-frame webNavigation events are recorded so
+ * the ROOT_CAUSE_REPORT can reconstruct the full sequence per attempt:
+ *   - kind="before"    (onBeforeNavigate)       → a top-level load is STARTING.
+ *   - kind="committed" (onCommitted)            → that load committed; carries
+ *                                                 transitionType + qualifiers.
+ *   - kind="completed" (onCompleted)            → the load finished (DOM ready).
+ *   - kind="history"   (onHistoryStateUpdated)  → FB SPA router pushState/replaceState.
+ *
+ * Attribution (read off the committed event for the home/feed URL):
+ *   - committed + qualifiers includes "server_redirect" → FB server 3xx.
+ *   - committed + qualifiers includes "client_redirect" → FB page JS/meta redirect.
+ *   - history                                            → FB SPA router reset.
+ *   - committed transition "typed"/"auto_toplevel" with NO redirect qualifier,
+ *     firing when no FB-initiated nav is expected         → OUR chrome.tabs call.
  *
  * Top frame only (frameId === 0). Requires the "webNavigation" manifest
  * permission; degrades to an empty trace if the API is unavailable.
@@ -36,9 +44,16 @@ var THGNavWatch = globalThis.THGNavWatch || (() => {
   if (typeof chrome !== 'undefined' && chrome.webNavigation) {
     try {
       const fbFilter = { url: [{ hostSuffix: 'facebook.com' }, { hostSuffix: 'fb.watch' }] };
+      // onBeforeNavigate: a top-level load is starting. Marks the LEADING edge
+      // of a redirect — pairs with the committed event to show "where it was
+      // heading vs where it landed".
+      chrome.webNavigation.onBeforeNavigate.addListener(e => record(e, 'before'), fbFilter);
       chrome.webNavigation.onCommitted.addListener(e => record(e, 'committed'), fbFilter);
+      // onCompleted: the load finished. Confirms the landing actually settled
+      // (distinguishes "redirected and stayed" from "flickered through").
+      chrome.webNavigation.onCompleted.addListener(e => record(e, 'completed'), fbFilter);
       // FB is an SPA: a reset-to-home is often a pushState, which fires
-      // onHistoryStateUpdated, NOT onCommitted. Capturing both is what makes
+      // onHistoryStateUpdated, NOT onCommitted. Capturing all four is what makes
       // the "FB SPA router did it" case visible.
       chrome.webNavigation.onHistoryStateUpdated.addListener(e => record(e, 'history'), fbFilter);
     } catch (_) { /* webNavigation unavailable — empty trace */ }

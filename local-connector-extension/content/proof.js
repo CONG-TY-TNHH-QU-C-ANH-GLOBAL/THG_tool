@@ -211,6 +211,9 @@ var THGContentProof = globalThis.THGContentProof || (() => {
     proof.page_url_after = window.location.href || '';
     proof.success = !!ok;
 
+    // A platform banner (rate-limit / checkpoint / blocked) is legitimate at
+    // ANY phase — FB can surface it before or after a submit — so it stays the
+    // first check.
     const platformReject = detectPlatformReject();
     if (platformReject) {
       proof.failure_reason = platformReject;
@@ -219,16 +222,31 @@ var THGContentProof = globalThis.THGContentProof || (() => {
       return proof;
     }
 
+    // PR8A PROOF INTEGRITY FIX (deterministic boundary).
+    //
+    // When the executor already returned ok=false it has classified the EXACT
+    // phase it failed at (target_not_reached / context_drift / composer_failed /
+    // typing / submit) — that is the authoritative truth. We must NOT override
+    // it with the feed-URL heuristic below, because that heuristic emits
+    // "page navigated to feed/home after submit", which is a LIE for any failure
+    // that never reached the submit phase (article_found=false → nothing was
+    // typed, nothing was submitted). The misleading "after submit" string in a
+    // gate-1 redirect was the exact contradiction this fix removes: a pre-submit
+    // landing on the feed is a NAVIGATION miss (target_not_reached), surfaced
+    // verbatim from the executor — not a post-submit redirect.
+    if (!ok) {
+      proof.failure_reason = mapCommentErrorReason(errorCode);
+      proof.notes = errorCode || '';
+      return proof;
+    }
+
+    // Reaching here means ok=true: the executor cleared the composer, i.e. it
+    // genuinely passed the submit phase. ONLY now is a feed/home landing a real
+    // post-submit redirect, so the "after submit" wording is accurate.
     if (isFeedishURL(proof.page_url_after)) {
       proof.failure_reason = 'redirected_feed';
       proof.success = false;
       proof.notes = 'page navigated to feed/home after submit';
-      return proof;
-    }
-
-    if (!ok) {
-      proof.failure_reason = mapCommentErrorReason(errorCode);
-      proof.notes = errorCode || '';
       return proof;
     }
 

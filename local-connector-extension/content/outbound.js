@@ -478,27 +478,62 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return out;
   }
 
+  // domCounts is the PR8A DOM census — raw element counts on the landed page,
+  // captured at the failing gate. The ROOT_CAUSE_REPORT reads these to separate
+  // a redirect (everything zero) from a gate failure (article_count>0 but
+  // composer_count==0) from a composer/typing failure — WITHOUT a screenshot.
+  // Pure read, no mutation.
+  function domCounts() {
+    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const commentButtons = buttons.filter(el => {
+      const label = labelOf(el);
+      return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
+    });
+    return {
+      article_count: document.querySelectorAll('[role="article"]').length,
+      comment_button_count: commentButtons.length,
+      composer_count: document.querySelectorAll('[contenteditable="true"][role="textbox"]').length,
+      textarea_count: document.querySelectorAll('textarea').length,
+      contenteditable_count: document.querySelectorAll('[contenteditable="true"]').length,
+    };
+  }
+
   // navDiagFor assembles the structured NavDiagnostic for the current page
   // state at a given gate. Pure-ish: reads location/title + caller-supplied
   // gate booleans + the background nav trace. Returns {} when THGNavReport is
   // not loaded (defensive — re-injection paths may omit it).
-  function navDiagFor(stage, gates, ctxInfo) {
+  //
+  // phase is the execution phase the caller was ATTEMPTING when it aborted. We
+  // refine it deterministically here: a gate-1 abort whose landing is not a real
+  // permalink is really a NAVIGATION failure (the tab never reached the post),
+  // not a gate failure — that distinction is the Redirect-vs-Gate split the
+  // ROOT_CAUSE_REPORT turns on. landed_url is the background-verified landing
+  // (≈ target); final_url is where the page actually is now (post-drift).
+  function navDiagFor(stage, phase, gates, ctxInfo) {
     if (!THGNavReport) return null;
-    const landed = location.href || '';
+    const finalUrl = location.href || '';
+    const navLanded = (ctxInfo.navTrace && ctxInfo.navTrace.landed_url) || '';
+    const rc = THGNavReport.classifyLanding(finalUrl);
+    let reachedPhase = phase || '';
+    if (reachedPhase === 'gate1' && rc !== 'permalink') reachedPhase = 'navigation';
     return THGNavReport.buildNavDiagnostic({
       navFromUrl: ctxInfo.navTrace && ctxInfo.navTrace.from_url,
       navToUrl: (ctxInfo.navTrace && ctxInfo.navTrace.to_url) || ctxInfo.targetUrl,
       navDurationMs: ctxInfo.navTrace && ctxInfo.navTrace.duration_ms,
       navAttempts: ctxInfo.navTrace && ctxInfo.navTrace.attempts,
-      landedUrl: landed,
+      landedUrl: navLanded,
+      finalUrl,
       docTitle: document.title || '',
       articleFound: gates.articleFound,
       permalinkFound: gates.permalinkFound,
       commentButtonFound: gates.commentButtonFound,
+      counts: domCounts(),
+      phase: reachedPhase,
       targetPostId: ctxInfo.targetPostId,
       accountId: ctxInfo.accountId,
       fbUserId: ctxInfo.fbUID,
-      redirectClass: THGNavReport.classifyLanding(landed),
+      redirectClass: rc,
       stage,
       domSnapshot: gates.articleFound ? '' : ((document.body && document.body.innerText) || '').slice(0, 2048),
     });
@@ -595,7 +630,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         // (we never reached an article to drift from) and NOT redirected_feed
         // (nothing was submitted). Retryable, no risk penalty (see Go side).
         const gates = probeCommentGates(targetPostId);
-        const navDiag = navDiagFor('gate1_no_article', gates, ctxInfo);
+        const navDiag = navDiagFor('gate1_no_article', 'gate1', gates, ctxInfo);
         const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
         console.warn('[THG outbound.executeComment] gate1 FAIL target_not_reached',
           { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
@@ -640,7 +675,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
           { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
           'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
-          navDiagFor('gate2_post_click_swap', probeCommentGates(targetPostId), ctxInfo));
+          navDiagFor('gate2_post_click_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
       }
     } else {
       scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
@@ -661,7 +696,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
             { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
           return commentResult(false, 'context_drift', null, ctx,
             'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
-            navDiagFor('gate2b_scroll_swap', probeCommentGates(targetPostId), ctxInfo));
+            navDiagFor('gate2b_scroll_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
         }
         editor = findCommentEditor(scope);
       } else {
@@ -674,7 +709,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         { target_id: targetPostId, landed_at_fail: landed });
       return commentResult(false, 'comment_box_not_found', null, ctx,
         'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') + ' landed_at=' + landed,
-        navDiagFor('comment_box_not_found', probeCommentGates(targetPostId), ctxInfo));
+        navDiagFor('comment_box_not_found', 'composer', probeCommentGates(targetPostId), ctxInfo));
     }
 
     // Checkpoint 3 — pre-type. The editor we are about to type into
@@ -690,15 +725,25 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
           { target_id: targetPostId, editor_scope_id: editorScopeID, landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
           'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
-          navDiagFor('gate3_editor_drift', probeCommentGates(targetPostId), ctxInfo));
+          navDiagFor('gate3_editor_drift', 'typing', probeCommentGates(targetPostId), ctxInfo));
       }
     }
 
-    // Identity locked. Only NOW do we type.
-    if (!setEditableText(editor, content)) return commentResult(false, 'comment_text_insert_failed', null, ctx);
+    // Identity locked. Only NOW do we type. PR8A: phase is now 'typing'.
+    if (!setEditableText(editor, content)) {
+      return commentResult(false, 'comment_text_insert_failed', null, ctx,
+        'typing.insert_failed: target id=' + abbreviate(targetPostId || '<none>'),
+        navDiagFor('typing_insert_failed', 'typing', probeCommentGates(targetPostId), ctxInfo));
+    }
     const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
-    if (!inserted) return commentResult(false, 'comment_text_not_confirmed', null, ctx);
+    if (!inserted) {
+      return commentResult(false, 'comment_text_not_confirmed', null, ctx,
+        'typing.not_confirmed: editor did not hold our content within 1.8s · target id=' + abbreviate(targetPostId || '<none>'),
+        navDiagFor('typing_not_confirmed', 'typing', probeCommentGates(targetPostId), ctxInfo));
+    }
 
+    // PR8A: text is in the composer — we are now at the SUBMIT phase. Only from
+    // here on is an "after submit" diagnostic legitimate.
     const submitButtons = findSubmitButtons(editor, [commentButton]);
     for (const submit of submitButtons) {
       if (submit && clickLikeUser(submit)) {
@@ -708,7 +753,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
           // node before we walk it for proof. Without this, the verifier
           // often misses the node and downgrades to optimistic_success.
           await wait(700);
-          return commentResult(true, '', 'sent_comment_button', ctx);
+          return commentResult(true, '', 'sent_comment_button', ctx, '',
+            navDiagFor('post_submit', 'verify', probeCommentGates(targetPostId), ctxInfo));
         }
       }
       await wait(400);
@@ -718,11 +764,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
       if (cleared) {
         await wait(700);
-        return commentResult(true, '', 'sent_comment_enter', ctx);
+        return commentResult(true, '', 'sent_comment_enter', ctx, '',
+          navDiagFor('post_submit', 'verify', probeCommentGates(targetPostId), ctxInfo));
       }
     }
 
-    return commentResult(false, submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found', null, ctx);
+    return commentResult(false,
+      submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found',
+      null, ctx,
+      'submit.not_cleared: composer still held our content after ' + submitButtons.length +
+      ' submit-button click(s) + Enter · target id=' + abbreviate(targetPostId || '<none>'),
+      navDiagFor('submit_not_cleared', 'submit', probeCommentGates(targetPostId), ctxInfo));
   }
 
   // abbreviate keeps identity-gate failure notes short. pfbid tokens run

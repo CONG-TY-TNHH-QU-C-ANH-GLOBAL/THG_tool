@@ -1,7 +1,11 @@
 package agent
 
 import (
+	"encoding/base64"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +17,48 @@ import (
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store/coordination"
 )
+
+// maxEvidenceScreenshotBytes bounds a decoded evidence screenshot before it
+// touches disk. A q40 JPEG of a 1080p tab is ~80–160 KB; 1 MB is a generous
+// ceiling that still rejects an extension shipping a runaway payload.
+const maxEvidenceScreenshotBytes = 1 << 20 // 1 MiB
+
+// persistEvidenceScreenshot decodes the extension's out-of-band base64 JPEG to
+// an ORG-SCOPED file under data/evidence/<orgID>/ and returns the relative path
+// to record in NavDiagnostic.ScreenshotPath. The bytes never enter evidence_json.
+//
+// Tenant safety: every path component is server-derived (orgID, outboundID,
+// attemptID are internal ids issued in org-scoped txs) — no extension-supplied
+// string reaches the filename, so this cannot be steered out of the org dir.
+// Best-effort: any failure returns "" with a logged warning; evidence capture
+// must never block the terminal callback.
+func persistEvidenceScreenshot(orgID, outboundID, attemptID int64, b64 string) (string, error) {
+	b64 = strings.TrimSpace(b64)
+	// Accept a data: URL prefix or raw base64.
+	if i := strings.Index(b64, ","); strings.HasPrefix(b64, "data:") && i >= 0 {
+		b64 = b64[i+1:]
+	}
+	if b64 == "" {
+		return "", nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return "", fmt.Errorf("decode evidence screenshot: %w", err)
+	}
+	if len(raw) == 0 || len(raw) > maxEvidenceScreenshotBytes {
+		return "", fmt.Errorf("evidence screenshot size out of bounds: %d bytes", len(raw))
+	}
+	dir := filepath.Join("data", "evidence", strconv.FormatInt(orgID, 10))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir evidence dir: %w", err)
+	}
+	name := fmt.Sprintf("ob%d-att%d-%d.jpg", outboundID, attemptID, time.Now().UTC().Unix())
+	rel := filepath.ToSlash(filepath.Join(dir, name))
+	if err := os.WriteFile(filepath.FromSlash(rel), raw, 0o644); err != nil {
+		return "", fmt.Errorf("write evidence screenshot: %w", err)
+	}
+	return rel, nil
+}
 
 // notificationDetail selects the most diagnostic string to surface in the
 // operator's failure notification (the `Chi tiet:` line in chat/Telegram).
@@ -360,6 +406,22 @@ func (h *Handler) finalizeOutbound(
 			failureReason = report.FailureReason
 			if failureReason == "" {
 				failureReason = string(outcome)
+			}
+		}
+		// PR8A evidence pack: persist the failing-tab screenshot (out-of-band
+		// base64 → org-scoped disk path). Done in the FIRST-WIN branch only so a
+		// replay cannot rewrite the file, and BEFORE proofToEvidence so the path
+		// rides into evidence_json. Non-success only — a verified send needs no
+		// failure screenshot. Telemetry-only: failures are logged, not propagated.
+		if !models.IsSuccessOutcome(outcome) && report.EvidenceScreenshotB64 != "" {
+			if path, sErr := persistEvidenceScreenshot(orgID, id, attemptID, report.EvidenceScreenshotB64); sErr != nil {
+				slog.WarnContext(ctx, "exec-verify: evidence screenshot persist failed",
+					"org_id", orgID, "outbound_id", id, "attempt_id", attemptID, "error", sErr)
+			} else if path != "" {
+				if proof.NavDiagnostic == nil {
+					proof.NavDiagnostic = &models.NavDiagnostic{}
+				}
+				proof.NavDiagnostic.ScreenshotPath = path
 			}
 		}
 		if err := h.db.Coordination().FinishExecutionAttempt(ctx, attemptID, outcome, failureReason, proofToEvidence(proof)); err != nil {

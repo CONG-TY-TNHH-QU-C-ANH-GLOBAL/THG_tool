@@ -27,13 +27,40 @@ type NavDiagnostic struct {
 	NavAttempts   int    `json:"nav_attempts,omitempty"`   // how many navigateAndVerify retries it took
 
 	// ── Landing state (content layer) ──
-	LandedURL string `json:"landed_url,omitempty"` // location.href at gate evaluation
-	DocTitle  string `json:"doc_title,omitempty"`  // document.title at gate evaluation
+	// LandedURL is the URL the BACKGROUND navigateAndVerify confirmed the tab
+	// reached (it only returns on a match, so this is normally == NavToURL).
+	// FinalURL is location.href the moment the CONTENT script evaluated the
+	// gate — captured separately so a late top-level redirect shows up as a
+	// LandedURL(target) != FinalURL(feed/home) delta in a single row, which is
+	// the PR8 "Redirect Failure" signature (landed_url != target_url).
+	LandedURL string `json:"landed_url,omitempty"` // background-verified landing (≈ target)
+	FinalURL  string `json:"final_url,omitempty"`  // location.href at gate evaluation (post-drift)
+	DocTitle  string `json:"doc_title,omitempty"`  // document.title at gate evaluation (the page_title)
 
 	// ── Pre-comment gates (content layer) — captured BEFORE any typing ──
 	ArticleFound       bool `json:"article_found"`        // a [role=article] for the target post is present
 	PermalinkFound     bool `json:"permalink_found"`      // the article's canonical permalink anchor is present
 	CommentButtonFound bool `json:"comment_button_found"` // a Comment/Bình luận button is present in scope
+
+	// ── DOM census (content layer) — PR8A evidence pack ──
+	// Raw element counts on the landed page, captured at the failing gate.
+	// Counts (not just the gate booleans) let the ROOT_CAUSE_REPORT separate
+	// "redirect: nothing on page" (all zero) from "gate: article present but
+	// composer never opened" (article_count>0, composer_count==0) etc. without
+	// a screenshot. All best-effort; absent/zero means "not observed / none".
+	ArticleCount         int `json:"article_count,omitempty"`         // [role=article] containers on the page
+	CommentButtonCount   int `json:"comment_button_count,omitempty"`  // visible Comment/Bình luận buttons
+	ComposerCount        int `json:"composer_count,omitempty"`        // contenteditable[role=textbox] comment composers
+	TextareaCount        int `json:"textarea_count,omitempty"`        // <textarea> elements
+	ContenteditableCount int `json:"contenteditable_count,omitempty"` // [contenteditable=true] elements
+
+	// ── Execution phase (content layer) — PR8A proof integrity ──
+	// Phase is the LAST execution phase actually REACHED before the failure,
+	// one of the ExecPhase* constants. It is the deterministic boundary that
+	// the classifier must respect: a failure whose Phase is < submit MUST NOT
+	// be described as "after submit" / "submit failed" / "verification failed".
+	// See content/proof.js buildCommentProof (proof-integrity fix).
+	Phase string `json:"phase,omitempty"`
 
 	// ── Identity (content layer) ──
 	TargetPostID string `json:"target_post_id,omitempty"` // post id extracted from the queued target_url
@@ -56,6 +83,14 @@ type NavDiagnostic struct {
 	// the extension before send). Captured on failure so the operator can see
 	// "Content unavailable" / login wall / feed shell without a screenshot.
 	DOMSnapshot string `json:"dom_snapshot,omitempty"`
+
+	// ScreenshotPath is the SERVER-written relative path of the JPEG the
+	// background captured at the failing moment (data/evidence/<org>/<...>.jpg).
+	// The extension ships the raw image out-of-band (ExtensionExecutionReport.
+	// EvidenceScreenshotB64); the server decodes it to disk and records ONLY
+	// the path here — the bytes are never stored in evidence_json. Empty when
+	// capture was unavailable or the attempt succeeded.
+	ScreenshotPath string `json:"screenshot_path,omitempty"`
 
 	// NavEvents is the chrome.webNavigation trace for the comment tab between
 	// tab-open and the gate evaluation (PR8A.1). It NAMES the source of the
@@ -102,4 +137,32 @@ const (
 	// RedirectClassUnknown — none of the above matched. Landed somewhere we do
 	// not yet classify; the LandedURL + DOMSnapshot carry the raw evidence.
 	RedirectClassUnknown = "unknown"
+)
+
+// ExecPhase constants — the closed vocabulary for NavDiagnostic.Phase. They
+// are ORDERED: each phase can only be reached after the previous one. The
+// classifier uses this ordering to enforce the PR8 proof-integrity rule:
+// a failure can only carry a "submit"/"verify" diagnostic if Phase reached
+// that far. Keep in sync with content/outbound.js executeComment phase tracker.
+const (
+	// ExecPhaseNavigation — the tab never arrived at the target post surface
+	// (bounced to feed/home/login before an article could be located). Maps to
+	// the report's "Redirect Failure" group (landed_url != target_url).
+	ExecPhaseNavigation = "navigation"
+	// ExecPhaseGate1 — reached the post permalink, but the target article never
+	// became present+stable (identity gate 1). Maps to "Gate Failure".
+	ExecPhaseGate1 = "gate1"
+	// ExecPhaseComposer — the target article was located and the Comment button
+	// engaged, but no editable composer materialised. Maps to "Composer Failure".
+	ExecPhaseComposer = "composer"
+	// ExecPhaseTyping — the composer was found and text insertion was attempted
+	// but the editor never held our content. Maps to "Typing Failure".
+	ExecPhaseTyping = "typing"
+	// ExecPhaseSubmit — text was inserted and a submit (click/enter) was issued
+	// but the composer never cleared. This is the FIRST phase at which an
+	// "after submit" diagnostic is legitimate.
+	ExecPhaseSubmit = "submit"
+	// ExecPhaseVerify — submit cleared the composer; the post-submit DOM
+	// observation (node match / count) ran. Maps to "Verification Failure".
+	ExecPhaseVerify = "verify"
 )

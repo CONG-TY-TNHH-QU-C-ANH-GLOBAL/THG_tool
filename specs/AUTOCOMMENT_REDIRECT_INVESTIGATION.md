@@ -1,8 +1,56 @@
 # Auto-Comment `redirected_feed` Investigation
 
-**Status**: 2026-06-03 — **PR8A Navigation Hardening shipped (manifest 0.5.17).** Stops the fix-and-pray
-loop: instead of another candidate fix to the executor, PR8A makes the failure NAME ITS OWN ROOT CAUSE.
-Awaiting one operator verification cycle to read the new typed telemetry, then decide PR8B from real data.
+**Status**: 2026-06-04 — **PR8A Evidence Pack + Proof Integrity Fix shipped (manifest 0.5.19).** Closes the
+classifier-lies gap and completes the evidence surface mandated by the PR8 directive. Next step is operator-
+owned: run ≥20 real `comment_all_leads` attempts, populate `specs/ROOT_CAUSE_REPORT.md`, THEN (and only then)
+design exactly one PR8B direction. **No PR8B until the report's findings table is filled from real data.**
+
+## 2026-06-04 — PR8A (this pass): Evidence Pack completed + Proof Integrity Fix
+
+Driven by the PR8 directive ("Evidence trước Fix"; GIAI ĐOẠN 1 = build Evidence Pack only — do NOT touch
+delivery / navigation / tech). Two things shipped; neither changes how a comment is delivered.
+
+**1. Proof Integrity Fix (the contradiction the operator flagged).** `article_found=false` together with
+"page navigated to feed/home after submit" was a deterministic-boundary violation: nothing was submitted.
+Root cause: `content/proof.js buildCommentProof` ran the `isFeedishURL(page_url_after)` heuristic BEFORE the
+`!ok` branch, so any PRE-submit abort that happened to land on the feed got stamped with the submit-implying
+note. Fix: reordered so (a) platform banner stays first (legit at any phase), (b) the executor's explicit
+`ok=false` classification wins next (target_not_reached / context_drift / composer / typing / submit —
+surfaced verbatim), (c) the "after submit" / `redirected_feed` wording is reachable ONLY when `ok===true`
+(the composer actually cleared). A pre-submit feed landing is now `target_not_reached` (navigation miss),
+never "after submit".
+
+**2. Evidence Pack — every failed attempt now persists (in `nav_diagnostic`):**
+- **Execution phase** (`phase`): the LAST phase reached — `navigation|gate1|composer|typing|submit|verify`
+  (`models.ExecPhase*`). A gate-1 abort whose landing is not a real permalink is deterministically downgraded
+  to `navigation`. This is the primary key the ROOT_CAUSE_REPORT buckets on.
+- **URL telemetry**: `landed_url` (background-verified ≈ target) split from `final_url` (`location.href` at
+  gate eval) so a late redirect shows as `landed_url(target) != final_url(feed)` in one row; plus `doc_title`.
+- **DOM census**: `article_count`, `comment_button_count`, `composer_count`, `textarea_count`,
+  `contenteditable_count` — separates "redirect: page empty" (all 0) from "gate/composer" (article>0) without
+  a screenshot.
+- **Nav timeline**: `navwatch.js` now records all four `webNavigation` events
+  (onBeforeNavigate/onCommitted/onCompleted/onHistoryStateUpdated) into `nav_events`, naming FB-redirect vs
+  SPA-router vs our-code.
+- **Screenshot**: background captures the failing tab (`chrome.tabs.captureVisibleTab`, JPEG q40) BEFORE
+  closing it, ships it out-of-band (`ExtensionExecutionReport.EvidenceScreenshotB64`); the server writes it to
+  the org-scoped `data/evidence/<org>/` and records only `screenshot_path` in evidence_json (bytes never
+  persisted to the DB column). Failure-only, best-effort, never load-bearing.
+
+Files: `internal/models/nav_diagnostic.go` (struct + ExecPhase consts), `internal/runtime/verifier.go`
+(report field), `internal/server/agent/outbox_agent.go` (`persistEvidenceScreenshot` + first-win wiring),
+`local-connector-extension/{content/navreport.js, content/outbound.js, content/proof.js, src/navwatch.js,
+src/outbox.js, manifest.json}`. New doc: `specs/ROOT_CAUSE_REPORT.md` (scaffold + population queries + PR8B gate).
+
+**Deliberately NOT done (per directive):** no delivery/navigation change, no Playwright/GraphQL/m.facebook
+migration, no PR8B design. Those are gated behind the 20-run report.
+
+---
+
+## (Prior) 2026-06-03 — PR8A Navigation Hardening shipped (manifest 0.5.17)
+
+Stops the fix-and-pray loop: instead of another candidate fix to the executor, PR8A makes the failure NAME ITS
+OWN ROOT CAUSE.
 
 ## 2026-06-03 — PR8A: Navigation Hardening (observability, NOT a fix)
 

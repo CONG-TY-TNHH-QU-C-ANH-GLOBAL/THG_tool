@@ -622,6 +622,18 @@ var THGOutbox = globalThis.THGOutbox || (() => {
           }
         }
       } catch (_) { /* telemetry must never break delivery */ }
+      // PR8A evidence pack: on FAILURE, capture the failing tab WHILE IT IS STILL
+      // OPEN (and still active in its window) so the operator sees the exact
+      // feed/login/post state. Out-of-band: the raw JPEG rides proof
+      // .evidence_screenshot_b64 (NOT nav_diagnostic) → the server writes it to
+      // disk and records only the path. Telemetry-only; never breaks delivery.
+      try {
+        if (result && result.proof && result.ok === false) {
+          const winId = (crawlInfo.tab && crawlInfo.tab.windowId) || crawlInfo.crawlWinId || undefined;
+          const shot = await chrome.tabs.captureVisibleTab(winId, { format: 'jpeg', quality: 40 }).catch(() => '');
+          if (shot) result.proof.evidence_screenshot_b64 = shot;
+        }
+      } catch (_) { /* screenshot is best-effort evidence, never load-bearing */ }
       // Mirror the crawler's cleanup so the FB window doesn't accumulate
       // tabs across a daily batch. Restore window state if crawler had
       // to un-minimize it during navigateAndVerify.

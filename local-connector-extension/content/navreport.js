@@ -125,12 +125,28 @@ var THGNavReport = globalThis.THGNavReport || (() => {
     putInt('nav_duration_ms', f.navDurationMs);
     putInt('nav_attempts', f.navAttempts);
     putStr('landed_url', f.landedUrl);
+    putStr('final_url', f.finalUrl);
     putStr('doc_title', f.docTitle);
     // Gate booleans are ALWAYS emitted (false is meaningful here — it says
     // "we looked and it was not there", the whole point of the gate).
     out.article_found = Boolean(f.articleFound);
     out.permalink_found = Boolean(f.permalinkFound);
     out.comment_button_found = Boolean(f.commentButtonFound);
+    // PR8A DOM census — counts the ROOT_CAUSE_REPORT buckets read to tell a
+    // redirect ("everything zero") from a gate/composer failure (article>0,
+    // composer==0). Emitted only when non-zero (putInt drops 0).
+    if (f.counts) {
+      putInt('article_count', f.counts.article_count);
+      putInt('comment_button_count', f.counts.comment_button_count);
+      putInt('composer_count', f.counts.composer_count);
+      putInt('textarea_count', f.counts.textarea_count);
+      putInt('contenteditable_count', f.counts.contenteditable_count);
+    }
+    // PR8A proof integrity — the LAST execution phase actually reached. The
+    // backend classifier refuses to emit a submit/verify diagnostic when this
+    // is below 'submit'. One of ExecPhase* (navigation|gate1|composer|typing|
+    // submit|verify).
+    putStr('phase', f.phase);
     putStr('target_post_id', f.targetPostId);
     if (Number.isFinite(parseInt(f.accountId, 10)) && parseInt(f.accountId, 10) !== 0) {
       out.account_id = parseInt(f.accountId, 10);

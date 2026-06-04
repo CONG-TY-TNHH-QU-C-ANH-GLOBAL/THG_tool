@@ -318,6 +318,13 @@ type ExtensionExecutionReport struct {
 	// NavDiagnostic is the PR8A navigation-hardening telemetry (nav trace +
 	// landing gates + redirect class). Optional; absent on legacy builds.
 	NavDiagnostic *models.NavDiagnostic `json:"nav_diagnostic,omitempty"`
+	// EvidenceScreenshotB64 is a base64 JPEG of the failing tab the background
+	// captured at the moment of failure. It is OUT-OF-BAND evidence: the server
+	// decodes it to disk and records only the resulting path in
+	// NavDiagnostic.ScreenshotPath — the bytes are NEVER persisted into
+	// evidence_json (VerifierProof deliberately has no field for them). Empty on
+	// success and on legacy builds. Bounded server-side before it touches disk.
+	EvidenceScreenshotB64 string `json:"evidence_screenshot_b64,omitempty"`
 	// ExecutionID is the per-attempt idempotency token the server
 	// issued at claim time and the executor MUST echo back. The
 	// terminal-state CAS in store.FinalizeOutboundAttempt requires

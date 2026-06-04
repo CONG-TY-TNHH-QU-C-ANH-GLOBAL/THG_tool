@@ -24,6 +24,9 @@ data/backups/
 # Generated images
 data/images/
 
+# PR8A evidence-pack failure screenshots (paths recorded in evidence_json)
+data/evidence/
+
 # IDE
 .vscode/
 .idea/
