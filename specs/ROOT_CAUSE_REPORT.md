@@ -355,3 +355,45 @@ Reload to **0.5.22**, run `comment_all_leads`. Expected: the forensic
 gate-1 finds the article and proceeds past `navigation` into
 `composer`/`typing`/`submit`. Re-run Query 1 — `navigation` should collapse. If a
 real `dom_verified` lands, **PR8 is closed.**
+
+---
+
+## PR8D — submit-phase cleanup (0.5.23). Logo bug GONE; comments now post.
+
+0.5.22 result: comments post. Latest attempt forensics returned **`phase=verify`**
+(composer cleared → submitted) with `click:4, dispatchEvent:30`. Two residual
+issues surfaced, both in the submit/typing phase (NOT navigation):
+
+**1. "Bị mò" — the avatar/sticker picker opened.** `findSubmitButtons` clicked a
+composer-toolbar icon before the real send button. Root cause: `rejectActionLabel`
+listed only ENGLISH icon labels (emoji/sticker/gif) but FB renders **Vietnamese**
+aria-labels (nhãn dán / biểu tượng cảm xúc / máy ảnh / avatar), which passed as
+spatial submit candidates and were clicked (opening "Avatar của bạn"). The comment
+still posted via a later click, so the attempt reached `verify` — but it groped.
+Fix: (a) `rejectActionLabel` extended with the Vietnamese toolbar labels;
+(b) `findSubmitButtons` now tries **labeled** submit buttons ("Bình luận"/"Gửi")
+FIRST, spatial-only icons only as fallback — so the real send is clicked first and
+the editor clears before any icon is reached.
+
+**2. Duplicated comment text.** FB persists an unsent comment **draft per post**;
+on a retry it re-mounts the draft and `insertText` appended to it. Fix:
+`setEditableText` now clears the editor (`selectNodeContents` + `execCommand
+('delete')`) before inserting, so a restored draft can't double the text.
+
+**3. Forensics flooding (tooling fix).** The proof phase fired 356 `innerText`
+reads that flushed the click ops out of the 80-event ring. `content/forensics.js`
+now keeps mutating ops (click/focus/dispatchEvent/observe) in a separate
+`actions` buffer (`nav_diagnostic.forensics.actions`) that read-volume can't
+flood, so the triggering click is always visible.
+
+**Separate / upstream — not in 0.5.23:** the comment text begins with the literal
+placeholder **"Anonymous participant"** because the lead's author name was never
+resolved (crawler) and the AI prompt used the placeholder. This is a content /
+name-resolution fix in the Go AI layer (e.g. omit the name salutation when the
+author is "Anonymous participant"/empty), tracked separately from the executor.
+
+### Verification gate (0.5.23)
+Reload to **0.5.23**, run `comment_all_leads`. Expected: no avatar/sticker picker
+opens (forensic `actions` shows the labeled send clicked directly, no toolbar-icon
+click), the comment text is single (no duplication), and the attempt reaches
+`dom_verified`. Read `forensics.actions` to confirm the click sequence.

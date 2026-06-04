@@ -135,8 +135,13 @@ type NavForensics struct {
 	// innerText.get) plus innerHTML_bytes / innerText_bytes totals. This directly
 	// answers "how many DOM scans / clicks / focuses / how many KB of innerHTML".
 	Counts map[string]int `json:"counts,omitempty"`
-	// Timeline is the last ~80 micro-ops before the snapshot, each with its ms
-	// offset, op name, and a short detail (selector + result count, target tag).
+	// Actions is the MUTATING-op timeline (click / focus / dispatchEvent /
+	// MutationObserver.observe) kept in its own buffer so the few interesting
+	// interactions are never flooded out by the high-volume read ops in Timeline.
+	// This is where the click that opens a picker / navigates shows up.
+	Actions []ForensicEvent `json:"actions,omitempty"`
+	// Timeline is the last ~50 READ micro-ops (querySelectorAll / innerText / ...)
+	// before the snapshot, each with its ms offset, op name, and a short detail.
 	Timeline []ForensicEvent `json:"timeline,omitempty"`
 	// PushStates is the MAIN-world history.pushState/replaceState/popstate events
 	// observed in the window, each with FB's stack trace at the call site.

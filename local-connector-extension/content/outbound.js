@@ -159,9 +159,18 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   function setEditableText(editor, text) {
     try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) {} }
     if (editor.isContentEditable) {
+      // PR8D: clear any pre-existing / FB-restored draft BEFORE inserting. FB
+      // persists an unsent comment draft per post; on a retry it re-mounts the
+      // draft into the composer, and insertText then APPENDED to it → the
+      // duplicated comment ("…Inbox mình nhé!Anonymous participant, nếu bạn…").
+      // selectNodeContents + execCommand('delete') guarantees an empty editor
+      // even when the draft sits in a child node a plain select-all-replace missed.
+      selectEditableContents(editor);
+      try { document.execCommand('delete', false, null); } catch (_) {}
       selectEditableContents(editor);
       document.execCommand('insertText', false, text);
     } else if ('value' in editor) {
+      setInputValue(editor, '');
       setInputValue(editor, text);
     } else {
       return false;
@@ -215,7 +224,22 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   }
 
   function rejectActionLabel(label) {
-    return hasAny(label, ['share', 'like', 'cancel', 'photo', 'gif', 'emoji', 'sticker', 'anh', 'huy', 'thich', 'chia se']);
+    return hasAny(label, [
+      'share', 'like', 'cancel', 'photo', 'gif', 'emoji', 'sticker', 'anh', 'huy', 'thich', 'chia se',
+      // PR8D: Vietnamese composer-toolbar icon labels. FB renders aria-labels in
+      // the UI locale, so the English-only list above let the sticker/avatar/
+      // emoji/camera icons (next to the editor) pass as spatial submit
+      // candidates — clicking them opened the "Avatar của bạn" picker (the "bị
+      // mò" groping). norm() strips diacritics, so these are the stripped forms.
+      'nhan dan',           // nhãn dán = sticker
+      'bieu tuong cam xuc', // biểu tượng cảm xúc = emoji
+      'cam xuc',            // shorter emoji variants
+      'avatar',
+      'may anh',            // máy ảnh = camera
+      'hinh anh',           // hình ảnh = image
+      'dinh kem',           // đính kèm = attach
+      'tep', 'tap tin',     // tệp / tập tin = file
+    ]);
   }
 
   // extractPostIdFromUrl pulls the canonical Facebook post identifier
@@ -479,8 +503,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       }
       if (candidates.length >= 3) break;
     }
-    candidates.sort((a, b) => submitScore(editor, a) - submitScore(editor, b));
-    return candidates.slice(0, 5);
+    // PR8D: partition by confidence and try LABELED submit buttons first. The
+    // real send control carries a positive aria-label ("Bình luận"/"Gửi"/
+    // "Comment"/"Send"). Spatial-only candidates are toolbar icons near the
+    // editor — we try them ONLY if no labeled button cleared the composer, so
+    // the executor never clicks the sticker/avatar icon first (the groping that
+    // opened the avatar picker while the comment still posted via a later click).
+    const labeled = candidates.filter(el => hasAny(labelOf(el), submitKeys));
+    const spatialOnly = candidates.filter(el => !hasAny(labelOf(el), submitKeys));
+    labeled.sort((a, b) => submitScore(editor, a) - submitScore(editor, b));
+    spatialOnly.sort((a, b) => submitScore(editor, a) - submitScore(editor, b));
+    return labeled.concat(spatialOnly).slice(0, 5);
   }
 
   // probeCommentGates inspects the live DOM ONCE and reports the three PR8A

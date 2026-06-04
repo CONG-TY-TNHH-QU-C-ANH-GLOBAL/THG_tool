@@ -29,18 +29,32 @@ var THGForensics = globalThis.THGForensics || (() => {
   const RING = 600;
   let armed = false;
   let entryTs = 0;
-  let timeline = [];      // { t, op, detail }
+  let timeline = [];      // READ ops (querySelectorAll/innerText/...) — high volume
+  let actions = [];       // MUTATING ops (click/focus/dispatchEvent/observe) — few, never flooded
   const counts = {};      // op → total count (exact, unbounded)
   const pushStates = [];  // { ts, url, method, stack } absolute wall clock
   const saved = {};       // originals for uninstall
+
+  // PR8D: the proof-collection phase (snapshotCommentCount + findCommentNode)
+  // fires hundreds of innerText/querySelectorAll READS, which flooded the single
+  // ring and pushed the few interesting CLICKS out of the snapshot. Route
+  // mutating ops to a separate `actions` buffer so the click that (e.g.) opened
+  // a picker is ALWAYS visible regardless of read volume.
+  const ACTION_OPS = { click: 1, focus: 1, dispatchEvent: 1, 'MutationObserver.observe': 1 };
 
   const now = () => Date.now();
 
   function rec(op, detail) {
     counts[op] = (counts[op] || 0) + 1;
     if (!armed) return;
-    timeline.push({ t: now() - entryTs, op, detail: detail == null ? '' : String(detail).slice(0, 120) });
-    if (timeline.length > RING) timeline.splice(0, timeline.length - RING);
+    const entry = { t: now() - entryTs, op, detail: detail == null ? '' : String(detail).slice(0, 120) };
+    if (ACTION_OPS[op]) {
+      actions.push(entry);
+      if (actions.length > 150) actions.splice(0, actions.length - 150);
+    } else {
+      timeline.push(entry);
+      if (timeline.length > RING) timeline.splice(0, timeline.length - RING);
+    }
   }
 
   function tagDesc(el) {
@@ -174,6 +188,7 @@ var THGForensics = globalThis.THGForensics || (() => {
     if (armed) uninstall();
     entryTs = now();
     timeline = [];
+    actions = [];
     for (const k in counts) delete counts[k];
     try { patch(); armed = true; } catch (_) { armed = false; }
   }
@@ -194,16 +209,22 @@ var THGForensics = globalThis.THGForensics || (() => {
       .filter(p => p.ts >= entryTs && isHomeish(p.url))
       .sort((a, b) => a.ts - b.ts)[0] || null;
     const resetT = homePs ? (homePs.ts - entryTs) : 0;
+    // last_op_before_reset is the last MUTATING action (click/focus/dispatch)
+    // at/before the reset — the trigger candidate. Actions are kept in their own
+    // un-flooded buffer so this survives a heavy proof-read phase.
     let lastOp = null;
     if (homePs) {
-      for (const e of timeline) {
+      for (const e of actions) {
         if (e.t <= resetT) lastOp = e; else break;
       }
+    } else if (actions.length) {
+      lastOp = actions[actions.length - 1];
     }
     return {
       entry_ts: entryTs,
       counts: { ...counts },
-      timeline: timeline.slice(-80),
+      actions: actions.slice(-100),
+      timeline: timeline.slice(-50),
       push_states: pushStates
         .filter(p => p.ts >= entryTs - 500)
         .slice(-10)
