@@ -56,6 +56,25 @@ type NavDiagnostic struct {
 	// the extension before send). Captured on failure so the operator can see
 	// "Content unavailable" / login wall / feed shell without a screenshot.
 	DOMSnapshot string `json:"dom_snapshot,omitempty"`
+
+	// NavEvents is the chrome.webNavigation trace for the comment tab between
+	// tab-open and the gate evaluation (PR8A.1). It NAMES the source of the
+	// home-redirect: a server_redirect/client_redirect qualifier means FB
+	// redirected; a 'history' kind (onHistoryStateUpdated) means FB's SPA
+	// router reset; a 'typed'/'auto_toplevel' committed nav with no redirect
+	// qualifier means our own chrome.tabs code moved the tab. This is the field
+	// that settles "FB vs our system" with ground truth instead of inference.
+	NavEvents []NavEvent `json:"nav_events,omitempty"`
+}
+
+// NavEvent is one top-frame navigation observed on the comment tab via
+// chrome.webNavigation (onCommitted / onHistoryStateUpdated). See NavDiagnostic.NavEvents.
+type NavEvent struct {
+	URL        string `json:"url,omitempty"`
+	Transition string `json:"transition,omitempty"` // webNavigation transitionType (link/typed/auto_toplevel/reload/...)
+	Qualifiers string `json:"qualifiers,omitempty"` // comma-joined transitionQualifiers (server_redirect/client_redirect/forward_back/from_address_bar)
+	Kind       string `json:"kind,omitempty"`       // "committed" (full nav) | "history" (SPA pushState/replaceState)
+	TMs        int    `json:"t_ms,omitempty"`       // ms since the comment tab was opened
 }
 
 // RedirectClass constants — the closed vocabulary for NavDiagnostic.RedirectClass.

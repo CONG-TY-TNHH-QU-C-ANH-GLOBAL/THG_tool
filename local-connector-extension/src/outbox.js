@@ -538,6 +538,10 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     //     target). Scrolling a feed to rediscover a known post is the wrong
     //     model — go straight to the permalink instead.
 
+    // PR8A.1: mark when we begin opening the comment tab, so THGNavWatch can
+    // hand back exactly the navigation events that fired on this tab during
+    // the attempt — that trace NAMES who redirected it to home.
+    const navWatchStart = Date.now();
     let crawlInfo;
     try {
       crawlInfo = await THGCommands.navigateAndVerify(targetUrl);
@@ -603,6 +607,21 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       }
     } finally {
       releaseTabLock();
+      // PR8A.1: BEFORE removing the tab, fold the webNavigation trace for this
+      // tab into the proof's nav_diagnostic. The ring buffer already holds the
+      // events (they were recorded as they fired), so this is just a read —
+      // but we do it pre-remove so tabId is unambiguous. This is the trace that
+      // names whether home came from FB (server/client_redirect, SPA history)
+      // or our own chrome.tabs code (typed/auto_toplevel, no redirect qualifier).
+      try {
+        if (result && result.proof && globalThis.THGNavWatch) {
+          const evs = THGNavWatch.eventsFor(tabId, navWatchStart);
+          if (evs.length) {
+            result.proof.nav_diagnostic = result.proof.nav_diagnostic || {};
+            result.proof.nav_diagnostic.nav_events = evs;
+          }
+        }
+      } catch (_) { /* telemetry must never break delivery */ }
       // Mirror the crawler's cleanup so the FB window doesn't accumulate
       // tabs across a daily batch. Restore window state if crawler had
       // to un-minimize it during navigateAndVerify.
