@@ -17,6 +17,7 @@ import type { SystemInfo } from '../../services/systemService';
 import type { LocalConnector } from '../../types';
 import { useLang } from '../../i18n/useLang';
 import { connectorStatusLabel, facebookIdentityLabel, formatCountdown, formatLastSeen, isDashboardStreamConnector } from './browserHelpers';
+import { ConnectorSetupStepper } from './ConnectorSetupStepper';
 
 function resolveExtensionStoreUrl(systemInfo: SystemInfo | null): string {
   const directUrl = (systemInfo?.chrome_extension_store_url || '').trim();
@@ -99,6 +100,15 @@ export function LocalConnectorPanel({
 
   const streamStatusTag = extensionOnline > 0 ? 'tag-ok' : online > 0 ? 'tag-warm' : 'tag-mute';
 
+  // PR-M4 onboarding stepper state. Steps auto-advance from the live connector
+  // set so the member SEES progress: install -> pair -> Facebook login -> done.
+  const facebookReady = connectors.some((c) => c.online && c.streamStatus === 'facebook_logged_in');
+  const currentSetupStep = facebookReady ? 4 : connectors.length > 0 ? 3 : (pairingCode && !pairingExpired) ? 2 : 1;
+  const readyConnector = connectors.find((c) => c.online && c.streamStatus === 'facebook_logged_in');
+  const onlineIdentity = readyConnector
+    ? facebookIdentityLabel({ displayName: readyConnector.fbDisplayName, username: readyConnector.fbUsername, fbUserId: readyConnector.fbUserId })
+    : '';
+
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <header
@@ -138,6 +148,16 @@ export function LocalConnectorPanel({
           {tc.setupToggle}
         </button>
       </header>
+
+      {/* PR-M4: always-visible progress stepper + security strip. Shows the
+          member where they are and confirms success without expanding setup. */}
+      <div style={{ padding: 'var(--s-4) var(--s-5)', borderBottom: '1px solid var(--line)' }}>
+        <ConnectorSetupStepper
+          currentStep={currentSetupStep}
+          facebookReady={facebookReady}
+          onlineIdentity={onlineIdentity}
+        />
+      </div>
 
       {setupOpen && (
         <div
