@@ -20,11 +20,13 @@ export interface ConnectorAccountStatus {
   assigned_user_id: number;
   assigned_user_name: string;
   account_fb_user_id: string;
+  account_fb_display_name: string;
   connector_id: number;
   connector_name: string;
   connector_online: boolean;
   stream_status: string;
   connector_fb_user_id: string;
+  connector_fb_display_name: string;
   reachable: boolean;
   state: ConnectorAccountState;
 }

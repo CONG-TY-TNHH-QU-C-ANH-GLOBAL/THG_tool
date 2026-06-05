@@ -17,12 +17,18 @@ type connectorAccountStatus struct {
 	AccountName       string `json:"account_name"`
 	AssignedUserID    int64  `json:"assigned_user_id"`
 	AssignedUserName  string `json:"assigned_user_name"`
-	AccountFBUserID   string `json:"account_fb_user_id"`
-	ConnectorID       int64  `json:"connector_id"`
-	ConnectorName     string `json:"connector_name"`
-	ConnectorOnline   bool   `json:"connector_online"`
-	StreamStatus      string `json:"stream_status"`
-	ConnectorFBUserID string `json:"connector_fb_user_id"`
+	AccountFBUserID      string `json:"account_fb_user_id"`
+	AccountFBDisplayName string `json:"account_fb_display_name"`
+	ConnectorID          int64  `json:"connector_id"`
+	ConnectorName        string `json:"connector_name"`
+	ConnectorOnline      bool   `json:"connector_online"`
+	StreamStatus         string `json:"stream_status"`
+	ConnectorFBUserID    string `json:"connector_fb_user_id"`
+	// ConnectorFBDisplayName is the LIVE logged-in FB name reported by the
+	// connector — the most accurate identity (account.name is often an
+	// auto-generated placeholder like "Facebook 05/06"). The UI labels the row
+	// by this when present.
+	ConnectorFBDisplayName string `json:"connector_fb_display_name"`
 	// Reachable = an online connector is bound AND logged into the SAME FB
 	// account this record expects. The single field telling the operator
 	// "will an automation on this account actually run".
@@ -64,12 +70,13 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 			continue
 		}
 		row := connectorAccountStatus{
-			AccountID:        acc.ID,
-			AccountName:      acc.Name,
-			AssignedUserID:   acc.AssignedUserID,
-			AssignedUserName: acc.AssignedUserName,
-			AccountFBUserID:  strings.TrimSpace(acc.FBUserID),
-			State:            "no_connector",
+			AccountID:            acc.ID,
+			AccountName:          acc.Name,
+			AssignedUserID:       acc.AssignedUserID,
+			AssignedUserName:     acc.AssignedUserName,
+			AccountFBUserID:      strings.TrimSpace(acc.FBUserID),
+			AccountFBDisplayName: strings.TrimSpace(acc.FBDisplayName),
+			State:                "no_connector",
 		}
 		if conn, ok := byAccount[acc.ID]; ok {
 			row.ConnectorID = conn.ID
@@ -77,6 +84,7 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 			row.ConnectorOnline = conn.Online
 			row.StreamStatus = conn.StreamStatus
 			row.ConnectorFBUserID = strings.TrimSpace(conn.FBUserID)
+			row.ConnectorFBDisplayName = strings.TrimSpace(conn.FBDisplayName)
 			row.State, row.Reachable = deriveConnectorState(acc, conn)
 			if conn.Online {
 				onlineCount++

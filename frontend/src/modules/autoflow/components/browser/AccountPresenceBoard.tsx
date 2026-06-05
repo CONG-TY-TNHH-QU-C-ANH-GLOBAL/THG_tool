@@ -65,6 +65,10 @@ export function AccountPresenceBoard() {
       <div style={{ display: 'grid', gap: 6 }}>
         {rows.map((r) => {
           const meta = STATE_META[r.state] ?? STATE_META.no_connector;
+          // Identity priority: the LIVE logged-in FB name from the connector is
+          // the truth; account.name is often an auto-generated placeholder.
+          const identity = r.connector_fb_display_name || r.account_fb_display_name || r.account_name || `Account #${r.account_id}`;
+          const fbId = r.connector_fb_user_id || r.account_fb_user_id;
           return (
             <div
               key={r.account_id}
@@ -79,11 +83,11 @@ export function AccountPresenceBoard() {
                 background: r.reachable ? 'var(--ok)' : r.state === 'wrong_account' ? 'var(--hot)' : 'var(--text-faint)',
               }} />
               <strong style={{ fontSize: 13, color: 'var(--text)', minWidth: 120 }}>
-                {r.account_name || `Account #${r.account_id}`}
+                {identity}
               </strong>
               <span style={{ fontSize: 12, color: 'var(--text-mute)', flex: 1 }}>
                 {r.assigned_user_name ? `Chủ: ${r.assigned_user_name}` : 'Chưa gán chủ'}
-                {r.connector_fb_user_id ? ` · FB ${r.connector_fb_user_id}` : ''}
+                {fbId ? ` · FB ${fbId}` : ''}
               </span>
               <span className={`tag ${meta.tag}`}>{meta.label}</span>
             </div>

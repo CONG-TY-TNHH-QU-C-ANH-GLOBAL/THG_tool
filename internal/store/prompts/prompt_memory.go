@@ -83,19 +83,18 @@ func (s *Store) GetPromptHistory(limit int) ([]models.PromptLog, error) {
 	return logs, nil
 }
 
-// GetPromptHistoryForOrg returns recent prompt logs for one workspace, scoped to
-// ONE member's copilot chat (PR-M1). It returns the caller's own user-typed
-// prompts PLUS the shared system feed (source='system', user_id=0 — crawl/outbound
-// status events that belong to the whole workspace, not a private conversation).
-// Other members' typed prompts are NOT returned, so the chat is private per user.
-//
-// userID<=0 (legacy/unauthenticated) falls back to the pre-PR-M1 behaviour of
-// returning user_id=0 rows + system, which is the safe no-identity default.
+// GetPromptHistoryForOrg returns the copilot chat for ONE member (PR-M1.1).
+// It is the member's OWN conversation only — their typed prompts + the AI's
+// replies to them. System events (source='system' — recurring-crawl progress,
+// outbound status) are deliberately EXCLUDED: they are workspace execution
+// telemetry, not conversation, and they were flooding every member's chat and
+// surviving "Clear history". Status now lives on the Browser / activity surfaces,
+// keeping the copilot chat clean and truly private per member.
 func (s *Store) GetPromptHistoryForOrg(orgID, userID int64, limit int) ([]models.PromptLog, error) {
 	rows, err := s.db.Query(
 		`SELECT id, org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success, created_at
 		 FROM prompt_logs
-		 WHERE org_id = ? AND (user_id = ? OR source = 'system')
+		 WHERE org_id = ? AND user_id = ? AND source != 'system'
 		 ORDER BY created_at DESC
 		 LIMIT ?`,
 		orgID, userID, limit,
