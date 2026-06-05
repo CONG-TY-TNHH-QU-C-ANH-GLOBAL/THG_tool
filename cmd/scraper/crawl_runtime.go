@@ -37,7 +37,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	orgID := argInt64(args, "org_id")
 	accountID := argInt64(args, "account_id")
 	if accountID <= 0 && orgID > 0 && db != nil {
-		if pickedAccountID, err := pickReadyFacebookAccountIDForCrawl(db, orgID); err == nil && pickedAccountID > 0 {
+		if pickedAccountID, err := pickReadyFacebookAccountIDForCrawl(db, orgID, argInt64(args, "user_id"), argString(args, "user_role")); err == nil && pickedAccountID > 0 {
 			accountID = pickedAccountID
 			args["account_id"] = pickedAccountID
 		}
@@ -100,7 +100,33 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, intent), nil
 }
 
-func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, error) {
+func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID, userID int64, role string) (int64, error) {
+	// PR-M3 member scope: a non-privileged member's auto-resolved crawl must only
+	// land on an account they OWN — mirroring the comment path
+	// (resolveCallerAccountID). Without this, a sales member's crawl could
+	// silently run on another member's online account (cross-member confusion).
+	// Admin / platform roles, and the system scheduler (userID<=0), keep org-wide
+	// resolution. `allow` gates every candidate below by this ownership filter.
+	ownedOnly := false
+	owned := map[int64]bool{}
+	if userID > 0 {
+		r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
+		if !models.IsPlatformRole(r) && r != models.RoleAdmin {
+			ownedOnly = true
+			accs, err := db.Identities().GetAccountsForUser(orgID, userID)
+			if err != nil {
+				return 0, err
+			}
+			for _, a := range accs {
+				owned[a.ID] = true
+			}
+			if len(owned) == 0 {
+				return 0, nil // member owns no account — nothing safe to auto-pick
+			}
+		}
+	}
+	allow := func(id int64) bool { return !ownedOnly || owned[id] }
+
 	// PRIMARY: prefer the account an ONLINE, FB-logged-in extension connector is
 	// actually bound to. The dispatcher (pickOnlineConnectorForCrawl) routes by
 	// the connector's assigned_account_id, so the picker MUST agree with it.
@@ -114,7 +140,7 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, er
 	// execute them.
 	if conns, cErr := db.Connectors().ListLocalConnectors(orgID); cErr == nil {
 		for _, c := range conns {
-			if c.Online && c.AssignedAccountID > 0 &&
+			if c.Online && c.AssignedAccountID > 0 && allow(c.AssignedAccountID) &&
 				strings.EqualFold(strings.TrimSpace(c.StreamStatus), browsergateway.StreamFacebookLoggedIn) {
 				return c.AssignedAccountID, nil
 			}
@@ -125,7 +151,7 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, er
 		return 0, err
 	}
 	if screen != nil &&
-		screen.AccountID > 0 &&
+		screen.AccountID > 0 && allow(screen.AccountID) &&
 		screen.AgentID > 0 &&
 		strings.EqualFold(strings.TrimSpace(screen.StreamStatus), browsergateway.StreamFacebookLoggedIn) &&
 		time.Since(screen.UpdatedAt) <= 5*time.Minute {
@@ -139,7 +165,7 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID int64) (int64, er
 		if acc.Platform == models.PlatformFacebook &&
 			acc.BrowserLoggedIn &&
 			acc.Status == models.AccountActive &&
-			strings.TrimSpace(acc.FBUserID) != "" {
+			strings.TrimSpace(acc.FBUserID) != "" && allow(acc.ID) {
 			return acc.ID, nil
 		}
 	}

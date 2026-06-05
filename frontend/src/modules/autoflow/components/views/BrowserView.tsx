@@ -11,6 +11,7 @@ import { AutomationCommandCenter } from '../browser/AutomationCommandCenter';
 import { CyberEmptyState } from '../browser/CyberEmptyState';
 import { LocalChromeViewer } from '../browser/LocalChromeViewer';
 import { LocalConnectorPanel } from '../browser/LocalConnectorPanel';
+import { AccountPresenceBoard } from '../browser/AccountPresenceBoard';
 import { facebookIdentityLabel, isDashboardStreamConnector, isUsableConnectorForAccount, stateLabel, stateTone } from '../browser/browserHelpers';
 import '../../autoflow.css';
 
@@ -263,6 +264,8 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           {newLoading ? 'Đang khởi động...' : 'Phiên mới'}
         </button>
       </div>
+
+      <AccountPresenceBoard />
 
       <LocalConnectorPanel
         connectors={connectors}

@@ -215,6 +215,10 @@ type PromptLog struct {
 	ID          int64  `json:"id" db:"id"`
 	OrgID       int64  `json:"org_id" db:"org_id"`
 	AccountID   int64  `json:"account_id" db:"account_id"`
+	// UserID is the member who issued the prompt — the per-user privacy key for
+	// the copilot chat (PR-M1). 0 for system events (source='system'), which are
+	// the shared execution feed visible to all members.
+	UserID      int64  `json:"user_id" db:"user_id"`
 	Source      string `json:"source" db:"source"` // telegram, dashboard
 	UserPrompt  string `json:"user_prompt" db:"user_prompt"`
 	AIResponse  string `json:"ai_response" db:"ai_response"`

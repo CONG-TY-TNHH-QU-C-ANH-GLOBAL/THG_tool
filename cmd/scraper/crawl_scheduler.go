@@ -88,7 +88,10 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 	for _, intent := range intents {
 		accountID := intent.AccountID
 		if accountID <= 0 {
-			if picked, pickErr := pickReadyFacebookAccountIDForCrawl(db, intent.OrgID); pickErr == nil {
+			// Recurring scheduler runs system-side (no live member request); use
+			// org-wide resolution (userID=0). Recurring intents normally carry an
+			// explicit AccountID, so this fallback is rare.
+			if picked, pickErr := pickReadyFacebookAccountIDForCrawl(db, intent.OrgID, 0, ""); pickErr == nil {
 				accountID = picked
 			}
 		}

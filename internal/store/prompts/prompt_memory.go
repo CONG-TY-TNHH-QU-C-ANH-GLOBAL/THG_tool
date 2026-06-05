@@ -41,8 +41,8 @@ func (s *Store) InsertPromptLog(p *models.PromptLog) error {
 		decisionJSON = "{}"
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO prompt_logs (org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success, routing_decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.OrgID, p.AccountID, p.Source, p.UserPrompt, p.AIResponse, p.ActionTaken, p.ActionArgs, p.Success, decisionJSON,
+		`INSERT INTO prompt_logs (org_id, account_id, user_id, source, user_prompt, ai_response, action_taken, action_args, success, routing_decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.OrgID, p.AccountID, p.UserID, p.Source, p.UserPrompt, p.AIResponse, p.ActionTaken, p.ActionArgs, p.Success, decisionJSON,
 	)
 	return err
 }
@@ -83,15 +83,22 @@ func (s *Store) GetPromptHistory(limit int) ([]models.PromptLog, error) {
 	return logs, nil
 }
 
-// GetPromptHistoryForOrg returns recent prompt logs for one workspace only.
-func (s *Store) GetPromptHistoryForOrg(orgID int64, limit int) ([]models.PromptLog, error) {
+// GetPromptHistoryForOrg returns recent prompt logs for one workspace, scoped to
+// ONE member's copilot chat (PR-M1). It returns the caller's own user-typed
+// prompts PLUS the shared system feed (source='system', user_id=0 — crawl/outbound
+// status events that belong to the whole workspace, not a private conversation).
+// Other members' typed prompts are NOT returned, so the chat is private per user.
+//
+// userID<=0 (legacy/unauthenticated) falls back to the pre-PR-M1 behaviour of
+// returning user_id=0 rows + system, which is the safe no-identity default.
+func (s *Store) GetPromptHistoryForOrg(orgID, userID int64, limit int) ([]models.PromptLog, error) {
 	rows, err := s.db.Query(
 		`SELECT id, org_id, account_id, source, user_prompt, ai_response, action_taken, action_args, success, created_at
 		 FROM prompt_logs
-		 WHERE org_id = ?
+		 WHERE org_id = ? AND (user_id = ? OR source = 'system')
 		 ORDER BY created_at DESC
 		 LIMIT ?`,
-		orgID, limit,
+		orgID, userID, limit,
 	)
 	if err != nil {
 		return nil, err
@@ -109,8 +116,11 @@ func (s *Store) GetPromptHistoryForOrg(orgID int64, limit int) ([]models.PromptL
 	return logs, rows.Err()
 }
 
-func (s *Store) DeletePromptLogForOrg(orgID, id int64) error {
-	res, err := s.db.Exec(`DELETE FROM prompt_logs WHERE id = ? AND org_id = ?`, id, orgID)
+// DeletePromptLogForOrgUser deletes one chat row, scoped to the OWNING member
+// (PR-M1). A member can only delete their own copilot messages, never another
+// member's or the shared system feed.
+func (s *Store) DeletePromptLogForOrgUser(orgID, userID, id int64) error {
+	res, err := s.db.Exec(`DELETE FROM prompt_logs WHERE id = ? AND org_id = ? AND user_id = ?`, id, orgID, userID)
 	if err != nil {
 		return err
 	}
@@ -121,8 +131,10 @@ func (s *Store) DeletePromptLogForOrg(orgID, id int64) error {
 	return nil
 }
 
-func (s *Store) DeleteAllPromptLogsForOrg(orgID int64) (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM prompt_logs WHERE org_id = ?`, orgID)
+// DeleteAllPromptLogsForUser clears one member's OWN copilot chat (PR-M1). It
+// does NOT touch other members' chats or the shared system feed (user_id=0).
+func (s *Store) DeleteAllPromptLogsForUser(orgID, userID int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM prompt_logs WHERE org_id = ? AND user_id = ? AND source != 'system'`, orgID, userID)
 	if err != nil {
 		return 0, err
 	}

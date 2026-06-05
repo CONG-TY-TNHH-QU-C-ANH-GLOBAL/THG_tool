@@ -129,10 +129,11 @@ func keywordOverlap(a, b []string) float64 {
 // routing dashboard — prefer the constructor helpers in routing_decision.go
 // (NewDeterministicDecision / NewBrainDecision / NewPreflightDecision /
 // NewScopeGuardDecision / NewLLMFallbackDecision).
-func (a *Agent) logPrompt(orgID, accountID int64, source, prompt, response, action, args string, success bool, decision RoutingDecision) {
+func (a *Agent) logPrompt(orgID, accountID, userID int64, source, prompt, response, action, args string, success bool, decision RoutingDecision) {
 	pl := &models.PromptLog{
 		OrgID:               orgID,
 		AccountID:           accountID,
+		UserID:              userID, // PR-M1: per-user chat privacy key
 		Source:              source,
 		UserPrompt:          prompt,
 		AIResponse:          response,

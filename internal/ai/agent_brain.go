@@ -146,12 +146,12 @@ type BrainRecurrence struct {
 	Reason          string `json:"reason,omitempty"`
 }
 
-func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, orgID, selectedAccountID int64, userContext map[string]string, accounts []models.Account) (string, bool) {
+func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, orgID, selectedAccountID, userID int64, userContext map[string]string, accounts []models.Account) (string, bool) {
 	if a == nil || a.brain == nil || !a.brain.Available() {
 		return "", false
 	}
 	if ok, msg := facebookScopePreflight(prompt); !ok {
-		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "facebook_scope_guard", "", true, NewScopeGuardDecision(msg))
+		a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "facebook_scope_guard", "", true, NewScopeGuardDecision(msg))
 		return msg, true
 	}
 
@@ -182,7 +182,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	}
 	if err := validateBrainPlan(plan); err != nil {
 		msg := "Agent Brain returned an unsafe or invalid plan, so no automation was executed.\n\nDetail: " + err.Error()
-		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_invalid_plan", mustJSON(plan), false,
+		a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "brain_invalid_plan", mustJSON(plan), false,
 			RoutingDecision{Route: RouteBrain, ReasonCode: ReasonBrainInvalidPlan, Reason: err.Error()})
 		return msg, true
 	}
@@ -192,7 +192,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		if msg == "" {
 			msg = facebookScopeGuardMessage()
 		}
-		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_refuse", mustJSON(plan), true,
+		a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "brain_refuse", mustJSON(plan), true,
 			NewBrainDecision("refuse", msg))
 		return msg, true
 	}
@@ -208,7 +208,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		dec := NewBrainDecision(plan.Decision, msg)
 		dec.MissingSignals = analyseMissingSignals(prompt)
 		dec.InferredSignals = inferredSignalsFromPrompt(prompt)
-		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_"+strings.ToLower(plan.Decision), mustJSON(plan), true, dec)
+		a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "brain_"+strings.ToLower(plan.Decision), mustJSON(plan), true, dec)
 		if strings.EqualFold(plan.Decision, "chat") {
 			a.learnFromPrompt(prompt)
 		}
@@ -217,14 +217,14 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 
 	if actionPlanNeedsProfile(plan) {
 		if ok, msg := businessCalibrationPreflight(userContext, prompt); !ok {
-			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_business_preflight", mustJSON(plan), false,
+			a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "brain_business_preflight", mustJSON(plan), false,
 				NewPreflightDecision(ReasonBusinessPreflightBlocked, msg))
 			return msg, true
 		}
 	}
 	if actionPlanNeedsBrowser(plan) {
 		if ok, msg := facebookBrowserPreflight(accounts, selectedAccountID); !ok {
-			a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_browser_preflight", mustJSON(plan), false,
+			a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "brain_browser_preflight", mustJSON(plan), false,
 				NewPreflightDecision(ReasonBrowserPreflightBlocked, msg))
 			return msg, true
 		}
@@ -234,7 +234,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	}
 	if a.ActionHandler == nil {
 		msg := "Action handler is not configured; Agent Brain plan was validated but not executed."
-		a.logPrompt(orgID, selectedAccountID, source, prompt, msg, "brain_no_action_handler", mustJSON(plan), false,
+		a.logPrompt(orgID, selectedAccountID, userID, source, prompt, msg, "brain_no_action_handler", mustJSON(plan), false,
 			RoutingDecision{Route: RouteBrain, ReasonCode: ReasonBrainNoHandler, Reason: msg})
 		return msg, true
 	}
@@ -271,7 +271,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 	if !success && strings.TrimSpace(responseText) == "" {
 		responseText = "Agent Brain plan was validated, but no action completed successfully."
 	}
-	a.logPrompt(orgID, selectedAccountID, source, prompt, responseText, "brain_"+firstAction, firstArgs, success,
+	a.logPrompt(orgID, selectedAccountID, userID, source, prompt, responseText, "brain_"+firstAction, firstArgs, success,
 		NewBrainDecision("execute", "brain plan executed → "+firstAction))
 	if success && firstAction != "" {
 		a.updateMemory(prompt, firstAction, firstArgs)

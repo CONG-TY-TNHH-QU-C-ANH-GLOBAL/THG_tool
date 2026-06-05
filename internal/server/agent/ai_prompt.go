@@ -42,7 +42,10 @@ func (h *Handler) aiHistory(c *fiber.Ctx) error {
 		limit = 20
 	}
 	orgID, _ := c.Locals("org_id").(int64)
-	history, err := h.db.Prompts().GetPromptHistoryForOrg(orgID, limit)
+	userID, _ := c.Locals("user_id").(int64)
+	// PR-M1: scope the copilot chat to the calling member (their own prompts +
+	// the shared system feed). Other members' commands stay private to them.
+	history, err := h.db.Prompts().GetPromptHistoryForOrg(orgID, userID, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -51,11 +54,12 @@ func (h *Handler) aiHistory(c *fiber.Ctx) error {
 
 func (h *Handler) aiDeleteHistoryItem(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid history id"})
 	}
-	if err := h.db.Prompts().DeletePromptLogForOrg(orgID, id); err != nil {
+	if err := h.db.Prompts().DeletePromptLogForOrgUser(orgID, userID, id); err != nil {
 		if err == sql.ErrNoRows {
 			return c.Status(404).JSON(fiber.Map{"error": "history item not found"})
 		}
@@ -66,7 +70,8 @@ func (h *Handler) aiDeleteHistoryItem(c *fiber.Ctx) error {
 
 func (h *Handler) aiDeleteHistory(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	deleted, err := h.db.Prompts().DeleteAllPromptLogsForOrg(orgID)
+	userID, _ := c.Locals("user_id").(int64)
+	deleted, err := h.db.Prompts().DeleteAllPromptLogsForUser(orgID, userID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
