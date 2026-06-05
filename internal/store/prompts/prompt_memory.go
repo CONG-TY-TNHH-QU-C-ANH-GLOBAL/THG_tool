@@ -47,6 +47,28 @@ func (s *Store) InsertPromptLog(p *models.PromptLog) error {
 	return err
 }
 
+// InsertUserAutomationLog records an automation status event ATTRIBUTED to the
+// member who initiated it (PR-M5.1). Unlike InsertSystemPromptLog (source=
+// 'system', user_id=0, hidden from the per-user chat), this carries the
+// initiator's user_id + source='status', so outbound results — e.g.
+// "comment #X trạng thái: finished/target_not_reached. Chi tiet: ..." — appear
+// in THAT member's private copilot chat. They can see why their OWN comment
+// failed, without re-sharing results to other members or bringing back the
+// crawl-progress spam (which stays source='system' and out of the chat).
+func (s *Store) InsertUserAutomationLog(orgID, accountID, userID int64, message, action, args string, success bool) error {
+	return s.InsertPromptLog(&models.PromptLog{
+		OrgID:       orgID,
+		AccountID:   accountID,
+		UserID:      userID,
+		Source:      "status",
+		UserPrompt:  "",
+		AIResponse:  message,
+		ActionTaken: action,
+		ActionArgs:  args,
+		Success:     success,
+	})
+}
+
 // InsertSystemPromptLog stores connector and automation updates in the same
 // prompt history table so the dashboard chat can show crawl/outbox events.
 func (s *Store) InsertSystemPromptLog(orgID, accountID int64, message, action, args string, success bool) error {

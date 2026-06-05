@@ -164,7 +164,19 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	if verified {
 		eventName = models.ExecutionEventVerified
 	}
-	RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, eventName, fmt.Sprintf(`{"id":%d,"type":%q,"execution_state":%q,"verification_outcome":%q,"detail":%q,"verified":%t}`, msg.ID, msg.Type, state, outcome, detail, verified), verified)
+	argsJSON := fmt.Sprintf(`{"id":%d,"type":%q,"execution_state":%q,"verification_outcome":%q,"detail":%q,"verified":%t}`, msg.ID, msg.Type, state, outcome, detail, verified)
+	// PR-M5.1: attribute the outbound result to the member who initiated it so
+	// "comment #X failed: <reason>" lands in THEIR private copilot chat (they need
+	// to see why their own comment failed). Falls back to the shared system feed
+	// only when the initiator is unknown (legacy rows). Crawl progress stays
+	// system-scoped and out of the chat.
+	if msg.CreatedBy > 0 {
+		if err := db.Prompts().InsertUserAutomationLog(orgID, msg.AccountID, msg.CreatedBy, userText, eventName, argsJSON, verified); err != nil {
+			log.Printf("[Outbound] record user automation event failed org=%d outbound=%d: %v", orgID, msg.ID, err)
+		}
+	} else {
+		RecordDashboardAutomationEvent(db, orgID, msg.AccountID, userText, eventName, argsJSON, verified)
+	}
 	if notifier != nil {
 		notifier(userText)
 	}
