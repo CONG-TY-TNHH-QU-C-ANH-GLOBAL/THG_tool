@@ -96,6 +96,32 @@ export function connectorStatusLabel(status?: string): string {
   }
 }
 
+// looksLikeJunkName rejects labels that are clearly NOT a person/account name —
+// they are Facebook feed text or UI strings that the meta collector sometimes
+// scrapes into fb_display_name / account name (e.g. "Unreadsports_saggy is a
+// suggested Page for you to follow.1d", "Chỉnh sửa", "Facebook 05/06 15:56").
+// A real name is short and free of these markers, so when a label trips this we
+// fall through to a stable identifier (@username / FB <id>) instead of showing
+// garbage — keeping the session list, connector cards and presence board labels
+// consistent and trustworthy.
+export function looksLikeJunkName(raw: string): boolean {
+  const s = (raw || '').trim();
+  if (!s) return true;
+  if (s.length > 48) return true; // names are short; feed snippets are long
+  const low = s.toLowerCase();
+  const markers = [
+    'suggested page', 'suggested for you', 'is a suggested', 'gợi ý', 'theo dõi',
+    'follow', 'chỉnh sửa', 'edit profile', "what's on your mind", 'bạn đang nghĩ gì',
+    'watch', 'reels', 'notification', 'thông báo', 'marketplace',
+  ];
+  if (markers.some((m) => low.includes(m))) return true;
+  // Feed-item time suffix like "· 1d", ".1d", "2 h", "3 ngày"
+  if (/[·.]\s*\d+\s*[dhmw]\b/.test(low) || /\b\d+\s*(ngày|giờ|phút|tuần)\b/.test(low)) return true;
+  // Auto-generated placeholder "Facebook 05/06 15:56" / "Facebook 6156..."
+  if (/^facebook\s+\d/.test(low)) return true;
+  return false;
+}
+
 export function facebookIdentityLabel(identity: {
   displayName?: string;
   username?: string;
@@ -104,14 +130,15 @@ export function facebookIdentityLabel(identity: {
   fallback?: string;
 }): string {
   const displayName = (identity.displayName || '').trim();
-  if (displayName) return displayName;
+  if (displayName && !looksLikeJunkName(displayName)) return displayName;
   const username = (identity.username || '').trim().replace(/^@+/, '');
-  if (username) return `@${username}`;
+  if (username && !looksLikeJunkName(username)) return `@${username}`;
   const email = (identity.email || '').trim();
   if (email) return email;
   const fbUserId = (identity.fbUserId || '').trim();
   if (fbUserId) return `FB ${fbUserId}`;
-  return (identity.fallback || '').trim();
+  const fallback = (identity.fallback || '').trim();
+  return looksLikeJunkName(fallback) ? '' : fallback;
 }
 
 export function actionTypeLabel(type?: string): string {

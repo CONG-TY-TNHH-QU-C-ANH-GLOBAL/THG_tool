@@ -303,6 +303,13 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
             fbUserId: w.fbUserId,
             fallback: w.accountName,
           });
+          // "Your device" = a connector YOU paired drives this account's session.
+          // This is what lets the member pick their own row out of the workspace
+          // list when the FB-scraped names are ambiguous/garbage.
+          const isMine = connectors.some(
+            (c) => c.createdBy === currentUserId && isDashboardStreamConnector(c) &&
+              (c.assignedAccountId === w.accountId || c.assignedAccountId === 0),
+          );
           return (
             <div
               key={w.accountId}
@@ -328,9 +335,15 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                 }}
               />
               <Monitor size={14} color="var(--text-mute)" />
-              <span style={{ flex: 1, color: 'var(--text)', fontWeight: 500, fontSize: 13 }}>
-                {identityLabel || w.accountName}
+              <span style={{ color: 'var(--text)', fontWeight: 500, fontSize: 13 }}>
+                {identityLabel || `Tài khoản #${w.accountId}`}
               </span>
+              {isMine && (
+                <span className="tag tag-ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Monitor size={11} /> Thiết bị của bạn
+                </span>
+              )}
+              <span style={{ flex: 1 }} />
               {w.loggedIn && (
                 <span className="tag tag-cold" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <CheckCircle2 size={11} />Đã đăng nhập
