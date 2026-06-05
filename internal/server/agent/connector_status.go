@@ -40,9 +40,18 @@ type connectorAccountStatus struct {
 // GET /connectors/status — per-account connector + member + online state.
 func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
 	if orgID <= 0 {
 		return c.Status(401).JSON(fiber.Map{"error": "org context required"})
 	}
+	// PR-M5 account privacy: a Facebook account/device is PRIVATE to the member
+	// who owns it. The presence board only ever shows the caller's OWN accounts —
+	// even an admin cannot see a staff member's accounts here (admin oversight of
+	// staff is the activity counts + online status on the Nhân viên tab, never the
+	// account itself). Admins additionally see UNASSIGNED accounts so they can
+	// still manage org-owned-but-unclaimed ones.
+	canSee := func(acc models.Account) bool { return models.CanViewAccountDevice(&acc, userID, role) }
 	accounts, err := h.db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -68,6 +77,9 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 	for _, acc := range accounts {
 		if acc.Platform != models.PlatformFacebook {
 			continue
+		}
+		if !canSee(acc) {
+			continue // account privacy: not the caller's own (and not admin-visible unassigned)
 		}
 		row := connectorAccountStatus{
 			AccountID:            acc.ID,

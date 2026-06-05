@@ -13,6 +13,17 @@ func (h *Handler) autoflowGetStaff(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	// PR-M5: a member is "online" iff they have a live extension connector. This
+	// is the ONLY device signal admins get on staff — never the staff's Facebook
+	// account itself (that stays private to the owning member).
+	onlineUsers := map[int64]bool{}
+	if conns, cErr := h.deps.DB.Connectors().ListLocalConnectors(orgID); cErr == nil {
+		for _, c := range conns {
+			if c.Online && c.CreatedBy > 0 {
+				onlineUsers[c.CreatedBy] = true
+			}
+		}
+	}
 	type row struct {
 		ID        int64  `json:"id"`
 		OrgID     int64  `json:"org_id"`
@@ -21,6 +32,7 @@ func (h *Handler) autoflowGetStaff(c *fiber.Ctx) error {
 		Role      string `json:"role"`
 		Status    string `json:"status"`
 		Joined    string `json:"joined"`
+		Online    bool   `json:"online"`
 		Convs     int    `json:"convs"`
 		Converted int    `json:"converted"`
 		Cmts      int    `json:"cmts"`
@@ -34,7 +46,7 @@ func (h *Handler) autoflowGetStaff(c *fiber.Ctx) error {
 		}
 		out = append(out, row{
 			ID: m.UserID, OrgID: m.OrgID, Name: m.Name, Email: m.Email, Role: m.Role,
-			Status: status, Joined: m.Joined,
+			Status: status, Joined: m.Joined, Online: onlineUsers[m.UserID],
 			Convs: m.Convs, Converted: m.Converted, Cmts: m.Cmts, Pts: m.Pts,
 		})
 	}

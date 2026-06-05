@@ -121,6 +121,7 @@ export interface StaffMember {
   role: string;
   status: MemberStatus;
   joined: string;
+  online: boolean; // PR-M5: has a live extension connector right now
   convs: number;
   converted: number;
   cmts: number;

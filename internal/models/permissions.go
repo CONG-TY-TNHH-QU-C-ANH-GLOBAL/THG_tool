@@ -23,3 +23,25 @@ func IsAccountOwnerAllowed(acc *Account, userID int64, role string) bool {
 	}
 	return acc.AssignedUserID > 0 && acc.AssignedUserID == userID
 }
+
+// CanViewAccountDevice is the VIEW-side privacy gate for a Facebook account /
+// device identity + live session (PR-M5). It is STRICTER than
+// IsAccountOwnerAllowed: a Facebook account belongs to the member who owns it
+// and is PRIVATE to them — even an admin cannot view a staff member's account.
+// Admin oversight of staff is the per-staff automation activity (comments /
+// posts / inbox) + online status on the Nhân viên tab, never the account itself.
+//
+//   - Account assigned to the caller          → visible.
+//   - Unassigned account (AssignedUserID == 0) → visible to admin/platform only
+//     (org-owned but unclaimed — admin may still manage it).
+//   - Account assigned to ANOTHER member       → hidden from EVERYONE, admin incl.
+func CanViewAccountDevice(acc *Account, userID int64, role string) bool {
+	if acc == nil {
+		return false
+	}
+	if acc.AssignedUserID > 0 && acc.AssignedUserID == userID {
+		return true
+	}
+	r := UserRole(strings.TrimSpace(strings.ToLower(role)))
+	return acc.AssignedUserID == 0 && (IsPlatformRole(r) || r == RoleAdmin)
+}

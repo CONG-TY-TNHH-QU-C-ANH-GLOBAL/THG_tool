@@ -52,12 +52,22 @@ func LocalConnectorPairingRoutes(group fiber.Router, deps LocalConnectorDeps, pa
 // GET /api/connectors
 func (h *LocalConnectorHandler) listLocalConnectors(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
-	conns, err := h.db.Connectors().ListLocalConnectors(orgID)
+	userID, _ := c.Locals("user_id").(int64)
+	all, err := h.db.Connectors().ListLocalConnectors(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	// PR-M5 device privacy: a member sees ONLY the connectors (devices) they
+	// paired — admin included. A staff member's Chrome/device never shows in
+	// another member's list. (Server-side aggregates like the Nhân viên online
+	// indicator read the full list separately and expose only a boolean.)
+	conns := make([]connectors.AgentToken, 0, len(all))
 	online := 0
-	for _, conn := range conns {
+	for _, conn := range all {
+		if userID > 0 && conn.CreatedBy != userID {
+			continue
+		}
+		conns = append(conns, conn)
 		if conn.Online {
 			online++
 		}

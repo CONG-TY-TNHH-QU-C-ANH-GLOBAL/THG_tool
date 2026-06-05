@@ -3,7 +3,7 @@ import * as api from './api';
 
 interface BackendStaff {
   id: number; org_id?: number; name: string; email: string; role: string;
-  status: string; joined: string; convs: number; converted: number; cmts: number;
+  status: string; joined: string; online?: boolean; convs: number; converted: number; cmts: number;
 }
 interface StaffResponse { staff: BackendStaff[]; count: number; }
 
@@ -31,6 +31,7 @@ function toStaff(b: BackendStaff): StaffMember {
     role: b.role as StaffMember['role'],
     status: (b.status === 'Suspended' ? 'Suspended' : 'Active') as MemberStatus,
     joined: b.joined,
+    online: b.online ?? false,
     convs: b.convs,
     converted: b.converted,
     cmts: b.cmts,
@@ -99,6 +100,7 @@ export async function updateStaffStatus(orgId: string, staffId: number, status: 
     role: 'sales',
     status,
     joined: '',
+    online: false,
     convs: 0,
     converted: 0,
     cmts: 0,

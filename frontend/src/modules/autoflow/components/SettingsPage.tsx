@@ -646,8 +646,16 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                       <Row style={{ gap: 8 }}>
                         <Avatar text={s.name[0] || 'U'} size={26} />
                         <div>
-                          <p style={{ color: theme.text, fontWeight: 500 }}>{s.name}</p>
-                          <p style={{ color: theme.textFaint, fontSize: 10 }}>Joined {s.joined || '-'}</p>
+                          <p style={{ color: theme.text, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span
+                              title={s.online ? 'Đang online' : 'Offline'}
+                              style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: s.online ? theme.green : theme.textFaint }}
+                            />
+                            {s.name}
+                          </p>
+                          <p style={{ color: s.online ? theme.green : theme.textFaint, fontSize: 10 }}>
+                            {s.online ? 'Đang online' : 'Offline'} · Joined {s.joined || '-'}
+                          </p>
                         </div>
                       </Row>
                     </td>

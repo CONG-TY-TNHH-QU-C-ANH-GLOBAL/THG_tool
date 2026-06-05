@@ -32,14 +32,18 @@ func (h *Handler) workspaceList(c *fiber.Ctx) error {
 		accounts []models.Account
 		err      error
 	)
-	r := models.UserRole(role)
-	if models.IsPlatformRole(r) || r == models.RoleAdmin {
-		accounts, err = h.db.Identities().GetAllAccounts(orgID)
-	} else {
-		accounts, err = h.db.Identities().GetAccountsForUser(orgID, userID)
-	}
+	// PR-M5 account privacy: a Facebook account/device is private to its owning
+	// member. Even admin no longer sees a staff member's account in the session
+	// list — only their own (+ unassigned for admin). Admin oversight of staff is
+	// the automation activity + online status on the Nhân viên tab.
+	all, err := h.db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	for i := range all {
+		if models.CanViewAccountDevice(&all[i], userID, role) {
+			accounts = append(accounts, all[i])
+		}
 	}
 
 	type entry struct {
@@ -495,20 +499,19 @@ func (h *Handler) getAccounts(c *fiber.Ctx) error {
 	// every account in the org. Mirrors workspaceList; leads stay shared
 	// elsewhere (feedback_shared_battlefield_not_crm). Previously this returned
 	// GetAllAccounts to every role — a cross-member account leak.
-	var (
-		accounts []models.Account
-		err      error
-	)
-	if r := models.UserRole(role); models.IsPlatformRole(r) || r == models.RoleAdmin {
-		accounts, err = h.db.Identities().GetAllAccounts(orgID)
-	} else {
-		accounts, err = h.db.Identities().GetAccountsForUser(orgID, userID)
-	}
+	// PR-M5 account privacy: own accounts only (+ unassigned for admin). A staff
+	// member's account is never visible to another member or to admin here.
+	all, err := h.db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	for i := range accounts {
-		accounts[i].CookiesJSON = "[REDACTED]"
+	accounts := make([]models.Account, 0, len(all))
+	for i := range all {
+		if !models.CanViewAccountDevice(&all[i], userID, role) {
+			continue
+		}
+		all[i].CookiesJSON = "[REDACTED]"
+		accounts = append(accounts, all[i])
 	}
 	return c.JSON(fiber.Map{"accounts": accounts, "count": len(accounts)})
 }
