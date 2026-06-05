@@ -708,6 +708,23 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       } catch (err) {
         error = err?.message || String(err);
       }
+      // PR8D.1: a TAB-LIFECYCLE error ("No tab with id", "No window with id",
+      // "Frame ... was removed", "message channel closed") means the tab/frame
+      // vanished BEFORE the content script could act — nothing was typed or
+      // submitted. With no proof the server would classify this as
+      // shadow_rejected (a non-retryable "we tried and FB silently rejected"),
+      // stranding the lead. It is actually transient (SW recycle / window
+      // minimized → tab discarded / tab closed mid-flow), so report it as
+      // soft_fail with a proof so the row stays RETRYABLE next poll cycle.
+      if (!ok && !proof && error && /No tab with id|No window with id|Frame .*was removed|message channel closed|Receiving end does not exist/i.test(error)) {
+        proof = {
+          success: false,
+          failure_reason: 'soft_fail',
+          page_url_after: '',
+          notes: 'tab_lifecycle (retryable, nothing attempted): ' + error,
+          execution_id: String(message.execution_id || ''),
+        };
+      }
       if (error) {
         await THGShared.storageSet({ lastOutboxError: error, lastError: error }).catch(() => {});
       }

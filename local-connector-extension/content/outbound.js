@@ -88,8 +88,33 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     });
   }
 
+  // isInsidePostContainer reports whether el lives inside the TARGET POST's own
+  // dialog/article — identified by a post-permalink anchor in the same container.
+  // PR8D.1: on a permalink the post often renders as a [role=dialog] MODAL over
+  // the feed; its "Close" (X) button dismisses the POST (→ FB pushState to home),
+  // not a blocking popup. dismissBlockingOverlays must never click a control that
+  // belongs to the post. A genuine blocking popup (save-password / notifications /
+  // cookie) is a dialog WITHOUT a permalink anchor, so it stays dismissable.
+  function isInsidePostContainer(el) {
+    const container = el.closest && el.closest('[role="dialog"], [role="article"]');
+    if (!container) return false;
+    return !!container.querySelector(
+      'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
+    );
+  }
+
   async function dismissBlockingOverlays() {
-    const labels = ['not now', 'ok', 'close', 'later', 'maybe later', 'remember password', 'de sau', 'luc khac', 'khong phai bay gio'];
+    // PR8D.1: dropped the generic 'ok' / 'close' keywords. They matched CONTENT
+    // controls, not blocking popups, and each caused a navigate-to-home incident:
+    //   - 'ok' matched the Facebook LOGO (faceb-OO-k) — clicking it went home.
+    //   - 'close' matched the POST DIALOG's Close (X) on a permalink modal —
+    //     clicking it shut the post and FB pushState'd to home (forensics:
+    //     last_op = click div[role=button][al=Close] → redirect_class=home,
+    //     article_found=false). Locale-independent (hit en_GB "Close").
+    // Real blocking popups all carry a SPECIFIC decline label below; we do not
+    // need the ambiguous generic words. An undismissed popup degrades to
+    // composer_not_found (retryable) — far safer than navigating off the post.
+    const labels = ['not now', 'later', 'maybe later', 'remember password', 'de sau', 'luc khac', 'khong phai bay gio'];
     // Candidates are real button controls only. The old selector included a bare
     // `[aria-label]`, which matched the top-nav `a[role="link"]` Facebook logo —
     // a NAVIGATION link, never an overlay-dismiss control. Restricting to
@@ -104,6 +129,10 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       const role = norm(el.getAttribute?.('role'));
       const isNavLink = role === 'link' || (el.tagName === 'A' && !!el.getAttribute?.('href') && role !== 'button');
       if (isNavLink) continue;
+      // PR8D.1: never click a control that belongs to the target post itself
+      // (its Close/X would dismiss the post → home). Blocking popups have no
+      // permalink anchor in their container, so they are unaffected.
+      if (isInsidePostContainer(el)) continue;
       const label = labelOf(el);
       if (!label) continue;
       if (labelMatchesDismiss(label, labels)) {
