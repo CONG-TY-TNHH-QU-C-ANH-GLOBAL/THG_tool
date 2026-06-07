@@ -57,6 +57,30 @@ func RecordDashboardAutomationEvent(db *store.Store, orgID, accountID int64, mes
 	}
 }
 
+// recordAutomationForAccount routes an account-scoped automation event (crawl
+// progress / summary / failure) to the OWNING member's private copilot chat, so
+// they can track everything happening on their own account — without leaking it
+// to other members (consistent with PR-M5 account privacy). Falls back to the
+// shared system feed only when the account has no owner (legacy / unassigned).
+func recordAutomationForAccount(db *store.Store, orgID, accountID int64, message, action, args string, success bool) {
+	if db == nil || orgID <= 0 {
+		return
+	}
+	var ownerID int64
+	if accountID > 0 {
+		if acc, err := db.Identities().GetAccountForOrg(accountID, orgID); err == nil && acc != nil {
+			ownerID = acc.AssignedUserID
+		}
+	}
+	if ownerID > 0 {
+		if err := db.Prompts().InsertUserAutomationLog(orgID, accountID, ownerID, message, action, args, success); err != nil {
+			log.Printf("[AutomationEvent] user automation log failed org=%d account=%d action=%s: %v", orgID, accountID, action, err)
+		}
+		return
+	}
+	RecordDashboardAutomationEvent(db, orgID, accountID, message, action, args, success)
+}
+
 // Vietnamese label dictionaries used when composing user-facing notifier text.
 // English log lines stay untouched so dev/ops grep pipelines keep working.
 var stageVN = map[string]string{
@@ -235,7 +259,7 @@ func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID
 	logText := fmt.Sprintf("[THG Agent] Crawl %s completed. Task %s. Org #%d, account #%d. %s. Source: %s", label, taskID, orgID, accountID, outcomeEN, sourceURL)
 	userText := fmt.Sprintf("%s Crawl %s đã hoàn tất. Tác vụ %s. Org #%d, account #%d. %s. Nguồn: %s", notifierPrefix, label, taskID, orgID, accountID, outcomeVN, sourceVN)
 	log.Printf("[ConnectorCrawl] %s", logText)
-	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q,"exit_reason":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL, exitReason), true)
+	recordAutomationForAccount(db, orgID, accountID, userText, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q,"exit_reason":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL, exitReason), true)
 	if notifier != nil {
 		notifier(userText)
 	}
@@ -265,7 +289,7 @@ func NotifyCrawlProgress(db *store.Store, notifier func(string), orgID, accountI
 	userText := fmt.Sprintf("%s Crawl %s đang chạy. Tác vụ %s. Org #%d, account #%d. Trạng thái: %s. Tiến độ: %s bài. Nguồn: %s",
 		notifierPrefix, label, taskID, orgID, accountID, stageLabelVN(stage), progress, sourceVN)
 	log.Printf("[ConnectorCrawl] %s", logText)
-	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_progress",
+	recordAutomationForAccount(db, orgID, accountID, userText, "system_crawl_progress",
 		fmt.Sprintf(`{"task_id":%q,"intent":%q,"stage":%q,"fetched":%d,"max":%d,"source_url":%q}`, taskID, label, stage, fetched, max, source), true)
 	if notifier != nil {
 		notifier(userText)
@@ -282,7 +306,7 @@ func NotifyCrawlFailure(db *store.Store, notifier func(string), orgID, accountID
 	logText := fmt.Sprintf("[THG Agent] Crawl task %s failed. Org #%d, account #%d. Reason: %s", taskID, orgID, accountID, reason)
 	userText := fmt.Sprintf("%s Tác vụ crawl %s thất bại. Org #%d, account #%d. Lý do: %s", notifierPrefix, taskID, orgID, accountID, reasonVN)
 	log.Printf("[ConnectorCrawl] %s", logText)
-	RecordDashboardAutomationEvent(db, orgID, accountID, userText, "system_crawl_failure", fmt.Sprintf(`{"task_id":%q,"reason":%q}`, taskID, reason), false)
+	recordAutomationForAccount(db, orgID, accountID, userText, "system_crawl_failure", fmt.Sprintf(`{"task_id":%q,"reason":%q}`, taskID, reason), false)
 	if notifier != nil {
 		notifier(userText)
 	}
