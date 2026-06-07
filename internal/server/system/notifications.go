@@ -225,7 +225,7 @@ func crawlExitReasonLabel(reason string) string {
 	}
 }
 
-func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID int64, taskID, intent string, totalItems, fetched, inserted int, sourceURL, exitReason string) {
+func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID int64, taskID, intent string, totalItems, fetched, inserted int, sourceURL, exitReason, scrollNote string) {
 	label := strings.TrimSpace(intent)
 	if label == "" {
 		label = "facebook_crawl"
@@ -258,6 +258,12 @@ func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID
 	}
 	logText := fmt.Sprintf("[THG Agent] Crawl %s completed. Task %s. Org #%d, account #%d. %s. Source: %s", label, taskID, orgID, accountID, outcomeEN, sourceURL)
 	userText := fmt.Sprintf("%s Crawl %s đã hoàn tất. Tác vụ %s. Org #%d, account #%d. %s. Nguồn: %s", notifierPrefix, label, taskID, orgID, accountID, outcomeVN, sourceVN)
+	if scrollNote = strings.TrimSpace(scrollNote); scrollNote != "" {
+		// PR-CRAWL1: surface the scroll forensic inline on low-yield crawls so the
+		// operator can see WHY only a few posts came back, right in the chat.
+		userText += " · Chẩn đoán cuộn: " + scrollNote
+		logText += " · scroll: " + scrollNote
+	}
 	log.Printf("[ConnectorCrawl] %s", logText)
 	recordAutomationForAccount(db, orgID, accountID, userText, "system_crawl_summary", fmt.Sprintf(`{"task_id":%q,"intent":%q,"raw_items":%d,"fetched":%d,"qualified":%d,"filtered":%d,"skipped":%d,"source_url":%q,"exit_reason":%q}`, taskID, label, totalItems, fetched, inserted, rejected, skipped, sourceURL, exitReason), true)
 	if notifier != nil {

@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		Status           string         `json:"status"`
 		Error            string         `json:"error"`
 		ExitReason       string         `json:"exit_reason"`
+		ScrollDiag       map[string]any `json:"scroll_diag"` // PR-CRAWL1 forensic: passes / max_articles / scroll_moved_ever / ...
 		Keywords         []string       `json:"keywords"`
 		MarketSignalGate map[string]any `json:"market_signal_gate"`
 		UserPrompt       string         `json:"user_prompt"`
@@ -177,7 +179,23 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		}
 	}
 	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
-	system.NotifyCrawlSummary(h.db, h.notifier, orgID, body.AccountID, body.TaskID, intent, len(body.Items), fetched, inserted, primarySourceURL, body.ExitReason)
+	// PR-CRAWL1 forensic: when a crawl yields suspiciously few raw posts, log the
+	// scroll diagnostic so we can tell WHY without guessing. scroll_moved_ever=
+	// false ⇒ our scroll never moved the feed (window minimized → rAF throttle, or
+	// wrong scroll target); true with max_articles_seen≈1 ⇒ FB stopped loading
+	// despite scrolling (platform side / genuinely few CHRONOLOGICAL posts).
+	scrollNote := ""
+	if len(body.Items) <= 2 && body.ScrollDiag != nil {
+		sd := body.ScrollDiag
+		scrollNote = fmt.Sprintf("moved=%v passes=%v max_articles=%v target=%v",
+			sd["scroll_moved_ever"], sd["passes"], sd["max_articles_seen"], sd["final_scroll_target"])
+		slog.WarnContext(c.Context(), "crawl-forensic: low yield",
+			"org_id", orgID, "account_id", body.AccountID, "task_id", body.TaskID,
+			"raw_items", len(body.Items), "exit_reason", body.ExitReason,
+			"scroll_diag", body.ScrollDiag,
+		)
+	}
+	system.NotifyCrawlSummary(h.db, h.notifier, orgID, body.AccountID, body.TaskID, intent, len(body.Items), fetched, inserted, primarySourceURL, body.ExitReason, scrollNote)
 	return c.JSON(fiber.Map{
 		"status":   "stored",
 		"task_id":  body.TaskID,

@@ -408,6 +408,16 @@ var THGContentCrawl = (() => {
     let prevScrollTarget = '';
     let exitReason = 'pass_exhausted';
     let cursorReached = false;
+    // Scroll forensic (PR-CRAWL1): records whether OUR scroll actually moved the
+    // feed vs whether FB simply stopped loading. Decisive for "only 1 post,
+    // exit=no_progress" — scroll_moved_ever=false ⇒ our scroll/throttle problem
+    // (window minimized → rAF throttled, wrong scroll target); true but
+    // max_articles=1 ⇒ FB did not load more despite scrolling (platform side).
+    let passesRun = 0;
+    let maxScrollY = 0;
+    let maxArticles = 0;
+    let maxDocHeight = 0;
+    let scrollMovedEver = false;
     emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
       // Small pause before grabbing elements, giving UI a moment to react to the previous scroll
@@ -498,6 +508,12 @@ var THGContentCrawl = (() => {
       // flat while the viewport still moves. Count scroll movement as progress,
       // then stop only after enough active scrolling fails to produce new posts.
       const scrollMoved = prevScrollY >= 0 && Math.abs(scrollY - prevScrollY) > 24;
+      // Scroll forensic accumulation.
+      if (scrollMoved) scrollMovedEver = true;
+      passesRun = pass + 1;
+      if (scrollY > maxScrollY) maxScrollY = scrollY;
+      if (articlesSeen > maxArticles) maxArticles = articlesSeen;
+      if (docHeight > maxDocHeight) maxDocHeight = docHeight;
       const targetChanged = prevScrollTarget && prevScrollTarget !== scrollInfo.label;
       const pageMoved = docHeight !== prevHeight || articlesSeen !== prevArticles || items.length !== prevItemsLength || scrollMoved || targetChanged;
       if (pass > 0 && !pageMoved) {
@@ -538,7 +554,16 @@ var THGContentCrawl = (() => {
         keywords: Array.isArray(task?.keywords) ? task.keywords : [],
         items,
         exit_reason: exitReason,
-        cursor_reached: cursorReached
+        cursor_reached: cursorReached,
+        scroll_diag: {
+          passes: passesRun,
+          max_articles_seen: maxArticles,
+          max_scroll_y: maxScrollY,
+          max_doc_height: maxDocHeight,
+          scroll_moved_ever: scrollMovedEver,
+          final_scroll_target: prevScrollTarget,
+          landed_url: location.href || '',
+        }
       }
     };
   }
