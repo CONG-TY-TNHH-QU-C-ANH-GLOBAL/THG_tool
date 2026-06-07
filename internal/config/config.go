@@ -95,10 +95,16 @@ func Load() *Config {
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS
 		// don't break on the next deploy. Drop the alias once VPS env is updated.
 		OpenAIClassifierModel: getEnv("OPENAI_CLASSIFIER_MODEL", getEnv("OPENAI_MODEL", "gpt-5.0-mini")),
-		// gpt-5.0 is a reasoning-class model: ai.callOpenAI omits temperature
-		// for it automatically (gpt-5*/o* reject temperature != 1). Override
-		// with OPENAI_COMMENT_MODEL if your account serves a different exact ID.
-		OpenAICommentModel:    getEnv("OPENAI_COMMENT_MODEL", "gpt-5.0"),
+		// Default is the fast chat model gpt-4.1 — NOT a reasoning model. A short
+		// Facebook comment/inbox reply does not benefit from gpt-5.0 reasoning,
+		// which spends hidden reasoning tokens and routinely pushes a single
+		// generation past the 25s genCtx timeout ("context deadline exceeded").
+		// gpt-4.1 returns in a few seconds, eliminating those timeouts, at lower
+		// cost and equivalent quality for this length. Override with
+		// OPENAI_COMMENT_MODEL (e.g. gpt-5.0) if you want reasoning — and raise the
+		// generation timeout to match. callOpenAI omits temperature for gpt-5*/o*
+		// automatically when such a model is configured.
+		OpenAICommentModel:    getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
 		AgentBrainURL:      getEnv("AGENT_BRAIN_URL", ""),
 		AgentBrainTimeout:  getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
 		APISecret:          getEnv("API_SECRET", ""),

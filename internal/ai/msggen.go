@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -623,7 +624,50 @@ func chatCompletionBody(model, prompt string) map[string]any {
 	return body
 }
 
+// callOpenAI runs callOpenAIOnce with a single retry on TRANSIENT failures
+// (network blip, HTTP 429/5xx, empty completion). It deliberately does NOT retry
+// once the caller's context is cancelled/expired — a retry would have no time
+// budget left and just fail again ("context deadline exceeded"). A short backoff
+// separates the two attempts.
 func (mg *MessageGenerator) callOpenAI(ctx context.Context, prompt string) (string, error) {
+	const maxAttempts = 2
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		out, err := mg.callOpenAIOnce(ctx, prompt)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil || attempt == maxAttempts || !isRetryableOpenAIError(err) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", lastErr
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return "", lastErr
+}
+
+// isRetryableOpenAIError reports whether a callOpenAIOnce failure is worth one
+// retry. Context cancellation/deadline is NOT retryable (no time remains).
+func isRetryableOpenAIError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "openai request failed") || // transport/network blip
+		strings.Contains(s, "http 429") ||
+		strings.Contains(s, "http 500") || strings.Contains(s, "http 502") ||
+		strings.Contains(s, "http 503") || strings.Contains(s, "http 504") ||
+		strings.Contains(s, "empty content")
+}
+
+func (mg *MessageGenerator) callOpenAIOnce(ctx context.Context, prompt string) (string, error) {
 	jsonBody, _ := json.Marshal(chatCompletionBody(mg.model, prompt))
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
 	if err != nil {
