@@ -198,6 +198,20 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			content = applyCommentReasoning(ctx, db, knowledgeBuilder, msgGen, reasoningMode, reasoningProfile, orgID, accountID, lead.Content, lead.Author, content)
 		}
 
+		// PR-1 Comment Quality Hotfix: dedupe repeated sentences/paragraphs and
+		// validate quality at the queue boundary — a doubled "X.X" generation (from
+		// any source) must NEVER reach Facebook. Reject with a typed reason instead
+		// of posting garbage.
+		if msgType == "comment" {
+			cleaned, ok, qreason := ai.SanitizeComment(content)
+			if !ok {
+				skipped++
+				skipReasons[qreason]++
+				continue
+			}
+			content = cleaned
+		}
+
 		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
 			OrgID:      orgID,
 			Type:       msgType,

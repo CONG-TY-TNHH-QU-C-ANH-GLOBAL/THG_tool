@@ -226,6 +226,21 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return current.includes(sample);
   }
 
+  // editorTextDoubled detects the duplicated-comment failure (PR-1): FB persists
+  // an unsent draft per post and can re-mount it AFTER our insert, so the composer
+  // ends up holding our content TWICE ("…nhé.…nhé."). editorContainsContent only
+  // does a substring check, which a doubled composer passes — this is the explicit
+  // anti-duplication guard run right before submit.
+  function editorTextDoubled(editor, content) {
+    if (!editor || !document.contains(editor)) return false;
+    const current = norm(textOfEditable(editor)).replace(/\s+/g, ' ').trim();
+    const expected = norm(content).replace(/\s+/g, ' ').trim();
+    if (!expected || !current || expected.length < 6) return false;
+    const first = current.indexOf(expected);
+    if (first !== -1 && current.indexOf(expected, first + expected.length) !== -1) return true;
+    return current.length >= Math.floor(expected.length * 1.6) && current.startsWith(expected);
+  }
+
   function pressEnter(editor) {
     if (!editor) return false;
     try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) {} }
@@ -939,6 +954,21 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       return commentResult(false, 'comment_text_not_confirmed', null, ctx,
         'typing.not_confirmed: editor did not hold our content within 1.8s · target id=' + abbreviate(targetPostId || '<none>'),
         navDiagFor('typing_not_confirmed', 'typing', probeCommentGates(targetPostId), ctxInfo));
+    }
+
+    // PR-1 anti-duplication: never submit a doubled composer. If FB re-mounted a
+    // draft and our content got appended despite the PR8D clear, re-clear +
+    // re-insert once; abort with comment_quality_invalid if still doubled.
+    if (editorTextDoubled(editor, content)) {
+      selectEditableContents(editor);
+      try { document.execCommand('delete', false, null); } catch (_) {}
+      setEditableText(editor, content);
+      await waitFor(() => editorContainsContent(editor, content), 1200, 150);
+      if (editorTextDoubled(editor, content)) {
+        return commentResult(false, 'comment_quality_invalid', null, ctx,
+          'composer held a doubled comment after re-clear · target id=' + abbreviate(targetPostId || '<none>'),
+          navDiagFor('comment_quality_invalid', 'typing', probeCommentGates(targetPostId), ctxInfo));
+      }
     }
 
     // PR8A: text is in the composer — we are now at the SUBMIT phase. Only from
