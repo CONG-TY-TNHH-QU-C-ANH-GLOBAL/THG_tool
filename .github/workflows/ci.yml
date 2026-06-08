@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: File-size guardrail (200-line rule, baseline-aware)
+        run: python3 scripts/check_file_size.py
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
