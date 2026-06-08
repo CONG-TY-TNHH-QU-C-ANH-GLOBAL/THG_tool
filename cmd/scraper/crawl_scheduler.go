@@ -86,20 +86,17 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 		return err
 	}
 	for _, intent := range intents {
+		taskID := recurringCrawlTaskID(intent.ID, now, intent.IntervalMinutes)
+		// Reliability Track invariant: NEVER silently fall back to a "first ready"
+		// account. A mission without an explicit account_id is a misconfiguration
+		// (e.g. legacy intents 7/9 created before PR-A required account selection)
+		// — skip it with a typed reason so the operator fixes the mission, instead
+		// of piling every account-less mission onto one connector.
 		accountID := intent.AccountID
 		if accountID <= 0 {
-			// Recurring scheduler runs system-side (no live member request); use
-			// org-wide resolution (userID=0). Recurring intents normally carry an
-			// explicit AccountID, so this fallback is rare.
-			if picked, pickErr := pickReadyFacebookAccountIDForCrawl(db, intent.OrgID, 0, ""); pickErr == nil {
-				accountID = picked
-			}
-		}
-		taskID := recurringCrawlTaskID(intent.ID, now, intent.IntervalMinutes)
-		if accountID <= 0 {
-			errMsg := "no ready Facebook account for recurring crawl"
+			errMsg := "account_not_selected: mission has no account_id — edit the mission and choose the account that should run it"
 			_ = db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg)
-			log.Printf("[CrawlIntent] skipped intent=%d org=%d: %s", intent.ID, intent.OrgID, errMsg)
+			log.Printf("[CrawlIntent] skipped intent=%d org=%d: account_not_selected", intent.ID, intent.OrgID)
 			continue
 		}
 		args := map[string]any{

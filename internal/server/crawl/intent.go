@@ -109,6 +109,15 @@ func createIntent(deps Deps) fiber.Handler {
 			})
 		}
 
+		// Mission Preflight (Reliability Track PR-A): a user-created crawl mission
+		// MUST name a ready account. No account_id=0, no silent fallback to a
+		// "first ready" account. Fail early with a typed, actionable reason.
+		userID, _ := c.Locals("user_id").(int64)
+		role, _ := c.Locals("user_role").(string)
+		if reason, msg := EvaluateCrawlAccountReadiness(c.Context(), deps.DB, orgID, userID, role, body.AccountID); reason != ReadinessReady {
+			return c.Status(422).JSON(fiber.Map{"error": msg, "reason_code": reason})
+		}
+
 		sourceType := "facebook_group"
 		if !strings.Contains(strings.ToLower(body.SourceURL), "/groups/") {
 			sourceType = "facebook_page"

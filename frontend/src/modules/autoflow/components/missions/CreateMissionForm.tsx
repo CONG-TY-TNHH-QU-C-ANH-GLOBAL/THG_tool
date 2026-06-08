@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Send, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 import { createMission, type CreateMissionInput, type CrawlIntent } from '../../services/crawlIntentService';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
@@ -36,11 +36,20 @@ export default function CreateMissionForm({ onCreated, onCancel, compact }: Crea
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // PR-A Mission Preflight: the account is REQUIRED — the system must never
+  // auto-pick or silently fall back. Preselect only when exactly one account is
+  // ready, purely as a UX convenience; the user still confirms by submitting.
+  useEffect(() => {
+    if (accountId === '' && activeAccounts.length === 1) {
+      setAccountId(activeAccounts[0].accountId);
+    }
+  }, [activeAccounts, accountId]);
+
   const promptTrim = prompt.trim();
   const urlTrim = sourceUrl.trim();
   const promptValid = promptTrim.length >= MIN_PROMPT;
   const urlValid = FACEBOOK_URL_RE.test(urlTrim);
-  const canSubmit = promptValid && urlValid && !submitting;
+  const canSubmit = promptValid && urlValid && accountId !== '' && !submitting;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -52,8 +61,9 @@ export default function CreateMissionForm({ onCreated, onCancel, compact }: Crea
         source_url: urlTrim,
         interval_minutes: intervalMinutes,
         max_items: maxItems,
+        // Required (PR-A): canSubmit guarantees a chosen account; never omit it.
+        account_id: accountId as number,
       };
-      if (accountId !== '') payload.account_id = accountId;
       const result = await createMission(payload);
       setPrompt('');
       setSourceUrl('');
@@ -109,6 +119,37 @@ export default function CreateMissionForm({ onCreated, onCancel, compact }: Crea
       </div>
 
       <div>
+        <label style={{ display: 'block', fontSize: 12, color: 'var(--text-faint)', marginBottom: 6 }}>
+          {tm.formAccountLabel} <span style={{ color: 'var(--hot)' }}>*</span>
+        </label>
+        {activeAccounts.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--hot)', background: 'rgba(220,40,40,0.08)', padding: '8px 10px', borderRadius: 8 }}>
+            Chưa có account nào sẵn sàng. Mở Browser, pair Chrome Extension và đăng nhập Facebook cho account muốn chạy, rồi quay lại.
+          </div>
+        ) : (
+          <select
+            className="input"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value ? Number(e.target.value) : '')}
+            required
+            style={{ width: '100%' }}
+          >
+            <option value="" disabled>— Chọn account sẽ chạy nhiệm vụ —</option>
+            {activeAccounts.map((w) => (
+              <option key={w.accountId} value={w.accountId}>
+                {w.accountName}{w.fbUsername ? ` · ${w.fbUsername}` : ''} {w.loggedIn ? '· đã đăng nhập FB' : '· đang chạy'}
+              </option>
+            ))}
+          </select>
+        )}
+        {accountId === '' && activeAccounts.length > 0 && (
+          <p style={{ fontSize: 11, color: 'var(--text-mute)', margin: '4px 0 0' }}>
+            Bắt buộc chọn account — hệ thống không tự chọn account thay bạn.
+          </p>
+        )}
+      </div>
+
+      <div>
         <button
           type="button"
           onClick={() => setAdvancedOpen((v) => !v)}
@@ -160,26 +201,6 @@ export default function CreateMissionForm({ onCreated, onCancel, compact }: Crea
                 style={{ width: '100%' }}
               />
             </div>
-            {activeAccounts.length > 1 && (
-              <div style={{ gridColumn: compact ? '1' : '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: 11, color: 'var(--text-faint)', marginBottom: 6 }}>
-                  {tm.formAccountLabel}
-                </label>
-                <select
-                  className="input"
-                  value={accountId}
-                  onChange={(e) => setAccountId(e.target.value ? Number(e.target.value) : '')}
-                  style={{ width: '100%' }}
-                >
-                  <option value="">{tm.formAccountAuto}</option>
-                  {activeAccounts.map((w) => (
-                    <option key={w.accountId} value={w.accountId}>
-                      {w.accountName} {w.fbUsername ? `· ${w.fbUsername}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
         )}
       </div>
