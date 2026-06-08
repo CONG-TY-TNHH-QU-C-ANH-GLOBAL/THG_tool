@@ -49,7 +49,10 @@ var THGHeartbeat = globalThis.THGHeartbeat || (() => {
     const target = THGFacebookState.chooseTarget(targets, state.fbUserId);
     if (target) {
       await THGStream.sendChromeStatus(target, state).catch(() => {});
-      await THGStream.sendScreenshot(target, state).catch(() => {});
+      // Stream removed (PR-F): the dashboard no longer needs a live screenshot —
+      // UID + "Facebook connected" status is the source of truth. We keep
+      // heartbeat + chrome-status (liveness + identity), and drop the
+      // captureVisibleTab upload entirely.
       // Kick heavy work WITHOUT awaiting — liveness must not depend on it.
       kickWork(target, state);
     }

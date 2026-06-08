@@ -28,26 +28,14 @@ var THGStream = globalThis.THGStream || (() => {
     return Array.isArray(payload.targets) ? payload.targets : [];
   }
 
-  async function sendScreenshot(target, state) {
-    const accountId = target?.account_id || target?.accountId || 0;
-    if (!accountId || !state.tab || !state.tab.active || !state.currentUrl) return;
-    const imageData = await chrome.tabs.captureVisibleTab(state.tab.windowId, { format: 'jpeg', quality: 50 });
-    const res = await THGApi.agentFetch('/api/connectors/screenshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...THGApi.stateBody(state, accountId),
-        image_data: imageData
-      })
-    });
-    if (!res.ok) throw new Error(`screenshot failed (${res.status})`);
-  }
+  // sendScreenshot was removed (PR-F): the live screenshot stream is gone. This
+  // module now only carries the connector's liveness + identity sync (heartbeat,
+  // chrome-status, browser-targets). captureVisibleTab is no longer used.
 
   return {
     fetchTargets,
     sendChromeStatus,
-    sendHeartbeat,
-    sendScreenshot
+    sendHeartbeat
   };
 })();
 globalThis.THGStream = THGStream;
