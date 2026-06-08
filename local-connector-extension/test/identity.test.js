@@ -14,7 +14,7 @@ const assert = require('assert');
 // standalone. Indirect eval runs it in global scope.
 const metaSrc = fs.readFileSync(path.join(__dirname, '..', 'content', 'meta.js'), 'utf8');
 (0, eval)(metaSrc); // eslint-disable-line no-eval
-const { isSuspiciousIdentityLabel } = globalThis.THGContentMeta;
+const { isSuspiciousIdentityLabel, isReservedHandle } = globalThis.THGContentMeta;
 
 // B1 — UI-affordance labels (the "Cover photo" bug) must be rejected.
 for (const bad of [
@@ -23,9 +23,28 @@ for (const bad of [
 ]) {
   assert.strictEqual(isSuspiciousIdentityLabel(bad), true, `must reject UI label: "${bad}"`);
 }
+// 0.5.33 — auto-generated image ALT-TEXT must be rejected (the 0.5.30 miss:
+// "May be an image of text that says ..." leaked as a name).
+for (const bad of [
+  'May be an image of text that says "Cia AM CH LSEY LS EY JM"',
+  'May be an image of one person',
+  'No photo description available.',
+  'Có thể là hình ảnh về văn bản',
+  'Không có mô tả ảnh.',
+]) {
+  assert.strictEqual(isSuspiciousIdentityLabel(bad), true, `must reject alt-text: "${bad}"`);
+}
 // B1 — real names must be accepted (not suspicious).
 for (const ok of ['Nguyễn Văn A', 'David Anh', 'THG Fulfill', 'Nhiên An', 'Photo Studio ABC']) {
   assert.strictEqual(isSuspiciousIdentityLabel(ok), false, `must accept real name: "${ok}"`);
+}
+
+// 0.5.33 — reserved URL handles (the "photo" username bug) must be rejected.
+for (const h of ['photo', 'story.php', 'watch', 'reel', 'groups', 'permalink.php', 'profile.php', '']) {
+  assert.strictEqual(isReservedHandle(h), true, `must reject reserved handle: "${h}"`);
+}
+for (const h of ['nguyen.van.a', 'thgfulfill', 'david.anh.123']) {
+  assert.strictEqual(isReservedHandle(h), false, `must accept real handle: "${h}"`);
 }
 
 // B2 — c_user cookie extraction parity (proof.js primary source).
