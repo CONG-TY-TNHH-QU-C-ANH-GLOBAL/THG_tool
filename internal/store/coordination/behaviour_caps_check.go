@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store/dbutil"
 )
 
@@ -105,34 +106,32 @@ func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDe
 		return CapsDecision{}, err
 	}
 
-	// Verified-Actor block (P1b): an account caught logged into a different
-	// Facebook identity than expected is denied ALL execution until an
-	// operator clears it. Checked first — it is a hard integrity stop, not a
-	// pacing decision, and must override even an otherwise-allowed account.
-	if actorBlocked == 1 {
-		return CapsDecision{Allowed: false, Reason: "actor_mismatch_blocked"}, nil
-	}
-
+	var cooldownUntil time.Time
 	if cooldownUntilStr != "" {
-		until := dbutil.ParseSQLiteTime(cooldownUntilStr)
-		if !until.IsZero() && time.Now().UTC().Before(until.UTC()) {
-			return CapsDecision{
-				Allowed:       false,
-				Reason:        "account_cooldown_active",
-				CooldownUntil: until,
-			}, nil
-		}
+		cooldownUntil = dbutil.ParseSQLiteTime(cooldownUntilStr)
 	}
+	return DecideCaps(caps, countersDay, commentsToday, inboxToday, groupPostsToday,
+		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, msgType), nil
+}
 
+// DecideCaps is the PURE cap decision — no DB, no side effects. It is the SINGLE
+// source of cap-gate truth, shared by the queue-time gate (CheckCapsTx, which
+// reads + applies risk decay first) and the read-only readiness matrix
+// (EvaluateCaps, which reads WITHOUT decay). Keeping the decision here means the
+// gate and the matrix can never disagree on why an account is blocked.
+func DecideCaps(caps models.BehaviourCaps, countersDay string, commentsToday, inboxToday, groupPostsToday, profilePostsToday int, riskScore float64, cooldownUntil time.Time, actorBlocked bool, msgType string) CapsDecision {
+	// Verified-Actor block (P1b): an account caught logged into a different
+	// Facebook identity than expected is denied ALL execution until an operator
+	// clears it. Checked first — a hard integrity stop, not a pacing decision.
+	if actorBlocked {
+		return CapsDecision{Allowed: false, Reason: "actor_mismatch_blocked"}
+	}
+	if !cooldownUntil.IsZero() && time.Now().UTC().Before(cooldownUntil.UTC()) {
+		return CapsDecision{Allowed: false, Reason: "account_cooldown_active", CooldownUntil: cooldownUntil}
+	}
 	if caps.RiskScoreCeiling > 0 && riskScore >= caps.RiskScoreCeiling {
-		return CapsDecision{
-			Allowed:     false,
-			Reason:      "risk_ceiling_exceeded",
-			RiskScore:   riskScore,
-			RiskCeiling: caps.RiskScoreCeiling,
-		}, nil
+		return CapsDecision{Allowed: false, Reason: "risk_ceiling_exceeded", RiskScore: riskScore, RiskCeiling: caps.RiskScoreCeiling}
 	}
-
 	if col := counterColumnForAction(msgType); col != "" {
 		cap := caps.CapForAction(msgType)
 		if cap > 0 {
@@ -150,10 +149,45 @@ func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDe
 				}
 			}
 			if counter >= cap {
-				return CapsDecision{Allowed: false, Reason: "daily_limit_exceeded"}, nil
+				return CapsDecision{Allowed: false, Reason: "daily_limit_exceeded"}
 			}
 		}
 	}
+	return CapsDecision{Allowed: true, Reason: "ok"}
+}
 
-	return CapsDecision{Allowed: true, Reason: "ok"}, nil
+// EvaluateCaps is the READ-ONLY cap check for the readiness matrix (PR-D). Unlike
+// CheckCapsTx it takes NO transaction and applies NO risk decay (a projection must
+// not write) — so a risk score that decay would recover may still read as
+// over-ceiling, which is conservatively correct for a "is this account ready"
+// display. The actual queue gate (CheckCapsTx) remains authoritative.
+func (s *Store) EvaluateCaps(ctx context.Context, accountID int64, msgType string) (CapsDecision, error) {
+	caps, _, err := s.ResolveAccountCaps(ctx, accountID)
+	if err != nil {
+		return CapsDecision{}, err
+	}
+	var (
+		countersDay                                                   string
+		commentsToday, inboxToday, groupPostsToday, profilePostsToday int
+		riskScore                                                     float64
+		cooldownUntilStr                                              string
+		actorBlocked                                                  int
+	)
+	err = s.db.QueryRowContext(ctx,
+		`SELECT counters_day, comments_today, inbox_today, group_posts_today,
+		        profile_posts_today, risk_score, COALESCE(cooldown_until,''),
+		        COALESCE(actor_blocked,0)
+		   FROM account_runtime_state
+		  WHERE account_id = ?`, accountID,
+	).Scan(&countersDay, &commentsToday, &inboxToday, &groupPostsToday,
+		&profilePostsToday, &riskScore, &cooldownUntilStr, &actorBlocked)
+	if err != nil && err != sql.ErrNoRows {
+		return CapsDecision{}, err
+	}
+	var cooldownUntil time.Time
+	if cooldownUntilStr != "" {
+		cooldownUntil = dbutil.ParseSQLiteTime(cooldownUntilStr)
+	}
+	return DecideCaps(caps, countersDay, commentsToday, inboxToday, groupPostsToday,
+		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, msgType), nil
 }

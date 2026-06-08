@@ -79,6 +79,8 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// PR-M2 presence board: per-account connector + member + online state, so the
 	// operator can see which of N accounts is actually reachable (tenant-auth).
 	group.Get("/connectors/status", h.connectorStatus)
+	// PR-D readiness matrix: per-account, per-capability "can run + why not".
+	group.Get("/accounts/readiness", h.accountReadiness)
 	group.Delete("/ai/history", h.aiDeleteHistory)
 	group.Delete("/ai/history/:id", h.aiDeleteHistoryItem)
 
