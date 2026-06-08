@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +16,34 @@ import (
 	"github.com/thg/scraper/internal/textutil"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
+
+// recordReasoningDryRun runs the P2c Knowledge-Intelligence reasoning for ONE
+// lead and persists the resulting CommentDecision for observation, WITHOUT
+// touching the comment text or execution. Best-effort: every error is logged and
+// swallowed so it can never break the queue path. See
+// specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2c dry-run).
+func recordReasoningDryRun(ctx context.Context, db *store.Store, kb *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, orgID, accountID int64, leadContent, author string, profile *ai.BusinessProfile) {
+	rctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	candidates, retrievalID, err := kb.CandidatesForLead(rctx, orgID, leadContent)
+	if err != nil {
+		log.Printf("[reasoning-dryrun] candidates org=%d: %v", orgID, err)
+		return
+	}
+	decision, err := msgGen.DecideComment(rctx, leadContent, author, profile, candidates, retrievalID)
+	if err != nil {
+		log.Printf("[reasoning-dryrun] decide org=%d: %v", orgID, err)
+		return
+	}
+	log.Printf("[reasoning-dryrun] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v caps=%d products=%d proofs=%d",
+		orgID, accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap,
+		len(decision.Selected.Capabilities), len(decision.Selected.Products), len(decision.Selected.Proofs))
+	payload, _ := json.Marshal(decision)
+	if err := db.Prompts().InsertSystemPromptLog(orgID, accountID,
+		"agent comment decision (dry-run, not executed)", "comment_decision_dryrun", string(payload), !decision.KnowledgeGap); err != nil {
+		log.Printf("[reasoning-dryrun] persist org=%d: %v", orgID, err)
+	}
+}
 
 func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
 	orgID := argInt64(args, "org_id")
@@ -59,6 +89,16 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	knowledgeBuilder := knowledgeRuntime.NewBuilder(db.Knowledge())
 	knowledgeBuilder.Recorder = db.Knowledge()
 	knowledgeBuilder.TraceRec = db.Knowledge()
+	// P2c DRY-RUN (Knowledge Intelligence Layer): when enabled, compute the
+	// grounded CommentDecision per lead and persist it for observation. It does
+	// NOT change the comment text or execution — it validates agent reasoning on
+	// real data before the decision is allowed to drive output. Gated by env so
+	// the live queue path pays nothing unless explicitly switched on.
+	reasoningDryRun := os.Getenv("THG_COMMENT_REASONING_DRYRUN") == "1"
+	var dryRunProfile *ai.BusinessProfile
+	if reasoningDryRun {
+		dryRunProfile = ai.LoadProfileForOrg(db, orgID)
+	}
 	template := argString(args, "template")
 	queued, skipped := 0, 0
 	approvedCount := 0
@@ -115,6 +155,12 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			skipped++
 			skipReasons["empty_content"]++
 			continue
+		}
+
+		// P2c dry-run: observe the grounded reasoning decision for this lead
+		// without altering the comment being queued. Best-effort, gated.
+		if reasoningDryRun && msgType == "comment" {
+			recordReasoningDryRun(ctx, db, knowledgeBuilder, msgGen, orgID, accountID, lead.Content, lead.Author, dryRunProfile)
 		}
 
 		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
