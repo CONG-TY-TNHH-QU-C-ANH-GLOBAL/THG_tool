@@ -60,13 +60,22 @@ var THGContentProof = globalThis.THGContentProof || (() => {
   // this we'd accept ANY comment that happens to contain matching text,
   // which silently approves comments by other people on the same post.
   function currentFBUserID() {
-    // Pattern 1: meta tags / inline scripts often carry USER_ID
+    // Pattern 0 (PRIMARY, reliable): the `c_user` cookie. This is the SAME source
+    // the background heartbeat (src/facebook-state.js) uses to set
+    // accounts.fb_user_id, so the Verified-Actor gate compares apples-to-apples
+    // (expected accounts.fb_user_id vs live c_user) instead of mixing a
+    // cookie-derived expected with an HTML-derived actual. c_user is NOT httpOnly,
+    // so the content script can read it from document.cookie. See
+    // specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md PR-B (B2).
+    const ck = (document.cookie || '').match(/(?:^|;\s*)c_user=(\d+)/);
+    if (ck) return ck[1];
+    // Pattern 1 (fallback): meta tags / inline scripts often carry USER_ID
     const html = document.documentElement?.innerHTML || '';
     const m1 = html.match(/"USER_ID":"(\d+)"/);
     if (m1) return m1[1];
     const m2 = html.match(/"actorID":"(\d+)"/);
     if (m2) return m2[1];
-    // Pattern 2: data-userid attribute on a profile node
+    // Pattern 2 (fallback): data-userid attribute on a profile node
     const el = document.querySelector('[data-userid]');
     if (el) {
       const id = el.getAttribute('data-userid') || '';

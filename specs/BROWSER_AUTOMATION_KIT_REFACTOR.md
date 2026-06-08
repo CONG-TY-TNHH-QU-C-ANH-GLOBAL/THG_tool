@@ -14,6 +14,25 @@ selectors. 7. Actions return result/proof via a shared contract.
 
 ---
 
+## Confirmed supplementary principles (founder, 2026-06-08)
+1. **Not started yet** — backlog until comment delivery is stable + FB-Reliability
+   PR-A prod-verified + PR-B done.
+2. Current order: PR-A/A.1 prod test → PR-B Identity Accuracy → comment-delivery
+   stable → THEN this track.
+3. **PR-1..PR-3 are STRICT no-behavior-change**: move code / namespace / manifest
+   order ONLY. Do NOT touch Facebook logic. Do NOT "conveniently" fix a selector
+   mid-extraction.
+4. Stay on content scripts + global namespace — NO ES module / import until a
+   bundler exists.
+5. **Manifest order IS architecture**: core loads before runtime/platform/action.
+6. PR-5 Taobao/1688 skeleton is CODE-ONLY — no host_permissions / matches for
+   taobao/1688 until real automation.
+7. **Before PR-4 registry/router, write the platform action/result contract
+   explicitly**: `platform, action, execution_id, account_id, connector_id,
+   reason_code, proof/evidence envelope`.
+8. Add **golden smoke checks** guaranteeing Facebook comment/inbox/post behavior
+   is unchanged across the extraction.
+
 ## Codebase reality that SHAPES the design (verified)
 
 **A. Loading model = classic content scripts + global namespaces, in manifest

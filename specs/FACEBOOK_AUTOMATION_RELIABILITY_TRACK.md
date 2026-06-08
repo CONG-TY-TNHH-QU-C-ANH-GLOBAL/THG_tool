@@ -61,6 +61,17 @@ unchanged (expected `accounts.fb_user_id` vs live `c_user`; mismatch blocks the
 account + notifies owner; unknown never auto-executes; verified does not
 auto-clear an operator block). Tests cover all.
 
+**PR-B part 1 SHIPPED (ext 0.5.30):** B2 — `content/proof.js currentFBUserID`
+reads the `c_user` cookie FIRST (same source as the heartbeat → Verified-Actor
+compares apples-to-apples), HTML `USER_ID`/`data-userid` as fallback. B1 —
+`content/meta.js` rejects UI-affordance labels (Cover photo / Ảnh bìa / Profile
+picture / See more / Menu / …, diacritic-insensitive) and keeps scanning for a
+real name. Golden smoke `local-connector-extension/test/identity.test.js`.
+**PR-B part 2 (NEXT):** B3 heartbeat metadata `identity_confidence /
+identity_extraction_method / identity_last_verified_at` (src/facebook-state.js +
+src/api.js + backend + migration); B4 confirm backend treats missing `fb_user_id`
+as identity_unknown (mostly via `connectors.PickReadyConnector` ConnIdentityUnknown).
+
 ### PR-C — Connector Registry / multi-account per device
 Model: one device runs MANY Facebook accounts — each Chrome PROFILE is its OWN
 connector. No "1 machine = 1 account." Connector metadata: `connector_id,
