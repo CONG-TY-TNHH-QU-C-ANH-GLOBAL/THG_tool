@@ -3,6 +3,8 @@ package ai
 import (
 	"regexp"
 	"strings"
+
+	"github.com/thg/scraper/internal/models"
 )
 
 // PR-1 Comment Quality Hotfix (Omnichannel Sales Copilot track). A doubled
@@ -63,4 +65,68 @@ func SanitizeComment(text string) (string, bool, string) {
 		return cleaned, false, "comment_quality_invalid"
 	}
 	return cleaned, true, ""
+}
+
+var (
+	reCommentURL   = regexp.MustCompile(`https?://[^\s)]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|vn|net|org|io|co|shop|store|info|biz|me)(?:/[^\s)]*)?`)
+	reCommentEmail = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	reCommentPhone = regexp.MustCompile(`(?:\+?84|0)(?:[\s.\-]?\d){8,10}`)
+)
+
+// ScreenCommentContacts enforces the CTA/contact policy (PR-3): a comment may cite
+// AT MOST ONE URL and it MUST be the grounded company website; any email/phone MUST
+// be the grounded official contact. Anything else is a fabricated / non-grounded
+// contact and is rejected. Returns (ok, reasonCode):
+//   - comment_multiple_urls    — more than one URL
+//   - comment_unsupported_contact — a website/email/phone not grounded in identity
+func ScreenCommentContacts(text string, identity models.CompanyIdentity) (bool, string) {
+	lower := strings.ToLower(text)
+	// Strip emails before URL detection so an email's domain is not double-counted
+	// as a URL.
+	lowerNoEmail := reCommentEmail.ReplaceAllString(lower, " ")
+	urls := reCommentURL.FindAllString(lowerNoEmail, -1)
+	if len(urls) > 1 {
+		return false, "comment_multiple_urls"
+	}
+	allowedURL := identity.AllowedURL()
+	if len(urls) == 1 {
+		if allowedURL == "" || !strings.Contains(normURLForMatch(urls[0]), allowedURL) {
+			return false, "comment_unsupported_contact"
+		}
+	}
+	contact := strings.ToLower(identity.OfficialContact)
+	for _, m := range reCommentEmail.FindAllString(lower, -1) {
+		if contact == "" || !strings.Contains(contact, m) {
+			return false, "comment_unsupported_contact"
+		}
+	}
+	contactDigits := digitsOnly(contact)
+	for _, m := range reCommentPhone.FindAllString(text, -1) {
+		d := digitsOnly(m)
+		if len(d) < 9 {
+			continue // too short to be a phone number
+		}
+		if contactDigits == "" || !strings.Contains(contactDigits, d) {
+			return false, "comment_unsupported_contact"
+		}
+	}
+	return true, ""
+}
+
+func normURLForMatch(u string) string {
+	s := strings.ToLower(strings.TrimSpace(u))
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	s = strings.TrimPrefix(s, "www.")
+	return strings.TrimRight(s, "/")
+}
+
+func digitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

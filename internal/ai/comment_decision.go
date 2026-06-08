@@ -332,6 +332,58 @@ func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, 
 	return mg.callOpenAI(ctx, buildGroundedCommentPrompt(leadContent, authorName, profile, decision))
 }
 
+// ResolveCompanyIdentity projects the brand-trust identity (PR-3) from the org's
+// BusinessProfile plus the CTA grounded for THIS lead. INTERIM: identity lives on
+// BusinessProfile (org-wide, grounded, never fabricated). A future
+// `company_identity` KnowledgeOS asset can populate models.CompanyIdentity
+// directly without changing this resolver's output shape or the prompt.
+func ResolveCompanyIdentity(profile *BusinessProfile, groundedCTA *models.GroundedItem) models.CompanyIdentity {
+	var id models.CompanyIdentity
+	if profile != nil {
+		id.CompanyName = strings.TrimSpace(profile.Name)
+		id.Website = strings.TrimSpace(profile.Website)
+		id.OfficialContact = strings.TrimSpace(profile.OfficialContact)
+		id.PrimaryCTA = strings.TrimSpace(profile.PrimaryCTA)
+		id.ServiceSummary = strings.TrimSpace(orFallback(profile.Services, profile.Description))
+	}
+	// A CTA grounded for this specific lead overrides the org-default CTA.
+	if groundedCTA != nil && strings.TrimSpace(groundedCTA.Label) != "" {
+		id.PrimaryCTA = strings.TrimSpace(groundedCTA.Label)
+	}
+	return id
+}
+
+// buildCompanyBlock renders only the GROUNDED identity fields — an empty field is
+// omitted so the model is never shown (and cannot echo) a fabricated website/contact.
+func buildCompanyBlock(id models.CompanyIdentity) string {
+	if !id.HasBrand() {
+		return "(brand not configured — write helpfully without naming a company)"
+	}
+	var b strings.Builder
+	b.WriteString("- Brand: " + id.CompanyName + "\n")
+	if id.Website != "" {
+		b.WriteString("- Website (the ONLY URL you may cite): " + id.Website + "\n")
+	}
+	if id.OfficialContact != "" {
+		b.WriteString("- Official contact (the ONLY contact you may cite): " + id.OfficialContact + "\n")
+	}
+	if id.ServiceSummary != "" {
+		b.WriteString("- What we do: " + id.ServiceSummary + "\n")
+	}
+	return b.String()
+}
+
+// buildContactRule encodes the CTA/contact policy: brand trust WITHOUT contact spam.
+func buildContactRule(id models.CompanyIdentity) string {
+	rule := "8. CONTACT POLICY: identify naturally as the brand to build trust, but do NOT spam contact. Use AT MOST ONE contact method — prefer the brand name + a soft inbox CTA. NEVER invent a website, email, or phone; cite ONLY what is listed in COMPANY IDENTITY. Do NOT repeat the CTA or the website."
+	if id.Website != "" {
+		rule += " Mention the Website at most ONCE and ONLY if it directly helps this lead."
+	} else {
+		rule += " No website is configured — do NOT include any URL."
+	}
+	return rule
+}
+
 // buildGroundedCommentPrompt is the PURE, testable prompt builder for the grounded
 // comment (PR-2 depth upgrade). It is INTENT-AWARE: a product-seeking lead leads
 // with the real SKU + price; a service-seeking lead leads with capability + proof +
@@ -384,16 +436,22 @@ func buildGroundedCommentPrompt(leadContent, authorName string, profile *Busines
 		profileBlock = profile.ToPromptBlock()
 	}
 
+	identity := ResolveCompanyIdentity(profile, decision.Selected.CTA)
+	companyBlock := buildCompanyBlock(identity)
+	contactRule := buildContactRule(identity)
+
 	nameRule := "2. Address the author by their EXACT name."
 	if a := strings.TrimSpace(authorName); a == "" || a == "Anonymous participant" {
 		nameRule = "2. The author is anonymous — do NOT use any name or salutation."
 	}
 
-	return fmt.Sprintf(`You are a senior sales professional. Write ONE natural, human comment on this Facebook post, pitching ONLY the matched offer below. NEVER invent a capability, price, product, SKU, or proof that is not listed. Bind the comment to the POST CONTENT — reference what the author actually asked for.
+	return fmt.Sprintf(`You are a senior sales professional. Write ONE natural, human comment on this Facebook post, pitching ONLY the matched offer below. NEVER invent a capability, price, product, SKU, website, or contact that is not listed. Bind the comment to the POST CONTENT — reference what the author actually asked for.
 
 BUSINESS PROFILE:
 %s
 
+COMPANY IDENTITY (you ARE this company — use for brand trust):
+%s
 MATCHED OFFER FOR THIS LEAD (the ONLY things you may pitch):
 %s
 POST AUTHOR: %s
@@ -408,9 +466,11 @@ RULES:
 5. State a price/SKU ONLY if it appears in the offer above; never guess.
 6. End with a soft CTA%s. Do NOT repeat the CTA.
 7. NO EMOJIS. Professional but human.
+%s
 
 RETURN ONLY THE COMMENT, NO EXPLANATION.`,
 		profileBlock,
+		companyBlock,
 		offer.String(),
 		strings.TrimSpace(authorName),
 		strings.TrimSpace(leadContent),
@@ -418,6 +478,7 @@ RETURN ONLY THE COMMENT, NO EXPLANATION.`,
 		nameRule,
 		intentRule,
 		ctaSuffix(ctaLine),
+		contactRule,
 	)
 }
 

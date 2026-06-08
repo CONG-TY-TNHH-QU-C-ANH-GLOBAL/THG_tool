@@ -23,7 +23,22 @@ repeated sentences/paragraphs + reject empty/over-length/anonymous-salutation as
 `comment_quality_invalid`, applied at the queue boundary) + extension
 `editorTextDoubled` guard (re-clear+re-insert once before submit, else abort).
 
-## PR-2 — GenerateCommentV2 Depth Upgrade (NEXT)
+## PR-3 — Company Identity / Brand Trust ✅ SHIPPED
+Comments now carry brand trust (who we are + how to reach us) WITHOUT contact spam.
+`models.CompanyIdentity` contract (CompanyName/Website/OfficialContact/PrimaryCTA/
+ServiceSummary) — resolved by `ai.ResolveCompanyIdentity` from BusinessProfile
+(+Website/OfficialContact/PrimaryCTA fields, KV-stored, no migration) + the grounded
+CTA. INTERIM source = BusinessProfile; future = a `company_identity` KnowledgeOS asset
+populating the SAME contract. `buildGroundedCommentPrompt` adds a COMPANY IDENTITY
+block (grounded fields only — empty omitted) + a CONTACT POLICY rule (brand name +
+inbox CTA; ≤1 URL; website only if grounded + helpful; no fabrication; no repeat).
+`ai.ScreenCommentContacts` (queue guard) rejects >1 URL (`comment_multiple_urls`) or
+any non-grounded website/email/phone (`comment_unsupported_contact`). Seed:
+`scripts/seed_company_identity.sql` (founder fills website/contact; THG not hardcoded).
+NEXT (FE): add Website/Contact/CTA to the business-profile settings form + show the
+resolved identity in the Agent Decision Inspector.
+
+## PR-2 — GenerateCommentV2 Depth Upgrade (done)
 Comment must bind to post context using GROUNDED assets: `sales_playbook · cta ·
 pricing · catalog SKU · product price`. Product-seeking lead → cite real SKU/price
 when available. Service-seeking lead → capability/proof/CTA from service knowledge.

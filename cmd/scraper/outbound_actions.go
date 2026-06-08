@@ -133,6 +133,17 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if reasoningMode != "off" {
 		reasoningProfile = ai.LoadProfileForOrg(db, orgID)
 	}
+	// PR-3 brand trust: resolve the org's grounded company identity once so the
+	// per-comment contact policy (ScreenCommentContacts) can reject any
+	// fabricated / non-grounded website / email / phone.
+	var commentIdentity models.CompanyIdentity
+	if msgType == "comment" {
+		idProfile := reasoningProfile
+		if idProfile == nil {
+			idProfile = ai.LoadProfileForOrg(db, orgID)
+		}
+		commentIdentity = ai.ResolveCompanyIdentity(idProfile, nil)
+	}
 	template := argString(args, "template")
 	queued, skipped := 0, 0
 	approvedCount := 0
@@ -210,6 +221,13 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 				continue
 			}
 			content = cleaned
+			// PR-3 contact policy: ≤1 URL, grounded-website-only, no fabricated
+			// email/phone. Reject (typed reason) rather than post an unsupported contact.
+			if cok, creason := ai.ScreenCommentContacts(content, commentIdentity); !cok {
+				skipped++
+				skipReasons[creason]++
+				continue
+			}
 		}
 
 		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{

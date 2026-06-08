@@ -27,6 +27,11 @@ type BusinessProfile struct {
 	Tone             string `json:"tone"`
 	ApprovalPolicy   string `json:"approval_policy"`
 	RejectRules      string `json:"reject_rules"` // what posts to ignore
+	// Company identity (PR-3 brand trust). Grounded source for the comment
+	// generator — empty means "not known", and nothing is ever fabricated.
+	Website         string `json:"website"`
+	OfficialContact string `json:"official_contact"` // Telegram/Zalo/email
+	PrimaryCTA      string `json:"primary_cta"`
 }
 
 // IsConfigured returns true if the profile has enough info for AI operations.
@@ -115,6 +120,9 @@ func businessProfileKeys() []string {
 		"tone",
 		"approval_policy",
 		"reject_rules",
+		"business_website",
+		"official_contact",
+		"primary_cta",
 	}
 }
 
@@ -177,6 +185,9 @@ func ProfileFromContext(ctx map[string]string) *BusinessProfile {
 		Tone:             ctx["tone"],
 		ApprovalPolicy:   ctx["approval_policy"],
 		RejectRules:      ctx["reject_rules"],
+		Website:          ctx["business_website"],
+		OfficialContact:  ctx["official_contact"],
+		PrimaryCTA:       ctx["primary_cta"],
 	}
 }
 
@@ -197,6 +208,9 @@ func (p *BusinessProfile) Save(db *store.Store) error {
 		"tone":               p.Tone,
 		"approval_policy":    p.ApprovalPolicy,
 		"reject_rules":       p.RejectRules,
+		"business_website":   p.Website,
+		"official_contact":   p.OfficialContact,
+		"primary_cta":        p.PrimaryCTA,
 	}
 	for k, v := range fields {
 		if v == "" {
@@ -237,6 +251,9 @@ func (p *BusinessProfile) SaveForOrg(db *store.Store, orgID int64) error {
 		"tone":               p.Tone,
 		"approval_policy":    p.ApprovalPolicy,
 		"reject_rules":       p.RejectRules,
+		"business_website":   p.Website,
+		"official_contact":   p.OfficialContact,
+		"primary_cta":        p.PrimaryCTA,
 	}
 	for k, v := range fields {
 		v = strings.TrimSpace(v)
