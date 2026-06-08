@@ -3,6 +3,11 @@
 This repository is evolving from a Facebook scraper into a multi-tenant
 Facebook Sales Intelligence and Automation workspace.
 
+**Before implementing, follow `CLAUDE.md`, especially:**
+- **Hard Rules**
+- **Engineering Guardrails** (200-line rule, no god files, `scripts/check_file_size.py`, `docs/PR_CHECKLIST.md`)
+- **Verification**
+
 Start here before making changes:
 
 1. `specs/PRODUCTION_FLOW.md` — current production wiring + helper layer (read first if you're changing auth, outbound, browser, or AI prompts)
