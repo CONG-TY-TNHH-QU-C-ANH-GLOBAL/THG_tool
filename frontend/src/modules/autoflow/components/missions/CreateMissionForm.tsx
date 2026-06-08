@@ -37,11 +37,13 @@ export default function CreateMissionForm({ onCreated, onCancel, compact }: Crea
   const [error, setError] = useState<string | null>(null);
 
   // PR-A Mission Preflight: the account is REQUIRED — the system must never
-  // auto-pick or silently fall back. Preselect only when exactly one account is
-  // ready, purely as a UX convenience; the user still confirms by submitting.
+  // auto-pick or silently fall back. Preselect ONLY when exactly one account is
+  // truly READY (logged in to Facebook), not merely one account total — purely a
+  // UX convenience; the user still confirms by submitting.
   useEffect(() => {
-    if (accountId === '' && activeAccounts.length === 1) {
-      setAccountId(activeAccounts[0].accountId);
+    const ready = activeAccounts.filter((w) => w.loggedIn);
+    if (accountId === '' && ready.length === 1) {
+      setAccountId(ready[0].accountId);
     }
   }, [activeAccounts, accountId]);
 

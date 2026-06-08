@@ -13,7 +13,7 @@ import (
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/textutil"
+	"github.com/thg/scraper/internal/store/connectors"
 )
 
 func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
@@ -295,41 +295,25 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 	return fmt.Sprintf("da tao Chrome Extension crawler command #%d task=%s intent=%s mode=chrome_extension", cmdID, task.TaskID, task.Intent), nil
 }
 
+// pickOnlineConnectorForCrawl resolves the connector that will run a crawl for
+// task.AccountID. It delegates the eligibility decision to the SHARED
+// connectors.PickReadyConnector so the run-time picker and the create-time
+// mission preflight (server/crawl EvaluateCrawlAccountReadiness) never diverge.
+// Returns (connectorID, "") on success, or (0, typed-reason) otherwise.
 func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
-	connectors, err := db.Connectors().ListLocalConnectors(task.OrgID)
+	conns, err := db.Connectors().ListLocalConnectors(task.OrgID)
 	if err != nil {
 		return 0, err.Error()
 	}
-	if len(connectors) == 0 {
-		return 0, "no Chrome Extension connector paired"
+	expectedFB := ""
+	if acc, _ := db.Identities().GetAccountForOrg(task.AccountID, task.OrgID); acc != nil {
+		expectedFB = acc.FBUserID
 	}
-	acc, _ := db.Identities().GetAccountForOrg(task.AccountID, task.OrgID)
-	var reasons []string
-	for _, conn := range connectors {
-		if !conn.Online {
-			reasons = append(reasons, fmt.Sprintf("connector #%d offline", conn.ID))
-			continue
-		}
-		if conn.AssignedAccountID > 0 && conn.AssignedAccountID != task.AccountID {
-			reasons = append(reasons, fmt.Sprintf("connector #%d assigned to account #%d", conn.ID, conn.AssignedAccountID))
-			continue
-		}
-		status := strings.TrimSpace(conn.StreamStatus)
-		if !strings.EqualFold(status, browsergateway.StreamFacebookLoggedIn) {
-			reasons = append(reasons, fmt.Sprintf("connector #%d status=%s", conn.ID, textutil.FirstNonEmpty(status, "unknown")))
-			continue
-		}
-		if strings.TrimSpace(conn.FBUserID) == "" {
-			reasons = append(reasons, fmt.Sprintf("connector #%d missing fb_user_id", conn.ID))
-			continue
-		}
-		if acc != nil && strings.TrimSpace(acc.FBUserID) != "" && strings.TrimSpace(conn.FBUserID) != strings.TrimSpace(acc.FBUserID) {
-			reasons = append(reasons, fmt.Sprintf("connector #%d fb_user_id mismatch", conn.ID))
-			continue
-		}
-		return conn.ID, ""
+	id, reason := connectors.PickReadyConnector(conns, task.AccountID, expectedFB, connectors.MinExtensionVersion)
+	if reason == connectors.ConnReady {
+		return id, ""
 	}
-	return 0, strings.Join(reasons, "; ")
+	return 0, reason
 }
 
 func openCrawlTaskID(intent string, sources []jobs.Source, args map[string]any) string {

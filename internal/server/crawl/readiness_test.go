@@ -9,25 +9,6 @@ import (
 	"github.com/thg/scraper/internal/store/storetest"
 )
 
-func TestExtensionVersionAtLeast(t *testing.T) {
-	cases := []struct {
-		v, min string
-		want   bool
-	}{
-		{"0.5.29.878", "0.5.26", true},
-		{"0.5.26", "0.5.26", true},
-		{"0.5.25", "0.5.26", false},
-		{"0.6.0", "0.5.26", true},
-		{"0.5", "0.5.26", false}, // missing trailing → 0 < 26
-		{"", "0.5.26", false},
-	}
-	for _, c := range cases {
-		if got := extensionVersionAtLeast(c.v, c.min); got != c.want {
-			t.Fatalf("extensionVersionAtLeast(%q,%q)=%v want %v", c.v, c.min, got, c.want)
-		}
-	}
-}
-
 func bootstrapReadinessStore(path string) error {
 	db, err := store.New(path)
 	if err != nil {

@@ -94,9 +94,16 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 		// of piling every account-less mission onto one connector.
 		accountID := intent.AccountID
 		if accountID <= 0 {
-			errMsg := "account_not_selected: mission has no account_id — edit the mission and choose the account that should run it"
+			// account_not_selected is a PERMANENT misconfiguration (not a
+			// transient run failure) — stop the intent IMMEDIATELY rather than
+			// re-firing every interval. Record the reason, then fail the intent
+			// so ClaimDueIntents (WHERE status='active') never picks it again.
+			// The user fixes it by deleting + recreating with an account (PR-A
+			// makes the form require one).
+			errMsg := "account_not_selected: mission has no account_id — delete and recreate the mission, choosing the account that should run it"
 			_ = db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg)
-			log.Printf("[CrawlIntent] skipped intent=%d org=%d: account_not_selected", intent.ID, intent.OrgID)
+			_ = db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, "failed")
+			log.Printf("[CrawlIntent] failed intent=%d org=%d: account_not_selected (stopped)", intent.ID, intent.OrgID)
 			continue
 		}
 		args := map[string]any{
