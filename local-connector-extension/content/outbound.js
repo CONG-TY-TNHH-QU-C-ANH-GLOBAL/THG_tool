@@ -403,10 +403,14 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // stability window absorbs that churn — any flicker resets the
   // window and the call keeps polling.
   //
-  // The stability check also catches the case where the canonical
-  // identity CHANGES mid-window (FB swaps article content in place
-  // during virtualised scroll). When findTargetArticle returns a
-  // different element across two checks, the window resets.
+  // Stability is tracked by post IDENTITY (the canonical id matched by
+  // findTargetArticle) + readiness, NOT by element reference: FB
+  // legitimately remounts the SAME post's article element during
+  // virtualised scroll, and resetting on every remount never converges
+  // on a busy group-feed permalink page. A genuine content swap to a
+  // DIFFERENT post makes findTargetArticle return null (ready=false),
+  // which still resets the window — so the anti-route-mismatch guard
+  // holds while benign remounts no longer starve the gate.
   async function waitUntilTargetArticleStable(targetPostId, opts) {
     const options = opts || {};
     const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : 8000;
@@ -419,20 +423,27 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     while (Date.now() < deadline) {
       const article = findTargetArticle(targetPostId);
       const ready = article && articleIsReadyForComment(article);
-      if (ready && article === stableArticle) {
+      if (ready) {
+        // Track stability by the target post's IDENTITY (canonical id, matched
+        // by findTargetArticle) + readiness — NOT by element reference.
+        // Facebook remounts the article element repeatedly while a virtualised
+        // group-feed permalink page reconciles, so the old
+        // `article === stableArticle` reference check never converged there: the
+        // post + composer were present but the window kept resetting on each
+        // remount → 8 s timeout → target_not_reached with the composer right
+        // there. The anti-route-mismatch guard is fully preserved — every tick
+        // still id-matches via findTargetArticle AND requires the comment
+        // surface via articleIsReadyForComment, so a content swap to a different
+        // post (ready=false) still resets the window below.
         if (stableSince === 0) stableSince = Date.now();
+        stableArticle = article; // hand back the freshest reference
         if (Date.now() - stableSince >= stableMs) {
-          return article;
+          return stableArticle;
         }
-      } else if (ready) {
-        // Found a ready article but it's a different reference than
-        // the previous tick (or this is the first tick). Start a
-        // fresh stability window.
-        stableArticle = article;
-        stableSince = Date.now();
-        // Don't return yet — wait at least one more poll to confirm.
       } else {
-        // Either no article, or article not ready. Reset.
+        // Target post gone, or its comment surface not yet mounted (or content
+        // swapped to a DIFFERENT post — findTargetArticle now returns null) →
+        // reset the stability window.
         stableArticle = null;
         stableSince = 0;
       }
