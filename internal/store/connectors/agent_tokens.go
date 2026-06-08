@@ -33,29 +33,35 @@ type AgentToken struct {
 	FBDisplayName     string     `json:"fb_display_name"`
 	FBUsername        string     `json:"fb_username"`
 	FBProfileURL      string     `json:"fb_profile_url"`
-	StreamStatus      string     `json:"stream_status"`
-	ChromeError       string     `json:"chrome_error"`
-	LastSeen          *time.Time `json:"last_seen"`
-	Online            bool       `json:"online"`
-	Active            bool       `json:"active"`
-	CreatedAt         time.Time  `json:"created_at"`
+	StreamStatus             string     `json:"stream_status"`
+	ChromeError              string     `json:"chrome_error"`
+	IdentityConfidence       string     `json:"identity_confidence"`
+	IdentityExtractionMethod string     `json:"identity_extraction_method"`
+	IdentityLastVerifiedAt   string     `json:"identity_last_verified_at"`
+	LastSeen                 *time.Time `json:"last_seen"`
+	Online                   bool       `json:"online"`
+	Active                   bool       `json:"active"`
+	CreatedAt                time.Time  `json:"created_at"`
 }
 
 type AgentPresence struct {
-	Hostname          string
-	OS                string
-	Version           string
-	Kind              string
-	Transport         string
-	AssignedAccountID int64
-	CapabilitiesJSON  string
-	CurrentURL        string
-	FBUserID          string
-	FBDisplayName     string
-	FBUsername        string
-	FBProfileURL      string
-	StreamStatus      string
-	ChromeError       string
+	Hostname                 string
+	OS                       string
+	Version                  string
+	Kind                     string
+	Transport                string
+	AssignedAccountID        int64
+	CapabilitiesJSON         string
+	CurrentURL               string
+	FBUserID                 string
+	FBDisplayName            string
+	FBUsername               string
+	FBProfileURL             string
+	StreamStatus             string
+	ChromeError              string
+	IdentityConfidence       string
+	IdentityExtractionMethod string
+	IdentityLastVerifiedAt   string
 }
 
 type ConnectorPairingCode struct {
@@ -192,6 +198,9 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 			fb_profile_url = CASE WHEN ? != '' THEN ? ELSE fb_profile_url END,
 			stream_status = CASE WHEN ? != '' THEN ? ELSE stream_status END,
 			chrome_error = ?,
+			identity_confidence = CASE WHEN ? != '' THEN ? ELSE identity_confidence END,
+			identity_extraction_method = CASE WHEN ? != '' THEN ? ELSE identity_extraction_method END,
+			identity_last_verified_at = CASE WHEN ? != '' THEN ? ELSE identity_last_verified_at END,
 			last_seen = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
 		p.Hostname, p.Hostname,
@@ -208,6 +217,9 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 		p.FBProfileURL, p.FBProfileURL,
 		p.StreamStatus, p.StreamStatus,
 		p.ChromeError,
+		p.IdentityConfidence, p.IdentityConfidence,
+		p.IdentityExtractionMethod, p.IdentityExtractionMethod,
+		p.IdentityLastVerifiedAt, p.IdentityLastVerifiedAt,
 		id,
 	)
 	return err
@@ -258,6 +270,8 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''),
 		        COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
 		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
+		        COALESCE(identity_confidence,''), COALESCE(identity_extraction_method,''),
+		        COALESCE(identity_last_verified_at,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens
 		 WHERE org_id = ? AND kind = 'extension_connector'
@@ -277,6 +291,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version,
 			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
 			&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
+			&t.IdentityConfidence, &t.IdentityExtractionMethod, &t.IdentityLastVerifiedAt,
 			&lastSeen, &t.Active, &t.CreatedAt); err != nil {
 			return nil, err
 		}

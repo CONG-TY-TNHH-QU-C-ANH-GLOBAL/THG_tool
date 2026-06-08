@@ -56,6 +56,9 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		LoginEmail       string `json:"login_email"`
 		StreamStatus     string `json:"stream_status"`
 		ChromeError      string `json:"chrome_error"`
+		IdentityConfidence       string `json:"identity_confidence"`
+		IdentityExtractionMethod string `json:"identity_extraction_method"`
+		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
 	}
 	_ = c.BodyParser(&body)
 	if body.Hostname == "" {
@@ -82,6 +85,9 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		FBProfileURL:      body.FBProfileURL,
 		StreamStatus:      body.StreamStatus,
 		ChromeError:       body.ChromeError,
+		IdentityConfidence:       body.IdentityConfidence,
+		IdentityExtractionMethod: body.IdentityExtractionMethod,
+		IdentityLastVerifiedAt:   body.IdentityLastVerifiedAt,
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
@@ -110,6 +116,9 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		LoginEmail    string `json:"login_email"`
 		StreamStatus  string `json:"stream_status"`
 		ChromeError   string `json:"chrome_error"`
+		IdentityConfidence       string `json:"identity_confidence"`
+		IdentityExtractionMethod string `json:"identity_extraction_method"`
+		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
 	}
 	_ = c.BodyParser(&body)
 
@@ -126,6 +135,9 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		FBProfileURL:      body.FBProfileURL,
 		StreamStatus:      status,
 		ChromeError:       body.ChromeError,
+		IdentityConfidence:       body.IdentityConfidence,
+		IdentityExtractionMethod: body.IdentityExtractionMethod,
+		IdentityLastVerifiedAt:   body.IdentityLastVerifiedAt,
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)

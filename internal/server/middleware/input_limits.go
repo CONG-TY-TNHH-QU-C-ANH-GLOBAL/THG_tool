@@ -43,6 +43,7 @@ const (
 	limConnectorLoginEmail      = 320
 	limConnectorStreamStatus    = 64
 	limConnectorChromeError     = 4096
+	limConnectorIdentityMeta    = 64
 )
 
 // ClampPresenceFields enforces upper bounds on every connector-supplied field
@@ -61,4 +62,7 @@ func ClampPresenceFields(p *connectors.AgentPresence) {
 	p.FBProfileURL = TruncateRune(p.FBProfileURL, limConnectorFBProfileURL)
 	p.StreamStatus = TruncateRune(p.StreamStatus, limConnectorStreamStatus)
 	p.ChromeError = TruncateRune(p.ChromeError, limConnectorChromeError)
+	p.IdentityConfidence = TruncateRune(p.IdentityConfidence, limConnectorIdentityMeta)
+	p.IdentityExtractionMethod = TruncateRune(p.IdentityExtractionMethod, limConnectorIdentityMeta)
+	p.IdentityLastVerifiedAt = TruncateRune(p.IdentityLastVerifiedAt, limConnectorIdentityMeta)
 }

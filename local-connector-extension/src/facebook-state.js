@@ -38,6 +38,10 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
       streamStatus = 'facebook_logged_in';
     }
     const meta = await collectMetaFromTab(firstFb);
+    // PR-B (B3): identity TRUTH is the c_user cookie. Report HOW confident /
+    // where-from so the backend readiness (PR-D) + health board (PR-E) can show
+    // "identity verified vs unknown" without trusting the (cosmetic) display name.
+    const hasCUser = !!cookie?.value;
     return {
       currentUrl,
       fbUserId: cookie?.value || '',
@@ -46,6 +50,9 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
       fbProfileUrl: meta.fb_profile_url || '',
       loginEmail: meta.login_email || '',
       streamStatus,
+      identityConfidence: hasCUser ? 'high' : 'none',
+      identityExtractionMethod: hasCUser ? 'cookie_c_user' : 'none',
+      identityLastVerifiedAt: hasCUser ? new Date().toISOString() : '',
       tab: firstFb
     };
   }

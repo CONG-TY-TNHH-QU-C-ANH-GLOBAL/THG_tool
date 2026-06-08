@@ -26,7 +26,10 @@ var THGApi = globalThis.THGApi || (() => {
       fb_username: state.fbUsername,
       fb_profile_url: state.fbProfileUrl,
       login_email: state.loginEmail,
-      stream_status: state.streamStatus
+      stream_status: state.streamStatus,
+      identity_confidence: state.identityConfidence || '',
+      identity_extraction_method: state.identityExtractionMethod || '',
+      identity_last_verified_at: state.identityLastVerifiedAt || ''
     };
   }
 
