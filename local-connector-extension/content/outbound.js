@@ -381,12 +381,25 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
     );
     if (!permalink || !visible(permalink)) return false;
+    // The comment surface is reachable when EITHER:
+    //  (a) a "Comment"/"Bình luận" button exists to expand the section (FEED
+    //      layout — the post is collapsed and we click to open the composer), OR
+    //  (b) a comment composer is ALREADY mounted inside the article (PERMALINK
+    //      layout — Facebook renders the post with comments already expanded, so
+    //      there is NO Comment button: comment_button_found=0 yet composer_count
+    //      =1). Requiring (a) alone starved the gate on permalink pages — the
+    //      observed target_not_reached@gate1 with the composer right there.
     const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
     const buttons = Array.from(article.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
-    return buttons.some(el => {
+    const hasCommentButton = buttons.some(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
     });
+    if (hasCommentButton) return true;
+    // (b) Permalink layout: accept an already-open in-article composer. The
+    // downstream Checkpoint-3 still re-verifies the editor belongs to the target
+    // article before typing, so this cannot type into the wrong post.
+    return !!findCommentEditor(article);
   }
 
   // waitUntilTargetArticleStable polls the live DOM until the target
