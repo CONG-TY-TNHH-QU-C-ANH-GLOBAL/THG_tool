@@ -429,6 +429,54 @@ func (h *Handler) finalizeOutbound(
 				"attempt_id", attemptID, "outcome", outcome, "error", err)
 		}
 
+		// Verified Actor integrity gate (P1b — specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b).
+		// Compare the account's EXPECTED Facebook identity against the live c_user
+		// the executor observed. The verdict is stamped APPEND-ONLY on this attempt
+		// row + the account's runtime state; action_ledger is NOT mutated for it. A
+		// definite mismatch BLOCKS the account from further auto-execute (the claim
+		// cap-check denies it) until an operator clears the block. Best-effort —
+		// failures here are logged, never abort finalize.
+		//
+		// TODO(p1b-atomicity): the verdict stamp runs AFTER FinishExecutionAttempt,
+		// not in the same transaction. If the process crashes between the two, the
+		// attempt is finalized but carries no actor_verdict (and no block is set).
+		// Harden later by folding FinishExecutionAttempt + MarkAttemptActorVerification
+		// + RecordAccountActorVerdict into ONE coordination finalize transaction.
+		// Tracked in specs/COMMENT_INTELLIGENCE_PIPELINE.md §11.
+		if attemptID > 0 && msg.AccountID > 0 {
+			expectedFB := ""
+			if acc, aErr := h.db.Identities().GetAccountForOrg(msg.AccountID, orgID); aErr == nil && acc != nil {
+				expectedFB = acc.FBUserID
+			}
+			actualFB := ""
+			if proof.NavDiagnostic != nil {
+				actualFB = proof.NavDiagnostic.FBUserID
+			}
+			verdict := coordination.ClassifyActorVerdict(expectedFB, actualFB)
+			if err := h.db.Coordination().MarkAttemptActorVerification(ctx, attemptID, expectedFB, actualFB, verdict); err != nil {
+				slog.WarnContext(ctx, "exec-verify: actor verdict stamp failed",
+					"attempt_id", attemptID, "error", err)
+			}
+			block := verdict == models.ActorVerdictMismatch
+			blockReason := ""
+			if block {
+				blockReason = fmt.Sprintf("actor mismatch: expected fb_user_id %s, observed %s", expectedFB, actualFB)
+			}
+			if err := h.db.Coordination().RecordAccountActorVerdict(ctx, orgID, msg.AccountID, verdict, actualFB, blockReason, block); err != nil {
+				slog.WarnContext(ctx, "exec-verify: actor verdict record failed",
+					"org_id", orgID, "account_id", msg.AccountID, "error", err)
+			}
+			if block {
+				// Operator alert: high-signal structured log + a problem event in
+				// the account owner's chat. The block also surfaces as a chip in
+				// the dashboard and is cleared via the admin clear-actor-block route.
+				slog.ErrorContext(ctx, "exec-verify: ACTOR MISMATCH — account blocked from auto-execute",
+					"org_id", orgID, "account_id", msg.AccountID, "outbound_id", id,
+					"expected_fb_user_id", expectedFB, "actual_fb_user_id", actualFB)
+				system.NotifyActorMismatch(h.db, orgID, msg.AccountID, id, expectedFB, actualFB)
+			}
+		}
+
 		ledgerOutcome := models.LedgerOutcomeAlias(outcome)
 		ledgerReason := string(outcome)
 		if failureReason != "" && failureReason != string(outcome) {

@@ -1,4 +1,4 @@
-import { del, get, put } from './api';
+import { del, get, post, put } from './api';
 
 // Outbound row lifecycle (PR-1 verified-state-centric refactor, May-2026).
 //
@@ -43,10 +43,30 @@ export interface OutboundMessage {
   created_at: string;
 }
 
+// ActorIdentity is the read-only Facebook identity of the account that
+// executes an outbound action — the "đăng bởi" actor, distinct from the
+// initiating staff/system principal (created_by). Keyed by account_id in
+// OutboxResponse.actors. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a.
+export interface ActorIdentity {
+  account_id: number;
+  account_name: string;
+  fb_user_id: string;
+  fb_display_name: string;
+  fb_username: string;
+  fb_profile_url: string;
+  // Verified-Actor state (P1b): last verdict for the account and whether it is
+  // blocked from auto-execute on an actor mismatch. See pipeline doc §7b.
+  actor_verdict?: 'verified' | 'mismatch' | 'unknown' | '';
+  actor_blocked?: boolean;
+}
+
 export interface OutboxResponse {
   messages: OutboundMessage[];
   count: number;
   counts: Record<string, number>;
+  // actors maps account_id → ActorIdentity for every account in the org,
+  // so the UI can render the executing Facebook actor without an N+1 fetch.
+  actors?: Record<string, ActorIdentity>;
 }
 
 export async function getOutbox(params?: { type?: string; status?: string; limit?: number }): Promise<OutboxResponse> {
@@ -70,6 +90,14 @@ export async function updateOutboxContent(id: number, content: string): Promise<
 
 export async function deleteOutbox(id: number): Promise<void> {
   await del(`/outbox/${id}`);
+}
+
+// clearActorBlock lifts a Verified-Actor block on an account (P1b) so it can
+// auto-execute again. Admin-only on the backend
+// (POST /accounts/:id/clear-actor-block). Call after the operator has confirmed
+// the correct Facebook identity is logged in on that account.
+export async function clearActorBlock(accountId: number): Promise<{ cleared: boolean; account_id: number }> {
+  return post<{ cleared: boolean; account_id: number }>(`/accounts/${accountId}/clear-actor-block`, {});
 }
 
 // deleteAllOutboundComments clears every comment outbox row for the org.

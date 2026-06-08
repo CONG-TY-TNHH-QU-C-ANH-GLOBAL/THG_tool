@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
+import { ExternalLink, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import {
+  clearActorBlock,
   deleteAllOutboundComments,
   deleteOutbox,
   getOutbox,
+  type ActorIdentity,
   type OutboundMessage,
 } from '../../services/outboxService';
 import { useLang } from '../../i18n/useLang';
@@ -105,6 +107,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
   const { lang, t } = useLang();
   const tv = t.commentingView;
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
+  const [actors, setActors] = useState<Record<string, ActorIdentity>>({});
   const [filter, setFilter] = useState<CommentFilter>('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,6 +155,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
     try {
       const response = await getOutbox({ type: 'comment', limit: 200 });
       setMessages(response.messages ?? []);
+      setActors(response.actors ?? {});
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : tv.loadError);
     } finally {
@@ -180,6 +184,47 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
 
   const selectedMessage = filtered.find((message) => message.id === selectedId) ?? null;
 
+  // Executor attribution (P1a). The acting Facebook identity for a row's
+  // account_id — distinct from the initiating principal (created_by). Falls
+  // back to the local account name, then the bare #id, when FB identity is
+  // not yet resolved. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a.
+  const actorOf = (accountId: number): ActorIdentity | undefined => actors[String(accountId)];
+  const executorName = (accountId: number): string => {
+    const a = actorOf(accountId);
+    return a?.fb_display_name || a?.account_name || `#${accountId}`;
+  };
+  // "Anonymous participant" is a real Facebook value for anonymous group
+  // posters (the TARGET, not our actor) — relabel it so it doesn't read as
+  // a missing field. See ROOT_CAUSE_REPORT.md note + pipeline doc §8.
+  const anonLabel = lang === 'vi' ? '(người đăng ẩn danh)' : '(anonymous poster)';
+  const targetLabel = (name: string): string =>
+    name === 'Anonymous participant' ? anonLabel : name;
+
+  // Verified-Actor chip (P1b). Surfaces whether the executing FB identity
+  // matched the account's expected one. A `blocked` account (actor mismatch)
+  // is denied further auto-execute until an operator clears it — that is the
+  // integrity gate, not just a label. See pipeline doc §7b.
+  const actorVerdictChip = (a: ActorIdentity | undefined) => {
+    if (!a) return null;
+    if (a.actor_blocked) {
+      return (
+        <span className="tag tag-hot" title={lang === 'vi' ? 'Tài khoản bị chặn auto do sai danh tính FB — cần operator gỡ' : 'Account blocked from auto-execute on actor mismatch — operator must clear'}>
+          {lang === 'vi' ? '⚠ SAI ACTOR — ĐÃ CHẶN' : '⚠ ACTOR MISMATCH — BLOCKED'}
+        </span>
+      );
+    }
+    switch (a.actor_verdict) {
+      case 'verified':
+        return <span className="tag tag-ok" title={lang === 'vi' ? 'Danh tính FB khớp tài khoản kỳ vọng' : 'FB identity matched the expected account'}>{lang === 'vi' ? '✅ ĐÚNG ACTOR' : '✅ VERIFIED ACTOR'}</span>;
+      case 'mismatch':
+        return <span className="tag tag-hot">{lang === 'vi' ? '⚠ SAI ACTOR' : '⚠ ACTOR MISMATCH'}</span>;
+      case 'unknown':
+        return <span className="tag tag-mute" title={lang === 'vi' ? 'Chưa xác minh được danh tính FB' : 'FB identity not yet verifiable'}>{lang === 'vi' ? '❔ CHƯA XÁC MINH' : '❔ UNVERIFIED'}</span>;
+      default:
+        return null;
+    }
+  };
+
   // The only operator-driven row-level action left is delete. Approve
   // / reject went away with the draft/approval flow — every queued
   // outbound runs autonomously.
@@ -187,6 +232,26 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
     setErrorMsg('');
     try {
       if (action === 'delete') await deleteOutbox(id);
+      await load();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : tv.updateError);
+    }
+  };
+
+  // Operator override for a Verified-Actor block (P1b). Admin-only; closes the
+  // operational loop so a mis-logged account isn't stuck blocked forever.
+  const handleClearActorBlock = async (accountId: number) => {
+    setErrorMsg('');
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        lang === 'vi'
+          ? `Gỡ chặn actor cho account #${accountId}? Chỉ làm sau khi đã xác nhận đúng tài khoản Facebook đang đăng nhập.`
+          : `Clear the actor block for account #${accountId}? Only do this after confirming the correct Facebook identity is logged in.`,
+      );
+      if (!ok) return;
+    }
+    try {
+      await clearActorBlock(accountId);
       await load();
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : tv.updateError);
@@ -308,7 +373,12 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span className="mono" style={{ fontSize: 12, color: 'var(--text-mute)' }}>#{message.account_id}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {actorOf(message.account_id)?.actor_blocked && (
+                          <ShieldCheck size={12} color="var(--hot)" aria-label={lang === 'vi' ? 'Account bị chặn (sai actor)' : 'Account blocked (actor mismatch)'} />
+                        )}
+                        {executorName(message.account_id)}
+                      </span>
                       <span className={statusTag(message)}>{statusLabel(message, lang)}</span>
                     </div>
                     <div style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -316,7 +386,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {message.target_name || tv.noTarget}
+                        {message.target_name ? targetLabel(message.target_name) : tv.noTarget}
                       </span>
                       <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
                         {message.created_at?.slice(5, 16) ?? '—'}
@@ -334,11 +404,24 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                 <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid var(--line)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 500, color: 'var(--text)' }}>
-                      {selectedMessage.target_name || tv.targetFallback}
+                      {selectedMessage.target_name ? targetLabel(selectedMessage.target_name) : tv.targetFallback}
                     </div>
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
-                      #{selectedMessage.account_id}
-                    </div>
+                    {(() => {
+                      const a = actorOf(selectedMessage.account_id);
+                      const postedBy = lang === 'vi' ? 'Đăng bởi' : 'Posted by';
+                      return (
+                        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span>{postedBy}: <span style={{ color: 'var(--text-mute)' }}>{executorName(selectedMessage.account_id)}</span></span>
+                          {a?.fb_profile_url && (
+                            <a href={a.fb_profile_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-mute)' }}>
+                              <ExternalLink size={11} />
+                            </a>
+                          )}
+                          <span className="mono">· Account #{selectedMessage.account_id}</span>
+                          {actorVerdictChip(a)}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <span className={statusTag(selectedMessage)}>{statusLabel(selectedMessage, lang)}</span>
                 </header>
@@ -356,7 +439,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                     <dl style={{ display: 'grid', gap: 10 }}>
                       <div style={{ display: 'grid', gap: 4 }}>
                         <dt className="field-label">{tv.fieldTarget}</dt>
-                        <dd style={{ margin: 0 }}>{selectedMessage.target_name || '—'}</dd>
+                        <dd style={{ margin: 0 }}>{selectedMessage.target_name ? targetLabel(selectedMessage.target_name) : '—'}</dd>
                       </div>
                       <div style={{ display: 'grid', gap: 4 }}>
                         <dt className="field-label">{tv.fieldContext}</dt>
@@ -377,6 +460,18 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                         <ExternalLink size={13} />
                         {tv.actionOpenTarget}
                       </a>
+                    )}
+                    {isAdmin && actorOf(selectedMessage.account_id)?.actor_blocked && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => void handleClearActorBlock(selectedMessage.account_id)}
+                        style={{ color: 'var(--ok, #16a34a)' }}
+                        title={lang === 'vi' ? 'Gỡ chặn auto-execute cho account này (sau khi đã đăng nhập đúng Facebook)' : 'Lift the auto-execute block on this account (after the correct Facebook is logged in)'}
+                      >
+                        <ShieldCheck size={13} />
+                        {lang === 'vi' ? 'Gỡ chặn actor' : 'Clear actor block'}
+                      </button>
                     )}
                     <button
                       type="button"

@@ -210,6 +210,56 @@ type Account struct {
 	FBProfileURL     string        `json:"fb_profile_url" db:"fb_profile_url"`
 }
 
+// ActorIdentity is the read-only projection of an account's Facebook
+// identity, used by operator-facing surfaces (the Agent Decision
+// Inspector / CommentingView) to answer "which Facebook actor executed
+// this action" — distinct from CreatedBy (the staff/system principal
+// that initiated it). See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a.
+//
+// It is a contract shape, not a DB row serialization: it carries only
+// the display-relevant identity fields, never cookies/proxy/secrets.
+type ActorIdentity struct {
+	AccountID     int64  `json:"account_id"`
+	AccountName   string `json:"account_name"`
+	FBUserID      string `json:"fb_user_id"`
+	FBDisplayName string `json:"fb_display_name"`
+	FBUsername    string `json:"fb_username"`
+	FBProfileURL  string `json:"fb_profile_url"`
+	// ActorVerdict / ActorBlocked are the Verified-Actor state for the
+	// account (P1b). Folded in by the API composition layer from the
+	// coordination domain — see specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b.
+	ActorVerdict string `json:"actor_verdict,omitempty"`
+	ActorBlocked bool   `json:"actor_blocked,omitempty"`
+}
+
+// Actor verdict vocabulary (Verified Actor — the closed enum for the
+// expected-vs-actual Facebook identity check at execution finalize).
+// Deterministic boundary: callers branch on these exact values, never a
+// proxy. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b.
+const (
+	// ActorVerdictVerified: the account's expected fb_user_id equals the
+	// live c_user the executor observed. The only verdict that permits
+	// auto-execute.
+	ActorVerdictVerified = "verified"
+	// ActorVerdictMismatch: both identities are known and DIFFERENT — the
+	// account is logged into a different Facebook than expected. Blocks the
+	// account from further auto-execute until an operator clears it.
+	ActorVerdictMismatch = "mismatch"
+	// ActorVerdictUnknown: expected or actual is missing, so the check could
+	// not run. Not a block (no evidence of wrongdoing) but not verified
+	// either — the gate treats it as "needs review", never auto-execute.
+	ActorVerdictUnknown = "unknown"
+)
+
+// ActorState is the per-account Verified-Actor projection consumed by
+// operator surfaces. Carried out of the coordination domain via a
+// dedicated read; merged into [ActorIdentity] at the API boundary.
+type ActorState struct {
+	Verdict     string // last ActorVerdict* observed for the account
+	Blocked     bool   // true when blocked from auto-execute on actor mismatch
+	BlockReason string
+}
+
 // PromptLog records every AI prompt interaction for learning.
 type PromptLog struct {
 	ID          int64  `json:"id" db:"id"`

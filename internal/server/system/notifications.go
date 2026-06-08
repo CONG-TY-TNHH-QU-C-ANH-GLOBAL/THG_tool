@@ -151,6 +151,25 @@ func NotifyExecutionStarted(db *store.Store, orgID, accountID, outboundID int64,
 		fmt.Sprintf(`{"id":%d,"type":%q,"execution_id":%q}`, outboundID, typ, executionID), true)
 }
 
+// NotifyActorMismatch is emitted by the Verified-Actor gate (P1b) when an
+// account is found logged into a DIFFERENT Facebook identity than expected and
+// has been blocked from further auto-execute. Routed to the account OWNER's
+// private chat — they are the one who must re-login the correct identity; an
+// admin lifts the block from the dashboard. success=false so it renders as a
+// problem event. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b.
+func NotifyActorMismatch(db *store.Store, orgID, accountID, outboundID int64, expectedFB, actualFB string) {
+	if db == nil || orgID <= 0 {
+		return
+	}
+	logMsg := fmt.Sprintf("[THG Agent] ACTOR MISMATCH account=%d expected=%s actual=%s outbound=%d org=%d — account BLOCKED",
+		accountID, expectedFB, actualFB, outboundID, orgID)
+	userMsg := fmt.Sprintf("%s ⚠ Tài khoản #%d đang đăng nhập SAI danh tính Facebook (kỳ vọng %s, thực tế %s). Đã CHẶN tự động để bảo vệ — hãy đăng nhập lại đúng tài khoản; admin có thể gỡ chặn.",
+		notifierPrefix, accountID, expectedFB, actualFB)
+	log.Printf("[Outbound] %s", logMsg)
+	recordAutomationForAccount(db, orgID, accountID, userMsg, "actor_mismatch_blocked",
+		fmt.Sprintf(`{"account_id":%d,"outbound_id":%d,"expected_fb_user_id":%q,"actual_fb_user_id":%q}`, accountID, outboundID, expectedFB, actualFB), false)
+}
+
 func NotifyOutboundStatus(db *store.Store, notifier func(string), orgID, id int64, state models.ExecutionState, outcome models.VerificationOutcome) {
 	NotifyOutboundStatusDetail(db, notifier, orgID, id, state, outcome, "")
 }

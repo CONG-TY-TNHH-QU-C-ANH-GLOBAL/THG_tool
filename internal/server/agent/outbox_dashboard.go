@@ -20,7 +20,40 @@ func (h *Handler) getOutbox(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	counts, _ := h.db.CountOutboundByStatusForOrg(orgID)
-	return c.JSON(fiber.Map{"messages": messages, "count": len(messages), "counts": counts})
+	// Executor attribution projection: resolve each row's account_id to its
+	// Facebook identity so the operator sees "đăng bởi <FB actor>", not a bare
+	// #account_id. Distinct from CreatedBy (the initiating principal). Best
+	// effort — a lookup failure must not break the dashboard list.
+	// See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a (P1a).
+	actors, _ := h.db.Identities().AccountIdentitiesForOrg(orgID)
+	// Fold the Verified-Actor state (P1b) into the actor projection so the UI
+	// can render the verdict chip / blocked badge per account. Composed at the
+	// API boundary — identities stays pure, coordination owns the verdict.
+	if states, sErr := h.db.Coordination().AccountActorStatesForOrg(c.UserContext(), orgID); sErr == nil {
+		for accID, st := range states {
+			if a, ok := actors[accID]; ok {
+				a.ActorVerdict = st.Verdict
+				a.ActorBlocked = st.Blocked
+				actors[accID] = a
+			}
+		}
+	}
+	return c.JSON(fiber.Map{"messages": messages, "count": len(messages), "counts": counts, "actors": actors})
+}
+
+// clearActorBlock is the operator override that lifts a Verified-Actor block
+// on one account (P1b). Admin-only. The account can auto-execute again after
+// the operator has confirmed the correct Facebook identity is logged in.
+func (h *Handler) clearActorBlock(c *fiber.Ctx) error {
+	orgID := c.Locals("org_id").(int64)
+	accountID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid account id"})
+	}
+	if err := h.db.Coordination().ClearActorBlock(c.UserContext(), orgID, accountID); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"cleared": true, "account_id": accountID})
 }
 
 func (h *Handler) draftOutbound(c *fiber.Ctx) error {

@@ -91,16 +91,26 @@ func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDe
 		commentsToday, inboxToday, groupPostsToday, profilePostsToday int
 		riskScore                                                     float64
 		cooldownUntilStr                                              string
+		actorBlocked                                                  int
 	)
 	err = tx.QueryRow(
 		`SELECT counters_day, comments_today, inbox_today, group_posts_today,
-		        profile_posts_today, risk_score, COALESCE(cooldown_until,'')
+		        profile_posts_today, risk_score, COALESCE(cooldown_until,''),
+		        COALESCE(actor_blocked,0)
 		   FROM account_runtime_state
 		  WHERE account_id = ?`, accountID,
 	).Scan(&countersDay, &commentsToday, &inboxToday, &groupPostsToday,
-		&profilePostsToday, &riskScore, &cooldownUntilStr)
+		&profilePostsToday, &riskScore, &cooldownUntilStr, &actorBlocked)
 	if err != nil && err != sql.ErrNoRows {
 		return CapsDecision{}, err
+	}
+
+	// Verified-Actor block (P1b): an account caught logged into a different
+	// Facebook identity than expected is denied ALL execution until an
+	// operator clears it. Checked first — it is a hard integrity stop, not a
+	// pacing decision, and must override even an otherwise-allowed account.
+	if actorBlocked == 1 {
+		return CapsDecision{Allowed: false, Reason: "actor_mismatch_blocked"}, nil
 	}
 
 	if cooldownUntilStr != "" {

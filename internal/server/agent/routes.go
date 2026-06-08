@@ -92,4 +92,8 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// executes when an account is available.
 	group.Put("/outbox/:id/content", h.editOutbound)
 	group.Delete("/outbox/:id", h.deleteOutbound)
+
+	// Verified Actor (P1b): operator override to lift an actor-mismatch block
+	// on an account so it can auto-execute again. Admin-only.
+	group.Post("/accounts/:id/clear-actor-block", adminOnly, h.clearActorBlock)
 }

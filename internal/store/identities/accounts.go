@@ -78,6 +78,39 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 	return &a, nil
 }
 
+// AccountIdentitiesForOrg returns a tenant-scoped map of account_id →
+// [models.ActorIdentity] for every account in the org. It is the batch
+// projection behind operator surfaces that render "which Facebook actor
+// executed this" without an N+1 GetAccount per row (CommentingView /
+// Agent Decision Inspector — see specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a).
+//
+// Secrets (cookies/proxy) are never selected. Returns an empty (non-nil)
+// map when the org has no accounts.
+func (s *Store) AccountIdentitiesForOrg(orgID int64) (map[int64]models.ActorIdentity, error) {
+	out := make(map[int64]models.ActorIdentity)
+	if orgID <= 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT id, name, COALESCE(fb_user_id,''), COALESCE(fb_display_name,''),
+		        COALESCE(fb_username,''), COALESCE(fb_profile_url,'')
+		 FROM accounts WHERE org_id = ?`, orgID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a models.ActorIdentity
+		if err := rows.Scan(&a.AccountID, &a.AccountName, &a.FBUserID,
+			&a.FBDisplayName, &a.FBUsername, &a.FBProfileURL); err != nil {
+			continue
+		}
+		out[a.AccountID] = a
+	}
+	return out, nil
+}
+
 // GetAccountByFacebookIdentity returns the account that owns a Facebook identity
 // in an org, or (nil, nil) when none exists. Backed by the partial unique index
 // uq_accounts_org_fb_identity (one FB identity = one account per org).

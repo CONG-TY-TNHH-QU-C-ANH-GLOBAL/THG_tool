@@ -216,6 +216,11 @@ func (a *AppStore) migrate() error {
 	a.db.Exec(`ALTER TABLE accounts ADD COLUMN fb_profile_url    TEXT    NOT NULL DEFAULT ''`)
 	a.db.Exec(`ALTER TABLE accounts ADD COLUMN checkpoint_count  INTEGER NOT NULL DEFAULT 0`)
 
+	// NOTE: Verified-Actor columns (P1b) on execution_attempts /
+	// account_runtime_state are added by migration 0006_add_actor_verification
+	// (the canonical migrator path), NOT here — adding them in both places
+	// would make 0006 fail on a duplicate column at boot.
+
 	return nil
 }
 
