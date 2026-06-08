@@ -421,8 +421,13 @@ No CRUD. Reuses KnowledgeOS retrieval, catalog sync, CTA assets, `UniversalClass
   `knowledge_gap`. Reuses `BuildForLeadWithTrace` + extends `UniversalClassify`;
   enforces grounding in code (drop invented items); surfaces `Images[0]`. Pure
   reasoning — buildable now, degrades gracefully on thin knowledge.
-- **P2b** **Knowledge Extraction enrichment**: make `website/notion` (and a
-  pricing/FAQ/case-study text source) reliably populate non-product knowledge,
+- **P2b** (PARTIAL, SHIPPED): the `csv` ingestor is registered + an admin,
+  tenant-scoped endpoint `POST /api/knowledge/seed-service` (idempotent; creates
+  one csv source → syncs → optionally approves) lets operators seed RAW service
+  knowledge without DevTools/CRUD. Domain data lives in `scripts/seed_service_
+  knowledge.*`, never in the binary. `website/notion` ingestors remain stubs
+  (a real crawler is future work). Full P2b also wants to:
+  make `website/notion` (and a pricing/FAQ/case-study text source) reliably populate non-product knowledge,
   and optionally CACHE a derived business-understanding (agent-authored +
   provenance — NOT a form) so per-lead reasoning is cheap and capability/proof
   selections are non-empty. Closes the §1 graceful-degradation gap with real data.

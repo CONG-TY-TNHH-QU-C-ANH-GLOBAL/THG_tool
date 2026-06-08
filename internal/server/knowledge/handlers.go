@@ -1,11 +1,14 @@
 ﻿package knowledge
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
@@ -143,6 +146,150 @@ func (h *handler) updateSource(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(updated)
+}
+
+// seedServiceBody is the wire shape for POST /knowledge/seed-service. Operators
+// supply RAW service knowledge as CSV or structured rows — the system NEVER
+// hardcodes any industry's knowledge (domain-agnostic Hard Rule). The default
+// THG seed data lives in scripts/seed_service_knowledge.*, not in the binary.
+type seedServiceBody struct {
+	Label     string    `json:"label"`      // optional; default "Service Knowledge"
+	AssetType string    `json:"asset_type"` // optional; default sales_playbook
+	CSV       string    `json:"csv"`        // CSV text (header row + rows), OR use Rows
+	Rows      []seedRow `json:"rows"`       // structured alternative to CSV
+	Approve   bool      `json:"approve"`    // approve the resulting assets after sync
+}
+
+type seedRow struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// seedService is the production-safe way to seed a tenant's service knowledge
+// (P2b): create/refresh ONE csv knowledge source, sync it via the registered csv
+// ingestor, and optionally approve the assets. Admin-only; tenant-scoped by the
+// JWT org (no org_id parameter). Idempotent — re-seeding the same label updates
+// rather than duplicating. Never touches the catalog and never changes
+// execution/auto policy. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2b).
+func (h *handler) seedService(c *fiber.Ctx) error {
+	orgID, ok := c.Locals("org_id").(int64)
+	if !ok || orgID <= 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+	}
+	if h.deps.Dispatcher == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "ingest_dispatcher_unavailable"})
+	}
+	// Typed availability check (req 8): the csv ingestor must be registered.
+	if _, okc := h.deps.Dispatcher.Registry.Lookup(sources.SourceCSV); !okc {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "csv_ingestor_unavailable",
+			"hint":  "register the csv ingestor in router.go before seeding",
+		})
+	}
+
+	var body seedServiceBody
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	// Knowledge types only — never the catalog (POD_product) or a banned claim,
+	// so a seed cannot corrupt the catalog (req 9).
+	at := assets.AssetType(strings.TrimSpace(body.AssetType))
+	if at == "" {
+		at = assets.AssetSalesPlaybook
+	}
+	if !at.IsKnown() || at == assets.AssetPODProduct || at == assets.AssetBannedClaim {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_asset_type", "asset_type": string(at)})
+	}
+
+	csvBody, err := buildSeedCSV(body)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	label := strings.TrimSpace(body.Label)
+	if label == "" {
+		label = "Service Knowledge"
+	}
+	cfg, _ := json.Marshal(map[string]string{"asset_type": string(at), "body": csvBody})
+
+	// Idempotency: reuse an existing csv source with the same label so a re-seed
+	// updates in place (same source_id → assets upsert by ExternalID, no dupes).
+	src := &sources.Source{OrgID: orgID, Type: sources.SourceCSV, Label: label, ConnectionConfig: cfg, SyncPolicy: sources.SyncManual}
+	if existing, lerr := h.deps.DB.Knowledge().ListSourcesForOrg(c.Context(), orgID, sources.ListFilter{}); lerr == nil {
+		for _, s := range existing {
+			if s.Type == sources.SourceCSV && s.Label == label {
+				src.ID = s.ID
+				break
+			}
+		}
+	}
+	if err := src.Validate(); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	saved, err := h.deps.DB.Knowledge().UpsertSource(c.Context(), src)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	res, syncErr := h.deps.Dispatcher.Run(c.Context(), saved)
+	if syncErr != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
+			"error": syncErr.Error(), "source_id": saved.ID, "result": res,
+		})
+	}
+
+	approved := 0
+	if body.Approve {
+		pending, _ := h.deps.DB.Knowledge().ListAssetsForOrg(c.Context(), orgID, assets.ListFilter{
+			SourceID: saved.ID,
+			States:   []assets.AssetState{assets.StatePending},
+		})
+		for _, a := range pending {
+			if serr := h.deps.DB.Knowledge().SetAssetState(c.Context(), a.ID, orgID, assets.StateApproved); serr == nil {
+				approved++
+			}
+		}
+	}
+
+	// Note: the csv ingestor reports successfully-written rows under AssetsSeen
+	// (create vs update is not distinguished at this layer), so we surface that
+	// as assets_ingested rather than the create/update split which it leaves 0.
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"source_id":       saved.ID,
+		"asset_type":      string(at),
+		"assets_ingested": res.AssetsSeen,
+		"assets_rejected": res.AssetsRejected,
+		"assets_approved": approved,
+	})
+}
+
+// buildSeedCSV normalizes the request into a CSV the csv ingestor accepts. It
+// prefers a raw CSV body; otherwise it renders structured rows to CSV (properly
+// escaped). Returns a typed error when neither yields at least one data row.
+func buildSeedCSV(b seedServiceBody) (string, error) {
+	if s := strings.TrimSpace(b.CSV); s != "" {
+		return s, nil
+	}
+	if len(b.Rows) == 0 {
+		return "", errors.New("no_rows: provide csv or rows")
+	}
+	var sb strings.Builder
+	w := csv.NewWriter(&sb)
+	_ = w.Write([]string{"title", "description"})
+	wrote := 0
+	for _, r := range b.Rows {
+		if strings.TrimSpace(r.Title) == "" {
+			continue
+		}
+		_ = w.Write([]string{strings.TrimSpace(r.Title), strings.TrimSpace(r.Description)})
+		wrote++
+	}
+	w.Flush()
+	if wrote == 0 {
+		return "", errors.New("no_rows: every row missing a title")
+	}
+	return sb.String(), nil
 }
 
 func (h *handler) deleteSource(c *fiber.Ctx) error {

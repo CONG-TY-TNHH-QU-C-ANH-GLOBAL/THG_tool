@@ -39,6 +39,9 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// system on the org's behalf — non-admins should never trigger
 	// outbound traffic against a tenant-configured backend.
 	group.Post("/knowledge/sources/:id/sync", adminOnly, h.syncSource)
+	// Production-safe seed of a tenant's service knowledge (P2b): create/refresh
+	// one csv source, sync, optionally approve. Admin-only; tenant-scoped by JWT.
+	group.Post("/knowledge/seed-service", adminOnly, h.seedService)
 }
 
 type handler struct{ deps Deps }
