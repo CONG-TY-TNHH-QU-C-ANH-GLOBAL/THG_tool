@@ -516,6 +516,41 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       || null;
   }
 
+  // findComposerForTarget locates the comment composer that BELONGS TO the target
+  // post when it is not nested inside the post's [role=article] (permalink layout:
+  // the "Write an answer…" box is a sibling / page-level element). It expands
+  // outward from the target article and returns the first visible comment editor
+  // that is EITHER inside the target post's article OR not inside ANY OTHER post's
+  // article (a true sibling/page-level composer near the target). A composer that
+  // sits inside a DIFFERENT post's article is SKIPPED — that is the wrong-post
+  // editor Checkpoint-3 was correctly rejecting (gate3_editor_drift), the cause of
+  // the observed context_drift on group permalink-feed pages. Returns null when
+  // only foreign-post composers exist.
+  function findComposerForTarget(targetPostId) {
+    if (!targetPostId) return null;
+    const id = String(targetPostId);
+    const targetArticle = findTargetArticle(id);
+    if (!targetArticle) return null;
+    const inArticle = findCommentEditor(targetArticle);
+    if (inArticle) return inArticle;
+    const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
+    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    let scope = targetArticle.parentElement;
+    for (let depth = 0; scope && depth < 6; depth += 1, scope = scope.parentElement) {
+      const editors = Array.from(scope.querySelectorAll('[contenteditable="true"], textarea, input[type="text"]'))
+        .filter(el => visible(el) && !hasAny(labelOf(el), badKeys));
+      for (const el of editors) {
+        const art = el.closest('[role="article"], [role="dialog"]');
+        const artId = art ? extractArticleCanonicalEntityId(art) : '';
+        if (artId && artId !== id) continue; // composer belongs to a DIFFERENT post — skip
+        if (hasAny(labelOf(el), commentKeys) || norm(el.getAttribute('role')) === 'textbox' || !artId) {
+          return el; // target's own, or a page/sibling-level composer near the target
+        }
+      }
+    }
+    return null;
+  }
+
   function submitScore(editor, button) {
     const er = editor.getBoundingClientRect();
     const br = button.getBoundingClientRect();
@@ -761,7 +796,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         stableMs: 500,
         pollMs: 200,
       });
-      if (!targetScope && permalinkPage && findCommentEditor(document)) {
+      if (!targetScope && permalinkPage && findComposerForTarget(targetPostId)) {
         // PERMALINK LAYOUT: the post is present but its comments are already
         // expanded (no in-article Comment button) and the composer lives at page
         // level. waitUntilTargetArticleStable never sees an in-article composer
@@ -833,7 +868,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
 
     let editor = findCommentEditor(scope);
     // Permalink layout: the composer is page-level (outside the post article).
-    if (!editor && permalinkPage) editor = findCommentEditor(document);
+    // Use the target-scoped finder so we never grab a DIFFERENT post's composer.
+    if (!editor && permalinkPage) editor = findComposerForTarget(targetPostId);
     if (!editor) {
       window.scrollBy({ top: 420, behavior: 'smooth' });
       await wait(900);
@@ -852,7 +888,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
             'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
             navDiagFor('gate2b_scroll_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
         }
-        editor = findCommentEditor(scope) || (permalinkPage ? findCommentEditor(document) : null);
+        editor = findCommentEditor(scope) || (permalinkPage ? findComposerForTarget(targetPostId) : null);
       } else {
         editor = findCommentEditor(scope) || findCommentEditor(document);
       }
@@ -887,7 +923,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',
           { target_id: targetPostId, editor_scope_id: editorScopeID || '<no-enclosing-article>', permalink_page: permalinkPage, landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
+          'identity_gate_3_editor_drift: editor closest container canonical id=' + (editorScopeID || '<none>') + ' != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
           navDiagFor('gate3_editor_drift', 'typing', probeCommentGates(targetPostId), ctxInfo));
       }
     }
