@@ -329,6 +329,14 @@ func truncateRunes(s string, n int) string {
 // decision is non-nil and not KnowledgeGap (otherwise fall back to the generic
 // generator — there is no grounded offer to write about).
 func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision) (string, error) {
+	return mg.callOpenAI(ctx, buildGroundedCommentPrompt(leadContent, authorName, profile, decision))
+}
+
+// buildGroundedCommentPrompt is the PURE, testable prompt builder for the grounded
+// comment (PR-2 depth upgrade). It is INTENT-AWARE: a product-seeking lead leads
+// with the real SKU + price; a service-seeking lead leads with capability + proof +
+// CTA from service knowledge. It pitches ONLY grounded assets — no fabrication.
+func buildGroundedCommentPrompt(leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision) string {
 	lang := detectLang(leadContent)
 	langRule := "Viết bằng tiếng Việt."
 	if lang == "en" {
@@ -336,25 +344,39 @@ func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, 
 	}
 
 	var offer strings.Builder
-	writeItem := func(prefix string, it models.GroundedItem) {
+	writeItem := func(prefix string, withSKU bool, it models.GroundedItem) {
 		line := "- " + prefix + ": " + strings.TrimSpace(it.Label)
+		if withSKU {
+			if sku := strings.TrimSpace(it.SKU); sku != "" {
+				line += " [SKU " + sku + "]"
+			}
+		}
 		if p := strings.TrimSpace(it.PriceText); p != "" {
 			line += " (giá " + p + ")"
 		}
 		offer.WriteString(line + "\n")
 	}
 	if len(decision.Selected.Capabilities) > 0 {
-		writeItem("Dịch vụ/capability", decision.Selected.Capabilities[0])
+		writeItem("Dịch vụ/capability", false, decision.Selected.Capabilities[0])
 	}
 	if len(decision.Selected.Products) > 0 {
-		writeItem("Sản phẩm", decision.Selected.Products[0])
+		writeItem("Sản phẩm", true, decision.Selected.Products[0])
 	}
 	if len(decision.Selected.Proofs) > 0 {
-		writeItem("Bằng chứng", decision.Selected.Proofs[0])
+		writeItem("Bằng chứng", false, decision.Selected.Proofs[0])
 	}
 	ctaLine := ""
 	if decision.Selected.CTA != nil {
 		ctaLine = strings.TrimSpace(decision.Selected.CTA.Label)
+	}
+
+	// Intent-aware emphasis — bind the comment to what the lead actually wants.
+	intentRule := "4. Mention at most ONE capability/product and at most ONE proof point from the list above."
+	switch decision.Intent {
+	case models.IntentProductSeeking:
+		intentRule = "4. This lead is PRODUCT-SEEKING: lead with the specific product and its REAL price/SKU from the offer above — be concrete, no vague pitch."
+	case models.IntentServiceSeeking:
+		intentRule = "4. This lead is SERVICE-SEEKING: pitch the capability + ONE proof point + a soft CTA from the service knowledge above; do NOT push a product SKU."
 	}
 
 	profileBlock := ""
@@ -367,7 +389,7 @@ func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, 
 		nameRule = "2. The author is anonymous — do NOT use any name or salutation."
 	}
 
-	prompt := fmt.Sprintf(`You are a senior sales professional. Write ONE natural, human comment on this Facebook post, pitching ONLY the matched offer below. NEVER invent a capability, price, product, or proof that is not listed.
+	return fmt.Sprintf(`You are a senior sales professional. Write ONE natural, human comment on this Facebook post, pitching ONLY the matched offer below. NEVER invent a capability, price, product, SKU, or proof that is not listed. Bind the comment to the POST CONTENT — reference what the author actually asked for.
 
 BUSINESS PROFILE:
 %s
@@ -381,10 +403,10 @@ POST CONTENT:
 RULES:
 1. %s
 %s
-3. 2–3 sentences MAX. Natural, human tone — NOT a bot.
-4. Mention at most ONE capability/product and at most ONE proof point from the list above.
-5. State a price ONLY if it appears in the offer above; never guess a price.
-6. End with a soft CTA%s.
+3. 2–3 sentences MAX. Natural, human tone — NOT a bot. Do NOT repeat a sentence.
+%s
+5. State a price/SKU ONLY if it appears in the offer above; never guess.
+6. End with a soft CTA%s. Do NOT repeat the CTA.
 7. NO EMOJIS. Professional but human.
 
 RETURN ONLY THE COMMENT, NO EXPLANATION.`,
@@ -394,9 +416,9 @@ RETURN ONLY THE COMMENT, NO EXPLANATION.`,
 		strings.TrimSpace(leadContent),
 		langRule,
 		nameRule,
+		intentRule,
 		ctaSuffix(ctaLine),
 	)
-	return mg.callOpenAI(ctx, prompt)
 }
 
 func ctaSuffix(cta string) string {
