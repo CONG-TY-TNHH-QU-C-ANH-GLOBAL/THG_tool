@@ -492,6 +492,18 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return null;
   }
 
+  // onTargetPermalinkPage reports whether the BROWSER URL currently addresses the
+  // target post ITSELF (its own permalink page). On such a page the focused post
+  // is unambiguous — the page-level comment composer ("Write an answer…") belongs
+  // to the target post even when it sits OUTSIDE the post's [role=article]
+  // (comments already expanded, no in-article Comment button — the observed 204
+  // case: comment_button_found=0 but composer_count=1). The in-article scoping
+  // guards exist to disambiguate FEED pages (many posts); a permalink page has a
+  // single focused post — its URL — so a page-level composer is safe to use there.
+  function onTargetPermalinkPage(postId) {
+    return !!postId && extractPostIdFromUrl(location.href || '') === String(postId);
+  }
+
   function findCommentEditor(scope) {
     const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
     const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
@@ -727,6 +739,11 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // backward-compat lane carries no live traffic.
     const targetPostId = extractPostIdFromUrl(targetUrl);
     let targetScope = null;
+    // permalinkPage: the executor navigated to the target post's OWN permalink, so
+    // a page-level composer (outside the post's [role=article]) is unambiguously
+    // the target's — see onTargetPermalinkPage. Used to accept the permalink
+    // layout where comments are pre-expanded and there is no in-article composer.
+    const permalinkPage = onTargetPermalinkPage(targetPostId);
     if (targetPostId) {
       // Checkpoint 1 — pre-locate WITH stability wait.
       //
@@ -744,6 +761,16 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         stableMs: 500,
         pollMs: 200,
       });
+      if (!targetScope && permalinkPage && findCommentEditor(document)) {
+        // PERMALINK LAYOUT: the post is present but its comments are already
+        // expanded (no in-article Comment button) and the composer lives at page
+        // level. waitUntilTargetArticleStable never sees an in-article composer
+        // and times out — yet the URL confirms we are on the target post's own
+        // page, so the page-level composer is the target's. Proceed: keep the
+        // article (if any) as scope for the button search; the editor search and
+        // Checkpoint-3 below fall back to the page-level composer for this case.
+        targetScope = findTargetArticle(targetPostId) || document;
+      }
       if (!targetScope) {
         const landed = location.href || '';
         // PR8A — DETERMINISTIC LANDING GATE. Navigate → Wait Article → Verify
@@ -805,6 +832,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     }
 
     let editor = findCommentEditor(scope);
+    // Permalink layout: the composer is page-level (outside the post article).
+    if (!editor && permalinkPage) editor = findCommentEditor(document);
     if (!editor) {
       window.scrollBy({ top: 420, behavior: 'smooth' });
       await wait(900);
@@ -812,8 +841,10 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         const refreshed = findTargetArticle(targetPostId);
         scope = refreshed || targetScope;
         // Re-verify after the scroll — article references may have gone
-        // stale, and the React tree may have rotated.
-        if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+        // stale, and the React tree may have rotated. On the target's own
+        // permalink page the URL already pins identity, so the in-article
+        // re-check is skipped (the composer is legitimately page-level there).
+        if (!permalinkPage && extractArticleCanonicalEntityId(scope) !== targetPostId) {
           const landed = location.href || '';
           console.warn('[THG outbound.executeComment] gate2b FAIL scroll swap',
             { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
@@ -821,7 +852,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
             'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
             navDiagFor('gate2b_scroll_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
         }
-        editor = findCommentEditor(scope);
+        editor = findCommentEditor(scope) || (permalinkPage ? findCommentEditor(document) : null);
       } else {
         editor = findCommentEditor(scope) || findCommentEditor(document);
       }
@@ -841,11 +872,20 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // carries our content and a stray submit click would commit it.
     if (targetPostId) {
       const editorArticle = editor.closest('[role="article"], [role="dialog"]');
-      if (!editorArticle || extractArticleCanonicalEntityId(editorArticle) !== targetPostId) {
+      const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '';
+      const inTargetArticle = editorScopeID === targetPostId;
+      // The editor demonstrably belongs to a DIFFERENT post — the route-mismatch
+      // case this guard exists for (May-2026 incident). Always reject.
+      const inDifferentPost = !!editorScopeID && editorScopeID !== targetPostId;
+      // Accept when the editor is in the target post's article, OR — on the
+      // target post's OWN permalink page — when it is a PAGE-LEVEL composer
+      // (not inside any other post's article). The page URL pins identity there,
+      // so the page-level "Write an answer…" box is the target's (the 204 case).
+      const ok = inTargetArticle || (permalinkPage && !inDifferentPost);
+      if (!ok) {
         const landed = location.href || '';
-        const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '<no-enclosing-article>';
         console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',
-          { target_id: targetPostId, editor_scope_id: editorScopeID, landed_at_fail: landed });
+          { target_id: targetPostId, editor_scope_id: editorScopeID || '<no-enclosing-article>', permalink_page: permalinkPage, landed_at_fail: landed });
         return commentResult(false, 'context_drift', null, ctx,
           'identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
           navDiagFor('gate3_editor_drift', 'typing', probeCommentGates(targetPostId), ctxInfo));
