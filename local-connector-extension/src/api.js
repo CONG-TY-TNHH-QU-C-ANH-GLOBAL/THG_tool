@@ -29,7 +29,8 @@ var THGApi = globalThis.THGApi || (() => {
       stream_status: state.streamStatus,
       identity_confidence: state.identityConfidence || '',
       identity_extraction_method: state.identityExtractionMethod || '',
-      identity_last_verified_at: state.identityLastVerifiedAt || ''
+      identity_last_verified_at: state.identityLastVerifiedAt || '',
+      browser_profile_id: state.browserProfileId || ''
     };
   }
 

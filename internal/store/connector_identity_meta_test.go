@@ -42,6 +42,7 @@ func TestConnectorIdentityMetadataPersist(t *testing.T) {
 		IdentityConfidence:       "high",
 		IdentityExtractionMethod: "cookie_c_user",
 		IdentityLastVerifiedAt:   "2026-06-09T00:00:00Z",
+		BrowserProfileID:         "profile-uuid-abc",
 	}); err != nil {
 		t.Fatalf("UpdateAgentPresence: %v", err)
 	}
@@ -56,6 +57,9 @@ func TestConnectorIdentityMetadataPersist(t *testing.T) {
 	c := conns[0]
 	if c.IdentityConfidence != "high" || c.IdentityExtractionMethod != "cookie_c_user" || c.IdentityLastVerifiedAt != "2026-06-09T00:00:00Z" {
 		t.Fatalf("identity metadata not persisted: confidence=%q method=%q verified=%q", c.IdentityConfidence, c.IdentityExtractionMethod, c.IdentityLastVerifiedAt)
+	}
+	if c.BrowserProfileID != "profile-uuid-abc" {
+		t.Fatalf("browser_profile_id not persisted: %q", c.BrowserProfileID)
 	}
 
 	// A later heartbeat that omits the identity fields must PRESERVE the last

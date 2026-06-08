@@ -38,6 +38,8 @@ type AgentToken struct {
 	IdentityConfidence       string     `json:"identity_confidence"`
 	IdentityExtractionMethod string     `json:"identity_extraction_method"`
 	IdentityLastVerifiedAt   string     `json:"identity_last_verified_at"`
+	BrowserProfileID         string     `json:"browser_profile_id"`
+	MachineLabel             string     `json:"machine_label"`
 	LastSeen                 *time.Time `json:"last_seen"`
 	Online                   bool       `json:"online"`
 	Active                   bool       `json:"active"`
@@ -62,6 +64,8 @@ type AgentPresence struct {
 	IdentityConfidence       string
 	IdentityExtractionMethod string
 	IdentityLastVerifiedAt   string
+	BrowserProfileID         string
+	MachineLabel             string
 }
 
 type ConnectorPairingCode struct {
@@ -201,6 +205,7 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 			identity_confidence = CASE WHEN ? != '' THEN ? ELSE identity_confidence END,
 			identity_extraction_method = CASE WHEN ? != '' THEN ? ELSE identity_extraction_method END,
 			identity_last_verified_at = CASE WHEN ? != '' THEN ? ELSE identity_last_verified_at END,
+			browser_profile_id = CASE WHEN ? != '' THEN ? ELSE browser_profile_id END,
 			last_seen = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
 		p.Hostname, p.Hostname,
@@ -220,6 +225,7 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 		p.IdentityConfidence, p.IdentityConfidence,
 		p.IdentityExtractionMethod, p.IdentityExtractionMethod,
 		p.IdentityLastVerifiedAt, p.IdentityLastVerifiedAt,
+		p.BrowserProfileID, p.BrowserProfileID,
 		id,
 	)
 	return err
@@ -272,6 +278,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
 		        COALESCE(identity_confidence,''), COALESCE(identity_extraction_method,''),
 		        COALESCE(identity_last_verified_at,''),
+		        COALESCE(browser_profile_id,''), COALESCE(machine_label,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens
 		 WHERE org_id = ? AND kind = 'extension_connector'
@@ -292,6 +299,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
 			&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
 			&t.IdentityConfidence, &t.IdentityExtractionMethod, &t.IdentityLastVerifiedAt,
+			&t.BrowserProfileID, &t.MachineLabel,
 			&lastSeen, &t.Active, &t.CreatedAt); err != nil {
 			return nil, err
 		}

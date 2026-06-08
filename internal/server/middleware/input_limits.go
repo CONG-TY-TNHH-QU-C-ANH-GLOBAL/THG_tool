@@ -65,4 +65,6 @@ func ClampPresenceFields(p *connectors.AgentPresence) {
 	p.IdentityConfidence = TruncateRune(p.IdentityConfidence, limConnectorIdentityMeta)
 	p.IdentityExtractionMethod = TruncateRune(p.IdentityExtractionMethod, limConnectorIdentityMeta)
 	p.IdentityLastVerifiedAt = TruncateRune(p.IdentityLastVerifiedAt, limConnectorIdentityMeta)
+	p.BrowserProfileID = TruncateRune(p.BrowserProfileID, limConnectorIdentityMeta)
+	p.MachineLabel = TruncateRune(p.MachineLabel, limConnectorFBName)
 }

@@ -3,6 +3,22 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
     return chrome.tabs.query(query);
   }
 
+  // ensureBrowserProfileId returns a STABLE per-Chrome-profile UUID. chrome
+  // .storage.local is scoped to the profile, so this id distinguishes profiles on
+  // the same machine (PR-C). Generated once, then reused forever for this profile.
+  async function ensureBrowserProfileId() {
+    try {
+      const got = await chrome.storage.local.get('browserProfileId');
+      if (got && got.browserProfileId) return got.browserProfileId;
+      const id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      await chrome.storage.local.set({ browserProfileId: id });
+      return id;
+    } catch {
+      return '';
+    }
+  }
+
   async function collectMetaFromTab(tab) {
     if (!tab?.id || !THGShared.isFacebookUrl(tab.url)) return {};
     try {
@@ -38,6 +54,7 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
       streamStatus = 'facebook_logged_in';
     }
     const meta = await collectMetaFromTab(firstFb);
+    const browserProfileId = await ensureBrowserProfileId();
     // PR-B (B3): identity TRUTH is the c_user cookie. Report HOW confident /
     // where-from so the backend readiness (PR-D) + health board (PR-E) can show
     // "identity verified vs unknown" without trusting the (cosmetic) display name.
@@ -53,6 +70,7 @@ var THGFacebookState = globalThis.THGFacebookState || (() => {
       identityConfidence: hasCUser ? 'high' : 'none',
       identityExtractionMethod: hasCUser ? 'cookie_c_user' : 'none',
       identityLastVerifiedAt: hasCUser ? new Date().toISOString() : '',
+      browserProfileId,
       tab: firstFb
     };
   }

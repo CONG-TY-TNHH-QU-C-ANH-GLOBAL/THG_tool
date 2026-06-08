@@ -59,6 +59,7 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		IdentityConfidence       string `json:"identity_confidence"`
 		IdentityExtractionMethod string `json:"identity_extraction_method"`
 		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
+		BrowserProfileID         string `json:"browser_profile_id"`
 	}
 	_ = c.BodyParser(&body)
 	if body.Hostname == "" {
@@ -88,6 +89,7 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		IdentityConfidence:       body.IdentityConfidence,
 		IdentityExtractionMethod: body.IdentityExtractionMethod,
 		IdentityLastVerifiedAt:   body.IdentityLastVerifiedAt,
+		BrowserProfileID:         body.BrowserProfileID,
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
@@ -119,6 +121,7 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		IdentityConfidence       string `json:"identity_confidence"`
 		IdentityExtractionMethod string `json:"identity_extraction_method"`
 		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
+		BrowserProfileID         string `json:"browser_profile_id"`
 	}
 	_ = c.BodyParser(&body)
 
@@ -138,6 +141,7 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		IdentityConfidence:       body.IdentityConfidence,
 		IdentityExtractionMethod: body.IdentityExtractionMethod,
 		IdentityLastVerifiedAt:   body.IdentityLastVerifiedAt,
+		BrowserProfileID:         body.BrowserProfileID,
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
