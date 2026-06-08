@@ -322,3 +322,86 @@ func truncateRunes(s string, n int) string {
 	}
 	return string(r[:n]) + "…"
 }
+
+// GenerateCommentV2 writes a comment from a GROUNDED CommentDecision (P2c). The
+// model is given ONLY the grounded selection (labels + real prices), so it cannot
+// pitch anything not backed by ingested knowledge. Caller must ensure the
+// decision is non-nil and not KnowledgeGap (otherwise fall back to the generic
+// generator — there is no grounded offer to write about).
+func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision) (string, error) {
+	lang := detectLang(leadContent)
+	langRule := "Viết bằng tiếng Việt."
+	if lang == "en" {
+		langRule = "MUST write in English."
+	}
+
+	var offer strings.Builder
+	writeItem := func(prefix string, it models.GroundedItem) {
+		line := "- " + prefix + ": " + strings.TrimSpace(it.Label)
+		if p := strings.TrimSpace(it.PriceText); p != "" {
+			line += " (giá " + p + ")"
+		}
+		offer.WriteString(line + "\n")
+	}
+	if len(decision.Selected.Capabilities) > 0 {
+		writeItem("Dịch vụ/capability", decision.Selected.Capabilities[0])
+	}
+	if len(decision.Selected.Products) > 0 {
+		writeItem("Sản phẩm", decision.Selected.Products[0])
+	}
+	if len(decision.Selected.Proofs) > 0 {
+		writeItem("Bằng chứng", decision.Selected.Proofs[0])
+	}
+	ctaLine := ""
+	if decision.Selected.CTA != nil {
+		ctaLine = strings.TrimSpace(decision.Selected.CTA.Label)
+	}
+
+	profileBlock := ""
+	if profile != nil && profile.IsConfigured() {
+		profileBlock = profile.ToPromptBlock()
+	}
+
+	nameRule := "2. Address the author by their EXACT name."
+	if a := strings.TrimSpace(authorName); a == "" || a == "Anonymous participant" {
+		nameRule = "2. The author is anonymous — do NOT use any name or salutation."
+	}
+
+	prompt := fmt.Sprintf(`You are a senior sales professional. Write ONE natural, human comment on this Facebook post, pitching ONLY the matched offer below. NEVER invent a capability, price, product, or proof that is not listed.
+
+BUSINESS PROFILE:
+%s
+
+MATCHED OFFER FOR THIS LEAD (the ONLY things you may pitch):
+%s
+POST AUTHOR: %s
+POST CONTENT:
+"""%s"""
+
+RULES:
+1. %s
+%s
+3. 2–3 sentences MAX. Natural, human tone — NOT a bot.
+4. Mention at most ONE capability/product and at most ONE proof point from the list above.
+5. State a price ONLY if it appears in the offer above; never guess a price.
+6. End with a soft CTA%s.
+7. NO EMOJIS. Professional but human.
+
+RETURN ONLY THE COMMENT, NO EXPLANATION.`,
+		profileBlock,
+		offer.String(),
+		strings.TrimSpace(authorName),
+		strings.TrimSpace(leadContent),
+		langRule,
+		nameRule,
+		ctaSuffix(ctaLine),
+	)
+	return mg.callOpenAI(ctx, prompt)
+}
+
+func ctaSuffix(cta string) string {
+	if cta == "" {
+		return ` (e.g. "Inbox mình nhé!" / "Feel free to DM!")`
+	}
+	return ` styled like: "` + cta + `"`
+}

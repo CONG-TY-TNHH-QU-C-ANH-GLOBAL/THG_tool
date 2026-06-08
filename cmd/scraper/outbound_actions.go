@@ -17,32 +17,67 @@ import (
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
 
-// recordReasoningDryRun runs the P2c Knowledge-Intelligence reasoning for ONE
-// lead and persists the resulting CommentDecision for observation, WITHOUT
-// touching the comment text or execution. Best-effort: every error is logged and
-// swallowed so it can never break the queue path. See
-// specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2c dry-run).
-func recordReasoningDryRun(ctx context.Context, db *store.Store, kb *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, orgID, accountID int64, leadContent, author string, profile *ai.BusinessProfile) {
-	rctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+// commentReasoningMode reads the P2c knowledge-reasoning switch (env, hot
+// kill-switch — no redeploy to flip):
+//
+//	off (default) — comment generation unchanged.
+//	dryrun        — compute + persist the grounded decision for observation;
+//	                does NOT change the comment text.
+//	live          — when the decision has a GROUNDED offer, it drives the comment
+//	                text (GenerateCommentV2); knowledge_gap falls back to the
+//	                existing generic generation (no regression).
+//
+// THG_COMMENT_REASONING_DRYRUN=1 is kept as an alias for dryrun.
+func commentReasoningMode() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("THG_COMMENT_REASONING"))) {
+	case "dryrun":
+		return "dryrun"
+	case "live":
+		return "live"
+	}
+	if os.Getenv("THG_COMMENT_REASONING_DRYRUN") == "1" {
+		return "dryrun"
+	}
+	return "off"
+}
+
+// applyCommentReasoning runs the Knowledge Intelligence reasoning for one comment
+// lead. dryrun only observes; live lets a GROUNDED decision drive the comment
+// text, falling back to `fallback` on knowledge_gap or any error. The decision is
+// persisted for observation in BOTH modes. Best-effort: it can never break the
+// queue path — every failure returns `fallback`. See
+// specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2c).
+func applyCommentReasoning(ctx context.Context, db *store.Store, kb *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, mode string, profile *ai.BusinessProfile, orgID, accountID int64, leadContent, author, fallback string) string {
+	rctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	candidates, retrievalID, err := kb.CandidatesForLead(rctx, orgID, leadContent)
 	if err != nil {
-		log.Printf("[reasoning-dryrun] candidates org=%d: %v", orgID, err)
-		return
+		log.Printf("[reasoning] candidates org=%d: %v", orgID, err)
+		return fallback
 	}
 	decision, err := msgGen.DecideComment(rctx, leadContent, author, profile, candidates, retrievalID)
-	if err != nil {
-		log.Printf("[reasoning-dryrun] decide org=%d: %v", orgID, err)
-		return
+	if err != nil || decision == nil {
+		log.Printf("[reasoning] decide org=%d: %v", orgID, err)
+		return fallback
 	}
-	log.Printf("[reasoning-dryrun] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v caps=%d products=%d proofs=%d",
-		orgID, accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap,
+	log.Printf("[reasoning:%s] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v caps=%d products=%d proofs=%d",
+		mode, orgID, accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap,
 		len(decision.Selected.Capabilities), len(decision.Selected.Products), len(decision.Selected.Proofs))
-	payload, _ := json.Marshal(decision)
-	if err := db.Prompts().InsertSystemPromptLog(orgID, accountID,
-		"agent comment decision (dry-run, not executed)", "comment_decision_dryrun", string(payload), !decision.KnowledgeGap); err != nil {
-		log.Printf("[reasoning-dryrun] persist org=%d: %v", orgID, err)
+	if payload, perr := json.Marshal(decision); perr == nil {
+		_ = db.Prompts().InsertSystemPromptLog(orgID, accountID,
+			"agent comment decision ("+mode+")", "comment_decision_"+mode, string(payload), !decision.KnowledgeGap)
 	}
+	if mode == "live" && !decision.KnowledgeGap {
+		text, gerr := msgGen.GenerateCommentV2(rctx, leadContent, author, profile, decision)
+		if gerr != nil {
+			log.Printf("[reasoning:live] GenerateCommentV2 org=%d: %v — falling back", orgID, gerr)
+			return fallback
+		}
+		if t := strings.TrimSpace(text); t != "" {
+			return t // grounded decision drives the live comment text
+		}
+	}
+	return fallback
 }
 
 func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
@@ -89,15 +124,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	knowledgeBuilder := knowledgeRuntime.NewBuilder(db.Knowledge())
 	knowledgeBuilder.Recorder = db.Knowledge()
 	knowledgeBuilder.TraceRec = db.Knowledge()
-	// P2c DRY-RUN (Knowledge Intelligence Layer): when enabled, compute the
-	// grounded CommentDecision per lead and persist it for observation. It does
-	// NOT change the comment text or execution — it validates agent reasoning on
-	// real data before the decision is allowed to drive output. Gated by env so
-	// the live queue path pays nothing unless explicitly switched on.
-	reasoningDryRun := os.Getenv("THG_COMMENT_REASONING_DRYRUN") == "1"
-	var dryRunProfile *ai.BusinessProfile
-	if reasoningDryRun {
-		dryRunProfile = ai.LoadProfileForOrg(db, orgID)
+	// P2c Knowledge Intelligence reasoning (off | dryrun | live). off is the
+	// default → comment generation unchanged. live lets a grounded decision drive
+	// the comment text, with a safe fallback to the existing generation on
+	// knowledge_gap. Hot env kill-switch — see commentReasoningMode.
+	reasoningMode := commentReasoningMode()
+	var reasoningProfile *ai.BusinessProfile
+	if reasoningMode != "off" {
+		reasoningProfile = ai.LoadProfileForOrg(db, orgID)
 	}
 	template := argString(args, "template")
 	queued, skipped := 0, 0
@@ -157,10 +191,11 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			continue
 		}
 
-		// P2c dry-run: observe the grounded reasoning decision for this lead
-		// without altering the comment being queued. Best-effort, gated.
-		if reasoningDryRun && msgType == "comment" {
-			recordReasoningDryRun(ctx, db, knowledgeBuilder, msgGen, orgID, accountID, lead.Content, lead.Author, dryRunProfile)
+		// P2c reasoning: in dryrun observe the grounded decision; in live let a
+		// grounded decision drive the comment text (fallback to `content` on
+		// knowledge_gap or error). off → no-op. Comment-type only.
+		if reasoningMode != "off" && msgType == "comment" {
+			content = applyCommentReasoning(ctx, db, knowledgeBuilder, msgGen, reasoningMode, reasoningProfile, orgID, accountID, lead.Content, lead.Author, content)
 		}
 
 		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{

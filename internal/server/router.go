@@ -29,6 +29,7 @@ import (
 	"github.com/thg/scraper/internal/server/system"
 	serverworkspace "github.com/thg/scraper/internal/server/workspace"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
+	"github.com/thg/scraper/internal/workspace_knowledge/ingestion/csv"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion/rest_json"
 	wsksources "github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
@@ -210,6 +211,11 @@ func (s *Server) registerRoutes() {
 	// when they land; no per-adapter handler wiring needed.
 	ingestRegistry := ingestion.NewRegistry()
 	ingestRegistry.Register(rest_json.New())
+	// csv: implemented, inline-body ingestor that maps each row to an asset of a
+	// configurable type (sales_playbook/faq/cta/...). Enables operators to supply
+	// raw service knowledge (P2b) as a pasted CSV so the agent can ground service
+	// comments. website/notion remain stubs and are intentionally NOT registered.
+	ingestRegistry.Register(csv.New())
 	knowledgeDispatcher := &ingestion.Dispatcher{
 		Registry: ingestRegistry,
 		Health:   s.db.Knowledge(),

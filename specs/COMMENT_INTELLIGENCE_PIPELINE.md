@@ -431,8 +431,12 @@ No CRUD. Reuses KnowledgeOS retrieval, catalog sync, CTA assets, `UniversalClass
   execution unchanged. Gated by `THG_COMMENT_REASONING_DRYRUN=1` so the live path
   pays nothing unless validating. Lets us check reasoning on real data before it
   drives output.
-- **P2c** `GenerateCommentV2` writes copy from the grounded decision only
-  (anonymous-name + price nil-guards). *Only after dry-run validates quality.*
+- **P2c** (SHIPPED, behind env): `GenerateCommentV2` writes copy from the grounded
+  decision only (anonymous-name + price nil-guards). A single hot kill-switch
+  `THG_COMMENT_REASONING=off|dryrun|live` (default `off`): `live` lets a GROUNDED
+  decision drive the comment text; `knowledge_gap` falls back to the existing
+  generic generation (NO regression); execution/auto-policy unchanged. Founder
+  flips it to `live` on prod to test; flips back to `off` to disable without redeploy.
 - **P2d** **Policy Gate** (auto/review/reject) before execution, default
   `org.auto_execute_enabled=false`; typed reason codes; enforces §12 invariant
   (verified-only auto) AND grounding (no auto-execute on `knowledge_gap` /

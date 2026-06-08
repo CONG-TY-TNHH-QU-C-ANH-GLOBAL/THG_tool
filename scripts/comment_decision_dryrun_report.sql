@@ -20,12 +20,12 @@
 -- 0. Sample size in scope ----------------------------------------------------
 SELECT '0_total_decisions' AS metric, COUNT(*) AS value
 FROM prompt_logs
-WHERE source='system' AND action_taken='comment_decision_dryrun';
+WHERE source='system' AND action_taken LIKE 'comment_decision_%';
 
 -- 1. knowledge_gap rate ------------------------------------------------------
 WITH d AS (
   SELECT action_args AS j FROM prompt_logs
-  WHERE source='system' AND action_taken='comment_decision_dryrun'
+  WHERE source='system' AND action_taken LIKE 'comment_decision_%'
 )
 SELECT
   COUNT(*)                                                                   AS total,
@@ -36,7 +36,7 @@ FROM d;
 -- 2. intent distribution -----------------------------------------------------
 WITH d AS (
   SELECT action_args AS j FROM prompt_logs
-  WHERE source='system' AND action_taken='comment_decision_dryrun'
+  WHERE source='system' AND action_taken LIKE 'comment_decision_%'
 )
 SELECT
   json_extract(j,'$.intent')                       AS intent,
@@ -49,7 +49,7 @@ ORDER BY n DESC;
 -- 3. average selected counts (capabilities / products / proofs / cta rate) ---
 WITH d AS (
   SELECT action_args AS j FROM prompt_logs
-  WHERE source='system' AND action_taken='comment_decision_dryrun'
+  WHERE source='system' AND action_taken LIKE 'comment_decision_%'
 )
 SELECT
   ROUND(AVG(COALESCE(json_array_length(j,'$.selected.capabilities'),0)),2) AS avg_capabilities,
@@ -62,7 +62,7 @@ FROM d;
 -- 4. most-selected assets / SKUs (across capabilities+products+proofs) -------
 WITH d AS (
   SELECT action_args AS j FROM prompt_logs
-  WHERE source='system' AND action_taken='comment_decision_dryrun'
+  WHERE source='system' AND action_taken LIKE 'comment_decision_%'
 ),
 items AS (
   SELECT json_extract(e.value,'$.source_asset_id') AS asset_id,
@@ -90,7 +90,7 @@ SELECT
   json_extract(action_args,'$.knowledge_gap') AS knowledge_gap,
   action_args                                 AS decision_json
 FROM prompt_logs
-WHERE source='system' AND action_taken='comment_decision_dryrun'
+WHERE source='system' AND action_taken LIKE 'comment_decision_%'
 ORDER BY created_at DESC
 LIMIT 10;
 
@@ -102,7 +102,7 @@ SELECT
   json_extract(action_args,'$.confidence')    AS confidence,
   json_extract(action_args,'$.knowledge_gap') AS knowledge_gap
 FROM prompt_logs
-WHERE source='system' AND action_taken='comment_decision_dryrun'
+WHERE source='system' AND action_taken LIKE 'comment_decision_%'
   AND json_extract(action_args,'$.knowledge_gap')=1
   AND json_extract(action_args,'$.confidence') > 0;
 
@@ -113,7 +113,7 @@ SELECT
   json_array_length(COALESCE(json_extract(action_args,'$.selected.products'),'[]')) AS n_products,
   action_args AS decision_json
 FROM prompt_logs
-WHERE source='system' AND action_taken='comment_decision_dryrun'
+WHERE source='system' AND action_taken LIKE 'comment_decision_%'
   AND json_extract(action_args,'$.intent')='service_seeking'
   AND json_array_length(COALESCE(json_extract(action_args,'$.selected.products'),'[]')) > 0
 ORDER BY created_at DESC;
