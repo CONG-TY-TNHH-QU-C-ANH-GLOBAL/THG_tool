@@ -176,11 +176,3 @@ export function actionStatusTone(status?: string) {
 export function actionTime(action: LocalConnectorAction): string {
   return action.completedAt || action.claimedAt || action.createdAt;
 }
-
-export function isRemoteControlKey(key: string): boolean {
-  return [
-    'Enter', 'Backspace', 'Tab', 'Escape', 'Delete',
-    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-    'Home', 'End', 'PageUp', 'PageDown',
-  ].includes(key);
-}

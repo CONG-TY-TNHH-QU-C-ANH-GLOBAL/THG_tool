@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, LogIn, Mail, Monitor, Plus, RefreshCw, ShieldCheck, StopCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, LogIn, Mail, Monitor, Plus, RefreshCw, StopCircle } from 'lucide-react';
 import { useWorkspaces } from '../../hooks/useWorkspaces';
 import { useConnectors } from '../../hooks/useConnectors';
 import { useAuthStore } from '../../stores/authStore';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
-import { disconnectLocalConnector, getLocalConnectorScreen } from '../../services/connectorsService';
-import type { LocalConnector, LocalConnectorScreen, WorkspaceSessionSnapshot } from '../../types';
-import VncCanvas from '../VncCanvas';
+import { disconnectLocalConnector } from '../../services/connectorsService';
+import type { LocalConnector } from '../../types';
 import { AutomationCommandCenter } from '../browser/AutomationCommandCenter';
 import { CyberEmptyState } from '../browser/CyberEmptyState';
-import { LocalChromeViewer } from '../browser/LocalChromeViewer';
 import { LocalConnectorPanel } from '../browser/LocalConnectorPanel';
 import { AccountPresenceBoard } from '../browser/AccountPresenceBoard';
 import { facebookIdentityLabel, isDashboardStreamConnector, isUsableConnectorForAccount, stateLabel, stateTone } from '../browser/browserHelpers';
@@ -23,47 +21,27 @@ function isErrorNotice(message: string): boolean {
 
 export default function BrowserView({ orgId }: BrowserViewProps) {
   const currentUser = useAuthStore(s => s.user);
-  const { workspaces, actionLoading, refresh, start, startNew, stop, syncSession } = useWorkspaces();
+  const { workspaces, actionLoading, refresh, start, startNew, stop } = useWorkspaces();
   const { connectors, creating: connectorCreating, refresh: refreshConnectors, createPairingCode } = useConnectors();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newLoading, setNewLoading] = useState(false);
-  const [sessionInfo, setSessionInfo] = useState<WorkspaceSessionSnapshot | null>(null);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [autoSyncPaused, setAutoSyncPaused] = useState(false);
   const [pairingCode, setPairingCode] = useState('');
   const [pairingExpiresAt, setPairingExpiresAt] = useState('');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [localScreen, setLocalScreen] = useState<LocalConnectorScreen | null>(null);
-  const [localScreenLoading, setLocalScreenLoading] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
   const [connectorNotice, setConnectorNotice] = useState<string | null>(null);
   const [browserNotice, setBrowserNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedId(null);
-    setSessionInfo(null);
-    setLocalScreen(null);
-    setSyncError(null);
     setBrowserNotice(null);
   }, [orgId]);
 
-  const selectedWs = workspaces.find(w => w.accountId === selectedId);
-  const selectedIsLocal = Boolean(selectedWs?.browserState?.startsWith('local_'));
-  const humanRequired = Boolean(
-    sessionInfo?.humanRequired ||
-    sessionInfo?.checkpoint ||
-    selectedWs?.browserState === 'checkpoint' ||
-    selectedWs?.browserState === 'human_required'
-  );
-  const hasSavedSession = Boolean(sessionInfo?.loggedIn || selectedWs?.loggedIn);
-  const manualCaptureMode = !hasSavedSession || humanRequired || autoSyncPaused;
-
   useEffect(() => {
-    if (selectedId !== null && selectedWs?.running) return;
+    if (selectedId !== null && workspaces.find(w => w.accountId === selectedId)?.running) return;
     const firstRunning = workspaces.find(w => w.running);
     setSelectedId(firstRunning?.accountId ?? null);
-  }, [selectedId, selectedWs?.running, workspaces]);
+  }, [selectedId, workspaces]);
 
   useEffect(() => {
     if (newLoading && workspaces.some(w => w.running)) {
@@ -75,90 +53,14 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     getSystemInfo().then(setSystemInfo).catch(() => setSystemInfo(null));
   }, []);
 
-  const refreshLocalScreen = async (accountId = selectedId) => {
-    if (!accountId) return;
-    setLocalScreenLoading(true);
-    try {
-      setLocalScreen(await getLocalConnectorScreen(accountId));
-    } catch {
-      setLocalScreen(null);
-    } finally {
-      setLocalScreenLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedId || !selectedIsLocal) {
-      setLocalScreen(null);
-      return;
-    }
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const screen = await getLocalConnectorScreen(selectedId);
-        if (!cancelled) setLocalScreen(screen);
-      } catch {
-        if (!cancelled) setLocalScreen(null);
-      }
-    };
-    void run();
-    const timer = setInterval(run, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [selectedId, selectedIsLocal]);
-
-  useEffect(() => {
-    if (selectedId === null || !selectedWs?.running || selectedIsLocal) {
-      setSessionInfo(null);
-      setSyncError(null);
-      setAutoSyncPaused(false);
-      return;
-    }
-    if (!hasSavedSession || humanRequired || autoSyncPaused) {
-      setSyncLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const run = async () => {
-      setSyncLoading(true);
-      try {
-        const snap = await syncSession(selectedId);
-        if (!cancelled) {
-          setSessionInfo(snap);
-          setSyncError(null);
-          if (!snap.loggedIn || snap.humanRequired || snap.checkpoint || snap.cookieError) {
-            setAutoSyncPaused(true);
-          }
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
-          setAutoSyncPaused(true);
-        }
-      } finally {
-        if (!cancelled) setSyncLoading(false);
-      }
-    };
-
-    void run();
-    const timer = setInterval(run, 10000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [selectedId, selectedWs?.running, selectedIsLocal, hasSavedSession, humanRequired, autoSyncPaused]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const running = workspaces.filter(w => w.running).length;
   const currentUserId = currentUser?.id ?? 0;
-  const recentActions = localScreen?.actions ?? [];
 
-  const ownStreamingConnectors = connectors.filter(c => c.createdBy === currentUserId && c.online && isDashboardStreamConnector(c));
+  // A connector YOU paired + currently online — required before starting a session.
+  const ownOnlineConnectors = connectors.filter(c => c.createdBy === currentUserId && c.online);
 
   const handleNewSession = async () => {
-    if (ownStreamingConnectors.length === 0) {
+    if (ownOnlineConnectors.length === 0) {
       setBrowserNotice('Chrome của bạn chưa kết nối workspace. Cài Chrome Extension, tạo mã ghép nối, dán mã vào popup extension, rồi mở tab Facebook đã đăng nhập.');
       return;
     }
@@ -167,27 +69,11 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     try {
       const id = await startNew();
       setSelectedId(id);
-      setBrowserNotice('Đã tạo phiên Facebook. Chrome Extension sẽ stream tab Facebook thật về dashboard — hãy giữ tab Facebook đã đăng nhập trong Chrome.');
+      setBrowserNotice('Đã tạo phiên Facebook. Giữ tab Facebook đã đăng nhập trong Chrome — extension sẽ tự động chạy nhiệm vụ.');
     } catch (e) {
       setBrowserNotice(e instanceof Error ? e.message : 'Không tạo được phiên mới');
     } finally {
       setNewLoading(false);
-    }
-  };
-
-  const handleManualSync = async () => {
-    if (selectedId === null) return;
-    setSyncLoading(true);
-    try {
-      const snap = await syncSession(selectedId);
-      setSessionInfo(snap);
-      setSyncError(null);
-      setAutoSyncPaused(!snap.loggedIn || snap.humanRequired || snap.checkpoint || Boolean(snap.cookieError));
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'Không đồng bộ được session');
-      setAutoSyncPaused(true);
-    } finally {
-      setSyncLoading(false);
     }
   };
 
@@ -204,7 +90,6 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
     setDisconnectingId(connector.id);
     try {
       await disconnectLocalConnector(connector.id);
-      setLocalScreen(null);
       await Promise.all([refreshConnectors(), refresh()]);
       setConnectorNotice(`Đã ngắt kết nối ${connector.hostname || connector.name}. Extension trên Chrome đó sẽ bị từ chối ở lần đồng bộ kế tiếp.`);
     } catch (e) {
@@ -228,7 +113,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
       <AutomationCommandCenter
         workspaces={workspaces}
         connectors={connectors}
-        actions={recentActions}
+        actions={[]}
         running={running}
         loading={newLoading}
         onRefresh={() => { void refresh(); void refreshConnectors(); }}
@@ -394,8 +279,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                     void start(w.accountId)
                       .then(() => {
                         setSelectedId(w.accountId);
-                        setBrowserNotice('Đang yêu cầu Chrome Extension stream tab Facebook thật về dashboard.');
-                        void refreshLocalScreen(w.accountId);
+                        setBrowserNotice('Đã kết nối tab Facebook. Extension sẽ tự động chạy nhiệm vụ.');
                       })
                       .catch(err => setBrowserNotice(err instanceof Error ? err.message : 'Không kết nối được tab Facebook'));
                   }}
@@ -405,7 +289,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
                   {actionLoading.has(w.accountId) ? <RefreshCw size={12} className="spin" /> : <LogIn size={12} />}
                   {actionLoading.has(w.accountId)
                     ? rowHasOnlineConnector ? 'Đang kết nối...' : 'Đang kiểm tra...'
-                    : rowHasOnlineConnector ? 'Bắt đầu stream' : 'Chưa sẵn sàng'}
+                    : rowHasOnlineConnector ? 'Bắt đầu' : 'Chưa sẵn sàng'}
                 </button>
               ) : (
                 <button
@@ -426,99 +310,6 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
           );
         })}
       </div>
-
-      {selectedId !== null && selectedWs?.running && selectedIsLocal && (
-        <LocalChromeViewer
-          screen={localScreen}
-          accountId={selectedId}
-          accountName={facebookIdentityLabel({
-            displayName: selectedWs.fbDisplayName || localScreen?.fbDisplayName,
-            username: selectedWs.fbUsername || localScreen?.fbUsername,
-            email: selectedWs.email,
-            fbUserId: selectedWs.fbUserId || localScreen?.fbUserId,
-            fallback: selectedWs.accountName,
-          })}
-          accountEmail={selectedWs.email}
-          loading={localScreenLoading}
-          onRefresh={() => void refreshLocalScreen(selectedId)}
-        />
-      )}
-
-      {selectedId !== null && selectedWs?.running && !selectedIsLocal && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden', background: 'var(--screen-bg)' }}>
-          <header
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, minmax(0, 1fr)) auto',
-              gap: 'var(--s-3)',
-              alignItems: 'center',
-              padding: 'var(--s-3) var(--s-4)',
-              background: 'var(--bg-elev-2)',
-              borderBottom: '1px solid var(--line)',
-            }}
-          >
-            <SessionStat label="Session" tone={humanRequired ? 'warn' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'ok' : 'mute')}>
-              {humanRequired ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
-              {humanRequired ? 'Cần xác minh' : (sessionInfo?.loggedIn || selectedWs.loggedIn ? 'Đã lưu' : 'Chưa xác thực')}
-            </SessionStat>
-            <SessionStat label="Facebook ID">
-              <span className="mono">{sessionInfo?.fbUserId || selectedWs.fbUserId || '—'}</span>
-            </SessionStat>
-            <SessionStat label="URL" muted>
-              {sessionInfo?.currentUrl || '—'}
-            </SessionStat>
-            <SessionStat label="CDP" tone={syncError || sessionInfo?.cookieError ? 'hot' : 'mute'}>
-              {humanRequired
-                ? sessionInfo?.humanReason || 'human_required'
-                : syncError || sessionInfo?.cookieError || (syncLoading ? 'đang đồng bộ' : 'sẵn sàng')}
-            </SessionStat>
-            <button
-              type="button"
-              className={`btn btn-sm ${manualCaptureMode ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => void handleManualSync()}
-              disabled={syncLoading}
-              style={{ whiteSpace: 'nowrap' }}
-            >
-              <RefreshCw size={12} className={syncLoading ? 'spin' : ''} />
-              {manualCaptureMode ? 'Đã đăng nhập — đồng bộ' : 'Đồng bộ'}
-            </button>
-          </header>
-
-          <VncCanvas
-            accountId={selectedId}
-            accountName={selectedWs.accountName}
-            cdpPort={selectedWs.cdpPort}
-            vncPort={selectedWs.vncPort}
-            errorMsg={selectedWs.errorMsg}
-          />
-
-          <footer
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--s-3)',
-              padding: 'var(--s-2) var(--s-4)',
-              background: 'var(--bg-elev)',
-              borderTop: '1px solid var(--line)',
-              fontSize: 12,
-            }}
-          >
-            {manualCaptureMode ? (
-              <span style={{ color: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={13} /> Auto-sync tạm dừng — đăng nhập, vào News Feed rồi bấm đồng bộ.
-              </span>
-            ) : selectedWs.loggedIn ? (
-              <span style={{ color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircle2 size={13} /> Session đã được lưu.
-              </span>
-            ) : (
-              <span style={{ color: 'var(--text-mute)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <RefreshCw size={13} className={syncLoading ? 'spin' : ''} /> Đang tự xác thực session.
-              </span>
-            )}
-          </footer>
-        </div>
-      )}
     </div>
   );
 }
@@ -540,47 +331,6 @@ function Notice({ tone, children }: { tone: 'ok' | 'hot' | 'warn'; children: Rea
           {children}
         </div>
       </div>
-    </div>
-  );
-}
-
-function SessionStat({
-  label,
-  tone,
-  muted,
-  children,
-}: {
-  label: string;
-  tone?: 'ok' | 'warn' | 'hot' | 'mute';
-  muted?: boolean;
-  children: React.ReactNode;
-}) {
-  const colorByTone: Record<NonNullable<typeof tone>, string> = {
-    ok: 'var(--ok)',
-    warn: 'var(--warn)',
-    hot: 'var(--hot)',
-    mute: 'var(--text-mute)',
-  };
-  const valueColor = tone ? colorByTone[tone] : muted ? 'var(--text-mute)' : 'var(--text)';
-  return (
-    <div style={{ minWidth: 0 }}>
-      <p className="field-label" style={{ marginBottom: 4 }}>{label}</p>
-      <p
-        style={{
-          margin: 0,
-          color: valueColor,
-          fontSize: 12,
-          fontWeight: 500,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 5,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {children}
-      </p>
     </div>
   );
 }
