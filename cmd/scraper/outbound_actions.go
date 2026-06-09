@@ -298,7 +298,48 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		riskDetails = fmt.Sprintf(" risk_block=account=%d,risk_score=%.3f,effective_ceiling=%.3f", accountID, riskBlockRisk, riskBlockCeiling)
 	}
 
+	if msgType == "comment" {
+		// Business-friendly: queued ≠ posted. Make clear the system will run on
+		// ready Facebook accounts and report each result; surface a status summary.
+		// (Submit/verify happens per-account; success is reported only when verified.)
+		skipNote := ""
+		if skipped > 0 {
+			skipNote = fmt.Sprintf(" Bỏ qua %d lead (%s).", skipped, friendlySkipReasons(skipReasons))
+		}
+		return fmt.Sprintf(
+			"Đã đưa %d comment vào hàng đợi. Đây CHƯA phải là đã đăng lên Facebook — hệ thống sẽ chạy bằng các tài khoản Facebook sẵn sàng và báo lại từng kết quả. Tóm tắt: %d đang chờ · 0 đang chạy · 0 đã đăng · 0 thất bại.%s%s",
+			queued, queued, skipNote, errDetails,
+		), nil
+	}
 	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s%s", msgType, queued, skipped, mode, skipReasons, riskDetails, errDetails), nil
+}
+
+// friendlySkipReasons summarizes skip reason codes for a customer-facing message.
+func friendlySkipReasons(reasons map[string]int) string {
+	if len(reasons) == 0 {
+		return "không đủ điều kiện"
+	}
+	label := map[string]string{
+		"no_target_url":          "thiếu link bài viết",
+		"empty_content":          "không soạn được nội dung",
+		"generation_failed":      "lỗi soạn nội dung",
+		"comment_quality_invalid": "không đạt kiểm tra chất lượng",
+		"comment_multiple_urls":  "comment có nhiều liên kết",
+		"comment_unsupported_contact": "comment có liên hệ chưa xác minh",
+		"account_cooldown_active": "tài khoản đang nghỉ an toàn",
+		"daily_limit_exceeded":   "đã đạt giới hạn hôm nay",
+		"risk_ceiling_exceeded":  "tài khoản đang ở chế độ bảo vệ",
+		"actor_mismatch_blocked": "tài khoản đăng nhập nhầm Facebook",
+	}
+	parts := make([]string, 0, len(reasons))
+	for code, n := range reasons {
+		name := label[code]
+		if name == "" {
+			name = "cần kiểm tra"
+		}
+		parts = append(parts, fmt.Sprintf("%s ×%d", name, n))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {

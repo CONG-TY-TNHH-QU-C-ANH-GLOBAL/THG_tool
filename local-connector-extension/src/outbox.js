@@ -192,6 +192,13 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       }
     } finally {
       releaseTabLock();
+      // Submit-verification boundary: the verifier already ran INSIDE the content
+      // script (executeComment dwells + builds proof before returning). Here we add
+      // an OBSERVATION dwell so the user can SEE the comment land — and a slow
+      // Facebook render finishes — BEFORE the tab closes. Failures dwell longer so
+      // the operator can inspect what happened. No delivery-tech change.
+      const ok = !!(result && (result.success === true || result.ok === true));
+      await new Promise(r => setTimeout(r, ok ? 4000 : 18000));
       await chrome.tabs.remove(tabId).catch(() => {});
       if (crawlInfo.shouldReminimize && crawlInfo.crawlWinId) {
         await chrome.windows.update(crawlInfo.crawlWinId, { state: 'minimized' }).catch(() => {});

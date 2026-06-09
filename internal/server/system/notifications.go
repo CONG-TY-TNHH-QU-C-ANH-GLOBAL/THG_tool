@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
@@ -197,12 +198,40 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 		statusLabel = string(state) + "/" + string(outcome)
 	}
 	logText := fmt.Sprintf("[THG Agent] Facebook %s #%d status: %s. Target: %s", msg.Type, msg.ID, statusLabel, msg.TargetName)
-	userText := fmt.Sprintf("%s Facebook %s #%d trạng thái: %s. Đối tượng: %s", notifierPrefix, msg.Type, msg.ID, statusLabel, msg.TargetName)
 	if detail != "" {
 		logText += fmt.Sprintf(". Detail: %s", detail)
-		userText += fmt.Sprintf(". Chi tiet: %s", detail)
 	}
 	log.Printf("[Outbound] %s", logText)
+
+	// Business-friendly result for the operator's copilot chat (Execution
+	// Visibility): success ONLY when verified; failure carries a readable reason.
+	// "Đã <action>" / "<Action> thất bại … — <reason>". The raw status/reason code
+	// never appears here.
+	typeVi := outboundTypeVi(msg.Type)
+	target := strings.TrimSpace(msg.TargetName)
+	if target == "" {
+		target = "lead"
+	}
+	acctName := ""
+	if acc, _ := db.Identities().GetAccountForOrg(msg.AccountID, orgID); acc != nil {
+		acctName = strings.TrimSpace(acc.FBDisplayName)
+	}
+	acctPart := fmt.Sprintf(" (Account #%d)", msg.AccountID)
+	if acctName != "" {
+		acctPart = fmt.Sprintf(" bằng Facebook %s (Account #%d)", acctName, msg.AccountID)
+	}
+	var userText string
+	switch {
+	case verified:
+		userText = fmt.Sprintf("%s ✅ Đã %s lead \"%s\"%s.", notifierPrefix, typeVi, target, acctPart)
+	case strings.Contains(strings.ToLower(string(outcome)), "optimistic"):
+		// Submitted ≠ Verified: clicked send but no verified proof yet.
+		userText = fmt.Sprintf("%s ℹ️ Đã gửi %s cho lead \"%s\"%s nhưng CHƯA xác minh được — hệ thống sẽ kiểm tra lại.", notifierPrefix, typeVi, target, acctPart)
+	case outcome != "": // a terminal verification outcome that is not success → failure
+		userText = fmt.Sprintf("%s ⚠️ %s thất bại cho lead \"%s\"%s — %s.", notifierPrefix, capitalizeFirst(typeVi), target, acctPart, friendlyOutboundReason(detail, string(outcome)))
+	default:
+		userText = fmt.Sprintf("%s Đang %s lead \"%s\"%s.", notifierPrefix, typeVi, target, acctPart)
+	}
 	eventName := models.ExecutionEventFailed
 	if verified {
 		eventName = models.ExecutionEventVerified
@@ -222,6 +251,53 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	}
 	if notifier != nil {
 		notifier(userText)
+	}
+}
+
+// outboundTypeVi renders an outbound type as a customer-facing verb.
+func outboundTypeVi(typ string) string {
+	switch typ {
+	case "comment":
+		return "comment"
+	case "inbox":
+		return "nhắn tin"
+	case "group_post", "profile_post", "post":
+		return "đăng bài"
+	default:
+		return typ
+	}
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
+
+// friendlyOutboundReason maps a failure detail/outcome to plain Vietnamese for the
+// operator chat — the raw reason code never surfaces. (Execution Visibility #8.)
+func friendlyOutboundReason(detail, outcome string) string {
+	s := strings.ToLower(detail + " " + outcome)
+	switch {
+	case strings.Contains(s, "target_not_reached"):
+		return "không mở được đúng bài viết Facebook"
+	case strings.Contains(s, "context_drift"):
+		return "Facebook chuyển trang trước khi gửi comment"
+	case strings.Contains(s, "connector_offline"):
+		return "Chrome profile chưa kết nối"
+	case strings.Contains(s, "actor_mismatch") || strings.Contains(s, "actor_blocked"):
+		return "đăng nhập nhầm Facebook"
+	case strings.Contains(s, "comment_quality_invalid"):
+		return "comment không đạt kiểm tra chất lượng"
+	case strings.Contains(s, "required_website_missing"), strings.Contains(s, "unsupported_contact"), strings.Contains(s, "multiple_urls"):
+		return "comment thiếu/sai thông tin liên hệ theo chính sách"
+	case strings.Contains(s, "comment_box_not_found"), strings.Contains(s, "not_confirmed"), strings.Contains(s, "insert_failed"):
+		return "không tìm thấy hoặc không nhập được ô comment trên Facebook"
+	default:
+		return "lỗi chưa xác định, cần kiểm tra bằng chứng"
 	}
 }
 

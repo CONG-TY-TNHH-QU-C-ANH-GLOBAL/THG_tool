@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { ActorVerdictChip } from '../ActorVerdictChip';
+import { commentReason, commentStatus } from '../commentExecution/statusMessages';
 import {
   clearActorBlock,
   deleteAllOutboundComments,
@@ -68,22 +69,10 @@ function statusLabel(msg: Pick<OutboundMessage, 'execution_state' | 'verificatio
   const state = msg.execution_state;
   const outcome = msg.verification_outcome ?? '';
   if (lang === 'vi') {
-    if (state === 'planned')   return 'ĐÃ LÊN KẾ HOẠCH';
-    if (state === 'executing') return 'ĐANG THỰC THI';
-    if (state === 'expired')   return 'HẾT HẠN';
-    if (state === 'finished') {
-      switch (outcome) {
-        case 'verified_success': return 'ĐÃ XÁC NHẬN';
-        case 'context_drift':    return 'SAI MỤC TIÊU';
-        case 'rate_limited':     return 'BỊ GIỚI HẠN';
-        case 'blocked':          return 'BỊ CHẶN';
-        case 'captcha':          return 'CẦN XỬ LÝ THỦ CÔNG';
-        case 'shadow_rejected':  return 'BỊ FB ẨN';
-        case 'execution_failed': return 'LỖI THỰC THI';
-        default:                 return 'THẤT BẠI';
-      }
-    }
-    return String(state).toUpperCase();
+    // Business-friendly lifecycle (Đang chờ / Đang chạy / Đã đăng thành công /
+    // Đã gửi nhưng chưa xác minh / Thất bại). The specific failure reason shows
+    // separately via commentReason — success ONLY when verified.
+    return commentStatus(state, outcome).label;
   }
   if (state === 'planned')   return 'PLANNED';
   if (state === 'executing') return 'EXECUTING';
@@ -411,6 +400,15 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                 </header>
 
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {(() => {
+                    // Last failure / unverified reason in plain Vietnamese (#6/#8).
+                    const reason = commentReason(selectedMessage.verification_outcome ?? '');
+                    return reason ? (
+                      <div className="card" style={{ padding: '10px 14px', borderLeft: '3px solid var(--warn)', fontSize: 12.5, color: 'var(--text-mute)' }}>
+                        <strong style={{ color: 'var(--text)' }}>Lý do:</strong> {reason}
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="card" style={{ padding: 16 }}>
                     <div className="eyebrow" style={{ marginBottom: 10 }}>{tv.contentTitle}</div>
                     <div style={{ color: 'var(--text)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>

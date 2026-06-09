@@ -66,6 +66,9 @@ func TestProofNotesReachesOperatorMessage(t *testing.T) {
 	outcome, proof = runtime.EnforceTargetIdentity(outcome, proof, targetURL, "comment")
 	detail := notificationDetail(proof, report, outcome)
 
+	// The granular path note is still preserved on the detail (→ evidence + server
+	// log). Execution Visibility (#8) moved the RAW code OUT of the operator chat,
+	// but the detail path itself must never be dropped upstream.
 	if !strings.Contains(detail, "path2.article_not_found_in_feed") {
 		t.Fatalf("notificationDetail dropped the path note; got %q", detail)
 	}
@@ -82,11 +85,17 @@ func TestProofNotesReachesOperatorMessage(t *testing.T) {
 	if captured == "" {
 		t.Fatal("notifier never fired — the operator would see nothing in chat")
 	}
-	if !strings.Contains(captured, "path2.article_not_found_in_feed") {
-		t.Fatalf("final operator message LOST the path note.\n got: %q", captured)
+	// Execution Visibility (#4/#8): the operator chat shows a BUSINESS-FRIENDLY
+	// reason, never the raw code. context_drift → "Facebook chuyển trang…", and the
+	// raw "path2…" / "context_drift" token must NOT leak into the chat string.
+	if !strings.Contains(captured, "Facebook chuyển trang trước khi gửi comment") {
+		t.Fatalf("operator message missing the friendly reason.\n got: %q", captured)
 	}
-	if !strings.Contains(captured, "Chi tiet:") {
-		t.Fatalf("final operator message missing the 'Chi tiet:' detail segment.\n got: %q", captured)
+	if strings.Contains(captured, "path2") || strings.Contains(captured, "context_drift") {
+		t.Fatalf("operator message leaked the raw reason code.\n got: %q", captured)
+	}
+	if !strings.Contains(captured, "thất bại") || !strings.Contains(captured, "Yến Nhi") {
+		t.Fatalf("operator message missing failure framing or lead name.\n got: %q", captured)
 	}
 	t.Logf("operator chat message: %s", captured)
 }
