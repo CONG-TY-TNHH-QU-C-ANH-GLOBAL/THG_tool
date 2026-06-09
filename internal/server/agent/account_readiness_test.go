@@ -34,7 +34,8 @@ func TestBuildAccountReadinessMatrix_NoConnector(t *testing.T) {
 		t.Fatalf("AddAccount: %v", err)
 	}
 
-	matrix, err := BuildAccountReadinessMatrix(db, orgID)
+	// admin sees unassigned org accounts (RBAC privacy rule).
+	matrix, err := BuildAccountReadinessMatrix(db, orgID, 1, "admin")
 	if err != nil {
 		t.Fatalf("BuildAccountReadinessMatrix: %v", err)
 	}

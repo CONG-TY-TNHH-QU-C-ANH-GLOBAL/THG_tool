@@ -81,14 +81,29 @@ extension_version, last_seen_at, capabilities`. Many connectors may share a
 connectors on one machine. Audit pairing: two profiles never bind the same
 account; rebind only by `fb_user_id`; no-steal preserved; no cross-member theft.
 
-### PR-D — Readiness Matrix
-Projection/API: per account+capability readiness — `account_id, fb_user_id,
-fb_display_name, connector_id, extension_version, can_crawl, can_comment,
-can_inbox, can_post, reasons[], required_action`. Typed reasons: `ready ·
-connector_offline · identity_unknown · actor_mismatch_blocked · extension_outdated
-· cooldown_active · daily_limit_exceeded · risk_ceiling_exceeded ·
-missing_default_account · not_owned`. Every mission/action UI consumes this
-instead of guessing.
+### PR-D — Readiness Matrix ✅ SHIPPED (66a0a1d + hardening)
+Read-only projection/API `GET /api/accounts/readiness`: per account, per capability
+(`crawl/comment/inbox/post`) `{can, reasons[]}` + `connector_id, extension_version,
+required_action`. **Canonical typed reasons** (one name each — UI must map to these
+EXACT strings): `connector_offline · actor_identity_unknown · actor_mismatch_blocked
+· extension_version_outdated · account_cooldown_active · risk_ceiling_exceeded ·
+daily_limit_exceeded`. (NOTE: it is `account_cooldown_active`, NOT `cooldown_active`
+— the existing gate code + this matrix share the one name; do not introduce a
+second.) Implementation hardening (PR-D.1):
+- **Shared truth:** `coordination.DecideCaps(now, …)` is PURE (clock injected, no
+  flake) and is the single cap decision used by the queue gate (`CheckCapsTx`, with
+  decay) and the read-only matrix (`EvaluateCaps`, no decay).
+- **crawl policy:** crawl is read-only → outbound pacing (cooldown/risk/daily) does
+  NOT apply, but the hard `actor_mismatch_blocked` (denies ALL execution) DOES.
+- **post mapping:** `post` → `group_post` cap (the live action). `profile_post` is a
+  scaffold; a separate capability is deferred until it ships (documented so the
+  group_post daily cap is never silently missed).
+- **RBAC:** scoped via `GetAllAccounts` + `models.CanViewAccountDevice` — a member
+  sees only their own accounts; an admin also sees unassigned org accounts; no other
+  member's `fb_user_id` leaks (same privacy rule as the connector status board).
+Every mission/action UI consumes this instead of guessing. (`missing_default_account
+/ not_owned` are create-time concerns handled by the mission preflight, not the
+matrix.)
 
 ### PR-E — Account Health Board
 Actionable table (replaces the screenshot stream as the customer's main
@@ -96,6 +111,9 @@ understanding surface): Account · FB Identity · Connector · Chrome Profile ·
 Status · Last Seen · Capabilities · Block Reason · Action. Actions: reconnect
 guide · clear actor block (admin) · set default account · view last failure
 evidence · extension version · offline duration.
+**MUST consume `GET /api/accounts/readiness` (PR-D) as the source of per-capability
+status + typed reasons + required_action — do NOT re-derive readiness from the old
+`stream_status`/`online` flags in the FE.** Group rows by `machine_label` (PR-C).
 
 ### PR-F — Stream cleanup
 Remove the continuous screenshot stream from the customer's primary UX ONLY AFTER

@@ -110,23 +110,25 @@ func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDe
 	if cooldownUntilStr != "" {
 		cooldownUntil = dbutil.ParseSQLiteTime(cooldownUntilStr)
 	}
-	return DecideCaps(caps, countersDay, commentsToday, inboxToday, groupPostsToday,
+	return DecideCaps(time.Now().UTC(), caps, countersDay, commentsToday, inboxToday, groupPostsToday,
 		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, msgType), nil
 }
 
-// DecideCaps is the PURE cap decision — no DB, no side effects. It is the SINGLE
-// source of cap-gate truth, shared by the queue-time gate (CheckCapsTx, which
-// reads + applies risk decay first) and the read-only readiness matrix
-// (EvaluateCaps, which reads WITHOUT decay). Keeping the decision here means the
-// gate and the matrix can never disagree on why an account is blocked.
-func DecideCaps(caps models.BehaviourCaps, countersDay string, commentsToday, inboxToday, groupPostsToday, profilePostsToday int, riskScore float64, cooldownUntil time.Time, actorBlocked bool, msgType string) CapsDecision {
+// DecideCaps is the PURE cap decision — no DB, no side effects, and `now` is passed
+// in (not read from the clock) so callers get deterministic results and the UTC
+// day-rollover comparison can't go flaky in tests. It is the SINGLE source of
+// cap-gate truth, shared by the queue-time gate (CheckCapsTx, which reads + applies
+// risk decay first) and the read-only readiness matrix (EvaluateCaps, no decay) —
+// so the gate and the matrix can never disagree on why an account is blocked.
+func DecideCaps(now time.Time, caps models.BehaviourCaps, countersDay string, commentsToday, inboxToday, groupPostsToday, profilePostsToday int, riskScore float64, cooldownUntil time.Time, actorBlocked bool, msgType string) CapsDecision {
+	now = now.UTC()
 	// Verified-Actor block (P1b): an account caught logged into a different
 	// Facebook identity than expected is denied ALL execution until an operator
 	// clears it. Checked first — a hard integrity stop, not a pacing decision.
 	if actorBlocked {
 		return CapsDecision{Allowed: false, Reason: "actor_mismatch_blocked"}
 	}
-	if !cooldownUntil.IsZero() && time.Now().UTC().Before(cooldownUntil.UTC()) {
+	if !cooldownUntil.IsZero() && now.Before(cooldownUntil.UTC()) {
 		return CapsDecision{Allowed: false, Reason: "account_cooldown_active", CooldownUntil: cooldownUntil}
 	}
 	if caps.RiskScoreCeiling > 0 && riskScore >= caps.RiskScoreCeiling {
@@ -136,7 +138,7 @@ func DecideCaps(caps models.BehaviourCaps, countersDay string, commentsToday, in
 		cap := caps.CapForAction(msgType)
 		if cap > 0 {
 			counter := 0
-			if countersDay == dbutil.UTCDayKey(time.Now()) {
+			if countersDay == dbutil.UTCDayKey(now) {
 				switch col {
 				case "comments_today":
 					counter = commentsToday
@@ -188,6 +190,6 @@ func (s *Store) EvaluateCaps(ctx context.Context, accountID int64, msgType strin
 	if cooldownUntilStr != "" {
 		cooldownUntil = dbutil.ParseSQLiteTime(cooldownUntilStr)
 	}
-	return DecideCaps(caps, countersDay, commentsToday, inboxToday, groupPostsToday,
+	return DecideCaps(time.Now().UTC(), caps, countersDay, commentsToday, inboxToday, groupPostsToday,
 		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, msgType), nil
 }

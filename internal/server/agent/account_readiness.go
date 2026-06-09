@@ -16,10 +16,13 @@ import (
 // SAME evaluators the gates use (connectors.PickReadyConnector + coordination
 // EvaluateCaps/DecideCaps) so the matrix can never disagree with the gate.
 
-// capabilityMsgType maps a readiness capability to the behaviour-caps action type
-// ("" = connector-only, no daily/risk caps — crawl is not an outbound action).
+// capabilityMsgType maps an OUTBOUND readiness capability to its behaviour-caps
+// action type. crawl is NOT here — it is a read-only action (see the crawl branch
+// below), not subject to outbound daily/risk/cooldown pacing. "post" maps to
+// `group_post` (the live FB posting action); profile posting is a scaffold today,
+// so a separate `profile_post` capability is intentionally deferred until it ships
+// (documented so the group_post daily cap is never silently missed).
 var capabilityMsgType = map[string]string{
-	models.CapabilityCrawl:   "",
 	models.CapabilityComment: "comment",
 	models.CapabilityInbox:   "inbox",
 	models.CapabilityPost:    "group_post",
@@ -30,12 +33,15 @@ var readinessCapabilities = []string{
 }
 
 // BuildAccountReadinessMatrix composes the per-account, per-capability readiness
-// for an org. Read-only (no decay/writes). Connector eligibility comes from the
-// shared PickReadyConnector; outbound capabilities additionally consult the
-// read-only behaviour caps (EvaluateCaps).
-func BuildAccountReadinessMatrix(db *store.Store, orgID int64) ([]models.AccountReadiness, error) {
+// for an org, SCOPED to what the caller may see (RBAC: a member sees only their
+// own accounts; an admin additionally sees unassigned org accounts — same privacy
+// rule as the connector status board, so no other member's fb_user_id leaks).
+// Read-only (no decay/writes). Connector eligibility = shared PickReadyConnector;
+// crawl additionally honors the hard actor-mismatch block; comment/inbox/post
+// additionally consult the read-only behaviour caps (EvaluateCaps).
+func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role string) ([]models.AccountReadiness, error) {
 	ctx := context.Background()
-	identities, err := db.Identities().AccountIdentitiesForOrg(orgID)
+	accounts, err := db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -44,32 +50,45 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID int64) ([]models.Account
 	for i := range conns {
 		connByID[conns[i].ID] = conns[i]
 	}
+	actorStates, _ := db.Coordination().AccountActorStatesForOrg(ctx, orgID)
 
-	out := make([]models.AccountReadiness, 0, len(identities))
-	for accID, ident := range identities {
-		connID, connReason := connectors.PickReadyConnector(conns, accID, ident.FBUserID, connectors.MinExtensionVersion)
+	out := make([]models.AccountReadiness, 0, len(accounts))
+	for i := range accounts {
+		acc := accounts[i]
+		if acc.Platform != models.PlatformFacebook {
+			continue
+		}
+		if !models.CanViewAccountDevice(&acc, userID, role) {
+			continue // RBAC + privacy: not the caller's own (and not admin-visible unassigned)
+		}
+		connID, connReason := connectors.PickReadyConnector(conns, acc.ID, acc.FBUserID, connectors.MinExtensionVersion)
 		extVer := ""
 		if c, ok := connByID[connID]; ok {
 			extVer = c.Version
 		}
 		ar := models.AccountReadiness{
-			AccountID:        accID,
-			FBUserID:         ident.FBUserID,
-			FBDisplayName:    ident.FBDisplayName,
+			AccountID:        acc.ID,
+			FBUserID:         acc.FBUserID,
+			FBDisplayName:    acc.FBDisplayName,
 			ConnectorID:      connID,
 			ExtensionVersion: extVer,
 			RequiredAction:   readinessRequiredAction(connReason),
 		}
 		connReady := connReason == connectors.ConnReady
+		actorBlocked := actorStates[acc.ID].Blocked
 		for _, capName := range readinessCapabilities {
 			var reasons []string
 			if !connReady {
 				reasons = append(reasons, connReason)
 			}
-			if msgType := capabilityMsgType[capName]; msgType != "" {
-				if dec, derr := db.Coordination().EvaluateCaps(ctx, accID, msgType); derr == nil && !dec.Allowed {
-					reasons = append(reasons, dec.Reason)
+			if capName == models.CapabilityCrawl {
+				// crawl is read-only: outbound pacing (cooldown/risk/daily) does NOT
+				// apply, but the hard Verified-Actor block (denies ALL execution) does.
+				if actorBlocked {
+					reasons = append(reasons, "actor_mismatch_blocked")
 				}
+			} else if dec, derr := db.Coordination().EvaluateCaps(ctx, acc.ID, capabilityMsgType[capName]); derr == nil && !dec.Allowed {
+				reasons = append(reasons, dec.Reason)
 			}
 			ar.Capabilities = append(ar.Capabilities, models.CapabilityReadiness{
 				Capability: capName,
@@ -102,10 +121,12 @@ func readinessRequiredAction(connReason string) string {
 // GET /api/accounts/readiness
 func (h *Handler) accountReadiness(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
+	userID, _ := c.Locals("user_id").(int64)
+	role, _ := c.Locals("user_role").(string)
 	if orgID <= 0 {
 		return c.Status(401).JSON(fiber.Map{"error": "org context required"})
 	}
-	matrix, err := BuildAccountReadinessMatrix(h.db, orgID)
+	matrix, err := BuildAccountReadinessMatrix(h.db, orgID, userID, role)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
