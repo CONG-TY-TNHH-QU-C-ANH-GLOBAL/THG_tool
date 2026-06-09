@@ -291,6 +291,8 @@ func capitalizeFirst(s string) string {
 func friendlyOutboundReason(detail, outcome string) string {
 	s := strings.ToLower(detail + " " + outcome)
 	switch {
+	case strings.Contains(s, "duplicate_execution"):
+		return "lần gửi này đã được xử lý ở lần trước (chống gửi trùng)"
 	case strings.Contains(s, "duplicate_text"):
 		return "comment bị lặp trước khi xếp hàng"
 	case strings.Contains(s, "text_doubled"):

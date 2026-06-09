@@ -36,6 +36,8 @@ export function commentReason(outcome: string): string {
     case 'submitted_unverified':
     case 'optimistic_success':
       return 'Đã bấm gửi nhưng hệ thống chưa thấy comment xuất hiện để xác minh.';
+    case 'duplicate_execution_suppressed':
+      return 'Lần gửi này đã được xử lý ở lần trước (chống gửi trùng).';
     case 'comment_quality_duplicate_text':
       return 'Comment bị lặp trước khi xếp hàng.';
     case 'comment_text_doubled':

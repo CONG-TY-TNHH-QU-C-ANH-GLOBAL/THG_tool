@@ -83,10 +83,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // and can re-execute messages whose backend status has moved
       // on. Reject + retry keeps the source of truth at the server.
       if (MUTATING_COMMAND_TYPES.has(type)) {
+        // Idempotency (incident root fix): the background uses at-least-once delivery
+        // and RESENDS a mutate command when the message channel drops mid-execution
+        // (FB SPA reset). Suppress a resend of an in-flight / just-completed
+        // execution_id so it cannot re-insert the comment → the doubled "A+A".
+        const execId = String((message && message.message && message.message.execution_id) || '').trim();
+        if (THGExecDedup.isDuplicate(execId, Date.now())) {
+          sendResponse({ ok: false, error: 'duplicate_execution_suppressed', execution_id: execId });
+          return;
+        }
         if (activeMutation) {
           sendResponse({ ok: false, error: 'tab_busy_executing' });
           return;
         }
+        THGExecDedup.markActive(execId);
         const work = (async () => {
           if (type === 'thg_execute_outbound') {
             return THGContentOutbound.executeOutbound(message.message || {});
@@ -99,7 +109,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           return thgExecuteCommand(message.command || {});
         })();
-        activeMutation = work.finally(() => { activeMutation = null; });
+        activeMutation = work.finally(() => { activeMutation = null; THGExecDedup.markDone(execId, Date.now()); });
         sendResponse(await activeMutation);
         return;
       }
