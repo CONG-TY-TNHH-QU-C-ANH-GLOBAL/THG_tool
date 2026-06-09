@@ -1,6 +1,7 @@
 importScripts(
   'src/shared.js',
   'src/window-policy.js',
+  'src/automation_tab.js',
   'src/navwatch.js',
   'src/facebook-state.js',
   'src/api.js',

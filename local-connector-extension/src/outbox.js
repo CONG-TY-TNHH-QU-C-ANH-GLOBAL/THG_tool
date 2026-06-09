@@ -155,7 +155,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     const postId = extractPostIdFromTargetUrl(targetUrl);
     let crawlInfo;
     try {
-      crawlInfo = await THGCommands.navigateAndVerify(groupHomeUrl);
+      crawlInfo = await THGCommands.navigateAndVerify(groupHomeUrl, { reuseTab: true });
     } catch (err) {
       return {
         ok: false,
@@ -593,7 +593,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       // resets to home ~t+8.4s; the crawler's 5000ms settle handed off at that
       // exact edge. 800ms hands off inside the stable window so gate-1 types
       // before the reset. (Crawl keeps the 5000ms default.)
-      crawlInfo = await THGCommands.navigateAndVerify(targetUrl, { settleMs: 800 });
+      crawlInfo = await THGCommands.navigateAndVerify(targetUrl, { settleMs: 800, reuseTab: true });
     } catch (err) {
       // PR8A: navigateAndVerify exhausted 3 retries — the post permalink never
       // held (FB redirected every attempt). This is target_not_reached, not the

@@ -117,7 +117,7 @@ var THGCommands = globalThis.THGCommands || (() => {
   // full requestAnimationFrame scheduling; minimized windows throttle rAF
   // which prevents React/SPA from rendering the feed.
   // Returns { tab, shouldReminimize, crawlWinId } so the caller can re-minimize after.
-  async function openCrawlTab(navigateTo) {
+  async function openCrawlTab(navigateTo, reuse = false) {
     const fbTabs = await chrome.tabs.query({
       url: ['https://facebook.com/*', 'https://*.facebook.com/*']
     });
@@ -133,9 +133,21 @@ var THGCommands = globalThis.THGCommands || (() => {
         await chrome.windows.update(crawlWinId, { focused: true }).catch(() => {});
       }
     }
+    // One automation tab per connector (PR-2): the COMMENT outbox path passes
+    // reuse=true → reuse the remembered tab if alive (navigate it) instead of
+    // opening a new tab per lead. The crawl path passes reuse=false so its temporary
+    // tab stays independent and never hijacks the comment batch's tab.
+    if (reuse) {
+      const reused = await THGAutomationTab.reuseIfAlive(navigateTo);
+      if (reused) {
+        if (reused.windowId) await chrome.windows.update(reused.windowId, THGWindowPolicy.focusUpdate()).catch(() => {});
+        return { tab: reused, shouldReminimize, crawlWinId: reused.windowId || crawlWinId };
+      }
+    }
     const tabOpts = { url: navigateTo, active: true };
     if (crawlWinId) tabOpts.windowId = crawlWinId;
     const tab = await chrome.tabs.create(tabOpts);
+    if (reuse) THGAutomationTab.remember(tab && tab.id);
     if (tab?.windowId) {
       // Window Respect (PR-2): focus only — do NOT force state:'normal' over a
       // maximized/fullscreen window (that snaps it to half-screen). A maximized
@@ -176,7 +188,7 @@ var THGCommands = globalThis.THGCommands || (() => {
     const navStart = Date.now();
     let lastActual = '';
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const info = await openCrawlTab(navigateTo);
+      const info = await openCrawlTab(navigateTo, opts.reuseTab === true);
       const fromUrl = info.tab?.pendingUrl || info.tab?.url || '';
       try {
         await THGFacebookState.waitForTabReady(info.tab.id);
