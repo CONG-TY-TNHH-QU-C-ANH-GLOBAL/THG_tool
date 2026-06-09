@@ -359,7 +359,9 @@ func friendlySkipReasons(reasons map[string]int) string {
 		if name == "" {
 			name = "cần kiểm tra"
 		}
-		parts = append(parts, fmt.Sprintf("%s ×%d", name, n))
+		// Incident forensics: keep the raw code in brackets so the exact skip gate is
+		// unambiguous in the copilot message (no guessing which guard fired).
+		parts = append(parts, fmt.Sprintf("%s [%s] ×%d", name, code, n))
 	}
 	return strings.Join(parts, ", ")
 }
