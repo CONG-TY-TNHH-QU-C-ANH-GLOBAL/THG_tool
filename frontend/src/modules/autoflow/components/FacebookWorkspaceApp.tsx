@@ -50,7 +50,6 @@ interface ThreadsBadgeResponse {
 const ADMIN_TABS: NavItem[] = [
   { id: 'leads', Icon: Users },
   { id: 'chat', Icon: Bot },
-  { id: 'browser', Icon: Globe },
   { id: 'health', Icon: Activity },
   { id: 'inbox', Icon: MessageSquare },
   { id: 'posting', Icon: FileText },
@@ -67,7 +66,6 @@ const STAFF_TABS: NavItem[] = [
   // sessions on accounts they own — so the panel is safe to expose.
   // Shared-battlefield: sales see all accounts as context, action only
   // their own. See feedback_shared_battlefield_not_crm.
-  { id: 'browser', Icon: Globe },
   { id: 'health', Icon: Activity },
   { id: 'inbox', Icon: MessageSquare },
 ];
@@ -151,7 +149,14 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
     };
   }, [org.id]);
 
-  const mainTabs = (isAdmin ? ADMIN_TABS : STAFF_TABS).map(item => (
+  // PR-E.2: the legacy Browser tab (old LocalConnectorPanel / stream viewer with
+  // dev-style stream/pairing wording) is SUPERADMIN-only. Customers/members use the
+  // "Kết nối Facebook" tab as the single official setup flow — no second connection
+  // surface. The Browser view code is kept (not deleted) for platform debug.
+  const isPlatform = isPlatformRole(role);
+  const baseTabs = isAdmin ? ADMIN_TABS : STAFF_TABS;
+  const visibleTabs: NavItem[] = isPlatform ? [...baseTabs, { id: 'browser', Icon: Globe }] : baseTabs;
+  const mainTabs = visibleTabs.map(item => (
     item.id === 'inbox' ? { ...item, badge: inboxBadge } : item
   ));
 
@@ -180,7 +185,9 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       case 'chat':
         return <WorkspaceChatView orgId={orgId} />;
       case 'browser':
-        return <BrowserView orgId={orgId} />;
+        // Superadmin-only legacy debug surface (PR-E.2). A customer/member can
+        // never reach it via nav; this guard keeps them out even on a stale tab.
+        return isPlatform ? <BrowserView orgId={orgId} /> : <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} />;
       case 'health':
         return <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} />;
       case 'inbox':
