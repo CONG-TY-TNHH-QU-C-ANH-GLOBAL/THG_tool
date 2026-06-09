@@ -31,7 +31,7 @@ interface Props {
 
 export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: Props) {
   const [showTech, setShowTech] = useState(false);
-  const allReasons = Array.from(new Set(account.capabilities.flatMap(c => c.reasons)));
+  const allReasons = Array.from(new Set(account.capabilities.flatMap(c => c.reasons ?? [])));
   const status = overallStatus(allReasons);
   const color = SEVERITY_COLOR[status.severity];
   const identity = account.fb_display_name || account.account_name || `Tài khoản #${account.account_id}`;
@@ -59,7 +59,7 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {account.capabilities.map(cap => {
-          const reasonCode = cap.reasons[0];
+          const reasonCode = (cap.reasons ?? [])[0];
           const sev: Severity = cap.can ? 'ready' : mapReason(reasonCode || '').severity;
           const c = SEVERITY_COLOR[sev];
           return (

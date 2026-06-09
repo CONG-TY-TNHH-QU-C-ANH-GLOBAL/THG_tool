@@ -53,7 +53,7 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
 
   const counts: Record<Severity, number> = { ready: 0, warning: 0, blocked: 0, waiting: 0 };
   for (const a of accounts) {
-    const reasons = Array.from(new Set(a.capabilities.flatMap(c => c.reasons)));
+    const reasons = Array.from(new Set(a.capabilities.flatMap(c => c.reasons ?? [])));
     counts[overallStatus(reasons).severity] += 1;
   }
 

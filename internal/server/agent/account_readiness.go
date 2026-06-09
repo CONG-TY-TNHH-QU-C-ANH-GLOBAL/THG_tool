@@ -80,7 +80,10 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		connReady := connReason == connectors.ConnReady
 		actorBlocked := actorStates[acc.ID].Blocked
 		for _, capName := range readinessCapabilities {
-			var reasons []string
+			// Non-nil so JSON is `[]`, never `null` — a nil slice would marshal to
+			// null and crash the FE (`cap.reasons[0]`). Contract: reasons is always
+			// an array.
+			reasons := []string{}
 			if !connReady {
 				reasons = append(reasons, connReason)
 			}
