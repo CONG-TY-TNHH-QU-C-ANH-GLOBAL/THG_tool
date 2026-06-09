@@ -188,14 +188,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   function setEditableText(editor, text) {
     try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) {} }
     if (editor.isContentEditable) {
-      // PR8D: clear any pre-existing / FB-restored draft BEFORE inserting. FB
-      // persists an unsent comment draft per post; on a retry it re-mounts the
-      // draft into the composer, and insertText then APPENDED to it → the
-      // duplicated comment ("…Inbox mình nhé!Anonymous participant, nếu bạn…").
-      // selectNodeContents + execCommand('delete') guarantees an empty editor
-      // even when the draft sits in a child node a plain select-all-replace missed.
-      selectEditableContents(editor);
-      try { document.execCommand('delete', false, null); } catch (_) {}
+      // PR8D + PR-DUP: clear any pre-existing / FB-restored draft BEFORE inserting.
+      // FB persists an unsent comment draft per post; on a retry it re-mounts the
+      // draft into the composer, and insertText then APPENDS to it → the duplicated
+      // comment ("…Inbox mình nhé.Bên mình là THG Fulfill…"). A SINGLE delete can
+      // miss a Lexical/Draft draft that re-materialises, so clear in a short loop
+      // until the editor is actually empty (capped) before inserting.
+      for (let i = 0; i < 6; i += 1) {
+        if (norm(textOfEditable(editor)).length === 0) break;
+        selectEditableContents(editor);
+        try { document.execCommand('delete', false, null); } catch (_) {}
+      }
       selectEditableContents(editor);
       document.execCommand('insertText', false, text);
     } else if ('value' in editor) {
@@ -239,6 +242,21 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const first = current.indexOf(expected);
     if (first !== -1 && current.indexOf(expected, first + expected.length) !== -1) return true;
     return current.length >= Math.floor(expected.length * 1.6) && current.startsWith(expected);
+  }
+
+  // ensureSingleInsertion is the SHARED anti-duplication guard for every comment
+  // path (permalink executeComment AND group-feed executeCommentInFeed). FB can
+  // re-mount a per-post draft AFTER our insert, doubling the composer. Re-clear +
+  // re-insert once; return true only if the composer now holds a SINGLE copy.
+  // Centralised so the guard can never again exist in one path and be missing in
+  // the other (the divergence that let group-feed comments double).
+  async function ensureSingleInsertion(editor, content) {
+    if (!editorTextDoubled(editor, content)) return true;
+    selectEditableContents(editor);
+    try { document.execCommand('delete', false, null); } catch (_) {}
+    setEditableText(editor, content);
+    await waitFor(() => editorContainsContent(editor, content), 1200, 150);
+    return !editorTextDoubled(editor, content);
   }
 
   function pressEnter(editor) {
@@ -956,19 +974,11 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         navDiagFor('typing_not_confirmed', 'typing', probeCommentGates(targetPostId), ctxInfo));
     }
 
-    // PR-1 anti-duplication: never submit a doubled composer. If FB re-mounted a
-    // draft and our content got appended despite the PR8D clear, re-clear +
-    // re-insert once; abort with comment_quality_invalid if still doubled.
-    if (editorTextDoubled(editor, content)) {
-      selectEditableContents(editor);
-      try { document.execCommand('delete', false, null); } catch (_) {}
-      setEditableText(editor, content);
-      await waitFor(() => editorContainsContent(editor, content), 1200, 150);
-      if (editorTextDoubled(editor, content)) {
-        return commentResult(false, 'comment_quality_invalid', null, ctx,
-          'composer held a doubled comment after re-clear · target id=' + abbreviate(targetPostId || '<none>'),
-          navDiagFor('comment_quality_invalid', 'typing', probeCommentGates(targetPostId), ctxInfo));
-      }
+    // PR-1 anti-duplication (shared guard): never submit a doubled composer.
+    if (!(await ensureSingleInsertion(editor, content))) {
+      return commentResult(false, 'comment_quality_invalid', null, ctx,
+        'composer held a doubled comment after re-clear · target id=' + abbreviate(targetPostId || '<none>'),
+        navDiagFor('comment_quality_invalid', 'typing', probeCommentGates(targetPostId), ctxInfo));
     }
 
     // PR8A: text is in the composer — we are now at the SUBMIT phase. Only from
@@ -1352,6 +1362,14 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (!inserted) {
       return commentResult(false, 'comment_text_not_confirmed', null, ctx,
         'path2.comment_text_not_confirmed: target id=' + abbreviate(targetPostId));
+    }
+
+    // PR-DUP: same anti-duplication guard as executeComment — group-feed comments
+    // were doubling because this path lacked it. FB re-mounts a per-post draft after
+    // our insert; re-clear + re-insert once, abort if still doubled.
+    if (!(await ensureSingleInsertion(editor, content))) {
+      return commentResult(false, 'comment_quality_invalid', null, ctx,
+        'path2.composer held a doubled comment after re-clear · target id=' + abbreviate(targetPostId));
     }
 
     const submitButtons = findSubmitButtons(editor, [commentButton]);
