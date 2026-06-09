@@ -9,6 +9,7 @@ export interface CapabilityReadiness {
 export interface AccountReadiness {
   account_id: number;
   account_name: string;
+  assigned_user_name: string;
   fb_user_id: string;
   fb_display_name: string;
   connector_id: number;

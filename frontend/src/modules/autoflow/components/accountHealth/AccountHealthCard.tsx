@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Globe, Monitor, ShieldAlert, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Globe, Monitor, ShieldAlert, User, Wrench } from 'lucide-react';
 import type { AccountReadiness } from './types';
 import { CAPABILITY_LABELS } from './types';
 import { mapReason, overallStatus, type Severity } from './reasonMessages';
@@ -37,8 +37,10 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
   const identity = account.fb_display_name || account.account_name
     || (account.fb_user_id ? `FB ${account.fb_user_id}` : `Tài khoản #${account.account_id}`);
   // Customer-friendly Chrome profile line — the human label (set at pairing) or a
-  // plain "chưa đặt tên". Raw ids/version live under "Chi tiết kỹ thuật".
-  const profileLabel = account.machine_label || 'Chrome profile chưa đặt tên';
+  // plain "Chưa đặt tên". Raw ids/version live under "Chi tiết kỹ thuật".
+  // TODO(PR-C pairing form): when a set-machine-label API exists, add a small
+  // "Đặt tên profile" CTA here.
+  const profileLabel = `Chrome profile: ${account.machine_label || 'Chưa đặt tên'}`;
   const isActorBlocked = allReasons.includes('actor_mismatch_blocked');
 
   return (
@@ -49,8 +51,11 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
             <Monitor size={15} color="var(--text-mute)" />
             <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{identity}</span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <Globe size={12} /> {profileLabel}
+          <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 5, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {account.assigned_user_name && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><User size={12} /> Nhân viên: {account.assigned_user_name}</span>
+            )}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Globe size={12} /> {profileLabel}</span>
           </div>
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color, background: `color-mix(in srgb, ${color} 12%, transparent)`, padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -58,7 +63,8 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
         </span>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Agent có thể dùng tài khoản này cho các tác vụ:</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: -4 }}>
         {account.capabilities.map(cap => {
           const reasonCode = (cap.reasons ?? [])[0];
           const sev: Severity = cap.can ? 'ready' : mapReason(reasonCode || '').severity;

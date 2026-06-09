@@ -4,25 +4,30 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { clearActorBlock, getAccountReadiness } from '../../services/accountHealthService';
 import { getSystemInfo, type SystemInfo } from '../../services/systemService';
+import { getDefaultAccountId, setDefaultAccountId } from '../../services/executionContextService';
 import type { AccountReadiness } from './types';
 import { overallStatus, severityLabel, type Severity } from './reasonMessages';
 import { AccountHealthCard } from './AccountHealthCard';
 import { FacebookConnectionWizard } from './FacebookConnectionWizard';
+import { NextStepsPanel } from './NextStepsPanel';
+import { SafetyCard } from './SafetyCard';
 
-interface Props { orgId: string; isAdmin: boolean; }
+interface Props { orgId: string; isAdmin: boolean; onNavigate?: (tab: string) => void; }
 
 const SUMMARY_ORDER: Severity[] = ['ready', 'warning', 'waiting', 'blocked'];
 const SUMMARY_COLOR: Record<Severity, string> = {
   ready: 'var(--ok)', warning: 'var(--warn)', waiting: '#3b82f6', blocked: 'var(--hot)',
 };
 
-export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
+export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props) {
   const [accounts, setAccounts] = useState<AccountReadiness[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<number | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [defaultAccountId, setDefaultId] = useState(0);
+  const [settingDefault, setSettingDefault] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,23 +43,25 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
 
   useEffect(() => { void load(); }, [load, orgId]);
   useEffect(() => { getSystemInfo().then(setSystemInfo).catch(() => setSystemInfo(null)); }, []);
+  useEffect(() => { getDefaultAccountId().then(setDefaultId).catch(() => setDefaultId(0)); }, []);
 
   const handleClear = async (accountId: number) => {
     setClearingId(accountId);
-    try {
-      await clearActorBlock(accountId);
-      await load();
-    } catch {
-      /* surfaced on next load */
-    } finally {
-      setClearingId(null);
-    }
+    try { await clearActorBlock(accountId); await load(); }
+    catch { /* surfaced on next load */ }
+    finally { setClearingId(null); }
+  };
+
+  const handleSetDefault = async (accountId: number) => {
+    setSettingDefault(true);
+    try { setDefaultId(await setDefaultAccountId(accountId)); }
+    catch { /* no-op */ }
+    finally { setSettingDefault(false); }
   };
 
   const counts: Record<Severity, number> = { ready: 0, warning: 0, blocked: 0, waiting: 0 };
   for (const a of accounts) {
-    const reasons = Array.from(new Set(a.capabilities.flatMap(c => c.reasons ?? [])));
-    counts[overallStatus(reasons).severity] += 1;
+    counts[overallStatus(Array.from(new Set(a.capabilities.flatMap(c => c.reasons ?? [])))).severity] += 1;
   }
 
   return (
@@ -78,21 +85,8 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
       </header>
 
       {wizardOpen && (
-        <FacebookConnectionWizard
-          systemInfo={systemInfo}
-          onClose={() => setWizardOpen(false)}
-          onConnected={() => void load()}
-        />
+        <FacebookConnectionWizard systemInfo={systemInfo} onClose={() => setWizardOpen(false)} onConnected={() => void load()} />
       )}
-
-      <div className="card" style={{ display: 'flex', gap: 'var(--s-5)', padding: 'var(--s-3) var(--s-5)', flexWrap: 'wrap' }}>
-        {SUMMARY_ORDER.map(sev => (
-          <span key={sev} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text-mute)' }}>
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: SUMMARY_COLOR[sev] }} />
-            {severityLabel(sev)}: <strong className="tabular" style={{ color: 'var(--text)' }}>{counts[sev]}</strong>
-          </span>
-        ))}
-      </div>
 
       {error && (
         <div className="banner banner-hot" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -101,25 +95,36 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
         </div>
       )}
 
-      {loading && accounts.length === 0 ? (
-        <div style={{ color: 'var(--text-mute)', fontSize: 13, padding: 'var(--s-4)' }}>Đang tải trạng thái tài khoản…</div>
-      ) : accounts.length === 0 ? (
-        <div className="card" style={{ padding: 'var(--s-5)', textAlign: 'center', color: 'var(--text-mute)', fontSize: 13.5 }}>
-          Chưa có tài khoản nào. Thêm tài khoản Facebook và pair Chrome Extension để bắt đầu.
+      <div style={{ display: 'flex', gap: 'var(--s-4)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '2 1 440px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
+          <div className="card" style={{ display: 'flex', gap: 'var(--s-5)', padding: 'var(--s-3) var(--s-5)', flexWrap: 'wrap' }}>
+            {SUMMARY_ORDER.map(sev => (
+              <span key={sev} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text-mute)' }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: SUMMARY_COLOR[sev] }} />
+                {severityLabel(sev)}: <strong className="tabular" style={{ color: 'var(--text)' }}>{counts[sev]}</strong>
+              </span>
+            ))}
+          </div>
+          {loading && accounts.length === 0 ? (
+            <div style={{ color: 'var(--text-mute)', fontSize: 13, padding: 'var(--s-4)' }}>Đang tải trạng thái tài khoản…</div>
+          ) : accounts.length === 0 ? (
+            <div className="card" style={{ padding: 'var(--s-5)', textAlign: 'center', color: 'var(--text-mute)', fontSize: 13.5 }}>
+              Chưa có tài khoản nào. Bấm “Kết nối Facebook mới” để bắt đầu.
+            </div>
+          ) : (
+            accounts.map(a => (
+              <AccountHealthCard key={a.account_id} account={a} isAdmin={isAdmin}
+                onClearBlock={accId => void handleClear(accId)} clearing={clearingId === a.account_id} />
+            ))
+          )}
         </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 'var(--s-3)' }}>
-          {accounts.map(a => (
-            <AccountHealthCard
-              key={a.account_id}
-              account={a}
-              isAdmin={isAdmin}
-              onClearBlock={accId => void handleClear(accId)}
-              clearing={clearingId === a.account_id}
-            />
-          ))}
+
+        <div style={{ flex: '1 1 280px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
+          <NextStepsPanel accounts={accounts} onNavigate={onNavigate} defaultAccountId={defaultAccountId}
+            onSetDefault={accId => void handleSetDefault(accId)} settingDefault={settingDefault} />
+          <SafetyCard />
         </div>
-      )}
+      </div>
     </div>
   );
 }

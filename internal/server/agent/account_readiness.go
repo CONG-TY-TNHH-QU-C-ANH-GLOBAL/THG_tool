@@ -69,6 +69,7 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		ar := models.AccountReadiness{
 			AccountID:        acc.ID,
 			AccountName:      acc.Name,
+			AssignedUserName: acc.AssignedUserName,
 			FBUserID:         acc.FBUserID,
 			FBDisplayName:    acc.FBDisplayName,
 			ConnectorID:      connID,

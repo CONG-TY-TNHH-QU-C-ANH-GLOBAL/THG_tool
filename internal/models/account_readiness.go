@@ -25,6 +25,7 @@ type CapabilityReadiness struct {
 type AccountReadiness struct {
 	AccountID        int64                 `json:"account_id"`
 	AccountName      string                `json:"account_name"`
+	AssignedUserName string                `json:"assigned_user_name"` // who manages this account ("" if unassigned)
 	FBUserID         string                `json:"fb_user_id"`
 	FBDisplayName    string                `json:"fb_display_name"`
 	ConnectorID      int64                 `json:"connector_id"`

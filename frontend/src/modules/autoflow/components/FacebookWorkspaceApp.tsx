@@ -187,9 +187,9 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       case 'browser':
         // Superadmin-only legacy debug surface (PR-E.2). A customer/member can
         // never reach it via nav; this guard keeps them out even on a stale tab.
-        return isPlatform ? <BrowserView orgId={orgId} /> : <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} />;
+        return isPlatform ? <BrowserView orgId={orgId} /> : <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} onNavigate={(t) => setTab(t as Tab)} />;
       case 'health':
-        return <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} />;
+        return <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} onNavigate={(t) => setTab(t as Tab)} />;
       case 'inbox':
         return <InboxView orgId={orgId} />;
       case 'posting':
