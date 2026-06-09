@@ -232,6 +232,15 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	default:
 		userText = fmt.Sprintf("%s Đang %s lead \"%s\"%s.", notifierPrefix, typeVi, target, acctPart)
 	}
+	// Window Respect (PR-2): comment tabs are kept open — tell the operator so they
+	// know they can go inspect the result/error on the live page.
+	if msg.Type == "comment" {
+		if verified {
+			userText += " Tab Facebook được giữ lại để bạn kiểm tra."
+		} else if outcome != "" && outcome != models.VerifSubmittedUnverified {
+			userText += " Tab Facebook được giữ lại để bạn kiểm tra lỗi."
+		}
+	}
 	eventName := models.ExecutionEventFailed
 	if verified {
 		eventName = models.ExecutionEventVerified
