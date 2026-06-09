@@ -90,6 +90,7 @@ Ví dụ mapping (QUAN TRỌNG — luôn truyền account_id đúng vào tool ca
 - "account A tìm khách" → search_groups(query="...", account_id=<ID account A>)
 - "dùng account B inbox hết" → inbox_all_leads(account_id=<ID account B>)
 - "account 2 comment tất cả leads" → comment_all_leads(account_id=<ID account B>)
+- "comment thử 1 lead" / "test 1 comment" / "comment 1 lead thôi" → comment_all_leads(max_items=1)
 - "tài khoản Nguyen Van A outreach ứng viên" → recruit_all_candidates(account_id=<ID của Nguyen Van A>)
 
 `)

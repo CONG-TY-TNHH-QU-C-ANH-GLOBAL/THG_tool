@@ -120,6 +120,7 @@ var agentTools = []map[string]any{
 					"template":     map[string]string{"type": "string", "description": "Optional user-provided comment template"},
 					"score_filter": map[string]string{"type": "string", "description": "hot, warm, cold, or all"},
 					"account_id":   map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"max_items":    map[string]string{"type": "integer", "description": "Maximum number of leads to comment when the user gives a number — e.g. set 1 to test a single comment. Omit for the default."},
 				},
 			},
 		},
