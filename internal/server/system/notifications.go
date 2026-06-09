@@ -291,6 +291,20 @@ func capitalizeFirst(s string) string {
 func friendlyOutboundReason(detail, outcome string) string {
 	s := strings.ToLower(detail + " " + outcome)
 	switch {
+	case strings.Contains(s, "duplicate_text"):
+		return "comment bị lặp trước khi xếp hàng"
+	case strings.Contains(s, "text_doubled"):
+		return "comment bị lặp trước khi gửi"
+	case strings.Contains(s, "text_mismatch"):
+		return "nội dung trong ô comment không khớp nội dung agent đã soạn"
+	case strings.Contains(s, "composer_clear_failed"):
+		return "không xoá được bản nháp cũ trong ô comment"
+	case strings.Contains(s, "submit_not_found"), strings.Contains(s, "submit_button_not_found"):
+		return "không tìm thấy nút gửi comment"
+	case strings.Contains(s, "submit_click_failed"):
+		return "không bấm được nút gửi comment"
+	case strings.Contains(s, "submit_not_confirmed"), strings.Contains(s, "submit_not_accepted"):
+		return "Facebook chưa nhận comment sau khi bấm gửi"
 	case strings.Contains(s, "target_not_reached"):
 		return "không mở được đúng bài viết Facebook"
 	case strings.Contains(s, "context_drift"):

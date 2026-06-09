@@ -36,6 +36,22 @@ export function commentReason(outcome: string): string {
     case 'submitted_unverified':
     case 'optimistic_success':
       return 'Đã bấm gửi nhưng hệ thống chưa thấy comment xuất hiện để xác minh.';
+    case 'comment_quality_duplicate_text':
+      return 'Comment bị lặp trước khi xếp hàng.';
+    case 'comment_text_doubled':
+      return 'Comment bị lặp trước khi gửi.';
+    case 'comment_text_mismatch':
+      return 'Nội dung trong ô comment không khớp nội dung agent đã soạn.';
+    case 'composer_clear_failed':
+      return 'Không xoá được bản nháp cũ trong ô comment.';
+    case 'comment_submit_not_found':
+    case 'submit_button_not_found':
+      return 'Không tìm thấy nút gửi comment.';
+    case 'submit_click_failed':
+      return 'Không bấm được nút gửi comment.';
+    case 'comment_submit_not_confirmed':
+    case 'submit_not_accepted':
+      return 'Facebook chưa nhận comment sau khi bấm gửi.';
     case 'target_not_reached':
     case 'redirected_feed':
       return 'Không mở được đúng bài viết Facebook.';

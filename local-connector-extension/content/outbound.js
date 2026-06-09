@@ -229,35 +229,12 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return current.includes(sample);
   }
 
-  // editorTextDoubled detects the duplicated-comment failure (PR-1): FB persists
-  // an unsent draft per post and can re-mount it AFTER our insert, so the composer
-  // ends up holding our content TWICE ("…nhé.…nhé."). editorContainsContent only
-  // does a substring check, which a doubled composer passes — this is the explicit
-  // anti-duplication guard run right before submit.
-  function editorTextDoubled(editor, content) {
-    if (!editor || !document.contains(editor)) return false;
-    const current = norm(textOfEditable(editor)).replace(/\s+/g, ' ').trim();
-    const expected = norm(content).replace(/\s+/g, ' ').trim();
-    if (!expected || !current || expected.length < 6) return false;
-    const first = current.indexOf(expected);
-    if (first !== -1 && current.indexOf(expected, first + expected.length) !== -1) return true;
-    return current.length >= Math.floor(expected.length * 1.6) && current.startsWith(expected);
-  }
+  // (Doubled-composer detection moved to content/comment_composer_guard.js —
+  // THGCommentGuard.isExactRepeatedText / assertComposerExactlyExpected.)
 
-  // ensureSingleInsertion is the SHARED anti-duplication guard for every comment
-  // path (permalink executeComment AND group-feed executeCommentInFeed). FB can
-  // re-mount a per-post draft AFTER our insert, doubling the composer. Re-clear +
-  // re-insert once; return true only if the composer now holds a SINGLE copy.
-  // Centralised so the guard can never again exist in one path and be missing in
-  // the other (the divergence that let group-feed comments double).
-  async function ensureSingleInsertion(editor, content) {
-    if (!editorTextDoubled(editor, content)) return true;
-    selectEditableContents(editor);
-    try { document.execCommand('delete', false, null); } catch (_) {}
-    setEditableText(editor, content);
-    await waitFor(() => editorContainsContent(editor, content), 1200, 150);
-    return !editorTextDoubled(editor, content);
-  }
+  // (Composer anti-duplication now lives in content/comment_composer_guard.js —
+  // THGCommentGuard.prepareComposerForComment + assertComposerExactlyExpected — so
+  // every comment path shares one guard and none can diverge.)
 
   function pressEnter(editor) {
     if (!editor) return false;
@@ -961,28 +938,25 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       }
     }
 
-    // Identity locked. Only NOW do we type. PR8A: phase is now 'typing'.
-    if (!setEditableText(editor, content)) {
-      return commentResult(false, 'comment_text_insert_failed', null, ctx,
-        'typing.insert_failed: target id=' + abbreviate(targetPostId || '<none>'),
-        navDiagFor('typing_insert_failed', 'typing', probeCommentGates(targetPostId), ctxInfo));
+    // Identity locked. Composer prep (clear → insert → stabilise → equality) is
+    // owned by THGCommentGuard so no path can submit a doubled/mismatched composer.
+    const prep = await THGCommentGuard.prepareComposerForComment(editor, content);
+    if (!prep.ok) {
+      return commentResult(false, prep.reason, null, ctx,
+        'typing.' + prep.reason + ': ' + JSON.stringify(prep.diagnostic) + ' · target id=' + abbreviate(targetPostId || '<none>'),
+        navDiagFor(prep.reason, 'typing', probeCommentGates(targetPostId), ctxInfo));
     }
-    const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
-    if (!inserted) {
-      return commentResult(false, 'comment_text_not_confirmed', null, ctx,
-        'typing.not_confirmed: editor did not hold our content within 1.8s · target id=' + abbreviate(targetPostId || '<none>'),
-        navDiagFor('typing_not_confirmed', 'typing', probeCommentGates(targetPostId), ctxInfo));
-    }
-
-    // PR-1 anti-duplication (shared guard): never submit a doubled composer.
-    if (!(await ensureSingleInsertion(editor, content))) {
-      return commentResult(false, 'comment_quality_invalid', null, ctx,
-        'composer held a doubled comment after re-clear · target id=' + abbreviate(targetPostId || '<none>'),
-        navDiagFor('comment_quality_invalid', 'typing', probeCommentGates(targetPostId), ctxInfo));
+    // HARD pre-submit block: composer MUST equal the queued content exactly.
+    const presub = THGCommentGuard.assertComposerExactlyExpected(editor, content);
+    if (!presub.ok) {
+      await THGCommentGuard.clearComposerUntilEmpty(editor);
+      const r = presub.duplicate ? 'comment_text_doubled' : 'comment_text_mismatch';
+      return commentResult(false, r, null, ctx,
+        'pre_submit_verify.' + r + ': ' + JSON.stringify(presub) + ' · target id=' + abbreviate(targetPostId || '<none>'),
+        navDiagFor(r, 'pre_submit_verify', probeCommentGates(targetPostId), ctxInfo));
     }
 
-    // PR8A: text is in the composer — we are now at the SUBMIT phase. Only from
-    // here on is an "after submit" diagnostic legitimate.
+    // PR8A: text is in the composer AND equals expected — SUBMIT phase.
     const submitButtons = findSubmitButtons(editor, [commentButton]);
     for (const submit of submitButtons) {
       if (submit && clickLikeUser(submit)) {
@@ -1354,22 +1328,19 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         ' landed_at=' + landed);
     }
 
-    if (!setEditableText(editor, content)) {
-      return commentResult(false, 'comment_text_insert_failed', null, ctx,
-        'path2.comment_text_insert_failed: target id=' + abbreviate(targetPostId));
+    // Composer prep + HARD equality via the SAME shared guard as executeComment, so
+    // the group-feed path can never again diverge and submit a doubled composer.
+    const prep = await THGCommentGuard.prepareComposerForComment(editor, content);
+    if (!prep.ok) {
+      return commentResult(false, prep.reason, null, ctx,
+        'path2.' + prep.reason + ': ' + JSON.stringify(prep.diagnostic) + ' · target id=' + abbreviate(targetPostId));
     }
-    const inserted = await waitFor(() => editorContainsContent(editor, content), 1800, 150);
-    if (!inserted) {
-      return commentResult(false, 'comment_text_not_confirmed', null, ctx,
-        'path2.comment_text_not_confirmed: target id=' + abbreviate(targetPostId));
-    }
-
-    // PR-DUP: same anti-duplication guard as executeComment — group-feed comments
-    // were doubling because this path lacked it. FB re-mounts a per-post draft after
-    // our insert; re-clear + re-insert once, abort if still doubled.
-    if (!(await ensureSingleInsertion(editor, content))) {
-      return commentResult(false, 'comment_quality_invalid', null, ctx,
-        'path2.composer held a doubled comment after re-clear · target id=' + abbreviate(targetPostId));
+    const presub = THGCommentGuard.assertComposerExactlyExpected(editor, content);
+    if (!presub.ok) {
+      await THGCommentGuard.clearComposerUntilEmpty(editor);
+      const r = presub.duplicate ? 'comment_text_doubled' : 'comment_text_mismatch';
+      return commentResult(false, r, null, ctx,
+        'path2.pre_submit_verify.' + r + ': ' + JSON.stringify(presub) + ' · target id=' + abbreviate(targetPostId));
     }
 
     const submitButtons = findSubmitButtons(editor, [commentButton]);

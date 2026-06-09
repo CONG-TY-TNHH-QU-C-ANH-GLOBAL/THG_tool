@@ -221,6 +221,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 				continue
 			}
 			content = cleaned
+			// Duplicate guard (incident PR-1): an A+A repeated block must never enter
+			// the outbox, even if it survived sentence-level dedup. Typed reason so the
+			// operator sees "Comment bị lặp" instead of garbage on Facebook.
+			if ai.DetectRepeatedText(content) {
+				skipped++
+				skipReasons["comment_quality_duplicate_text"]++
+				continue
+			}
 			// PR-3 contact policy: ≤1 URL, grounded-website-only, no fabricated
 			// email/phone. Reject (typed reason) rather than post an unsupported contact.
 			if cok, creason := ai.ScreenCommentContacts(content, commentIdentity); !cok {
