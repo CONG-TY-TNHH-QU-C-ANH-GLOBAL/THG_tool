@@ -333,12 +333,12 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 
-	// Once Facebook login is confirmed, tell the extension to run in background so
-	// the user observes automation via the dashboard BrowserView, not the raw tab.
-	if strings.EqualFold(streamStatus, browsergateway.StreamFacebookLoggedIn) &&
-		!h.db.Connectors().HasRecentConnectorCommand(orgID, accountID, "window_control", 30*time.Minute) {
-		_, _ = h.db.Connectors().CreateConnectorCommand(orgID, accountID, agentID, 0, "window_control", `{"action":"minimize"}`)
-	}
+	// Window Respect (PR-2): the periodic window_control:minimize was removed. It
+	// existed for the old "observe automation via the dashboard BrowserView" model
+	// (the raw tab was minimized out of the way) — but BrowserView/stream was
+	// retired (PR-F), so the command only snapped the user's full-screen Chrome away
+	// for a feature that no longer exists. The user-owned window is sacred; the
+	// extension also no-ops window_control:minimize unless a debug policy opts in.
 
 	return c.JSON(fiber.Map{"status": "stored", "ts": time.Now().Unix()})
 }

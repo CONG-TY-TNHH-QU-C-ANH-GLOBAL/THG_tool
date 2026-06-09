@@ -97,6 +97,11 @@ var THGCommands = globalThis.THGCommands || (() => {
   async function handleWindowControl(payload) {
     const action = String(payload?.action || '').toLowerCase();
     if (action !== 'minimize') return;
+    // Window Respect (PR-2): never minimize the user's window in normal flow.
+    // Honour a backend window_control:minimize ONLY when the debug/operator policy
+    // explicitly enables it — otherwise it is a no-op (the user's full-screen Chrome
+    // must not snap away under them).
+    if (!THGWindowPolicy.shouldMinimizeAfterExecution()) return;
     const fbTabs = await chrome.tabs.query({
       url: ['https://facebook.com/*', 'https://*.facebook.com/*']
     });
@@ -132,7 +137,10 @@ var THGCommands = globalThis.THGCommands || (() => {
     if (crawlWinId) tabOpts.windowId = crawlWinId;
     const tab = await chrome.tabs.create(tabOpts);
     if (tab?.windowId) {
-      await chrome.windows.update(tab.windowId, { state: 'normal', focused: true }).catch(() => {});
+      // Window Respect (PR-2): focus only — do NOT force state:'normal' over a
+      // maximized/fullscreen window (that snaps it to half-screen). A maximized
+      // window renders fine; only a MINIMIZED one needed the restore above (124).
+      await chrome.windows.update(tab.windowId, THGWindowPolicy.focusUpdate()).catch(() => {});
     }
     return { tab, shouldReminimize, crawlWinId };
   }

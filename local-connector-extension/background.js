@@ -1,5 +1,6 @@
 importScripts(
   'src/shared.js',
+  'src/window-policy.js',
   'src/navwatch.js',
   'src/facebook-state.js',
   'src/api.js',

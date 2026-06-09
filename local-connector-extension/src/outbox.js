@@ -177,7 +177,11 @@ var THGOutbox = globalThis.THGOutbox || (() => {
 
     const releaseTabLock = acquireTabExecutionLock(tabId);
     if (!releaseTabLock) {
-      await chrome.tabs.remove(tabId).catch(() => {});
+      // Window Respect (PR-2): another execution owns this tab — don't close it
+      // (would disrupt the other run / the user's tab). Back off; the poller retries.
+      if (THGWindowPolicy.shouldCloseTabAfterExecution()) {
+        await chrome.tabs.remove(tabId).catch(() => {});
+      }
       throw new Error('tab_busy_executing');
     }
 
@@ -192,15 +196,14 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       }
     } finally {
       releaseTabLock();
-      // Submit-verification boundary: the verifier already ran INSIDE the content
-      // script (executeComment dwells + builds proof before returning). Here we add
-      // an OBSERVATION dwell so the user can SEE the comment land — and a slow
-      // Facebook render finishes — BEFORE the tab closes. Failures dwell longer so
-      // the operator can inspect what happened. No delivery-tech change.
-      const ok = !!(result && (result.success === true || result.ok === true));
-      await new Promise(r => setTimeout(r, ok ? 4000 : 18000));
-      await chrome.tabs.remove(tabId).catch(() => {});
-      if (crawlInfo.shouldReminimize && crawlInfo.crawlWinId) {
+      // Window Respect (PR-2): the user-owned window is sacred. By default we LEAVE
+      // the Facebook tab open on its final page so the user can inspect the comment
+      // (success or failure) — no auto-close, no minimize. The verifier already ran
+      // inside the content script. Only a debug build flips these policy flags.
+      if (THGWindowPolicy.shouldCloseTabAfterExecution()) {
+        await chrome.tabs.remove(tabId).catch(() => {});
+      }
+      if (THGWindowPolicy.shouldMinimizeAfterExecution() && crawlInfo.shouldReminimize && crawlInfo.crawlWinId) {
         await chrome.windows.update(crawlInfo.crawlWinId, { state: 'minimized' }).catch(() => {});
       }
     }
@@ -387,8 +390,10 @@ var THGOutbox = globalThis.THGOutbox || (() => {
     }
     const tabId = state.tab && state.tab.id;
     if (!tabId) return fail('soft_fail', 'c.locate.no_fb_tab');
-    // Foreground the tab/window WITHOUT navigating (no reload → no frame churn).
-    try { if (state.tab.windowId) await chrome.windows.update(state.tab.windowId, { state: 'normal', focused: true }); } catch { /* ignore */ }
+    // Foreground the tab/window WITHOUT navigating (no reload → no frame churn) and
+    // WITHOUT resizing — Window Respect (PR-2): focus only, never force state:'normal'
+    // over the user's maximized/fullscreen window unless window management is enabled.
+    try { if (state.tab.windowId) await chrome.windows.update(state.tab.windowId, THGWindowPolicy.focusUpdate()); } catch { /* ignore */ }
     try { await chrome.tabs.update(tabId, { active: true }); } catch { /* ignore */ }
     await THGShared.delay(500);
 
@@ -634,10 +639,12 @@ var THGOutbox = globalThis.THGOutbox || (() => {
 
     const releaseTabLock = acquireTabExecutionLock(tabId);
     if (!releaseTabLock) {
-      // Race with another mutate-class caller on the just-created tab is
-      // implausible (the tab is brand new), but we still defend: clean up
-      // and let the outbox poller retry next cycle.
-      await chrome.tabs.remove(tabId).catch(() => {});
+      // Race with another mutate-class caller on the just-created tab is implausible
+      // (the tab is brand new). Window Respect (PR-2): don't close by default; back
+      // off and let the outbox poller retry next cycle.
+      if (THGWindowPolicy.shouldCloseTabAfterExecution()) {
+        await chrome.tabs.remove(tabId).catch(() => {});
+      }
       throw new Error('tab_busy_executing');
     }
 
@@ -687,11 +694,14 @@ var THGOutbox = globalThis.THGOutbox || (() => {
           if (shot) result.proof.evidence_screenshot_b64 = shot;
         }
       } catch (_) { /* screenshot is best-effort evidence, never load-bearing */ }
-      // Mirror the crawler's cleanup so the FB window doesn't accumulate
-      // tabs across a daily batch. Restore window state if crawler had
-      // to un-minimize it during navigateAndVerify.
-      await chrome.tabs.remove(tabId).catch(() => {});
-      if (crawlInfo.shouldReminimize && crawlInfo.crawlWinId) {
+      // Window Respect (PR-2): by default LEAVE the tab open on its final page so
+      // the user can inspect the comment result, and never minimize the window.
+      // (Per-connector tab REUSE is the future approach to avoid accumulation — not
+      // in this PR; the founder chose "don't close" over auto-close.) Debug only.
+      if (THGWindowPolicy.shouldCloseTabAfterExecution()) {
+        await chrome.tabs.remove(tabId).catch(() => {});
+      }
+      if (THGWindowPolicy.shouldMinimizeAfterExecution() && crawlInfo.shouldReminimize && crawlInfo.crawlWinId) {
         await chrome.windows.update(crawlInfo.crawlWinId, { state: 'minimized' }).catch(() => {});
       }
     }
