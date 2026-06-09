@@ -5,6 +5,7 @@ const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
 const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
 const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
 import DefaultAccountSettings from './DefaultAccountSettings';
+import { CompanyIdentityForm } from './companyIdentity/CompanyIdentityForm';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { alpha, theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
@@ -396,6 +397,8 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
               {orgSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
           </Row>
+          {/* PR Company Identity: grounded brand/website/contact/CTA for AI comments. */}
+          <CompanyIdentityForm isAdmin={isAdmin} />
         </div>
       )}
 

@@ -46,6 +46,9 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly 
 	group.Post("/org/assets/:kind", adminOnly, h.uploadOrgAsset)
 	group.Get("/org/business-profile", h.getBusinessProfile)
 	group.Put("/org/business-profile", adminOnly, h.updateBusinessProfile)
+	// Company Identity form (brand/website/contact/CTA used by grounded comments).
+	group.Get("/org/company-identity", h.getCompanyIdentity)
+	group.Put("/org/company-identity", adminOnly, h.updateCompanyIdentity)
 
 	// Workspace Knowledge OS — Operator Replay surface. Read-only;
 	// tenant-scoped via c.Locals("org_id"). See
