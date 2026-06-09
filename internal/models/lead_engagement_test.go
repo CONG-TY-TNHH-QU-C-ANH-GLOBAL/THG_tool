@@ -219,7 +219,7 @@ func TestTerminalFromOutcome(t *testing.T) {
 	}
 	cases := map[ExecutionOutcome]want{
 		ExecutionDOMVerified:         {ExecFinished, VerifVerifiedSuccess},
-		ExecutionOptimisticSuccess:   {ExecFinished, VerifVerifiedSuccess},
+		ExecutionOptimisticSuccess:   {ExecFinished, VerifSubmittedUnverified}, // Submitted ≠ Verified (founder)
 		ExecutionDuplicateBlocked:    {ExecFinished, VerifVerifiedSuccess},
 		ExecutionContextDrift:        {ExecFinished, VerifContextDrift},
 		ExecutionRedirectedFeed:      {ExecFinished, VerifContextDrift},

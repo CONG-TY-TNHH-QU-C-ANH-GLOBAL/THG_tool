@@ -69,6 +69,41 @@ func TestLeadEngagement_FacebookActorAttribution(t *testing.T) {
 	}
 }
 
+// Optimistic Success Semantics Hardening: a submitted-but-unverified comment
+// (action_ledger.outcome='submitted_unverified') is NOT a verified touch — the Lead
+// Engagement projection (WHERE outcome='succeeded') must exclude it entirely, so the
+// Lead tab never shows it as "Đã comment".
+func TestLeadEngagement_SubmittedUnverifiedExcluded(t *testing.T) {
+	db := newEngagementTestStore(t)
+	ctx := context.Background()
+
+	user := seedUser(t, db, 1, "Alice")
+	accID := seedAccount(t, db, 1, "Sales FB", user)
+	leadID := seedLead(t, db, 1, "https://facebook.com/post/Z", "https://facebook.com/profile/Z", "")
+	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		OrgID: 1, Type: "comment", Platform: "facebook",
+		AccountID: accID, CreatedBy: user, TargetURL: "https://facebook.com/post/Z", Content: "submitted",
+	}, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+	// Finalize as submitted_unverified (what LedgerOutcomeAlias(optimistic) writes).
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, res.ID, models.LedgerOutcomeSubmittedUnverified, "optimistic"); err != nil {
+		t.Fatalf("mark: %v", err)
+	}
+
+	state, err := db.Leads().GetLeadEngagement(ctx, 1, leadID)
+	if err != nil {
+		t.Fatalf("GetLeadEngagement: %v", err)
+	}
+	if len(state.Entries) != 0 {
+		t.Fatalf("submitted_unverified must NOT appear as a verified interaction; got %d entries", len(state.Entries))
+	}
+	if state.Badge == models.LeadBadgeProtected || state.Badge == models.LeadBadgeVisible {
+		t.Errorf("submitted_unverified must not promote the engagement badge; got %s", state.Badge)
+	}
+}
+
 // created_by=0 (system / agent auto-comment) must project gracefully: account is
 // still surfaced, initiator is empty (not a crash, not a fake user).
 func TestLeadEngagement_FacebookActor_SystemCreatedByGraceful(t *testing.T) {

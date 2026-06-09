@@ -224,9 +224,9 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	switch {
 	case verified:
 		userText = fmt.Sprintf("%s ✅ Đã %s lead \"%s\"%s.", notifierPrefix, typeVi, target, acctPart)
-	case strings.Contains(strings.ToLower(string(outcome)), "optimistic"):
-		// Submitted ≠ Verified: clicked send but no verified proof yet.
-		userText = fmt.Sprintf("%s ℹ️ Đã gửi %s cho lead \"%s\"%s nhưng CHƯA xác minh được — hệ thống sẽ kiểm tra lại.", notifierPrefix, typeVi, target, acctPart)
+	case outcome == models.VerifSubmittedUnverified || strings.Contains(strings.ToLower(string(outcome)), "optimistic"):
+		// Submitted ≠ Verified: clicked send but no verified proof yet. Info, NOT success.
+		userText = fmt.Sprintf("%s ℹ️ Đã gửi %s cho lead \"%s\"%s nhưng CHƯA xác minh được comment đã xuất hiện trên Facebook.", notifierPrefix, typeVi, target, acctPart)
 	case outcome != "": // a terminal verification outcome that is not success → failure
 		userText = fmt.Sprintf("%s ⚠️ %s thất bại cho lead \"%s\"%s — %s.", notifierPrefix, capitalizeFirst(typeVi), target, acctPart, friendlyOutboundReason(detail, string(outcome)))
 	default:

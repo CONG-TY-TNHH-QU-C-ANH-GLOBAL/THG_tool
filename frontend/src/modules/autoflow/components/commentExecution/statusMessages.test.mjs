@@ -15,10 +15,12 @@ const { commentStatus, commentReason } = await import('data:text/javascript;base
 assert.deepStrictEqual(commentStatus('queued', ''), { label: 'Đang chờ', severity: 'waiting' });
 assert.deepStrictEqual(commentStatus('executing', ''), { label: 'Đang chạy', severity: 'running' });
 assert.deepStrictEqual(commentStatus('finished', 'verified_success'), { label: 'Đã đăng thành công', severity: 'success' });
-// Submitted but not verified is NOT success.
-assert.strictEqual(commentStatus('finished', 'optimistic_success').severity, 'unverified');
-assert.strictEqual(commentStatus('finished', 'optimistic_success').label, 'Đã gửi nhưng chưa xác minh');
+// Submitted but not verified is NOT success — backend now carries submitted_unverified.
+assert.strictEqual(commentStatus('finished', 'submitted_unverified').severity, 'unverified');
+assert.strictEqual(commentStatus('finished', 'submitted_unverified').label, 'Đã gửi nhưng chưa xác minh');
+assert.strictEqual(commentStatus('finished', 'optimistic_success').severity, 'unverified'); // legacy alias still handled
 assert.strictEqual(commentStatus('finished', 'context_drift').severity, 'failed');
+assert.ok(commentReason('submitted_unverified').includes('chưa'));
 
 // Reasons: plain Vietnamese, no raw code; success → ''.
 assert.strictEqual(commentReason('verified_success'), '');

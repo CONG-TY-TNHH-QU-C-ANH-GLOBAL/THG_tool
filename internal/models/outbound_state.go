@@ -66,6 +66,12 @@ const (
 	// engagement_events row (PR-2).
 	VerifVerifiedSuccess VerificationOutcome = "verified_success"
 
+	// VerifSubmittedUnverified — the action was SUBMITTED (clicked send) but no
+	// verified DOM/proof confirmation that the comment appeared (optimistic_success).
+	// Founder decision: Submitted ≠ Verified — NOT a success, NOT a verified touch,
+	// no engagement_events row. The operator sees "Đã gửi nhưng chưa xác minh".
+	VerifSubmittedUnverified VerificationOutcome = "submitted_unverified"
+
 	// VerifContextDrift — the action landed on a different post /
 	// thread / entity than the outbound row's target_url. Identity
 	// invariant violated. Engagement event WITHHELD. Account reputation
@@ -117,8 +123,11 @@ const (
 // callers should treat as VerifExecutionFailed defensively.
 func VerifyOutcomeFromExecution(o ExecutionOutcome) (VerificationOutcome, bool) {
 	switch o {
-	case ExecutionDOMVerified, ExecutionOptimisticSuccess, ExecutionDuplicateBlocked:
+	case ExecutionDOMVerified, ExecutionDuplicateBlocked:
 		return VerifVerifiedSuccess, true
+	case ExecutionOptimisticSuccess:
+		// Submitted ≠ Verified — its own non-success terminal outcome.
+		return VerifSubmittedUnverified, true
 	case ExecutionContextDrift, ExecutionRedirectedFeed:
 		return VerifContextDrift, true
 	case ExecutionTargetNotReached:

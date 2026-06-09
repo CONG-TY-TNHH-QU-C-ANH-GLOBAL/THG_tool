@@ -21,7 +21,7 @@ export function commentStatus(state: string, outcome: string): CommentStatus {
   if (s === 'expired') return { label: 'Hết hạn — chưa chạy', severity: 'failed' };
   if (s === 'finished') {
     if (o === 'verified_success' || o === 'dom_verified') return { label: 'Đã đăng thành công', severity: 'success' };
-    if (o === 'optimistic_success') return { label: 'Đã gửi nhưng chưa xác minh', severity: 'unverified' };
+    if (o === 'submitted_unverified' || o === 'optimistic_success') return { label: 'Đã gửi nhưng chưa xác minh', severity: 'unverified' };
     return { label: 'Thất bại', severity: 'failed' };
   }
   return { label: 'Đang chờ', severity: 'waiting' };
@@ -33,6 +33,7 @@ export function commentReason(outcome: string): string {
     case 'verified_success':
     case 'dom_verified':
       return '';
+    case 'submitted_unverified':
     case 'optimistic_success':
       return 'Đã bấm gửi nhưng hệ thống chưa thấy comment xuất hiện để xác minh.';
     case 'target_not_reached':

@@ -134,6 +134,24 @@ func IsSuccessOutcome(o ExecutionOutcome) bool {
 	}
 }
 
+// LedgerOutcomeSubmittedUnverified is a THIRD action_ledger.outcome value beside
+// "succeeded"/"failed": the comment was submitted but we have no verified proof it
+// landed (optimistic_success). Founder decision: Submitted ≠ Verified — it is NOT a
+// verified touch, so the Lead Engagement projection (WHERE outcome='succeeded')
+// excludes it and no engagement_event is emitted.
+const LedgerOutcomeSubmittedUnverified = "submitted_unverified"
+
+// IsSubmittedUnverifiedOutcome: the action was sent but not DOM/proof verified.
+func IsSubmittedUnverifiedOutcome(o ExecutionOutcome) bool {
+	return o == ExecutionOptimisticSuccess
+}
+
+// IsVerifiedCommentOutcome: a GENUINELY verified interaction — DOM proof, or the
+// comment already existed (duplicate_blocked). optimistic_success is excluded.
+func IsVerifiedCommentOutcome(o ExecutionOutcome) bool {
+	return o == ExecutionDOMVerified || o == ExecutionDuplicateBlocked
+}
+
 // IsRetryableOutcome reports whether a fresh attempt is likely to
 // succeed. soft_fail / verification_timeout are retryable; shadow_reject
 // / blocked / captcha / rate_limited are NOT — re-clicking would just
@@ -192,6 +210,12 @@ func RiskSignalForOutcome(o ExecutionOutcome) RiskSignal {
 // collapses to "failed" (with the rich classification in the reason
 // column). The execution_attempts table holds the full taxonomy.
 func LedgerOutcomeAlias(o ExecutionOutcome) string {
+	// Submitted-but-unverified is its OWN ledger value — never "succeeded" (which
+	// would make it a verified touch). Checked first so it wins over IsSuccessOutcome
+	// (which still treats optimistic as "we acted" for the executor flow).
+	if IsSubmittedUnverifiedOutcome(o) {
+		return LedgerOutcomeSubmittedUnverified
+	}
 	if IsSuccessOutcome(o) {
 		return "succeeded"
 	}
@@ -260,13 +284,10 @@ func TerminalFromOutcome(o ExecutionOutcome) (ExecutionState, VerificationOutcom
 // DeriveBadge function in lead_engagement.go also re-filters as
 // defense in depth.
 //
-// Returns true ONLY for "succeeded". Note that the rich
-// ExecutionOutcome taxonomy collapses through LedgerOutcomeAlias —
-// dom_verified / optimistic_success / duplicate_blocked all map to
-// "succeeded" here, which is the right behaviour: duplicate_blocked
-// means the comment already existed, optimistic_success has partial
-// proof, and dom_verified is the strongest signal — all three
-// represent a real touch from the customer's point of view.
+// Returns true ONLY for "succeeded". Through LedgerOutcomeAlias, dom_verified and
+// duplicate_blocked collapse to "succeeded" (genuine verified touches), while
+// optimistic_success collapses to "submitted_unverified" (founder decision:
+// Submitted ≠ Verified) — so it returns false here and never counts as a touch.
 func IsLedgerOutcomeVerifiedTouch(outcome string) bool {
 	return outcome == "succeeded"
 }
