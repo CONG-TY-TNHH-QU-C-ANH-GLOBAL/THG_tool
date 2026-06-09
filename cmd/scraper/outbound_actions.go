@@ -347,6 +347,11 @@ func friendlySkipReasons(reasons map[string]int) string {
 		"lead_replied":                   "lead đã trả lời — không gửi thêm",
 		"conversation_closed":            "hội thoại với lead đã đóng",
 		"action_policy_missing":          "workspace chưa bật chính sách hành động",
+		// Target-URL resolution (resolveOutboundTargetURL) — the common skip for a
+		// fresh lead whose crawled URL is not a direct commentable post permalink.
+		"missing_post_permalink": "lead chưa có link bài viết comment được (URL không phải permalink bài post)",
+		"missing_target":         "lead thiếu link nguồn",
+		"unrouted_source_type":   "loại nguồn của lead không hỗ trợ comment",
 	}
 	parts := make([]string, 0, len(reasons))
 	for code, n := range reasons {
