@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
 import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus, LeadThreadRole } from '../../types';
+import { LeadFacebookInteractions } from '../leads/LeadFacebookInteractions';
 import { useLeads } from '../../hooks/useLeads';
 import { useLang } from '../../i18n/useLang';
 import {
@@ -142,7 +143,16 @@ function relativeTime(iso: string): string {
 // abstract status pill.
 function engagementContext(state: LeadEngagementState | undefined): string {
   if (!state || !state.last_engaged_at) return 'chưa ai chạm — ưu tiên';
-  const who = state.last_engaged_by || '(unassigned)';
+  // Prefer the Facebook ACCOUNT attribution (execution is owned per account) over a
+  // mutable assigned-user name, and surface amplification ("N account"). This is
+  // observability — the lead stays shared.
+  const accNames = Array.from(new Map((state.entries ?? [])
+    .filter(e => e.account_id > 0)
+    .map(e => [e.account_id, e.fb_display_name || e.account_name || `Account #${e.account_id}`] as const))
+    .values());
+  const who = accNames.length === 0 ? (state.last_engaged_by || '(chưa rõ account)')
+    : accNames.length === 1 ? accNames[0]
+    : `${accNames.length} account`;
   const when = relativeTime(state.last_engaged_at);
   if (state.badge === 'followup_pending') return `${who} • chờ reply ${when}`;
   if (state.badge === 'closed') return `${who} • đã đóng`;
@@ -872,6 +882,10 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                   {selectedLead.phone || tv.noteEmpty}
                 </p>
 
+                <div style={{ marginTop: 20 }}>
+                  <LeadFacebookInteractions entries={selectedLead.engagement?.entries ?? []} relativeTime={relativeTime} />
+                </div>
+
                 <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>HOẠT ĐỘNG WORKSPACE</span>
                   <span className={engagementBadgeDisplay(selectedLead.engagement?.badge).className} style={{ fontSize: 10, padding: '1px 6px' }}>
@@ -890,8 +904,8 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                   return (
                     <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {entries.slice(0, 5).map((entry, idx) => {
-                        const who = entry.user_name || '(tài khoản chưa gán)';
-                        const acct = entry.account_name ? ` qua ${entry.account_name}` : '';
+                        const who = entry.user_name || entry.fb_display_name || entry.account_name || '(agent tự động)';
+                        const acct = entry.account_name && entry.user_name ? ` qua ${entry.account_name}` : '';
                         const when = relativeTime(entry.performed_at);
                         return (
                           <li key={idx} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5 }}>

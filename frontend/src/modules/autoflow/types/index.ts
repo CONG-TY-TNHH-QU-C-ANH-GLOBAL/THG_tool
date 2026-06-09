@@ -61,6 +61,11 @@ export interface LeadEngagementEntry {
   user_name: string;
   account_id: number;
   account_name: string;
+  fb_display_name?: string;
+  fb_profile_url?: string;
+  actor_verdict?: string;   // verified | mismatch | unknown | ''
+  actor_blocked?: boolean;
+  channel?: string;         // 'facebook'
   action: string;           // comment | inbox | group_post | profile_post
   target_url: string;
   outcome: string;

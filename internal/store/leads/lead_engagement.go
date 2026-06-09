@@ -264,10 +264,18 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 	// action) — NOT account.assigned_user_id, which is mutable and would rewrite
 	// history when an account is reassigned (Organic Sales Network execution
 	// ownership). created_by=0 = system/legacy/unattributed.
+	// Facebook actor attribution: a.fb_* identifies the account that performed the
+	// interaction; account_runtime_state carries the Verified-Actor verdict (P1b).
+	// Read-only; no ledger mutation; LEFT JOINs so a missing account/state degrades
+	// gracefully (account_id=0 / verdict="").
 	query := `
 		SELECT al.target_url,
 		       COALESCE(a.id, 0)                  AS account_id,
 		       COALESCE(a.name, '')               AS account_name,
+		       COALESCE(a.fb_display_name, '')     AS fb_display_name,
+		       COALESCE(a.fb_profile_url, '')      AS fb_profile_url,
+		       COALESCE(ars.last_actor_verdict, '') AS actor_verdict,
+		       COALESCE(ars.actor_blocked, 0)      AS actor_blocked,
 		       al.created_by                      AS user_id,
 		       COALESCE(u.name, '')               AS user_name,
 		       al.action_type,
@@ -276,6 +284,7 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 		  FROM action_ledger al
 		  LEFT JOIN accounts a ON a.id = al.account_id
 		  LEFT JOIN users    u ON u.id = al.created_by
+		  LEFT JOIN account_runtime_state ars ON ars.account_id = al.account_id
 		 WHERE al.org_id = ?
 		   AND al.outcome = 'succeeded'
 		   AND al.target_url IN (` + placeholders + `)
@@ -289,17 +298,21 @@ func (s *Store) listEngagementEntriesByURLs(ctx context.Context, orgID int64, ur
 
 	for rows.Next() {
 		var (
-			e          models.LeadEngagement
-			performed  string
-			outcome    sql.NullString
+			e           models.LeadEngagement
+			performed   string
+			outcome     sql.NullString
+			actorBlocked int
 		)
-		if err := rows.Scan(&e.TargetURL, &e.AccountID, &e.AccountName, &e.UserID, &e.UserName,
+		if err := rows.Scan(&e.TargetURL, &e.AccountID, &e.AccountName, &e.FBDisplayName, &e.FBProfileURL,
+			&e.ActorVerdict, &actorBlocked, &e.UserID, &e.UserName,
 			&e.Action, &outcome, &performed); err != nil {
 			return nil, err
 		}
 		if outcome.Valid {
 			e.Outcome = outcome.String
 		}
+		e.ActorBlocked = actorBlocked == 1
+		e.Channel = "facebook"
 		e.PerformedAt = dbutil.ParseSQLiteTime(performed)
 		out[e.TargetURL] = append(out[e.TargetURL], e)
 	}

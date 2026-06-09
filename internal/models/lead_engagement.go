@@ -15,10 +15,18 @@ import "time"
 // action by one staff member via one account, taken from the Action
 // Ledger and enriched with operator identity for surfacing in the UI.
 type LeadEngagement struct {
-	UserID      int64     `json:"user_id"`     // 0 if account is unassigned
-	UserName    string    `json:"user_name"`   // "" if user_id == 0
+	UserID      int64     `json:"user_id"`     // al.created_by — the IMMUTABLE initiator; 0 = system/agent
+	UserName    string    `json:"user_name"`   // initiator name; "" if user_id == 0
 	AccountID   int64     `json:"account_id"`
 	AccountName string    `json:"account_name"`
+	// Facebook actor attribution (Lead Facebook Interaction Attribution). The
+	// account that actually performed the interaction — execution is OWNED even
+	// though the lead is SHARED. Observability only; no ownership/lock.
+	FBDisplayName string `json:"fb_display_name"`
+	FBProfileURL  string `json:"fb_profile_url"`
+	ActorVerdict  string `json:"actor_verdict"` // verified | mismatch | unknown | ""
+	ActorBlocked  bool   `json:"actor_blocked"`
+	Channel       string `json:"channel"` // "facebook"
 	Action      string    `json:"action"`      // comment | inbox | group_post | profile_post
 	TargetURL   string    `json:"target_url"`
 	Outcome     string    `json:"outcome"`     // queued | succeeded | failed | skipped

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { ActorVerdictChip } from '../ActorVerdictChip';
 import {
   clearActorBlock,
   deleteAllOutboundComments,
@@ -204,26 +205,9 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
   // matched the account's expected one. A `blocked` account (actor mismatch)
   // is denied further auto-execute until an operator clears it — that is the
   // integrity gate, not just a label. See pipeline doc §7b.
-  const actorVerdictChip = (a: ActorIdentity | undefined) => {
-    if (!a) return null;
-    if (a.actor_blocked) {
-      return (
-        <span className="tag tag-hot" title={lang === 'vi' ? 'Tài khoản bị chặn auto do sai danh tính FB — cần operator gỡ' : 'Account blocked from auto-execute on actor mismatch — operator must clear'}>
-          {lang === 'vi' ? '⚠ SAI ACTOR — ĐÃ CHẶN' : '⚠ ACTOR MISMATCH — BLOCKED'}
-        </span>
-      );
-    }
-    switch (a.actor_verdict) {
-      case 'verified':
-        return <span className="tag tag-ok" title={lang === 'vi' ? 'Danh tính FB khớp tài khoản kỳ vọng' : 'FB identity matched the expected account'}>{lang === 'vi' ? '✅ ĐÚNG ACTOR' : '✅ VERIFIED ACTOR'}</span>;
-      case 'mismatch':
-        return <span className="tag tag-hot">{lang === 'vi' ? '⚠ SAI ACTOR' : '⚠ ACTOR MISMATCH'}</span>;
-      case 'unknown':
-        return <span className="tag tag-mute" title={lang === 'vi' ? 'Chưa xác minh được danh tính FB' : 'FB identity not yet verifiable'}>{lang === 'vi' ? '❔ CHƯA XÁC MINH' : '❔ UNVERIFIED'}</span>;
-      default:
-        return null;
-    }
-  };
+  // Delegates to the shared ActorVerdictChip so Comment + Lead tabs never diverge.
+  const actorVerdictChip = (a: ActorIdentity | undefined) =>
+    a ? <ActorVerdictChip actorVerdict={a.actor_verdict} actorBlocked={a.actor_blocked} lang={lang} /> : null;
 
   // The only operator-driven row-level action left is delete. Approve
   // / reject went away with the draft/approval flow — every queued
