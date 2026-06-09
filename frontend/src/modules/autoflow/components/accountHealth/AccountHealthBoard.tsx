@@ -113,7 +113,7 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
             </div>
           ) : (
             accounts.map(a => (
-              <AccountHealthCard key={a.account_id} account={a} isAdmin={isAdmin}
+              <AccountHealthCard key={a.account_id} account={a} isAdmin={isAdmin} multiAccount={accounts.length > 1}
                 onClearBlock={accId => void handleClear(accId)} clearing={clearingId === a.account_id} />
             ))
           )}

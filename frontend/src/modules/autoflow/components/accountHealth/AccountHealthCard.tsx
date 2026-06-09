@@ -27,9 +27,10 @@ interface Props {
   isAdmin: boolean;
   onClearBlock?: (accountId: number) => void;
   clearing?: boolean;
+  multiAccount?: boolean;
 }
 
-export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: Props) {
+export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing, multiAccount }: Props) {
   const [showTech, setShowTech] = useState(false);
   const allReasons = Array.from(new Set(account.capabilities.flatMap(c => c.reasons ?? [])));
   const status = overallStatus(allReasons);
@@ -53,9 +54,12 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 5, display: 'flex', flexDirection: 'column', gap: 3 }}>
             {account.assigned_user_name && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><User size={12} /> Nhân viên: {account.assigned_user_name}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><User size={12} /> Người quản lý: {account.assigned_user_name}</span>
             )}
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Globe size={12} /> {profileLabel}</span>
+            {!account.machine_label && multiAccount && (
+              <span style={{ fontSize: 11, color: 'var(--text-faint)', paddingLeft: 17 }}>Đặt tên profile giúp dễ quản lý nhiều tài khoản.</span>
+            )}
           </div>
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color, background: `color-mix(in srgb, ${color} 12%, transparent)`, padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
