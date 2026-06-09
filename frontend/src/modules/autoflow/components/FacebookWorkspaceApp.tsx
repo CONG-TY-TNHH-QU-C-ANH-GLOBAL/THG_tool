@@ -162,7 +162,7 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       browser: t.nav.browser,
       // Inline label (PR-E) — kept out of the large i18n strings.ts god file per
       // the Engineering Guardrails (do not grow legacy large files).
-      health: 'Trạng thái tài khoản',
+      health: 'Kết nối Facebook',
       inbox: t.nav.inbox,
       posting: t.nav.posting,
       commenting: t.nav.commenting,

@@ -20,8 +20,8 @@ type ReasonBody = Omit<ReasonMessage, 'technical_code'>;
 const REASON_MESSAGES: Record<string, ReasonBody> = {
   connector_offline: {
     title: 'Chrome profile chưa kết nối',
-    description: 'Tài khoản này chưa có Chrome Extension online nên hệ thống chưa thể chạy tự động.',
-    action: 'Mở Chrome profile đã gắn với tài khoản này, đăng nhập Facebook và đảm bảo extension THG đang bật.',
+    description: 'Tài khoản này chưa có Chrome sẵn sàng nên hệ thống chưa thể chạy tự động.',
+    action: 'Mở Chrome profile đã gắn với tài khoản này, đăng nhập Facebook và đảm bảo THG Connector đang bật.',
     severity: 'blocked',
   },
   actor_identity_unknown: {
@@ -37,27 +37,27 @@ const REASON_MESSAGES: Record<string, ReasonBody> = {
     severity: 'blocked',
   },
   extension_version_outdated: {
-    title: 'Extension cần cập nhật',
-    description: 'Phiên bản THG Chrome Extension đang cũ nên không đủ điều kiện chạy automation.',
-    action: 'Reload hoặc cập nhật extension lên phiên bản mới nhất.',
+    title: 'Công cụ THG cần cập nhật',
+    description: 'Phiên bản THG Connector đang cũ nên không đủ điều kiện chạy tự động hoá.',
+    action: 'Reload hoặc cập nhật THG Connector lên phiên bản mới nhất.',
     severity: 'warning',
   },
   account_cooldown_active: {
     title: 'Tài khoản đang nghỉ an toàn',
     description: 'Hệ thống tạm nghỉ tài khoản này để tránh thao tác quá dày trên Facebook.',
-    action: 'Chờ hết thời gian nghỉ hoặc kiểm tra lịch chạy.',
+    action: 'Chờ hết thời gian nghỉ để tránh thao tác quá dày trên Facebook.',
     severity: 'waiting',
   },
   risk_ceiling_exceeded: {
     title: 'Tài khoản đang ở chế độ bảo vệ',
     description: 'Tài khoản có nhiều lỗi gần đây nên hệ thống tạm dừng để bảo vệ uy tín tài khoản.',
-    action: 'Kiểm tra lỗi gần đây, chờ hệ thống hồi phục hoặc admin reset risk nếu đã xác minh an toàn.',
+    action: 'Kiểm tra lỗi gần đây hoặc chờ hệ thống hồi phục.',
     severity: 'blocked',
   },
   daily_limit_exceeded: {
     title: 'Đã đạt giới hạn hôm nay',
     description: 'Tài khoản đã dùng hết số lượt hành động cho hôm nay.',
-    action: 'Chờ sang ngày mới hoặc admin điều chỉnh giới hạn nếu cần.',
+    action: 'Tài khoản sẽ tiếp tục vào ngày mai hoặc admin điều chỉnh giới hạn.',
     severity: 'waiting',
   },
 };

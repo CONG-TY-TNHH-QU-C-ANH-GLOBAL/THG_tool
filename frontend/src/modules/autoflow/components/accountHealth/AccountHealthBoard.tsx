@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { clearActorBlock, getAccountReadiness } from '../../services/accountHealthService';
+import { getSystemInfo, type SystemInfo } from '../../services/systemService';
 import type { AccountReadiness } from './types';
 import { overallStatus, severityLabel, type Severity } from './reasonMessages';
 import { AccountHealthCard } from './AccountHealthCard';
+import { FacebookConnectionWizard } from './FacebookConnectionWizard';
 
 interface Props { orgId: string; isAdmin: boolean; }
 
@@ -19,6 +21,8 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<number | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +37,7 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
   }, []);
 
   useEffect(() => { void load(); }, [load, orgId]);
+  useEffect(() => { getSystemInfo().then(setSystemInfo).catch(() => setSystemInfo(null)); }, []);
 
   const handleClear = async (accountId: number) => {
     setClearingId(accountId);
@@ -56,16 +61,29 @@ export default function AccountHealthBoard({ orgId, isAdmin }: Props) {
     <div style={{ padding: 'var(--s-4)', display: 'flex', flexDirection: 'column', gap: 'var(--s-4)' }}>
       <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div className="eyebrow"><span className="dot" />SỨC KHOẺ TÀI KHOẢN</div>
-          <h2 style={{ fontSize: 28, marginTop: 8 }}>Trạng thái tài khoản</h2>
-          <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6 }}>
-            Mỗi tài khoản bán hàng đang sẵn sàng hay gặp vấn đề gì — và bạn cần làm gì tiếp theo.
+          <div className="eyebrow"><span className="dot" />FACEBOOK BÁN HÀNG</div>
+          <h2 style={{ fontSize: 28, marginTop: 8 }}>Kết nối Facebook bán hàng</h2>
+          <p style={{ color: 'var(--text-mute)', fontSize: 13.5, marginTop: 6, maxWidth: 640 }}>
+            Kết nối Facebook của nhân viên để agent có thể tìm lead, bình luận, inbox và đăng bài theo quyền được cấp. THG không lưu mật khẩu Facebook.
           </p>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw size={13} className={loading ? 'spin' : ''} /> Làm mới
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw size={13} className={loading ? 'spin' : ''} /> Làm mới
+          </button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setWizardOpen(true)}>
+            <Plus size={14} /> Kết nối Facebook mới
+          </button>
+        </div>
       </header>
+
+      {wizardOpen && (
+        <FacebookConnectionWizard
+          systemInfo={systemInfo}
+          onClose={() => setWizardOpen(false)}
+          onConnected={() => void load()}
+        />
+      )}
 
       <div className="card" style={{ display: 'flex', gap: 'var(--s-5)', padding: 'var(--s-3) var(--s-5)', flexWrap: 'wrap' }}>
         {SUMMARY_ORDER.map(sev => (
