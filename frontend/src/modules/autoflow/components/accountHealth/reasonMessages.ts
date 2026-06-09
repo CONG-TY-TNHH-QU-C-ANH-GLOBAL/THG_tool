@@ -37,7 +37,7 @@ const REASON_MESSAGES: Record<string, ReasonBody> = {
     severity: 'blocked',
   },
   extension_version_outdated: {
-    title: 'Công cụ THG cần cập nhật',
+    title: 'Extension cần cập nhật',
     description: 'Phiên bản THG Connector đang cũ nên không đủ điều kiện chạy tự động hoá.',
     action: 'Reload hoặc cập nhật THG Connector lên phiên bản mới nhất.',
     severity: 'warning',
@@ -76,7 +76,7 @@ const REASON_PRIORITY: string[] = [
 const FALLBACK: ReasonBody = {
   title: 'Cần kiểm tra tài khoản',
   description: 'Hệ thống phát hiện một trạng thái cần kiểm tra ở tài khoản này.',
-  action: 'Mở chi tiết tài khoản hoặc liên hệ admin để kiểm tra.',
+  action: 'Làm mới trạng thái hoặc liên hệ admin để kiểm tra.',
   severity: 'warning',
 };
 

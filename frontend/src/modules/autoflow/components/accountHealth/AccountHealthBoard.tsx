@@ -28,6 +28,7 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [defaultAccountId, setDefaultId] = useState(0);
   const [settingDefault, setSettingDefault] = useState(false);
+  const [actionMsg, setActionMsg] = useState<{ tone: 'ok' | 'hot'; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,15 +48,17 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
 
   const handleClear = async (accountId: number) => {
     setClearingId(accountId);
-    try { await clearActorBlock(accountId); await load(); }
-    catch { /* surfaced on next load */ }
+    setActionMsg(null);
+    try { await clearActorBlock(accountId); await load(); setActionMsg({ tone: 'ok', text: 'Đã gỡ chặn tài khoản.' }); }
+    catch (e) { setActionMsg({ tone: 'hot', text: e instanceof Error ? e.message : 'Không gỡ chặn được — thử lại hoặc liên hệ admin.' }); }
     finally { setClearingId(null); }
   };
 
   const handleSetDefault = async (accountId: number) => {
     setSettingDefault(true);
-    try { setDefaultId(await setDefaultAccountId(accountId)); }
-    catch { /* no-op */ }
+    setActionMsg(null);
+    try { setDefaultId(await setDefaultAccountId(accountId)); setActionMsg({ tone: 'ok', text: 'Đã đặt làm tài khoản mặc định.' }); }
+    catch (e) { setActionMsg({ tone: 'hot', text: e instanceof Error ? e.message : 'Không đặt được tài khoản mặc định — thử lại.' }); }
     finally { setSettingDefault(false); }
   };
 
@@ -94,6 +97,12 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
           <span style={{ fontSize: 13 }}>{error}</span>
         </div>
       )}
+      {actionMsg && (
+        <div className={`banner banner-${actionMsg.tone === 'ok' ? 'ok' : 'hot'}`} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 13 }}>{actionMsg.text}</span>
+          <button type="button" style={{ background: 'transparent', border: 0, cursor: 'pointer', color: 'var(--text-mute)', fontSize: 12 }} onClick={() => setActionMsg(null)}>Đóng</button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 'var(--s-4)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: '2 1 440px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--s-3)' }}>
@@ -108,8 +117,17 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
           {loading && accounts.length === 0 ? (
             <div style={{ color: 'var(--text-mute)', fontSize: 13, padding: 'var(--s-4)' }}>Đang tải trạng thái tài khoản…</div>
           ) : accounts.length === 0 ? (
-            <div className="card" style={{ padding: 'var(--s-5)', textAlign: 'center', color: 'var(--text-mute)', fontSize: 13.5 }}>
-              Chưa có tài khoản nào. Bấm “Kết nối Facebook mới” để bắt đầu.
+            <div className="card" style={{ padding: 'var(--s-6, var(--s-5))', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              <Plus size={28} color="var(--text-faint)" />
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Chưa có Facebook nào được kết nối</div>
+                <p style={{ fontSize: 13, color: 'var(--text-mute)', marginTop: 6, maxWidth: 420 }}>
+                  Kết nối Facebook đầu tiên để agent có thể tìm lead, bình luận, inbox và đăng bài theo quyền được cấp.
+                </p>
+              </div>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setWizardOpen(true)}>
+                <Plus size={14} /> Kết nối Facebook mới
+              </button>
             </div>
           ) : (
             accounts.map(a => (
