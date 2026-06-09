@@ -850,6 +850,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // no comment can submit a doubled/mismatched composer.
     const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
       executorPath: permalinkPage ? 'permalink_page' : 'permalink_article',
+      outboundId: opts.outboundId || 0,
       clickLikeUser, editorContainsContent, waitFor, wait, submitDeps,
     });
     if (!sm.ok) {
@@ -1205,6 +1206,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // group-feed executor can never diverge or submit a doubled/mismatched composer.
     const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
       executorPath: 'group_feed',
+      outboundId: Number(message?.id || message?.outbound_id || 0) || 0,
       clickLikeUser, editorContainsContent, waitFor, wait, submitDeps,
     });
     if (!sm.ok) {
@@ -1326,6 +1328,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const navOpts = {
       accountId: Number(message?.account_id || message?.accountId || 0) || 0,
       navTrace: message?.nav_trace || null,
+      outboundId: Number(message?.id || message?.outbound_id || 0) || 0,
     };
     if (type === 'comment') return executeComment(content, targetUrl, executionId, navOpts);
     if (type === 'inbox') return executeInbox(content, executionId);
