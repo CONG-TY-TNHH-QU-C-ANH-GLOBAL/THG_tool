@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Monitor, ShieldAlert, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Globe, Monitor, ShieldAlert, Wrench } from 'lucide-react';
 import type { AccountReadiness } from './types';
 import { CAPABILITY_LABELS } from './types';
 import { mapReason, overallStatus, type Severity } from './reasonMessages';
@@ -34,8 +34,11 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
   const allReasons = Array.from(new Set(account.capabilities.flatMap(c => c.reasons ?? [])));
   const status = overallStatus(allReasons);
   const color = SEVERITY_COLOR[status.severity];
-  const identity = account.fb_display_name || account.account_name || `Tài khoản #${account.account_id}`;
-  const profile = account.machine_label || (account.browser_profile_id ? `Profile ${account.browser_profile_id.slice(0, 8)}` : '');
+  const identity = account.fb_display_name || account.account_name
+    || (account.fb_user_id ? `FB ${account.fb_user_id}` : `Tài khoản #${account.account_id}`);
+  // Customer-friendly Chrome profile line — the human label (set at pairing) or a
+  // plain "chưa đặt tên". Raw ids/version live under "Chi tiết kỹ thuật".
+  const profileLabel = account.machine_label || 'Chrome profile chưa đặt tên';
   const isActorBlocked = allReasons.includes('actor_mismatch_blocked');
 
   return (
@@ -46,10 +49,8 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
             <Monitor size={15} color="var(--text-mute)" />
             <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>{identity}</span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 4 }}>
-            {account.fb_user_id ? <span className="mono">FB {account.fb_user_id}</span> : 'Chưa có Facebook ID'}
-            {profile && <> · {profile}</>}
-            {account.extension_version && <> · Ext {account.extension_version}</>}
+          <div style={{ fontSize: 12, color: 'var(--text-mute)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Globe size={12} /> {profileLabel}
           </div>
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color, background: `color-mix(in srgb, ${color} 12%, transparent)`, padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -106,6 +107,7 @@ export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing }: 
               <div>account_id: {account.account_id}</div>
               <div>connector_id: {account.connector_id || '—'}</div>
               <div>fb_user_id: {account.fb_user_id || '—'}</div>
+              <div>browser_profile_id: {account.browser_profile_id || '—'}</div>
               <div>extension_version: {account.extension_version || '—'}</div>
               <div>reason_codes: {allReasons.length ? allReasons.join(', ') : 'ready'}</div>
             </div>
