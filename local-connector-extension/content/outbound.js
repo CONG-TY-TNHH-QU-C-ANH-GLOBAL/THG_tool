@@ -236,50 +236,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // THGCommentGuard.prepareComposerForComment + assertComposerExactlyExpected — so
   // every comment path shares one guard and none can diverge.)
 
-  function pressEnter(editor) {
-    if (!editor) return false;
-    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) {} }
-    const init = {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-      composed: true
-    };
-    try {
-      editor.dispatchEvent(new KeyboardEvent('keydown', init));
-      editor.dispatchEvent(new KeyboardEvent('keypress', init));
-      editor.dispatchEvent(new KeyboardEvent('keyup', init));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
+  // (pressEnter + the submit-button finder moved to content/comment_submit.js —
+  // THGCommentSubmit. Shared DOM predicates are threaded in via submitDeps below.)
 
   function enabledButton(el) {
     return el && el.getAttribute?.('aria-disabled') !== 'true' && !el.disabled;
   }
 
-  function rejectActionLabel(label) {
-    return hasAny(label, [
-      'share', 'like', 'cancel', 'photo', 'gif', 'emoji', 'sticker', 'anh', 'huy', 'thich', 'chia se',
-      // PR8D: Vietnamese composer-toolbar icon labels. FB renders aria-labels in
-      // the UI locale, so the English-only list above let the sticker/avatar/
-      // emoji/camera icons (next to the editor) pass as spatial submit
-      // candidates — clicking them opened the "Avatar của bạn" picker (the "bị
-      // mò" groping). norm() strips diacritics, so these are the stripped forms.
-      'nhan dan',           // nhãn dán = sticker
-      'bieu tuong cam xuc', // biểu tượng cảm xúc = emoji
-      'cam xuc',            // shorter emoji variants
-      'avatar',
-      'may anh',            // máy ảnh = camera
-      'hinh anh',           // hình ảnh = image
-      'dinh kem',           // đính kèm = attach
-      'tep', 'tap tin',     // tệp / tập tin = file
-    ]);
-  }
+  // submitDeps threads outbound.js's shared DOM predicates into the extracted
+  // THGCommentSubmit module (which owns findSubmitButtons / pressEnter / the reject
+  // list) — keeps those primitives DRY without polluting globals.
+  const submitDeps = { labelOf, norm, hasAny, visible, enabledButton };
 
   // extractPostIdFromUrl pulls the canonical Facebook post identifier
   // out of a target URL. Returns "" when the URL is missing or shaped
@@ -561,70 +528,9 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return null;
   }
 
-  function submitScore(editor, button) {
-    const er = editor.getBoundingClientRect();
-    const br = button.getBoundingClientRect();
-    const ey = er.top + er.height / 2;
-    const by = br.top + br.height / 2;
-    let score = Math.abs(ey - by) + Math.max(0, er.left - br.left) / 3;
-    const label = labelOf(button);
-    const text = norm(button.innerText || '');
-    if (!text) score -= 20;
-    if (text && hasAny(text, ['comment', 'binh luan'])) score += 80;
-    if (!hasAny(label, ['comment', 'post', 'send', 'binh luan', 'dang', 'gui'])) score += 100;
-    return score;
-  }
-
-  function submitCandidateSpatial(editor, button) {
-    const er = editor.getBoundingClientRect();
-    const br = button.getBoundingClientRect();
-    const verticallyNear = br.bottom >= er.top - 28 && br.top <= er.bottom + 42;
-    const toRight = br.left >= er.left - 10;
-    const compact = br.width <= 110 && br.height <= 72;
-    return verticallyNear && toRight && compact;
-  }
-
-  function findSubmitButtons(editor, excluded = []) {
-    const submitKeys = ['comment', 'post', 'send', 'binh luan', 'dang', 'gui'];
-    const scopes = [];
-    const form = editor.closest('form');
-    if (form) scopes.push(form);
-    let parent = editor.parentElement;
-    for (let i = 0; parent && i < 8; i += 1) {
-      scopes.push(parent);
-      parent = parent.parentElement;
-    }
-    scopes.push(editor.closest('[role="dialog"], [role="article"]') || document);
-    const seen = new Set(excluded.filter(Boolean));
-    const candidates = [];
-    for (const scope of scopes) {
-      if (!scope) continue;
-      for (const el of Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]'))) {
-        if (seen.has(el)) continue;
-        seen.add(el);
-        const label = labelOf(el);
-        const hasSubmitLabel = hasAny(label, submitKeys);
-        const spatial = submitCandidateSpatial(editor, el);
-        if (!visible(el) || !enabledButton(el)) continue;
-        if (label && rejectActionLabel(label)) continue;
-        if (!hasSubmitLabel && !spatial) continue;
-        if (el === editor || el.contains(editor)) continue;
-        candidates.push(el);
-      }
-      if (candidates.length >= 3) break;
-    }
-    // PR8D: partition by confidence and try LABELED submit buttons first. The
-    // real send control carries a positive aria-label ("Bình luận"/"Gửi"/
-    // "Comment"/"Send"). Spatial-only candidates are toolbar icons near the
-    // editor — we try them ONLY if no labeled button cleared the composer, so
-    // the executor never clicks the sticker/avatar icon first (the groping that
-    // opened the avatar picker while the comment still posted via a later click).
-    const labeled = candidates.filter(el => hasAny(labelOf(el), submitKeys));
-    const spatialOnly = candidates.filter(el => !hasAny(labelOf(el), submitKeys));
-    labeled.sort((a, b) => submitScore(editor, a) - submitScore(editor, b));
-    spatialOnly.sort((a, b) => submitScore(editor, a) - submitScore(editor, b));
-    return labeled.concat(spatialOnly).slice(0, 5);
-  }
+  // (submitScore / submitCandidateSpatial / findSubmitButtons moved to
+  // content/comment_submit.js — THGCommentSubmit.findSubmitButtons(editor, excluded,
+  // submitDeps).)
 
   // probeCommentGates inspects the live DOM ONCE and reports the three PR8A
   // pre-comment signals for the target post WITHOUT mutating anything:
@@ -957,7 +863,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     }
 
     // PR8A: text is in the composer AND equals expected — SUBMIT phase.
-    const submitButtons = findSubmitButtons(editor, [commentButton]);
+    const submitButtons = THGCommentSubmit.findSubmitButtons(editor, [commentButton], submitDeps);
     for (const submit of submitButtons) {
       if (submit && clickLikeUser(submit)) {
         const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
@@ -973,7 +879,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       await wait(400);
     }
 
-    if (pressEnter(editor)) {
+    if (THGCommentSubmit.pressEnter(editor)) {
       const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
       if (cleared) {
         await wait(700);
@@ -1343,7 +1249,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         'path2.pre_submit_verify.' + r + ': ' + JSON.stringify(presub) + ' · target id=' + abbreviate(targetPostId));
     }
 
-    const submitButtons = findSubmitButtons(editor, [commentButton]);
+    const submitButtons = THGCommentSubmit.findSubmitButtons(editor, [commentButton], submitDeps);
     for (const submit of submitButtons) {
       if (submit && clickLikeUser(submit)) {
         const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
@@ -1357,7 +1263,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       await wait(400);
     }
 
-    if (pressEnter(editor)) {
+    if (THGCommentSubmit.pressEnter(editor)) {
       const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
       if (cleared) {
         await wait(700);

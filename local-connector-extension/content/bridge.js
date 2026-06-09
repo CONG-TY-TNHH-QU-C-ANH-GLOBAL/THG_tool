@@ -98,14 +98,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         THGExecDedup.markActive(execId);
         const work = (async () => {
-          if (type === 'thg_execute_outbound') {
-            return THGContentOutbound.executeOutbound(message.message || {});
-          }
-          if (type === 'thg_comment_in_group_feed') {
-            return THGContentOutbound.executeCommentInFeed(message.message || {});
-          }
-          if (type === 'thg_comment_via_rung2') {
-            return THGContentOutbound.executeCommentViaRung2(message.message || {});
+          // Single comment entrypoint (Browser Automation Kit extraction).
+          if (type === 'thg_execute_outbound' || type === 'thg_comment_in_group_feed' || type === 'thg_comment_via_rung2') {
+            return THGCommentExecutor.execute(type, message.message || {});
           }
           return thgExecuteCommand(message.command || {});
         })();
