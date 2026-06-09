@@ -844,56 +844,23 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       }
     }
 
-    // Identity locked. Composer prep (clear → insert → stabilise → equality) is
-    // owned by THGCommentGuard so no path can submit a doubled/mismatched composer.
-    const prep = await THGCommentGuard.prepareComposerForComment(editor, content);
-    if (!prep.ok) {
-      return commentResult(false, prep.reason, null, ctx,
-        'typing.' + prep.reason + ': ' + JSON.stringify(prep.diagnostic) + ' · target id=' + abbreviate(targetPostId || '<none>'),
-        navDiagFor(prep.reason, 'typing', probeCommentGates(targetPostId), ctxInfo));
+    // Identity locked. The composer→submit STATE MACHINE (THGCommentSM) owns the
+    // whole "clear → insert → assert exactly equals → submit (re-asserting before
+    // each click) → composer-cleared" path, shared with the group-feed executor, so
+    // no comment can submit a doubled/mismatched composer.
+    const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
+      executorPath: permalinkPage ? 'permalink_page' : 'permalink_article',
+      clickLikeUser, editorContainsContent, waitFor, wait, submitDeps,
+    });
+    if (!sm.ok) {
+      return commentResult(false, sm.reason, null, ctx,
+        'sm.' + sm.reason + ': ' + JSON.stringify(sm.diagnostic) + ' · target id=' + abbreviate(targetPostId || '<none>'),
+        navDiagFor(sm.reason, sm.diagnostic.phase || 'submit', probeCommentGates(targetPostId), ctxInfo));
     }
-    // HARD pre-submit block: composer MUST equal the queued content exactly.
-    const presub = THGCommentGuard.assertComposerExactlyExpected(editor, content);
-    if (!presub.ok) {
-      await THGCommentGuard.clearComposerUntilEmpty(editor);
-      const r = presub.duplicate ? 'comment_text_doubled' : 'comment_text_mismatch';
-      return commentResult(false, r, null, ctx,
-        'pre_submit_verify.' + r + ': ' + JSON.stringify(presub) + ' · target id=' + abbreviate(targetPostId || '<none>'),
-        navDiagFor(r, 'pre_submit_verify', probeCommentGates(targetPostId), ctxInfo));
-    }
-
-    // PR8A: text is in the composer AND equals expected — SUBMIT phase.
-    const submitButtons = THGCommentSubmit.findSubmitButtons(editor, [commentButton], submitDeps);
-    for (const submit of submitButtons) {
-      if (submit && clickLikeUser(submit)) {
-        const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
-        if (cleared) {
-          // Settle delay — give the DOM a moment to render the new comment
-          // node before we walk it for proof. Without this, the verifier
-          // often misses the node and downgrades to optimistic_success.
-          await wait(700);
-          return commentResult(true, '', 'sent_comment_button', ctx, '',
-            navDiagFor('post_submit', 'verify', probeCommentGates(targetPostId), ctxInfo));
-        }
-      }
-      await wait(400);
-    }
-
-    if (THGCommentSubmit.pressEnter(editor)) {
-      const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
-      if (cleared) {
-        await wait(700);
-        return commentResult(true, '', 'sent_comment_enter', ctx, '',
-          navDiagFor('post_submit', 'verify', probeCommentGates(targetPostId), ctxInfo));
-      }
-    }
-
-    return commentResult(false,
-      submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found',
-      null, ctx,
-      'submit.not_cleared: composer still held our content after ' + submitButtons.length +
-      ' submit-button click(s) + Enter · target id=' + abbreviate(targetPostId || '<none>'),
-      navDiagFor('submit_not_cleared', 'submit', probeCommentGates(targetPostId), ctxInfo));
+    // Submit accepted (composer cleared). Settle so the proof verifier sees the new node.
+    await wait(700);
+    return commentResult(true, '', 'sent_comment', ctx, 'sm.sent: ' + JSON.stringify(sm.diagnostic),
+      navDiagFor('post_submit', 'verify', probeCommentGates(targetPostId), ctxInfo));
   }
 
   // abbreviate keeps identity-gate failure notes short. pfbid tokens run
@@ -1234,51 +1201,19 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         ' landed_at=' + landed);
     }
 
-    // Composer prep + HARD equality via the SAME shared guard as executeComment, so
-    // the group-feed path can never again diverge and submit a doubled composer.
-    const prep = await THGCommentGuard.prepareComposerForComment(editor, content);
-    if (!prep.ok) {
-      return commentResult(false, prep.reason, null, ctx,
-        'path2.' + prep.reason + ': ' + JSON.stringify(prep.diagnostic) + ' · target id=' + abbreviate(targetPostId));
+    // Same composer→submit STATE MACHINE as executeComment — one shared path, so the
+    // group-feed executor can never diverge or submit a doubled/mismatched composer.
+    const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
+      executorPath: 'group_feed',
+      clickLikeUser, editorContainsContent, waitFor, wait, submitDeps,
+    });
+    if (!sm.ok) {
+      return commentResult(false, sm.reason, null, ctx,
+        'path2.' + sm.reason + ': ' + JSON.stringify(sm.diagnostic) + ' · target id=' + abbreviate(targetPostId));
     }
-    const presub = THGCommentGuard.assertComposerExactlyExpected(editor, content);
-    if (!presub.ok) {
-      await THGCommentGuard.clearComposerUntilEmpty(editor);
-      const r = presub.duplicate ? 'comment_text_doubled' : 'comment_text_mismatch';
-      return commentResult(false, r, null, ctx,
-        'path2.pre_submit_verify.' + r + ': ' + JSON.stringify(presub) + ' · target id=' + abbreviate(targetPostId));
-    }
-
-    const submitButtons = THGCommentSubmit.findSubmitButtons(editor, [commentButton], submitDeps);
-    for (const submit of submitButtons) {
-      if (submit && clickLikeUser(submit)) {
-        const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
-        if (cleared) {
-          await wait(700);
-          return commentResult(true, '', 'sent_comment_button',
-            { ...ctx, /* attach success note via 5th arg below */ },
-            'path2.comment_success: target id=' + abbreviate(targetPostId) + ' via=submit_button');
-        }
-      }
-      await wait(400);
-    }
-
-    if (THGCommentSubmit.pressEnter(editor)) {
-      const cleared = await waitFor(() => !editorContainsContent(editor, content), 7000, 250);
-      if (cleared) {
-        await wait(700);
-        return commentResult(true, '', 'sent_comment_enter', ctx,
-          'path2.comment_success: target id=' + abbreviate(targetPostId) + ' via=enter_key');
-      }
-    }
-
-    return commentResult(false,
-      submitButtons.length ? 'comment_submit_not_confirmed' : 'comment_submit_not_found',
-      null, ctx,
-      'path2.article_found_comment_opened_submit_failed: target id=' + abbreviate(targetPostId) +
-      ' submit_candidates=' + submitButtons.length +
-      ' typed=' + content.length + 'chars' +
-      ' (text inserted into editor but submit click + enter both did not clear editor within 7s)');
+    await wait(700);
+    return commentResult(true, '', 'sent_comment', ctx,
+      'path2.comment_success: target id=' + abbreviate(targetPostId) + ' · ' + JSON.stringify(sm.diagnostic));
   }
 
   // probeRung2Click implements the content-script half of the Rung-2 probe.
