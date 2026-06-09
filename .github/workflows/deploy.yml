@@ -1,5 +1,12 @@
 name: Deploy to Server
 
+# Serialize deploys: back-to-back pushes trigger overlapping Deploy runs that race
+# on the same /tmp/scraper scp target → "tar: scraper: Cannot open: Permission
+# denied". Queue them (never cancel an in-flight deploy mid-`sudo mv`).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 on:
   workflow_run:
     workflows: ["CI"]
