@@ -147,7 +147,7 @@ var THGCommands = globalThis.THGCommands || (() => {
     const tabOpts = { url: navigateTo, active: true };
     if (crawlWinId) tabOpts.windowId = crawlWinId;
     const tab = await chrome.tabs.create(tabOpts);
-    if (reuse) THGAutomationTab.remember(tab && tab.id);
+    if (reuse) await THGAutomationTab.remember(tab && tab.id);
     if (tab?.windowId) {
       // Window Respect (PR-2): focus only — do NOT force state:'normal' over a
       // maximized/fullscreen window (that snaps it to half-screen). A maximized
@@ -213,8 +213,12 @@ var THGCommands = globalThis.THGCommands || (() => {
         };
       }
       console.warn(`[THGCommands] navigate verify failed attempt ${attempt}: expected=${navigateTo} actual=${tab?.url || 'unknown'}`);
-      // Close failed attempt's tab before retrying so we don't accumulate tabs.
-      try { await chrome.tabs.remove(info.tab.id); } catch { /* ignore */ }
+      // Close the failed attempt's tab before retrying so temp crawl tabs don't
+      // accumulate — EXCEPT the persistent automation tab (reuseTab), which must
+      // stay open for the user / evidence and is simply re-navigated next attempt.
+      if (opts.reuseTab !== true) {
+        try { await chrome.tabs.remove(info.tab.id); } catch { /* ignore */ }
+      }
       await THGShared.delay(3000);
     }
     // Surface the last actual landed URL + total duration so the caller can

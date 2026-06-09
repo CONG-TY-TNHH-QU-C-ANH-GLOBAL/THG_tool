@@ -555,10 +555,11 @@ var THGOutbox = globalThis.THGOutbox || (() => {
   //   helper inherits the crawler's proven nav profile: 3 retries,
   //   5000ms SPA settle, URL verification, close-tab-on-fail.
   //
-  // Tab lifecycle: the tab created by navigateAndVerify is temporary.
-  // We acquire the per-tab execution lock, dispatch the command, then
-  // close the tab in finally so a 10-comment daily batch doesn't leak
-  // 10 dangling tabs into the FB window.
+  // Tab lifecycle (PR-2 + PR-2.1): comment execution reuses ONE persistent
+  // automation tab per connector (reuseTab:true → THGAutomationTab). A 10-comment
+  // batch runs on a single tab the user can watch; the tab is NOT closed/minimized
+  // after execution (Window Respect). We still acquire the per-tab execution lock
+  // before dispatching so two comments never run in the same tab concurrently.
   async function executeInFacebookTab(message) {
     const targetUrl = targetUrlForMessage(message);
     if (!targetUrl) throw new Error('outbox target URL is empty');
@@ -569,8 +570,9 @@ var THGOutbox = globalThis.THGOutbox || (() => {
 
     // ─── COMMENT DELIVERY — SINGLE PATH: navigate directly to the post ──
     // Comments fall straight through to the generic crawler-nav path below:
-    // navigateAndVerify(targetUrl) opens a FRESH tab ON THE POST PERMALINK
-    // using the crawler's proven chrome.tabs.create + retry + settle flow,
+    // navigateAndVerify(targetUrl, { reuseTab:true }) navigates the PERSISTENT
+    // automation tab to the post permalink (reusing it across the batch; creating
+    // one only if none is alive), using the crawler's proven retry + settle flow,
     // then thg_execute_outbound runs executeComment on that loaded page — the
     // content script only types/submits, it never navigates. That avoids BOTH
     // dead ends we have now ruled out by telemetry:
