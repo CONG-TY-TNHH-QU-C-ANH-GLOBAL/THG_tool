@@ -66,8 +66,12 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
   // clearComposerUntilEmpty: FB/Lexical can restore a draft after a single delete.
   // Clear, then require the editor to stay empty for stableMs before declaring it
   // clear; repeat up to maxRounds. Returns { ok, rounds }.
-  async function clearComposerUntilEmpty(composer, { maxRounds = 6, stableMs = 800 } = {}) {
+  async function clearComposerUntilEmpty(composer, { maxRounds = 8, stableMs = 1000, settleMs = 600 } = {}) {
     try { composer.focus({ preventScroll: true }); } catch (_) { try { composer.focus(); } catch (_) {} }
+    // FB persists a per-post comment draft and re-mounts it into the Lexical editor
+    // state on focus/mount — let that fire FIRST so we clear the RESTORED draft
+    // instead of racing it (the draft that innerText may not show until it commits).
+    await wait(settleMs);
     for (let i = 0; i < maxRounds; i += 1) {
       if (readComposerText(composer).length === 0) {
         await wait(stableMs);
@@ -75,8 +79,12 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
       }
       selectAllIn(composer);
       try { document.execCommand('delete', false, null); } catch (_) {}
+      // Belt + braces for Lexical: a full-selection insertText('') replace clears
+      // editor-state content a plain delete can leave behind.
+      selectAllIn(composer);
+      try { document.execCommand('insertText', false, ''); } catch (_) {}
       try { composer.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
-      await wait(180);
+      await wait(200);
     }
     return { ok: readComposerText(composer).length === 0, rounds: maxRounds };
   }
@@ -104,7 +112,7 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
     diag.composer_empty_stable = cleared.ok;
     if (!cleared.ok) return { ok: false, reason: 'composer_clear_failed', diagnostic: diag };
 
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       diag.insert_attempts = attempt;
       insertTextInto(composer, expected);
       await waitForStableComposerText(composer);
@@ -112,9 +120,20 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
       diag.composer_after_insert_length = check.actual_length;
       diag.composer_after_insert_equals_expected = check.ok;
       diag.composer_after_insert_is_duplicate_of_expected = check.duplicate;
-      if (check.ok) return { ok: true, diagnostic: diag };
       if (check.mismatch) return { ok: false, reason: 'comment_text_mismatch', diagnostic: diag };
-      // duplicate → clear and retry once
+      if (check.ok) {
+        // LATE-RESTORE GUARD: FB can re-mount the per-post draft a beat AFTER the
+        // composer stabilised — the innerText-vs-Lexical-model race that let A+A
+        // reach submit. Wait an extra settle and RE-ASSERT; only return ok if it
+        // STAYS single. If it doubled late, clear + retry.
+        await wait(900);
+        const late = assertComposerExactlyExpected(composer, expected);
+        diag.composer_after_settle_length = late.actual_length;
+        diag.composer_after_settle_is_duplicate_of_expected = late.duplicate;
+        if (late.ok) return { ok: true, diagnostic: diag };
+        if (late.mismatch) return { ok: false, reason: 'comment_text_mismatch', diagnostic: diag };
+      }
+      // duplicate (immediate or late) → clear and retry
       await clearComposerUntilEmpty(composer);
     }
     return { ok: false, reason: 'comment_text_doubled', diagnostic: diag };

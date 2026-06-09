@@ -76,12 +76,16 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
     diag.composer_cleared_after_submit = cleared;
 
     if (!clicked) {
+      // Clear so no text is left for FB to save as a draft that doubles next attempt.
+      await G.clearComposerUntilEmpty(editor);
       diag.phase = diag.submit_button_found ? 'submit_click_failed' : 'submit_button_not_found';
       return { ok: false, reason: diag.phase, diagnostic: diag };
     }
     if (!cleared) {
       // Submitted but composer never cleared → NOT accepted. NOT hidden_by_facebook
-      // (no evidence FB accepted then hid it — invariant #4).
+      // (no evidence FB accepted then hid it — invariant #4). Clear so the leftover
+      // text can't become FB's restored draft (the A+A source) on the next attempt.
+      await G.clearComposerUntilEmpty(editor);
       diag.phase = 'submit_not_accepted';
       return { ok: false, reason: 'submit_not_accepted', diagnostic: diag };
     }
