@@ -328,16 +328,25 @@ func friendlySkipReasons(reasons map[string]int) string {
 		return "không đủ điều kiện"
 	}
 	label := map[string]string{
-		"no_target_url":          "thiếu link bài viết",
-		"empty_content":          "không soạn được nội dung",
-		"generation_failed":      "lỗi soạn nội dung",
-		"comment_quality_invalid": "không đạt kiểm tra chất lượng",
-		"comment_multiple_urls":  "comment có nhiều liên kết",
-		"comment_unsupported_contact": "comment có liên hệ chưa xác minh",
-		"account_cooldown_active": "tài khoản đang nghỉ an toàn",
-		"daily_limit_exceeded":   "đã đạt giới hạn hôm nay",
-		"risk_ceiling_exceeded":  "tài khoản đang ở chế độ bảo vệ",
-		"actor_mismatch_blocked": "tài khoản đăng nhập nhầm Facebook",
+		"no_target_url":                  "thiếu link bài viết",
+		"missing_target_url":             "thiếu link bài viết",
+		"empty_content":                  "không soạn được nội dung",
+		"generation_failed":              "lỗi soạn nội dung",
+		"comment_quality_invalid":        "không đạt kiểm tra chất lượng",
+		"comment_quality_duplicate_text": "nội dung bị lặp",
+		"comment_multiple_urls":          "comment có nhiều liên kết",
+		"comment_unsupported_contact":    "comment có liên hệ chưa xác minh",
+		"account_cooldown_active":        "tài khoản đang nghỉ an toàn",
+		"daily_limit_exceeded":           "đã đạt giới hạn hôm nay",
+		"risk_ceiling_exceeded":          "tài khoản đang ở chế độ bảo vệ",
+		"actor_mismatch_blocked":         "tài khoản đăng nhập nhầm Facebook",
+		// Coordination / dedup guards — the common "0 queued" causes.
+		"outbound_cooldown_active":       "đã gửi tới lead này gần đây (chờ hết 24h)",
+		"duplicate_outbound_target_race": "đã có comment đang xếp hàng cho bài này",
+		"awaiting_reply_cooldown":        "đang chờ lead phản hồi lần trước",
+		"lead_replied":                   "lead đã trả lời — không gửi thêm",
+		"conversation_closed":            "hội thoại với lead đã đóng",
+		"action_policy_missing":          "workspace chưa bật chính sách hành động",
 	}
 	parts := make([]string, 0, len(reasons))
 	for code, n := range reasons {
