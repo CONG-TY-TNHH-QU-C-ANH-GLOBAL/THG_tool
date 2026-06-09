@@ -62,15 +62,18 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 			continue // RBAC + privacy: not the caller's own (and not admin-visible unassigned)
 		}
 		connID, connReason := connectors.PickReadyConnector(conns, acc.ID, acc.FBUserID, connectors.MinExtensionVersion)
-		extVer := ""
+		extVer, machineLabel, profileID := "", "", ""
 		if c, ok := connByID[connID]; ok {
-			extVer = c.Version
+			extVer, machineLabel, profileID = c.Version, c.MachineLabel, c.BrowserProfileID
 		}
 		ar := models.AccountReadiness{
 			AccountID:        acc.ID,
+			AccountName:      acc.Name,
 			FBUserID:         acc.FBUserID,
 			FBDisplayName:    acc.FBDisplayName,
 			ConnectorID:      connID,
+			MachineLabel:     machineLabel,
+			BrowserProfileID: profileID,
 			ExtensionVersion: extVer,
 			RequiredAction:   readinessRequiredAction(connReason),
 		}

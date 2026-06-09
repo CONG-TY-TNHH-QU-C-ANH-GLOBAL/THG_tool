@@ -24,9 +24,12 @@ type CapabilityReadiness struct {
 // AccountReadiness is the readiness of one account across all capabilities.
 type AccountReadiness struct {
 	AccountID        int64                 `json:"account_id"`
+	AccountName      string                `json:"account_name"`
 	FBUserID         string                `json:"fb_user_id"`
 	FBDisplayName    string                `json:"fb_display_name"`
 	ConnectorID      int64                 `json:"connector_id"`
+	MachineLabel     string                `json:"machine_label"`      // human label typed at pairing (PR-C)
+	BrowserProfileID string                `json:"browser_profile_id"` // stable per-Chrome-profile id (PR-C)
 	ExtensionVersion string                `json:"extension_version"`
 	Capabilities     []CapabilityReadiness `json:"capabilities"`
 	RequiredAction   string                `json:"required_action"` // top actionable hint, "" when fully ready

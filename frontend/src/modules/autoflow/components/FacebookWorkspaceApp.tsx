@@ -8,6 +8,7 @@ import SettingsPage from './SettingsPage';
 import { useLang } from '../i18n/useLang';
 import { isPlatformRole } from '../services/authService';
 import {
+  Activity,
   Bot,
   FileText,
   Globe,
@@ -22,13 +23,14 @@ import {
 const LeadsView = lazy(() => import('./views/LeadsView'));
 const WorkspaceChatView = lazy(() => import('./views/WorkspaceChatView'));
 const BrowserView = lazy(() => import('./views/BrowserView'));
+const AccountHealthBoard = lazy(() => import('./accountHealth/AccountHealthBoard'));
 const InboxView = lazy(() => import('./views/InboxView'));
 const PostingView = lazy(() => import('./views/PostingView'));
 const CommentingView = lazy(() => import('./views/CommentingView'));
 const LeaderboardView = lazy(() => import('./views/LeaderboardView'));
 const MissionsView = lazy(() => import('./views/MissionsView'));
 
-type Tab = 'leads' | 'chat' | 'browser' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'missions' | 'settings';
+type Tab = 'leads' | 'chat' | 'browser' | 'health' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'missions' | 'settings';
 
 interface FacebookWorkspaceAppProps {
   workspaceId: string;
@@ -49,6 +51,7 @@ const ADMIN_TABS: NavItem[] = [
   { id: 'leads', Icon: Users },
   { id: 'chat', Icon: Bot },
   { id: 'browser', Icon: Globe },
+  { id: 'health', Icon: Activity },
   { id: 'inbox', Icon: MessageSquare },
   { id: 'posting', Icon: FileText },
   { id: 'commenting', Icon: MessageCircle },
@@ -65,6 +68,7 @@ const STAFF_TABS: NavItem[] = [
   // Shared-battlefield: sales see all accounts as context, action only
   // their own. See feedback_shared_battlefield_not_crm.
   { id: 'browser', Icon: Globe },
+  { id: 'health', Icon: Activity },
   { id: 'inbox', Icon: MessageSquare },
 ];
 
@@ -156,6 +160,9 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
       leads: t.nav.leads,
       chat: t.nav.chat,
       browser: t.nav.browser,
+      // Inline label (PR-E) — kept out of the large i18n strings.ts god file per
+      // the Engineering Guardrails (do not grow legacy large files).
+      health: 'Trạng thái tài khoản',
       inbox: t.nav.inbox,
       posting: t.nav.posting,
       commenting: t.nav.commenting,
@@ -174,6 +181,8 @@ export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceA
         return <WorkspaceChatView orgId={orgId} />;
       case 'browser':
         return <BrowserView orgId={orgId} />;
+      case 'health':
+        return <AccountHealthBoard orgId={orgId} isAdmin={isAdmin} />;
       case 'inbox':
         return <InboxView orgId={orgId} />;
       case 'posting':
