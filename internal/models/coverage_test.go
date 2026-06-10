@@ -70,7 +70,7 @@ func TestProjectLeadCoverage(t *testing.T) {
 		{AccountID: 2, Outcome: "succeeded", PerformedAt: t0.Add(2 * time.Minute)},
 		{AccountID: 3, Outcome: "queued", PerformedAt: t0.Add(3 * time.Minute)}, // not verified → ignored
 	}
-	st := ProjectLeadCoverage(entries, true)
+	st := ProjectLeadCoverage(entries, true, nil, "")
 	if len(st.ActorsTouched) != 2 || !st.ActorTouched(1) || !st.ActorTouched(2) {
 		t.Errorf("expected actors {1,2}, got %v", st.ActorsTouched)
 	}

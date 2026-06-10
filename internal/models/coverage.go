@@ -90,10 +90,12 @@ func EvaluateCoverage(state LeadCoverageState, policy CoveragePolicy, actorAccou
 }
 
 // ProjectLeadCoverage builds the coverage state from VERIFIED ledger entries + the
-// lead-replied signal (spec: specs/MULTI_ACTOR_COVERAGE_POLICY.md). Entries should
-// already be verified successes; the check is applied defensively. Content fields
-// (website/CTA/angles) are filled by the generation layer, not here.
-func ProjectLeadCoverage(entries []LeadEngagement, leadReplied bool) LeadCoverageState {
+// lead-replied signal + the ACTUAL prior comment texts (spec:
+// specs/MULTI_ACTOR_COVERAGE_POLICY.md). Entries should already be verified
+// successes; the check is applied defensively. Content fields are CONTENT-ACCURATE:
+// website/CTA are true only if a comment actually used them, angles are classified
+// from the text — never inferred from a touch count.
+func ProjectLeadCoverage(entries []LeadEngagement, leadReplied bool, comments []string, website string) LeadCoverageState {
 	st := LeadCoverageState{LeadReplied: leadReplied}
 	for _, e := range entries {
 		if !IsLedgerOutcomeVerifiedTouch(e.Outcome) {
@@ -107,6 +109,9 @@ func ProjectLeadCoverage(entries []LeadEngagement, leadReplied bool) LeadCoverag
 			st.LastTouchAt = e.PerformedAt
 		}
 	}
+	st.WebsiteAlreadyUsed = DetectWebsiteUsed(comments, website)
+	st.DirectCTAAlreadyUsed = DetectDirectCTAUsed(comments)
+	st.UsedAngles = ClassifyAngles(comments)
 	return st
 }
 

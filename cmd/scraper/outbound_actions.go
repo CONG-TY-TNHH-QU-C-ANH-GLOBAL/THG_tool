@@ -184,19 +184,16 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// replied, coverage is full, or it is too soon behind the previous actor.
 		var persona models.ActorPersona
 		if msgType == "comment" && lead.ID > 0 {
-			if cov, cerr := db.Leads().GetLeadCoverageState(ctx, orgID, lead.ID); cerr == nil {
+			if cov, cerr := db.Leads().GetLeadCoverageState(ctx, orgID, lead.ID, commentIdentity.Website); cerr == nil {
 				if ok, reason := models.EvaluateCoverage(*cov, coveragePolicy, accountID, time.Now().UTC()); !ok {
 					skipped++
 					skipReasons[reason]++
 					continue
 				}
-				// Eligible: a prior verified touch almost certainly used the website + a
-				// hard CTA, so a LATER actor adds value (advice/experience) without
-				// re-citing them. The persona forces that different angle in generation.
-				if cov.OrgTouchCount > 0 {
-					cov.WebsiteAlreadyUsed = true
-					cov.DirectCTAAlreadyUsed = true
-				}
+				// Eligible: shape this actor's comment from the CONTENT-ACCURATE coverage
+				// state — no_link only if a prior comment actually cited the website,
+				// experience_share only if one actually used a hard CTA, and avoid the
+				// angles already present in earlier comments.
 				persona = models.DeriveActorPersona(*cov, coveragePolicy, "", "")
 			}
 		}
