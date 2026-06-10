@@ -16,7 +16,10 @@ const lifecycleSummaryScan = 1000
 func (s *Store) LeadLifecycleSummary(ctx context.Context, orgID int64) (models.LifecycleSummary, error) {
 	var sum models.LifecycleSummary
 	items, err := s.GetWorkQueue(ctx, orgID, models.WorkQueueOptions{
-		States:       []models.LeadFreshnessState{models.LeadActive, models.LeadWaitingReply, models.LeadFollowupDue},
+		States: []models.LeadFreshnessState{
+			models.LeadActive, models.LeadWaitingReply,
+			models.LeadWaitingVerification, models.LeadFollowupDue,
+		},
 		IncludeStale: true,
 		Limit:        lifecycleSummaryScan,
 	})
@@ -29,6 +32,8 @@ func (s *Store) LeadLifecycleSummary(ctx context.Context, orgID int64) (models.L
 			sum.Active++
 		case models.LeadWaitingReply:
 			sum.WaitingReply++
+		case models.LeadWaitingVerification:
+			sum.WaitingVerification++
 		case models.LeadFollowupDue:
 			sum.FollowupDue++
 		case models.LeadStale:

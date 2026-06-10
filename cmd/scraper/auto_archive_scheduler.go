@@ -24,6 +24,7 @@ func lifecyclePolicyFromConfig(cfg *config.Config) models.LeadLifecyclePolicy {
 		EvidenceRetentionDays: cfg.EvidenceRetentionDays,
 		RawCrawlRetentionDays: cfg.RawCrawlRetentionDays,
 		FollowupWindow:        models.DefaultFollowupWindow,
+		VerificationCooldown:  time.Duration(cfg.VerificationCooldownMin) * time.Minute,
 	}
 }
 

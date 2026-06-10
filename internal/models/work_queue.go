@@ -80,6 +80,8 @@ func freshnessRank(state LeadFreshnessState) int {
 		return 3
 	case LeadWaitingReply:
 		return 2
+	case LeadWaitingVerification:
+		return 2
 	case LeadStale:
 		return 1
 	default:

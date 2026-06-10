@@ -89,6 +89,7 @@ type Config struct {
 	EvidenceRetentionDays int // retention for execution evidence blobs (compaction; ledger kept)
 	RawCrawlRetentionDays int // retention for raw crawl payload (compaction; ledger kept)
 	ArchiveIntervalMin    int // auto-archive sweep cadence in minutes
+	VerificationCooldownMin int // how long a submitted-unverified comment holds a lead (waiting_verification)
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -140,6 +141,7 @@ func Load() *Config {
 		EvidenceRetentionDays: getEnvInt("LEAD_EVIDENCE_RETENTION_DAYS", 14),
 		RawCrawlRetentionDays: getEnvInt("LEAD_RAW_CRAWL_RETENTION_DAYS", 90),
 		ArchiveIntervalMin:    getEnvInt("LEAD_ARCHIVE_INTERVAL_MIN", 360),
+		VerificationCooldownMin: getEnvInt("LEAD_VERIFICATION_COOLDOWN_MIN", 30),
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),

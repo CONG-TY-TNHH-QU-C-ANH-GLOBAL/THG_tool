@@ -96,6 +96,7 @@ func (s *Store) lifecycleForCandidate(ctx context.Context, orgID int64, lead mod
 	in := models.LeadLifecycleInputs{
 		LeadID:              lead.ID,
 		LastCrawledAt:       lead.CreatedAt,
+		LastSoftTouchAt:     s.latestSoftTouchAt(ctx, orgID, engagementMatchURLs(&lead)),
 		LastCustomerReplyAt: s.lastCustomerReplyAt(orgID, lead.AuthorURL),
 	}
 	if eng, err := s.GetLeadEngagement(ctx, orgID, lead.ID); err == nil {
