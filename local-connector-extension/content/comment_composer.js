@@ -41,6 +41,19 @@ var THGCommentComposer = globalThis.THGCommentComposer || (() => {
 
   const hasAny = (s, keys) => keys.some((k) => s.includes(k));
 
+  // hostVerdict: channel-neutral identity decision for a candidate's nearest container.
+  // The channel adapter supplies the container's id (hostId), the target id (targetId), and
+  // whether the current URL already pins identity to a single target (urlPinsIdentity, e.g. a
+  // post's own permalink page). When the URL pins identity, a host id that differs is a NESTED
+  // item (a comment/answer/reply container), NOT a competing target — so we report 'unknown'
+  // (let shape/keyword decide) instead of 'foreign'. On listing/feed surfaces a differing id
+  // is a genuinely different target → 'foreign'.
+  function hostVerdict({ hostId, targetId, urlPinsIdentity }) {
+    if (!hostId || !targetId) return 'unknown';
+    if (String(hostId) === String(targetId)) return 'target';
+    return urlPinsIdentity ? 'unknown' : 'foreign';
+  }
+
   // classify one editable candidate against the target article. Returns { accepted, reason }.
   //
   // Post IDENTITY is channel-specific (Facebook compares canonical permalink ids), so the host
@@ -97,7 +110,7 @@ var THGCommentComposer = globalThis.THGCommentComposer || (() => {
     return out;
   }
 
-  return { EDITABLE_SEL, COMMENT_REPLY_KEYS, CREATE_POST_KEYS, isEditableShape, classify, findComposerEntry };
+  return { EDITABLE_SEL, COMMENT_REPLY_KEYS, CREATE_POST_KEYS, isEditableShape, hostVerdict, classify, findComposerEntry };
 })();
 globalThis.THGCommentComposer = THGCommentComposer;
 if (typeof module !== 'undefined' && module.exports) module.exports = THGCommentComposer;
