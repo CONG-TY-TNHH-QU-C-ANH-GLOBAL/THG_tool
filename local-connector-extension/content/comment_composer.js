@@ -42,20 +42,33 @@ var THGCommentComposer = globalThis.THGCommentComposer || (() => {
   const hasAny = (s, keys) => keys.some((k) => s.includes(k));
 
   // classify one editable candidate against the target article. Returns { accepted, reason }.
+  //
+  // Post IDENTITY is channel-specific (Facebook compares canonical permalink ids), so the host
+  // article's verdict is supplied by an injected deps.classifyHost(host) → 'target' | 'foreign'
+  // | 'unknown'. Generic core never parses channel ids. We hard-reject wrong_post ONLY on a
+  // positive 'foreign' verdict; an 'unknown' host (e.g. a comment item article that carries no
+  // own post permalink, or a layout wrapper) falls through to a shape/keyword check so a real
+  // answer/comment composer is not lost — this is the gate1 false-negative the previous strict
+  // `host === article` identity check produced on group "Write an answer…" posts.
   function classify(el, article, deps) {
     const visible = deps.visible || (() => true);
     if (!isEditableShape(el)) return { accepted: false, reason: 'unsupported_editable_shape' };
     if (!visible(el)) return { accepted: false, reason: 'invisible' };
     const txt = textOf(el);
     if (hasAny(txt, CREATE_POST_KEYS)) return { accepted: false, reason: 'create_post_composer' };
+    // Subtree containment is robust to nested inner articles/dialogs FB renders for the
+    // question/answer block, embedded content, or comment items.
+    if (article && article.contains && article.contains(el)) return { accepted: true, reason: 'in_target_article' };
     const host = deps.closestArticle ? deps.closestArticle(el) : null;
-    if (host && article) {
-      if (host === article) return { accepted: true, reason: 'in_target_article' };
-      return { accepted: false, reason: 'wrong_post' };
-    }
-    // Not nested in any article (composer sibling region): accept only if it reads like a
-    // comment/answer/reply composer (the global create-post box is already excluded above).
+    if (host && host === article) return { accepted: true, reason: 'in_target_article' };
+    const verdict = host && deps.classifyHost ? deps.classifyHost(host) : 'unknown';
+    if (verdict === 'target') return { accepted: true, reason: 'in_target_article' };
+    if (verdict === 'foreign') return { accepted: false, reason: 'wrong_post' };
+    // Host identity unknown (or no host article): accept only a comment/answer/reply-shaped
+    // composer (the global create-post box is already excluded above).
     if (hasAny(txt, COMMENT_REPLY_KEYS)) return { accepted: true, reason: 'target_discussion_region' };
+    // A host article exists but is neither the target nor answer-shaped → ambiguous → reject.
+    if (host && host !== article) return { accepted: false, reason: 'wrong_post' };
     return { accepted: false, reason: 'outside_target_scope' };
   }
 

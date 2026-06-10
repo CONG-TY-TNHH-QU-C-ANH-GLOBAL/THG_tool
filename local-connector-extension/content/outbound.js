@@ -355,21 +355,38 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // commentSurfaceDeps injects the DOM helpers the comment_button.js + comment_composer.js
   // modules need (kept here so the modules stay pure + unit-testable). closestArticle +
   // docEditables enable the page-wide, article-scoped composer fallback.
-  function commentSurfaceDeps() {
+  // classifyHostFor builds the Facebook-specific host-identity verdict the generic composer
+  // core injects via deps.classifyHost: a candidate's nearest [role=article] is compared by
+  // CANONICAL permalink id, not DOM-node identity. 'target' = same post, 'foreign' = a
+  // positively different post (wrong_post), 'unknown' = a host with no own post permalink (a
+  // comment item / wrapper) where the core falls back to shape/keyword acceptance. When no
+  // targetPostId is supplied (legacy profile_post/inbox callers) every host reads 'unknown',
+  // preserving the pre-existing backward-compat behaviour.
+  function classifyHostFor(targetPostId) {
+    return (host) => {
+      if (!host || !targetPostId) return 'unknown';
+      const id = extractArticleCanonicalEntityId(host);
+      if (!id) return 'unknown';
+      return id === targetPostId ? 'target' : 'foreign';
+    };
+  }
+  function commentSurfaceDeps(targetPostId) {
     return {
       visible, labelOf, findCommentEditor,
       closestArticle: (el) => (el && el.closest ? el.closest('[role="article"], [role="dialog"]') : null),
       docEditables: () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea')),
+      classifyHost: classifyHostFor(targetPostId),
     };
   }
   // discoverDeps adds the scroll/retry primitives for the gate1 fallback. scrollIntoCenter
   // alternates center / toward-bottom so a lazily-mounted composer below the action row gets
   // surfaced. Bounded to ~12s (FB group posts can be slow) — never waits forever.
-  function discoverDeps() {
+  function discoverDeps(targetPostId) {
     return {
       visible, labelOf, findCommentEditor,
       closestArticle: (el) => (el && el.closest ? el.closest('[role="article"], [role="dialog"]') : null),
       docEditables: () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea')),
+      classifyHost: classifyHostFor(targetPostId),
       scrollIntoCenter: (el, towardBottom) => {
         try { el.scrollIntoView({ block: towardBottom ? 'end' : 'center' }); } catch (e) { /* ignore */ }
       },
@@ -377,7 +394,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     };
   }
 
-  function articleIsReadyForComment(article) {
+  function articleIsReadyForComment(article, targetPostId) {
     if (!article) return false;
     const permalink = article.querySelector(
       'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
@@ -387,7 +404,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // OR an already-mounted in-article composer (PERMALINK layout). Discovery lives in the
     // extracted THGCommentButton module. Checkpoint-3 still re-verifies the editor belongs
     // to the target article before typing, so this never types into the wrong post.
-    return THGCommentButton.commentSurfaceState(article, commentSurfaceDeps()).found;
+    return THGCommentButton.commentSurfaceState(article, commentSurfaceDeps(targetPostId)).found;
   }
 
   // waitUntilTargetArticleStable polls the live DOM until the target
@@ -423,7 +440,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     let stableArticle = null;
     while (Date.now() < deadline) {
       const article = findTargetArticle(targetPostId);
-      const ready = article && articleIsReadyForComment(article);
+      const ready = article && articleIsReadyForComment(article, targetPostId);
       if (ready) {
         // Track stability by the target post's IDENTITY (canonical id, matched
         // by findTargetArticle) + readiness — NOT by element reference.
@@ -739,7 +756,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         // view and retry the broadened discovery before giving up.
         const art = findTargetArticle(targetPostId);
         if (art) {
-          const disc = await THGCommentButton.discoverCommentSurface(art, discoverDeps());
+          const disc = await THGCommentButton.discoverCommentSurface(art, discoverDeps(targetPostId));
           if (disc.found) targetScope = art;
         }
       }
@@ -751,7 +768,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         // commented"). Otherwise the post was never reached → target_not_reached.
         const probe = probeCommentGates(targetPostId);
         const art = findTargetArticle(targetPostId);
-        const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps()) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none', composer_candidates: [] };
+        const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps(targetPostId)) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none', composer_candidates: [] };
         const candReasons = (ent.composer_candidates || []).map((cand) => cand.reason + (cand.accepted ? '(ok)' : '')).join(',');
         const gates = {
           articleFound: probe.articleFound, permalinkFound: probe.permalinkFound,
@@ -762,7 +779,14 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
         console.warn('[THG outbound.executeComment] gate1 FAIL ' + reason,
           { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
-            nav_at_entry: navAtEntry, redirect_class: rc, gates, entry: ent });
+            nav_at_entry: navAtEntry, redirect_class: rc, gates,
+            // P0 #7: per-candidate composer reasons + shape counts at top level so a future
+            // UI-drift can be diagnosed from the console object alone (no full-HTML dump).
+            gate1_passed_via: ent.gate1_passed_via,
+            composer_candidates: ent.composer_candidates,
+            textbox_candidates_count: ent.textbox_candidates_count,
+            contenteditable_candidates_count: ent.contenteditable_candidates_count,
+            entry: ent });
         return commentResult(false, reason, null, ctx,
           'identity_gate_1_' + reason + ': target id=' + abbreviate(targetPostId) +
           ' redirect_class=' + rc +
