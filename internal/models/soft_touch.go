@@ -43,9 +43,9 @@ func IsLedgerOutcomeSoftTouch(outcome string, submitClicked, composerCleared boo
 func IsRetryableBeforeSubmitFailure(reason string) bool {
 	switch strings.ToLower(strings.TrimSpace(reason)) {
 	case "target_not_reached", "composer_failed", "composer_clear_failed",
-		"comment_text_doubled", "comment_text_mismatch", "submit_button_not_found",
-		"comment_submit_not_found", "submit_click_failed", "soft_fail",
-		"verification_timeout":
+		"comment_button_not_found", "comment_text_doubled", "comment_text_mismatch",
+		"submit_button_not_found", "comment_submit_not_found", "submit_click_failed",
+		"soft_fail", "verification_timeout":
 		return true
 	default:
 		return false

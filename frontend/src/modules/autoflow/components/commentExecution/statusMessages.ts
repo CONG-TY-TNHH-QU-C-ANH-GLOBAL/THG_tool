@@ -83,6 +83,8 @@ export function commentReason(outcome: string): string {
     case 'comment_submit_not_confirmed':
     case 'submit_not_accepted':
       return 'Facebook chưa nhận comment sau khi bấm gửi.';
+    case 'comment_button_not_found':
+      return 'Đã mở đúng bài viết nhưng chưa thấy nút Bình luận để mở ô comment.';
     case 'target_not_reached':
     case 'redirected_feed':
       return 'Không mở được đúng bài viết Facebook.';

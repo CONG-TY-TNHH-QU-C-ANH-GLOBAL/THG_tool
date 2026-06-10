@@ -271,7 +271,10 @@ func ClassifyExtensionReport(report ExtensionExecutionReport) (models.ExecutionO
 			return models.ExecutionShadowRejected, proof
 		case "redirect", "redirected_feed", "feed_escape":
 			return models.ExecutionRedirectedFeed, proof
-		case "composer_failed", "composer":
+		case "composer_failed", "composer", "comment_button_not_found":
+			// comment_button_not_found (PR-B): reached the post but the Comment/Bình luận
+			// surface never appeared — a pre-submit failure in the same family as a
+			// composer that never opened. Retryable, no risk penalty; nothing was typed.
 			return models.ExecutionComposerFailed, proof
 		case "soft_fail", "transient", "network":
 			return models.ExecutionSoftFail, proof

@@ -352,31 +352,31 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   //   3. (Implicit, enforced by the caller stability window.) These
   //      conditions hold continuously for stableMs milliseconds, so
   //      we are not catching a transient mount that will unmount.
+  // commentSurfaceDeps injects the DOM helpers the comment_button.js module needs (kept here
+  // so the module stays pure + unit-testable).
+  function commentSurfaceDeps() {
+    return { visible, labelOf, findCommentEditor };
+  }
+  // discoverDeps adds the scroll/retry primitives for the gate1 fallback.
+  function discoverDeps() {
+    return {
+      visible, labelOf, findCommentEditor,
+      scrollIntoCenter: (el) => { try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* ignore */ } },
+      wait, now: () => Date.now(), timeoutMs: 4000, pollMs: 300,
+    };
+  }
+
   function articleIsReadyForComment(article) {
     if (!article) return false;
     const permalink = article.querySelector(
       'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
     );
     if (!permalink || !visible(permalink)) return false;
-    // The comment surface is reachable when EITHER:
-    //  (a) a "Comment"/"Bình luận" button exists to expand the section (FEED
-    //      layout — the post is collapsed and we click to open the composer), OR
-    //  (b) a comment composer is ALREADY mounted inside the article (PERMALINK
-    //      layout — Facebook renders the post with comments already expanded, so
-    //      there is NO Comment button: comment_button_found=0 yet composer_count
-    //      =1). Requiring (a) alone starved the gate on permalink pages — the
-    //      observed target_not_reached@gate1 with the composer right there.
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
-    const buttons = Array.from(article.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
-    const hasCommentButton = buttons.some(el => {
-      const label = labelOf(el);
-      return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
-    });
-    if (hasCommentButton) return true;
-    // (b) Permalink layout: accept an already-open in-article composer. The
-    // downstream Checkpoint-3 still re-verifies the editor belongs to the target
-    // article before typing, so this cannot type into the wrong post.
-    return !!findCommentEditor(article);
+    // The comment surface is reachable via EITHER a Comment/Bình luận button (FEED layout)
+    // OR an already-mounted in-article composer (PERMALINK layout). Discovery lives in the
+    // extracted THGCommentButton module. Checkpoint-3 still re-verifies the editor belongs
+    // to the target article before typing, so this never types into the wrong post.
+    return THGCommentButton.commentSurfaceState(article, commentSurfaceDeps()).found;
   }
 
   // waitUntilTargetArticleStable polls the live DOM until the target
@@ -723,21 +723,30 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         targetScope = findTargetArticle(targetPostId) || document;
       }
       if (!targetScope) {
+        // Gate1 fallback (PR-B): the stability poll never caught the comment surface, but
+        // the post may be present with a lazily-mounted action row. Scroll the article into
+        // view and retry the broadened discovery before giving up.
+        const art = findTargetArticle(targetPostId);
+        if (art) {
+          const disc = await THGCommentButton.discoverCommentSurface(art, discoverDeps());
+          if (disc.found) targetScope = art;
+        }
+      }
+      if (!targetScope) {
         const landed = location.href || '';
-        // PR8A — DETERMINISTIC LANDING GATE. Navigate → Wait Article → Verify
-        // Post ID just FAILED: the queued post never became present+stable on
-        // the page. Probe the DOM once to explain why, classify the landing,
-        // and STOP — do NOT type. This is target_not_reached, NOT context_drift
-        // (we never reached an article to drift from) and NOT redirected_feed
-        // (nothing was submitted). Retryable, no risk penalty (see Go side).
+        // PR8A landing gate FAILED. Probe + classify: if we reached the post (article +
+        // permalink) but found NO comment button, that is comment_button_not_found — a
+        // distinct, retryable, no-risk pre-submit failure, NOT target_not_reached (we DID
+        // reach the post) and NOT context_drift / redirected_feed (nothing submitted).
         const gates = probeCommentGates(targetPostId);
-        const navDiag = navDiagFor('gate1_no_article', 'gate1', gates, ctxInfo);
+        const reason = THGCommentButton.classifyGate1Failure(gates);
+        const navDiag = navDiagFor('gate1_' + reason, 'gate1', gates, ctxInfo);
         const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
-        console.warn('[THG outbound.executeComment] gate1 FAIL target_not_reached',
+        console.warn('[THG outbound.executeComment] gate1 FAIL ' + reason,
           { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
             nav_at_entry: navAtEntry, redirect_class: rc, gates });
-        return commentResult(false, 'target_not_reached', null, ctx,
-          'identity_gate_1_target_not_reached: target id=' + abbreviate(targetPostId) +
+        return commentResult(false, reason, null, ctx,
+          'identity_gate_1_' + reason + ': target id=' + abbreviate(targetPostId) +
           ' redirect_class=' + rc +
           ' article_found=' + gates.articleFound +
           ' permalink_found=' + gates.permalinkFound +
