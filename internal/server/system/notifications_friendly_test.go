@@ -25,7 +25,7 @@ func TestFriendlyOutboundReason(t *testing.T) {
 	// read as a clear cause, NOT the generic unknown-error fallback.
 	for _, detail := range []string{"comment_button_not_found", "identity_gate_1_comment_button_not_found: target id=123 did not settle"} {
 		got := friendlyOutboundReason(detail, "execution_failed")
-		if !strings.Contains(got, "nút bình luận") {
+		if !strings.Contains(got, "bình luận") {
 			t.Errorf("comment_button_not_found should map to a clear reason, got %q", got)
 		}
 		if strings.Contains(got, "chưa xác định") {

@@ -357,12 +357,16 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   function commentSurfaceDeps() {
     return { visible, labelOf, findCommentEditor };
   }
-  // discoverDeps adds the scroll/retry primitives for the gate1 fallback.
+  // discoverDeps adds the scroll/retry primitives for the gate1 fallback. scrollIntoCenter
+  // alternates center / toward-bottom so a lazily-mounted composer below the action row gets
+  // surfaced. Bounded to ~12s (FB group posts can be slow) — never waits forever.
   function discoverDeps() {
     return {
       visible, labelOf, findCommentEditor,
-      scrollIntoCenter: (el) => { try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* ignore */ } },
-      wait, now: () => Date.now(), timeoutMs: 4000, pollMs: 300,
+      scrollIntoCenter: (el, towardBottom) => {
+        try { el.scrollIntoView({ block: towardBottom ? 'end' : 'center' }); } catch (e) { /* ignore */ }
+      },
+      wait, now: () => Date.now(), timeoutMs: 12000, pollMs: 400,
     };
   }
 
@@ -734,25 +738,35 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       }
       if (!targetScope) {
         const landed = location.href || '';
-        // PR8A landing gate FAILED. Probe + classify: if we reached the post (article +
-        // permalink) but found NO comment button, that is comment_button_not_found — a
-        // distinct, retryable, no-risk pre-submit failure, NOT target_not_reached (we DID
-        // reach the post) and NOT context_drift / redirected_feed (nothing submitted).
-        const gates = probeCommentGates(targetPostId);
+        // PR8A landing gate FAILED. Probe BUTTON + COMPOSER under the target article and
+        // classify: reached the post but neither a comment button NOR a visible composer →
+        // comment_button_not_found (a discovery miss — retryable, no risk; NOT "post can't be
+        // commented"). Otherwise the post was never reached → target_not_reached.
+        const probe = probeCommentGates(targetPostId);
+        const art = findTargetArticle(targetPostId);
+        const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps()) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none' };
+        const gates = {
+          articleFound: probe.articleFound, permalinkFound: probe.permalinkFound,
+          commentButtonFound: ent.comment_button_found, composerEntryFound: ent.composer_entry_found,
+        };
         const reason = THGCommentButton.classifyGate1Failure(gates);
         const navDiag = navDiagFor('gate1_' + reason, 'gate1', gates, ctxInfo);
         const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
         console.warn('[THG outbound.executeComment] gate1 FAIL ' + reason,
           { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
-            nav_at_entry: navAtEntry, redirect_class: rc, gates });
+            nav_at_entry: navAtEntry, redirect_class: rc, gates, entry: ent });
         return commentResult(false, reason, null, ctx,
           'identity_gate_1_' + reason + ': target id=' + abbreviate(targetPostId) +
           ' redirect_class=' + rc +
           ' article_found=' + gates.articleFound +
           ' permalink_found=' + gates.permalinkFound +
           ' comment_button_found=' + gates.commentButtonFound +
+          ' composer_entry_found=' + gates.composerEntryFound +
+          ' textbox_candidates=' + ent.textbox_candidates_count +
+          ' contenteditable_candidates=' + ent.contenteditable_candidates_count +
+          ' gate1_passed_via=' + ent.gate1_passed_via +
           ' landed_at=' + landed + ' nav_at_entry=' + navAtEntry +
-          ' did not settle (article+permalink+comment-button stable 500ms) within 8s',
+          ' did not settle (article+permalink+comment-entry) within fallback window',
           navDiag);
       }
     }

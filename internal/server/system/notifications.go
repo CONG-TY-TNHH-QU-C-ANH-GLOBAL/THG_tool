@@ -319,8 +319,8 @@ func friendlyOutboundReason(detail, outcome string) string {
 		return "comment không đạt kiểm tra chất lượng"
 	case strings.Contains(s, "required_website_missing"), strings.Contains(s, "unsupported_contact"), strings.Contains(s, "multiple_urls"):
 		return "comment thiếu/sai thông tin liên hệ theo chính sách"
-	case strings.Contains(s, "comment_button_not_found"):
-		return "đã mở đúng bài viết nhưng không thấy nút bình luận/ô comment (có thể bài bị giới hạn bình luận, hoặc DOM chưa render) — có thể thử lại"
+	case strings.Contains(s, "comment_button_not_found"), strings.Contains(s, "comment_entry_not_found"):
+		return "không tìm thấy nút/ô bình luận tự động — bạn có thể mở post để kiểm tra hoặc thử lại"
 	case strings.Contains(s, "comment_box_not_found"), strings.Contains(s, "not_confirmed"), strings.Contains(s, "insert_failed"):
 		return "không tìm thấy hoặc không nhập được ô comment trên Facebook"
 	case strings.Contains(s, "composer_failed"):

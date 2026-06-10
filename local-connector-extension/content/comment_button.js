@@ -1,10 +1,12 @@
-// Gate1 comment-button discovery (spec: specs/COMMENT_ASYNC_REVERIFY.md companion; PR-B).
-// Extracted OUT of the outbound.js composer god file. Some FB group posts render
-// article + permalink but lazily mount the action row (Comment/Bình luận button) only when
-// scrolled into view — gate1 then timed out as target_not_reached even though the post was
-// right there. This module broadens the button search, adds a scroll-into-center + retry
-// fallback, gathers diagnostics, and (critically) classifies "reached the post but no
-// comment button" as comment_button_not_found, NOT target_not_reached.
+// Gate1 comment-ENTRY discovery (spec: specs/COMMENT_ASYNC_REVERIFY.md companion; PR-B + the
+// gate1-robustness follow-up). Operator evidence: humans can comment most of these posts, so
+// comment_button_not_found is usually a DISCOVERY false-negative, not a non-commentable post.
+//
+// Gate1 must pass if ANY valid entry point exists under the TARGET article: a Comment/Bình
+// luận action button (broadened role/aria/text variants) OR an already-visible composer
+// (contenteditable / role=textbox / textarea / "Viết bình luận…" placeholder). If the
+// composer is already open we do NOT require an action button. Scoped to the target article
+// so a neighbouring post's composer can never satisfy the gate.
 //
 // Pure logic + injected DOM deps (visible/labelOf/findCommentEditor/scrollIntoCenter/wait/
 // now) so it is unit-testable with plain fake nodes — no jsdom.
@@ -13,6 +15,11 @@ var THGCommentButton = globalThis.THGCommentButton || (() => {
     'comment', 'write a comment', 'binh luan', 'viet binh luan',
     'bình luận', 'viết bình luận', 'add a comment',
   ];
+  // Placeholder / aria text that marks a composer entry (an opener or the textbox itself).
+  const COMPOSER_KEYS = COMMENT_KEYS;
+  // Composer textbox selectors — a visible one scoped to the target article IS the entry.
+  const COMPOSER_SEL = '[contenteditable="true"], [role="textbox"], textarea';
+  const BUTTON_SEL = 'div[role="button"], button, a[role="button"], span[role="button"], [aria-label]';
 
   function labelHasComment(label) {
     const l = String(label || '');
@@ -20,98 +27,105 @@ var THGCommentButton = globalThis.THGCommentButton || (() => {
     return !l.includes('share') && !l.includes('like'); // avoid share/like rows
   }
 
-  // findCommentButton scans an article for a visible Comment/Bình luận control using
-  // broadened role + aria-label variants. deps: { visible, labelOf }. Returns el | null.
+  // findCommentButton scans the target article for a visible Comment/Bình luận control.
   function findCommentButton(article, deps) {
     if (!article || !article.querySelectorAll) return null;
     const visible = deps.visible || (() => true);
     const labelOf = deps.labelOf || (() => '');
-    const sel = 'div[role="button"], button, a[role="button"], span[role="button"], [aria-label]';
-    const els = Array.from(article.querySelectorAll(sel)).filter(visible);
-    for (const el of els) {
+    for (const el of Array.from(article.querySelectorAll(BUTTON_SEL)).filter(visible)) {
       if (labelHasComment(labelOf(el))) return el;
     }
     return null;
   }
 
-  // commentSurfaceState classifies how the comment surface is reachable RIGHT NOW: a Comment
-  // button to expand it, or an already-mounted composer (permalink layout). { found, via }.
+  // findComposerEntry finds an ALREADY-VISIBLE composer scoped to the target article: a
+  // textbox/contenteditable, or an opener whose aria-label/placeholder reads "Viết bình luận…".
+  function findComposerEntry(article, deps) {
+    if (!article || !article.querySelectorAll) return null;
+    const visible = (deps && deps.visible) || (() => true);
+    for (const el of Array.from(article.querySelectorAll(COMPOSER_SEL))) {
+      if (visible(el)) return el; // a visible textbox under the target article = the composer
+    }
+    for (const el of Array.from(article.querySelectorAll('[aria-label], [placeholder]'))) {
+      if (!visible(el)) continue;
+      const txt = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '')).toLowerCase();
+      if (COMPOSER_KEYS.some((k) => txt.includes(k))) return el;
+    }
+    return null;
+  }
+
+  // commentSurfaceState: how the entry is reachable RIGHT NOW. { found, via }.
   function commentSurfaceState(article, deps) {
-    if (findCommentButton(article, deps)) return { found: true, via: 'button' };
-    if (deps.findCommentEditor && deps.findCommentEditor(article)) return { found: true, via: 'composer' };
+    if (findCommentButton(article, deps)) return { found: true, via: 'comment_button' };
+    if (findComposerEntry(article, deps)) return { found: true, via: 'composer_entry' };
+    if (deps.findCommentEditor && deps.findCommentEditor(article)) return { found: true, via: 'composer_entry' };
     return { found: false, via: 'none' };
   }
 
-  // diagnostics gathers the gate1 instrumentation fields (requirement 1).
+  // diagnostics gathers the structured gate1 instrumentation.
   function diagnostics(article, deps) {
     const visible = (deps && deps.visible) || (() => true);
     const labelOf = (deps && deps.labelOf) || (() => '');
     const out = {
-      article_found: !!article,
-      permalink_found: false,
-      comment_button_found: false,
-      action_row_found: false,
-      visible_buttons_text: [],
-      aria_labels: [],
+      article_found: !!article, permalink_found: false, action_row_found: false,
+      comment_button_found: false, composer_entry_found: false,
+      visible_button_texts: [], aria_labels: [],
+      textbox_candidates_count: 0, contenteditable_candidates_count: 0,
+      gate1_passed_via: 'none',
     };
     if (!article || !article.querySelectorAll) return out;
     out.permalink_found = !!article.querySelector(
       'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
     );
-    const els = Array.from(article.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"], [aria-label]')).filter(visible);
-    for (const el of els) {
+    out.comment_button_found = !!findCommentButton(article, deps);
+    out.composer_entry_found = !!findComposerEntry(article, deps);
+    out.textbox_candidates_count = article.querySelectorAll('[role="textbox"], textarea').length;
+    out.contenteditable_candidates_count = article.querySelectorAll('[contenteditable="true"]').length;
+    for (const el of Array.from(article.querySelectorAll(BUTTON_SEL)).filter(visible)) {
       const label = labelOf(el);
       if (label) {
-        out.visible_buttons_text.push(label.slice(0, 40));
-        if (labelHasComment(label)) out.comment_button_found = true;
+        out.visible_button_texts.push(label.slice(0, 40));
         if (label.includes('like') || label.includes('share') || labelHasComment(label)) out.action_row_found = true;
       }
       const aria = el.getAttribute && el.getAttribute('aria-label');
       if (aria) out.aria_labels.push(String(aria).slice(0, 40));
     }
+    out.gate1_passed_via = out.comment_button_found ? 'comment_button' : (out.composer_entry_found ? 'composer_entry' : 'none');
     return out;
   }
 
-  // discoverCommentSurface is the fallback: scroll the article into center, then poll for
-  // the comment surface (button OR composer) within a bounded time, retrying. Returns
-  // { found, via, scrolledAttempts, expandedAttempts }. deps adds scrollIntoCenter/wait/now.
+  // discoverCommentSurface is the bounded fallback: alternate scroll-into-center /
+  // toward-bottom, re-querying the button THEN the composer, up to ~12s.
   async function discoverCommentSurface(article, deps) {
     const wait = deps.wait || (async () => {});
     const now = deps.now || (() => 0);
-    const timeoutMs = typeof deps.timeoutMs === 'number' ? deps.timeoutMs : 4000;
-    const pollMs = typeof deps.pollMs === 'number' ? deps.pollMs : 300;
+    const timeoutMs = typeof deps.timeoutMs === 'number' ? deps.timeoutMs : 12000;
+    const pollMs = typeof deps.pollMs === 'number' ? deps.pollMs : 400;
     let scrolledAttempts = 0;
-    let expandedAttempts = 0;
-
+    let towardBottom = false;
     let st = commentSurfaceState(article, deps);
     const deadline = now() + timeoutMs;
     while (!st.found && now() < deadline) {
-      if (deps.scrollIntoCenter) { deps.scrollIntoCenter(article); scrolledAttempts++; }
-      // A collapsed action row sometimes hides behind a "more actions" control — try to
-      // reveal it before the next probe.
-      if (deps.expandMoreActions && deps.expandMoreActions(article)) expandedAttempts++;
+      if (deps.scrollIntoCenter) { deps.scrollIntoCenter(article, towardBottom); scrolledAttempts++; }
+      towardBottom = !towardBottom; // alternate center / toward-bottom to surface the composer
       await wait(pollMs);
       st = commentSurfaceState(article, deps);
     }
-    return { found: st.found, via: st.via, scrolledAttempts, expandedAttempts };
+    return { found: st.found, via: st.via, scrolledAttempts };
   }
 
-  // classifyGate1Failure: reached the post (article+permalink) but no comment button →
-  // comment_button_not_found (a pre-submit, retryable, no-risk failure distinct from a true
-  // navigation miss). Otherwise target_not_reached.
+  // classifyGate1Failure: reached the post (article+permalink) but NO entry (neither button
+  // nor composer) → comment_button_not_found (pre-submit, retryable). Otherwise the post was
+  // never reached → target_not_reached.
   function classifyGate1Failure(gates) {
     const g = gates || {};
-    if (g.articleFound && g.permalinkFound && !g.commentButtonFound) return 'comment_button_not_found';
+    if (g.articleFound && g.permalinkFound && !g.commentButtonFound && !g.composerEntryFound) return 'comment_button_not_found';
     return 'target_not_reached';
   }
 
   return {
-    COMMENT_KEYS,
-    findCommentButton,
-    commentSurfaceState,
-    diagnostics,
-    discoverCommentSurface,
-    classifyGate1Failure,
+    COMMENT_KEYS, findCommentButton, findComposerEntry, commentSurfaceState,
+    diagnostics, discoverCommentSurface, classifyGate1Failure,
   };
 })();
 globalThis.THGCommentButton = THGCommentButton;
