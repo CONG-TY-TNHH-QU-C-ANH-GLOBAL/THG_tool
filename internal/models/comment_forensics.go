@@ -41,6 +41,16 @@ type CommentForensicsRow struct {
 	EvidenceScreenshotPath     string `json:"evidence_screenshot_path"`
 	Notes                      string `json:"notes"`
 	Classification             string `json:"classification"`
+
+	// Async-reverify observability (PR-A.1). These answer "did the reverify pipeline run,
+	// and did it correct this comment?" — so a stuck submitted_unverified can be traced to
+	// not-scheduled vs scheduled-not-claimed vs attempted-not-found vs corrected.
+	ReverifyScheduled      bool   `json:"reverify_scheduled"`       // a comment_reverify row exists
+	ReverifyOutcome        string `json:"reverify_outcome"`         // pending | verified | not_found | error | ""
+	ReverifyAttemptedAt    string `json:"reverify_attempted_at"`    // when the connector reported (or "")
+	ReverifyReason         string `json:"reverify_reason"`          // reverify diagnostic reason
+	CorrectionEventID      int64  `json:"correction_event_id"`      // action_ledger.id of the appended 'succeeded' correction (0 = none)
+	LatestEffectiveOutcome string `json:"latest_effective_outcome"` // succeeded if a correction exists, else the latest ledger outcome
 }
 
 // ClassifyCommentForensics buckets an attempt from its terminal outcome. The outcome

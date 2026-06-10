@@ -2,6 +2,7 @@ package coordination
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 
@@ -90,7 +91,44 @@ func (s *Store) enrichForensicsRow(ctx context.Context, orgID int64, r *models.C
 		).Scan(&r.ActorDisplay)
 	}
 
+	s.enrichReverifyState(ctx, orgID, r)
 	parseForensicsEvidence(evidenceJSON, r)
+}
+
+// enrichReverifyState reads the async-reverify queue row + any appended correction so the
+// report can show where the pipeline stands for this comment.
+func (s *Store) enrichReverifyState(ctx context.Context, orgID int64, r *models.CommentForensicsRow) {
+	var (
+		outcome     sql.NullString
+		reason      sql.NullString
+		attemptedAt sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT outcome, reason, attempted_at FROM comment_reverify
+		  WHERE outbound_id = ? AND org_id = ?`,
+		r.OutboundID, orgID,
+	).Scan(&outcome, &reason, &attemptedAt)
+	if err == nil {
+		r.ReverifyScheduled = true
+		r.ReverifyOutcome = outcome.String
+		r.ReverifyReason = reason.String
+		r.ReverifyAttemptedAt = attemptedAt.String
+	}
+
+	// A reverify correction is a 'succeeded' ledger row with reason='reverified'.
+	var correctionID sql.NullInt64
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT id FROM action_ledger
+		  WHERE outbound_id = ? AND org_id = ? AND outcome = 'succeeded' AND reason = ?
+		  ORDER BY performed_at DESC LIMIT 1`,
+		r.OutboundID, orgID, ReverifyCorrectionReason,
+	).Scan(&correctionID)
+	if correctionID.Valid {
+		r.CorrectionEventID = correctionID.Int64
+		r.LatestEffectiveOutcome = "succeeded"
+	} else {
+		r.LatestEffectiveOutcome = r.LedgerOutcome
+	}
 }
 
 // parseForensicsEvidence unpacks the persisted evidence_json into the forensic row.
