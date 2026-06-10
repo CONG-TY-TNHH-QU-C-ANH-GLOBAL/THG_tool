@@ -43,6 +43,7 @@
         "content/execution_dedup.js",
         "content/comment_submit.js",
         "content/comment_state_machine.js",
+        "content/comment_button.js",
         "content/outbound.js",
         "content/reverify.js",
         "content/comment_executor.js",
