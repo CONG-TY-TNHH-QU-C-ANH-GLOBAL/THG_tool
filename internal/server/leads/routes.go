@@ -12,7 +12,12 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// Engagement endpoints MUST be registered before the /leads/:id catch-all
 	// or Fiber routes /leads/engagement into the :id handler.
 	group.Get("/leads/engagement", getLeadEngagementsBatch(deps))
+	// Lead Lifecycle (PR-4): static segments before the /leads/:id catch-all.
+	group.Get("/leads/lifecycle", getLeadLifecyclesBatch(deps))
+	group.Get("/leads/archived", getArchivedLeads(deps))
 	group.Get("/leads/:id/engagement", getLeadEngagement(deps))
+	group.Post("/leads/:id/archive", archiveLead(deps))
+	group.Post("/leads/:id/unarchive", unarchiveLead(deps))
 	// Admin-only: see every AI classification decision (kept + rejected)
 	// to answer "why did the AI reject 50/50 posts on this crawl?".
 	group.Get("/leads/classifications/recent", adminOnly, getClassificationsRecent(deps))

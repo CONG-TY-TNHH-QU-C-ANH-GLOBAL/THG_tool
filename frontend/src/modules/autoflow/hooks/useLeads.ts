@@ -5,6 +5,7 @@ import {
   getLeadEngagementsBatch,
   getLeads,
 } from '../services/leadsService';
+import { getLeadLifecyclesBatch } from '../services/lifecycleService';
 
 const CRAWL_DISPATCH_KEY = 'autoflow:last_crawl_dispatch';
 const POLL_INTERVAL_MS = 15_000;
@@ -28,9 +29,19 @@ export function useLeads(orgId: string, statusFilter: LeadStatus | 'All' = 'All'
         setLeads(data);
         if (data.length === 0) return;
         const ids = data.map(l => l.id);
-        const engagementMap = await getLeadEngagementsBatch(orgId, ids);
+        // Engagement (coordination badge) + lifecycle (work-management state) are two
+        // orthogonal projections; fetch both and merge. Both are best-effort — the list
+        // renders without them. Lifecycle drives the Cần xử lý / Chờ phản hồi / ... tabs.
+        const [engagementMap, lifecycleMap] = await Promise.all([
+          getLeadEngagementsBatch(orgId, ids),
+          getLeadLifecyclesBatch(ids),
+        ]);
         if (cancelled) return;
-        setLeads(prev => prev.map(l => ({ ...l, engagement: engagementMap[l.id] })));
+        setLeads(prev => prev.map(l => ({
+          ...l,
+          engagement: engagementMap[l.id],
+          lifecycle: lifecycleMap[l.id],
+        })));
       })
       .catch(err => { if (!cancelled) setError(err instanceof Error ? err : new Error(String(err))); })
       .finally(() => { if (!cancelled) setIsLoading(false); });
