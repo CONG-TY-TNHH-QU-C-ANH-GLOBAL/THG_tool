@@ -111,3 +111,33 @@ export async function deleteAllOutboundComments(): Promise<{ deleted: number }> 
 export async function deleteAllOutboundPosts(): Promise<{ deleted: number }> {
   return del<{ deleted: number }>('/outbox/posts/all');
 }
+
+// --- Manual human verification + retry + outcome metrics (COMMENT_ASYNC_REVERIFY.md) ---
+
+// humanVerifyComment confirms a submitted_unverified comment the operator saw on Facebook.
+// Appends a 'succeeded'/'human_verified' correction (idempotent on the backend).
+export async function humanVerifyComment(id: number): Promise<{ corrected: boolean; already_verified: boolean; new_effective_outcome: string }> {
+  return post(`/comments/${id}/human-verify`, {});
+}
+
+// retryComment re-queues a retryable pre-submit failure as a fresh attempt through the
+// normal pipeline (PolicyGate / dedup / readiness). The old failed row is never touched.
+export async function retryComment(id: number): Promise<{ ok: boolean; new_outbound_id?: number; reason?: string }> {
+  return post(`/comments/${id}/retry`, {});
+}
+
+export interface CommentMetrics {
+  total: number; verified_success: number; submitted_unverified: number;
+  target_not_reached: number; execution_failed: number; comment_button_not_found: number;
+  other_failed: number; human_verified: number; reverified: number; reverify_error: number;
+}
+export interface CommentMetricsResponse {
+  days: number; metrics: CommentMetrics;
+  effective_verified: number; submitted_unverified_open: number; submitted_unverified_rate: number;
+}
+
+// getCommentMetrics returns the comment outcome summary used to decide whether
+// submitted_unverified is frequent enough to reopen async reverify.
+export async function getCommentMetrics(days = 7): Promise<CommentMetricsResponse> {
+  return get<CommentMetricsResponse>(`/comments/metrics?days=${days}`);
+}

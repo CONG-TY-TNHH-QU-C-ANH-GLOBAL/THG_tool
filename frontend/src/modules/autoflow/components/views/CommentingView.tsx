@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { ActorVerdictChip } from '../ActorVerdictChip';
 import { commentReason, commentStatus } from '../commentExecution/statusMessages';
+import { CommentRowActions } from '../commentExecution/CommentRowActions';
+import { CommentMetricsBar } from '../commentExecution/CommentMetricsBar';
 import {
   clearActorBlock,
   deleteAllOutboundComments,
@@ -279,6 +281,8 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
         ))}
       </div>
 
+      <CommentMetricsBar />
+
       {errorMsg && <div className="banner banner-error">{errorMsg}</div>}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden', minHeight: 560 }}>
@@ -443,6 +447,8 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                         {tv.actionOpenTarget}
                       </a>
                     )}
+                    {/* Manual human-verify (submitted_unverified) + retry (pre-submit fail). */}
+                    <CommentRowActions message={selectedMessage} onDone={() => void load()} />
                     {isAdmin && actorOf(selectedMessage.account_id)?.actor_blocked && (
                       <button
                         type="button"
