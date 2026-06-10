@@ -27,6 +27,8 @@ func TestEventConstantsAreStable(t *testing.T) {
 		events.EngagementReconcile:   "engagement.reconcile",
 		events.EngagementRevoked:     "engagement.revoked",
 		events.LeadArchiveSweep:      "lead.archive_sweep",
+		events.ReverifyClaim:         "reverify.claim",
+		events.ReverifyResult:        "reverify.result",
 		events.RiskSignalApplied:     "risk.signal_applied",
 		events.RiskCooldownSet:       "risk.cooldown_set",
 	}

@@ -59,6 +59,10 @@ const (
 	// Lead lifecycle events.
 	LeadArchiveSweep = "lead.archive_sweep"
 
+	// Async comment reverify events.
+	ReverifyClaim  = "reverify.claim"
+	ReverifyResult = "reverify.result"
+
 	// Risk / behaviour events.
 	RiskSignalApplied = "risk.signal_applied"
 	RiskCooldownSet   = "risk.cooldown_set"

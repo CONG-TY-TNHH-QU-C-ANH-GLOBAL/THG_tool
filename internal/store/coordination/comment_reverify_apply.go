@@ -43,6 +43,30 @@ func (s *Store) ApplyReverifyResult(ctx context.Context, orgID, id int64, found 
 	return false, s.RecordReverifyOutcome(ctx, id, ReverifyNotFound, strings.TrimSpace(notes))
 }
 
+// RecordReverifyError marks a reverify row as errored (the connector could not navigate /
+// reach the content script / post the result). attempted_at is stamped so the job leaves
+// pending — it must never sit pending+claimed forever. Idempotent + tenant-guarded.
+func (s *Store) RecordReverifyError(ctx context.Context, orgID, id int64, reason string) error {
+	if orgID <= 0 || id <= 0 {
+		return fmt.Errorf("reverify error requires org_id + id")
+	}
+	job, outcome, err := s.getReverify(ctx, id)
+	if err != nil {
+		return err
+	}
+	if job.OrgID != orgID {
+		return fmt.Errorf("reverify %d not in org %d", id, orgID) // tenant guard
+	}
+	if outcome != ReverifyPending {
+		return nil // already resolved — idempotent no-op
+	}
+	r := strings.TrimSpace(reason)
+	if r == "" {
+		r = "reverify_error"
+	}
+	return s.RecordReverifyOutcome(ctx, id, ReverifyError, r)
+}
+
 // getReverify loads a reverify row's job fields + current outcome.
 func (s *Store) getReverify(ctx context.Context, id int64) (ReverifyJob, string, error) {
 	var (

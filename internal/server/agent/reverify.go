@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/thg/scraper/internal/runtime/events"
 )
 
 // Async comment reverify agent endpoints (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-A).
@@ -30,6 +32,10 @@ func (h *Handler) agentReverifyClaim(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	if len(jobs) > 0 {
+		events.Info(c.Context(), events.ReverifyClaim,
+			events.FieldOrgID, orgID, events.FieldAccountID, accountID, "count", len(jobs))
+	}
 	return c.JSON(fiber.Map{"reverifies": jobs, "count": len(jobs)})
 }
 
@@ -45,13 +51,32 @@ func (h *Handler) agentReverifyResult(c *fiber.Ctx) error {
 		Found            bool   `json:"found"`
 		CommentPermalink string `json:"comment_permalink"`
 		Notes            string `json:"notes"`
+		Error            string `json:"error"`
 	}
 	if err := c.BodyParser(&body); err != nil || body.ID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "id required"})
 	}
-	corrected, err := h.db.Coordination().ApplyReverifyResult(c.Context(), orgID, body.ID, body.Found, body.CommentPermalink, body.Notes)
+	// The connector ALWAYS reports a terminal verdict for a claimed job. An `error` (could
+	// not navigate / reach the content script / post) records outcome=error so the job never
+	// sits pending forever. Otherwise found→correction / not-found.
+	co := h.db.Coordination()
+	var corrected bool
+	var err error
+	outcome := "verified"
+	if e := body.Error; e != "" {
+		outcome = "error"
+		err = co.RecordReverifyError(c.Context(), orgID, body.ID, e)
+	} else if body.Found {
+		corrected, err = co.ApplyReverifyResult(c.Context(), orgID, body.ID, true, body.CommentPermalink, body.Notes)
+	} else {
+		outcome = "not_found"
+		_, err = co.ApplyReverifyResult(c.Context(), orgID, body.ID, false, "", body.Notes)
+	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"ok": true, "corrected": corrected})
+	events.Info(c.Context(), events.ReverifyResult,
+		events.FieldOrgID, orgID, "reverify_id", body.ID, events.FieldOutcome, outcome,
+		"corrected", corrected, events.FieldReason, body.Error)
+	return c.JSON(fiber.Map{"ok": true, "corrected": corrected, "outcome": outcome})
 }
