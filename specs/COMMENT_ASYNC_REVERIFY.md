@@ -69,9 +69,22 @@ dedup/cooldown/risk gates that govern real sends):
   =2) enqueues eligible rows.
 - Agent endpoints `GET /api/agent/reverify/claim` + `POST /api/agent/reverify/result`.
 - Extension: `content/reverify.js` (read-only DOM search, reuses proof.js — never composes),
-  `src/reverify.js` (connector poller, runs after outbox; reports only a definitive verdict,
-  leaves the row pending on busy/error), wired via comment_executor + bridge + heartbeat +
-  manifest. The composer state machine + gate logic are untouched.
+  `src/reverify.js` (connector poller, runs after outbox), wired via comment_executor +
+  bridge + heartbeat + manifest. The composer state machine + gate logic are untouched.
+
+**Fail-safe (PR-A connector fix).** A claimed job MUST reach a terminal verdict — it must
+never sit pending+claimed forever:
+- The connector ALWAYS reports (verified / not_found / **error** with reason) for every
+  claimed job, even on nav-fail / no-tab / content-unreachable / worker-exception. The state
+  shape is `liveState.tab.id` (not `.tabId`), and `sendMessage` falls back to
+  `injectContentScripts` + retry (an old FB tab may hold a pre-reverify content script).
+- `error` → `RecordReverifyError` (outcome=error, attempted_at stamped). Result endpoint
+  routes error/found/not_found and emits `events.ReverifyResult`; claim emits
+  `events.ReverifyClaim`. Connector logs `reverify_*` stage lines.
+- Lease-aware claim (`ReverifyClaimLease`=5m): a pending job is re-offered only if unclaimed
+  OR its claim went stale (connector crashed before reporting) — auto-reclaim, no permanent
+  stuck. Manual reset: `UPDATE comment_reverify SET claimed_at=NULL WHERE ... outcome='pending'
+  AND attempted_at IS NULL`.
 
 The original design follows.
 

@@ -21,6 +21,11 @@ const (
 	ReverifyCorrectionReason = "reverified"
 )
 
+// ReverifyClaimLease bounds how long a claimed-but-unreported job is considered in-flight.
+// After this, the lease-aware claim re-offers it (the connector crashed before reporting) —
+// so a job can never sit pending+claimed forever.
+const ReverifyClaimLease = 5 * time.Minute
+
 // ReverifyJob is one row of the reverify queue handed to the extension.
 type ReverifyJob struct {
 	ID         int64  `json:"id"`
@@ -99,10 +104,15 @@ func (s *Store) ClaimDueReverifies(ctx context.Context, orgID, accountID int64, 
 	if limit <= 0 {
 		limit = 20
 	}
+	// Lease-aware: claim pending jobs that are unclaimed OR whose claim lease expired (the
+	// connector crashed before reporting). This both prevents two connectors double-claiming
+	// an in-flight job AND auto-reclaims a stuck one — no job stays pending+claimed forever.
+	leaseCutoff := now.Add(-ReverifyClaimLease).UTC().Format("2006-01-02 15:04:05")
 	query := `SELECT id, org_id, outbound_id, target_url, account_id, created_by, COALESCE(content,'')
 	   FROM comment_reverify
-	  WHERE outcome = ? AND scheduled_for <= ? AND org_id = ?`
-	args := []any{ReverifyPending, now.UTC().Format("2006-01-02 15:04:05"), orgID}
+	  WHERE outcome = ? AND scheduled_for <= ? AND org_id = ?
+	    AND (claimed_at IS NULL OR claimed_at <= ?)`
+	args := []any{ReverifyPending, now.UTC().Format("2006-01-02 15:04:05"), orgID, leaseCutoff}
 	if accountID > 0 {
 		query += ` AND account_id = ?`
 		args = append(args, accountID)
