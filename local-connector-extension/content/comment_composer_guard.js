@@ -123,39 +123,41 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
     clog(ctx, 'prepare_start', { expected_length: exp.length, actual_length: readComposerText(composer).length,
       extra: { editor_tag: ed.tagName, editor_class: String(ed.className || '').slice(0, 60), editor_editable: !!ed.isContentEditable } });
 
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      const cleared = await clearComposerUntilEmpty(composer);
-      diag.clear_attempts += cleared.rounds;
-      diag.composer_empty_stable = cleared.ok;
-      clog(ctx, 'after_clear', { expected_length: exp.length, actual_length: readComposerText(composer).length, equals_expected: cleared.ok, reason: cleared.ok ? '' : 'composer_clear_failed' });
-      if (!cleared.ok) return { ok: false, reason: 'composer_clear_failed', diagnostic: diag };
+    const abort = async (reason) => { try { await clearComposerUntilEmpty(composer); } catch (_) {} return { ok: false, reason, diagnostic: diag }; };
 
-      diag.insert_attempts = attempt;
-      const ins = await insertTextInto(composer, expected);
-      await waitForStableComposerText(composer);
-      const check = assertComposerExactlyExpected(composer, expected);
-      diag.method = ins.method;
-      diag.composer_after_insert_length = check.actual_length;
-      diag.composer_after_insert_equals_expected = check.ok;
-      diag.composer_after_insert_is_duplicate_of_expected = check.duplicate;
-      const ea = snip(exp); const aa = snip(readComposerText(composer));
-      clog(ctx, 'after_insert', { method: ins.method, expected_length: exp.length, actual_length: check.actual_length, equals_expected: check.ok, is_duplicate: check.duplicate,
-        extra: { exp_head: ea.head, exp_tail: ea.tail, act_head: aa.head, act_tail: aa.tail } });
+    // 1. CLEAR-OR-ABORT — never insert into a composer that still holds text.
+    const cleared = await clearComposerUntilEmpty(composer);
+    diag.clear_attempts = cleared.rounds;
+    diag.composer_empty_stable = cleared.ok;
+    clog(ctx, 'after_clear', { expected_length: exp.length, actual_length: readComposerText(composer).length, equals_expected: cleared.ok, reason: cleared.ok ? '' : 'composer_clear_failed' });
+    if (!cleared.ok) return { ok: false, reason: 'composer_clear_failed', diagnostic: diag };
 
-      if (check.mismatch) return { ok: false, reason: 'comment_text_mismatch', diagnostic: diag };
-      if (check.ok) {
-        await wait(900); // late-restore guard
-        const late = assertComposerExactlyExpected(composer, expected);
-        diag.composer_after_settle_length = late.actual_length;
-        diag.composer_after_settle_is_duplicate_of_expected = late.duplicate;
-        clog(ctx, 'after_settle', { method: ins.method, expected_length: exp.length, actual_length: late.actual_length, equals_expected: late.ok, is_duplicate: late.duplicate });
-        if (late.ok) return { ok: true, diagnostic: diag };
-        if (late.mismatch) return { ok: false, reason: 'comment_text_mismatch', diagnostic: diag };
-      }
-      // doubled (immediate or late) → loop clears + retries once
-    }
-    clog(ctx, 'doubled_abort', { method: diag.method, expected_length: exp.length, actual_length: diag.composer_after_insert_length, is_duplicate: true, reason: 'comment_text_doubled' });
-    return { ok: false, reason: 'comment_text_doubled', diagnostic: diag };
+    // 2. ONE insert (single method — no cumulative fallback).
+    diag.insert_attempts = 1;
+    const before_length = readComposerText(composer).length;
+    const ins = await insertTextInto(composer, expected);
+    await waitForStableComposerText(composer);
+    const check = assertComposerExactlyExpected(composer, expected);
+    diag.method = ins.method;
+    diag.composer_after_insert_length = check.actual_length;
+    diag.composer_after_insert_equals_expected = check.ok;
+    diag.composer_after_insert_is_duplicate_of_expected = check.duplicate;
+    const ea = snip(exp); const aa = snip(readComposerText(composer));
+    clog(ctx, 'after_insert', { method: ins.method, expected_length: exp.length, actual_length: check.actual_length, equals_expected: check.ok, is_duplicate: check.duplicate,
+      extra: { attempt_no: 1, before_length, after_length: check.actual_length, exp_head: ea.head, exp_tail: ea.tail, act_head: aa.head, act_tail: aa.tail } });
+
+    // 3. STRICT: doubled / over-length / mismatch → abort, no fallback, no submit.
+    if (check.duplicate || check.actual_length > exp.length) return abort('comment_text_doubled');
+    if (check.mismatch) return abort('comment_text_mismatch');
+
+    // 4. ok — LATE-RESTORE re-CHECK (re-assert only; never a second insert).
+    await wait(900);
+    const late = assertComposerExactlyExpected(composer, expected);
+    diag.composer_after_settle_length = late.actual_length;
+    diag.composer_after_settle_is_duplicate_of_expected = late.duplicate;
+    clog(ctx, 'after_settle', { method: ins.method, expected_length: exp.length, actual_length: late.actual_length, equals_expected: late.ok, is_duplicate: late.duplicate });
+    if (late.ok) return { ok: true, diagnostic: diag };
+    return abort(late.duplicate || late.actual_length > exp.length ? 'comment_text_doubled' : 'comment_text_mismatch');
   }
 
   return {
