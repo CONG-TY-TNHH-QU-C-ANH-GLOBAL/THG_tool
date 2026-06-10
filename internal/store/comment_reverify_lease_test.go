@@ -21,7 +21,7 @@ func scheduleAndClaimOne(t *testing.T, db *Store, postURL string) int64 {
 	for _, j := range jobs {
 		_ = co.ScheduleReverify(ctx, j, time.Now())
 	}
-	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	if len(claimed) != 1 {
 		t.Fatalf("claimed %d, want 1", len(claimed))
 	}
@@ -58,6 +58,13 @@ func TestReverify_ErrorLeavesNoStuckPending(t *testing.T) {
 	}
 }
 
+func ageClaimReverify(t *testing.T, db *Store, rid int64) {
+	t.Helper()
+	if _, err := db.db.Exec(`UPDATE comment_reverify SET claimed_at = datetime('now','-10 minutes') WHERE id = ?`, rid); err != nil {
+		t.Fatalf("age claim: %v", err)
+	}
+}
+
 // The lease-aware claim re-offers a pending job whose claim went stale (connector crashed
 // before reporting), but does NOT re-offer a freshly-claimed one.
 func TestReverify_LeaseReclaimsStaleClaim(t *testing.T) {
@@ -67,18 +74,44 @@ func TestReverify_LeaseReclaimsStaleClaim(t *testing.T) {
 	rid := scheduleAndClaimOne(t, db, "https://facebook.com/groups/1/posts/RVLEASE")
 
 	// Freshly claimed → a second claim must NOT re-offer it (lease still held).
-	again, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	again, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	if len(again) != 0 {
 		t.Errorf("freshly-claimed job must not be re-offered, got %d", len(again))
 	}
 
-	// Age the claim past the lease → it becomes re-claimable.
-	if _, err := db.db.Exec(
-		`UPDATE comment_reverify SET claimed_at = datetime('now','-10 minutes') WHERE id = ?`, rid); err != nil {
-		t.Fatalf("age claim: %v", err)
-	}
-	reclaimed, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	ageClaimReverify(t, db, rid) // past the lease → re-claimable
+	reclaimed, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	if len(reclaimed) != 1 || reclaimed[0].ID != rid {
 		t.Errorf("stale-claimed job should be re-offered, got %+v", reclaimed)
+	}
+}
+
+// Self-heal: a connector that keeps claiming (stale code) but never attempts gets the job
+// retired as error=claim_without_attempt after the claim budget — never pending forever.
+func TestReverify_ClaimWithoutAttemptSelfHeals(t *testing.T) {
+	db := newSharedStore(t, "reverify_selfheal.db")
+	ctx := context.Background()
+	co := db.Coordination()
+	postURL := "https://facebook.com/groups/1/posts/RVHEAL"
+	rid := scheduleAndClaimOne(t, db, postURL) // claim #1
+
+	// Reclaim until the budget is exhausted, never attempting.
+	for i := 0; i < coordination.ReverifyMaxClaimsWithoutAttempt; i++ {
+		ageClaimReverify(t, db, rid)
+		if _, err := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10); err != nil {
+			t.Fatalf("claim %d: %v", i, err)
+		}
+	}
+	// The next claim self-heals it and stops re-offering.
+	last, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
+	if len(last) != 0 {
+		t.Errorf("a job over the claim budget must not be re-offered, got %d", len(last))
+	}
+	rows, _ := co.CommentForensicsByTargetURLs(ctx, 1, []string{postURL})
+	if rows[0].ReverifyOutcome != coordination.ReverifyError {
+		t.Errorf("reverify_outcome = %q, want error", rows[0].ReverifyOutcome)
+	}
+	if rows[0].ReverifyReason != coordination.ReverifyReasonClaimWithoutAttempt {
+		t.Errorf("reverify_reason = %q, want claim_without_attempt", rows[0].ReverifyReason)
 	}
 }

@@ -18,6 +18,7 @@ import (
 func (h *Handler) agentReverifyClaim(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	accountID, _ := c.Locals("agent_assigned_account_id").(int64)
+	tokenID, _ := c.Locals("agent_id").(int64) // WHO is claiming — recorded for diagnosis
 	if orgID <= 0 {
 		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
 	}
@@ -28,13 +29,14 @@ func (h *Handler) agentReverifyClaim(c *fiber.Ctx) error {
 	if limit > 20 {
 		limit = 20
 	}
-	jobs, err := h.db.Coordination().ClaimDueReverifies(c.Context(), orgID, accountID, time.Now(), limit)
+	jobs, err := h.db.Coordination().ClaimDueReverifies(c.Context(), orgID, accountID, tokenID, time.Now(), limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	if len(jobs) > 0 {
 		events.Info(c.Context(), events.ReverifyClaim,
-			events.FieldOrgID, orgID, events.FieldAccountID, accountID, "count", len(jobs))
+			events.FieldOrgID, orgID, events.FieldAccountID, accountID,
+			"token_id", tokenID, "count", len(jobs))
 	}
 	return c.JSON(fiber.Map{"reverifies": jobs, "count": len(jobs)})
 }

@@ -124,7 +124,7 @@ func TestReverify_ForensicsReflectsCorrection(t *testing.T) {
 	for _, j := range jobs {
 		_ = co.ScheduleReverify(ctx, j, time.Now())
 	}
-	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	if _, err := co.ApplyReverifyResult(ctx, 1, claimed[0].ID, true, "https://fb.com/x?comment_id=1", "found"); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
