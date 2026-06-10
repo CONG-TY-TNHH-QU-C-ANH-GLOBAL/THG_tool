@@ -352,10 +352,15 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   //   3. (Implicit, enforced by the caller stability window.) These
   //      conditions hold continuously for stableMs milliseconds, so
   //      we are not catching a transient mount that will unmount.
-  // commentSurfaceDeps injects the DOM helpers the comment_button.js module needs (kept here
-  // so the module stays pure + unit-testable).
+  // commentSurfaceDeps injects the DOM helpers the comment_button.js + comment_composer.js
+  // modules need (kept here so the modules stay pure + unit-testable). closestArticle +
+  // docEditables enable the page-wide, article-scoped composer fallback.
   function commentSurfaceDeps() {
-    return { visible, labelOf, findCommentEditor };
+    return {
+      visible, labelOf, findCommentEditor,
+      closestArticle: (el) => (el && el.closest ? el.closest('[role="article"], [role="dialog"]') : null),
+      docEditables: () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea')),
+    };
   }
   // discoverDeps adds the scroll/retry primitives for the gate1 fallback. scrollIntoCenter
   // alternates center / toward-bottom so a lazily-mounted composer below the action row gets
@@ -363,6 +368,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   function discoverDeps() {
     return {
       visible, labelOf, findCommentEditor,
+      closestArticle: (el) => (el && el.closest ? el.closest('[role="article"], [role="dialog"]') : null),
+      docEditables: () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea')),
       scrollIntoCenter: (el, towardBottom) => {
         try { el.scrollIntoView({ block: towardBottom ? 'end' : 'center' }); } catch (e) { /* ignore */ }
       },
@@ -744,7 +751,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         // commented"). Otherwise the post was never reached → target_not_reached.
         const probe = probeCommentGates(targetPostId);
         const art = findTargetArticle(targetPostId);
-        const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps()) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none' };
+        const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps()) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none', composer_candidates: [] };
+        const candReasons = (ent.composer_candidates || []).map((cand) => cand.reason + (cand.accepted ? '(ok)' : '')).join(',');
         const gates = {
           articleFound: probe.articleFound, permalinkFound: probe.permalinkFound,
           commentButtonFound: ent.comment_button_found, composerEntryFound: ent.composer_entry_found,
@@ -765,6 +773,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
           ' textbox_candidates=' + ent.textbox_candidates_count +
           ' contenteditable_candidates=' + ent.contenteditable_candidates_count +
           ' gate1_passed_via=' + ent.gate1_passed_via +
+          ' composer_candidate_reasons=[' + candReasons + ']' +
           ' landed_at=' + landed + ' nav_at_entry=' + navAtEntry +
           ' did not settle (article+permalink+comment-entry) within fallback window',
           navDiag);

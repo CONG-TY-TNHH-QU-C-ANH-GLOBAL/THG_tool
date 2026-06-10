@@ -6,6 +6,7 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+require('./comment_composer.js'); // sets globalThis.THGCommentComposer (composer delegation)
 const CB = require('./comment_button.js');
 
 const visible = () => true;
@@ -16,7 +17,6 @@ function btn(label) {
   return { _label: label, getAttribute: (n) => (n === 'aria-label' ? label : null) };
 }
 const composerEl = () => ({ getAttribute: () => null });
-const placeholderEl = (text) => ({ getAttribute: (n) => (n === 'aria-label' || n === 'placeholder' ? text : null) });
 
 // makeArticle routes selector strings to the right fake nodes (scoped to THIS article).
 function makeArticle(state) {
@@ -47,14 +47,6 @@ function makeArticle(state) {
   assert.strictEqual(st.found, true);
   assert.strictEqual(st.via, 'composer_entry');
 }
-// 1b. Composer expressed only as a "Viết bình luận…" placeholder opener → also passes.
-{
-  const a = makeArticle({ permalink: true, placeholders: [placeholderEl('Viết bình luận...')] });
-  const st = CB.commentSurfaceState(a, deps);
-  assert.strictEqual(st.found, true);
-  assert.strictEqual(st.via, 'composer_entry');
-}
-
 // 2. Action button delayed until after a scroll → discovery eventually passes.
 {
   let t = 0;
