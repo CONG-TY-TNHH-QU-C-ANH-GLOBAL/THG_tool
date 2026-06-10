@@ -11,7 +11,7 @@ import (
 // verification evidence actually say?". Read-only; the classification lives in
 // models.ClassifyCommentForensics. Registered under the superadmin group.
 
-// superAdminCommentForensics handles GET/POST /api/admin/superadmin/comment-forensics.
+// superAdminCommentForensics handles GET/POST /api/superadmin/comment-forensics.
 // URLs come from the `urls` query param (comma/newline separated) or a JSON body
 // {"urls": [...], "org_id": N}. Founder may target any org via org_id.
 func (h *Handler) superAdminCommentForensics(c *fiber.Ctx) error {

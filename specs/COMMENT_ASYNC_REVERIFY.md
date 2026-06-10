@@ -31,7 +31,7 @@ and (b) later **reverify out-of-band** and, only on real proof, append a correct
   outbound + latest execution_attempt + action_ledger, parses `evidence_json`
   (comment_permalink, page_url_after, nav_diagnostic{phase, redirect_class},
   screenshot_path, notes).
-- Endpoint: `GET|POST /api/admin/superadmin/comment-forensics?org_id=&urls=` (founder).
+- Endpoint: `GET|POST /api/superadmin/comment-forensics?org_id=&urls=` (founder).
 
 ### Part B — Soft-touch semantics (done)
 - `models.IsLedgerOutcomeHardVerifiedTouch` (only `succeeded`/`dom_verified`),
