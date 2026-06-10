@@ -17,7 +17,14 @@ let insertCount = 0;
 let mode = 'replace';
 const composer = {
   isContentEditable: true, tagName: 'DIV', className: 'composer',
-  get innerText() { return composerText; }, focus() {}, dispatchEvent() { return true; },
+  get innerText() { return composerText; }, focus() {},
+  // Simulate Lexical: an input event carrying inputType:insertText + data INSERTS
+  // data again. Regression guard — a synthetic InputEvent after execCommand would
+  // double the comment (the 526=263×2 bug). insertTextInto must NOT dispatch one.
+  dispatchEvent(ev) {
+    if (ev && ev.type === 'input' && ev.inputType === 'insertText' && ev.data) composerText += ev.data;
+    return true;
+  },
 };
 globalThis.window = { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) };
 globalThis.document = {
@@ -30,7 +37,7 @@ globalThis.document = {
   },
 };
 globalThis.KeyboardEvent = class { constructor(t) { this.type = t; } };
-globalThis.InputEvent = class { constructor(t) { this.type = t; } };
+globalThis.InputEvent = class { constructor(t, init) { this.type = t; this.inputType = init && init.inputType; this.data = init && init.data; } };
 globalThis.Event = class { constructor(t) { this.type = t; } };
 globalThis.chrome = { runtime: { getManifest: () => ({ version: 'test' }) } };
 

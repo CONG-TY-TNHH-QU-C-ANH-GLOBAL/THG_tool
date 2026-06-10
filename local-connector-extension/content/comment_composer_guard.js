@@ -75,8 +75,11 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
   // { method, actual }; the caller asserts + retries via clear.
   async function insertTextInto(composer, expected) {
     selectAllRobust(composer);
+    // execCommand('insertText') ALREADY fires the native input event that Lexical
+    // consumes to insert the text ONCE. Do NOT also dispatch a synthetic
+    // InputEvent({inputType:'insertText', data: expected}) — Lexical reads its .data
+    // and inserts the text a SECOND time → A+A (telemetry: 526 = 263×2 on one insert).
     try { document.execCommand('insertText', false, expected); } catch (_) {}
-    try { composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: expected })); } catch (_) {}
     await wait(160);
     return { method: 'kbd_selectall_insertText', actual: readComposerText(composer) };
   }
