@@ -21,10 +21,39 @@ export function commentStatus(state: string, outcome: string): CommentStatus {
   if (s === 'expired') return { label: 'Hết hạn — chưa chạy', severity: 'failed' };
   if (s === 'finished') {
     if (o === 'verified_success' || o === 'dom_verified') return { label: 'Đã đăng thành công', severity: 'success' };
-    if (o === 'submitted_unverified' || o === 'optimistic_success') return { label: 'Đã gửi nhưng chưa xác minh', severity: 'unverified' };
+    if (o === 'submitted_unverified' || o === 'optimistic_success') return { label: 'Đã gửi, đang chờ xác minh', severity: 'unverified' };
     return { label: 'Thất bại', severity: 'failed' };
   }
   return { label: 'Đang chờ', severity: 'waiting' };
+}
+
+// CommentAction is a status-contextual action the UI can offer next to a comment row.
+// Data-only (no JSX) so it stays unit-testable and the rendering view doesn't grow.
+export interface CommentAction {
+  key: 'open_post' | 'reverify';
+  label: string;
+  href?: string;     // present for link actions (open_post)
+  enabled: boolean;  // reverify is disabled until the async-reverify endpoint ships (Part D)
+  todo?: string;     // why an action is not yet wired
+}
+
+// commentActions returns the actions for a row. "Mở post" always (open the target post to
+// check manually). "Xác minh lại" only for the unverified state — disabled with a TODO
+// until POST /api/.../reverify exists (see specs/COMMENT_ASYNC_REVERIFY.md).
+export function commentActions(severity: ExecSeverity, targetUrl?: string): CommentAction[] {
+  const actions: CommentAction[] = [];
+  if (targetUrl) {
+    actions.push({ key: 'open_post', label: 'Mở post', href: targetUrl, enabled: true });
+  }
+  if (severity === 'unverified') {
+    actions.push({
+      key: 'reverify',
+      label: 'Xác minh lại',
+      enabled: false,
+      todo: 'Chờ endpoint reverify bất đồng bộ (specs/COMMENT_ASYNC_REVERIFY.md).',
+    });
+  }
+  return actions;
 }
 
 // commentReason → plain Vietnamese for a failed/unverified outcome ('' for success).
@@ -35,7 +64,7 @@ export function commentReason(outcome: string): string {
       return '';
     case 'submitted_unverified':
     case 'optimistic_success':
-      return 'Đã bấm gửi nhưng hệ thống chưa thấy comment xuất hiện để xác minh.';
+      return 'Đã bấm gửi, đang chờ hệ thống xác minh comment xuất hiện trên Facebook.';
     case 'duplicate_execution_suppressed':
       return 'Lần gửi này đã được xử lý ở lần trước (chống gửi trùng).';
     case 'comment_quality_duplicate_text':

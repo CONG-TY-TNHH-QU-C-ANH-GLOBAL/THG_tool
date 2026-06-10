@@ -21,6 +21,9 @@ const (
 	LeadWaitingReply LeadFreshnessState = "waiting_reply"
 	// We touched it, no reply, the wait window passed — time to follow up.
 	LeadFollowupDue LeadFreshnessState = "followup_due"
+	// We SUBMITTED a comment but it is not DOM-verified yet — held in a verification
+	// cooldown so the planner does not re-comment and risk a real Facebook duplicate.
+	LeadWaitingVerification LeadFreshnessState = "waiting_verification"
 	// No meaningful activity for stale_after_days — cold, an archive candidate.
 	LeadStale LeadFreshnessState = "stale"
 	// Archived (archived_at set). Hidden from the default list; kept for dedup/coverage.
@@ -34,9 +37,10 @@ const (
 	NextActionComment  LeadNextAction = "comment"  // untouched eligible lead → comment
 	NextActionReply    LeadNextAction = "reply"    // customer replied → respond
 	NextActionWait     LeadNextAction = "wait"     // inside the wait window → hold
-	NextActionFollowup LeadNextAction = "followup" // wait window elapsed → re-engage
-	NextActionArchive  LeadNextAction = "archive"  // stale → archive candidate
-	NextActionNone     LeadNextAction = "none"     // archived → nothing to do
+	NextActionFollowup    LeadNextAction = "followup"     // wait window elapsed → re-engage
+	NextActionVerifyLater LeadNextAction = "verify_later" // soft touch → reverify, don't recomment
+	NextActionArchive     LeadNextAction = "archive"      // stale → archive candidate
+	NextActionNone        LeadNextAction = "none"         // archived → nothing to do
 )
 
 // Archive reason codes (stable strings; shared by the maintenance job + UI mapping).
@@ -57,9 +61,16 @@ type LeadLifecyclePolicy struct {
 	EvidenceRetentionDays int           `json:"evidence_retention_days"`
 	RawCrawlRetentionDays int           `json:"raw_crawl_retention_days"`
 	FollowupWindow        time.Duration `json:"followup_window"`
+	VerificationCooldown  time.Duration `json:"verification_cooldown"` // soft touch holds the lead this long
 }
 
-// DefaultLeadLifecyclePolicy returns the spec defaults (14 / 30 / 14 / 90 days, 24h).
+// DefaultVerificationCooldown is how long a submitted-but-unverified lead stays in
+// waiting_verification before falling back to a normal (retry-eligible) state. Long enough
+// for the async reverify pass to run, short enough that a permanently-unverified soft touch
+// does not strand the lead forever.
+const DefaultVerificationCooldown = 30 * time.Minute
+
+// DefaultLeadLifecyclePolicy returns the spec defaults (14 / 30 / 14 / 90 days, 24h, 30m).
 func DefaultLeadLifecyclePolicy() LeadLifecyclePolicy {
 	return LeadLifecyclePolicy{
 		StaleAfterDays:        14,
@@ -67,6 +78,7 @@ func DefaultLeadLifecyclePolicy() LeadLifecyclePolicy {
 		EvidenceRetentionDays: 14,
 		RawCrawlRetentionDays: 90,
 		FollowupWindow:        DefaultFollowupWindow,
+		VerificationCooldown:  DefaultVerificationCooldown,
 	}
 }
 
@@ -77,7 +89,8 @@ func DefaultLeadLifecyclePolicy() LeadLifecyclePolicy {
 type LeadLifecycleInputs struct {
 	LeadID             int64
 	LastCrawledAt      time.Time
-	LastEngagedAt      time.Time // latest verified touch (action_ledger outcome=succeeded)
+	LastEngagedAt      time.Time // latest HARD verified touch (action_ledger outcome=succeeded)
+	LastSoftTouchAt    time.Time // latest submitted_unverified touch (soft touch; not verified)
 	LastCustomerReplyAt time.Time // conversation_threads.last_inbound_at
 	ThreadStatus       string    // closed/converted/replied/initiated/""
 	ArchivedAt         time.Time
@@ -102,11 +115,12 @@ type LeadLifecycleState struct {
 // powers the copilot's "nothing eligible right now, but here is what exists" suggestion
 // (PR-5) so "comment N leads" with no fresh targets degrades into a helpful next step.
 type LifecycleSummary struct {
-	Active       int `json:"active"`
-	WaitingReply int `json:"waiting_reply"`
-	FollowupDue  int `json:"followup_due"`
-	Stale        int `json:"stale"`
-	Archived     int `json:"archived"`
+	Active              int `json:"active"`
+	WaitingReply        int `json:"waiting_reply"`
+	WaitingVerification int `json:"waiting_verification"`
+	FollowupDue         int `json:"followup_due"`
+	Stale               int `json:"stale"`
+	Archived            int `json:"archived"`
 }
 
 // DeriveLeadLifecycle is the pure decision function. Order matters — first match wins
@@ -119,6 +133,9 @@ func DeriveLeadLifecycle(in LeadLifecycleInputs, policy LeadLifecyclePolicy, now
 	if policy.FollowupWindow <= 0 {
 		policy.FollowupWindow = DefaultFollowupWindow
 	}
+	if policy.VerificationCooldown <= 0 {
+		policy.VerificationCooldown = DefaultVerificationCooldown
+	}
 	st := LeadLifecycleState{
 		LeadID:              in.LeadID,
 		LastCrawledAt:       in.LastCrawledAt,
@@ -126,12 +143,17 @@ func DeriveLeadLifecycle(in LeadLifecycleInputs, policy LeadLifecyclePolicy, now
 		LastCustomerReplyAt: in.LastCustomerReplyAt,
 		ArchivedAt:          in.ArchivedAt,
 		ArchiveReason:       in.ArchiveReason,
-		LastSeenAt:          maxTime(in.LastCrawledAt, in.LastEngagedAt, in.LastCustomerReplyAt),
+		LastSeenAt:          maxTime(in.LastCrawledAt, in.LastEngagedAt, in.LastSoftTouchAt, in.LastCustomerReplyAt),
 	}
 
 	staleCutoff := now.Add(-time.Duration(policy.StaleAfterDays) * 24 * time.Hour)
 	customerReplied := !in.LastCustomerReplyAt.IsZero() &&
 		(in.LastEngagedAt.IsZero() || in.LastCustomerReplyAt.After(in.LastEngagedAt))
+	// A soft touch holds the lead only while it is the freshest signal and inside the
+	// cooldown — a later hard touch or customer reply takes precedence below.
+	softTouchActive := !in.LastSoftTouchAt.IsZero() &&
+		now.Sub(in.LastSoftTouchAt) < policy.VerificationCooldown &&
+		in.LastSoftTouchAt.After(in.LastEngagedAt)
 
 	switch {
 	case !in.ArchivedAt.IsZero():
@@ -139,6 +161,10 @@ func DeriveLeadLifecycle(in LeadLifecycleInputs, policy LeadLifecyclePolicy, now
 	case customerReplied:
 		// The customer is waiting on us — highest-value work, never stale.
 		st.FreshnessState, st.NextAction, st.NextActionAt = LeadActive, NextActionReply, now
+	case softTouchActive:
+		// Submitted but unverified — wait for verification, do NOT re-comment.
+		st.FreshnessState, st.NextAction = LeadWaitingVerification, NextActionVerifyLater
+		st.NextActionAt = in.LastSoftTouchAt.Add(policy.VerificationCooldown)
 	case in.LastEngagedAt.IsZero():
 		// Never touched: fresh if recent, stale if it aged out untouched.
 		if in.LastCrawledAt.Before(staleCutoff) {

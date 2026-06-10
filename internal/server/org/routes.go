@@ -77,4 +77,7 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly 
 	// project_runtime_control_plane memory for the broader EXP track.
 	superAdminGrp.Get("/accounts/:id/diagnostic", h.superAdminAccountDiagnostic)
 	superAdminGrp.Post("/accounts/:id/reset-risk", h.superAdminAccountResetRisk)
+	// Comment verification forensics: why did these target URLs verify / fail?
+	superAdminGrp.Get("/comment-forensics", h.superAdminCommentForensics)
+	superAdminGrp.Post("/comment-forensics", h.superAdminCommentForensics)
 }

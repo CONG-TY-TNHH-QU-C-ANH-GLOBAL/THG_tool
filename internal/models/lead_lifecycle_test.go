@@ -56,6 +56,24 @@ func TestDeriveLeadLifecycle(t *testing.T) {
 			wantAction: NextActionReply,
 		},
 		{
+			name:       "recent soft touch is waiting_verification (do not re-comment)",
+			in:         LeadLifecycleInputs{LastCrawledAt: daysAgo(1), LastSoftTouchAt: now.Add(-10 * time.Minute)},
+			wantState:  LeadWaitingVerification,
+			wantAction: NextActionVerifyLater,
+		},
+		{
+			name:       "soft touch past cooldown falls back to active (retry eligible)",
+			in:         LeadLifecycleInputs{LastCrawledAt: daysAgo(1), LastSoftTouchAt: now.Add(-40 * time.Minute)},
+			wantState:  LeadActive,
+			wantAction: NextActionComment,
+		},
+		{
+			name:       "hard verified touch newer than a recent soft touch wins",
+			in:         LeadLifecycleInputs{LastCrawledAt: daysAgo(1), LastSoftTouchAt: now.Add(-10 * time.Minute), LastEngagedAt: now.Add(-5 * time.Minute)},
+			wantState:  LeadWaitingReply,
+			wantAction: NextActionWait,
+		},
+		{
 			name:       "archived wins over everything",
 			in:         LeadLifecycleInputs{LastCrawledAt: hoursAgo(1), ArchivedAt: hoursAgo(3), ArchiveReason: ArchiveReasonNotRelevant},
 			wantState:  LeadArchived,
