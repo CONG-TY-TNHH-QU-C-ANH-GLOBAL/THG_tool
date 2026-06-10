@@ -363,12 +363,28 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // targetPostId is supplied (legacy profile_post/inbox callers) every host reads 'unknown',
   // preserving the pre-existing backward-compat behaviour.
   function classifyHostFor(targetPostId) {
+    // urlPinsIdentity: on the target post's OWN permalink page the URL identifies a single
+    // top-level post, so a host [role=article] that extracts a DIFFERENT id is a nested
+    // comment/answer item — not a competing post. The channel-neutral verdict rule lives in
+    // the composer core (THGCommentComposer.hostVerdict); this Facebook layer only supplies
+    // the canonical ids + the permalink signal. FEED pages keep the strict 'foreign' verdict.
+    const urlPinsIdentity = onTargetPermalinkPage(targetPostId);
     return (host) => {
       if (!host || !targetPostId) return 'unknown';
-      const id = extractArticleCanonicalEntityId(host);
-      if (!id) return 'unknown';
-      return id === targetPostId ? 'target' : 'foreign';
+      return THGCommentComposer.hostVerdict({
+        hostId: extractArticleCanonicalEntityId(host), targetId: String(targetPostId), urlPinsIdentity,
+      });
     };
+  }
+  // isCreatePostComposer reuses the composer core's create-post vocabulary so the global
+  // "What's on your mind / Tạo bài viết" box can never be mistaken for a post's composer —
+  // the one thing the permalink-page identity relaxation must still positively exclude.
+  function isCreatePostComposer(el) {
+    const C = globalThis.THGCommentComposer;
+    if (!el || !el.getAttribute || !C || !C.CREATE_POST_KEYS) return false;
+    const raw = [el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || '',
+      ((el.parentElement && el.parentElement.textContent) || '').slice(0, 80)].join(' ').toLowerCase();
+    return C.CREATE_POST_KEYS.some((k) => raw.includes(k));
   }
   function commentSurfaceDeps(targetPostId) {
     return {
@@ -540,14 +556,18 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (inArticle) return inArticle;
     const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
     const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const onPermalink = onTargetPermalinkPage(id);
     let scope = targetArticle.parentElement;
     for (let depth = 0; scope && depth < 6; depth += 1, scope = scope.parentElement) {
       const editors = Array.from(scope.querySelectorAll('[contenteditable="true"], textarea, input[type="text"]'))
-        .filter(el => visible(el) && !hasAny(labelOf(el), badKeys));
+        .filter(el => visible(el) && !hasAny(labelOf(el), badKeys) && !isCreatePostComposer(el));
       for (const el of editors) {
         const art = el.closest('[role="article"], [role="dialog"]');
         const artId = art ? extractArticleCanonicalEntityId(art) : '';
-        if (artId && artId !== id) continue; // composer belongs to a DIFFERENT post — skip
+        // A composer inside a DIFFERENT post's article is skipped on FEED pages. On the
+        // target's OWN permalink page the URL pins identity (single top-level post), so a
+        // foreign-id host is a nested comment/answer item near the target — not skipped.
+        if (artId && artId !== id && !onPermalink) continue;
         if (hasAny(labelOf(el), commentKeys) || norm(el.getAttribute('role')) === 'textbox' || !artId) {
           return el; // target's own, or a page/sibling-level composer near the target
         }
@@ -882,14 +902,13 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       const editorArticle = editor.closest('[role="article"], [role="dialog"]');
       const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '';
       const inTargetArticle = editorScopeID === targetPostId;
-      // The editor demonstrably belongs to a DIFFERENT post — the route-mismatch
-      // case this guard exists for (May-2026 incident). Always reject.
-      const inDifferentPost = !!editorScopeID && editorScopeID !== targetPostId;
-      // Accept when the editor is in the target post's article, OR — on the
-      // target post's OWN permalink page — when it is a PAGE-LEVEL composer
-      // (not inside any other post's article). The page URL pins identity there,
-      // so the page-level "Write an answer…" box is the target's (the 204 case).
-      const ok = inTargetArticle || (permalinkPage && !inDifferentPost);
+      // On the target post's OWN permalink page the URL pins identity: the page renders ONE
+      // top-level post, so an editor whose enclosing [role=article] extracts a DIFFERENT id
+      // is a nested comment/answer item (the live "Write an answer…" 204 case), NOT a wrong
+      // post. Accept it — the only box we must still positively reject there is the GLOBAL
+      // create-post composer. On FEED pages (multiple real posts) the strict in-target-article
+      // requirement remains the route-mismatch guard (May-2026 incident).
+      const ok = inTargetArticle || (permalinkPage && !isCreatePostComposer(editor));
       if (!ok) {
         const landed = location.href || '';
         console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',

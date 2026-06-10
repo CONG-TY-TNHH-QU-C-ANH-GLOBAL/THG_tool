@@ -94,4 +94,38 @@ const hostTarget = () => 'target';
   assert.strictEqual(out.candidates[0].aria, 'Write an answer…');
 }
 
+// 9) hostVerdict (the live permalink fix): on the target's OWN permalink page (urlPinsIdentity),
+//    a host article that extracts a DIFFERENT id is a nested comment/answer item → 'unknown'
+//    (NOT 'foreign'), so the answer composer is no longer false-rejected wrong_post. On a FEED
+//    page the same differing id is a genuinely different post → 'foreign'.
+{
+  const T = '2040078973566103';
+  assert.strictEqual(C.hostVerdict({ hostId: T, targetId: T, urlPinsIdentity: true }), 'target');
+  assert.strictEqual(C.hostVerdict({ hostId: T, targetId: T, urlPinsIdentity: false }), 'target');
+  // The exact live failure: foreign host id, but we are on the target's own permalink page.
+  assert.strictEqual(C.hostVerdict({ hostId: '999000111', targetId: T, urlPinsIdentity: true }), 'unknown',
+    'permalink page must downgrade a foreign host to unknown (the 204 fix)');
+  // Feed page keeps strict wrong-post protection.
+  assert.strictEqual(C.hostVerdict({ hostId: '999000111', targetId: T, urlPinsIdentity: false }), 'foreign');
+  // No id resolvable → unknown either way.
+  assert.strictEqual(C.hostVerdict({ hostId: '', targetId: T, urlPinsIdentity: false }), 'unknown');
+  assert.strictEqual(C.hostVerdict({ hostId: T, targetId: '', urlPinsIdentity: true }), 'unknown');
+}
+
+// 10) End-to-end of the live fix path: foreign-host candidate on a permalink page resolves via
+//     hostVerdict('unknown') → answer keyword → accepted (this is what makes gate1 pass now).
+{
+  const T = '2040078973566103';
+  const el = liveAnswerBox();
+  const permalinkVerdict = (host) => C.hostVerdict({ hostId: '999000111', targetId: T, urlPinsIdentity: true });
+  const r = C.classify(el, makeArticle(), { visible: sizeVisible, closestArticle: () => ({}), classifyHost: permalinkVerdict });
+  assert.strictEqual(r.accepted, true, 'foreign-host answer composer on permalink page must be accepted');
+  assert.strictEqual(r.reason, 'target_discussion_region');
+  // Same candidate on a FEED page (foreign) stays rejected.
+  const feedVerdict = () => C.hostVerdict({ hostId: '999000111', targetId: T, urlPinsIdentity: false });
+  const r2 = C.classify(liveAnswerBox(), makeArticle(), { visible: sizeVisible, closestArticle: () => ({}), classifyHost: feedVerdict });
+  assert.strictEqual(r2.accepted, false);
+  assert.strictEqual(r2.reason, 'wrong_post');
+}
+
 console.log('gate1 comment_composer regression: PASS');
