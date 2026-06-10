@@ -229,12 +229,24 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 				skipReasons["comment_quality_duplicate_text"]++
 				continue
 			}
-			// PR-3 contact policy: ≤1 URL, grounded-website-only, no fabricated
-			// email/phone. Reject (typed reason) rather than post an unsupported contact.
+			// Brand-trust contact policy: ≤1 URL, grounded website / official contact,
+			// no fabricated email/phone. On a violation, REPAIR toward the Company
+			// Identity (t.me link → @handle, drop non-grounded URLs) and re-screen;
+			// only drop the lead if the repaired comment still fails.
 			if cok, creason := ai.ScreenCommentContacts(content, commentIdentity); !cok {
-				skipped++
-				skipReasons[creason]++
-				continue
+				repaired, changed := ai.RepairCommentContacts(content, commentIdentity)
+				rok, rreason := ai.ScreenCommentContacts(repaired, commentIdentity)
+				if changed && rok {
+					content = repaired
+				} else {
+					skipped++
+					if changed {
+						skipReasons[rreason]++
+					} else {
+						skipReasons[creason]++
+					}
+					continue
+				}
 			}
 		}
 

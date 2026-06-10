@@ -382,7 +382,7 @@ func buildContactRule(id models.CompanyIdentity) string {
 		rule += " No website is configured — do NOT include any URL."
 	}
 	if id.OfficialContact != "" {
-		rule += " Include the Official contact exactly as listed."
+		rule += " Write the Official contact as a plain handle/label (e.g. \"Telegram @handle\", \"Zalo 0987...\"), NOT as a link — the Website is the only URL allowed."
 	}
 	return rule
 }

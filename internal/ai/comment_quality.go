@@ -88,9 +88,11 @@ func ScreenCommentContacts(text string, identity models.CompanyIdentity) (bool, 
 	if len(urls) > 1 {
 		return false, "comment_multiple_urls"
 	}
-	allowedURL := identity.AllowedURL()
+	// The single permitted URL may be EITHER the grounded website OR the official
+	// contact when that contact is itself a URL (e.g. t.me/handle) — both are in the
+	// Company Identity allowlist.
 	if len(urls) == 1 {
-		if allowedURL == "" || !strings.Contains(normURLForMatch(urls[0]), allowedURL) {
+		if !urlMatchesAny(urls[0], allowedContactURLs(identity)) {
 			return false, "comment_unsupported_contact"
 		}
 	}
