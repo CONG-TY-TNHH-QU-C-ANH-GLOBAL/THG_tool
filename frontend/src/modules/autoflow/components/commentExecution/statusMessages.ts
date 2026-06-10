@@ -30,28 +30,34 @@ export function commentStatus(state: string, outcome: string): CommentStatus {
 // CommentAction is a status-contextual action the UI can offer next to a comment row.
 // Data-only (no JSX) so it stays unit-testable and the rendering view doesn't grow.
 export interface CommentAction {
-  key: 'open_post' | 'reverify';
+  key: 'open_post' | 'human_verify' | 'retry';
   label: string;
   href?: string;     // present for link actions (open_post)
-  enabled: boolean;  // reverify is disabled until the async-reverify endpoint ships (Part D)
-  todo?: string;     // why an action is not yet wired
+  enabled: boolean;
+  confirm?: string;  // confirmation-dialog text shown before a mutating action
 }
 
-// commentActions returns the actions for a row. "Mở post" always (open the target post to
-// check manually). "Xác minh lại" only for the unverified state — disabled with a TODO
-// until POST /api/.../reverify exists (see specs/COMMENT_ASYNC_REVERIFY.md).
-export function commentActions(severity: ExecSeverity, targetUrl?: string): CommentAction[] {
+// Retryable PRE-SUBMIT failure outcomes (the comment never landed → a fresh attempt is safe).
+const RETRYABLE_OUTCOMES = new Set(['target_not_reached', 'execution_failed', 'comment_button_not_found']);
+
+// commentActions returns the status-contextual actions for a comment row (data-only,
+// unit-testable). "Xác nhận đã đăng" ONLY for submitted_unverified (operator saw it on FB);
+// "Thử lại" ONLY for retryable pre-submit failures. Never offer manual confirm on a failure.
+export function commentActions(severity: ExecSeverity, outcome: string, targetUrl?: string): CommentAction[] {
+  const o = (outcome || '').toLowerCase();
   const actions: CommentAction[] = [];
   if (targetUrl) {
     actions.push({ key: 'open_post', label: 'Mở post', href: targetUrl, enabled: true });
   }
   if (severity === 'unverified') {
     actions.push({
-      key: 'reverify',
-      label: 'Xác minh lại',
-      enabled: false,
-      todo: 'Chờ endpoint reverify bất đồng bộ (specs/COMMENT_ASYNC_REVERIFY.md).',
+      key: 'human_verify',
+      label: 'Xác nhận đã đăng',
+      enabled: true,
+      confirm: 'Chỉ xác nhận nếu bạn đã mở Facebook và nhìn thấy comment này được đăng bởi đúng tài khoản. Hành động này sẽ ghi nhận comment là đã đăng thành công.',
     });
+  } else if (severity === 'failed' && RETRYABLE_OUTCOMES.has(o)) {
+    actions.push({ key: 'retry', label: 'Thử lại', enabled: true });
   }
   return actions;
 }
@@ -84,10 +90,12 @@ export function commentReason(outcome: string): string {
     case 'submit_not_accepted':
       return 'Facebook chưa nhận comment sau khi bấm gửi.';
     case 'comment_button_not_found':
-      return 'Đã mở đúng bài viết nhưng chưa thấy nút Bình luận để mở ô comment.';
+      return 'Không tìm thấy nút bình luận/composer trên bài viết. Có thể bài bị giới hạn bình luận, DOM chưa render, hoặc cần thử lại.';
+    case 'execution_failed':
+      return 'Không hoàn tất được thao tác (có thể không thấy nút bình luận, bài bị giới hạn, hoặc DOM chưa render). Có thể thử lại.';
     case 'target_not_reached':
     case 'redirected_feed':
-      return 'Không mở được đúng bài viết Facebook.';
+      return 'Không mở được đúng bài viết Facebook. Có thể thử lại.';
     case 'context_drift':
       return 'Facebook chuyển trang trước khi gửi comment.';
     case 'connector_offline':

@@ -89,6 +89,10 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 
 	group.Get("/outbox", h.getOutbox)
 	group.Post("/outbox/draft", h.draftOutbound)
+	// Manual human verification + retry + outcome metrics (spec: COMMENT_ASYNC_REVERIFY.md).
+	group.Post("/comments/:id/human-verify", h.humanVerifyComment)
+	group.Post("/comments/:id/retry", h.retryComment)
+	group.Get("/comments/metrics", h.commentOutcomeMetrics)
 	group.Delete("/outbox/comments/all", adminOnly, h.deleteAllOutboundComments)
 	group.Delete("/outbox/posts/all", adminOnly, h.deleteAllOutboundPosts)
 	// /outbox/:id/approve and /outbox/:id/reject were removed in the

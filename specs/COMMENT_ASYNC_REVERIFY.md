@@ -53,6 +53,28 @@ and (b) later **reverify out-of-band** and, only on real proof, append a correct
   for the unverified state — currently `enabled:false` with a TODO pointing here until
   Part D ships.
 
+## Manual verification + retry + metrics (companion PR)
+
+Async reverify stays **best-effort** (it must not block the dashboard, manual correction, or
+Telegram). The operator-facing fallbacks:
+
+- **Manual human-verify (Part A)** — `POST /api/comments/:id/human-verify`. Eligible ONLY for
+  `submitted_unverified` (which by construction means submit reached + composer cleared);
+  `models.HumanVerifyEligible` rejects every failed_before_submit variant. Appends a
+  `succeeded`/`human_verified` correction (append-only, idempotent) +
+  `comment_verification_audit` row (who/when/prev→new/correction id). Tenant + account-owner
+  scoped (`requireOutboundOwnerRow`). FE: "Xác nhận đã đăng" with a confirmation dialog,
+  only on submitted_unverified rows.
+- **Retry (Part B)** — `POST /api/comments/:id/retry`. Only for retryable PRE-submit failures
+  (`IsRetryableVerificationOutcome`: target_not_reached / execution_failed incl.
+  comment_button_not_found). Re-queues a FRESH attempt via the canonical
+  `QueueOutboundForOrg` (PolicyGate / dedup / readiness); never touches the old row. Manual
+  confirm is NEVER offered for these. FE: "Thử lại" + friendlier failure copy.
+- **Metrics (Part C)** — `GET /api/comments/metrics?days=N` →
+  `models.CommentMetrics` (+ effective_verified, submitted_unverified_open/rate). Decision
+  rule: rate <10% = edge case (manual fallback); >10–15% sustained = reopen async reverify.
+  FE: a compact `CommentMetricsBar`.
+
 ## Part D — Async reverify (SHIPPED, PR-A)
 
 Implemented as a decoupled reverify queue (NOT a new outbound action, so it bypasses the
