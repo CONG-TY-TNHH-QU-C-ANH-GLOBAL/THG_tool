@@ -16,7 +16,17 @@ type HumanVerifyResult struct {
 	Corrected           bool   `json:"corrected"`            // a new correction was appended
 	AlreadyVerified     bool   `json:"already_verified"`     // idempotent: a correction already existed
 	CorrectionLedgerID  int64  `json:"correction_ledger_id"` // the (new or existing) succeeded ledger row
+	AuditID             int64  `json:"audit_id"`             // comment_verification_audit row id (0 if idempotent)
 	NewEffectiveOutcome string `json:"new_effective_outcome"`
+}
+
+// CommentCorrection is a succeeded ledger correction on a comment (human_verified or
+// reverified) — the signal the dashboard uses to show the LATEST EFFECTIVE outcome instead
+// of the stale outbound_messages.verification_outcome.
+type CommentCorrection struct {
+	CorrectionID int64  `json:"correction_id"`
+	Reason       string `json:"reason"`  // human_verified | reverified
+	Outcome      string `json:"outcome"` // succeeded
 }
 
 // HumanVerifyEligible reports whether a comment may be MANUALLY confirmed as posted. Allowed

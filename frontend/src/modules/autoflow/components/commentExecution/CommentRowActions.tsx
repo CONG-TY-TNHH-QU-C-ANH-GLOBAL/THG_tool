@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { CheckCircle, RotateCw } from 'lucide-react';
 import type { OutboundMessage } from '../../services/outboxService';
 import { humanVerifyComment, retryComment } from '../../services/outboxService';
-import { commentActions, commentStatus } from './statusMessages';
+import { commentActions, commentStatus, effectiveOutcome } from './statusMessages';
 
 // Per-comment manual actions (spec: specs/COMMENT_ASYNC_REVERIFY.md companion, Part A/B).
 // "Xác nhận đã đăng" appears ONLY for submitted_unverified (operator saw it on Facebook);
@@ -13,14 +13,18 @@ import { commentActions, commentStatus } from './statusMessages';
 
 interface Props {
   message: OutboundMessage;
+  correctionReason?: string; // a succeeded correction (human_verified/reverified) → already posted
   onDone: () => void; // reload the list after a successful action
 }
 
-export function CommentRowActions({ message, onDone }: Props) {
+export function CommentRowActions({ message, correctionReason, onDone }: Props) {
   const [busy, setBusy] = useState(false);
-  const { severity } = commentStatus(message.execution_state ?? '', message.verification_outcome ?? '');
+  // Use the EFFECTIVE outcome so a corrected (manually/async verified) row reads as success
+  // → the "Xác nhận đã đăng" button auto-hides once a correction exists.
+  const outcome = effectiveOutcome(message.verification_outcome, correctionReason);
+  const { severity } = commentStatus(message.execution_state ?? '', outcome);
   // Skip open_post here — the detail pane already renders a "Mở post" link.
-  const actions = commentActions(severity, message.verification_outcome ?? '', undefined)
+  const actions = commentActions(severity, outcome, undefined)
     .filter((a) => a.key !== 'open_post');
   if (actions.length === 0) return null;
 

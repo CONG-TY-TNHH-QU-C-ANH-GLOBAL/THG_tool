@@ -48,9 +48,12 @@ func (h *Handler) humanVerifyComment(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{
 		"ok":                    true,
+		"outbound_id":           id,
 		"corrected":             res.Corrected,
 		"already_verified":      res.AlreadyVerified,
-		"correction_ledger_id":  res.CorrectionLedgerID,
+		"correction_event_id":   res.CorrectionLedgerID,
+		"audit_id":              res.AuditID,
+		"reason":                models.LedgerReasonHumanVerified,
 		"new_effective_outcome": res.NewEffectiveOutcome,
 	})
 }

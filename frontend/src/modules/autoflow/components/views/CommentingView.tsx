@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { ActorVerdictChip } from '../ActorVerdictChip';
-import { commentReason, commentStatus } from '../commentExecution/statusMessages';
+import { commentReason, commentStatus, effectiveOutcome } from '../commentExecution/statusMessages';
 import { CommentRowActions } from '../commentExecution/CommentRowActions';
 import { CommentMetricsBar } from '../commentExecution/CommentMetricsBar';
 import {
@@ -12,6 +12,7 @@ import {
   deleteOutbox,
   getOutbox,
   type ActorIdentity,
+  type CommentCorrection,
   type OutboundMessage,
 } from '../../services/outboxService';
 import { useLang } from '../../i18n/useLang';
@@ -54,9 +55,9 @@ function matchesFilter(msg: Pick<OutboundMessage, 'execution_state' | 'verificat
   }
 }
 
-function statusTag(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>): string {
+function statusTag(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>, correctionReason?: string): string {
   const state = msg.execution_state;
-  const outcome = msg.verification_outcome ?? '';
+  const outcome = effectiveOutcome(msg.verification_outcome, correctionReason);
   if (state === 'finished' && outcome === 'verified_success') return 'tag tag-ok';
   if (state === 'executing') return 'tag tag-warm';
   if (state === 'planned') return 'tag tag-cold';
@@ -67,21 +68,23 @@ function statusTag(msg: Pick<OutboundMessage, 'execution_state' | 'verification_
 // Operator-facing label. Surfaces the specific verification outcome
 // when finished so the dashboard can distinguish "verified" from
 // "context_drift" / "rate_limited" / "blocked" at a glance.
-function statusLabel(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>, lang: 'vi' | 'en'): string {
+function statusLabel(msg: Pick<OutboundMessage, 'execution_state' | 'verification_outcome'>, lang: 'vi' | 'en', correctionReason?: string): string {
   const state = msg.execution_state;
-  const outcome = msg.verification_outcome ?? '';
+  // A succeeded correction (human_verified / reverified) overrides a stale submitted_unverified.
+  const outcome = effectiveOutcome(msg.verification_outcome, correctionReason);
+  const manualTag = correctionReason === 'human_verified' ? (lang === 'vi' ? ' · xác nhận thủ công' : ' · manual') : '';
   if (lang === 'vi') {
     // Business-friendly lifecycle (Đang chờ / Đang chạy / Đã đăng thành công /
-    // Đã gửi nhưng chưa xác minh / Thất bại). The specific failure reason shows
-    // separately via commentReason — success ONLY when verified.
-    return commentStatus(state, outcome).label;
+    // Đã gửi, đang chờ xác minh / Thất bại). The specific failure reason shows
+    // separately via commentReason — success ONLY when verified (incl. corrections).
+    return commentStatus(state, outcome).label + manualTag;
   }
   if (state === 'planned')   return 'PLANNED';
   if (state === 'executing') return 'EXECUTING';
   if (state === 'expired')   return 'EXPIRED';
   if (state === 'finished') {
     switch (outcome) {
-      case 'verified_success': return 'VERIFIED';
+      case 'verified_success': return 'VERIFIED' + manualTag;
       case 'context_drift':    return 'CONTEXT DRIFT';
       case 'rate_limited':     return 'RATE LIMITED';
       case 'blocked':          return 'BLOCKED';
@@ -99,6 +102,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
   const { lang, t } = useLang();
   const tv = t.commentingView;
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
+  const [corrections, setCorrections] = useState<Record<string, CommentCorrection>>({});
   const [actors, setActors] = useState<Record<string, ActorIdentity>>({});
   const [filter, setFilter] = useState<CommentFilter>('all');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -148,6 +152,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
       const response = await getOutbox({ type: 'comment', limit: 200 });
       setMessages(response.messages ?? []);
       setActors(response.actors ?? {});
+      setCorrections(response.corrections ?? {});
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : tv.loadError);
     } finally {
@@ -356,7 +361,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                         )}
                         {executorName(message.account_id)}
                       </span>
-                      <span className={statusTag(message)}>{statusLabel(message, lang)}</span>
+                      <span className={statusTag(message, corrections[message.id]?.reason)}>{statusLabel(message, lang, corrections[message.id]?.reason)}</span>
                     </div>
                     <div style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {message.content || <span style={{ color: 'var(--text-faint)' }}>{tv.emptyValue}</span>}
@@ -400,13 +405,14 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                       );
                     })()}
                   </div>
-                  <span className={statusTag(selectedMessage)}>{statusLabel(selectedMessage, lang)}</span>
+                  <span className={statusTag(selectedMessage, corrections[selectedMessage.id]?.reason)}>{statusLabel(selectedMessage, lang, corrections[selectedMessage.id]?.reason)}</span>
                 </header>
 
                 <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {(() => {
-                    // Last failure / unverified reason in plain Vietnamese (#6/#8).
-                    const reason = commentReason(selectedMessage.verification_outcome ?? '');
+                    // Last failure / unverified reason in plain Vietnamese (#6/#8). A
+                    // corrected row is effectively succeeded → no reason shown.
+                    const reason = commentReason(effectiveOutcome(selectedMessage.verification_outcome, corrections[selectedMessage.id]?.reason));
                     return reason ? (
                       <div className="card" style={{ padding: '10px 14px', borderLeft: '3px solid var(--warn)', fontSize: 12.5, color: 'var(--text-mute)' }}>
                         <strong style={{ color: 'var(--text)' }}>Lý do:</strong> {reason}
@@ -448,7 +454,7 @@ export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) 
                       </a>
                     )}
                     {/* Manual human-verify (submitted_unverified) + retry (pre-submit fail). */}
-                    <CommentRowActions message={selectedMessage} onDone={() => void load()} />
+                    <CommentRowActions message={selectedMessage} correctionReason={corrections[selectedMessage.id]?.reason} onDone={() => void load()} />
                     {isAdmin && actorOf(selectedMessage.account_id)?.actor_blocked && (
                       <button
                         type="button"

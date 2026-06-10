@@ -70,6 +70,20 @@ func TestHumanVerify_AppendsCorrectionAuditedIdempotent(t *testing.T) {
 		t.Errorf("audit rows = %d, want 1", auditCount)
 	}
 
+	if res.AuditID <= 0 {
+		t.Errorf("audit_id should be returned for the FE")
+	}
+
+	// The dashboard overlay sees this outbound as effectively succeeded (human_verified),
+	// so the badge can show posted even though verification_outcome stays submitted_unverified.
+	corr, err := co.CommentCorrectionsForOutbounds(ctx, 1, []int64{outboundID})
+	if err != nil {
+		t.Fatalf("CommentCorrectionsForOutbounds: %v", err)
+	}
+	if c, ok := corr[outboundID]; !ok || c.Reason != models.LedgerReasonHumanVerified || c.Outcome != "succeeded" {
+		t.Errorf("correction overlay missing/wrong for outbound %d: %+v", outboundID, corr)
+	}
+
 	// Idempotent: a second confirm is a no-op (no duplicate correction).
 	again, _ := co.AppendHumanVerifyCorrection(ctx, in)
 	if !again.AlreadyVerified || again.Corrected {
@@ -77,6 +91,27 @@ func TestHumanVerify_AppendsCorrectionAuditedIdempotent(t *testing.T) {
 	}
 	if got := ledgerOutcomes(t, db, 1, postURL); len(got) != 2 {
 		t.Errorf("idempotent: ledger must stay 2 rows, got %v", got)
+	}
+}
+
+// A row with NO correction (operator hasn't confirmed it) is absent from the overlay → it
+// keeps showing submitted_unverified. Guards the 304 case.
+func TestCommentCorrections_UnconfirmedRowAbsent(t *testing.T) {
+	db := newSharedStore(t, "corrections_absent.db")
+	ctx := context.Background()
+	confirmed := seedComment(t, db, 1, 10, "https://fb.com/p/C1", "a", "submitted_unverified")
+	unconfirmed := seedComment(t, db, 1, 10, "https://fb.com/p/C2", "b", "submitted_unverified")
+	if _, err := db.Coordination().AppendHumanVerifyCorrection(ctx, coordination.HumanVerifyInput{
+		OrgID: 1, OutboundID: confirmed, TargetURL: "https://fb.com/p/C1", AccountID: 10, VerifiedBy: 42, PreviousOutcome: "submitted_unverified",
+	}); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	corr, _ := db.Coordination().CommentCorrectionsForOutbounds(ctx, 1, []int64{confirmed, unconfirmed})
+	if _, ok := corr[confirmed]; !ok {
+		t.Errorf("confirmed row should be in the overlay")
+	}
+	if _, ok := corr[unconfirmed]; ok {
+		t.Errorf("unconfirmed row must NOT be in the overlay (stays submitted_unverified)")
 	}
 }
 
