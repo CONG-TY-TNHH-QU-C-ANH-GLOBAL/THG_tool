@@ -90,7 +90,7 @@ func TestReverify_EligibilityAndClaim(t *testing.T) {
 			}
 		}
 	}
-	claimed, err := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	claimed, err := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	if err != nil {
 		t.Fatalf("ClaimDueReverifies: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestReverify_FoundAppendsCorrectionAppendOnly(t *testing.T) {
 	for _, j := range jobs {
 		_ = co.ScheduleReverify(ctx, j, time.Now())
 	}
-	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	rid := claimed[0].ID
 
 	corrected, err := co.ApplyReverifyResult(ctx, 1, rid, true, "https://facebook.com/x?comment_id=999", "found")
@@ -170,7 +170,7 @@ func TestReverify_NotFoundStaysUnverified(t *testing.T) {
 	for _, j := range jobs {
 		_ = co.ScheduleReverify(ctx, j, time.Now())
 	}
-	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 
 	corrected, err := co.ApplyReverifyResult(ctx, 1, claimed[0].ID, false, "", "comment not visible")
 	if err != nil {
