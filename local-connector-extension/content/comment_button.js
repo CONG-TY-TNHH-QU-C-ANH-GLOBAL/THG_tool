@@ -15,10 +15,6 @@ var THGCommentButton = globalThis.THGCommentButton || (() => {
     'comment', 'write a comment', 'binh luan', 'viet binh luan',
     'bình luận', 'viết bình luận', 'add a comment',
   ];
-  // Placeholder / aria text that marks a composer entry (an opener or the textbox itself).
-  const COMPOSER_KEYS = COMMENT_KEYS;
-  // Composer textbox selectors — a visible one scoped to the target article IS the entry.
-  const COMPOSER_SEL = '[contenteditable="true"], [role="textbox"], textarea';
   const BUTTON_SEL = 'div[role="button"], button, a[role="button"], span[role="button"], [aria-label]';
 
   function labelHasComment(label) {
@@ -38,27 +34,22 @@ var THGCommentButton = globalThis.THGCommentButton || (() => {
     return null;
   }
 
-  // findComposerEntry finds an ALREADY-VISIBLE composer scoped to the target article: a
-  // textbox/contenteditable, or an opener whose aria-label/placeholder reads "Viết bình luận…".
-  function findComposerEntry(article, deps) {
-    if (!article || !article.querySelectorAll) return null;
-    const visible = (deps && deps.visible) || (() => true);
-    for (const el of Array.from(article.querySelectorAll(COMPOSER_SEL))) {
-      if (visible(el)) return el; // a visible textbox under the target article = the composer
-    }
-    for (const el of Array.from(article.querySelectorAll('[aria-label], [placeholder]'))) {
-      if (!visible(el)) continue;
-      const txt = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('placeholder') || '')).toLowerCase();
-      if (COMPOSER_KEYS.some((k) => txt.includes(k))) return el;
-    }
-    return null;
+  // composerEntry delegates to the scope-robust THGCommentComposer (target-article subtree
+  // first, then a page-wide scoped fallback). Returns { el, reason, candidates }.
+  function composerEntry(article, deps) {
+    const C = globalThis.THGCommentComposer;
+    if (C && C.findComposerEntry) return C.findComposerEntry(article, deps);
+    // Ultra-fallback if the composer module didn't load: the legacy injected editor finder.
+    const el = deps.findCommentEditor ? deps.findCommentEditor(article) : null;
+    return { el, reason: el ? 'legacy_editor' : 'none', candidates: [] };
   }
 
-  // commentSurfaceState: how the entry is reachable RIGHT NOW. { found, via }.
+  // commentSurfaceState: how the entry is reachable RIGHT NOW. { found, via, composerReason }.
   function commentSurfaceState(article, deps) {
     if (findCommentButton(article, deps)) return { found: true, via: 'comment_button' };
-    if (findComposerEntry(article, deps)) return { found: true, via: 'composer_entry' };
-    if (deps.findCommentEditor && deps.findCommentEditor(article)) return { found: true, via: 'composer_entry' };
+    const comp = composerEntry(article, deps);
+    if (comp.el) return { found: true, via: 'composer_entry', composerReason: comp.reason };
+    if (deps.findCommentEditor && deps.findCommentEditor(article)) return { found: true, via: 'composer_entry', composerReason: 'legacy_editor' };
     return { found: false, via: 'none' };
   }
 
@@ -78,8 +69,11 @@ var THGCommentButton = globalThis.THGCommentButton || (() => {
       'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
     );
     out.comment_button_found = !!findCommentButton(article, deps);
-    out.composer_entry_found = !!findComposerEntry(article, deps);
-    out.textbox_candidates_count = article.querySelectorAll('[role="textbox"], textarea').length;
+    const comp = composerEntry(article, deps);
+    out.composer_entry_found = !!comp.el;
+    out.composer_reason = comp.reason || (comp.el ? 'found' : 'none');
+    out.composer_candidates = comp.candidates || []; // per-candidate {aria,role,parent_text,accepted,reason}
+    out.textbox_candidates_count = (comp.candidates || []).length;
     out.contenteditable_candidates_count = article.querySelectorAll('[contenteditable="true"]').length;
     for (const el of Array.from(article.querySelectorAll(BUTTON_SEL)).filter(visible)) {
       const label = labelOf(el);
@@ -124,7 +118,7 @@ var THGCommentButton = globalThis.THGCommentButton || (() => {
   }
 
   return {
-    COMMENT_KEYS, findCommentButton, findComposerEntry, commentSurfaceState,
+    COMMENT_KEYS, findCommentButton, commentSurfaceState,
     diagnostics, discoverCommentSurface, classifyGate1Failure,
   };
 })();
