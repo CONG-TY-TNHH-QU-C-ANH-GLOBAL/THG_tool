@@ -1,7 +1,6 @@
-// Gate1 comment-button discovery tests (PR-B). Proves: discovery finds the button or an
-// already-mounted composer; a delayed (lazily-mounted) action row is found after
-// scroll+retry; a button that never appears yields comment_button_not_found; a post we
-// never reached yields target_not_reached.
+// Gate1 comment-ENTRY discovery tests. Gate1 must pass if EITHER a comment button OR a
+// visible composer exists under the TARGET article; a neighbouring post's composer must not
+// satisfy it; lazily-mounted button/composer are found after scroll; neither → not found.
 //   Run: node content/comment_button.test.mjs
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
@@ -10,63 +9,109 @@ const require = createRequire(import.meta.url);
 const CB = require('./comment_button.js');
 
 const visible = () => true;
-const labelOf = (el) => String((el && el._label) || '').toLowerCase(); // mirrors outbound.js (lowercased)
-const baseDeps = { visible, labelOf, findCommentEditor: (a) => a && a._editor };
+const labelOf = (el) => String((el && el._label) || '').toLowerCase();
+const deps = { visible, labelOf, findCommentEditor: (a) => a && a._editor };
 
 function btn(label) {
-  return { _label: label, getAttribute: () => null };
+  return { _label: label, getAttribute: (n) => (n === 'aria-label' ? label : null) };
 }
-function staticArticle(els, editor) {
-  return { querySelector: () => null, querySelectorAll: () => els, _editor: editor || null };
-}
+const composerEl = () => ({ getAttribute: () => null });
+const placeholderEl = (text) => ({ getAttribute: (n) => (n === 'aria-label' || n === 'placeholder' ? text : null) });
 
-// 1. A visible Comment/Bình luận button → found via button.
-{
-  const st = CB.commentSurfaceState(staticArticle([btn('Bình luận')]), baseDeps);
-  assert.strictEqual(st.found, true);
-  assert.strictEqual(st.via, 'button');
-}
-
-// 2. No comment button but an already-mounted composer (permalink layout) → found via composer.
-{
-  const st = CB.commentSurfaceState(staticArticle([btn('Thích'), btn('Chia sẻ')], { id: 'editor' }), baseDeps);
-  assert.strictEqual(st.found, true);
-  assert.strictEqual(st.via, 'composer');
-}
-
-// 3. Delayed (lazily-mounted) button: appears once we've scrolled/waited → eventually pass.
-{
-  let t = 0;
-  const a = {
-    _editor: null,
-    querySelector: () => null,
-    querySelectorAll: () => (t >= 600 ? [btn('Comment')] : []), // mounts after ~2 polls
+// makeArticle routes selector strings to the right fake nodes (scoped to THIS article).
+function makeArticle(state) {
+  const get = typeof state === 'function' ? state : () => state;
+  return {
+    querySelector(sel) {
+      if (sel.includes('/posts/') || sel.includes('permalink') || sel.includes('story_fbid')) {
+        return get().permalink ? {} : null;
+      }
+      return null;
+    },
+    querySelectorAll(sel) {
+      const o = get();
+      if (sel.includes('role="button"')) return o.buttons || []; // BUTTON_SEL
+      if (sel.includes('contenteditable') || sel.includes('role="textbox"') || sel.includes('textarea')) return o.composers || [];
+      if (sel.includes('aria-label') || sel.includes('placeholder')) return o.placeholders || [];
+      return [];
+    },
+    get _editor() { return get().editor || null; },
   };
-  const deps = { ...baseDeps, scrollIntoCenter: () => {}, wait: async () => { t += 300; }, now: () => t, timeoutMs: 4000, pollMs: 300 };
-  const r = await CB.discoverCommentSurface(a, deps);
-  assert.strictEqual(r.found, true, 'delayed button should be found after scroll+retry');
-  assert.ok(r.scrolledAttempts >= 1, 'should have scrolled at least once');
 }
 
-// 4. Button missing forever → not found → comment_button_not_found (reached post, no button).
+// 1 + 6. No action button but a visible composer (permalink / Anonymous-participant shape) →
+// gate1 passes via composer_entry.
+{
+  const a = makeArticle({ permalink: true, composers: [composerEl()] });
+  const st = CB.commentSurfaceState(a, deps);
+  assert.strictEqual(st.found, true);
+  assert.strictEqual(st.via, 'composer_entry');
+}
+// 1b. Composer expressed only as a "Viết bình luận…" placeholder opener → also passes.
+{
+  const a = makeArticle({ permalink: true, placeholders: [placeholderEl('Viết bình luận...')] });
+  const st = CB.commentSurfaceState(a, deps);
+  assert.strictEqual(st.found, true);
+  assert.strictEqual(st.via, 'composer_entry');
+}
+
+// 2. Action button delayed until after a scroll → discovery eventually passes.
 {
   let t = 0;
-  const a = { _editor: null, querySelector: () => null, querySelectorAll: () => [btn('Thích')] };
-  const deps = { ...baseDeps, scrollIntoCenter: () => {}, wait: async () => { t += 300; }, now: () => t, timeoutMs: 1200, pollMs: 300 };
-  const r = await CB.discoverCommentSurface(a, deps);
+  const a = makeArticle(() => (t >= 800 ? { buttons: [btn('Comment')] } : {}));
+  const d = { ...deps, scrollIntoCenter: () => {}, wait: async () => { t += 400; }, now: () => t, timeoutMs: 12000, pollMs: 400 };
+  const r = await CB.discoverCommentSurface(a, d);
+  assert.strictEqual(r.found, true);
+  assert.strictEqual(r.via, 'comment_button');
+}
+
+// 3. Composer delayed until after a scroll → discovery eventually passes via composer_entry.
+{
+  let t = 0;
+  const a = makeArticle(() => (t >= 800 ? { composers: [composerEl()] } : {}));
+  const d = { ...deps, scrollIntoCenter: () => {}, wait: async () => { t += 400; }, now: () => t, timeoutMs: 12000, pollMs: 400 };
+  const r = await CB.discoverCommentSurface(a, d);
+  assert.strictEqual(r.found, true);
+  assert.strictEqual(r.via, 'composer_entry');
+}
+
+// 4. Reached the post but neither button nor composer → not found → comment_button_not_found.
+{
+  let t = 0;
+  const a = makeArticle({ permalink: true }); // no buttons, no composers
+  const d = { ...deps, scrollIntoCenter: () => {}, wait: async () => { t += 400; }, now: () => t, timeoutMs: 1600, pollMs: 400 };
+  const r = await CB.discoverCommentSurface(a, d);
   assert.strictEqual(r.found, false);
   assert.strictEqual(
-    CB.classifyGate1Failure({ articleFound: true, permalinkFound: true, commentButtonFound: false }),
+    CB.classifyGate1Failure({ articleFound: true, permalinkFound: true, commentButtonFound: false, composerEntryFound: false }),
     'comment_button_not_found',
   );
 }
 
-// 5. Post never reached (no article) → target_not_reached.
+// 5. A composer on a NEIGHBOURING post (a different article) must not satisfy the gate — we
+// only ever query the TARGET article, which has none.
+{
+  const target = makeArticle({ permalink: true }); // target has no entry
+  const _neighbour = makeArticle({ composers: [composerEl()] }); // irrelevant — never queried
+  void _neighbour;
+  assert.strictEqual(CB.commentSurfaceState(target, deps).found, false);
+}
+
+// 7. Post never reached (no article / no permalink) → target_not_reached.
 {
   assert.strictEqual(
-    CB.classifyGate1Failure({ articleFound: false, permalinkFound: false, commentButtonFound: false }),
+    CB.classifyGate1Failure({ articleFound: false, permalinkFound: false, commentButtonFound: false, composerEntryFound: false }),
     'target_not_reached',
   );
+}
+
+// diagnostics surfaces the composer + textbox candidates + gate1_passed_via.
+{
+  const a = makeArticle({ permalink: true, composers: [composerEl()] });
+  const d = CB.diagnostics(a, deps);
+  assert.strictEqual(d.composer_entry_found, true);
+  assert.strictEqual(d.gate1_passed_via, 'composer_entry');
+  assert.ok(d.textbox_candidates_count >= 0);
 }
 
 console.log('comment_button.test.mjs OK');

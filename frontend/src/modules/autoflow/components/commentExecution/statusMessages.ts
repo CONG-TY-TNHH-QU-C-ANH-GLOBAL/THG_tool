@@ -98,9 +98,10 @@ export function commentReason(outcome: string): string {
     case 'submit_not_accepted':
       return 'Facebook chưa nhận comment sau khi bấm gửi.';
     case 'comment_button_not_found':
-      return 'Không tìm thấy nút bình luận/composer trên bài viết. Có thể bài bị giới hạn bình luận, DOM chưa render, hoặc cần thử lại.';
+    case 'comment_entry_not_found':
+      return 'Không tìm thấy nút/ô bình luận tự động. Bạn có thể mở post để kiểm tra hoặc thử lại.';
     case 'execution_failed':
-      return 'Không hoàn tất được thao tác (có thể không thấy nút bình luận, bài bị giới hạn, hoặc DOM chưa render). Có thể thử lại.';
+      return 'Không hoàn tất được thao tác (chưa tìm thấy nút/ô bình luận hoặc DOM chưa render). Bạn có thể mở post để kiểm tra hoặc thử lại.';
     case 'target_not_reached':
     case 'redirected_feed':
       return 'Không mở được đúng bài viết Facebook. Có thể thử lại.';
