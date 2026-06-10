@@ -98,3 +98,49 @@ func TestClassifyCommentForensics_Buckets(t *testing.T) {
 		}
 	}
 }
+
+// PR-A.1: the forensics report reflects the reverify pipeline state + the appended
+// correction — so a stuck row can be traced and a corrected one reads as effectively
+// succeeded even though the original outbound row stays submitted_unverified.
+func TestReverify_ForensicsReflectsCorrection(t *testing.T) {
+	db := newSharedStore(t, "reverify_forensics.db")
+	ctx := context.Background()
+	co := db.Coordination()
+	postURL := "https://facebook.com/groups/1/posts/RVF"
+	seedSubmittedUnverified(t, db, 1, 10, postURL, "hello there")
+
+	before, err := co.CommentForensicsByTargetURLs(ctx, 1, []string{postURL})
+	if err != nil {
+		t.Fatalf("forensics before: %v", err)
+	}
+	if before[0].ReverifyScheduled {
+		t.Errorf("no reverify scheduled yet, want reverify_scheduled=false")
+	}
+	if before[0].LatestEffectiveOutcome != models.LedgerOutcomeSubmittedUnverified {
+		t.Errorf("latest_effective_outcome = %q, want submitted_unverified", before[0].LatestEffectiveOutcome)
+	}
+
+	jobs, _ := co.FindReverifyEligible(ctx, time.Now().Add(time.Hour), 50)
+	for _, j := range jobs {
+		_ = co.ScheduleReverify(ctx, j, time.Now())
+	}
+	claimed, _ := co.ClaimDueReverifies(ctx, 1, 10, time.Now(), 10)
+	if _, err := co.ApplyReverifyResult(ctx, 1, claimed[0].ID, true, "https://fb.com/x?comment_id=1", "found"); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	after, err := co.CommentForensicsByTargetURLs(ctx, 1, []string{postURL})
+	if err != nil {
+		t.Fatalf("forensics after: %v", err)
+	}
+	r := after[0]
+	if !r.ReverifyScheduled || r.ReverifyOutcome != "verified" {
+		t.Errorf("reverify state wrong: scheduled=%v outcome=%q", r.ReverifyScheduled, r.ReverifyOutcome)
+	}
+	if r.CorrectionEventID <= 0 {
+		t.Errorf("correction_event_id should be set after a found reverify")
+	}
+	if r.LatestEffectiveOutcome != "succeeded" {
+		t.Errorf("latest_effective_outcome = %q, want succeeded", r.LatestEffectiveOutcome)
+	}
+}
