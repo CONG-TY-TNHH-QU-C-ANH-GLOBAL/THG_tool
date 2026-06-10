@@ -1,3 +1,6 @@
+export * from './lifecycle';
+import type { LeadLifecycleState } from './lifecycle';
+
 export type Role = 'founder' | 'superadmin' | 'admin' | 'staff' | 'sales';
 export type PlanTier = 'Starter' | 'Pro' | 'Enterprise';
 export type LeadStatus = 'Hot' | 'Warm' | 'Cold';
@@ -45,6 +48,7 @@ export interface Lead {
   sourceType?: string;
   threadRole?: LeadThreadRole;
   engagement?: LeadEngagementState;
+  lifecycle?: LeadLifecycleState;
 }
 
 // Lead Engagement = derived coordination state from the Action Ledger.

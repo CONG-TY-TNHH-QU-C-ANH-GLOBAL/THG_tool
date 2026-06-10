@@ -82,6 +82,13 @@ type Config struct {
 	MaxWorkers      int
 	ScrollTimeout   int // seconds
 	ScanIntervalMin int // minutes
+
+	// Lead lifecycle / auto-archive (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md)
+	StaleAfterDays        int // days of no activity before a lead reads as stale
+	ArchiveAfterDays      int // days of no activity before the sweep auto-archives
+	EvidenceRetentionDays int // retention for execution evidence blobs (compaction; ledger kept)
+	RawCrawlRetentionDays int // retention for raw crawl payload (compaction; ledger kept)
+	ArchiveIntervalMin    int // auto-archive sweep cadence in minutes
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -128,6 +135,11 @@ func Load() *Config {
 		MaxWorkers:         getEnvInt("MAX_WORKERS", 1),
 		ScrollTimeout:      getEnvInt("SCROLL_TIMEOUT_SEC", 60),
 		ScanIntervalMin:    getEnvInt("SCAN_INTERVAL_MIN", 30),
+		StaleAfterDays:        getEnvInt("LEAD_STALE_AFTER_DAYS", 14),
+		ArchiveAfterDays:      getEnvInt("LEAD_ARCHIVE_AFTER_DAYS", 30),
+		EvidenceRetentionDays: getEnvInt("LEAD_EVIDENCE_RETENTION_DAYS", 14),
+		RawCrawlRetentionDays: getEnvInt("LEAD_RAW_CRAWL_RETENTION_DAYS", 90),
+		ArchiveIntervalMin:    getEnvInt("LEAD_ARCHIVE_INTERVAL_MIN", 360),
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),

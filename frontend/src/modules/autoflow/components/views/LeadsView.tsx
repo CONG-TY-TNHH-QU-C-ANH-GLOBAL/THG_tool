@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
-import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus, LeadThreadRole } from '../../types';
+import type { Lead, LeadEngagementBadge, LeadEngagementState, LeadStatus, LeadThreadRole, LifecycleTab } from '../../types';
 import { LeadFacebookInteractions } from '../leads/LeadFacebookInteractions';
+import { LifecycleTabs } from '../leads/LifecycleTabs';
 import { useLeads } from '../../hooks/useLeads';
+import { useArchivedLeads } from '../../hooks/useArchivedLeads';
 import { useLang } from '../../i18n/useLang';
 import {
   type ClassificationEntry,
@@ -208,6 +210,9 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const { leads, isLoading, error, refetch, remove } = useLeads(orgId, filter);
+  // Lead Lifecycle (PR-4): work-management tab — default "Cần xử lý" hides archived + stale.
+  const [lifecycleTab, setLifecycleTab] = useState<LifecycleTab>('active');
+  const { archived: archivedLeads } = useArchivedLeads(lifecycleTab === 'archived');
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
   const [classifyDebugOpen, setClassifyDebugOpen] = useState(false);
@@ -321,16 +326,33 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
     }
   };
 
+  // Lead Lifecycle (PR-4): the active tab picks the SOURCE. Archived comes from its own
+  // lazy fetch; every other tab filters the live list by freshness_state (missing →
+  // 'active'). stale never appears — it is not a tab.
+  const lifecycleSource = useMemo(() => {
+    if (lifecycleTab === 'archived') return archivedLeads;
+    return leads.filter((lead) => (lead.lifecycle?.freshness_state ?? 'active') === lifecycleTab);
+  }, [leads, archivedLeads, lifecycleTab]);
+
+  const lifecycleCounts = useMemo(() => {
+    const counts: Record<LifecycleTab, number> = { active: 0, waiting_reply: 0, followup_due: 0, archived: archivedLeads.length };
+    for (const lead of leads) {
+      const state = lead.lifecycle?.freshness_state ?? 'active';
+      if (state === 'active' || state === 'waiting_reply' || state === 'followup_due') counts[state] += 1;
+    }
+    return counts;
+  }, [leads, archivedLeads.length]);
+
   const filteredLeads = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return leads.filter((lead) => {
+    return lifecycleSource.filter((lead) => {
       if (roleFilter === 'leads' && !isLeadRole(lead.threadRole)) return false;
       if (roleFilter !== 'all' && roleFilter !== 'leads' && (lead.threadRole ?? 'intent_originator') !== roleFilter) return false;
       if (intentFilter !== 'all' && leadIntentKey(lead) !== intentFilter) return false;
       if (normalized && !leadSearchValue(lead).includes(normalized)) return false;
       return true;
     });
-  }, [leads, query, intentFilter, roleFilter]);
+  }, [lifecycleSource, query, intentFilter, roleFilter]);
 
   const intentCounts = useMemo(() => {
     const counts: Record<IntentKey, number> = {
@@ -707,7 +729,10 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
       <div className="card" style={{ padding: 0, overflow: 'hidden', minHeight: 560 }}>
         <div className="three-pane" style={{ minHeight: 560 }}>
           <aside style={{ padding: 16 }}>
-            <div className="sidebar-section">{tv.filtersLabel}</div>
+            <div className="sidebar-section">{lang === 'vi' ? 'VÒNG ĐỜI' : 'LIFECYCLE'}</div>
+            <LifecycleTabs active={lifecycleTab} counts={lifecycleCounts} onSelect={setLifecycleTab} lang={lang === 'vi' ? 'vi' : 'en'} />
+
+            <div className="sidebar-section" style={{ marginTop: 16 }}>{tv.filtersLabel}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {FILTERS.map((item) => {
                 const count = item === 'All' ? totals.all : leads.filter((lead) => lead.status === item).length;

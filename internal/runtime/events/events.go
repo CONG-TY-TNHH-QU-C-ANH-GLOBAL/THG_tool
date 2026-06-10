@@ -56,6 +56,9 @@ const (
 	EngagementReconcile = "engagement.reconcile"
 	EngagementRevoked   = "engagement.revoked"
 
+	// Lead lifecycle events.
+	LeadArchiveSweep = "lead.archive_sweep"
+
 	// Risk / behaviour events.
 	RiskSignalApplied = "risk.signal_applied"
 	RiskCooldownSet   = "risk.cooldown_set"
@@ -75,4 +78,9 @@ const (
 	FieldReason     = "reason"
 	FieldHook       = "hook"
 	FieldErr        = "error"
+	// Maintenance / sweep metrics.
+	FieldScanned    = "scanned_count"
+	FieldArchived   = "archived_count"
+	FieldReasons    = "archive_reason_counts"
+	FieldDurationMS = "duration_ms"
 )

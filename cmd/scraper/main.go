@@ -273,6 +273,9 @@ func main() {
 	go runCrawlIntentScheduler(ctx, db, jobStore, time.Minute)
 	log.Println("✅ Recurring crawl intent scheduler started (org plans → 30m+ automation)")
 
+	go runAutoArchiveScheduler(ctx, db, cfg)
+	log.Println("✅ Auto-archive scheduler started (lead lifecycle retention)")
+
 	// Start web server (non-blocking)
 	srv := server.New(db, jobStore, agent, workspaceMgr, server.Config{
 		Port:               cfg.WebPort,

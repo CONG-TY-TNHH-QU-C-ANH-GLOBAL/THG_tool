@@ -101,7 +101,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// gatekeeper: it downgrades to draft if the org has not opted in.
 	requestedAuto := argBool(args, "auto")
 
-	leads, err := leadsFromActionArgs(db, orgID, msgType, args)
+	leads, err := leadsFromActionArgs(ctx, db, orgID, msgType, args)
 	if err != nil {
 		return "", err
 	}
@@ -361,10 +361,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// Eligible-fill semantics: report leads SCANNED vs comments QUEUED so the
 		// operator sees "queued 5 after scanning 32", not "checked exactly 5".
 		if queued == 0 {
-			return fmt.Sprintf("Không tìm được lead hợp lệ để comment sau khi quét %d lead.%s%s", scanned, skipNote, errDetails), nil
+			// Lead Lifecycle PR-5: degrade honestly — report what the org DOES have
+			// (waiting/follow-up/archived) and a next step, not a dead-end "0 queued".
+			return noEligibleCommentMessage(ctx, db, orgID, scanned, skipNote) + errDetails, nil
 		}
+		// PR-5: name the source group ("Cần xử lý") so the operator knows selection came
+		// from the act-now work queue, not the raw lead list.
 		return fmt.Sprintf(
-			"Đã đưa %d comment vào hàng đợi sau khi quét %d lead. Đây CHƯA phải là đã đăng lên Facebook — hệ thống sẽ chạy bằng các tài khoản Facebook sẵn sàng và báo lại từng kết quả. Tóm tắt: %d đang chờ · 0 đang chạy · 0 đã đăng · 0 thất bại.%s%s",
+			"Đã đưa %d comment vào hàng đợi từ nhóm Cần xử lý sau khi quét %d lead. Đây CHƯA phải là đã đăng lên Facebook — hệ thống sẽ chạy bằng các tài khoản Facebook sẵn sàng và báo lại từng kết quả. Tóm tắt: %d đang chờ · 0 đang chạy · 0 đã đăng · 0 thất bại.%s%s",
 			queued, scanned, queued, skipNote, errDetails,
 		), nil
 	}
@@ -420,7 +424,7 @@ func friendlySkipReasons(reasons map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
-func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {
+func leadsFromActionArgs(ctx context.Context, db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {
 	if msgType == "comment" {
 		if target := textutil.FirstNonEmpty(argString(args, "post_url"), argString(args, "target_url")); target != "" {
 			return []models.Lead{{
@@ -449,10 +453,13 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 	if score == "" && msgType == "inbox" {
 		score = "hot"
 	}
-	// Eligible-fill (PR-2): fetch a LARGER candidate pool than the requested count so
-	// the planner can keep scanning past skipped leads until it has queued `requested`
-	// eligible comments. The per-lead stop happens in queueLeadOutreach.
-	return db.Leads().GetAutomationLeadsForOrg(orgID, score, scanPoolFor(requestedOutreachCount(args)))
+	// Lead Lifecycle PR-2: select from the WORK QUEUE, not the raw lead list —
+	// lifecycle-filtered to act-now leads (active/followup_due; archived + stale
+	// excluded) and ordered by score → freshness → next_action_at. Still a LARGER pool
+	// than the requested count for eligible-fill: the planner keeps scanning past
+	// coverage-skipped leads until it has queued `requested`. See
+	// specs/LEAD_LIFECYCLE_WORK_QUEUE.md.
+	return db.Leads().WorkQueueLeads(ctx, orgID, score, scanPoolFor(requestedOutreachCount(args)))
 }
 
 // requestedOutreachCount is how many ELIGIBLE comments/messages the caller asked to

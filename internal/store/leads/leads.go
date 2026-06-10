@@ -137,12 +137,13 @@ func (s *Store) GetLeads(score string, limit, offset int) ([]models.Lead, error)
 // the embedded EXISTS subquery (leads -> outbound) closes the
 // cross-tenant signal leak found in PR-2.
 //
-// tenant-ok: cross-domain projection (leads -> outbound). The
-// EXISTS subquery checks outbound_messages for delivery state.
-// NOTE: this query references `om.status = 'sent'` which no longer
-// exists post-PR-2 (the column was dropped in schema v7). This is a
-// pre-existing runtime bug unrelated to Phase 3 — track separately
-// and fix in a leads-domain PR (Phase 8).
+// tenant-ok: cross-domain projection (leads -> coordination). The `commented`
+// flag is VERIFIED-state truth: it reads the append-only action_ledger
+// (outcome='succeeded'), not the legacy outbound_messages.status enum. The old
+// `om.status='sent'` form was a dead always-false predicate — status stopped being
+// written when the taxonomy split into execution_state ⊥ verification_outcome
+// (feedback_outbound_taxonomy_split / feedback_verified_state_centric). A lead now
+// reads as "commented" only when a comment actually verified on its target URL.
 func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID int64) ([]models.Lead, error) {
 	query := `SELECT l.id, COALESCE(l.org_id,0), l.source_type, l.source_id,
 	           COALESCE(NULLIF(l.source_url, ''), p.url, '') as source_url,
@@ -151,11 +152,11 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	           l.author_role, l.pain_point, l.ai_reasoning, COALESCE(NULLIF(l.niche,''),'logistics'),
 	           COALESCE(NULLIF(l.thread_role,''),'intent_originator'),
 	           l.classified_at, l.created_at,
-	           EXISTS(SELECT 1 FROM outbound_messages om
-	                   WHERE om.target_url = COALESCE(NULLIF(l.source_url,''),p.url,'')
-	                     AND om.type='comment'
-	                     AND om.status = 'sent'
-	                     AND om.org_id = l.org_id) as commented
+	           EXISTS(SELECT 1 FROM action_ledger al
+	                   WHERE al.target_url = COALESCE(NULLIF(l.source_url,''),p.url,'')
+	                     AND al.action_type='comment'
+	                     AND al.outcome='succeeded'
+	                     AND al.org_id = l.org_id) as commented
 	          FROM leads l LEFT JOIN posts p ON l.source_id = p.id`
 	if orgID > 0 {
 		query += ` LEFT JOIN groups g ON p.group_id = g.id`
@@ -163,6 +164,11 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 
 	var args []any
 	var where []string
+	// Lead Lifecycle PR-1: archived leads are hidden from the default list AND
+	// excluded from planner selection (this method backs both). They stay in the
+	// table + engagement ledger for dedup/coverage history; PR-4 fetches them via a
+	// dedicated archived query. See specs/LEAD_LIFECYCLE_WORK_QUEUE.md.
+	where = append(where, "l.archived_at IS NULL")
 	if orgID > 0 {
 		where = append(where, "(COALESCE(NULLIF(l.org_id,0), g.org_id, 0) = ?)")
 		args = append(args, orgID)

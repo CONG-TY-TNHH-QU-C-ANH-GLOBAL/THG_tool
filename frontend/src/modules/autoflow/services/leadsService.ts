@@ -2,7 +2,7 @@ import type { Lead, LeadEngagementState, LeadStatus, LeadThreadRole } from '../t
 import * as api from './api';
 
 interface LeadsResponse { leads: BackendLead[]; count: number; }
-interface BackendLead {
+export interface BackendLead {
   id: number; author: string; author_url: string; content: string;
   score: string; service_match: string; author_role: string; pain_point: string;
   niche: string; source_url: string; secondary_url?: string; source_type?: string;
@@ -32,7 +32,7 @@ function numericScore(s: LeadStatus): number {
   return 45;
 }
 
-function toLead(b: BackendLead): Lead {
+export function toLead(b: BackendLead): Lead {
   const status = normalizeScore(b.score);
   return {
     id: b.id,
