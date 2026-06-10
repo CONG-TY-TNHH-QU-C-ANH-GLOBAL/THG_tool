@@ -104,12 +104,12 @@ func (mg *MessageGenerator) Available() bool {
 // GenerateComment generates a contextual comment for any business.
 // businessContext is a free-form description loaded from user_context (used as fallback profile).
 func (mg *MessageGenerator) GenerateComment(ctx context.Context, postContent, authorName, businessContext string) (string, error) {
-	return mg.GenerateCommentWithService(ctx, postContent, authorName, businessContext, "", "")
+	return mg.GenerateCommentWithService(ctx, postContent, authorName, businessContext, "", models.CompanyIdentity{})
 }
 
 // GenerateCommentWithService generates a comment using business profile for any industry.
 // serviceMatch and niche are kept for backward compat but no longer drive hardcoded templates.
-func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, postContent, authorName, businessContext, serviceMatch, _ string) (string, error) {
+func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, postContent, authorName, businessContext, serviceMatch string, identity models.CompanyIdentity) (string, error) {
 	lang := detectLang(postContent)
 	var langRule string
 	if lang == "en" {
@@ -125,10 +125,19 @@ func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, post
 		serviceNote = fmt.Sprintf("\nMost relevant service link: %s", url)
 	}
 
+	// Brand-trust grounding (PR-3): the configured company identity (brand / website /
+	// official contact / what-we-do) so the comment can include a real website +
+	// contact for the lead to reach us — grounded ONLY in this block, never invented.
+	companyBlock := buildCompanyBlock(identity)
+	contactRule := buildContactRule(identity)
+
 	prompt := fmt.Sprintf(`You are a senior sales professional with 10+ years of experience. Write a natural, human-sounding comment on this post.
 
 BUSINESS PROFILE:
 %s%s
+
+COMPANY IDENTITY (ground every brand / website / contact claim ONLY in this block — never invent one):
+%s
 
 POST AUTHOR: %s
 POST CONTENT:
@@ -137,13 +146,14 @@ POST CONTENT:
 RULES:
 1. %s
 2. Address the author by their EXACT name
-3. 2–3 sentences MAX. Natural tone — NOT a bot
+3. 2–4 sentences. Natural tone — NOT a bot
 4. Acknowledge their specific need or pain point
 5. Introduce your most relevant offering naturally
-6. Soft CTA at the end ("Inbox mình nhé!" / "Feel free to DM!")
+6. End with a soft CTA, and if a Website and/or Official contact ARE listed in COMPANY IDENTITY, include them so the lead can reach you (each at most once).
 7. NO EMOJIS. Professional but human.
+%s
 
-RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, authorName, postContent, langRule)
+RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, langRule, contactRule)
 
 	return mg.callOpenAI(ctx, prompt)
 }

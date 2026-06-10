@@ -65,3 +65,27 @@ func TestScreenCommentContacts(t *testing.T) {
 		}
 	}
 }
+
+// The default comment prompt must surface a configured website + official contact
+// (the founder's "comment thiếu website/contact" fix), and never invent one.
+func TestCompanyBlockAndContactRule_IncludeConfiguredWebsiteContact(t *testing.T) {
+	id := models.CompanyIdentity{CompanyName: "THG Fulfill", Website: "https://thgfulfill.com", OfficialContact: "t.me/thgfulfill", ServiceSummary: "US fulfillment"}
+	block := buildCompanyBlock(id)
+	if !strings.Contains(block, "https://thgfulfill.com") || !strings.Contains(block, "t.me/thgfulfill") {
+		t.Fatalf("company block must list the website + contact, got: %q", block)
+	}
+	rule := buildContactRule(id)
+	if !strings.Contains(strings.ToLower(rule), "include") {
+		t.Errorf("contact rule should instruct INCLUDING the website/contact, got: %q", rule)
+	}
+
+	// When nothing is configured, the block names no website/contact and the rule
+	// forbids inventing a URL (no fabrication).
+	empty := buildCompanyBlock(models.CompanyIdentity{})
+	if strings.Contains(empty, "http") {
+		t.Errorf("empty identity must not produce a URL, got: %q", empty)
+	}
+	if !strings.Contains(buildContactRule(models.CompanyIdentity{}), "do NOT include any URL") {
+		t.Error("no-website rule must forbid URLs")
+	}
+}

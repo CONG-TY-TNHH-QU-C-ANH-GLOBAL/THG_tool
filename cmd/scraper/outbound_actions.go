@@ -182,7 +182,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			if template != "" && msgType == "comment" {
 				content, genErr = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
 			} else if msgType == "comment" {
-				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, leadContext, lead.ServiceMatch, "")
+				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, leadContext, lead.ServiceMatch, commentIdentity)
 			} else {
 				content, genErr = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, leadContext, "")
 			}

@@ -375,11 +375,14 @@ func buildCompanyBlock(id models.CompanyIdentity) string {
 
 // buildContactRule encodes the CTA/contact policy: brand trust WITHOUT contact spam.
 func buildContactRule(id models.CompanyIdentity) string {
-	rule := "8. CONTACT POLICY: identify naturally as the brand to build trust, but do NOT spam contact. Use AT MOST ONE contact method — prefer the brand name + a soft inbox CTA. NEVER invent a website, email, or phone; cite ONLY what is listed in COMPANY IDENTITY. Do NOT repeat the CTA or the website."
+	rule := "8. CONTACT POLICY: ground every brand / website / contact claim ONLY in COMPANY IDENTITY — NEVER invent a website, email, or phone. INCLUDE the Official contact and the Website that ARE listed so the lead can reach you, but each AT MOST ONCE and with at most ONE URL total (no spam, no repetition)."
 	if id.Website != "" {
-		rule += " Mention the Website at most ONCE and ONLY if it directly helps this lead."
+		rule += " The Website above is the ONLY URL you may write."
 	} else {
 		rule += " No website is configured — do NOT include any URL."
+	}
+	if id.OfficialContact != "" {
+		rule += " Include the Official contact exactly as listed."
 	}
 	return rule
 }
