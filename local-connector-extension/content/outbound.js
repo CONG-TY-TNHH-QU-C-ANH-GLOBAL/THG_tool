@@ -576,6 +576,19 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return null;
   }
 
+  // acquireTargetComposer is the SINGLE SOURCE OF TRUTH for editor acquisition: it re-resolves
+  // the composer with the EXACT classifier gate1 accepted with (THGCommentComposer.findComposerEntry
+  // over the document-wide editable sweep in commentSurfaceDeps.docEditables), so a composer gate1
+  // passed can never be lost by a divergent, narrower finder. The old failure was precisely that
+  // divergence: gate1 swept document-wide while findComposerForTarget only walked 6 ancestor levels
+  // of the target article — the permalink "Write an answer…" box lived outside that subtree.
+  // Re-resolving here (fresh DOM query, same doctrine) also survives the async waits between gate1
+  // and typing. Returns { el, reason, candidates } — candidates carry per-editor diagnostics.
+  function acquireTargetComposer(targetPostId, scope) {
+    const article = (targetPostId && findTargetArticle(targetPostId)) || scope || document;
+    return THGCommentComposer.findComposerEntry(article, commentSurfaceDeps(targetPostId));
+  }
+
   // (submitScore / submitCandidateSpatial / findSubmitButtons moved to
   // content/comment_submit.js — THGCommentSubmit.findSubmitButtons(editor, excluded,
   // submitDeps).)
@@ -858,10 +871,11 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
     }
 
-    let editor = findCommentEditor(scope);
-    // Permalink layout: the composer is page-level (outside the post article).
-    // Use the target-scoped finder so we never grab a DIFFERENT post's composer.
-    if (!editor && permalinkPage) editor = findComposerForTarget(targetPostId);
+    // Editor acquisition uses acquireTargetComposer (the SAME classifier gate1 accepted with)
+    // as the source of truth; the legacy in-article / bounded-walk finders are only extra
+    // fallbacks. This unifies gate1 discovery and editor selection — the P0b handoff fix.
+    let acq = acquireTargetComposer(targetPostId, scope);
+    let editor = acq.el || findCommentEditor(scope) || (permalinkPage ? findComposerForTarget(targetPostId) : null);
     if (!editor) {
       window.scrollBy({ top: 420, behavior: 'smooth' });
       await wait(900);
@@ -880,17 +894,38 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
             'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
             navDiagFor('gate2b_scroll_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
         }
-        editor = findCommentEditor(scope) || (permalinkPage ? findComposerForTarget(targetPostId) : null);
+        acq = acquireTargetComposer(targetPostId, scope);
+        editor = acq.el || findCommentEditor(scope) || (permalinkPage ? findComposerForTarget(targetPostId) : null);
       } else {
         editor = findCommentEditor(scope) || findCommentEditor(document);
       }
     }
     if (!editor) {
       const landed = location.href || '';
+      // P0b diagnostics: prove EXACTLY why the visible composer was not used. Re-run the gate1
+      // classifier snapshot + surface every editor candidate with its accept/reject reason, so
+      // a comment_box_not_found is never opaque again.
+      const artD = targetPostId ? findTargetArticle(targetPostId) : null;
+      const entD = artD ? THGCommentButton.diagnostics(artD, commentSurfaceDeps(targetPostId)) : null;
+      const cands = (acq && acq.candidates && acq.candidates.length ? acq.candidates : (entD ? entD.composer_candidates : [])) || [];
+      const candReasons = cands.map((c) => c.reason + (c.accepted ? '(ok)' : '')).join(',');
+      const fcft = !!findComposerForTarget(targetPostId);
       console.warn('[THG outbound.executeComment] comment_box_not_found',
-        { target_id: targetPostId, landed_at_fail: landed });
+        { target_id: targetPostId, landed_at_fail: landed,
+          urlPinsIdentity: onTargetPermalinkPage(targetPostId),
+          gate1_passed_via: entD ? entD.gate1_passed_via : 'unknown',
+          findComposerForTarget_found: fcft,
+          editor_candidates_count: cands.length, editor_candidates: cands,
+          acquire_reason: acq ? acq.reason : 'none' });
       return commentResult(false, 'comment_box_not_found', null, ctx,
-        'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') + ' landed_at=' + landed,
+        'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') +
+        ' urlPinsIdentity=' + onTargetPermalinkPage(targetPostId) +
+        ' gate1_passed_via=' + (entD ? entD.gate1_passed_via : 'unknown') +
+        ' acquire_reason=' + (acq ? acq.reason : 'none') +
+        ' findComposerForTarget_found=' + fcft +
+        ' editor_candidates=' + cands.length +
+        ' editor_candidate_reasons=[' + candReasons + ']' +
+        ' landed_at=' + landed,
         navDiagFor('comment_box_not_found', 'composer', probeCommentGates(targetPostId), ctxInfo));
     }
 

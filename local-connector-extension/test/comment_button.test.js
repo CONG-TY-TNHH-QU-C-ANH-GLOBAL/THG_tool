@@ -66,5 +66,20 @@ function liveDeps(box) {
   }
   assert.strictEqual(called, true, 'commentSurfaceState must call THGCommentComposer.findComposerEntry');
 
+  // 5) UNIFIED HANDOFF (P0b): the element gate1 ACCEPTS must be the SAME element editor
+  //    acquisition returns. Both go through THGCommentComposer.findComposerEntry with the SAME
+  //    deps (commentSurfaceDeps), so a composer gate1 passed can never be lost by the editor
+  //    finder — the divergence that produced comment_box_not_found after gate1 succeeded.
+  {
+    const box = answerBox();
+    const art = makeArticle({ buttons: [likeBtn, shareBtn], editables: [], permalink: true });
+    const deps = liveDeps(box);
+    const d = B.diagnostics(art, deps);                 // gate1 view
+    assert.strictEqual(d.composer_entry_found, true);
+    assert.strictEqual(d.gate1_passed_via, 'composer_entry');
+    const acquired = globalThis.THGCommentComposer.findComposerEntry(art, deps).el; // acquisition view
+    assert.strictEqual(acquired, box, 'editor acquisition must return the same composer gate1 accepted');
+  }
+
   console.log('gate1 comment_button integration regression: PASS');
 })();
