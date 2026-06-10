@@ -128,4 +128,14 @@ const hostTarget = () => 'target';
   assert.strictEqual(r2.reason, 'wrong_post');
 }
 
+// 11) Negative: on the target permalink page, a truly UNRELATED composer (no comment/answer/
+//     reply shape, non-target host) must NOT be accepted just because the URL pins identity.
+{
+  const T = '2040078973566103';
+  const el = makeEl({ role: 'textbox', ce: 'true', aria: 'Add a poll option', parentText: 'Add a poll option' });
+  const verdict = () => C.hostVerdict({ hostId: '999000111', targetId: T, urlPinsIdentity: true });
+  const r = C.classify(el, makeArticle(), { visible: sizeVisible, closestArticle: () => ({}), classifyHost: verdict });
+  assert.strictEqual(r.accepted, false, 'an unrelated permalink composer must still be rejected');
+}
+
 console.log('gate1 comment_composer regression: PASS');
