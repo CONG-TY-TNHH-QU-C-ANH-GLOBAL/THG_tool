@@ -182,6 +182,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// may be covered by SEVERAL accounts — this is brand reach, not spam — but
 		// capped: skip (and keep scanning) when THIS actor already covered it, the lead
 		// replied, coverage is full, or it is too soon behind the previous actor.
+		var persona models.ActorPersona
 		if msgType == "comment" && lead.ID > 0 {
 			if cov, cerr := db.Leads().GetLeadCoverageState(ctx, orgID, lead.ID); cerr == nil {
 				if ok, reason := models.EvaluateCoverage(*cov, coveragePolicy, accountID, time.Now().UTC()); !ok {
@@ -189,6 +190,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 					skipReasons[reason]++
 					continue
 				}
+				// Eligible: a prior verified touch almost certainly used the website + a
+				// hard CTA, so a LATER actor adds value (advice/experience) without
+				// re-citing them. The persona forces that different angle in generation.
+				if cov.OrgTouchCount > 0 {
+					cov.WebsiteAlreadyUsed = true
+					cov.DirectCTAAlreadyUsed = true
+				}
+				persona = models.DeriveActorPersona(*cov, coveragePolicy, "", "")
 			}
 		}
 
@@ -208,7 +217,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			if template != "" && msgType == "comment" {
 				content, genErr = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
 			} else if msgType == "comment" {
-				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, leadContext, lead.ServiceMatch, commentIdentity)
+				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, leadContext, lead.ServiceMatch, commentIdentity, persona)
 			} else {
 				content, genErr = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, leadContext, "")
 			}

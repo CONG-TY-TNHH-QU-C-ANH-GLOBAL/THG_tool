@@ -104,12 +104,12 @@ func (mg *MessageGenerator) Available() bool {
 // GenerateComment generates a contextual comment for any business.
 // businessContext is a free-form description loaded from user_context (used as fallback profile).
 func (mg *MessageGenerator) GenerateComment(ctx context.Context, postContent, authorName, businessContext string) (string, error) {
-	return mg.GenerateCommentWithService(ctx, postContent, authorName, businessContext, "", models.CompanyIdentity{})
+	return mg.GenerateCommentWithService(ctx, postContent, authorName, businessContext, "", models.CompanyIdentity{}, models.ActorPersona{})
 }
 
 // GenerateCommentWithService generates a comment using business profile for any industry.
 // serviceMatch and niche are kept for backward compat but no longer drive hardcoded templates.
-func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, postContent, authorName, businessContext, serviceMatch string, identity models.CompanyIdentity) (string, error) {
+func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, postContent, authorName, businessContext, serviceMatch string, identity models.CompanyIdentity, persona models.ActorPersona) (string, error) {
 	lang := detectLang(postContent)
 	var langRule string
 	if lang == "en" {
@@ -130,6 +130,9 @@ func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, post
 	// contact for the lead to reach us — grounded ONLY in this block, never invented.
 	companyBlock := buildCompanyBlock(identity)
 	contactRule := buildContactRule(identity)
+	// Multi-actor coverage: when a teammate already covered this lead, the persona
+	// forces a different angle (no repeated website/CTA/phrasing). Empty for the first.
+	personaRule := buildPersonaRule(persona)
 
 	prompt := fmt.Sprintf(`You are a senior sales professional with 10+ years of experience. Write a natural, human-sounding comment on this post.
 
@@ -152,8 +155,9 @@ RULES:
 6. End with a soft CTA, and if a Website and/or Official contact ARE listed in COMPANY IDENTITY, include them so the lead can reach you (each at most once).
 7. NO EMOJIS. Professional but human.
 %s
+%s
 
-RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, langRule, contactRule)
+RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, langRule, contactRule, personaRule)
 
 	return mg.callOpenAI(ctx, prompt)
 }
