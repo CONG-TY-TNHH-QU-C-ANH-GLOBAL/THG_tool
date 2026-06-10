@@ -163,6 +163,9 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// queued or the pool is exhausted, instead of inspecting exactly N raw leads.
 	requested := requestedOutreachCount(args)
 	scanned := 0
+	// Coverage policy: brand-coverage-friendly default until a per-org settings
+	// surface exists (allow multi-actor, cap accounts/url/cta, gap, stop-on-reply).
+	coveragePolicy := models.DefaultCoveragePolicy()
 	for _, lead := range leads {
 		if queued >= requested {
 			break
@@ -173,6 +176,20 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			skipped++
 			skipReasons[skipReason]++
 			continue
+		}
+
+		// Multi-actor coverage gate (spec: MULTI_ACTOR_COVERAGE_POLICY). A SHARED lead
+		// may be covered by SEVERAL accounts — this is brand reach, not spam — but
+		// capped: skip (and keep scanning) when THIS actor already covered it, the lead
+		// replied, coverage is full, or it is too soon behind the previous actor.
+		if msgType == "comment" && lead.ID > 0 {
+			if cov, cerr := db.Leads().GetLeadCoverageState(ctx, orgID, lead.ID); cerr == nil {
+				if ok, reason := models.EvaluateCoverage(*cov, coveragePolicy, accountID, time.Now().UTC()); !ok {
+					skipped++
+					skipReasons[reason]++
+					continue
+				}
+			}
 		}
 
 		content := template
@@ -372,6 +389,11 @@ func friendlySkipReasons(reasons map[string]int) string {
 		"awaiting_reply_cooldown":        "đang chờ lead phản hồi lần trước",
 		"lead_replied":                   "lead đã trả lời — không gửi thêm",
 		"conversation_closed":            "hội thoại với lead đã đóng",
+		// Multi-actor coverage gate (brand coverage, not spam).
+		"already_commented_by_this_actor": "tài khoản này đã comment lead này",
+		"single_actor_policy":             "chính sách chỉ 1 tài khoản/lead",
+		"coverage_full":                   "lead đã đủ số tài khoản tiếp cận",
+		"coverage_gap_too_soon":           "chưa đủ giãn cách giữa các lượt comment",
 		"action_policy_missing":          "workspace chưa bật chính sách hành động",
 		// Target-URL resolution (resolveOutboundTargetURL) — the common skip for a
 		// fresh lead whose crawled URL is not a direct commentable post permalink.
