@@ -60,6 +60,15 @@ export interface ActorIdentity {
   actor_blocked?: boolean;
 }
 
+// CommentCorrection = a succeeded ledger correction (human_verified / reverified) on a
+// comment. Its presence means the LATEST EFFECTIVE outcome is succeeded even though the
+// outbound's (append-only, never-mutated) verification_outcome stays submitted_unverified.
+export interface CommentCorrection {
+  correction_id: number;
+  reason: string; // human_verified | reverified
+  outcome: string; // succeeded
+}
+
 export interface OutboxResponse {
   messages: OutboundMessage[];
   count: number;
@@ -67,6 +76,8 @@ export interface OutboxResponse {
   // actors maps account_id → ActorIdentity for every account in the org,
   // so the UI can render the executing Facebook actor without an N+1 fetch.
   actors?: Record<string, ActorIdentity>;
+  // corrections maps outbound_id → its latest succeeded correction (if any).
+  corrections?: Record<string, CommentCorrection>;
 }
 
 export async function getOutbox(params?: { type?: string; status?: string; limit?: number }): Promise<OutboxResponse> {

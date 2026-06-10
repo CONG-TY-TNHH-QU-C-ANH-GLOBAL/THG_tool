@@ -38,7 +38,17 @@ func (h *Handler) getOutbox(c *fiber.Ctx) error {
 			}
 		}
 	}
-	return c.JSON(fiber.Map{"messages": messages, "count": len(messages), "counts": counts, "actors": actors})
+	// Latest-effective-outcome overlay: a comment whose async/manual correction appended a
+	// 'succeeded' ledger row must show as posted even though its (append-only, never-mutated)
+	// verification_outcome stays submitted_unverified. The FE renders the effective outcome.
+	commentIDs := make([]int64, 0, len(messages))
+	for _, m := range messages {
+		if m.Type == "comment" {
+			commentIDs = append(commentIDs, m.ID)
+		}
+	}
+	corrections, _ := h.db.Coordination().CommentCorrectionsForOutbounds(c.UserContext(), orgID, commentIDs)
+	return c.JSON(fiber.Map{"messages": messages, "count": len(messages), "counts": counts, "actors": actors, "corrections": corrections})
 }
 
 // clearActorBlock is the operator override that lifts a Verified-Actor block

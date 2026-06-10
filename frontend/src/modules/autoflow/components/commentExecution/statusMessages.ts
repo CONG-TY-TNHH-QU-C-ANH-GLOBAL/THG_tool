@@ -13,6 +13,14 @@ export interface CommentStatus {
   severity: ExecSeverity;
 }
 
+// effectiveOutcome resolves the outcome the UI should display: a succeeded ledger correction
+// (human_verified / reverified) OVERRIDES a stale submitted_unverified — so a manually- or
+// async-confirmed comment shows as posted, not "đang chờ xác minh".
+export function effectiveOutcome(verificationOutcome: string | undefined, correctionReason?: string): string {
+  if (correctionReason === 'human_verified' || correctionReason === 'reverified') return 'verified_success';
+  return verificationOutcome ?? '';
+}
+
 export function commentStatus(state: string, outcome: string): CommentStatus {
   const s = (state || '').toLowerCase();
   const o = (outcome || '').toLowerCase();
