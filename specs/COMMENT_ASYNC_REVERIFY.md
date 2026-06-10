@@ -2,7 +2,7 @@
 
 **Track:** Facebook Automation Reliability / Comment Intelligence.
 **Status:** PR-1 Parts A–C shipped (forensics, soft-touch semantics, UI copy). Part D
-(async reverify) is **DESIGN — not yet built**.
+(async reverify) **SHIPPED** as PR-A — see "Part D — Async reverify (SHIPPED)" below.
 
 ## Problem
 
@@ -53,7 +53,29 @@ and (b) later **reverify out-of-band** and, only on real proof, append a correct
   for the unverified state — currently `enabled:false` with a TODO pointing here until
   Part D ships.
 
-## Part D — Async reverify (DESIGN)
+## Part D — Async reverify (SHIPPED, PR-A)
+
+Implemented as a decoupled reverify queue (NOT a new outbound action, so it bypasses the
+dedup/cooldown/risk gates that govern real sends):
+- Table `comment_reverify` (migration 0010) — work queue + audit (`reverify_attempted_at`
+  via `attempted_at`, `reverify_outcome` via `outcome`, `reason`).
+- `coordination`: `FindReverifyEligible` (submitted_unverified, finished, content+actor+url
+  present, older than `COMMENT_REVERIFY_DELAY_MIN`=3, not already scheduled — failed_before_
+  submit is excluded by construction), `ScheduleReverify` (idempotent), `ClaimDueReverifies`
+  (org+account scoped), `RecordReverifyOutcome`, `AppendReverifyCorrection` (append-only
+  `succeeded` ledger row, action_type=comment, reason=`reverified`), `ApplyReverifyResult`
+  (found→correction+verified / not-found→not_found; idempotent + tenant-guarded).
+- Scheduler `runCommentReverifyScheduler` (cmd/scraper, every `COMMENT_REVERIFY_INTERVAL_MIN`
+  =2) enqueues eligible rows.
+- Agent endpoints `GET /api/agent/reverify/claim` + `POST /api/agent/reverify/result`.
+- Extension: `content/reverify.js` (read-only DOM search, reuses proof.js — never composes),
+  `src/reverify.js` (connector poller, runs after outbox; reports only a definitive verdict,
+  leaves the row pending on busy/error), wired via comment_executor + bridge + heartbeat +
+  manifest. The composer state machine + gate logic are untouched.
+
+The original design follows.
+
+## Part D — Async reverify (DESIGN — as built above)
 
 Goal: out-of-band, append-only upgrade of a soft touch to a verified touch when — and
 only when — the comment is actually found on the post.

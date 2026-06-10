@@ -276,6 +276,9 @@ func main() {
 	go runAutoArchiveScheduler(ctx, db, cfg)
 	log.Println("✅ Auto-archive scheduler started (lead lifecycle retention)")
 
+	go runCommentReverifyScheduler(ctx, db, cfg)
+	log.Println("✅ Comment reverify scheduler started (submitted_unverified → reverify queue)")
+
 	// Start web server (non-blocking)
 	srv := server.New(db, jobStore, agent, workspaceMgr, server.Config{
 		Port:               cfg.WebPort,

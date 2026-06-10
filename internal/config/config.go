@@ -90,6 +90,8 @@ type Config struct {
 	RawCrawlRetentionDays int // retention for raw crawl payload (compaction; ledger kept)
 	ArchiveIntervalMin    int // auto-archive sweep cadence in minutes
 	VerificationCooldownMin int // how long a submitted-unverified comment holds a lead (waiting_verification)
+	CommentReverifyDelayMin int // wait this long after submit before scheduling an async reverify
+	CommentReverifyIntervalMin int // async reverify scheduler cadence in minutes
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -142,6 +144,8 @@ func Load() *Config {
 		RawCrawlRetentionDays: getEnvInt("LEAD_RAW_CRAWL_RETENTION_DAYS", 90),
 		ArchiveIntervalMin:    getEnvInt("LEAD_ARCHIVE_INTERVAL_MIN", 360),
 		VerificationCooldownMin: getEnvInt("LEAD_VERIFICATION_COOLDOWN_MIN", 30),
+		CommentReverifyDelayMin: getEnvInt("COMMENT_REVERIFY_DELAY_MIN", 3),
+		CommentReverifyIntervalMin: getEnvInt("COMMENT_REVERIFY_INTERVAL_MIN", 2),
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),

@@ -8,6 +8,7 @@ importScripts(
   'src/stream.js',
   'src/commands.js',
   'src/outbox.js',
+  'src/reverify.js',
   'src/heartbeat.js'
 );
 
