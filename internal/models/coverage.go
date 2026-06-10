@@ -89,6 +89,27 @@ func EvaluateCoverage(state LeadCoverageState, policy CoveragePolicy, actorAccou
 	return true, CoverageOK
 }
 
+// ProjectLeadCoverage builds the coverage state from VERIFIED ledger entries + the
+// lead-replied signal (spec: specs/MULTI_ACTOR_COVERAGE_POLICY.md). Entries should
+// already be verified successes; the check is applied defensively. Content fields
+// (website/CTA/angles) are filled by the generation layer, not here.
+func ProjectLeadCoverage(entries []LeadEngagement, leadReplied bool) LeadCoverageState {
+	st := LeadCoverageState{LeadReplied: leadReplied}
+	for _, e := range entries {
+		if !IsLedgerOutcomeVerifiedTouch(e.Outcome) {
+			continue
+		}
+		if e.AccountID > 0 && !slices.Contains(st.ActorsTouched, e.AccountID) {
+			st.ActorsTouched = append(st.ActorsTouched, e.AccountID)
+		}
+		st.OrgTouchCount++
+		if e.PerformedAt.After(st.LastTouchAt) {
+			st.LastTouchAt = e.PerformedAt
+		}
+	}
+	return st
+}
+
 // CTA + link policy values handed to the generator.
 const (
 	CTADirectInbox       = "direct_inbox"      // hard "inbox mình nhé" CTA

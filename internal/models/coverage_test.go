@@ -61,3 +61,26 @@ func TestDeriveActorPersona(t *testing.T) {
 		t.Errorf("persona must forbid used angles, got %v", p2.ForbiddenRepeatedPhrases)
 	}
 }
+
+func TestProjectLeadCoverage(t *testing.T) {
+	t0 := time.Date(2026, 6, 10, 10, 0, 0, 0, time.UTC)
+	entries := []LeadEngagement{
+		{AccountID: 1, Outcome: "succeeded", PerformedAt: t0},
+		{AccountID: 1, Outcome: "succeeded", PerformedAt: t0.Add(time.Minute)}, // same actor, dedup
+		{AccountID: 2, Outcome: "succeeded", PerformedAt: t0.Add(2 * time.Minute)},
+		{AccountID: 3, Outcome: "queued", PerformedAt: t0.Add(3 * time.Minute)}, // not verified → ignored
+	}
+	st := ProjectLeadCoverage(entries, true)
+	if len(st.ActorsTouched) != 2 || !st.ActorTouched(1) || !st.ActorTouched(2) {
+		t.Errorf("expected actors {1,2}, got %v", st.ActorsTouched)
+	}
+	if st.OrgTouchCount != 3 {
+		t.Errorf("expected 3 verified touches, got %d", st.OrgTouchCount)
+	}
+	if !st.LastTouchAt.Equal(t0.Add(2 * time.Minute)) {
+		t.Errorf("last touch should be the newest verified entry, got %v", st.LastTouchAt)
+	}
+	if !st.LeadReplied {
+		t.Error("LeadReplied must pass through")
+	}
+}
