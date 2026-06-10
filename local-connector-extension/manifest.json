@@ -44,6 +44,7 @@
         "content/comment_submit.js",
         "content/comment_state_machine.js",
         "content/outbound.js",
+        "content/reverify.js",
         "content/comment_executor.js",
         "content/bridge.js",
         "content.js"

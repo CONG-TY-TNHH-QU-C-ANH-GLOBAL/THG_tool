@@ -28,6 +28,10 @@ var THGHeartbeat = globalThis.THGHeartbeat || (() => {
     workRunning = (async () => {
       await THGCommands.process(target, state).catch(err => THGShared.storageSet({ lastError: err?.message || String(err) }));
       await THGOutbox.process(target, state).catch(err => THGShared.storageSet({ lastError: err?.message || String(err) }));
+      // Async comment reverify runs AFTER outbox so the two never drive the FB tab at once.
+      if (globalThis.THGReverify) {
+        await THGReverify.process(target, state).catch(err => THGShared.storageSet({ lastError: err?.message || String(err) }));
+      }
     })().finally(() => { workRunning = null; });
     return workRunning;
   }

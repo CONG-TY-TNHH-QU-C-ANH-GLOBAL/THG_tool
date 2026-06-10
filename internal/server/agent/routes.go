@@ -60,6 +60,9 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	agentGrp.Get("/outbox", h.agentGetOutbox)
 	agentGrp.Post("/outbox/:id/sent", h.agentOutboxSent)
 	agentGrp.Post("/outbox/:id/failed", h.agentOutboxFailed)
+	// Async comment reverify (spec: specs/COMMENT_ASYNC_REVERIFY.md).
+	agentGrp.Get("/reverify/claim", h.agentReverifyClaim)
+	agentGrp.Post("/reverify/result", h.agentReverifyResult)
 	agentGrp.Get("/images", h.agentServeImage)
 }
 

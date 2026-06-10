@@ -75,6 +75,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
+      // Async reverify: read-only re-check of a posted comment (no compose/submit). Yields
+      // if a mutate command is mid-flight so it never fights the composer for the tab; the
+      // connector leaves the row pending and retries next cycle. See COMMENT_ASYNC_REVERIFY.md.
+      if (type === 'thg_reverify_comment') {
+        if (activeMutation) { sendResponse({ ok: false, error: 'tab_busy_executing' }); return; }
+        sendResponse(await THGCommentExecutor.execute('thg_reverify_comment', message.message || {}));
+        return;
+      }
+
       // Mutate-class: serialise via activeMutation. A second
       // mutate command arriving while one is in flight is REJECTED
       // immediately — the caller (background outbox) is expected to

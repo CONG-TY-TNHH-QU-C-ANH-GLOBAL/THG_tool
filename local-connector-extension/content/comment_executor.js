@@ -8,6 +8,12 @@
 // Refactor-only: pure dispatch, no algorithm change.
 var THGCommentExecutor = globalThis.THGCommentExecutor || (() => {
   async function execute(type, message) {
+    // Read-only re-check (no compose/submit) — handled before the outbound guard so it
+    // works even if the composer module isn't loaded. See specs/COMMENT_ASYNC_REVERIFY.md.
+    if (type === 'thg_reverify_comment') {
+      const R = globalThis.THGContentReverify;
+      return R ? R.executeReverifyComment(message || {}) : { ok: false, error: 'reverify_not_ready' };
+    }
     const O = globalThis.THGContentOutbound;
     if (!O) return { ok: false, error: 'outbound_not_ready' };
     switch (type) {
