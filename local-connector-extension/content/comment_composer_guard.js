@@ -1,15 +1,14 @@
 // Comment Composer Guard — the SINGLE place that clears / inserts / equality-checks
 // the Facebook comment composer (kept out of the outbound.js god file).
-// FB's composer is Lexical: a Range selection does NOT drive execCommand insert/delete
-// (insert APPENDS, delete no-ops → the visible A+A). So we select via browser-native
-// execCommand('selectAll') and insert via a VERIFIED fallback chain (execCommand
-// insertText → paste-replacement → textContent), reading the composer back after each
-// method. Telemetry behind DEBUG_COMPOSER logs every step.
+// Telemetry (0.5.45) proved: composer starts EMPTY, yet our OLD multi-method fallback
+// chain inserted 3× (A+A+A = 191×3) because each method APPENDED and the read-back
+// === gave a false-negative at matching length. So now: ONE insert method (no
+// compounding) + Unicode-robust comparison (NFC + strip invisibles) + keyboard
+// select-all so the insert REPLACES. Telemetry behind DEBUG_COMPOSER logs every step.
 var THGCommentGuard = globalThis.THGCommentGuard || (() => {
   const wait = ms => new Promise(r => setTimeout(r, ms));
 
-  // Flip to false to silence all composer telemetry after the incident.
-  const DEBUG_COMPOSER = true;
+  const DEBUG_COMPOSER = true; // flip false to silence telemetry after the incident
   const EXT_VERSION = (() => { try { return chrome.runtime.getManifest().version; } catch (_) { return ''; } })();
 
   function clog(ctx, phase, f) {
@@ -17,26 +16,23 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
     f = f || {};
     try {
       console.log('[THG composer]', {
-        extension_version: EXT_VERSION,
-        outbound_id: (ctx && ctx.outboundId) || 0,
-        executor_path: (ctx && ctx.executorPath) || 'unknown',
-        method: f.method || '-',
+        extension_version: EXT_VERSION, outbound_id: (ctx && ctx.outboundId) || 0,
+        executor_path: (ctx && ctx.executorPath) || 'unknown', method: f.method || '-',
         expected_length: f.expected_length != null ? f.expected_length : -1,
         actual_length: f.actual_length != null ? f.actual_length : -1,
-        equals_expected: !!f.equals_expected,
-        is_duplicate: !!f.is_duplicate,
-        phase,
-        reason: f.reason || '',
-        ...(f.extra || {}),
+        equals_expected: !!f.equals_expected, is_duplicate: !!f.is_duplicate,
+        phase, reason: f.reason || '', ...(f.extra || {}),
       });
     } catch (_) { /* never break delivery on a log */ }
   }
 
+  // Unicode-robust: NFC-normalise + drop zero-width / soft-hyphen invisibles so a
+  // composer rendering of A compares EQUAL to the queued A (the false-negative that
+  // made the old chain over-insert).
   function normalizeCommentText(t) {
-    return String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+    return String(t == null ? '' : t).normalize('NFC').replace(/[​-‍﻿­]/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  // isExactRepeatedText: actual is expected repeated back-to-back (A+A).
   function isExactRepeatedText(actual, expected) {
     const a = normalizeCommentText(actual);
     const e = normalizeCommentText(expected);
@@ -55,7 +51,6 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
     return normalizeCommentText(raw);
   }
 
-  // assertComposerExactlyExpected: the hard pre-submit equality check.
   function assertComposerExactlyExpected(composer, expected) {
     const actual = readComposerText(composer);
     const e = normalizeCommentText(expected);
@@ -64,57 +59,30 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
     return { ok: false, duplicate, mismatch: !duplicate, actual_length: actual.length, expected_length: e.length };
   }
 
-  // selectAllIn: browser-native selectAll FIRST (drives Lexical's edit pipeline);
-  // Range is only a last resort.
-  function selectAllIn(el) {
+  // selectAllRobust: dispatch a Ctrl/Cmd+A keydown (Lexical's command handler selects
+  // all in its MODEL — DOM execCommand('selectAll') alone may not sync Lexical), then
+  // execCommand('selectAll') as belt-and-braces. Makes a following insert/delete act
+  // on the WHOLE content (replace/clear) instead of appending.
+  function selectAllRobust(el) {
     try { el.focus({ preventScroll: true }); } catch (_) { try { el.focus(); } catch (_) {} }
-    try { if (document.execCommand('selectAll', false, null)) return true; } catch (_) {}
-    try {
-      const r = document.createRange();
-      r.selectNodeContents(el);
-      const s = window.getSelection();
-      s.removeAllRanges();
-      s.addRange(r);
-      return true;
-    } catch (_) { return false; }
+    const k = { key: 'a', code: 'KeyA', keyCode: 65, which: 65, ctrlKey: true, metaKey: true, bubbles: true, cancelable: true };
+    try { el.dispatchEvent(new KeyboardEvent('keydown', k)); } catch (_) {}
+    try { document.execCommand('selectAll', false, null); } catch (_) {}
   }
 
-  function pasteInto(composer, text) {
-    selectAllIn(composer);
-    try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', text);
-      composer.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-      return true;
-    } catch (_) { return false; }
-  }
-
-  // insertTextInto: verified fallback chain — each method reads the composer back and
-  // a method only "counts" if the read-back equals expected. Returns { method, actual }.
+  // insertTextInto: ONE method only — select-all then execCommand('insertText') to
+  // REPLACE. Never falls through to appending methods (that produced A+A+A). Returns
+  // { method, actual }; the caller asserts + retries via clear.
   async function insertTextInto(composer, expected) {
-    const exp = normalizeCommentText(expected);
-    selectAllIn(composer);
+    selectAllRobust(composer);
     try { document.execCommand('insertText', false, expected); } catch (_) {}
     try { composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: expected })); } catch (_) {}
-    await wait(150);
-    if (readComposerText(composer) === exp) return { method: 'execCommand_insertText', actual: exp };
-
-    pasteInto(composer, expected);
-    await wait(180);
-    if (readComposerText(composer) === exp) return { method: 'paste', actual: exp };
-
-    try {
-      selectAllIn(composer);
-      document.execCommand('delete', false, null);
-      composer.textContent = expected;
-      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: expected }));
-    } catch (_) {}
-    await wait(120);
-    return { method: 'textContent_fallback', actual: readComposerText(composer) };
+    await wait(160);
+    return { method: 'kbd_selectall_insertText', actual: readComposerText(composer) };
   }
 
-  // clearComposerUntilEmpty: settle (let FB re-mount its draft) → selectAll+delete +
-  // paste-empty (Lexical belt-and-braces), require stable-empty before declaring ok.
+  // clearComposerUntilEmpty: settle (let FB re-mount any draft) → select-all + delete
+  // until stable-empty.
   async function clearComposerUntilEmpty(composer, { maxRounds = 8, stableMs = 1000, settleMs = 600 } = {}) {
     try { composer.focus({ preventScroll: true }); } catch (_) { try { composer.focus(); } catch (_) {} }
     await wait(settleMs);
@@ -123,9 +91,8 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
         await wait(stableMs);
         if (readComposerText(composer).length === 0) return { ok: true, rounds: i };
       }
-      selectAllIn(composer);
+      selectAllRobust(composer);
       try { document.execCommand('delete', false, null); } catch (_) {}
-      pasteInto(composer, '');
       try { composer.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
       await wait(200);
     }
@@ -145,9 +112,10 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
     return readComposerText(composer);
   }
 
-  // prepareComposerForComment: each attempt CLEARS-OR-ABORTS then INSERTS (verified);
-  // a doubled result clears + retries at most once, else aborts. Never inserts into a
-  // non-cleared composer; never returns ok for a doubled/mismatched composer.
+  function snip(s) { s = String(s || ''); return { head: s.slice(0, 28), tail: s.slice(-28) }; }
+
+  // prepareComposerForComment: each attempt CLEARS-OR-ABORTS then INSERTS once;
+  // doubled/mismatch → clear + retry at most once, else abort.
   async function prepareComposerForComment(composer, expected, ctx = {}) {
     const exp = normalizeCommentText(expected);
     const ed = composer || {};
@@ -170,11 +138,13 @@ var THGCommentGuard = globalThis.THGCommentGuard || (() => {
       diag.composer_after_insert_length = check.actual_length;
       diag.composer_after_insert_equals_expected = check.ok;
       diag.composer_after_insert_is_duplicate_of_expected = check.duplicate;
-      clog(ctx, 'after_insert', { method: ins.method, expected_length: exp.length, actual_length: check.actual_length, equals_expected: check.ok, is_duplicate: check.duplicate });
+      const ea = snip(exp); const aa = snip(readComposerText(composer));
+      clog(ctx, 'after_insert', { method: ins.method, expected_length: exp.length, actual_length: check.actual_length, equals_expected: check.ok, is_duplicate: check.duplicate,
+        extra: { exp_head: ea.head, exp_tail: ea.tail, act_head: aa.head, act_tail: aa.tail } });
 
       if (check.mismatch) return { ok: false, reason: 'comment_text_mismatch', diagnostic: diag };
       if (check.ok) {
-        await wait(900); // late-restore guard — FB can re-mount the draft a beat later
+        await wait(900); // late-restore guard
         const late = assertComposerExactlyExpected(composer, expected);
         diag.composer_after_settle_length = late.actual_length;
         diag.composer_after_settle_is_duplicate_of_expected = late.duplicate;

@@ -1,35 +1,28 @@
-// Pure + fallback-chain tests for the Comment Composer Guard.
+// Tests for the Comment Composer Guard.
 //   Run from local-connector-extension/: node content/comment_composer_guard.test.mjs
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
-// --- Mock a Lexical-like composer: execCommand('insertText') APPENDS (the bug),
-// execCommand('delete') is a no-op (Lexical ignores it), and paste REPLACES the
-// selection (Lexical's onPaste). The verified fallback chain must still end single.
+// Mock composer + DOM. execCommand('insertText') REPLACES the (selected-all) content,
+// matching a Lexical editor once select-all actually covers the content.
 let composerText = '';
 const composer = {
-  isContentEditable: true,
-  tagName: 'DIV',
-  className: 'composer',
+  isContentEditable: true, tagName: 'DIV', className: 'composer',
   get innerText() { return composerText; },
   focus() {},
-  dispatchEvent(ev) {
-    if (ev && ev.type === 'paste') composerText = ev.clipboardData.getData('text/plain');
-    return true;
-  },
+  dispatchEvent() { return true; },
 };
 globalThis.window = { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) };
 globalThis.document = {
   createRange: () => ({ selectNodeContents() {} }),
   execCommand(cmd, _ui, val) {
     if (cmd === 'selectAll') return true;
-    if (cmd === 'delete') return true;            // no-op on text (Lexical-broken)
-    if (cmd === 'insertText') { composerText += (val || ''); return true; } // APPENDS
+    if (cmd === 'delete') { composerText = ''; return true; }
+    if (cmd === 'insertText') { composerText = (val || ''); return true; } // REPLACE (select-all covered it)
     return false;
   },
 };
-globalThis.ClipboardEvent = class { constructor(type, init) { this.type = type; this.clipboardData = init.clipboardData; } };
-globalThis.DataTransfer = class { constructor() { this._d = {}; } setData(k, v) { this._d[k] = v; } getData(k) { return this._d[k] || ''; } };
+globalThis.KeyboardEvent = class { constructor(type) { this.type = type; } };
 globalThis.InputEvent = class { constructor(type) { this.type = type; } };
 globalThis.Event = class { constructor(type) { this.type = type; } };
 globalThis.chrome = { runtime: { getManifest: () => ({ version: 'test' }) } };
@@ -39,18 +32,24 @@ const G = require('./comment_composer_guard.js');
 
 const A = 'Bên THG Fulfill có hỗ trợ sourcing Tumbler 20oz. Nếu cần, inbox THG Fulfill nhé.';
 
-// --- Pure logic ---
+// Pure logic
 assert.strictEqual(G.normalizeCommentText('  a   b\n c '), 'a b c');
 assert.strictEqual(G.isExactRepeatedText(A, A), false);
 assert.strictEqual(G.isExactRepeatedText(A + A, A), true);
-assert.ok(G.assertComposerExactlyExpected({ innerText: A }, A).ok);
-assert.ok(G.assertComposerExactlyExpected({ innerText: A + A }, A).duplicate);
 
-// --- Verified fallback chain: a pre-existing draft equal to A means execCommand
-// insertText would APPEND → A+A; the chain must fall through to paste → single A.
-composerText = A; // leftover draft
+// Unicode robustness (the false-negative that made the old chain over-insert):
+// an NFD-composed string and a zero-width-joined string must compare EQUAL to A.
+const nfd = A.normalize('NFD');
+assert.strictEqual(G.normalizeCommentText(nfd), G.normalizeCommentText(A), 'NFD must equal NFC');
+const withZW = A.slice(0, 10) + '​' + A.slice(10);
+assert.strictEqual(G.normalizeCommentText(withZW), G.normalizeCommentText(A), 'zero-width stripped');
+assert.ok(G.assertComposerExactlyExpected({ innerText: nfd }, A).ok, 'NFD composer reads as exact match');
+
+// Single-method insert REPLACES (no A+A+A compounding): a pre-existing value is
+// replaced by expected → single, method kbd_selectall_insertText.
+composerText = 'OLD LEFTOVER';
 const res = await G.insertTextInto(composer, A);
-assert.strictEqual(G.readComposerText(composer), G.normalizeCommentText(A), 'composer must end up SINGLE, not A+A');
-assert.strictEqual(res.method, 'paste', 'execCommand appended (A+A) → paste replacement fixed it');
+assert.strictEqual(G.readComposerText(composer), G.normalizeCommentText(A), 'must end SINGLE, not compounded');
+assert.strictEqual(res.method, 'kbd_selectall_insertText');
 
 console.log('comment_composer_guard: PASS');
