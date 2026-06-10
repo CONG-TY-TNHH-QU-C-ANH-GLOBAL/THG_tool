@@ -158,7 +158,16 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// (resolved once above), so capturing the latest value is sufficient.
 	var riskBlockSeen bool
 	var riskBlockRisk, riskBlockCeiling float64
+	// Eligible-fill (PR-2): "comment thử 5 lead" means QUEUE 5 eligible comments —
+	// keep scanning the candidate pool past skipped leads until `requested` are
+	// queued or the pool is exhausted, instead of inspecting exactly N raw leads.
+	requested := requestedOutreachCount(args)
+	scanned := 0
 	for _, lead := range leads {
+		if queued >= requested {
+			break
+		}
+		scanned++
 		targetURL, skipReason := resolveOutboundTargetURL(lead, msgType)
 		if skipReason != "" {
 			skipped++
@@ -326,9 +335,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if skipped > 0 {
 			skipNote = fmt.Sprintf(" Bỏ qua %d lead (%s).", skipped, friendlySkipReasons(skipReasons))
 		}
+		// Eligible-fill semantics: report leads SCANNED vs comments QUEUED so the
+		// operator sees "queued 5 after scanning 32", not "checked exactly 5".
+		if queued == 0 {
+			return fmt.Sprintf("Không tìm được lead hợp lệ để comment sau khi quét %d lead.%s%s", scanned, skipNote, errDetails), nil
+		}
 		return fmt.Sprintf(
-			"Đã đưa %d comment vào hàng đợi. Đây CHƯA phải là đã đăng lên Facebook — hệ thống sẽ chạy bằng các tài khoản Facebook sẵn sàng và báo lại từng kết quả. Tóm tắt: %d đang chờ · 0 đang chạy · 0 đã đăng · 0 thất bại.%s%s",
-			queued, queued, skipNote, errDetails,
+			"Đã đưa %d comment vào hàng đợi sau khi quét %d lead. Đây CHƯA phải là đã đăng lên Facebook — hệ thống sẽ chạy bằng các tài khoản Facebook sẵn sàng và báo lại từng kết quả. Tóm tắt: %d đang chờ · 0 đang chạy · 0 đã đăng · 0 thất bại.%s%s",
+			queued, scanned, queued, skipNote, errDetails,
 		), nil
 	}
 	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s%s", msgType, queued, skipped, mode, skipReasons, riskDetails, errDetails), nil
@@ -407,19 +421,33 @@ func leadsFromActionArgs(db *store.Store, orgID int64, msgType string, args map[
 	if score == "" && msgType == "inbox" {
 		score = "hot"
 	}
-	limit := int(argInt64(args, "limit"))
-	if limit <= 0 {
-		// Copilot/agent path: extractMaxItemsFromPrompt parses the natural-
-		// language prompt ("với chỉ 1 lead") and stages the count under
-		// "max_items" in the args bag. Without this fallback the count was
-		// extracted but silently dropped, so /comment_all_leads với chỉ 1
-		// lead pulled the default 25.
-		limit = int(argInt64(args, "max_items"))
+	// Eligible-fill (PR-2): fetch a LARGER candidate pool than the requested count so
+	// the planner can keep scanning past skipped leads until it has queued `requested`
+	// eligible comments. The per-lead stop happens in queueLeadOutreach.
+	return db.Leads().GetAutomationLeadsForOrg(orgID, score, scanPoolFor(requestedOutreachCount(args)))
+}
+
+// requestedOutreachCount is how many ELIGIBLE comments/messages the caller asked to
+// queue ("comment thử 5 lead" → 5). Reads limit, then the agent's max_items
+// fallback; defaults to 25.
+func requestedOutreachCount(args map[string]any) int {
+	n := int(argInt64(args, "limit"))
+	if n <= 0 {
+		n = int(argInt64(args, "max_items"))
 	}
-	if limit <= 0 {
-		limit = 25
+	if n <= 0 {
+		n = 25
 	}
-	return db.Leads().GetAutomationLeadsForOrg(orgID, score, limit)
+	return n
+}
+
+// scanPoolFor sizes the candidate pool so the planner can keep scanning past skipped
+// leads until it has queued `requested` eligible comments — max(50, requested*10).
+func scanPoolFor(requested int) int {
+	if n := requested * 10; n > 50 {
+		return n
+	}
+	return 50
 }
 
 // resolveOutboundTargetURL maps a lead + msgType to the canonical target URL
