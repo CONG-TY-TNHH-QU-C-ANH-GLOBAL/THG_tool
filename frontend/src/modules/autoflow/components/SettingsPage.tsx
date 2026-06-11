@@ -6,6 +6,7 @@ const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
 const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
 import DefaultAccountSettings from './DefaultAccountSettings';
 import { CompanyIdentityForm } from './companyIdentity/CompanyIdentityForm';
+import TelegramIntegrationPage from './telegram/TelegramIntegrationPage';
 import type { Organization } from '../types';
 import { Avatar, Badge, Row } from './ui';
 import { alpha, theme, cardStyle, primaryBtn, secondaryBtn, inputStyle as baseInputStyle } from '../constants/styles';
@@ -47,11 +48,12 @@ import {
   Users,
   X,
   Zap,
+  Send,
 } from 'lucide-react';
 
 interface SettingsPageProps { org: Organization; orgId: string; isAdmin: boolean; }
 
-type SettingsTab = 'brand' | 'execution' | 'security' | 'staff' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics';
+type SettingsTab = 'brand' | 'execution' | 'security' | 'staff' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics' | 'integrations';
 
 const inputStyle: CSSProperties = baseInputStyle;
 
@@ -67,6 +69,7 @@ const TABS: { id: SettingsTab; label: string; Icon: ComponentType<{ size?: numbe
   { id: 'agents', label: 'AI Agents', Icon: Zap },
   { id: 'billing', label: 'Thanh toán', Icon: CreditCard },
   { id: 'workspace_knowledge', label: 'Kho dữ liệu', Icon: Database },
+  { id: 'integrations', label: 'Telegram', Icon: Send },
   { id: 'diagnostics', label: 'Chẩn đoán', Icon: Activity },
 ];
 
@@ -805,6 +808,10 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
         <Suspense fallback={<Spinner />}>
           <DataPrivateView orgId={orgId} isAdmin={isAdmin} />
         </Suspense>
+      )}
+
+      {activeTab === 'integrations' && (
+        <TelegramIntegrationPage orgId={orgId} isAdmin={isAdmin} />
       )}
 
       {activeTab === 'diagnostics' && (
