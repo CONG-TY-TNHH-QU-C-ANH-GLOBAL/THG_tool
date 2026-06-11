@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Settings2, Trash2 } from 'lucide-react';
 import { theme, cardStyle, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, destTypeLabel, type Lang } from './telegramCopy';
 import { destinationTone, type DestStatus } from './logic';
-import { destTypeLabel } from './labels';
 import { DestinationPreferencesPanel } from './DestinationPreferencesPanel';
 import { TestNotificationButton } from './TestNotificationButton';
 import type { TelegramDestination } from '../../services/telegramIntegrationApi';
@@ -22,7 +21,7 @@ interface Props {
 // private), type, status, filter, subscribed-event count, last delivery + error, and admin actions.
 // NEVER renders chat_id.
 export function TelegramChannelDestinationsTable({ lang, destinations, isAdmin, availableEventTypes, availableFilters, onSave, onDisconnect, onReload }: Props) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [editId, setEditId] = useState<number | null>(null);
 
   return (

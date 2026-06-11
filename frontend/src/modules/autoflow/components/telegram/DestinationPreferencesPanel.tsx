@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { theme, primaryBtn, secondaryBtn, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
-import { eventLabel, groupLabel } from './labels';
+import { strings, eventLabel, groupLabel, type Lang } from './telegramCopy';
 import { EVENT_GROUPS, sanitizeEventTypes } from './logic';
 import type { TelegramDestination } from '../../services/telegramIntegrationApi';
 
@@ -14,7 +13,7 @@ interface Props {
 // Per-destination event subscriptions + channel filter + (future) delivery mode. Admin edits which
 // events this channel receives. Channel-neutral (filters come from the backend).
 export function DestinationPreferencesPanel({ lang, destination, availableFilters, onSave, onClose }: Props) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [types, setTypes] = useState<string[]>(destination.event_types || []);
   const [filter, setFilter] = useState(destination.channel_filter || 'all');
   const [busy, setBusy] = useState(false);

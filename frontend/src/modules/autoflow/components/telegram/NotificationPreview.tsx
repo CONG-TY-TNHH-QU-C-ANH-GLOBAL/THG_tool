@@ -1,6 +1,6 @@
 import React from 'react';
 import { theme, cardStyle } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 
 // Static preview of what THG sends into a channel, so admins understand the output. Render-only;
 // vi-primary sample copy. No real data, no chat_id, no token.
@@ -14,7 +14,7 @@ const SAMPLES = [
 ];
 
 export const NotificationPreview = React.memo(({ lang }: { lang: Lang }) => {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   return (
     <div style={cardStyle({ display: 'grid', gap: 10 })}>
       <p style={{ color: theme.text, fontSize: 14, fontWeight: 650, margin: 0 }}>{t('preview_title')}</p>

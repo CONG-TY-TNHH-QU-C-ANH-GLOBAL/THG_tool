@@ -1,6 +1,6 @@
 import React from 'react';
 import { theme, cardStyle, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import { statusTone, type Tone } from './logic';
 import type { TelegramStatus, TelegramDestination } from '../../services/telegramIntegrationApi';
 
@@ -20,7 +20,7 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
 export const TelegramStatusCard = React.memo(({ lang, status, destinations }: {
   lang: Lang; status: TelegramStatus; destinations: TelegramDestination[];
 }) => {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const tone = statusTone(status.status);
   const tc = TONE_COLOR[tone];
   const lastDelivery = destinations.map((d) => d.last_delivery_at).filter(Boolean).sort().slice(-1)[0];

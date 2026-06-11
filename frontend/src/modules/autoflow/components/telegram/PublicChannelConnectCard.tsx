@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { theme, inputStyle, primaryBtn, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import * as tg from '../../services/telegramIntegrationApi';
 
 function Step({ n, text }: { n: number; text: string }) {
@@ -15,7 +15,7 @@ function Step({ n, text }: { n: number; text: string }) {
 // Public-channel connect: instructions + @username field → backend sends a test message and stores
 // the chat id/title Telegram returns (never shown). Surfaces verifying / connected / error states.
 export function PublicChannelConnectCard({ lang, onConnected }: { lang: Lang; onConnected: () => void }) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [username, setUsername] = useState('');
   const [state, setState] = useState<'idle' | 'verifying' | 'connected'>('idle');
   const [err, setErr] = useState<string | null>(null);

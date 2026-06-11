@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Send } from 'lucide-react';
 import { theme, secondaryBtn } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import * as tg from '../../services/telegramIntegrationApi';
 
 // Sends a test notification to one destination and shows the delivered/failed result inline.
@@ -9,7 +9,7 @@ import * as tg from '../../services/telegramIntegrationApi';
 export function TestNotificationButton({ lang, destinationId, onResult }: {
   lang: Lang; destinationId: number; onResult?: () => void;
 }) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 

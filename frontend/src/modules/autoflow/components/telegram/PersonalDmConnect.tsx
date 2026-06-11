@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { theme, secondaryBtn } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import { TelegramBindCodeCard } from './TelegramBindCodeCard';
 import * as tg from '../../services/telegramIntegrationApi';
 
 // Optional, SECONDARY: lets a user link their personal Telegram DM (for personal notifications /
 // /status commands). Not required for channel delivery.
 export function PersonalDmConnect({ lang }: { lang: Lang }) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [code, setCode] = useState<tg.BindCodeResponse | null>(null);
   const [busy, setBusy] = useState(false);
 

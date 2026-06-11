@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Hash, Lock, ArrowLeft } from 'lucide-react';
 import { theme, cardStyle, secondaryBtn, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import { PublicChannelConnectCard } from './PublicChannelConnectCard';
 import { PrivateChannelConnectCard } from './PrivateChannelConnectCard';
 
@@ -22,7 +22,7 @@ function TypeCard({ icon, label, onClick }: { icon: React.ReactNode; label: stri
 
 // Guided "Connect a Telegram channel" wizard: choose type → public (@username) or private (code).
 export function TelegramChannelSetupWizard({ lang, onConnected }: { lang: Lang; onConnected: () => void }) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [mode, setMode] = useState<Mode>('choose');
 
   return (

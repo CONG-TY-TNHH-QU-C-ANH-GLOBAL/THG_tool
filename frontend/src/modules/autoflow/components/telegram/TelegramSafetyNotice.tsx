@@ -1,11 +1,11 @@
 import React from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { theme, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 
 // Always-visible notice that Telegram action EXECUTION is disabled. Render-only.
 export const TelegramSafetyNotice = React.memo(({ lang }: { lang: Lang }) => {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   return (
     <div
       role="note"

@@ -1,12 +1,12 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { theme, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 
 // Renders remediation reasons (keys derived by logic.needsAttentionReasons). Render-only.
 export const TelegramNeedsAttention = React.memo(({ lang, reasons }: { lang: Lang; reasons: string[] }) => {
   if (!reasons.length) return null;
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   return (
     <div style={{ background: alpha(theme.yellow, 8), border: `1px solid ${alpha(theme.yellow, 30)}`, borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>

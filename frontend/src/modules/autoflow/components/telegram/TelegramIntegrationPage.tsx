@@ -6,7 +6,7 @@ import { useLang } from '../../i18n/useLang';
 import { useAuthStore } from '../../stores/authStore';
 import { useTelegramIntegration } from '../../hooks/useTelegramIntegration';
 import { destinationReasons, canManageChannels } from './logic';
-import { copy } from './copy';
+import { strings } from './telegramCopy';
 import { TelegramSafetyNotice } from './TelegramSafetyNotice';
 import { TelegramStatusCard } from './TelegramStatusCard';
 import { TelegramNeedsAttention } from './TelegramNeedsAttention';
@@ -23,7 +23,7 @@ import { TelegramEmptyState } from './TelegramEmptyState';
 // channels/preferences/audit; members view + manage their own DM binding).
 export default function TelegramIntegrationPage({ isAdmin }: { orgId: string; isAdmin: boolean }) {
   const { lang } = useLang();
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const currentUserId = useAuthStore((s) => s.user?.id ?? 0);
   const d = useTelegramIntegration(isAdmin);
   const [showWizard, setShowWizard] = useState(false);

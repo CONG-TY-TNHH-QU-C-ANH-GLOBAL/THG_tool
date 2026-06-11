@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { theme, cardStyle, alpha, tableHeaderCell, tableCell } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import { canRevokeBinding } from './logic';
 import type { TelegramBinding } from '../../services/telegramIntegrationApi';
 
@@ -13,7 +13,7 @@ interface Props {
 // SECONDARY section: optional personal DM bindings (personal notifications / commands). Visually
 // quieter than the channels card. Shows last_command_at. Role/ownership-aware revoke.
 export function PersonalBindingsTable({ lang, bindings, isAdmin, currentUserId, onRevoke }: Props) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [busyId, setBusyId] = useState<number | null>(null);
   const revoke = async (id: number) => {
     setBusyId(id);

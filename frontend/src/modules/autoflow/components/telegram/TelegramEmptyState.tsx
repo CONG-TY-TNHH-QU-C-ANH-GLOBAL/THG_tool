@@ -1,12 +1,12 @@
 import React from 'react';
 import { Send, Check } from 'lucide-react';
 import { theme, cardStyle, primaryBtn, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 
 // Channel-first empty state: benefits + "Connect Telegram channel" CTA. Render-only; CTA delegated.
 export const TelegramEmptyState = React.memo(
   ({ lang, isAdmin, onConnect }: { lang: Lang; isAdmin: boolean; onConnect: () => void }) => {
-    const { t } = copy(lang);
+    const { t } = strings(lang);
     return (
       <div style={cardStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12, padding: 36 })}>
         <div style={{ width: 52, height: 52, borderRadius: 14, display: 'grid', placeItems: 'center', background: alpha(theme.primary, 14) }}>

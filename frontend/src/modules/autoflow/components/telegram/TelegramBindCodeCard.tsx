@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Copy, Check, ExternalLink } from 'lucide-react';
 import { theme, alpha, primaryBtn, secondaryBtn } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import { secondsLeft, formatCountdown } from './logic';
 import type { BindCodeResponse } from '../../services/telegramIntegrationApi';
 
@@ -9,7 +9,7 @@ import type { BindCodeResponse } from '../../services/telegramIntegrationApi';
 // /bind instruction. Drives an expired state once the countdown hits zero.
 export const TelegramBindCodeCard = React.memo(
   ({ lang, code, onRegenerate }: { lang: Lang; code: BindCodeResponse; onRegenerate: () => void }) => {
-    const { t } = copy(lang);
+    const { t } = strings(lang);
     const [left, setLeft] = useState(() => secondsLeft(code.expires_at, Date.now()));
     const [copied, setCopied] = useState(false);
 

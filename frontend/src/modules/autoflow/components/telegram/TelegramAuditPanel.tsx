@@ -1,13 +1,13 @@
 import React from 'react';
 import { theme, cardStyle, tableHeaderCell, tableCell } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import type { TelegramAuditEvent } from '../../services/telegramIntegrationApi';
 
 // Admin-only audit trail of control-plane events. Render-only. Non-admins never receive the data
 // (backend 403s) and the panel is not rendered for them by the page.
 export function TelegramAuditPanel({ lang, events, isAdmin }: { lang: Lang; events: TelegramAuditEvent[]; isAdmin: boolean }) {
   if (!isAdmin) return null;
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   return (
     <div style={cardStyle({ padding: 0, overflow: 'hidden' })}>
       <p style={{ color: theme.text, fontSize: 14, fontWeight: 650, margin: 0, padding: '16px 16px 10px' }}>{t('audit_title')}</p>

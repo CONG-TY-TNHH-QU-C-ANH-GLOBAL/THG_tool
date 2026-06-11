@@ -1,5 +1,7 @@
-// Telegram channel-first UI copy (vi primary, en fallback). Local to the feature so the central
-// strings.ts is not grown. Dense key map; pick by lang from useLang().
+// THE single feature-local source of Telegram UI copy + labels (vi primary, en fallback). Kept
+// local so the central strings.ts is not grown. `strings(lang)` returns a translator `t`; the
+// key->label helpers (eventLabel/groupLabel/destTypeLabel) translate enum-ish keys. Named
+// `strings`, NOT `copy`, to avoid any confusion with copy-to-clipboard.
 export type Lang = 'vi' | 'en';
 type Dict = Record<string, string>;
 
@@ -91,7 +93,35 @@ const EN: Dict = {
   admin_only: 'Only admins can manage this section.', err_generic: 'Something went wrong, please try again.',
 };
 
-export function copy(lang: Lang) {
+// strings(lang).t(key) -> localized prose. Unknown keys return the key (safe).
+export function strings(lang: Lang) {
   const d = lang === 'en' ? EN : VI;
   return { t: (k: string) => d[k] ?? k };
+}
+
+// ── enum-ish key -> label helpers (vi explicit; en humanizes the key) ──
+const EVENT_VI: Dict = {
+  lead_created: 'Lead mới', lead_assigned: 'Lead được giao', lead_ready_for_review: 'Lead sẵn sàng xử lý',
+  comment_submitted: 'Comment đã gửi', comment_verified: 'Comment đã xác minh',
+  comment_unverified: 'Comment chưa xác minh', comment_failed: 'Comment lỗi',
+  post_submitted: 'Post đã gửi', post_failed: 'Post lỗi', inbox_sent: 'Inbox đã gửi', inbox_failed: 'Inbox lỗi',
+  connector_offline: 'Connector offline', account_attention: 'Tài khoản cần chú ý',
+  automation_paused: 'Tự động hoá tạm dừng', gate1_failure_spike: 'Tăng đột biến lỗi gate1',
+  submitted_unverified_spike: 'Tăng đột biến chưa xác minh', circuit_breaker_triggered: 'Ngắt mạch kích hoạt',
+};
+const GROUP_VI: Dict = { lead: 'Sự kiện Lead', agent: 'Hành động Agent', system: 'Hệ thống / Cảnh báo' };
+const GROUP_EN: Dict = { lead: 'Lead events', agent: 'Agent actions', system: 'System / Health' };
+const TYPE_VI: Dict = { channel: 'Channel', group: 'Group', personal_dm: 'DM cá nhân' };
+
+function humanize(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+export function eventLabel(lang: Lang, key: string): string {
+  return lang === 'vi' ? EVENT_VI[key] ?? humanize(key) : humanize(key);
+}
+export function groupLabel(lang: Lang, key: string): string {
+  return (lang === 'vi' ? GROUP_VI : GROUP_EN)[key] ?? key;
+}
+export function destTypeLabel(lang: Lang, type: string): string {
+  return lang === 'en' ? humanize(type) : TYPE_VI[type] ?? type;
 }

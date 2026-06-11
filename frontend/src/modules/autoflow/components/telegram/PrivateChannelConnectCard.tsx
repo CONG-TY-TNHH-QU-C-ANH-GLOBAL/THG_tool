@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Copy, Check, RefreshCw } from 'lucide-react';
 import { theme, primaryBtn, secondaryBtn, alpha } from '../../constants/styles';
-import { copy, type Lang } from './copy';
+import { strings, type Lang } from './telegramCopy';
 import { secondsLeft, formatCountdown } from './logic';
 import * as tg from '../../services/telegramIntegrationApi';
 
@@ -9,7 +9,7 @@ import * as tg from '../../services/telegramIntegrationApi';
 // channel; the bot captures it via channel_post. UI shows the code, a live countdown, and a
 // "check again" refetch (the page reloads destinations to detect the new channel).
 export function PrivateChannelConnectCard({ lang, onCheck }: { lang: Lang; onCheck: () => void }) {
-  const { t } = copy(lang);
+  const { t } = strings(lang);
   const [code, setCode] = useState<tg.ConnectCodeResponse | null>(null);
   const [expiresAt, setExpiresAt] = useState('');
   const [left, setLeft] = useState(0);
