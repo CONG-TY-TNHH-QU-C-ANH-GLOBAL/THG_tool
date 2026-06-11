@@ -549,6 +549,25 @@ func (h *Handler) finalizeOutbound(
 		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, terminalState, terminalOutcome, notificationDetail(proof, report, outcome))
 	}
 
+	// Per-ORG Telegram CHANNEL notification (distinct from the global-admin h.notifier above): uses
+	// the org's own bot + channel destinations. Best-effort — never affects the response.
+	if h.tgEvents != nil {
+		verified := models.IsVerifiedSuccess(terminalState, terminalOutcome)
+		if ev := agentEventType(msg.Type, verified, models.IsSuccessOutcome(outcome)); ev != "" {
+			channel := strings.ToLower(string(msg.Platform))
+			if channel == "" {
+				channel = "facebook"
+			}
+			state := "thất bại"
+			if verified {
+				state = "đã xác minh"
+			} else if models.IsSuccessOutcome(outcome) {
+				state = "chờ xác minh"
+			}
+			h.tgEvents.NotifyAgentAction(orgID, ev, channel, "#"+strconv.FormatInt(msg.AccountID, 10), msg.TargetName, state, msg.TargetURL, h.baseURL)
+		}
+	}
+
 	return &finalizeResolution{
 		HTTPStatus: 200,
 		Body: fiber.Map{
@@ -557,4 +576,31 @@ func (h *Handler) finalizeOutbound(
 			"attempt_id":           attemptID,
 		},
 	}, nil
+}
+
+// agentEventType maps an outbound action type + outcome to a Telegram destination event key.
+// "" means "no notification for this action type". comment submitted-but-not-verified is
+// comment_unverified (pending manual verification).
+func agentEventType(actionType string, verified, success bool) string {
+	switch actionType {
+	case "comment":
+		if verified {
+			return "comment_verified"
+		}
+		if success {
+			return "comment_unverified"
+		}
+		return "comment_failed"
+	case "inbox":
+		if success {
+			return "inbox_sent"
+		}
+		return "inbox_failed"
+	case "group_post", "post":
+		if success {
+			return "post_submitted"
+		}
+		return "post_failed"
+	}
+	return ""
 }

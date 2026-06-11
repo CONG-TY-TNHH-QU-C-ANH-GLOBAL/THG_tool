@@ -38,7 +38,12 @@ type Handler struct {
 	lsFactory *livesession.LiveSessionFactory
 	ctxStore  *store.Store
 	aiClass   *ai.MessageGenerator
+	onLead    func(leadingest.LeadEvent) // optional Telegram/notification hook per new lead
 }
+
+// SetLeadNotifier wires an optional best-effort hook fired once per NEW lead (e.g. Telegram
+// channel notification). Nil-safe — leaving it unset disables notifications.
+func (h *Handler) SetLeadNotifier(fn func(leadingest.LeadEvent)) { h.onLead = fn }
 
 func New(rt runtime.Runtime, scorer *scoring.Scorer, jobStore *jobs.Store, appStore *store.AppStore) *Handler {
 	return &Handler{
@@ -319,6 +324,7 @@ func (h *Handler) Handle(ctx context.Context, job *jobs.Job) (string, error) {
 					Keywords:        task.Keywords,
 					UserPrompt:      userPrompt,
 					IntentID:        task.IntentID,
+					OnLeadCreated:   h.onLead,
 				}, leadingest.Input{
 					TaskID:           job.TaskID,
 					OrgID:            task.OrgID,
@@ -400,7 +406,6 @@ func buildResult(records []output.Record, stats output.Stats) (string, error) {
 	}
 	return string(b), nil
 }
-
 
 func toRecord(item runtime.RawItem, filterSignals []string, sr scoring.Result) output.Record {
 	allSignals := make([]string, 0, len(filterSignals)+len(sr.Signals))

@@ -41,6 +41,19 @@ type Deps struct {
 	// runs). When > 0 AND LegacyDB is set, IngestPost advances the per-intent
 	// cursor after each successful insert. See project_scheduled_intelligence.md.
 	IntentID int64
+	// OnLeadCreated is an OPTIONAL best-effort notification hook fired once per NEW lead inserted
+	// (e.g. to push a Telegram channel notification). Wired by the caller; nil = no notification.
+	// It must never block or fail the ingest path.
+	OnLeadCreated func(LeadEvent)
+}
+
+// LeadEvent is the data a notification needs when a new lead is created.
+type LeadEvent struct {
+	OrgID   int64
+	LeadID  int64
+	Source  string // e.g. "Facebook group"
+	Name    string // author / lead name
+	Summary string // short content snippet
 }
 
 // SignalGate mirrors brain.MarketSignalGate but lives in this package to avoid
@@ -465,6 +478,17 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 				slog.WarnContext(ctx, "thread seed failed",
 					"task_id", in.TaskID, "org_id", in.OrgID, "profile_url", profile, "error", sErr)
 			}
+		}
+		// Best-effort notification hook (Telegram channel etc.). Never affects the ingest result.
+		if deps.OnLeadCreated != nil {
+			summary := content
+			if len(summary) > 140 {
+				summary = summary[:140] + "…"
+			}
+			deps.OnLeadCreated(LeadEvent{
+				OrgID: in.OrgID, LeadID: leadID, Source: "Facebook group",
+				Name: strings.TrimSpace(in.AuthorName), Summary: summary,
+			})
 		}
 	}
 	out.Inserted = true

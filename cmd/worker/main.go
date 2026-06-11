@@ -11,11 +11,14 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	facebookcrawl "github.com/thg/scraper/internal/jobhandlers/facebook_crawl"
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/livesession"
 	"github.com/thg/scraper/internal/runtime"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
+	tgclient "github.com/thg/scraper/internal/telegram/client"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 func main() {
@@ -39,6 +42,8 @@ func main() {
 		log.Fatalf("❌ main store: %v", err)
 	}
 	defer mainStore.Close()
+	// Required so the worker can DECRYPT each org's Telegram bot token (channel notifications).
+	mainStore.SetEncryptionKey(os.Getenv("ENCRYPTION_KEY"))
 
 	appStore, err := store.NewAppStore(mainStore)
 	if err != nil {
@@ -66,6 +71,19 @@ func main() {
 	scorer := scoring.New(scoring.DefaultConfig())
 	h := facebookcrawl.New(fallback, scorer, jobStore, appStore)
 	h.SetAllocator(allocator, lsFactory)
+
+	// Per-ORG Telegram channel notification on each NEW lead (uses the org's own bot token). The
+	// crawler runs here in the worker, so the notifier is wired here too. Best-effort.
+	tgControl := control.NewService(mainStore.Telegram(), tgclient.Bot, control.Flags{
+		NotifyEnabled:       envOr("TELEGRAM_NOTIFY_ENABLED", "true") != "false",
+		GlobalToken:         os.Getenv("TELEGRAM_BOT_TOKEN"),
+		AllowGlobalFallback: envOr("TELEGRAM_ALLOW_GLOBAL_FALLBACK", "false") == "true",
+	})
+	baseURL := envOr("APP_BASE_URL", os.Getenv("PUBLIC_APP_URL"))
+	h.SetLeadNotifier(func(ev leadingest.LeadEvent) {
+		tgControl.NotifyLeadCreated(ev.OrgID, ev.LeadID, "", ev.Source, ev.Name, ev.Summary, baseURL)
+	})
+	log.Println("✅ Telegram lead-created channel notifier wired (per-org bot)")
 	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is the
 		// legacy alias kept for backwards compat with /etc/thg-scraper/env on

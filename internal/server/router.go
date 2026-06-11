@@ -42,6 +42,20 @@ func (s *Server) registerRoutes() {
 	app := s.app
 	cfg := s.cfg
 
+	// ONE Telegram per-org control/notification service, shared by: the connector outcome emitter
+	// (comment/inbox/post → channel), the dashboard, the REST integrations API, and the webhook
+	// runtime. Per-ORG bots: the factory builds a transport from each org's own (decrypted) token;
+	// the global TELEGRAM_BOT_TOKEN is only the platform/dev webhook bot + an optional tenant
+	// fallback behind TELEGRAM_ALLOW_GLOBAL_FALLBACK. See specs/TELEGRAM_PER_ORG_BOT.md.
+	tgControl := control.NewService(s.db.Telegram(), tgclient.Bot, control.Flags{
+		NotifyEnabled:       s.cfg.TelegramNotifyEnabled,
+		ActionsEnabled:      s.cfg.TelegramActionsEnabled,
+		WebhookSecret:       s.cfg.TelegramWebhookSecret,
+		GlobalToken:         s.cfg.TelegramBotToken,
+		AllowGlobalFallback: s.cfg.TelegramAllowGlobalFallback,
+	})
+	tgBaseURL := s.cfg.Mailer.AppBaseURL
+
 	// Health check — no auth, no rate limiting, for load balancers / monitors
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "ts": time.Now().Unix()})
@@ -95,6 +109,8 @@ func (s *Server) registerRoutes() {
 		AIClass:  func() *ai.MessageGenerator { return s.aiClass },
 		WSHub:    s.wsHub,
 		Notifier: s.cfg.Notifier,
+		TgEvents: tgControl, // comment/inbox/post outcome + crawl-result → per-org channel
+		BaseURL:  tgBaseURL,
 	})
 
 	authDeps := serverauth.Deps{
@@ -144,6 +160,8 @@ func (s *Server) registerRoutes() {
 		AIClass:  func() *ai.MessageGenerator { return s.aiClass },
 		WSHub:    s.wsHub,
 		Notifier: s.cfg.Notifier,
+		TgEvents: tgControl,
+		BaseURL:  tgBaseURL,
 	}, adminOnly)
 
 	// Onboarding — new users with org_id=0 must complete this before accessing org features
@@ -152,19 +170,7 @@ func (s *Server) registerRoutes() {
 
 	// Telegram: ONE shared domain/control service (single source of truth) backs BOTH the REST
 	// settings API and the webhook runtime — neither re-implements binding/permission/policy
-	// rules. The bot client is the sender; flags are passed in so the domain never imports config.
-	// See specs/TELEGRAM_BOT_RUNTIME.md.
-	// Per-ORG bots: the factory builds a transport from each org's own (decrypted) token. The
-	// global TELEGRAM_BOT_TOKEN is only the platform/dev bot (shared webhook) + an OPTIONAL tenant
-	// fallback behind TELEGRAM_ALLOW_GLOBAL_FALLBACK. See specs/TELEGRAM_PER_ORG_BOT.md.
-	tgControl := control.NewService(s.db.Telegram(), tgclient.Bot, control.Flags{
-		NotifyEnabled:       s.cfg.TelegramNotifyEnabled,
-		ActionsEnabled:      s.cfg.TelegramActionsEnabled,
-		WebhookSecret:       s.cfg.TelegramWebhookSecret,
-		GlobalToken:         s.cfg.TelegramBotToken,
-		AllowGlobalFallback: s.cfg.TelegramAllowGlobalFallback,
-	})
-
+	// rules (tgControl is built once at the top of registerRoutes and shared).
 	// Webhook runtime — PUBLIC (Telegram cannot send a JWT); authenticity via the webhook secret.
 	servertelegram.Routes(api, servertelegram.Deps{Service: tgControl, WebhookSecret: s.cfg.TelegramWebhookSecret})
 

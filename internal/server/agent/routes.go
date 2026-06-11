@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 type Deps struct {
@@ -12,6 +13,11 @@ type Deps struct {
 	AIClass  func() *ai.MessageGenerator
 	WSHub    *WSHub
 	Notifier func(string)
+	// TgEvents emits per-org Telegram CHANNEL notifications (lead_created, comment_*). Optional;
+	// nil = no channel notifications. Shared with the integrations/webhook control service.
+	TgEvents *control.Service
+	// BaseURL is the public app URL used to build dashboard/post links in notifications.
+	BaseURL string
 }
 
 type Handler struct {
@@ -20,6 +26,8 @@ type Handler struct {
 	aiClass  func() *ai.MessageGenerator
 	wsHub    *WSHub
 	notifier func(string)
+	tgEvents *control.Service
+	baseURL  string
 }
 
 func NewHandler(deps Deps) *Handler {
@@ -29,6 +37,8 @@ func NewHandler(deps Deps) *Handler {
 		aiClass:  deps.AIClass,
 		wsHub:    deps.WSHub,
 		notifier: deps.Notifier,
+		tgEvents: deps.TgEvents,
+		baseURL:  deps.BaseURL,
 	}
 }
 
