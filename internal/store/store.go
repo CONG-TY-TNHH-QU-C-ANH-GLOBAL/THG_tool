@@ -17,10 +17,11 @@ import (
 	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/store/identities"
-	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/store/knowledge"
+	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
+	"github.com/thg/scraper/internal/store/telegram"
 	"github.com/thg/scraper/internal/store/threads"
 
 	_ "modernc.org/sqlite"
@@ -111,7 +112,17 @@ type Store struct {
 	// the engagement-projection cross-domain reads (per DOMAINS.md §2.2
 	// cross-domain projections via // tenant-ok annotations).
 	leads *leads.Store
+
+	// telegram owns the Telegram integration control-plane tables
+	// (settings, bind_codes, bindings, alert_prefs, audit). Org-scoped,
+	// channel-neutral, zero cross-domain writes. See
+	// specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md.
+	telegram *telegram.Store
 }
+
+// Telegram exposes the telegram-domain subpackage handle (integration
+// control-plane). Reach it via this accessor; no top-level bridge wrappers.
+func (s *Store) Telegram() *telegram.Store { return s.telegram }
 
 // Outbound exposes the outbound-domain subpackage handle. New code
 // MUST use this rather than the legacy bridge methods on *Store.
@@ -246,6 +257,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
+	s.telegram = telegram.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
 }
@@ -294,6 +306,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
+	s.telegram = telegram.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
 }

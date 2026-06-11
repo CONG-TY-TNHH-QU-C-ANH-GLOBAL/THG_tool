@@ -19,6 +19,7 @@ import (
 	serverauth "github.com/thg/scraper/internal/server/auth"
 	"github.com/thg/scraper/internal/server/autoflow"
 	"github.com/thg/scraper/internal/server/crawl"
+	serverintegrations "github.com/thg/scraper/internal/server/integrations"
 	serverknowledge "github.com/thg/scraper/internal/server/knowledge"
 	"github.com/thg/scraper/internal/server/leads"
 	servermw "github.com/thg/scraper/internal/server/middleware"
@@ -145,6 +146,18 @@ func (s *Server) registerRoutes() {
 	// Onboarding — new users with org_id=0 must complete this before accessing org features
 
 	serverorg.Routes(r, orgDeps, adminOnly, authpkg.RequireRole(string(models.RoleFounder)))
+
+	// Telegram integration control-plane (tenant-scoped; admin-gated mutations). Flags mirror the
+	// process feature flags so handlers never import config. See specs/TELEGRAM_INTEGRATION_UI.md.
+	serverintegrations.TelegramRoutes(r, serverintegrations.Deps{
+		DB: s.db,
+		Flags: serverintegrations.Flags{
+			BotEnabled:     s.cfg.TelegramBotEnabled,
+			NotifyEnabled:  s.cfg.TelegramNotifyEnabled,
+			ActionsEnabled: s.cfg.TelegramActionsEnabled,
+			BotConfigured:  strings.TrimSpace(s.cfg.TelegramBotToken) != "",
+		},
+	}, adminOnly)
 
 	// Org invites — admin creates/lists/revokes invite links
 	serverauth.InviteRoutes(r, authDeps, adminOnly)

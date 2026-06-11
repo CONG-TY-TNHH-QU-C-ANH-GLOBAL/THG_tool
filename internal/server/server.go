@@ -34,6 +34,13 @@ type Config struct {
 	Mailer mailer.Config
 
 	Notifier func(string)
+
+	// Telegram integration feature flags + bot identity, surfaced to the integrations
+	// control-plane handlers (default-safe; actions off by default).
+	TelegramBotToken       string
+	TelegramBotEnabled     bool
+	TelegramNotifyEnabled  bool
+	TelegramActionsEnabled bool
 }
 
 // Server provides the REST API and serves the Web UI.

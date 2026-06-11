@@ -14,6 +14,12 @@ type Config struct {
 	TelegramBotToken  string
 	TelegramAdminChat int64
 	TelegramOrgID     int64
+	// Telegram integration feature flags (control-plane). Default-safe: the bot + notifications
+	// are opt-in, and action EXECUTION is OFF by default and must stay off until reliability is
+	// validated (spec: specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md).
+	TelegramBotEnabled     bool // TELEGRAM_BOT_ENABLED
+	TelegramNotifyEnabled  bool // TELEGRAM_NOTIFY_ENABLED
+	TelegramActionsEnabled bool // TELEGRAM_ACTIONS_ENABLED (must default false)
 
 	// AI (OpenAI only).
 	//
@@ -25,8 +31,8 @@ type Config struct {
 	OpenAIAPIKey          string
 	OpenAIClassifierModel string // UniversalClassify + price extraction. Cheap+fast: gpt-4o-mini / gpt-5.4-mini.
 	OpenAICommentModel    string // Comments, inbox, follow-up, job posts, agent reasoning. Strong: gpt-4.1 / gpt-5.4.
-	AgentBrainURL      string // optional Python sidecar planner endpoint base URL
-	AgentBrainTimeout  int    // milliseconds
+	AgentBrainURL         string // optional Python sidecar planner endpoint base URL
+	AgentBrainTimeout     int    // milliseconds
 
 	// Security
 	APISecret      string // DEPRECATED: legacy API key; replaced by JWT auth
@@ -84,23 +90,26 @@ type Config struct {
 	ScanIntervalMin int // minutes
 
 	// Lead lifecycle / auto-archive (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md)
-	StaleAfterDays        int // days of no activity before a lead reads as stale
-	ArchiveAfterDays      int // days of no activity before the sweep auto-archives
-	EvidenceRetentionDays int // retention for execution evidence blobs (compaction; ledger kept)
-	RawCrawlRetentionDays int // retention for raw crawl payload (compaction; ledger kept)
-	ArchiveIntervalMin    int // auto-archive sweep cadence in minutes
-	VerificationCooldownMin int // how long a submitted-unverified comment holds a lead (waiting_verification)
-	CommentReverifyDelayMin int // wait this long after submit before scheduling an async reverify
+	StaleAfterDays             int // days of no activity before a lead reads as stale
+	ArchiveAfterDays           int // days of no activity before the sweep auto-archives
+	EvidenceRetentionDays      int // retention for execution evidence blobs (compaction; ledger kept)
+	RawCrawlRetentionDays      int // retention for raw crawl payload (compaction; ledger kept)
+	ArchiveIntervalMin         int // auto-archive sweep cadence in minutes
+	VerificationCooldownMin    int // how long a submitted-unverified comment holds a lead (waiting_verification)
+	CommentReverifyDelayMin    int // wait this long after submit before scheduling an async reverify
 	CommentReverifyIntervalMin int // async reverify scheduler cadence in minutes
 }
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	cfg := &Config{
-		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramAdminChat:  getEnvInt64("TELEGRAM_ADMIN_CHAT_ID", 0),
-		TelegramOrgID:      getEnvInt64("TELEGRAM_ORG_ID", 1),
-		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
+		TelegramBotToken:       getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramAdminChat:      getEnvInt64("TELEGRAM_ADMIN_CHAT_ID", 0),
+		TelegramOrgID:          getEnvInt64("TELEGRAM_ORG_ID", 1),
+		TelegramBotEnabled:     getEnvBool("TELEGRAM_BOT_ENABLED", false),
+		TelegramNotifyEnabled:  getEnvBool("TELEGRAM_NOTIFY_ENABLED", true),
+		TelegramActionsEnabled: getEnvBool("TELEGRAM_ACTIONS_ENABLED", false),
+		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS
 		// don't break on the next deploy. Drop the alias once VPS env is updated.
@@ -114,51 +123,51 @@ func Load() *Config {
 		// OPENAI_COMMENT_MODEL (e.g. gpt-5.0) if you want reasoning — and raise the
 		// generation timeout to match. callOpenAI omits temperature for gpt-5*/o*
 		// automatically when such a model is configured.
-		OpenAICommentModel:    getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
-		AgentBrainURL:      getEnv("AGENT_BRAIN_URL", ""),
-		AgentBrainTimeout:  getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
-		APISecret:          getEnv("API_SECRET", ""),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		EncryptionKey:      getEnv("ENCRYPTION_KEY", ""),
-		AllowedOrigins:     getEnv("ALLOWED_ORIGINS", ""),
-		AdminEmail:         getEnv("ADMIN_EMAIL", ""),
-		AdminPassword:      getEnv("ADMIN_PASSWORD", ""),
-		AdminName:          getEnv("ADMIN_NAME", "Admin"),
-		ChromePath:         getEnv("CHROME_PATH", ""),
-		ProfileDir:         getEnv("PROFILE_DIR", "data/profiles"),
-		Headless:           detectHeadless(),
-		ServerHost:         getEnv("SERVER_HOST", ""),
-		SSHPort:            getEnvInt("SSH_PORT", 22),
-		VNCPort:            getEnvInt("VNC_PORT", 5900),
-		CDPPort:            getEnvInt("CDP_PORT", 9222),
-		DisplayNum:         getEnvInt("DISPLAY_NUM", 99),
-		WebPort:            getEnvInt("WEB_PORT", 8080),
-		DBPath:             getEnv("DB_PATH", "data/scraper.db"),
-		BackupEnabled:      getEnv("BACKUP_ENABLED", "true") == "true",
-		MaxWorkers:         getEnvInt("MAX_WORKERS", 1),
-		ScrollTimeout:      getEnvInt("SCROLL_TIMEOUT_SEC", 60),
-		ScanIntervalMin:    getEnvInt("SCAN_INTERVAL_MIN", 30),
-		StaleAfterDays:        getEnvInt("LEAD_STALE_AFTER_DAYS", 14),
-		ArchiveAfterDays:      getEnvInt("LEAD_ARCHIVE_AFTER_DAYS", 30),
-		EvidenceRetentionDays: getEnvInt("LEAD_EVIDENCE_RETENTION_DAYS", 14),
-		RawCrawlRetentionDays: getEnvInt("LEAD_RAW_CRAWL_RETENTION_DAYS", 90),
-		ArchiveIntervalMin:    getEnvInt("LEAD_ARCHIVE_INTERVAL_MIN", 360),
-		VerificationCooldownMin: getEnvInt("LEAD_VERIFICATION_COOLDOWN_MIN", 30),
-		CommentReverifyDelayMin: getEnvInt("COMMENT_REVERIFY_DELAY_MIN", 3),
+		OpenAICommentModel:         getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
+		AgentBrainURL:              getEnv("AGENT_BRAIN_URL", ""),
+		AgentBrainTimeout:          getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
+		APISecret:                  getEnv("API_SECRET", ""),
+		JWTSecret:                  getEnv("JWT_SECRET", ""),
+		EncryptionKey:              getEnv("ENCRYPTION_KEY", ""),
+		AllowedOrigins:             getEnv("ALLOWED_ORIGINS", ""),
+		AdminEmail:                 getEnv("ADMIN_EMAIL", ""),
+		AdminPassword:              getEnv("ADMIN_PASSWORD", ""),
+		AdminName:                  getEnv("ADMIN_NAME", "Admin"),
+		ChromePath:                 getEnv("CHROME_PATH", ""),
+		ProfileDir:                 getEnv("PROFILE_DIR", "data/profiles"),
+		Headless:                   detectHeadless(),
+		ServerHost:                 getEnv("SERVER_HOST", ""),
+		SSHPort:                    getEnvInt("SSH_PORT", 22),
+		VNCPort:                    getEnvInt("VNC_PORT", 5900),
+		CDPPort:                    getEnvInt("CDP_PORT", 9222),
+		DisplayNum:                 getEnvInt("DISPLAY_NUM", 99),
+		WebPort:                    getEnvInt("WEB_PORT", 8080),
+		DBPath:                     getEnv("DB_PATH", "data/scraper.db"),
+		BackupEnabled:              getEnv("BACKUP_ENABLED", "true") == "true",
+		MaxWorkers:                 getEnvInt("MAX_WORKERS", 1),
+		ScrollTimeout:              getEnvInt("SCROLL_TIMEOUT_SEC", 60),
+		ScanIntervalMin:            getEnvInt("SCAN_INTERVAL_MIN", 30),
+		StaleAfterDays:             getEnvInt("LEAD_STALE_AFTER_DAYS", 14),
+		ArchiveAfterDays:           getEnvInt("LEAD_ARCHIVE_AFTER_DAYS", 30),
+		EvidenceRetentionDays:      getEnvInt("LEAD_EVIDENCE_RETENTION_DAYS", 14),
+		RawCrawlRetentionDays:      getEnvInt("LEAD_RAW_CRAWL_RETENTION_DAYS", 90),
+		ArchiveIntervalMin:         getEnvInt("LEAD_ARCHIVE_INTERVAL_MIN", 360),
+		VerificationCooldownMin:    getEnvInt("LEAD_VERIFICATION_COOLDOWN_MIN", 30),
+		CommentReverifyDelayMin:    getEnvInt("COMMENT_REVERIFY_DELAY_MIN", 3),
 		CommentReverifyIntervalMin: getEnvInt("COMMENT_REVERIFY_INTERVAL_MIN", 2),
-		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
-		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
-		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),
-		SMTPHost:           getEnv("SMTP_HOST", ""),
-		SMTPPort:           getEnvInt("SMTP_PORT", 587),
-		SMTPUsername:       getEnv("SMTP_USERNAME", ""),
-		SMTPPassword:       getEnv("SMTP_PASSWORD", ""),
-		SMTPFromEmail:      getEnv("SMTP_FROM_EMAIL", ""),
-		SMTPFromName:       getEnv("SMTP_FROM_NAME", "THG AutoFlow"),
-		SMTPTLS:            getEnvBool("SMTP_TLS", false),
-		SMTPStartTLS:       getEnvBool("SMTP_STARTTLS", true),
-		SMTPSkipVerify:     getEnvBool("SMTP_SKIP_VERIFY", false),
-		AppBaseURL:         getEnv("APP_BASE_URL", getEnv("PUBLIC_APP_URL", getEnv("NEXT_PUBLIC_SITE_URL", ""))),
+		GoogleClientID:             getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:         getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURI:          getEnv("GOOGLE_REDIRECT_URI", ""),
+		SMTPHost:                   getEnv("SMTP_HOST", ""),
+		SMTPPort:                   getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:               getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:               getEnv("SMTP_PASSWORD", ""),
+		SMTPFromEmail:              getEnv("SMTP_FROM_EMAIL", ""),
+		SMTPFromName:               getEnv("SMTP_FROM_NAME", "THG AutoFlow"),
+		SMTPTLS:                    getEnvBool("SMTP_TLS", false),
+		SMTPStartTLS:               getEnvBool("SMTP_STARTTLS", true),
+		SMTPSkipVerify:             getEnvBool("SMTP_SKIP_VERIFY", false),
+		AppBaseURL:                 getEnv("APP_BASE_URL", getEnv("PUBLIC_APP_URL", getEnv("NEXT_PUBLIC_SITE_URL", ""))),
 	}
 
 	if proxyStr := getEnv("PROXY_LIST", ""); proxyStr != "" {
