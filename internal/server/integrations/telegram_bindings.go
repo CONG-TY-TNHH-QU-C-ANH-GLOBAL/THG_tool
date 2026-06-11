@@ -2,9 +2,11 @@ package integrations
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/store/telegram"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 // listBindings returns bindings for the org. Admins/platform owners see ALL bindings; a normal
@@ -26,7 +28,27 @@ func (h *Handler) listBindings(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "load bindings failed"})
 	}
-	return c.JSON(fiber.Map{"bindings": bindings, "can_manage_all": canViewAllBindings(role)})
+	return c.JSON(fiber.Map{"bindings": toBindingDTOs(bindings), "can_manage_all": canViewAllBindings(role)})
+}
+
+// bindingDTO is the wire shape for the UI: surfaces last_command_at (the store struct keeps it as
+// sql.NullTime, json:"-"); chat_id is never exposed.
+type bindingDTO struct {
+	telegram.Binding
+	LastCommandAt *time.Time `json:"last_command_at"`
+}
+
+func toBindingDTOs(bs []telegram.Binding) []bindingDTO {
+	out := make([]bindingDTO, 0, len(bs))
+	for _, b := range bs {
+		d := bindingDTO{Binding: b}
+		if b.LastCommandAt.Valid {
+			t := b.LastCommandAt.Time
+			d.LastCommandAt = &t
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // revokeBinding revokes a binding. Admins/platform owners may revoke any binding in their org; a
@@ -53,6 +75,6 @@ func (h *Handler) revokeBinding(c *fiber.Ctx) error {
 	if err := h.deps.DB.Telegram().RevokeBinding(orgID, id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "revoke failed"})
 	}
-	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, binding.TelegramUserID, "binding_revoked", "ok", "")
+	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, binding.TelegramUserID, control.AuditBindingRevoked, "ok", "")
 	return c.JSON(fiber.Map{"revoked": true})
 }

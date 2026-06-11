@@ -41,6 +41,7 @@ type Config struct {
 	TelegramBotEnabled     bool
 	TelegramNotifyEnabled  bool
 	TelegramActionsEnabled bool
+	TelegramWebhookSecret  string
 }
 
 // Server provides the REST API and serves the Web UI.

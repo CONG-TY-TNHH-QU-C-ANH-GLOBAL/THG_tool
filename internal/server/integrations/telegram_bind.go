@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/store/telegram"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 const bindCodeTTL = 10 * time.Minute
@@ -21,7 +22,7 @@ func (h *Handler) createBindCode(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "issue code failed"})
 	}
-	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, 0, "bind_code_generated", "ok", "")
+	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, 0, control.AuditBindCodeGenerated, "ok", "")
 	bot := h.deps.Flags.BotUsername
 	deepLink := ""
 	if bot != "" {
@@ -36,34 +37,19 @@ func (h *Handler) createBindCode(c *fiber.Ctx) error {
 	})
 }
 
-// testNotification records a test-notification request against the caller's own active binding.
-// Returns 400 when notifications are globally disabled or the caller has no active binding.
-// Delivery itself is performed by the notifier (out of this control-plane PR); the result is
-// recorded as "queued" so the audit trail is honest about what happened.
+// testNotification actually SENDS a test message to the caller's own active binding(s) via the
+// shared control service (which audits the delivery result). Returns a typed reason on failure.
 func (h *Handler) testNotification(c *fiber.Ctx) error {
 	orgID, userID, _ := reqCtx(c)
 	if orgID == 0 || userID == 0 {
 		return noOrg(c)
 	}
-	if !h.deps.Flags.NotifyEnabled {
-		return c.Status(400).JSON(fiber.Map{"error": "telegram_notify_disabled"})
+	if h.deps.Control == nil {
+		return c.Status(503).JSON(fiber.Map{"error": "telegram_runtime_unavailable"})
 	}
-	mine, err := h.deps.DB.Telegram().ListBindingsByUser(orgID, userID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "load binding failed"})
+	ok, reason := h.deps.Control.TestNotify(orgID, userID)
+	if !ok {
+		return c.Status(400).JSON(fiber.Map{"error": reason})
 	}
-	if !hasActive(mine) {
-		return c.Status(400).JSON(fiber.Map{"error": "no_active_binding"})
-	}
-	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, 0, "test_notification_sent", "queued", "")
-	return c.JSON(fiber.Map{"queued": true, "note": "delivery pending notifier wiring"})
-}
-
-func hasActive(bs []telegram.Binding) bool {
-	for _, b := range bs {
-		if b.Status == "active" {
-			return true
-		}
-	}
-	return false
+	return c.JSON(fiber.Map{"sent": true})
 }

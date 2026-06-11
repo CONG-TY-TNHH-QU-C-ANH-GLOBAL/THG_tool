@@ -5,20 +5,11 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
-// validChannelFilters / validAlertTypes are the channel-neutral allow-lists the UI offers. Kept
-// here (transport/validation) so the store stays free of policy.
-var validChannelFilters = map[string]bool{"all": true, "facebook": true, "taobao": true, "1688": true}
-
-var validAlertTypes = map[string]bool{
-	"connector_offline":          true,
-	"gate1_failure_spike":        true,
-	"submitted_unverified_spike": true,
-	"automation_paused":          true,
-	"account_needs_attention":    true,
-	"circuit_breaker_triggered":  true,
-}
+// Allow-lists + audit-event names come from the shared control package (single source of truth) —
+// the REST API mirrors NOTHING locally.
 
 // getAlerts returns the org's alert preferences (defaults when unset). Any org member may read.
 func (h *Handler) getAlerts(c *fiber.Ctx) error {
@@ -39,13 +30,13 @@ func (h *Handler) getAlerts(c *fiber.Ctx) error {
 		"alerts_enabled":    prefs.AlertsEnabled,
 		"channel_filter":    prefs.ChannelFilter,
 		"alert_types":       types,
-		"available_types":   alertTypeKeys(),
-		"available_filters": []string{"all", "facebook", "taobao", "1688"},
+		"available_types":   control.AlertTypes,
+		"available_filters": control.ChannelFilters,
 	})
 }
 
-// updateAlerts writes the org's alert preferences (admin). Validates the channel filter + alert
-// types against the allow-lists, then audits the change.
+// updateAlerts writes the org's alert preferences (admin). Validates against the shared allow-lists
+// then audits the change.
 func (h *Handler) updateAlerts(c *fiber.Ctx) error {
 	orgID, userID, _ := reqCtx(c)
 	if orgID == 0 {
@@ -59,23 +50,15 @@ func (h *Handler) updateAlerts(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
-	if body.ChannelFilter == "" {
-		body.ChannelFilter = "all"
-	}
-	if !validChannelFilters[body.ChannelFilter] {
+	filter := control.NormalizeChannelFilter(body.ChannelFilter)
+	if body.ChannelFilter != "" && !control.IsValidChannelFilter(body.ChannelFilter) {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid channel_filter"})
 	}
-	clean := make([]string, 0, len(body.AlertTypes))
-	for _, t := range body.AlertTypes {
-		if validAlertTypes[t] {
-			clean = append(clean, t)
-		}
-	}
-	raw, _ := json.Marshal(clean)
-	if err := h.deps.DB.Telegram().UpsertAlertPrefs(orgID, body.AlertsEnabled, body.ChannelFilter, string(raw)); err != nil {
+	raw, _ := json.Marshal(control.SanitizeAlertTypes(body.AlertTypes))
+	if err := h.deps.DB.Telegram().UpsertAlertPrefs(orgID, body.AlertsEnabled, filter, string(raw)); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "save alerts failed"})
 	}
-	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, 0, "alerts_updated", "ok", string(raw))
+	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, 0, control.AuditAlertsUpdated, "ok", string(raw))
 	return h.getAlerts(c)
 }
 
@@ -94,11 +77,4 @@ func (h *Handler) getAudit(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "load audit failed"})
 	}
 	return c.JSON(fiber.Map{"events": events})
-}
-
-func alertTypeKeys() []string {
-	return []string{
-		"connector_offline", "gate1_failure_spike", "submitted_unverified_spike",
-		"automation_paused", "account_needs_attention", "circuit_breaker_triggered",
-	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 // Flags mirrors the process-level Telegram feature flags so handlers never import config. The
@@ -22,10 +23,13 @@ type Flags struct {
 	BotUsername    string
 }
 
-// Deps holds dependencies for the integrations handlers.
+// Deps holds dependencies for the integrations handlers. Control is the SHARED Telegram domain
+// service (single source of truth) — the REST handlers call it for test-notification, allow-lists,
+// and audit-event names rather than re-implementing any of them.
 type Deps struct {
-	DB    *store.Store
-	Flags Flags
+	DB      *store.Store
+	Control *control.Service
+	Flags   Flags
 }
 
 // Handler binds the dependencies.

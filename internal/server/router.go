@@ -28,7 +28,10 @@ import (
 	serverplatform "github.com/thg/scraper/internal/server/platform"
 	serverskills "github.com/thg/scraper/internal/server/skills"
 	"github.com/thg/scraper/internal/server/system"
+	servertelegram "github.com/thg/scraper/internal/server/telegram"
 	serverworkspace "github.com/thg/scraper/internal/server/workspace"
+	tgclient "github.com/thg/scraper/internal/telegram/client"
+	"github.com/thg/scraper/internal/telegram/control"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion/csv"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion/rest_json"
@@ -147,10 +150,24 @@ func (s *Server) registerRoutes() {
 
 	serverorg.Routes(r, orgDeps, adminOnly, authpkg.RequireRole(string(models.RoleFounder)))
 
-	// Telegram integration control-plane (tenant-scoped; admin-gated mutations). Flags mirror the
-	// process feature flags so handlers never import config. See specs/TELEGRAM_INTEGRATION_UI.md.
+	// Telegram: ONE shared domain/control service (single source of truth) backs BOTH the REST
+	// settings API and the webhook runtime — neither re-implements binding/permission/policy
+	// rules. The bot client is the sender; flags are passed in so the domain never imports config.
+	// See specs/TELEGRAM_BOT_RUNTIME.md.
+	tgControl := control.NewService(s.db.Telegram(), tgclient.New(s.cfg.TelegramBotToken), control.Flags{
+		NotifyEnabled:  s.cfg.TelegramNotifyEnabled,
+		ActionsEnabled: s.cfg.TelegramActionsEnabled,
+		WebhookSecret:  s.cfg.TelegramWebhookSecret,
+	})
+
+	// Webhook runtime — PUBLIC (Telegram cannot send a JWT); authenticity via the webhook secret.
+	servertelegram.Routes(api, servertelegram.Deps{Service: tgControl, WebhookSecret: s.cfg.TelegramWebhookSecret})
+
+	// REST settings/integration control-plane (tenant-scoped; admin-gated mutations). Shares the
+	// SAME control service so test-notification, allow-lists, and audit names are not duplicated.
 	serverintegrations.TelegramRoutes(r, serverintegrations.Deps{
-		DB: s.db,
+		DB:      s.db,
+		Control: tgControl,
 		Flags: serverintegrations.Flags{
 			BotEnabled:     s.cfg.TelegramBotEnabled,
 			NotifyEnabled:  s.cfg.TelegramNotifyEnabled,

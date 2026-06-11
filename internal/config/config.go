@@ -17,9 +17,10 @@ type Config struct {
 	// Telegram integration feature flags (control-plane). Default-safe: the bot + notifications
 	// are opt-in, and action EXECUTION is OFF by default and must stay off until reliability is
 	// validated (spec: specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md).
-	TelegramBotEnabled     bool // TELEGRAM_BOT_ENABLED
-	TelegramNotifyEnabled  bool // TELEGRAM_NOTIFY_ENABLED
-	TelegramActionsEnabled bool // TELEGRAM_ACTIONS_ENABLED (must default false)
+	TelegramBotEnabled     bool   // TELEGRAM_BOT_ENABLED
+	TelegramNotifyEnabled  bool   // TELEGRAM_NOTIFY_ENABLED
+	TelegramActionsEnabled bool   // TELEGRAM_ACTIONS_ENABLED (must default false)
+	TelegramWebhookSecret  string // TELEGRAM_WEBHOOK_SECRET (validates inbound webhook calls)
 
 	// AI (OpenAI only).
 	//
@@ -109,6 +110,7 @@ func Load() *Config {
 		TelegramBotEnabled:     getEnvBool("TELEGRAM_BOT_ENABLED", false),
 		TelegramNotifyEnabled:  getEnvBool("TELEGRAM_NOTIFY_ENABLED", true),
 		TelegramActionsEnabled: getEnvBool("TELEGRAM_ACTIONS_ENABLED", false),
+		TelegramWebhookSecret:  getEnv("TELEGRAM_WEBHOOK_SECRET", ""),
 		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS

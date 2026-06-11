@@ -52,9 +52,9 @@ func (s *Store) UpsertBinding(b Binding) (int64, error) {
 		status = "active"
 	}
 	res, err := s.db.Exec(`INSERT INTO telegram_bindings
-		(org_id, user_id, telegram_user_id, telegram_username, display_name, role, alert_recipient, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		b.OrgID, b.UserID, b.TelegramUserID, b.TelegramUsername, b.DisplayName, b.Role, recipient, status)
+		(org_id, user_id, telegram_user_id, telegram_username, display_name, chat_id, role, alert_recipient, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.OrgID, b.UserID, b.TelegramUserID, b.TelegramUsername, b.DisplayName, b.ChatID, b.Role, recipient, status)
 	if err != nil {
 		return 0, err
 	}
@@ -62,13 +62,13 @@ func (s *Store) UpsertBinding(b Binding) (int64, error) {
 }
 
 const bindingCols = `id, org_id, user_id, telegram_user_id, telegram_username, display_name,
-	role, alert_recipient, status, bound_at, last_command_at, revoked_at`
+	chat_id, role, alert_recipient, status, bound_at, last_command_at, revoked_at`
 
 func scanBinding(rows *sql.Rows) (Binding, error) {
 	var b Binding
 	var recipient int
 	err := rows.Scan(&b.ID, &b.OrgID, &b.UserID, &b.TelegramUserID, &b.TelegramUsername,
-		&b.DisplayName, &b.Role, &recipient, &b.Status, &b.BoundAt, &b.LastCommandAt, &b.RevokedAt)
+		&b.DisplayName, &b.ChatID, &b.Role, &recipient, &b.Status, &b.BoundAt, &b.LastCommandAt, &b.RevokedAt)
 	b.AlertRecipient = recipient != 0
 	return b, err
 }

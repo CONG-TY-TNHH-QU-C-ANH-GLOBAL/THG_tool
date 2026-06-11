@@ -1,6 +1,9 @@
 package integrations
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/telegram/control"
+)
 
 // channelStatus is the channel-neutral connector summary the UI renders. Facebook is active
 // today; Taobao/1688 are modelled as planned so the UI never hardcodes a single channel.
@@ -91,9 +94,9 @@ func (h *Handler) setEnabled(c *fiber.Ctx, enabled bool) error {
 	if err := h.deps.DB.Telegram().SetEnabled(orgID, enabled); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "update failed"})
 	}
-	action := "integration_disabled"
+	action := control.AuditIntegrationDisabled
 	if enabled {
-		action = "integration_enabled"
+		action = control.AuditIntegrationEnabled
 	}
 	_ = h.deps.DB.Telegram().InsertAudit(orgID, userID, 0, action, "ok", "")
 	return h.getStatus(c)

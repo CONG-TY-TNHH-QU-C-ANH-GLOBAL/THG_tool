@@ -71,6 +71,7 @@ type Binding struct {
 	TelegramUserID   int64        `json:"telegram_user_id"`
 	TelegramUsername string       `json:"telegram_username"`
 	DisplayName      string       `json:"display_name"`
+	ChatID           int64        `json:"-"` // Telegram chat id for replies/notifications; never exposed to UI
 	Role             string       `json:"role"`
 	AlertRecipient   bool         `json:"alert_recipient"`
 	Status           string       `json:"status"`

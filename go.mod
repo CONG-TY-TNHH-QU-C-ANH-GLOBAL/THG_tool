@@ -10,15 +10,15 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/valyala/fasthttp v1.51.0
 	golang.org/x/crypto v0.50.0
-	gopkg.in/telebot.v3 v3.3.8
 	modernc.org/sqlite v1.48.2
 )
 
 require (
+	github.com/gofiber/adaptor/v2 v2.2.1
 	github.com/gofiber/websocket/v2 v2.2.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_golang v1.23.2
-	golang.org/x/term v0.42.0
 )
 
 require (
@@ -32,9 +32,8 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/gofiber/adaptor/v2 v2.2.1 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect

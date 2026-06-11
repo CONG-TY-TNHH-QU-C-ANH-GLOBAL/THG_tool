@@ -1,6 +1,10 @@
 package integrations
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/thg/scraper/internal/telegram/control"
+)
 
 // computeStatus headline-state derivation (pure; no DB/HTTP).
 func TestComputeStatus(t *testing.T) {
@@ -37,18 +41,18 @@ func TestCanViewAllBindings(t *testing.T) {
 	}
 }
 
-// validation allow-lists must reject unknown channel filters / alert types (no silent pass-through).
+// validation allow-lists (now owned by the shared control package) must reject unknown values.
 func TestValidationAllowLists(t *testing.T) {
-	if validChannelFilters["myspace"] {
+	if control.IsValidChannelFilter("myspace") {
 		t.Error("unknown channel filter must be rejected")
 	}
-	if !validChannelFilters["facebook"] || !validChannelFilters["1688"] || !validChannelFilters["all"] {
+	if !control.IsValidChannelFilter("facebook") || !control.IsValidChannelFilter("1688") || !control.IsValidChannelFilter("all") {
 		t.Error("known channel filters must be accepted")
 	}
-	if validAlertTypes["delete_everything"] {
+	if control.IsValidAlertType("delete_everything") {
 		t.Error("unknown alert type must be rejected")
 	}
-	if !validAlertTypes["circuit_breaker_triggered"] {
+	if !control.IsValidAlertType("circuit_breaker_triggered") {
 		t.Error("known alert type must be accepted")
 	}
 }

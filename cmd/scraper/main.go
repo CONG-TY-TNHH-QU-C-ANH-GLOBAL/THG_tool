@@ -20,7 +20,7 @@ import (
 	session_pkg "github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/skills"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/telegram"
+	tgclient "github.com/thg/scraper/internal/telegram/client"
 	"github.com/thg/scraper/internal/workspace"
 )
 
@@ -189,13 +189,6 @@ func main() {
 	}
 
 	// Initialize price extractor (OpenAI Vision for reading price list images).
-	// Pricer is structured-output, accuracy >>> creativity → uses the cheap
-	// classifier model.
-	var pricer *ai.PriceExtractor
-	if cfg.OpenAIAPIKey != "" {
-		pricer = ai.NewPriceExtractor(cfg.OpenAIAPIKey, cfg.OpenAIClassifierModel)
-		log.Println("✅ Price extractor initialized")
-	}
 
 	// Initialize AI Agent (OpenAI Function Calling) — v2.
 	//
@@ -247,27 +240,20 @@ func main() {
 		log.Println("⚠️  OPENAI_API_KEY not set, AI Agent disabled")
 	}
 
-	// Initialize Telegram bot (optional)
-	var bot *telegram.Bot
+	// Telegram (optional). The legacy single-org long-poll agent-bot was RETIRED (see
+	// specs/TELEGRAM_BOT_RUNTIME.md): long-poll (getUpdates) and a webhook cannot share one bot
+	// token, and the product direction is a tenant-scoped integration, not a single-org side bot.
+	// The tenant-scoped webhook control-plane (POST /api/telegram/webhook, wired in the server) is
+	// now the SINGLE Telegram runtime. Here we only wire the system notifier to send to the
+	// configured admin chat via the thin Telegram client.
 	if cfg.TelegramBotToken != "" {
-		bot, err = telegram.New(cfg.TelegramBotToken, cfg.TelegramAdminChat, db, jobStore, agent, pricer)
-		if bot != nil {
-			bot.SetDefaultOrgID(cfg.TelegramOrgID)
+		tgClient := tgclient.New(cfg.TelegramBotToken)
+		if cfg.TelegramAdminChat != 0 {
+			telegramNotify = func(msg string) { _ = tgClient.Send(cfg.TelegramAdminChat, msg) }
 		}
-		if err != nil {
-			log.Printf("⚠️  Telegram bot init failed: %v", err)
-		} else {
-			telegramNotify = bot.Notify
-			log.Println("✅ Telegram bot initialized")
-		}
+		log.Println("✅ Telegram client initialized (webhook runtime; legacy long-poll bot retired)")
 	} else {
-		log.Println("⚠️  Telegram bot token not set, bot disabled")
-	}
-
-	// Start Telegram bot (non-blocking)
-	if bot != nil {
-		go bot.Start()
-		defer bot.Stop()
+		log.Println("⚠️  Telegram bot token not set, Telegram disabled")
 	}
 
 	go runCrawlIntentScheduler(ctx, db, jobStore, time.Minute)
@@ -296,6 +282,7 @@ func main() {
 		TelegramBotEnabled:     cfg.TelegramBotEnabled,
 		TelegramNotifyEnabled:  cfg.TelegramNotifyEnabled,
 		TelegramActionsEnabled: cfg.TelegramActionsEnabled,
+		TelegramWebhookSecret:  cfg.TelegramWebhookSecret,
 		Mailer: mailer.Config{
 			Host:               cfg.SMTPHost,
 			Port:               cfg.SMTPPort,
@@ -332,8 +319,8 @@ func main() {
 	defer srv.Shutdown()
 
 	log.Printf("🚀 System ready! Web UI: http://localhost:%d", cfg.WebPort)
-	if bot != nil {
-		log.Println("🤖 Telegram bot is listening for commands")
+	if cfg.TelegramBotToken != "" {
+		log.Println("🤖 Telegram webhook runtime ready at POST /api/telegram/webhook")
 	}
 
 	// Graceful shutdown
