@@ -128,6 +128,9 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		UserPrompt:      strings.TrimSpace(body.UserPrompt),
 		ExtraSignals:    []string{"chrome_extension_crawl"},
 		IntentID:        body.IntentID,
+		OnLeadCreated: func(ev leadingest.LeadEvent) {
+			h.tgEvents.NotifyLeadCreated(ev.OrgID, ev.LeadID, "", ev.Source, ev.Name, ev.Summary, h.baseURL)
+		},
 	}
 
 	inserted := 0
