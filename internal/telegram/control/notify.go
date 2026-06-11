@@ -12,6 +12,10 @@ func (s *Service) TestNotify(orgID, userID int64) (bool, string) {
 	if !s.flags.NotifyEnabled {
 		return false, "notify_disabled"
 	}
+	gb := s.globalBot() // personal DM bindings live on the platform/webhook bot
+	if gb == nil {
+		return false, "bot_token_missing"
+	}
 	bindings, err := s.store.ListBindingsByUser(orgID, userID)
 	if err != nil {
 		return false, "error"
@@ -21,7 +25,7 @@ func (s *Service) TestNotify(orgID, userID int64) (bool, string) {
 		if b.Status != "active" || b.ChatID == 0 {
 			continue
 		}
-		if e := s.tg.Send(b.ChatID, render.TestMessage()); e == nil {
+		if e := gb.Send(b.ChatID, render.TestMessage()); e == nil {
 			sent++
 		}
 	}
@@ -50,6 +54,10 @@ func (s *Service) NotifyBoundUsers(orgID int64, alertType, channel, message stri
 	if prefs.ChannelFilter != "all" && prefs.ChannelFilter != channel {
 		return 0, nil
 	}
+	gb := s.globalBot()
+	if gb == nil {
+		return 0, nil
+	}
 	recipients, err := s.store.ListAlertRecipients(orgID)
 	if err != nil {
 		return 0, err
@@ -59,7 +67,7 @@ func (s *Service) NotifyBoundUsers(orgID int64, alertType, channel, message stri
 		if b.ChatID == 0 {
 			continue
 		}
-		if e := s.tg.Send(b.ChatID, message); e == nil {
+		if e := gb.Send(b.ChatID, message); e == nil {
 			sent++
 		}
 	}

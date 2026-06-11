@@ -9,6 +9,10 @@ func (s *Service) NotifyEvent(orgID int64, eventType, channel, message string) (
 	if !s.flags.NotifyEnabled || !IsValidEventType(eventType) {
 		return 0, nil
 	}
+	bot, _ := s.resolveBot(orgID) // channel delivery uses the ORG's own bot token
+	if bot == nil {
+		return 0, nil
+	}
 	dests, err := s.store.ListActiveDestinations(orgID)
 	if err != nil {
 		return 0, err
@@ -21,7 +25,7 @@ func (s *Service) NotifyEvent(orgID int64, eventType, channel, message string) (
 		if d.ChannelFilter != "all" && d.ChannelFilter != channel {
 			continue
 		}
-		sendErr := s.tg.Send(d.ChatID, message)
+		sendErr := bot.Send(d.ChatID, message)
 		_ = s.store.RecordDelivery(orgID, d.ID, sendErr == nil, errText(sendErr))
 		if sendErr == nil {
 			sent++

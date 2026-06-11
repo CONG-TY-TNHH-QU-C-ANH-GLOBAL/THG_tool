@@ -257,7 +257,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
-	s.telegram = telegram.NewStore(s.db, s.dialect)
+	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
 	s.installRuntimeEventSink()
 	return s, nil
 }
@@ -306,7 +306,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.app = app.NewStore(s.db, s.dialect)
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
-	s.telegram = telegram.NewStore(s.db, s.dialect)
+	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
 	s.installRuntimeEventSink()
 	return s, nil
 }
@@ -366,5 +366,8 @@ func (s *Store) SetEncryptionKey(key string) {
 	s.encKey = key
 	if s.identities != nil {
 		s.identities.SetEncryptionKey(key)
+	}
+	if s.telegram != nil {
+		s.telegram.SetEncryptionKey(key)
 	}
 }

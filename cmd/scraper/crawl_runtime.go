@@ -65,7 +65,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 			CursorLastPostAt: parseRFC3339OrZero(argString(args, "_cursor_last_post_at")),
 			SinceRunAt:       parseRFC3339OrZero(argString(args, "_since_run_at")),
 		},
-		Filters:       jobs.Filters{Keywords: keywords, MinContentLength: 20, KeywordMinScore: 0},
+		Filters: jobs.Filters{Keywords: keywords, MinContentLength: 20, KeywordMinScore: 0},
 		ScoringConfig: jobs.ScoringConfig{
 			HotThreshold:  70,
 			WarmThreshold: 40,

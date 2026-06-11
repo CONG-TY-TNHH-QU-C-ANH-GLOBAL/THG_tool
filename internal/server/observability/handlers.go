@@ -54,21 +54,21 @@ func executionDistribution(deps Deps) fiber.Handler {
 // models.ExecutionAttempt plus a parsed `evidence` object so the
 // dashboard doesn't have to JSON.parse the embedded string client-side.
 type recentAttemptRow struct {
-	ID             int64                  `json:"id"`
-	ActionLedgerID int64                  `json:"action_ledger_id"`
-	OutboundID     int64                  `json:"outbound_id"`
-	OrgID          int64                  `json:"org_id"`
-	AccountID      int64                  `json:"account_id"`
-	TargetURL      string                 `json:"target_url"`
-	ActionType     string                 `json:"action_type"`
-	Attempt        int                    `json:"attempt"`
-	Status         string                 `json:"status"`
-	Outcome        string                 `json:"outcome"`
-	FailureReason  string                 `json:"failure_reason"`
-	Evidence       map[string]any         `json:"evidence,omitempty"`
-	DOMVerified    bool                   `json:"dom_verified"`
-	StartedAt      string                 `json:"started_at"`
-	FinishedAt     string                 `json:"finished_at,omitempty"`
+	ID             int64          `json:"id"`
+	ActionLedgerID int64          `json:"action_ledger_id"`
+	OutboundID     int64          `json:"outbound_id"`
+	OrgID          int64          `json:"org_id"`
+	AccountID      int64          `json:"account_id"`
+	TargetURL      string         `json:"target_url"`
+	ActionType     string         `json:"action_type"`
+	Attempt        int            `json:"attempt"`
+	Status         string         `json:"status"`
+	Outcome        string         `json:"outcome"`
+	FailureReason  string         `json:"failure_reason"`
+	Evidence       map[string]any `json:"evidence,omitempty"`
+	DOMVerified    bool           `json:"dom_verified"`
+	StartedAt      string         `json:"started_at"`
+	FinishedAt     string         `json:"finished_at,omitempty"`
 }
 
 // executionRecent serves GET /api/observability/execution/recent.

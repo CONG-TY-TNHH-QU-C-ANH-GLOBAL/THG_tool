@@ -29,7 +29,7 @@ import (
 // conflict heuristic returns no rows (the false-positive heuristic still
 // works since it has no internal/ai dependency).
 type Deps struct {
-	DB                    *store.Store
+	DB                     *store.Store
 	PromptIsSelfSufficient func(prompt string) bool
 }
 

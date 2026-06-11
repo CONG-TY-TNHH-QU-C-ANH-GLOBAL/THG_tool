@@ -21,6 +21,7 @@ type fakeSender struct {
 	resChatID   int64 // canned Resolve response (connect-public-channel tests)
 	resTitle    string
 	resUsername string
+	lastRef     string // last ref passed to Resolve (normalization assertions)
 }
 
 func (f *fakeSender) Send(_ int64, text string) error {
@@ -30,12 +31,22 @@ func (f *fakeSender) Send(_ int64, text string) error {
 	f.sent = append(f.sent, text)
 	return nil
 }
-func (f *fakeSender) Resolve(_, _ string) (int64, string, string, error) {
-	if f.fail || f.resChatID == 0 {
-		return 0, "", "", errors.New("resolve failed")
+func (f *fakeSender) Resolve(ref, _ string) (control.SendResult, error) {
+	f.lastRef = ref // capture the normalized reference for assertions
+	if f.fail {
+		return control.SendResult{}, errors.New("network")
+	}
+	if f.resChatID == 0 {
+		return control.SendResult{ErrCode: 400, ErrDesc: "chat not found"}, nil
 	}
 	f.sent = append(f.sent, "[resolve]")
-	return f.resChatID, f.resTitle, f.resUsername, nil
+	return control.SendResult{ChatID: f.resChatID, Title: f.resTitle, Username: f.resUsername}, nil
+}
+func (f *fakeSender) GetMe() (control.BotInfo, error) {
+	if f.fail {
+		return control.BotInfo{}, errors.New("bad token")
+	}
+	return control.BotInfo{BotID: 42, Username: "fakebot", DisplayName: "Fake Bot"}, nil
 }
 func (f *fakeSender) last() string {
 	if len(f.sent) == 0 {
@@ -52,7 +63,9 @@ func bootstrap(path string) error {
 	return db.Close()
 }
 
-func newSvc(t *testing.T, name string, s control.Bot, flags control.Flags) (*control.Service, *tgstore.Store) {
+// newSvc wraps the fake bot in a factory. By default it enables the global fallback so the fake bot
+// resolves for send/connect tests; pass flags.GlobalToken to exercise the per-org / missing paths.
+func newSvc(t *testing.T, name string, bot control.Bot, flags control.Flags) (*control.Service, *tgstore.Store) {
 	dst := storetest.CopyTemplate(t, bootstrap, name)
 	db, err := store.New(dst)
 	if err != nil {
@@ -60,7 +73,12 @@ func newSvc(t *testing.T, name string, s control.Bot, flags control.Flags) (*con
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	st := db.Telegram()
-	return control.NewService(st, s, flags), st
+	if flags.GlobalToken == "" {
+		flags.GlobalToken = "testbot"
+		flags.AllowGlobalFallback = true
+	}
+	factory := func(string) control.Bot { return bot }
+	return control.NewService(st, factory, flags), st
 }
 
 func msg(tg, chat int64, text string) control.IncomingMessage {

@@ -41,21 +41,21 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	var body struct {
-		Hostname         string `json:"hostname"`
-		OS               string `json:"os"`
-		Version          string `json:"version"`
-		Kind             string `json:"kind"`
-		Transport        string `json:"transport"`
-		AccountID        int64  `json:"account_id"`
-		CapabilitiesJSON string `json:"capabilities_json"`
-		CurrentURL       string `json:"current_url"`
-		FBUserID         string `json:"fb_user_id"`
-		FBDisplayName    string `json:"fb_display_name"`
-		FBUsername       string `json:"fb_username"`
-		FBProfileURL     string `json:"fb_profile_url"`
-		LoginEmail       string `json:"login_email"`
-		StreamStatus     string `json:"stream_status"`
-		ChromeError      string `json:"chrome_error"`
+		Hostname                 string `json:"hostname"`
+		OS                       string `json:"os"`
+		Version                  string `json:"version"`
+		Kind                     string `json:"kind"`
+		Transport                string `json:"transport"`
+		AccountID                int64  `json:"account_id"`
+		CapabilitiesJSON         string `json:"capabilities_json"`
+		CurrentURL               string `json:"current_url"`
+		FBUserID                 string `json:"fb_user_id"`
+		FBDisplayName            string `json:"fb_display_name"`
+		FBUsername               string `json:"fb_username"`
+		FBProfileURL             string `json:"fb_profile_url"`
+		LoginEmail               string `json:"login_email"`
+		StreamStatus             string `json:"stream_status"`
+		ChromeError              string `json:"chrome_error"`
 		IdentityConfidence       string `json:"identity_confidence"`
 		IdentityExtractionMethod string `json:"identity_extraction_method"`
 		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
@@ -72,20 +72,20 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		body.Version = c.Get("X-Agent-Version")
 	}
 	presence := connectors.AgentPresence{
-		Hostname:          body.Hostname,
-		OS:                body.OS,
-		Version:           body.Version,
-		Kind:              body.Kind,
-		Transport:         body.Transport,
-		AssignedAccountID: body.AccountID,
-		CapabilitiesJSON:  body.CapabilitiesJSON,
-		CurrentURL:        body.CurrentURL,
-		FBUserID:          body.FBUserID,
-		FBDisplayName:     body.FBDisplayName,
-		FBUsername:        body.FBUsername,
-		FBProfileURL:      body.FBProfileURL,
-		StreamStatus:      body.StreamStatus,
-		ChromeError:       body.ChromeError,
+		Hostname:                 body.Hostname,
+		OS:                       body.OS,
+		Version:                  body.Version,
+		Kind:                     body.Kind,
+		Transport:                body.Transport,
+		AssignedAccountID:        body.AccountID,
+		CapabilitiesJSON:         body.CapabilitiesJSON,
+		CurrentURL:               body.CurrentURL,
+		FBUserID:                 body.FBUserID,
+		FBDisplayName:            body.FBDisplayName,
+		FBUsername:               body.FBUsername,
+		FBProfileURL:             body.FBProfileURL,
+		StreamStatus:             body.StreamStatus,
+		ChromeError:              body.ChromeError,
 		IdentityConfidence:       body.IdentityConfidence,
 		IdentityExtractionMethod: body.IdentityExtractionMethod,
 		IdentityLastVerifiedAt:   body.IdentityLastVerifiedAt,
@@ -109,15 +109,15 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	var body struct {
-		AccountID     int64  `json:"account_id"`
-		CurrentURL    string `json:"current_url"`
-		FBUserID      string `json:"fb_user_id"`
-		FBDisplayName string `json:"fb_display_name"`
-		FBUsername    string `json:"fb_username"`
-		FBProfileURL  string `json:"fb_profile_url"`
-		LoginEmail    string `json:"login_email"`
-		StreamStatus  string `json:"stream_status"`
-		ChromeError   string `json:"chrome_error"`
+		AccountID                int64  `json:"account_id"`
+		CurrentURL               string `json:"current_url"`
+		FBUserID                 string `json:"fb_user_id"`
+		FBDisplayName            string `json:"fb_display_name"`
+		FBUsername               string `json:"fb_username"`
+		FBProfileURL             string `json:"fb_profile_url"`
+		LoginEmail               string `json:"login_email"`
+		StreamStatus             string `json:"stream_status"`
+		ChromeError              string `json:"chrome_error"`
 		IdentityConfidence       string `json:"identity_confidence"`
 		IdentityExtractionMethod string `json:"identity_extraction_method"`
 		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
@@ -130,14 +130,14 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		status = browsergateway.StreamChromeNotConnected
 	}
 	presence := connectors.AgentPresence{
-		AssignedAccountID: body.AccountID,
-		CurrentURL:        body.CurrentURL,
-		FBUserID:          body.FBUserID,
-		FBDisplayName:     body.FBDisplayName,
-		FBUsername:        body.FBUsername,
-		FBProfileURL:      body.FBProfileURL,
-		StreamStatus:      status,
-		ChromeError:       body.ChromeError,
+		AssignedAccountID:        body.AccountID,
+		CurrentURL:               body.CurrentURL,
+		FBUserID:                 body.FBUserID,
+		FBDisplayName:            body.FBDisplayName,
+		FBUsername:               body.FBUsername,
+		FBProfileURL:             body.FBProfileURL,
+		StreamStatus:             status,
+		ChromeError:              body.ChromeError,
 		IdentityConfidence:       body.IdentityConfidence,
 		IdentityExtractionMethod: body.IdentityExtractionMethod,
 		IdentityLastVerifiedAt:   body.IdentityLastVerifiedAt,

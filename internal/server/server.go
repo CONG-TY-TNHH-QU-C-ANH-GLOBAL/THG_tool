@@ -37,11 +37,12 @@ type Config struct {
 
 	// Telegram integration feature flags + bot identity, surfaced to the integrations
 	// control-plane handlers (default-safe; actions off by default).
-	TelegramBotToken       string
-	TelegramBotEnabled     bool
-	TelegramNotifyEnabled  bool
-	TelegramActionsEnabled bool
-	TelegramWebhookSecret  string
+	TelegramBotToken            string
+	TelegramBotEnabled          bool
+	TelegramNotifyEnabled       bool
+	TelegramActionsEnabled      bool
+	TelegramWebhookSecret       string
+	TelegramAllowGlobalFallback bool
 }
 
 // Server provides the REST API and serves the Web UI.

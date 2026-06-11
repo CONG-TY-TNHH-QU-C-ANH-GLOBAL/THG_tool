@@ -404,7 +404,7 @@ func friendlySkipReasons(reasons map[string]int) string {
 		"single_actor_policy":             "chính sách chỉ 1 tài khoản/lead",
 		"coverage_full":                   "lead đã đủ số tài khoản tiếp cận",
 		"coverage_gap_too_soon":           "chưa đủ giãn cách giữa các lượt comment",
-		"action_policy_missing":          "workspace chưa bật chính sách hành động",
+		"action_policy_missing":           "workspace chưa bật chính sách hành động",
 		// Target-URL resolution (resolveOutboundTargetURL) — the common skip for a
 		// fresh lead whose crawled URL is not a direct commentable post permalink.
 		"missing_post_permalink": "lead chưa có link bài viết comment được (URL không phải permalink bài post)",

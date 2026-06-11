@@ -21,6 +21,10 @@ type Config struct {
 	TelegramNotifyEnabled  bool   // TELEGRAM_NOTIFY_ENABLED
 	TelegramActionsEnabled bool   // TELEGRAM_ACTIONS_ENABLED (must default false)
 	TelegramWebhookSecret  string // TELEGRAM_WEBHOOK_SECRET (validates inbound webhook calls)
+	// TELEGRAM_ALLOW_GLOBAL_FALLBACK: when true, tenant channel delivery may fall back to the
+	// platform TELEGRAM_BOT_TOKEN if an org has not connected its own bot. Default false — enterprise
+	// tenants connect their OWN bot (the token is a customer secret).
+	TelegramAllowGlobalFallback bool
 
 	// AI (OpenAI only).
 	//
@@ -104,14 +108,15 @@ type Config struct {
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	cfg := &Config{
-		TelegramBotToken:       getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramAdminChat:      getEnvInt64("TELEGRAM_ADMIN_CHAT_ID", 0),
-		TelegramOrgID:          getEnvInt64("TELEGRAM_ORG_ID", 1),
-		TelegramBotEnabled:     getEnvBool("TELEGRAM_BOT_ENABLED", false),
-		TelegramNotifyEnabled:  getEnvBool("TELEGRAM_NOTIFY_ENABLED", true),
-		TelegramActionsEnabled: getEnvBool("TELEGRAM_ACTIONS_ENABLED", false),
-		TelegramWebhookSecret:  getEnv("TELEGRAM_WEBHOOK_SECRET", ""),
-		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
+		TelegramBotToken:            getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramAdminChat:           getEnvInt64("TELEGRAM_ADMIN_CHAT_ID", 0),
+		TelegramOrgID:               getEnvInt64("TELEGRAM_ORG_ID", 1),
+		TelegramBotEnabled:          getEnvBool("TELEGRAM_BOT_ENABLED", false),
+		TelegramNotifyEnabled:       getEnvBool("TELEGRAM_NOTIFY_ENABLED", true),
+		TelegramActionsEnabled:      getEnvBool("TELEGRAM_ACTIONS_ENABLED", false),
+		TelegramWebhookSecret:       getEnv("TELEGRAM_WEBHOOK_SECRET", ""),
+		TelegramAllowGlobalFallback: getEnvBool("TELEGRAM_ALLOW_GLOBAL_FALLBACK", false),
+		OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS
 		// don't break on the next deploy. Drop the alias once VPS env is updated.

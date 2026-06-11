@@ -20,11 +20,11 @@ func TestConnectPublicChannel(t *testing.T) {
 		t.Fatalf("expected 1 active destination, got %d", len(act))
 	}
 
-	// Resolve fails (bot not admin / not found) → typed reason, nothing stored.
-	failing := &fakeSender{} // resChatID 0 → Resolve errors
+	// Resolve returns a Telegram 400 (channel/username invalid) → specific reason, nothing stored.
+	failing := &fakeSender{} // resChatID 0 → SendResult{ErrCode:400}
 	svc2, st2 := newSvc(t, "tg_connect_fail.db", failing, control.Flags{NotifyEnabled: true})
-	if d, reason := svc2.ConnectPublicChannel(7, 99, "ghost"); d != nil || reason != "resolve_failed" {
-		t.Fatalf("expected resolve_failed, got d=%+v reason=%q", d, reason)
+	if d, reason := svc2.ConnectPublicChannel(7, 99, "ghost"); d != nil || reason != "channel_not_found_or_username_invalid" {
+		t.Fatalf("expected channel_not_found_or_username_invalid, got d=%+v reason=%q", d, reason)
 	}
 	if act, _ := st2.ListActiveDestinations(7); len(act) != 0 {
 		t.Fatal("nothing should be stored on resolve failure")

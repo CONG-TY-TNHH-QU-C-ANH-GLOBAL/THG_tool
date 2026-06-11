@@ -19,8 +19,11 @@ import (
 type capSender struct{ n int }
 
 func (c *capSender) Send(_ int64, _ string) error { c.n++; return nil }
-func (c *capSender) Resolve(_, _ string) (int64, string, string, error) {
-	return 0, "", "", nil
+func (c *capSender) Resolve(_, _ string) (control.SendResult, error) {
+	return control.SendResult{}, nil
+}
+func (c *capSender) GetMe() (control.BotInfo, error) {
+	return control.BotInfo{BotID: 1, Username: "webhookbot"}, nil
 }
 
 func bootstrap(path string) error {
@@ -38,7 +41,8 @@ func newApp(t *testing.T, name, secret string, sender control.Bot) (*fiber.App, 
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := control.NewService(db.Telegram(), sender, control.Flags{WebhookSecret: secret})
+	factory := func(string) control.Bot { return sender }
+	svc := control.NewService(db.Telegram(), factory, control.Flags{WebhookSecret: secret, GlobalToken: "webhookbot"})
 	app := fiber.New()
 	servertelegram.Routes(app.Group("/api"), servertelegram.Deps{Service: svc, WebhookSecret: secret})
 	return app, db

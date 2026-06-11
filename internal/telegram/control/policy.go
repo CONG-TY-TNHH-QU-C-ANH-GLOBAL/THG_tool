@@ -82,6 +82,9 @@ const (
 	AuditDestinationDisabled  = "destination_disabled"
 	AuditDestinationTest      = "destination_test"
 	AuditDestinationPrefs     = "destination_prefs_updated"
+	AuditBotSaved             = "bot_token_saved"
+	AuditBotVerified          = "bot_token_verified"
+	AuditBotRevoked           = "bot_token_revoked"
 )
 
 // ── Allow-lists (single source of truth; REST API + UI both mirror these) ──

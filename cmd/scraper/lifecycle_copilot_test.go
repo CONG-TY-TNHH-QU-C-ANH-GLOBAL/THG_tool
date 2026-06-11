@@ -9,10 +9,10 @@ import (
 
 func TestJoinVietnamese(t *testing.T) {
 	cases := map[string][]string{
-		"":            {},
-		"a":           {"a"},
-		"a và b":      {"a", "b"},
-		"a, b và c":   {"a", "b", "c"},
+		"":          {},
+		"a":         {"a"},
+		"a và b":    {"a", "b"},
+		"a, b và c": {"a", "b", "c"},
 	}
 	for want, in := range cases {
 		if got := joinVietnamese(in); got != want {

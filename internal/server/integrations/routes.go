@@ -9,6 +9,7 @@ package integrations
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
+	servermw "github.com/thg/scraper/internal/server/middleware"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
 )
@@ -44,6 +45,14 @@ func TelegramRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	g.Get("/status", h.getStatus)            // any org member
 	g.Post("/enable", adminOnly, h.enable)   // admin
 	g.Post("/disable", adminOnly, h.disable) // admin
+
+	// Per-ORG bot credential (Step 1: connect your bot). Admin-only; token save/verify are
+	// rate-limited (they call Telegram getMe). The token is never returned.
+	tokenLimit := servermw.AuthRateLimit()
+	g.Get("/bot", adminOnly, h.getBot)
+	g.Post("/bot", adminOnly, tokenLimit, h.saveBot)
+	g.Post("/bot/verify", adminOnly, tokenLimit, h.verifyBot)
+	g.Delete("/bot", adminOnly, h.deleteBot)
 
 	// Notification DESTINATIONS (PRIMARY product path: Telegram channels). Admin-gated mutations.
 	g.Get("/destinations", h.listDestinations)

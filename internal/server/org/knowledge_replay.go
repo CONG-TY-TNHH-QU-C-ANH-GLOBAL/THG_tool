@@ -1,4 +1,4 @@
-﻿package org
+package org
 
 import (
 	"database/sql"
@@ -25,7 +25,7 @@ import (
 // Query params:
 //   - limit  (optional, default 25, max 100): page size
 //   - before (optional): pagination cursor â€” pass the smallest
-//                        occurred_at from the previous page
+//     occurred_at from the previous page
 func (h *Handler) listKnowledgeEvents(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {

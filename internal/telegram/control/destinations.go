@@ -12,14 +12,21 @@ import (
 // notifications immediately; the admin trims them in the UI. channel_filter defaults to "all".
 func defaultEventTypesJSON() string { b, _ := json.Marshal(EventTypes); return string(b) }
 
-// normalizeChannelRef ensures a public-channel reference is addressable ("@handle"). A numeric id
-// (private channel) is left as-is.
+// normalizeChannelRef ensures a public-channel reference is addressable ("@handle"). Accepts
+// @handle, bare handle, t.me/handle, https://t.me/handle. A numeric id is left as-is.
 func normalizeChannelRef(ref string) string {
 	r := strings.TrimSpace(ref)
+	for _, p := range []string{"https://t.me/", "http://t.me/", "https://telegram.me/", "t.me/", "telegram.me/"} {
+		if i := strings.Index(strings.ToLower(r), p); i == 0 {
+			r = r[len(p):]
+			break
+		}
+	}
+	r = strings.TrimSpace(r)
 	if r == "" || strings.HasPrefix(r, "@") || strings.HasPrefix(r, "-") || isDigits(r) {
 		return r
 	}
-	return "@" + strings.TrimPrefix(r, "@")
+	return "@" + r
 }
 
 func isDigits(s string) bool {
@@ -35,19 +42,28 @@ func isDigits(s string) bool {
 // (the bot must already be an admin/sender of the channel) and stores the chat id/title Telegram
 // returns. Audited. Returns a typed reason on failure (resolve_failed = bot not admin / not found).
 func (s *Service) ConnectPublicChannel(orgID, userID int64, ref string) (*tgstore.Destination, string) {
-	chatID, title, username, err := s.tg.Resolve(normalizeChannelRef(ref), render.ChannelConnected())
-	if err != nil || chatID == 0 {
-		s.audit(orgID, userID, 0, AuditDestinationConnected, "resolve_failed", ref)
-		return nil, "resolve_failed"
+	bot, reason := s.resolveBot(orgID) // the ORG's own bot must reach its channel
+	if bot == nil {
+		s.audit(orgID, userID, 0, AuditDestinationConnected, reason, "")
+		return nil, reason // bot_token_missing
+	}
+	res, err := bot.Resolve(normalizeChannelRef(ref), render.ChannelConnected())
+	if err != nil {
+		return nil, "network_error"
+	}
+	if res.ChatID == 0 {
+		r := classifyTelegramError(res.ErrCode, res.ErrDesc)
+		s.audit(orgID, userID, 0, AuditDestinationConnected, r, "")
+		return nil, r
 	}
 	id, err := s.store.UpsertDestination(tgstore.Destination{
-		OrgID: orgID, DestinationType: "channel", ChatID: chatID, Title: title, Username: username,
+		OrgID: orgID, DestinationType: "channel", ChatID: res.ChatID, Title: res.Title, Username: res.Username,
 		Status: "active", EventTypes: defaultEventTypesJSON(), ChannelFilter: "all", ConnectedByUserID: userID,
 	})
 	if err != nil {
 		return nil, "error"
 	}
-	s.audit(orgID, userID, 0, AuditDestinationConnected, "ok", title)
+	s.audit(orgID, userID, 0, AuditDestinationConnected, "ok", res.Title)
 	d, _ := s.store.GetDestination(orgID, id)
 	return d, ""
 }
@@ -73,7 +89,9 @@ func (s *Service) HandleChannelPost(chatID int64, title, username, text string) 
 		return
 	}
 	s.audit(orgID, userID, 0, AuditDestinationConnected, "ok_channel_post", title)
-	_ = s.tg.Send(chatID, render.ChannelConnected())
+	if gb := s.globalBot(); gb != nil { // confirm on the platform/webhook bot that received the post
+		_ = gb.Send(chatID, render.ChannelConnected())
+	}
 }
 
 // TestDestination sends a test message to a destination and records the delivery result. Audited.
@@ -82,7 +100,11 @@ func (s *Service) TestDestination(orgID, id int64) (bool, string) {
 	if err != nil || d == nil {
 		return false, "not_found"
 	}
-	sendErr := s.tg.Send(d.ChatID, render.TestMessage())
+	bot, reason := s.resolveBot(orgID)
+	if bot == nil {
+		return false, reason // bot_token_missing
+	}
+	sendErr := bot.Send(d.ChatID, render.TestMessage())
 	_ = s.store.RecordDelivery(orgID, id, sendErr == nil, errText(sendErr))
 	if sendErr != nil {
 		s.audit(orgID, 0, 0, AuditDestinationTest, "failed", d.Title)

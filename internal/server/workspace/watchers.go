@@ -472,7 +472,6 @@ func applyFacebookHumanChallengeDetection(snap *facebookSessionSnapshot, bodyTex
 	}
 }
 
-
 func cdpEndpointsForInstance(inst *browserworkspace.Instance) []cdpEndpoint {
 	if inst == nil {
 		return nil

@@ -16,15 +16,20 @@ import (
 
 // Store provides telegram-domain data access. No cross-domain Hooks — telegram has zero
 // cross-domain writes (it reads users/role from the request context, never from peer tables).
+// encKey encrypts the per-org bot token at rest (AES-256-GCM via auth.Encrypt); empty = no-op (dev).
 type Store struct {
 	db      *sql.DB
 	dialect dbutil.Dialect
+	encKey  string
 }
 
-// NewStore constructs a telegram Store.
-func NewStore(db *sql.DB, dialect dbutil.Dialect) *Store {
-	return &Store{db: db, dialect: dialect}
+// NewStore constructs a telegram Store. encKey is the app encryption key for the bot token.
+func NewStore(db *sql.DB, dialect dbutil.Dialect, encKey string) *Store {
+	return &Store{db: db, dialect: dialect, encKey: encKey}
 }
+
+// SetEncryptionKey updates the encryption key (mirrored from the top-level Store at boot).
+func (s *Store) SetEncryptionKey(key string) { s.encKey = key }
 
 // DB returns the underlying *sql.DB.
 func (s *Store) DB() *sql.DB { return s.db }

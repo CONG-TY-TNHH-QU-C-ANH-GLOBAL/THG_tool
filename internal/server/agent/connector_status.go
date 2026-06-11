@@ -13,10 +13,10 @@ import (
 // which FB identity is actually logged in. This turns the opaque aggregate
 // "2 extensions online" into "which of my N accounts is reachable right now".
 type connectorAccountStatus struct {
-	AccountID         int64  `json:"account_id"`
-	AccountName       string `json:"account_name"`
-	AssignedUserID    int64  `json:"assigned_user_id"`
-	AssignedUserName  string `json:"assigned_user_name"`
+	AccountID            int64  `json:"account_id"`
+	AccountName          string `json:"account_name"`
+	AssignedUserID       int64  `json:"assigned_user_id"`
+	AssignedUserName     string `json:"assigned_user_name"`
 	AccountFBUserID      string `json:"account_fb_user_id"`
 	AccountFBDisplayName string `json:"account_fb_display_name"`
 	ConnectorID          int64  `json:"connector_id"`

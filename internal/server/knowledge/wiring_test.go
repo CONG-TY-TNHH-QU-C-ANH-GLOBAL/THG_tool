@@ -102,14 +102,14 @@ func thgLikeResponse(page, pages int, ids []string) []byte {
 // with a store-backed-style writer factory — and runs Dispatcher.Run
 // against an httptest upstream. The test passes iff:
 //
-//   1. The registry routed SourceRESTJSON to the rest_json adapter.
-//   2. The adapter paginated through both pages of the simulated
-//      upstream.
-//   3. Every item flowed Adapter → products.Writer → AssetWriter →
-//      AssetStore.UpsertKnowledgeAsset.
-//   4. The dispatcher persisted a "healthy" status at the end.
-//   5. The dispatcher reported AssetsCreated equal to the number of
-//      upstream items.
+//  1. The registry routed SourceRESTJSON to the rest_json adapter.
+//  2. The adapter paginated through both pages of the simulated
+//     upstream.
+//  3. Every item flowed Adapter → products.Writer → AssetWriter →
+//     AssetStore.UpsertKnowledgeAsset.
+//  4. The dispatcher persisted a "healthy" status at the end.
+//  5. The dispatcher reported AssetsCreated equal to the number of
+//     upstream items.
 //
 // Any future adapter that emits product-catalog assets will pass
 // this same test shape — that's why we exercise the full Dispatcher

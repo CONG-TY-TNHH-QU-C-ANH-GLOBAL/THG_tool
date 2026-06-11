@@ -66,9 +66,12 @@ func (s *Service) HandleMessage(m IncomingMessage) error {
 	return s.reply(m.ChatID, render.Unknown())
 }
 
+// reply sends a DM response via the PLATFORM/dev bot the shared webhook belongs to (DM commands
+// arrive on that bot). No-op when no global bot is configured (per-workspace DM webhook is pending).
 func (s *Service) reply(chatID int64, text string) error {
-	if s.tg == nil {
+	bot := s.globalBot()
+	if bot == nil {
 		return nil
 	}
-	return s.tg.Send(chatID, text)
+	return bot.Send(chatID, text)
 }

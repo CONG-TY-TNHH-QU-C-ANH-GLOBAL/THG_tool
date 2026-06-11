@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/jobs"
-	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/textutil"
 )
 
@@ -117,10 +117,10 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 			// Soft cursor: crawler may skip content older than the previous
 			// run / the explicit cursor when honoring this. See
 			// project_scheduled_intelligence.md gap #2.
-			"_intent_id":              intent.ID,
-			"_since_run_at":           formatRFC3339OrEmpty(intent.LastRunAt),
-			"_cursor_last_post_id":    intent.CursorLastPostID,
-			"_cursor_last_post_at":    formatRFC3339OrEmpty(intent.CursorLastPostAt),
+			"_intent_id":           intent.ID,
+			"_since_run_at":        formatRFC3339OrEmpty(intent.LastRunAt),
+			"_cursor_last_post_id": intent.CursorLastPostID,
+			"_cursor_last_post_at": formatRFC3339OrEmpty(intent.CursorLastPostAt),
 		}
 		source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: textutil.FirstNonEmpty(intent.SourceLabel, "recurring_intent")}
 		result, submitErr := submitOpenCrawl(ctx, db, jobStore, intent.Intent, []jobs.Source{source}, args)

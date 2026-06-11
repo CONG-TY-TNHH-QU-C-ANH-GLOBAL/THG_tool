@@ -22,7 +22,7 @@ func (h *Handler) getBusinessProfile(c *fiber.Ctx) error {
 	}
 	profile := ai.LoadProfileForOrg(h.deps.DB, orgID)
 	return c.JSON(fiber.Map{
-		"profile":      profile,
+		"profile":       profile,
 		"is_configured": profile.IsConfigured(),
 	})
 }
@@ -63,7 +63,7 @@ func (h *Handler) updateBusinessProfile(c *fiber.Ctx) error {
 	}
 	updated := ai.LoadProfileForOrg(h.deps.DB, orgID)
 	return c.JSON(fiber.Map{
-		"profile":      updated,
+		"profile":       updated,
 		"is_configured": updated.IsConfigured(),
 	})
 }

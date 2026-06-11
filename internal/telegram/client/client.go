@@ -1,8 +1,7 @@
-// Package client is the Telegram Bot API transport. It exposes only what the runtime needs
-// (sendMessage, and resolving a chat reference to its id/title) and satisfies the control.Bot
-// interface structurally — it imports NO domain package. The bot token is held privately and is
-// NEVER logged, returned, or embedded in an error (the request URL contains the token, so errors
-// are deliberately generic). No command/business logic lives here.
+// Package client is the Telegram Bot API transport for ONE bot token. It implements control.Bot.
+// The token is held privately and is NEVER logged, returned, or embedded in an error (the request
+// URL contains the token, so transport errors are deliberately generic; Telegram's own error
+// code/description ARE surfaced — they carry no secret). No command/business logic lives here.
 package client
 
 import (
@@ -10,77 +9,102 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
-// Client is a minimal Telegram Bot API client.
+// Client is a minimal Telegram Bot API client bound to a single token.
 type Client struct {
 	token string
 	http  *http.Client
 	base  string
 }
 
-// New builds a client with a 10s timeout. An empty token yields a client whose calls fail safely.
+// New builds a client for a token (10s timeout). Empty token → calls fail safely.
 func New(token string) *Client {
 	return &Client{token: token, http: &http.Client{Timeout: 10 * time.Second}, base: "https://api.telegram.org"}
 }
 
-// Configured reports token presence WITHOUT exposing the value.
-func (c *Client) Configured() bool { return c.token != "" }
+// Bot adapts *Client to control.Bot — used as the BotFactory: control.BotFactory(client.Bot).
+func Bot(token string) control.Bot { return New(token) }
 
-// sendMessageResp is the slice of the Telegram sendMessage response we read.
-type sendMessageResp struct {
+type apiResp struct {
 	OK     bool `json:"ok"`
 	Result struct {
-		Chat struct {
+		ID        int64  `json:"id"`
+		FirstName string `json:"first_name"`
+		Username  string `json:"username"`
+		Chat      struct {
 			ID       int64  `json:"id"`
 			Title    string `json:"title"`
 			Username string `json:"username"`
 		} `json:"chat"`
 	} `json:"result"`
+	ErrorCode   int    `json:"error_code"`
+	Description string `json:"description"`
 }
 
-// sendMessage POSTs to sendMessage with an arbitrary chat reference (numeric id or "@username") and
-// returns the resolved chat from the response. Shared by Send + Resolve.
-func (c *Client) sendMessage(chatRef any, text string) (sendMessageResp, error) {
-	var out sendMessageResp
+func (c *Client) call(method string, body any) (apiResp, error) {
+	var out apiResp
 	if c.token == "" {
 		return out, errors.New("telegram: bot token not configured")
 	}
-	payload, _ := json.Marshal(map[string]any{"chat_id": chatRef, "text": text})
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		c.base+"/bot"+c.token+"/sendMessage", bytes.NewReader(payload))
+	var rdr *bytes.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rdr = bytes.NewReader(b)
+	} else {
+		rdr = bytes.NewReader(nil)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.base+"/bot"+c.token+"/"+method, rdr)
 	if err != nil {
 		return out, errors.New("telegram: build request failed")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return out, errors.New("telegram: send failed (network)")
+		return out, errors.New("telegram: network error")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return out, fmt.Errorf("telegram: send failed (status %d)", resp.StatusCode)
-	}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return out, nil
 }
 
-// Send delivers a plain-text message to a known numeric chat id (satisfies control.Bot.Send).
+// Send delivers a plain-text message to a known numeric chat id.
 func (c *Client) Send(chatID int64, text string) error {
-	_, err := c.sendMessage(chatID, text)
-	return err
+	r, err := c.call("sendMessage", map[string]any{"chat_id": chatID, "text": text})
+	if err != nil {
+		return err
+	}
+	if !r.OK {
+		return errors.New("telegram: send rejected")
+	}
+	return nil
 }
 
-// Resolve sends `text` to a chat reference ("@username" for a public channel, or a numeric id) and
-// returns the resolved chat id/title/username — used to connect a public channel in one verified
-// call (satisfies control.Bot.Resolve). Primitive returns keep this package domain-free.
-func (c *Client) Resolve(ref, text string) (chatID int64, title, username string, err error) {
-	r, err := c.sendMessage(ref, text)
+// Resolve sends `text` to a chat reference ("@username" or numeric) and returns the resolved chat,
+// or Telegram's error code/description on rejection (token-free) so the domain can classify it.
+func (c *Client) Resolve(ref, text string) (control.SendResult, error) {
+	r, err := c.call("sendMessage", map[string]any{"chat_id": ref, "text": text})
 	if err != nil {
-		return 0, "", "", err
+		return control.SendResult{}, err
 	}
-	return r.Result.Chat.ID, r.Result.Chat.Title, r.Result.Chat.Username, nil
+	return control.SendResult{
+		ChatID: r.Result.Chat.ID, Title: r.Result.Chat.Title, Username: r.Result.Chat.Username,
+		ErrCode: r.ErrorCode, ErrDesc: r.Description,
+	}, nil
+}
+
+// GetMe verifies the token and returns the bot identity.
+func (c *Client) GetMe() (control.BotInfo, error) {
+	r, err := c.call("getMe", nil)
+	if err != nil {
+		return control.BotInfo{}, err
+	}
+	if !r.OK || r.Result.ID == 0 {
+		return control.BotInfo{}, errors.New("telegram: invalid bot token")
+	}
+	return control.BotInfo{BotID: r.Result.ID, Username: r.Result.Username, DisplayName: r.Result.FirstName}, nil
 }

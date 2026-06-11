@@ -187,16 +187,16 @@ func (h *Handler) superAdminAccountDiagnostic(c *fiber.Ctx) error {
 
 	// 2. Behaviour profile + runtime state (cross-org allowed for founder)
 	type behaviour struct {
-		TrustLevel       string  `json:"trust_level"`
-		RiskScore        float64 `json:"risk_score"`
-		Ceiling          float64 `json:"ceiling"`
-		RecentFailures   int     `json:"recent_failures"`
-		CooldownUntil    string  `json:"cooldown_until"`
-		CommentsToday    int     `json:"comments_today"`
-		InboxToday       int     `json:"inbox_today"`
-		GroupPostsToday  int     `json:"group_posts_today"`
-		CountersDay      string  `json:"counters_day"`
-		RiskCeilingHit   bool    `json:"risk_ceiling_hit"`
+		TrustLevel      string  `json:"trust_level"`
+		RiskScore       float64 `json:"risk_score"`
+		Ceiling         float64 `json:"ceiling"`
+		RecentFailures  int     `json:"recent_failures"`
+		CooldownUntil   string  `json:"cooldown_until"`
+		CommentsToday   int     `json:"comments_today"`
+		InboxToday      int     `json:"inbox_today"`
+		GroupPostsToday int     `json:"group_posts_today"`
+		CountersDay     string  `json:"counters_day"`
+		RiskCeilingHit  bool    `json:"risk_ceiling_hit"`
 	}
 	var b behaviour
 	// Profile (may not exist for fresh accounts — TrustWarming default applies)
@@ -233,14 +233,14 @@ func (h *Handler) superAdminAccountDiagnostic(c *fiber.Ctx) error {
 
 	// 3. Recent execution_attempts with parsed notes (THE diagnostic gold)
 	type attempt struct {
-		StartedAt      string `json:"started_at"`
-		ActionType     string `json:"action_type"`
-		Outcome        string `json:"outcome"`
-		FailureReason  string `json:"failure_reason"`
-		Notes          string `json:"notes"`
-		PageURLAfter   string `json:"page_url_after"`
-		DOMSnippet     string `json:"dom_snippet"`
-		EvidenceRaw    string `json:"evidence_raw"`
+		StartedAt     string `json:"started_at"`
+		ActionType    string `json:"action_type"`
+		Outcome       string `json:"outcome"`
+		FailureReason string `json:"failure_reason"`
+		Notes         string `json:"notes"`
+		PageURLAfter  string `json:"page_url_after"`
+		DOMSnippet    string `json:"dom_snippet"`
+		EvidenceRaw   string `json:"evidence_raw"`
 	}
 	attemptsRows, err := db.QueryContext(c.Context(),
 		`SELECT COALESCE(started_at,''), COALESCE(action_type,''),
