@@ -13,6 +13,7 @@ import (
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 // parsePostedAtRFC3339 parses a Facebook post timestamp emitted by the
@@ -129,7 +130,14 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		ExtraSignals:    []string{"chrome_extension_crawl"},
 		IntentID:        body.IntentID,
 		OnLeadCreated: func(ev leadingest.LeadEvent) {
-			h.tgEvents.NotifyLeadCreated(ev.OrgID, ev.LeadID, "", ev.Source, ev.Name, ev.Summary, h.baseURL)
+			workspace := ""
+			if org, _ := h.db.GetOrganization(ev.OrgID); org != nil {
+				workspace = org.Name
+			}
+			h.tgEvents.NotifyLead(control.LeadNotice{
+				OrgID: ev.OrgID, LeadID: ev.LeadID, Channel: "facebook", Workspace: workspace,
+				Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: h.baseURL,
+			})
 		},
 	}
 

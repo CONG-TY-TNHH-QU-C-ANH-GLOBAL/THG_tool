@@ -16,6 +16,7 @@ import (
 	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store/coordination"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 // maxEvidenceScreenshotBytes bounds a decoded evidence screenshot before it
@@ -558,13 +559,16 @@ func (h *Handler) finalizeOutbound(
 			if channel == "" {
 				channel = "facebook"
 			}
-			state := "thất bại"
-			if verified {
-				state = "đã xác minh"
-			} else if models.IsSuccessOutcome(outcome) {
-				state = "chờ xác minh"
-			}
-			h.tgEvents.NotifyAgentAction(orgID, ev, channel, "#"+strconv.FormatInt(msg.AccountID, 10), msg.TargetName, state, msg.TargetURL, h.baseURL)
+			h.tgEvents.NotifyAction(control.ActionNotice{
+				OrgID: orgID, OutboundID: id, EventType: ev, Channel: channel,
+				Workspace:   h.orgName(orgID),
+				Agent:       h.agentName(msg.AccountID),
+				Author:      msg.TargetName,
+				CommentText: msg.Content,
+				PostURL:     msg.TargetURL,
+				Reason:      failureReasonText(report, string(outcome)),
+				BaseURL:     h.baseURL,
+			})
 		}
 	}
 

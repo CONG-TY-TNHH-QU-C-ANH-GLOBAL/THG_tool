@@ -47,13 +47,16 @@ type Deps struct {
 	OnLeadCreated func(LeadEvent)
 }
 
-// LeadEvent is the data a notification needs when a new lead is created.
+// LeadEvent is the data a notification needs when a new lead is created. Excerpt is RAW post text
+// (the consumer sanitizes it); Reason is the matched signal/AI reason.
 type LeadEvent struct {
-	OrgID   int64
-	LeadID  int64
-	Source  string // e.g. "Facebook group"
-	Name    string // author / lead name
-	Summary string // short content snippet
+	OrgID, LeadID int64
+	AuthorName    string // author / lead name
+	PostURL       string // canonical Facebook permalink
+	Excerpt       string // raw post content (sanitized downstream)
+	Reason        string // matched signal / AI reason
+	SourceType    string // post | comment
+	GroupFBID     string // source group id, when known
 }
 
 // SignalGate mirrors brain.MarketSignalGate but lives in this package to avoid
@@ -479,15 +482,17 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 					"task_id", in.TaskID, "org_id", in.OrgID, "profile_url", profile, "error", sErr)
 			}
 		}
-		// Best-effort notification hook (Telegram channel etc.). Never affects the ingest result.
+		// Best-effort notification hook (Telegram channel etc.). Raw content is passed; the consumer
+		// sanitizes + caps it. Never affects the ingest result.
 		if deps.OnLeadCreated != nil {
-			summary := content
-			if len(summary) > 140 {
-				summary = summary[:140] + "…"
-			}
 			deps.OnLeadCreated(LeadEvent{
-				OrgID: in.OrgID, LeadID: leadID, Source: "Facebook group",
-				Name: strings.TrimSpace(in.AuthorName), Summary: summary,
+				OrgID: in.OrgID, LeadID: leadID,
+				AuthorName: strings.TrimSpace(in.AuthorName),
+				PostURL:    in.PrimaryURL,
+				Excerpt:    content,
+				Reason:     textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, " / ")),
+				SourceType: sourceType,
+				GroupFBID:  in.GroupFBID,
 			})
 		}
 	}

@@ -81,7 +81,14 @@ func main() {
 	})
 	baseURL := envOr("APP_BASE_URL", os.Getenv("PUBLIC_APP_URL"))
 	h.SetLeadNotifier(func(ev leadingest.LeadEvent) {
-		tgControl.NotifyLeadCreated(ev.OrgID, ev.LeadID, "", ev.Source, ev.Name, ev.Summary, baseURL)
+		workspace := ""
+		if org, _ := mainStore.GetOrganization(ev.OrgID); org != nil {
+			workspace = org.Name
+		}
+		tgControl.NotifyLead(control.LeadNotice{
+			OrgID: ev.OrgID, LeadID: ev.LeadID, Channel: "facebook", Workspace: workspace,
+			Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: baseURL,
+		})
 	})
 	log.Println("✅ Telegram lead-created channel notifier wired (per-org bot)")
 	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
