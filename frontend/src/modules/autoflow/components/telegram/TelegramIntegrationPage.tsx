@@ -1,13 +1,14 @@
 'use client';
 import React, { useState } from 'react';
-import { Send } from 'lucide-react';
-import { theme } from '../../constants/styles';
+import { Send, AlertTriangle } from 'lucide-react';
+import { theme, alpha } from '../../constants/styles';
 import { useLang } from '../../i18n/useLang';
 import { useAuthStore } from '../../stores/authStore';
 import { useTelegramIntegration } from '../../hooks/useTelegramIntegration';
-import { destinationReasons, canManageChannels } from './logic';
+import { destinationReasons, canManageChannels, botReady } from './logic';
 import { strings } from './telegramCopy';
 import { TelegramSafetyNotice } from './TelegramSafetyNotice';
+import { TelegramBotCredentialCard } from './TelegramBotCredentialCard';
 import { TelegramStatusCard } from './TelegramStatusCard';
 import { TelegramNeedsAttention } from './TelegramNeedsAttention';
 import { TelegramChannelDestinationsTable } from './TelegramChannelDestinationsTable';
@@ -18,9 +19,8 @@ import { PersonalDmConnect } from './PersonalDmConnect';
 import { TelegramAuditPanel } from './TelegramAuditPanel';
 import { TelegramEmptyState } from './TelegramEmptyState';
 
-// Settings → Integrations → Telegram (channel-first). Telegram is primarily a workspace
-// notification CHANNEL; the DM bindings section is clearly secondary. Role-gated (admin manages
-// channels/preferences/audit; members view + manage their own DM binding).
+// Settings → Integrations → Telegram (channel-first). Step 1 = connect the workspace's OWN bot;
+// channel connect is gated until the org bot is configured. DM bindings are secondary.
 export default function TelegramIntegrationPage({ isAdmin }: { orgId: string; isAdmin: boolean }) {
   const { lang } = useLang();
   const { t } = strings(lang);
@@ -47,7 +47,8 @@ export default function TelegramIntegrationPage({ isAdmin }: { orgId: string; is
   }
 
   const s = d.status;
-  const isEmpty = d.destinations.length === 0 && d.bindings.length === 0;
+  const botOK = botReady(d.bot);
+  const noChannels = d.destinations.length === 0;
   const lastError = d.destinations.find((x) => x.last_error)?.last_error || '';
   const reasons = destinationReasons(lastError, s.flags.TELEGRAM_NOTIFY_ENABLED, s.bot_configured);
 
@@ -55,15 +56,24 @@ export default function TelegramIntegrationPage({ isAdmin }: { orgId: string; is
     <div style={{ display: 'grid', gap: 16 }}>
       {header}
       <TelegramSafetyNotice lang={lang} />
+      <TelegramStatusCard lang={lang} status={s} destinations={d.destinations} bot={d.bot} />
 
-      {isEmpty ? (
+      {/* Step 1 — connect the workspace bot (always shown; compact once configured) */}
+      <TelegramBotCredentialCard lang={lang} bot={d.bot} isAdmin={admin} onSave={d.saveBot} onRemove={d.removeBot} />
+
+      {/* Channel section is GATED on a configured org bot */}
+      {!botOK ? (
+        <div role="note" style={{ display: 'flex', gap: 9, alignItems: 'center', background: alpha(theme.yellow, 8), border: `1px solid ${alpha(theme.yellow, 30)}`, borderRadius: 'var(--radius-md)', padding: '12px 14px' }}>
+          <AlertTriangle size={15} color={theme.yellow} />
+          <span style={{ color: theme.textMuted, fontSize: 12.5 }}>{t('bot_required_for_channel')}</span>
+        </div>
+      ) : noChannels ? (
         <>
           <TelegramEmptyState lang={lang} isAdmin={admin} onConnect={() => setShowWizard(true)} />
           {admin && showWizard && <TelegramChannelSetupWizard lang={lang} onConnected={d.reload} />}
         </>
       ) : (
         <>
-          <TelegramStatusCard lang={lang} status={s} destinations={d.destinations} />
           <TelegramNeedsAttention lang={lang} reasons={reasons} />
           <TelegramChannelDestinationsTable
             lang={lang} destinations={d.destinations} isAdmin={admin}
@@ -72,14 +82,15 @@ export default function TelegramIntegrationPage({ isAdmin }: { orgId: string; is
           />
           {admin && <TelegramChannelSetupWizard lang={lang} onConnected={d.reload} />}
           <NotificationPreview lang={lang} />
-
-          {/* Secondary: optional personal DM bindings */}
-          <PersonalBindingsTable lang={lang} bindings={d.bindings} isAdmin={d.canManageAll} currentUserId={currentUserId} onRevoke={d.revoke} />
-          <PersonalDmConnect lang={lang} />
-
-          <TelegramAuditPanel lang={lang} events={d.audit} isAdmin={isAdmin} />
         </>
       )}
+
+      {/* Secondary: optional personal DM bindings (depend on the platform/dev webhook bot) */}
+      <PersonalBindingsTable lang={lang} bindings={d.bindings} isAdmin={d.canManageAll} currentUserId={currentUserId} onRevoke={d.revoke} />
+      <p style={{ color: theme.textFaint, fontSize: 11.5, margin: 0 }}>{t('personal_dm_note')}</p>
+      <PersonalDmConnect lang={lang} />
+
+      <TelegramAuditPanel lang={lang} events={d.audit} isAdmin={isAdmin} />
     </div>
   );
 }

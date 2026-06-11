@@ -47,6 +47,25 @@ const VI: Dict = {
   empty_b1: 'Nhận lead mới ngay khi xuất hiện', empty_b2: 'Nhận trạng thái agent comment / post / inbox',
   empty_b3: 'Nhận cảnh báo lỗi và sự cố vận hành', empty_cta: 'Kết nối Telegram Channel',
   admin_only: 'Chỉ admin mới quản lý được mục này.', err_generic: 'Có lỗi xảy ra, vui lòng thử lại.',
+  // Step 1 — connect your bot
+  bot_step_title: 'Bước 1: Kết nối bot Telegram của workspace',
+  bot_step_desc: 'Mở @BotFather → /newbot → tạo bot → copy Bot Token và dán vào đây.',
+  bot_token_label: 'Bot Token', bot_verify_save: 'Xác minh & Lưu bot',
+  bot_connected: 'Đã kết nối bot', bot_last4: 'Token (4 số cuối)', bot_last_verified: 'Xác minh lúc',
+  bot_replace: 'Thay bot khác', bot_revoke: 'Gỡ bot',
+  bot_never_shown: 'Token chỉ nhập một lần và không bao giờ hiển thị lại.',
+  bot_required_for_channel: 'Trước tiên hãy kết nối bot Telegram cho workspace này.',
+  cred_configured: 'Đã cấu hình', cred_missing: 'Chưa có', cred_invalid: 'Không hợp lệ', cred_revoked: 'Đã gỡ',
+  bot_credential: 'Bot credential', webhook_label: 'Webhook của bot', webhook_pending: 'Đang chờ (per-workspace webhook)',
+  public_delivery: 'Gửi channel công khai', avail_available: 'Khả dụng', avail_unavailable: 'Chưa khả dụng',
+  private_coming_soon: 'Sắp có — cần per-workspace webhook', personal_dm_note: 'Hiện phụ thuộc bot webhook nền tảng (dev).',
+  // connect-channel error reasons (backend codes)
+  reason_bot_token_missing: 'Chưa kết nối bot cho workspace. Hãy hoàn tất Bước 1 trước.',
+  reason_bot_token_invalid: 'Bot token không hợp lệ. Kiểm tra lại token từ @BotFather.',
+  reason_bot_not_channel_admin: 'Bot chưa phải admin của channel. Hãy thêm bot làm admin.',
+  reason_bot_lacks_post_permission: 'Bot thiếu quyền gửi tin trong channel.',
+  reason_channel_not_found_or_username_invalid: 'Không tìm thấy channel hoặc @username sai.',
+  reason_telegram_api_error: 'Telegram báo lỗi. Thử lại sau.', reason_network_error: 'Lỗi mạng. Thử lại.',
 };
 
 const EN: Dict = {
@@ -91,6 +110,23 @@ const EN: Dict = {
   empty_b1: 'Get new leads the moment they appear', empty_b2: 'Get agent comment / post / inbox status',
   empty_b3: 'Get error and operational incident alerts', empty_cta: 'Connect Telegram channel',
   admin_only: 'Only admins can manage this section.', err_generic: 'Something went wrong, please try again.',
+  bot_step_title: 'Step 1: Connect your workspace Telegram bot',
+  bot_step_desc: 'Open @BotFather → /newbot → create a bot → copy the Bot Token and paste it here.',
+  bot_token_label: 'Bot Token', bot_verify_save: 'Verify & Save Bot',
+  bot_connected: 'Bot connected', bot_last4: 'Token (last 4)', bot_last_verified: 'Verified at',
+  bot_replace: 'Replace bot', bot_revoke: 'Remove bot',
+  bot_never_shown: 'The token is entered once and never shown again.',
+  bot_required_for_channel: 'Connect a Telegram bot for this workspace first.',
+  cred_configured: 'Configured', cred_missing: 'Missing', cred_invalid: 'Invalid', cred_revoked: 'Revoked',
+  bot_credential: 'Bot credential', webhook_label: 'Bot webhook', webhook_pending: 'Pending (per-workspace webhook)',
+  public_delivery: 'Public channel delivery', avail_available: 'Available', avail_unavailable: 'Unavailable',
+  private_coming_soon: 'Coming soon — requires per-workspace webhook', personal_dm_note: 'Currently depends on the platform/dev webhook bot.',
+  reason_bot_token_missing: 'No bot connected for this workspace. Complete Step 1 first.',
+  reason_bot_token_invalid: 'Invalid bot token. Re-check the token from @BotFather.',
+  reason_bot_not_channel_admin: 'The bot is not a channel admin. Add the bot as an admin.',
+  reason_bot_lacks_post_permission: 'The bot lacks permission to post in the channel.',
+  reason_channel_not_found_or_username_invalid: 'Channel not found or @username is invalid.',
+  reason_telegram_api_error: 'Telegram returned an error. Try again later.', reason_network_error: 'Network error. Try again.',
 };
 
 // strings(lang).t(key) -> localized prose. Unknown keys return the key (safe).
