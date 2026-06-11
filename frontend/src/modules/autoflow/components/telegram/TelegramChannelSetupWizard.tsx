@@ -1,26 +1,32 @@
 import React, { useState } from 'react';
 import { Hash, Lock, ArrowLeft } from 'lucide-react';
-import { theme, cardStyle, secondaryBtn, alpha } from '../../constants/styles';
+import { theme, cardStyle, alpha } from '../../constants/styles';
 import { strings, type Lang } from './telegramCopy';
+import { PRIVATE_CHANNEL_READY } from './logic';
 import { PublicChannelConnectCard } from './PublicChannelConnectCard';
-import { PrivateChannelConnectCard } from './PrivateChannelConnectCard';
 
-type Mode = 'choose' | 'public' | 'private';
+type Mode = 'choose' | 'public';
 
-function TypeCard({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function TypeCard({ icon, label, sub, disabled, onClick }: {
+  icon: React.ReactNode; label: string; sub?: string; disabled?: boolean; onClick?: () => void;
+}) {
   return (
-    <button onClick={onClick} style={{
-      display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', cursor: 'pointer',
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
+      display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', cursor: disabled ? 'not-allowed' : 'pointer',
       border: `1px solid ${theme.border}`, background: 'var(--bg-elev-2)', borderRadius: 'var(--radius-md)',
-      padding: '14px 16px', color: theme.text, fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 200,
+      padding: '14px 16px', color: theme.text, fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 200, opacity: disabled ? 0.6 : 1,
     }}>
       <span style={{ width: 34, height: 34, borderRadius: 9, display: 'grid', placeItems: 'center', background: alpha(theme.primary, 14), color: theme.primary }}>{icon}</span>
-      {label}
+      <span style={{ display: 'grid' }}>
+        {label}
+        {sub && <span style={{ color: theme.textFaint, fontSize: 11, fontWeight: 400 }}>{sub}</span>}
+      </span>
     </button>
   );
 }
 
-// Guided "Connect a Telegram channel" wizard: choose type → public (@username) or private (code).
+// Guided "Connect a Telegram channel" wizard. Public (@username) works with the org bot now.
+// Private (/connect code) requires the per-workspace webhook, which is PENDING — shown disabled.
 export function TelegramChannelSetupWizard({ lang, onConnected }: { lang: Lang; onConnected: () => void }) {
   const { t } = strings(lang);
   const [mode, setMode] = useState<Mode>('choose');
@@ -41,12 +47,11 @@ export function TelegramChannelSetupWizard({ lang, onConnected }: { lang: Lang; 
           <p style={{ color: theme.textFaint, fontSize: 12, margin: '0 0 8px' }}>{t('wiz_choose')}</p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <TypeCard icon={<Hash size={18} />} label={t('type_public')} onClick={() => setMode('public')} />
-            <TypeCard icon={<Lock size={18} />} label={t('type_private')} onClick={() => setMode('private')} />
+            <TypeCard icon={<Lock size={18} />} label={t('type_private')} sub={t('private_coming_soon')} disabled={!PRIVATE_CHANNEL_READY} />
           </div>
         </div>
       )}
       {mode === 'public' && <PublicChannelConnectCard lang={lang} onConnected={onConnected} />}
-      {mode === 'private' && <PrivateChannelConnectCard lang={lang} onCheck={onConnected} />}
     </div>
   );
 }

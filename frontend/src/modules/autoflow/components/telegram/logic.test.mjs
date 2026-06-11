@@ -105,4 +105,30 @@ for (const forbidden of ['comment', 'post', 'send', 'execute', 'auto_comment']) 
   assert.ok(!L.CONTROL_ACTIONS.includes(forbidden), `control actions must not expose ${forbidden}`);
 }
 
+// ── Step 1: per-org bot credential gating ──
+
+// botCredState: missing | configured | invalid | revoked.
+assert.strictEqual(L.botCredState(null), 'missing');
+assert.strictEqual(L.botCredState({ bot_configured: false }), 'missing');
+assert.strictEqual(L.botCredState({ bot_configured: true, status: 'active' }), 'configured');
+assert.strictEqual(L.botCredState({ bot_configured: false, status: 'invalid' }), 'invalid');
+assert.strictEqual(L.botCredState({ bot_configured: false, status: 'revoked' }), 'revoked');
+
+// No bot → channel connect disabled; configured + admin → enabled; non-admin never.
+assert.strictEqual(L.botReady(null), false);
+assert.strictEqual(L.canConnectChannel(true, null), false);
+assert.strictEqual(L.canConnectChannel(true, { bot_configured: true, status: 'active' }), true);
+assert.strictEqual(L.canConnectChannel(false, { bot_configured: true, status: 'active' }), false);
+// Revoked/invalid bot → connect disabled.
+assert.strictEqual(L.canConnectChannel(true, { bot_configured: false, status: 'revoked' }), false);
+assert.strictEqual(L.canConnectChannel(true, { bot_configured: false, status: 'invalid' }), false);
+
+// Public delivery available only when the org bot is configured.
+assert.strictEqual(L.publicDeliveryAvailable({ bot_configured: true, status: 'active' }), true);
+assert.strictEqual(L.publicDeliveryAvailable(null), false);
+
+// Private channel + per-org webhook are PENDING → must not be presented as ready.
+assert.strictEqual(L.PRIVATE_CHANNEL_READY, false);
+assert.strictEqual(L.webhookState(), 'pending');
+
 console.log('Telegram integration UI logic: PASS');

@@ -149,3 +149,38 @@ export function channelFirstStatus(
   if (!botConfigured || anyNeedsAttention) return 'needs_attention';
   return 'connected';
 }
+
+// ── Step 1: per-org bot credential ──
+
+export type BotCredState = 'configured' | 'missing' | 'invalid' | 'revoked';
+
+// botCredState derives the Step-1 state from the /bot response.
+export function botCredState(bot: { bot_configured: boolean; status?: string } | null): BotCredState {
+  if (!bot || (!bot.bot_configured && !bot.status)) return 'missing';
+  if (bot.status === 'invalid') return 'invalid';
+  if (bot.status === 'revoked') return 'revoked';
+  return bot.bot_configured ? 'configured' : 'missing';
+}
+
+// botReady — channel connect/delivery requires a configured org bot.
+export function botReady(bot: { bot_configured: boolean; status?: string } | null): boolean {
+  return botCredState(bot) === 'configured';
+}
+
+// canConnectChannel — only an admin, and only once the org bot is configured.
+export function canConnectChannel(isAdmin: boolean, bot: { bot_configured: boolean; status?: string } | null): boolean {
+  return isAdmin === true && botReady(bot);
+}
+
+// publicDeliveryAvailable / privateChannelReady — public works once the bot is configured; private
+// requires the per-workspace webhook, which is PENDING, so it must NOT be presented as ready.
+export function publicDeliveryAvailable(bot: { bot_configured: boolean; status?: string } | null): boolean {
+  return botReady(bot);
+}
+export const PRIVATE_CHANNEL_READY = false; // per-org webhook pending — keep private connect disabled
+
+// webhookState — this org's bot webhook is not registered yet (per-workspace webhook pending).
+export type WebhookState = 'pending' | 'configured' | 'not_configured';
+export function webhookState(): WebhookState {
+  return 'pending';
+}

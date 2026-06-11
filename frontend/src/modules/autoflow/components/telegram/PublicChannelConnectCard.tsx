@@ -29,8 +29,11 @@ export function PublicChannelConnectCard({ lang, onConnected }: { lang: Lang; on
       onConnected();
     } catch (e) {
       setState('idle');
-      const raw = e instanceof Error ? e.message : '';
-      setErr(raw === 'resolve_failed' ? t('reason_resolve_failed') : (raw || t('err_generic')));
+      // Map the backend reason code (bot_token_missing, bot_not_channel_admin, …) to a clear
+      // message; fall back to the generic error for anything unmapped.
+      const code = e instanceof Error ? e.message : '';
+      const mapped = t('reason_' + code);
+      setErr(code && mapped !== 'reason_' + code ? mapped : t('err_generic'));
     }
   };
 

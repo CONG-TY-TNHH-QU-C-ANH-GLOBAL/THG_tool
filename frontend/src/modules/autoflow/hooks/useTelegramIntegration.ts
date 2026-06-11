@@ -6,6 +6,7 @@ import * as tg from '../services/telegramIntegrationApi';
 
 export interface TelegramData {
   status: tg.TelegramStatus | null;
+  bot: tg.TelegramBotStatus | null;
   destinations: tg.TelegramDestination[];
   availableEventTypes: string[];
   availableFilters: string[];
@@ -17,7 +18,7 @@ export interface TelegramData {
 }
 
 const EMPTY: TelegramData = {
-  status: null, destinations: [], availableEventTypes: [], availableFilters: [],
+  status: null, bot: null, destinations: [], availableEventTypes: [], availableFilters: [],
   bindings: [], canManageAll: false, audit: [], loading: true, error: null,
 };
 
@@ -27,12 +28,12 @@ export function useTelegramIntegration(isAdmin: boolean) {
   const load = useCallback(async () => {
     setData((d) => ({ ...d, loading: true, error: null }));
     try {
-      const [status, dest, bindings] = await Promise.all([
-        tg.getStatus(), tg.getDestinations(), tg.getBindings(),
+      const [status, bot, dest, bindings] = await Promise.all([
+        tg.getStatus(), tg.getBot(), tg.getDestinations(), tg.getBindings(),
       ]);
       const audit = isAdmin ? await tg.getAudit().catch(() => []) : [];
       setData({
-        status, destinations: dest.destinations, availableEventTypes: dest.available_event_types,
+        status, bot, destinations: dest.destinations, availableEventTypes: dest.available_event_types,
         availableFilters: dest.available_filters, bindings: bindings.bindings,
         canManageAll: bindings.can_manage_all, audit, loading: false, error: null,
       });
@@ -58,5 +59,15 @@ export function useTelegramIntegration(isAdmin: boolean) {
     await load();
   }, [load]);
 
-  return { ...data, reload: load, savePreferences, disconnect, revoke };
+  // Bot credential (Step 1). saveBot throws the typed reason on failure so the card can show it.
+  const saveBot = useCallback(async (token: string) => {
+    const bot = await tg.saveBot(token);
+    setData((d) => ({ ...d, bot }));
+  }, []);
+  const removeBot = useCallback(async () => {
+    await tg.deleteBot();
+    await load();
+  }, [load]);
+
+  return { ...data, reload: load, savePreferences, disconnect, revoke, saveBot, removeBot };
 }

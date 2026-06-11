@@ -110,6 +110,21 @@ export const getStatus = () => api.get<TelegramStatus>(`${BASE}/status`);
 export const enableIntegration = () => api.post<TelegramStatus>(`${BASE}/enable`, {});
 export const disableIntegration = () => api.post<TelegramStatus>(`${BASE}/disable`, {});
 
+// ── Per-ORG bot credential (Step 1). The token is never returned — only safe fields. ──
+export interface TelegramBotStatus {
+  bot_configured: boolean;
+  bot_username?: string;
+  bot_display_name?: string;
+  token_last4?: string;
+  status?: 'active' | 'invalid' | 'revoked' | 'needs_attention';
+  last_verified_at?: string | null;
+  last_error?: string;
+}
+export const getBot = () => api.get<TelegramBotStatus>(`${BASE}/bot`);
+export const saveBot = (token: string) => api.post<TelegramBotStatus>(`${BASE}/bot`, { token });
+export const verifyBot = () => api.post<TelegramBotStatus>(`${BASE}/bot/verify`, {});
+export const deleteBot = () => api.del(`${BASE}/bot`);
+
 // ── Notification destinations (PRIMARY: Telegram channels) ──
 export const getDestinations = () => api.get<DestinationsResponse>(`${BASE}/destinations`);
 export const connectPublicChannel = (username: string) =>
