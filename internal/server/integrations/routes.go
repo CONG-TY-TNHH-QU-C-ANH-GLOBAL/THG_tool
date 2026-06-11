@@ -41,9 +41,18 @@ type Handler struct{ deps Deps }
 func TelegramRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	h := &Handler{deps: deps}
 	g := group.Group("/settings/integrations/telegram")
-	g.Get("/status", h.getStatus)                    // any org member
-	g.Post("/enable", adminOnly, h.enable)           // admin
-	g.Post("/disable", adminOnly, h.disable)         // admin
+	g.Get("/status", h.getStatus)            // any org member
+	g.Post("/enable", adminOnly, h.enable)   // admin
+	g.Post("/disable", adminOnly, h.disable) // admin
+
+	// Notification DESTINATIONS (PRIMARY product path: Telegram channels). Admin-gated mutations.
+	g.Get("/destinations", h.listDestinations)
+	g.Post("/destinations", adminOnly, h.connectDestination)
+	g.Delete("/destinations/:id", adminOnly, h.deleteDestination)
+	g.Post("/destinations/:id/test", adminOnly, h.testDestination)
+	g.Put("/destinations/:id/preferences", adminOnly, h.updateDestinationPreferences)
+
+	// Personal DM bindings (SECONDARY: optional per-user recipients / command auth).
 	g.Post("/bind-codes", h.createBindCode)          // member binds self
 	g.Get("/bindings", h.listBindings)               // admin=all, member=own (in-handler)
 	g.Delete("/bindings/:id", h.revokeBinding)       // admin=any, member=own (in-handler)

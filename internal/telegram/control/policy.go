@@ -65,19 +65,23 @@ func ParseCommand(text string) (cmd, arg string) {
 
 // ── Audit event names (the ONLY place these strings are defined) ──
 const (
-	AuditBindCodeGenerated   = "bind_code_generated"
-	AuditBindSuccess         = "bind_success"
-	AuditBindFailed          = "bind_failed"
-	AuditUnbind              = "unbind"
-	AuditBindingRevoked      = "binding_revoked"
-	AuditIntegrationEnabled  = "integration_enabled"
-	AuditIntegrationDisabled = "integration_disabled"
-	AuditTestNotification    = "test_notification"
-	AuditAlertsUpdated       = "alerts_updated"
-	AuditCommandReceived     = "command_received"
-	AuditCommandDenied       = "command_denied"
-	AuditNotificationSent    = "notification_sent"
-	AuditNotificationFailed  = "notification_failed"
+	AuditBindCodeGenerated    = "bind_code_generated"
+	AuditBindSuccess          = "bind_success"
+	AuditBindFailed           = "bind_failed"
+	AuditUnbind               = "unbind"
+	AuditBindingRevoked       = "binding_revoked"
+	AuditIntegrationEnabled   = "integration_enabled"
+	AuditIntegrationDisabled  = "integration_disabled"
+	AuditTestNotification     = "test_notification"
+	AuditAlertsUpdated        = "alerts_updated"
+	AuditCommandReceived      = "command_received"
+	AuditCommandDenied        = "command_denied"
+	AuditNotificationSent     = "notification_sent"
+	AuditNotificationFailed   = "notification_failed"
+	AuditDestinationConnected = "destination_connected"
+	AuditDestinationDisabled  = "destination_disabled"
+	AuditDestinationTest      = "destination_test"
+	AuditDestinationPrefs     = "destination_prefs_updated"
 )
 
 // ── Allow-lists (single source of truth; REST API + UI both mirror these) ──
@@ -90,6 +94,34 @@ var AlertTypes = []string{
 
 // ChannelFilters is the channel-neutral filter allow-list (Facebook now; Taobao/1688 modelled).
 var ChannelFilters = []string{"all", "facebook", "taobao", "1688"}
+
+// EventTypes is the full set of automation events a notification destination can subscribe to
+// (superset of the legacy system-health AlertTypes). Channel-neutral. Lead / agent-action /
+// system-health categories. This is the SINGLE source of truth the REST API + UI mirror.
+var EventTypes = []string{
+	// lead lifecycle
+	"lead_created", "lead_assigned", "lead_ready_for_review",
+	// agent actions
+	"comment_submitted", "comment_verified", "comment_unverified", "comment_failed",
+	"post_submitted", "post_failed", "inbox_sent", "inbox_failed",
+	// system / health
+	"connector_offline", "account_attention", "automation_paused",
+	"gate1_failure_spike", "submitted_unverified_spike", "circuit_breaker_triggered",
+}
+
+// IsValidEventType validates one event key against the allow-list.
+func IsValidEventType(t string) bool { return inList(t, EventTypes) }
+
+// SanitizeEventTypes drops any unknown event type (defends the preferences payload).
+func SanitizeEventTypes(types []string) []string {
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		if IsValidEventType(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 func inList(v string, list []string) bool {
 	for _, x := range list {

@@ -16,8 +16,11 @@ import (
 )
 
 type fakeSender struct {
-	sent []string
-	fail bool
+	sent        []string
+	fail        bool
+	resChatID   int64 // canned Resolve response (connect-public-channel tests)
+	resTitle    string
+	resUsername string
 }
 
 func (f *fakeSender) Send(_ int64, text string) error {
@@ -26,6 +29,13 @@ func (f *fakeSender) Send(_ int64, text string) error {
 	}
 	f.sent = append(f.sent, text)
 	return nil
+}
+func (f *fakeSender) Resolve(_, _ string) (int64, string, string, error) {
+	if f.fail || f.resChatID == 0 {
+		return 0, "", "", errors.New("resolve failed")
+	}
+	f.sent = append(f.sent, "[resolve]")
+	return f.resChatID, f.resTitle, f.resUsername, nil
 }
 func (f *fakeSender) last() string {
 	if len(f.sent) == 0 {
@@ -42,7 +52,7 @@ func bootstrap(path string) error {
 	return db.Close()
 }
 
-func newSvc(t *testing.T, name string, s control.Sender, flags control.Flags) (*control.Service, *tgstore.Store) {
+func newSvc(t *testing.T, name string, s control.Bot, flags control.Flags) (*control.Service, *tgstore.Store) {
 	dst := storetest.CopyTemplate(t, bootstrap, name)
 	db, err := store.New(dst)
 	if err != nil {

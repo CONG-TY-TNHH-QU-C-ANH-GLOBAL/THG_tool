@@ -48,21 +48,28 @@ func (h *Handler) getStatus(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "count bindings failed"})
 	}
+	destCount, err := h.deps.DB.Telegram().CountDestinations(orgID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "count destinations failed"})
+	}
 	f := h.deps.Flags
 	var webhookAt any
 	if settings.WebhookLastAt.Valid {
 		webhookAt = settings.WebhookLastAt.Time
 	}
 	return c.JSON(fiber.Map{
-		"status":           computeStatus(settings.Enabled, f.BotConfigured, counts.Active),
-		"enabled":          settings.Enabled,
-		"bot_username":     orFirst(settings.BotUsername, f.BotUsername),
-		"bot_configured":   f.BotConfigured,
-		"webhook_last_at":  webhookAt,
-		"webhook_last_err": settings.WebhookLastErr,
-		"bound_users":      counts.Active,
-		"alert_recipients": counts.AlertRecipients,
-		"actions_enabled":  f.ActionsEnabled,
+		// "connected" once there is at least one active connection — a channel DESTINATION
+		// (primary) or a personal DM binding (secondary).
+		"status":              computeStatus(settings.Enabled, f.BotConfigured, destCount+counts.Active),
+		"active_destinations": destCount,
+		"enabled":             settings.Enabled,
+		"bot_username":        orFirst(settings.BotUsername, f.BotUsername),
+		"bot_configured":      f.BotConfigured,
+		"webhook_last_at":     webhookAt,
+		"webhook_last_err":    settings.WebhookLastErr,
+		"bound_users":         counts.Active,
+		"alert_recipients":    counts.AlertRecipients,
+		"actions_enabled":     f.ActionsEnabled,
 		"flags": fiber.Map{
 			"TELEGRAM_BOT_ENABLED":     f.BotEnabled,
 			"TELEGRAM_NOTIFY_ENABLED":  f.NotifyEnabled,

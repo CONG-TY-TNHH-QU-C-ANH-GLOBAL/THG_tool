@@ -19,6 +19,9 @@ import (
 type capSender struct{ n int }
 
 func (c *capSender) Send(_ int64, _ string) error { c.n++; return nil }
+func (c *capSender) Resolve(_, _ string) (int64, string, string, error) {
+	return 0, "", "", nil
+}
 
 func bootstrap(path string) error {
 	db, err := store.New(path)
@@ -28,7 +31,7 @@ func bootstrap(path string) error {
 	return db.Close()
 }
 
-func newApp(t *testing.T, name, secret string, sender control.Sender) (*fiber.App, *store.Store) {
+func newApp(t *testing.T, name, secret string, sender control.Bot) (*fiber.App, *store.Store) {
 	dst := storetest.CopyTemplate(t, bootstrap, name)
 	db, err := store.New(dst)
 	if err != nil {

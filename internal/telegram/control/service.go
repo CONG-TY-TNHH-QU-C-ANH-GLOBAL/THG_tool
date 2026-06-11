@@ -6,10 +6,13 @@ import (
 	tgstore "github.com/thg/scraper/internal/store/telegram"
 )
 
-// Sender abstracts the Telegram transport so the domain never imports the HTTP client (the client
-// implements this; keeps the dependency one-directional — no import cycle, no token in the domain).
-type Sender interface {
+// Bot abstracts the Telegram transport so the domain never imports the HTTP client (the client
+// satisfies this structurally; one-directional dependency, no token in the domain). Resolve sends
+// `text` to a chat reference ("@username" or numeric id) and returns the resolved chat — used to
+// connect a public channel in one verified call.
+type Bot interface {
 	Send(chatID int64, text string) error
+	Resolve(ref, text string) (chatID int64, title, username string, err error)
 }
 
 // Flags are the process feature flags the domain needs. Passed in by the wiring layer; the domain
@@ -23,14 +26,14 @@ type Flags struct {
 
 // Service is the single domain service shared by the REST settings API and the webhook runtime.
 type Service struct {
-	store  *tgstore.Store
-	sender Sender
-	flags  Flags
+	store *tgstore.Store
+	tg    Bot
+	flags Flags
 }
 
-// NewService wires the store + a Telegram sender + the feature flags.
-func NewService(store *tgstore.Store, sender Sender, flags Flags) *Service {
-	return &Service{store: store, sender: sender, flags: flags}
+// NewService wires the store + the Telegram bot transport + the feature flags.
+func NewService(store *tgstore.Store, bot Bot, flags Flags) *Service {
+	return &Service{store: store, tg: bot, flags: flags}
 }
 
 // Flags exposes the feature flags (read-only) for handlers that compose status.

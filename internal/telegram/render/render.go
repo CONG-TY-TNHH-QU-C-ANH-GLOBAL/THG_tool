@@ -66,3 +66,46 @@ func Unknown() string {
 func TestMessage() string {
 	return "🔔 Đây là thông báo thử từ THG. Nếu bạn nhận được tin này, kênh cảnh báo Telegram đang hoạt động."
 }
+
+// ChannelConnected confirms a channel is linked to the workspace (sent into the channel on connect).
+func ChannelConnected() string {
+	return "✅ Channel đã được kết nối với THG AutoFlow. Các thông báo vận hành sẽ được gửi vào đây."
+}
+
+// ── Event message builders (used by emitters + tests; channel-neutral, no secrets) ──
+
+// LeadCreated renders the "new lead" notification.
+func LeadCreated(workspace, source, lead, summary, dashboardURL string) string {
+	return "📌 Lead mới từ " + orDash(source) + "\n" +
+		"Workspace: " + orDash(workspace) + "\n" +
+		"Lead: " + orDash(lead) + "\n" +
+		"Tóm tắt: " + orDash(summary) + "\n" +
+		"Trạng thái: sẵn sàng xử lý\n" +
+		"Mở dashboard: " + dashboardURL
+}
+
+// AgentComment renders the "agent submitted a comment" notification. state e.g. "đã gửi" / "chờ xác minh".
+func AgentComment(channel, account, lead, state, postURL, dashboardURL string) string {
+	return "✅ Agent đã gửi comment\n" +
+		"Channel: " + orDash(channel) + "\n" +
+		"Account: " + orDash(account) + "\n" +
+		"Lead: " + orDash(lead) + "\n" +
+		"Trạng thái: " + orDash(state) + "\n" +
+		"Mở post: " + postURL + "\n" +
+		"Mở dashboard: " + dashboardURL
+}
+
+// Failure renders an attention/failure notification. reason is a typed reason code.
+func Failure(channel, account, reason, dashboardURL string) string {
+	return "⚠️ Cần kiểm tra\n" +
+		orDash(channel) + " " + orDash(account) + " gặp lỗi.\n" +
+		"Lý do: " + orDash(reason) + "\n" +
+		"Mở dashboard: " + dashboardURL
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}

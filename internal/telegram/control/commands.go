@@ -67,8 +67,8 @@ func (s *Service) HandleMessage(m IncomingMessage) error {
 }
 
 func (s *Service) reply(chatID int64, text string) error {
-	if s.sender == nil {
+	if s.tg == nil {
 		return nil
 	}
-	return s.sender.Send(chatID, text)
+	return s.tg.Send(chatID, text)
 }
