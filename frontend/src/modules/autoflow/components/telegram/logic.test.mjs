@@ -71,4 +71,38 @@ for (const forbidden of ['comment', 'post', 'send_comment', 'execute']) {
 // the six expected alert types exist (channel-neutral catalog).
 assert.strictEqual(L.ALERT_TYPES.length, 6);
 
+// ── Channel-first additions ──
+
+// channelFirstStatus: 0 channels = not_connected; >0 + healthy = connected; needs-attention flag.
+assert.strictEqual(L.channelFirstStatus(true, true, 0, false), 'not_connected');
+assert.strictEqual(L.channelFirstStatus(true, true, 2, false), 'connected');
+assert.strictEqual(L.channelFirstStatus(true, true, 2, true), 'needs_attention');
+assert.strictEqual(L.channelFirstStatus(true, false, 2, false), 'needs_attention'); // no bot token
+
+// destination status tone.
+assert.strictEqual(L.destinationTone('active'), 'ok');
+assert.strictEqual(L.destinationTone('needs_attention'), 'warn');
+assert.strictEqual(L.destinationTone('disabled'), 'off');
+
+// event catalog: 17 events across 3 groups; sanitize drops unknown.
+assert.strictEqual(L.EVENT_TYPES.length, 17);
+assert.strictEqual(L.EVENT_GROUPS.length, 3);
+assert.deepStrictEqual(L.sanitizeEventTypes(['lead_created', 'evil', 'comment_failed']), ['lead_created', 'comment_failed']);
+
+// channel filters render facebook/taobao/1688 generically (fallback catalog).
+for (const ch of ['all', 'facebook', 'taobao', '1688']) {
+  assert.strictEqual(L.isValidChannelFilter(ch, []), true, `channel ${ch} must be valid generically`);
+}
+
+// needs-attention remediation reasons for a destination.
+assert.deepStrictEqual(L.destinationReasons('boom', false, false), ['token_missing', 'notify_disabled', 'delivery_failed']);
+assert.deepStrictEqual(L.destinationReasons('', true, true), []);
+
+// channel management is admin-only; control actions still expose NO execution action.
+assert.strictEqual(L.canManageChannels(false), false);
+assert.strictEqual(L.canManageChannels(true), true);
+for (const forbidden of ['comment', 'post', 'send', 'execute', 'auto_comment']) {
+  assert.ok(!L.CONTROL_ACTIONS.includes(forbidden), `control actions must not expose ${forbidden}`);
+}
+
 console.log('Telegram integration UI logic: PASS');

@@ -21,6 +21,8 @@ export interface TelegramFlags {
   bot_token_configured: boolean;
 }
 
+export type TelegramConnStateFull = TelegramConnState | 'disabled';
+
 export interface TelegramStatus {
   status: TelegramConnState;
   enabled: boolean;
@@ -30,9 +32,39 @@ export interface TelegramStatus {
   webhook_last_err: string;
   bound_users: number;
   alert_recipients: number;
+  active_destinations: number;
   actions_enabled: boolean;
   flags: TelegramFlags;
   channels: TelegramChannel[];
+}
+
+// A notification destination — primarily a Telegram CHANNEL. chat_id is never sent by the backend.
+export interface TelegramDestination {
+  id: number;
+  destination_type: 'channel' | 'group' | 'personal_dm';
+  title: string;
+  username: string;
+  invite_link: string;
+  status: 'active' | 'disabled' | 'needs_attention';
+  event_types: string[];
+  channel_filter: string;
+  delivery_mode: string;
+  connected_by_user_id: number;
+  last_delivery_at: string | null;
+  last_error: string;
+  created_at: string;
+}
+
+export interface DestinationsResponse {
+  destinations: TelegramDestination[];
+  available_event_types: string[];
+  available_filters: string[];
+}
+
+export interface ConnectCodeResponse {
+  connect_code: string;
+  instructions: string;
+  ttl_seconds: number;
 }
 
 export interface TelegramBinding {
@@ -45,6 +77,7 @@ export interface TelegramBinding {
   alert_recipient: boolean;
   status: 'active' | 'revoked';
   bound_at: string;
+  last_command_at: string | null;
 }
 
 export interface BindCodeResponse {
@@ -76,6 +109,21 @@ export interface TelegramAuditEvent {
 export const getStatus = () => api.get<TelegramStatus>(`${BASE}/status`);
 export const enableIntegration = () => api.post<TelegramStatus>(`${BASE}/enable`, {});
 export const disableIntegration = () => api.post<TelegramStatus>(`${BASE}/disable`, {});
+
+// ── Notification destinations (PRIMARY: Telegram channels) ──
+export const getDestinations = () => api.get<DestinationsResponse>(`${BASE}/destinations`);
+export const connectPublicChannel = (username: string) =>
+  api.post<{ destination: TelegramDestination }>(`${BASE}/destinations`, { type: 'public', username });
+export const createPrivateChannelConnectCode = () =>
+  api.post<ConnectCodeResponse>(`${BASE}/destinations`, { type: 'private' });
+export const testDestination = (id: number) =>
+  api.post<{ sent: boolean }>(`${BASE}/destinations/${id}/test`, {});
+export const updateDestinationPreferences = (id: number, body: { event_types: string[]; channel_filter: string }) =>
+  api.put<{ updated: boolean }>(`${BASE}/destinations/${id}/preferences`, body);
+// Disconnect soft-disables; reconnecting (re-running setup) re-enables it.
+export const disconnectDestination = (id: number) => api.del(`${BASE}/destinations/${id}`);
+
+// ── Personal DM bindings (SECONDARY) ──
 export const createBindCode = () => api.post<BindCodeResponse>(`${BASE}/bind-codes`, {});
 
 export async function getBindings(): Promise<{ bindings: TelegramBinding[]; can_manage_all: boolean }> {

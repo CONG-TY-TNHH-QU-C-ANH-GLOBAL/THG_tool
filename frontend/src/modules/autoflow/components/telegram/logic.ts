@@ -94,7 +94,58 @@ export function canTestNotification(notifyEnabled: boolean, activeBindings: numb
 // offer. There is intentionally no 'comment'/'post'/execution action — asserted by tests.
 export const CONTROL_ACTIONS = [
   'enable', 'disable', 'generate_bind_code', 'revoke_binding', 'test_notification', 'update_alerts',
+  'connect_channel', 'test_destination', 'update_preferences', 'disconnect_destination',
 ] as const;
 export function actionsExecutionEnabled(): boolean {
   return false; // hard constant — Telegram cannot execute outbound actions in this product
+}
+
+// ── Channel destinations (channel-first model) ──
+
+export type DestStatus = 'active' | 'disabled' | 'needs_attention';
+
+// destinationTone maps a destination status to a UI tone.
+export function destinationTone(status: DestStatus): Tone {
+  if (status === 'active') return 'ok';
+  if (status === 'needs_attention') return 'warn';
+  return 'off';
+}
+
+// The full event-type catalog grouped for the preferences UI (mirrors the backend allow-list).
+export const EVENT_GROUPS = [
+  { key: 'lead', types: ['lead_created', 'lead_assigned', 'lead_ready_for_review'] },
+  { key: 'agent', types: ['comment_submitted', 'comment_verified', 'comment_unverified', 'comment_failed', 'post_submitted', 'post_failed', 'inbox_sent', 'inbox_failed'] },
+  { key: 'system', types: ['connector_offline', 'account_attention', 'automation_paused', 'gate1_failure_spike', 'submitted_unverified_spike', 'circuit_breaker_triggered'] },
+] as const;
+
+export const EVENT_TYPES = EVENT_GROUPS.flatMap((g) => g.types) as readonly string[];
+
+// sanitizeEventTypes keeps only event types the backend accepts (defends the PUT payload).
+export function sanitizeEventTypes(types: string[], available?: string[]): string[] {
+  const known = new Set<string>(available && available.length ? available : EVENT_TYPES);
+  return (types || []).filter((t) => known.has(t));
+}
+
+// destinationReasons derives remediation keys for a needs_attention destination + global gates.
+export function destinationReasons(lastError: string, notifyEnabled: boolean, botConfigured: boolean): string[] {
+  const out: string[] = [];
+  if (!botConfigured) out.push('token_missing');
+  if (!notifyEnabled) out.push('notify_disabled');
+  if (lastError) out.push('delivery_failed');
+  return out;
+}
+
+// canManageChannels — connecting/disconnecting/editing workspace channels is admin-only.
+export function canManageChannels(isAdmin: boolean): boolean {
+  return isAdmin === true;
+}
+
+// channelFirstStatus folds destination + binding counts into the headline state. A destination is
+// the PRIMARY signal; bindings are secondary.
+export function channelFirstStatus(
+  enabled: boolean, botConfigured: boolean, activeDestinations: number, anyNeedsAttention: boolean,
+): ConnState {
+  if (activeDestinations === 0) return 'not_connected';
+  if (!botConfigured || anyNeedsAttention) return 'needs_attention';
+  return 'connected';
 }

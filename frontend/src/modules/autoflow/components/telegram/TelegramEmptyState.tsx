@@ -1,11 +1,11 @@
 import React from 'react';
-import { Send } from 'lucide-react';
+import { Send, Check } from 'lucide-react';
 import { theme, cardStyle, primaryBtn, alpha } from '../../constants/styles';
 import { copy, type Lang } from './copy';
 
-// "Not connected yet" empty state with the enable CTA. Render-only; the CTA is delegated up.
+// Channel-first empty state: benefits + "Connect Telegram channel" CTA. Render-only; CTA delegated.
 export const TelegramEmptyState = React.memo(
-  ({ lang, isAdmin, onEnable, busy }: { lang: Lang; isAdmin: boolean; onEnable: () => void; busy: boolean }) => {
+  ({ lang, isAdmin, onConnect }: { lang: Lang; isAdmin: boolean; onConnect: () => void }) => {
     const { t } = copy(lang);
     return (
       <div style={cardStyle({ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12, padding: 36 })}>
@@ -13,13 +13,18 @@ export const TelegramEmptyState = React.memo(
           <Send size={24} color={theme.primary} />
         </div>
         <p style={{ color: theme.text, fontSize: 16, fontWeight: 650, margin: 0 }}>{t('empty_title')}</p>
-        <p style={{ color: theme.textMuted, fontSize: 13, maxWidth: 420, lineHeight: 1.6, margin: 0 }}>{t('empty_body')}</p>
-        {isAdmin && (
-          <button style={primaryBtn({ marginTop: 4, opacity: busy ? 0.6 : 1 })} disabled={busy} onClick={onEnable}>
-            {t('enable')}
-          </button>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 6, textAlign: 'left' }}>
+          {['empty_b1', 'empty_b2', 'empty_b3'].map((k) => (
+            <li key={k} style={{ display: 'flex', gap: 8, alignItems: 'center', color: theme.textMuted, fontSize: 13 }}>
+              <Check size={15} color={theme.green} /> {t(k)}
+            </li>
+          ))}
+        </ul>
+        {isAdmin ? (
+          <button style={primaryBtn({ marginTop: 4 })} onClick={onConnect}>{t('empty_cta')}</button>
+        ) : (
+          <p style={{ color: theme.textFaint, fontSize: 12 }}>{t('admin_only')}</p>
         )}
-        {!isAdmin && <p style={{ color: theme.textFaint, fontSize: 12 }}>{t('admin_only')}</p>}
       </div>
     );
   },
