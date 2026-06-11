@@ -42,8 +42,19 @@ func main() {
 		log.Fatalf("❌ main store: %v", err)
 	}
 	defer mainStore.Close()
-	// Required so the worker can DECRYPT each org's Telegram bot token (channel notifications).
-	mainStore.SetEncryptionKey(os.Getenv("ENCRYPTION_KEY"))
+	// INTERNAL platform config (NOT customer setup): the worker decrypts each org's Telegram bot
+	// token with the SAME ENCRYPTION_KEY the server used to encrypt it. A mismatch/absence is a
+	// deployment misconfiguration — fail fast in production; loud internal warning otherwise. (The
+	// notification dispatcher additionally shape-validates the decrypted token so a key mismatch is
+	// audited as platform_config_missing instead of sending a garbage token to Telegram.)
+	encKey := os.Getenv("ENCRYPTION_KEY")
+	if encKey == "" {
+		if os.Getenv("APP_ENV") == "production" {
+			log.Fatalf("❌ [PLATFORM] ENCRYPTION_KEY not set — worker cannot decrypt per-org Telegram bot tokens. Internal deployment config required (must match the server's key); not customer setup.")
+		}
+		log.Println("⚠️  [PLATFORM] ENCRYPTION_KEY not set — per-org Telegram channel notifications from the worker are degraded until configured (internal deployment config, not customer setup).")
+	}
+	mainStore.SetEncryptionKey(encKey)
 
 	appStore, err := store.NewAppStore(mainStore)
 	if err != nil {
@@ -79,7 +90,12 @@ func main() {
 		GlobalToken:         os.Getenv("TELEGRAM_BOT_TOKEN"),
 		AllowGlobalFallback: envOr("TELEGRAM_ALLOW_GLOBAL_FALLBACK", "false") == "true",
 	})
-	baseURL := envOr("APP_BASE_URL", os.Getenv("PUBLIC_APP_URL"))
+	// Canonical app URL is INTERNAL platform config (PUBLIC_APP_URL preferred). When unset, the
+	// renderer cleanly OMITS the dashboard link — never an empty "Mở dashboard:" line.
+	baseURL := envOr("PUBLIC_APP_URL", os.Getenv("APP_BASE_URL"))
+	if baseURL == "" {
+		log.Println("ℹ️  [PLATFORM] PUBLIC_APP_URL/APP_BASE_URL not set — Telegram lead notifications will omit the dashboard link (internal config).")
+	}
 	h.SetLeadNotifier(func(ev leadingest.LeadEvent) {
 		workspace := ""
 		if org, _ := mainStore.GetOrganization(ev.OrgID); org != nil {

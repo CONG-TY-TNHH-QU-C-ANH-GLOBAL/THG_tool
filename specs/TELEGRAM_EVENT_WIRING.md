@@ -52,10 +52,31 @@ emitter → `control.NotifyEvent(orgID, eventType, channel, message)` → resolv
 `bot.Send(chat_id, message)` → `RecordDelivery` + audit. A destination only receives events it has
 opted into (per-destination `event_types`).
 
-## Deploy notes
-- **Worker** needs `ENCRYPTION_KEY` (same value as the server) + `TELEGRAM_NOTIFY_ENABLED` +
-  optionally `APP_BASE_URL` (for dashboard links). Without `ENCRYPTION_KEY` the worker cannot
-  decrypt org bot tokens → lead notifications silently won't send.
+## Setup boundary — CUSTOMER vs PLATFORM (binding)
+Customers configure ONLY: save bot token → add bot as channel admin → connect channel → receive a
+test notification. They never see or set `ENCRYPTION_KEY`, `PUBLIC_APP_URL`/`APP_BASE_URL`, or any
+worker env. Those are **internal platform/deployment config**, never surfaced in UI copy.
+
+Platform (deployment) config, internal only:
+- `ENCRYPTION_KEY` — MUST be identical across every runtime that handles org bot tokens (server +
+  worker). The worker **fails fast at startup in production** when it is unset, and logs a loud
+  internal warning otherwise. It is the secret used to encrypt-at-rest the customer's bot token.
+- `PUBLIC_APP_URL` (preferred) / `APP_BASE_URL` — canonical app URL for dashboard/outbox links. When
+  unset the renderer **cleanly omits** the link line (never an empty "Mở dashboard:"); the worker
+  logs an internal notice.
+- `TELEGRAM_NOTIFY_ENABLED` (default true).
+
+### Platform misconfiguration handling (no silent broken output, no customer blame)
+The notification dispatcher (`control`) **shape-validates** the decrypted bot token (`<digits>:<…>`;
+decryption junk is base64 with no `:`). If a stored credential decrypts to junk — i.e. a runtime
+whose `ENCRYPTION_KEY` does not match the one that encrypted it — `resolveBot` returns
+`platform_config_missing`: the dispatcher REFUSES to send a garbage token, audits it as
+`platform_config_missing` (action `notification_failed`), and **does NOT `RecordDelivery`** so the
+customer's channel is never marked failing. `GET /bot` returns `platform_ready=false` (via
+`control.EncryptionHealthy`); the UI shows an admin-safe banner —
+"Hệ thống thông báo đang cần cấu hình từ quản trị hệ thống." — with **no env names**. This is OUR
+problem to fix, not the customer's Telegram setup.
+
 - A destination must be subscribed to the event types you expect (default on connect = all).
 
 ## Tests

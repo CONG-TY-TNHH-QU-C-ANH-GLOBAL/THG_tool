@@ -65,6 +65,12 @@ func (s *Service) Flags() Flags { return s.flags }
 // explicitly allowed. reason="bot_token_missing" when neither is available.
 func (s *Service) resolveBot(orgID int64) (Bot, string) {
 	if token, ok := s.store.GetDecryptedBotToken(orgID); ok && token != "" {
+		// A stored credential that decrypts to junk is an INTERNAL config problem (key mismatch),
+		// not a missing bot — surface it distinctly so we never send a garbage token to Telegram
+		// nor blame the customer's channel.
+		if !looksLikeBotToken(token) {
+			return nil, reasonPlatformConfig
+		}
 		return s.factory(token), ""
 	}
 	if s.flags.AllowGlobalFallback && s.flags.GlobalToken != "" {

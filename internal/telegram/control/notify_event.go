@@ -9,8 +9,14 @@ func (s *Service) NotifyEvent(orgID int64, eventType, channel, message string) (
 	if !s.flags.NotifyEnabled || !IsValidEventType(eventType) {
 		return 0, nil
 	}
-	bot, _ := s.resolveBot(orgID) // channel delivery uses the ORG's own bot token
+	bot, reason := s.resolveBot(orgID) // channel delivery uses the ORG's own bot token
 	if bot == nil {
+		// platform_config_missing is OUR fault (e.g. ENCRYPTION_KEY mismatch), not the customer's
+		// Telegram setup. Audit it distinctly and DO NOT RecordDelivery — the channel must not be
+		// marked failing/wrong over an internal config gap.
+		if reason == reasonPlatformConfig {
+			s.audit(orgID, 0, 0, AuditNotificationFailed, reasonPlatformConfig, channel)
+		}
 		return 0, nil
 	}
 	dests, err := s.store.ListActiveDestinations(orgID)

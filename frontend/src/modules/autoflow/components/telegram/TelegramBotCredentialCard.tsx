@@ -40,6 +40,12 @@ export function TelegramBotCredentialCard({ lang, bot, isAdmin, onSave, onRemove
           <Check size={16} color={theme.green} />
           <span style={{ color: theme.text, fontSize: 14, fontWeight: 650 }}>{t('bot_connected')}: @{bot?.bot_username}</span>
         </div>
+        {bot?.platform_ready === false && (
+          <div role="note" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: alpha(theme.yellow, 8), border: `1px solid ${alpha(theme.yellow, 30)}`, borderRadius: 'var(--radius-sm)', padding: '9px 11px' }}>
+            <ShieldAlert size={14} color={theme.yellow} style={{ marginTop: 1, flexShrink: 0 }} />
+            <span style={{ color: theme.textMuted, fontSize: 12 }}>{t('platform_not_ready')}</span>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12.5, color: theme.textMuted }}>
           <span>{bot?.bot_display_name}</span>
           <span>{t('bot_last4')}: ••••{bot?.token_last4}</span>

@@ -119,6 +119,8 @@ export interface TelegramBotStatus {
   status?: 'active' | 'invalid' | 'revoked' | 'needs_attention';
   last_verified_at?: string | null;
   last_error?: string;
+  // false = internal platform/runtime config issue (not the customer's Telegram setup). Admin-safe.
+  platform_ready?: boolean;
 }
 export const getBot = () => api.get<TelegramBotStatus>(`${BASE}/bot`);
 export const saveBot = (token: string) => api.post<TelegramBotStatus>(`${BASE}/bot`, { token });

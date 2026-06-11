@@ -17,13 +17,15 @@ func (h *Handler) getBot(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "load bot failed"})
 	}
 	if cred == nil {
-		return c.JSON(fiber.Map{"bot_configured": false})
+		return c.JSON(fiber.Map{"bot_configured": false, "platform_ready": true})
 	}
 	var verifiedAt *time.Time
 	if cred.LastVerifiedAt.Valid {
 		t := cred.LastVerifiedAt.Time
 		verifiedAt = &t
 	}
+	// platform_ready=false means the stored token can't be decrypted by this runtime (internal
+	// ENCRYPTION_KEY misconfiguration) — the UI shows an admin-config message, NOT a customer error.
 	return c.JSON(fiber.Map{
 		"bot_configured":   cred.Status == "active",
 		"bot_username":     cred.BotUsername,
@@ -32,6 +34,7 @@ func (h *Handler) getBot(c *fiber.Ctx) error {
 		"status":           cred.Status,
 		"last_verified_at": verifiedAt,
 		"last_error":       cred.LastError,
+		"platform_ready":   h.deps.Control.EncryptionHealthy(orgID),
 	})
 }
 
