@@ -23,6 +23,7 @@ import (
 	serverknowledge "github.com/thg/scraper/internal/server/knowledge"
 	"github.com/thg/scraper/internal/server/leads"
 	servermw "github.com/thg/scraper/internal/server/middleware"
+	servernotifications "github.com/thg/scraper/internal/server/notifications"
 	serverobservability "github.com/thg/scraper/internal/server/observability"
 	serverorg "github.com/thg/scraper/internal/server/org"
 	serverplatform "github.com/thg/scraper/internal/server/platform"
@@ -145,6 +146,9 @@ func (s *Server) registerRoutes() {
 
 	// Protected API routes — require JWT
 	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady, freshOrg)
+
+	// In-app notification bell (PR-1): invite + connector events.
+	servernotifications.Routes(r, servernotifications.Deps{DB: s.db})
 
 	leads.Routes(r, leads.Deps{
 		DB:       s.db,

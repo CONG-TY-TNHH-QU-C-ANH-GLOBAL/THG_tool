@@ -5,7 +5,8 @@ import { ArrowLeft, ArrowRight, Building2, Check, Inbox, User } from 'lucide-rea
 import type { AuthUser } from '../services/authService';
 import { useAuthStore } from '../stores/authStore';
 import { useLang } from '../i18n/useLang';
-import { getMyPendingInvites, acceptInviteToken, type PendingInvite } from '../services/staffService';
+import { getMyPendingInvites, type PendingInvite } from '../services/staffService';
+import { useAcceptInvite } from './notifications/useAcceptInvite';
 import { facebookWorkspaceIdOf } from '../service';
 import styles from '../../../platform/onboarding.module.css';
 
@@ -28,6 +29,7 @@ export default function CreateFacebookWorkspace() {
   const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [acceptingId, setAcceptingId] = useState<number | null>(null);
+  const inviteFlow = useAcceptInvite();
 
   useEffect(() => {
     let cancelled = false;
@@ -44,17 +46,13 @@ export default function CreateFacebookWorkspace() {
   async function handleAcceptInvite(invite: PendingInvite) {
     setAcceptingId(invite.id);
     setError('');
-    try {
-      const data = await acceptInviteToken(invite.token);
-      useAuthStore.getState().setAuth(data.access_token, data.user as AuthUser);
-      const workspaceId = facebookWorkspaceIdOf((data.user as AuthUser).org_id);
-      if (workspaceId) navigateToWorkspace(workspaceId);
-      else router.push('/services');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : (lang === 'vi' ? 'Không nhận được invite.' : 'Could not accept invite.'));
-    } finally {
-      setAcceptingId(null);
+    // Shared accept sequence (PR-1): fresh token → hydrate /auth/me →
+    // joined-toast → route to the invited workspace. No logout needed.
+    const data = await inviteFlow.accept(invite.token);
+    if (!data) {
+      setError(lang === 'vi' ? 'Không nhận được invite.' : 'Could not accept invite.');
     }
+    setAcceptingId(null);
   }
 
   async function handleSetup() {

@@ -149,6 +149,14 @@ export async function getMyPendingInvites(): Promise<PendingInvite[]> {
   return res.invites ?? [];
 }
 
-export async function acceptInviteToken(token: string): Promise<{ access_token: string; org_id: number; user: { id: number; org_id: number; email: string; name: string; role: string } }> {
+export interface AcceptInviteResult {
+  access_token: string;
+  org_id: number;
+  org_name: string;
+  role: string;
+  user: { id: number; org_id: number; email: string; name: string; role: string };
+}
+
+export async function acceptInviteToken(token: string): Promise<AcceptInviteResult> {
   return api.post(`/auth/join/${encodeURIComponent(token)}`, {});
 }

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { ChevronDown, LogOut, User as UserIcon, LayoutGrid } from 'lucide-react';
 import { useAuthStore } from '../../modules/autoflow/stores/authStore';
+import NotificationBell from '../../modules/autoflow/components/notifications/NotificationBell';
 import { LangSwitch } from '../../modules/autoflow/components/ds/LangSwitch';
 import { DensitySwitch } from '../../modules/autoflow/components/ds/DensitySwitch';
 import { ThemeToggle } from '../../modules/autoflow/components/ds/ThemeToggle';
@@ -146,6 +147,7 @@ export default function TopNav() {
 
       <div style={{ flex: 1 }} />
 
+      <NotificationBell />
       <ThemeToggle />
       <DensitySwitch />
       <LangSwitch />
