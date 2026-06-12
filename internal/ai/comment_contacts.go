@@ -57,6 +57,15 @@ func RepairCommentContacts(text string, id models.CompanyIdentity) (string, bool
 	out := text
 	changed := false
 
+	// PR-6: heal spaced/malformed/non-canonical mentions of the grounded
+	// website into its ONE canonical clickable form before the URL pass,
+	// so a repairable variant is normalized instead of dropped.
+	if id.Website != "" {
+		if fixed, c := RepairWebsiteMentions(out, id.Website); c {
+			out, changed = fixed, true
+		}
+	}
+
 	if h := telegramHandle(id.OfficialContact); h != "" {
 		name := strings.TrimPrefix(h, "@")
 		re := regexp.MustCompile(`(?i)\b(?:https?://)?t\.me/` + regexp.QuoteMeta(name) + `\b`)

@@ -341,7 +341,10 @@ func ResolveCompanyIdentity(profile *BusinessProfile, groundedCTA *models.Ground
 	var id models.CompanyIdentity
 	if profile != nil {
 		id.CompanyName = strings.TrimSpace(profile.Name)
-		id.Website = strings.TrimSpace(profile.Website)
+		// PR-6: the website enters the identity in canonical clickable
+		// form (https://, healed spacing, no trailing slash) so the
+		// prompt cites it exactly and the guard repairs variants to it.
+		id.Website = CanonicalWebsite(profile.Website)
 		id.OfficialContact = strings.TrimSpace(profile.OfficialContact)
 		id.PrimaryCTA = strings.TrimSpace(profile.PrimaryCTA)
 		id.ServiceSummary = strings.TrimSpace(orFallback(profile.Services, profile.Description))
