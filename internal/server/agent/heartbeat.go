@@ -97,6 +97,9 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
+	// PR-8: blocked extension builds raise a rate-limited alert
+	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
+	h.maybeAlertExtensionOutdated(orgID, agentID, presence.Version)
 	return c.JSON(fiber.Map{
 		"status":       "ok",
 		"connector_id": agentID,
@@ -153,6 +156,9 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
+	// PR-8: blocked extension builds raise a rate-limited alert
+	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
+	h.maybeAlertExtensionOutdated(orgID, agentID, presence.Version)
 	createdBy, _ := c.Locals("agent_created_by").(int64)
 	currentAssigned, _ := c.Locals("agent_assigned_account_id").(int64)
 	if orgID > 0 && (body.AccountID > 0 || strings.TrimSpace(body.FBUserID) != "") {
@@ -340,6 +346,9 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 	}
 	clampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
+	// PR-8: blocked extension builds raise a rate-limited alert
+	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
+	h.maybeAlertExtensionOutdated(orgID, agentID, presence.Version)
 
 	// Window Respect (PR-2): the periodic window_control:minimize was removed. It
 	// existed for the old "observe automation via the dashboard BrowserView" model

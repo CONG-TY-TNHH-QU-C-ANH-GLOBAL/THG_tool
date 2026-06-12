@@ -5,6 +5,7 @@ import (
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/mailer"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/telegram/control"
 )
 
 // Deps holds dependencies needed by auth and onboarding handlers.
@@ -20,6 +21,9 @@ type Deps struct {
 	ServerHost         string
 	SSHPort            int
 	Mailer             mailer.Config
+	// TgEvents emits per-org Telegram channel notifications for the
+	// invite lifecycle (PR-8). Optional; nil = no channel notifications.
+	TgEvents *control.Service
 }
 
 type Handler struct {

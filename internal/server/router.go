@@ -127,6 +127,7 @@ func (s *Server) registerRoutes() {
 		ServerHost:         cfg.ServerHost,
 		SSHPort:            cfg.SSHPort,
 		Mailer:             cfg.Mailer,
+		TgEvents:           tgControl, // PR-8: invite lifecycle → org Telegram channels
 	}
 	serverauth.Routes(api, authDeps, authLimiter, regLimiter)
 

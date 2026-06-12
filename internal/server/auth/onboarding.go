@@ -523,7 +523,7 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d,"previous_org_id":%d}`, orgID, targetRole, inviteID, previousOrgID))
 	h.deps.DB.InsertAuditLog(userID, "membership_granted", c.IP(),
 		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d}`, orgID, targetRole, inviteID))
-	h.notifyInviteAccepted(orgID, user.Name, user.Email, string(targetRole))
+	h.notifyInviteAccepted(orgID, inviteID, user.Name, user.Email, string(targetRole))
 
 	return c.JSON(fiber.Map{
 		"access_token": newToken,
