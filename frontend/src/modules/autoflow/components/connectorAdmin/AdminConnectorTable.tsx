@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pause, Play, RefreshCw, Copy } from 'lucide-react';
 import {
+  contactStateLabel,
   getConnectorOverview,
   pauseAccountAssignment,
   resumeAccountAssignment,
@@ -82,12 +83,21 @@ export default function AdminConnectorTable() {
         <tbody>
           {rows.map(r => {
             const vs = versionStateLabel(r.extension_version_state);
+            const cs = contactStateLabel(r.contact_profile_state);
             const primaryBlock = r.block_reasons[0] ? mapReason(r.block_reasons[0]) : null;
             return (
               <tr key={r.account_id}>
                 <td style={td}>
                   <div>{r.staff_name || '— chưa gán —'}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{r.staff_email}{r.staff_role ? ` · ${r.staff_role}` : ''}</div>
+                  {cs && (
+                    <div
+                      style={{ fontSize: 10.5, color: toneColor[cs.tone] }}
+                      title="Trạng thái hồ sơ liên hệ (PR-5): thiếu/chưa đủ thì comment AI dùng liên hệ công ty hoặc bỏ qua theo policy."
+                    >
+                      {cs.label}
+                    </div>
+                  )}
                 </td>
                 <td style={td}>
                   <div>{r.fb_display_name || r.account_name}</div>

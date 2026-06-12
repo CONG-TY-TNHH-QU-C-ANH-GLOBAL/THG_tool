@@ -161,6 +161,9 @@ type RejectedCandidate struct {
 type VectorFilter struct {
 	Types  []assets.AssetType
 	States []assets.AssetState
+	// ExcludeUnhealthySources mirrors assets.ListFilter — the retrieval
+	// hot path never quotes from stale/error/needs_auth sources.
+	ExcludeUnhealthySources bool
 }
 
 // VectorHit is one row returned by the store's vector query. Same

@@ -132,6 +132,10 @@ func (s *Store) QueryNearestVectors(ctx context.Context, orgID int64, queryVecto
 			args = append(args, string(st))
 		}
 	}
+	if filter.ExcludeUnhealthySources {
+		q += unhealthySourceExclusion
+		args = append(args, orgID)
+	}
 	q += `
 		)
 		SELECT id, org_id, source_id, external_id, type, title, description,

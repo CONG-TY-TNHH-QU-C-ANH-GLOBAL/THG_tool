@@ -160,6 +160,8 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 	hits, err := s.Store.QueryNearestVectors(bounded, orgID, queryVector, modelVersion, retrieval.VectorFilter{
 		Types:  filter.Types,
 		States: filter.EffectiveStates(),
+		// Retrieval hot path: never quote from stale/unhealthy catalogs.
+		ExcludeUnhealthySources: true,
 	}, candidateK)
 	if err != nil {
 		return nil, trace, fmt.Errorf("pgvector searcher: query: %w", err)

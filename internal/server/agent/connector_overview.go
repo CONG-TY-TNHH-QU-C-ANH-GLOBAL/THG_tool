@@ -34,6 +34,10 @@ type connectorOverviewRow struct {
 	AutomationEligible    bool     `json:"automation_eligible"`
 	AssignmentPaused      bool     `json:"assignment_paused"`
 	BlockReasons          []string `json:"block_reasons"`
+	// ContactProfileState (PR-5 audit column): complete | incomplete |
+	// missing | "" (unassigned account). Read-only — comments fall back
+	// to the company contact (or omit, per policy) when not complete.
+	ContactProfileState string `json:"contact_profile_state"`
 }
 
 // connectorOverview handles GET /api/admin/connectors/overview (adminOnly).
@@ -56,6 +60,12 @@ func (h *Handler) connectorOverview(c *fiber.Ctx) error {
 		userByID[u.ID] = u
 	}
 	pausedByID := h.assignmentPausedMap(orgID)
+	contactByUser := map[int64]*models.StaffContactProfile{}
+	if profiles, perr := h.db.ListStaffContactProfiles(orgID); perr == nil {
+		for i := range profiles {
+			contactByUser[profiles[i].UserID] = &profiles[i]
+		}
+	}
 
 	rows := make([]connectorOverviewRow, 0, len(accounts))
 	for i := range accounts {
@@ -77,6 +87,7 @@ func (h *Handler) connectorOverview(c *fiber.Ctx) error {
 		if u, ok := userByID[acc.AssignedUserID]; ok {
 			row.StaffEmail = u.Email
 			row.StaffRole = string(u.Role)
+			row.ContactProfileState = contactProfileState(contactByUser[acc.AssignedUserID])
 		}
 		// Surface the account's connector even when not ready (offline →
 		// last_seen still answers "when was this device last alive").
@@ -105,6 +116,20 @@ func (h *Handler) connectorOverview(c *fiber.Ctx) error {
 		rows = append(rows, row)
 	}
 	return c.JSON(fiber.Map{"accounts": rows, "count": len(rows)})
+}
+
+// contactProfileState classifies a staff contact profile for the audit
+// column: complete (active + a usable contact line), incomplete (row
+// exists but inactive/empty), missing (never configured).
+func contactProfileState(p *models.StaffContactProfile) string {
+	switch {
+	case p == nil:
+		return "missing"
+	case p.Active && p.ContactLine() != "":
+		return "complete"
+	default:
+		return "incomplete"
+	}
 }
 
 // assignmentPausedMap reads the admin pause flag for every org account

@@ -13,11 +13,13 @@ import (
 // thgfulfill com, scheme-less partials) are repaired to the canonical
 // form, never emitted.
 
-// CanonicalWebsite normalizes the STORED website value into its
+// CanonicalWebsite normalizes the STORED website value into ONE
 // canonical clickable form: https:// scheme (http upgraded), host
-// lowercased exactly as configured (www stays iff the operator stored
-// www), no trailing slash, inner whitespace healed ("thgfulfill. com"
-// → "thgfulfill.com"). Empty in → empty out.
+// lowercased with the "www." prefix STRIPPED (review decision: every
+// input variant of thgfulfill.com — with/without scheme, with/without
+// www — must output exactly https://thgfulfill.com), no trailing
+// slash, inner whitespace healed ("thgfulfill. com" → "thgfulfill.com").
+// Empty in → empty out.
 func CanonicalWebsite(stored string) string {
 	s := strings.TrimSpace(stored)
 	if s == "" {
@@ -37,7 +39,11 @@ func CanonicalWebsite(stored string) string {
 	if i := strings.Index(s, "/"); i >= 0 {
 		host, path = s[:i], s[i:]
 	}
-	return "https://" + strings.ToLower(host) + path
+	host = strings.TrimPrefix(strings.ToLower(host), "www.")
+	if host == "" {
+		return ""
+	}
+	return "https://" + host + path
 }
 
 // websiteBaseName extracts the registrable label used for spaced-domain

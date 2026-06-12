@@ -99,4 +99,28 @@ func TestConnectorOverview_OperationalOnly(t *testing.T) {
 	if !strings.Contains(joined, "extension_unsupported") || !strings.Contains(joined, "assignment_paused_by_admin") {
 		t.Errorf("block reasons missing: %v", reasons)
 	}
+
+	// Contact-profile audit column (review item 3): no profile → "missing";
+	// an active profile with a usable line → "complete".
+	if row["contact_profile_state"] != "missing" {
+		t.Errorf("contact_profile_state = %v, want missing", row["contact_profile_state"])
+	}
+	if err := db.UpsertStaffContactProfile(&models.StaffContactProfile{
+		UserID: staffID, OrgID: 1, Zalo: "0901234567", Active: true, Visibility: "team",
+	}); err != nil {
+		t.Fatalf("seed contact profile: %v", err)
+	}
+	resp2, err := app.Test(httptest.NewRequest("GET", "/admin/connectors/overview", nil))
+	if err != nil {
+		t.Fatalf("second request: %v", err)
+	}
+	defer resp2.Body.Close()
+	raw2, _ := io.ReadAll(resp2.Body)
+	var out2 struct {
+		Accounts []map[string]any `json:"accounts"`
+	}
+	_ = json.Unmarshal(raw2, &out2)
+	if out2.Accounts[0]["contact_profile_state"] != "complete" {
+		t.Errorf("contact_profile_state after seed = %v, want complete", out2.Accounts[0]["contact_profile_state"])
+	}
 }

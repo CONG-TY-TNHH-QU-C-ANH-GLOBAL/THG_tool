@@ -24,6 +24,20 @@ export interface ConnectorOverviewRow {
   automation_eligible: boolean;
   assignment_paused: boolean;
   block_reasons: string[];
+  contact_profile_state: 'complete' | 'incomplete' | 'missing' | '' | string;
+}
+
+export function contactStateLabel(state: string): { label: string; tone: 'ok' | 'warn' | 'blocked' } | null {
+  switch (state) {
+    case 'complete':
+      return { label: 'Liên hệ ✓', tone: 'ok' };
+    case 'incomplete':
+      return { label: 'Liên hệ chưa đủ', tone: 'warn' };
+    case 'missing':
+      return { label: 'Chưa có liên hệ', tone: 'warn' };
+    default:
+      return null; // unassigned account — nothing to audit
+  }
 }
 
 export async function getConnectorOverview(): Promise<ConnectorOverviewRow[]> {
