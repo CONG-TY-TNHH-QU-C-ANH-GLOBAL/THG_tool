@@ -40,6 +40,8 @@ type AgentToken struct {
 	IdentityLastVerifiedAt   string     `json:"identity_last_verified_at"`
 	BrowserProfileID         string     `json:"browser_profile_id"`
 	MachineLabel             string     `json:"machine_label"`
+	BuildNumber              string     `json:"build_number"`
+	ReleaseChannel           string     `json:"release_channel"`
 	LastSeen                 *time.Time `json:"last_seen"`
 	Online                   bool       `json:"online"`
 	Active                   bool       `json:"active"`
@@ -66,6 +68,8 @@ type AgentPresence struct {
 	IdentityLastVerifiedAt   string
 	BrowserProfileID         string
 	MachineLabel             string
+	BuildNumber              string
+	ReleaseChannel           string
 }
 
 type ConnectorPairingCode struct {
@@ -206,6 +210,8 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 			identity_extraction_method = CASE WHEN ? != '' THEN ? ELSE identity_extraction_method END,
 			identity_last_verified_at = CASE WHEN ? != '' THEN ? ELSE identity_last_verified_at END,
 			browser_profile_id = CASE WHEN ? != '' THEN ? ELSE browser_profile_id END,
+			build_number = CASE WHEN ? != '' THEN ? ELSE build_number END,
+			release_channel = CASE WHEN ? != '' THEN ? ELSE release_channel END,
 			last_seen = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
 		p.Hostname, p.Hostname,
@@ -226,6 +232,8 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 		p.IdentityExtractionMethod, p.IdentityExtractionMethod,
 		p.IdentityLastVerifiedAt, p.IdentityLastVerifiedAt,
 		p.BrowserProfileID, p.BrowserProfileID,
+		p.BuildNumber, p.BuildNumber,
+		p.ReleaseChannel, p.ReleaseChannel,
 		id,
 	)
 	return err
@@ -279,6 +287,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 		        COALESCE(identity_confidence,''), COALESCE(identity_extraction_method,''),
 		        COALESCE(identity_last_verified_at,''),
 		        COALESCE(browser_profile_id,''), COALESCE(machine_label,''),
+		        COALESCE(build_number,''), COALESCE(release_channel,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens
 		 WHERE org_id = ? AND kind = 'extension_connector'
@@ -299,7 +308,7 @@ func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
 			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
 			&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
 			&t.IdentityConfidence, &t.IdentityExtractionMethod, &t.IdentityLastVerifiedAt,
-			&t.BrowserProfileID, &t.MachineLabel,
+			&t.BrowserProfileID, &t.MachineLabel, &t.BuildNumber, &t.ReleaseChannel,
 			&lastSeen, &t.Active, &t.CreatedAt); err != nil {
 			return nil, err
 		}

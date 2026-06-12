@@ -218,6 +218,7 @@ func (h *Handler) listMyPendingInvites(c *fiber.Ctx) error {
 		 LEFT JOIN organizations o ON o.id = i.org_id
 		 WHERE lower(trim(i.email)) = lower(trim(?))
 		   AND i.used_at IS NULL
+		   AND i.revoked_at IS NULL
 		   AND i.expires_at > CURRENT_TIMESTAMP
 		 ORDER BY i.created_at DESC`, user.Email)
 	if err != nil {
@@ -312,7 +313,7 @@ func (h *Handler) createInvite(c *fiber.Ctx) error {
 	var pendingID int64
 	if err := h.deps.DB.DB().QueryRowContext(c.Context(),
 		`SELECT id FROM org_invites
-		 WHERE org_id = ? AND lower(trim(email)) = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+		 WHERE org_id = ? AND lower(trim(email)) = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
 		 LIMIT 1`, orgID, req.Email).Scan(&pendingID); err == nil {
 		return c.Status(409).JSON(fiber.Map{"error": "pending invite already exists for this email"})
 	}
@@ -333,6 +334,10 @@ func (h *Handler) createInvite(c *fiber.Ctx) error {
 	h.deps.DB.InsertAuditLog(userID, "workspace_invite_created", c.IP(),
 		fmt.Sprintf(`{"org_id":%d,"email":%q,"role":%q}`, orgID, req.Email, req.Role))
 	emailResult := h.sendWorkspaceInviteEmail(c, inviteID, orgID, userID, req.Email, req.Role, token, expiresAt.Format(time.RFC3339))
+	// Already-registered invitees also get an in-app bell notification.
+	if inviter, _ := h.deps.DB.GetUserByID(userID); inviter != nil {
+		h.notifyInviteReceived(orgID, h.orgNameOf(orgID), inviter.Name, req.Email, req.Role, token)
+	}
 
 	return c.Status(201).JSON(fiber.Map{
 		"id":              inviteID,
@@ -355,11 +360,20 @@ func (h *Handler) listInvites(c *fiber.Ctx) error {
 	if orgID == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
 	}
+	// All recent invites, with the derived lifecycle status the admin
+	// table renders: pending | accepted | expired | revoked (PR-1).
 	rows, err := h.deps.DB.DB().QueryContext(c.Context(),
-		`SELECT id, email, COALESCE(NULLIF(role, ''), 'sales'), token, created_by, expires_at, used_at, created_at,
-		        COALESCE(NULLIF(email_status, ''), 'pending'), COALESCE(email_error, '')
-		 FROM org_invites WHERE org_id = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
-		 ORDER BY created_at DESC`, orgID)
+		`SELECT id, email, COALESCE(NULLIF(role, ''), 'sales'), token, created_by, expires_at, used_at,
+		        revoked_at, created_at,
+		        COALESCE(NULLIF(email_status, ''), 'pending'), COALESCE(email_error, ''),
+		        CASE
+		          WHEN revoked_at IS NOT NULL THEN 'revoked'
+		          WHEN used_at IS NOT NULL THEN 'accepted'
+		          WHEN expires_at <= CURRENT_TIMESTAMP THEN 'expired'
+		          ELSE 'pending'
+		        END
+		 FROM org_invites WHERE org_id = ?
+		 ORDER BY created_at DESC LIMIT 100`, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -374,18 +388,21 @@ func (h *Handler) listInvites(c *fiber.Ctx) error {
 		CreatedBy   int64   `json:"created_by"`
 		ExpiresAt   string  `json:"expires_at"`
 		UsedAt      *string `json:"used_at"`
+		RevokedAt   *string `json:"revoked_at"`
 		CreatedAt   string  `json:"created_at"`
 		EmailStatus string  `json:"email_status"`
 		EmailError  string  `json:"email_error"`
+		Status      string  `json:"status"`
 	}
 	var invites []inviteRow
 	for rows.Next() {
 		var inv inviteRow
-		var usedAt *string
-		if err := rows.Scan(&inv.ID, &inv.Email, &inv.Role, &inv.Token, &inv.CreatedBy, &inv.ExpiresAt, &usedAt, &inv.CreatedAt, &inv.EmailStatus, &inv.EmailError); err != nil {
+		var usedAt, revokedAt *string
+		if err := rows.Scan(&inv.ID, &inv.Email, &inv.Role, &inv.Token, &inv.CreatedBy, &inv.ExpiresAt, &usedAt, &revokedAt, &inv.CreatedAt, &inv.EmailStatus, &inv.EmailError, &inv.Status); err != nil {
 			continue
 		}
 		inv.UsedAt = usedAt
+		inv.RevokedAt = revokedAt
 		inv.InviteURL = "/join/" + inv.Token
 		invites = append(invites, inv)
 	}
@@ -403,7 +420,7 @@ func (h *Handler) resendInvite(c *fiber.Ctx) error {
 	row := h.deps.DB.DB().QueryRowContext(c.Context(),
 		`SELECT email, COALESCE(NULLIF(role, ''), 'sales'), token, expires_at
 		 FROM org_invites
-		 WHERE id = ? AND org_id = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`,
+		 WHERE id = ? AND org_id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP`,
 		id, orgID)
 	var email, role, token, expiresAt string
 	if err := row.Scan(&email, &role, &token, &expiresAt); err != nil {
@@ -432,8 +449,11 @@ func (h *Handler) revokeInvite(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
 	}
 	id, _ := c.ParamsInt("id")
+	// Soft revoke (PR-1): keep the row so the admin table shows the
+	// 'revoked' status; accepted invites cannot be revoked retroactively.
 	_, err := h.deps.DB.DB().ExecContext(c.Context(),
-		`DELETE FROM org_invites WHERE id = ? AND org_id = ?`, id, orgID)
+		`UPDATE org_invites SET revoked_at = CURRENT_TIMESTAMP
+		  WHERE id = ? AND org_id = ? AND used_at IS NULL AND revoked_at IS NULL`, id, orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -447,7 +467,7 @@ func (h *Handler) getInviteInfo(c *fiber.Ctx) error {
 	row := h.deps.DB.DB().QueryRowContext(c.Context(),
 		`SELECT i.email, COALESCE(NULLIF(i.role, ''), 'sales'), i.expires_at, o.name
 		 FROM org_invites i JOIN organizations o ON o.id = i.org_id
-		 WHERE i.token = ? AND i.used_at IS NULL AND i.expires_at > CURRENT_TIMESTAMP`, token)
+		 WHERE i.token = ? AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > CURRENT_TIMESTAMP`, token)
 
 	var email, role, expiresAt, orgName string
 	if err := row.Scan(&email, &role, &expiresAt, &orgName); err != nil {
@@ -473,7 +493,7 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 	var email, role string
 	row := h.deps.DB.DB().QueryRowContext(c.Context(),
 		`SELECT id, org_id, email, COALESCE(NULLIF(role, ''), 'sales') FROM org_invites
-		 WHERE token = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`, token)
+		 WHERE token = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP`, token)
 	if err := row.Scan(&inviteID, &orgID, &email, &role); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "invite not found or expired"})
 	}
@@ -501,10 +521,15 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 
 	h.deps.DB.InsertAuditLog(userID, "invite_accepted", c.IP(),
 		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d,"previous_org_id":%d}`, orgID, targetRole, inviteID, previousOrgID))
+	h.deps.DB.InsertAuditLog(userID, "membership_granted", c.IP(),
+		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d}`, orgID, targetRole, inviteID))
+	h.notifyInviteAccepted(orgID, inviteID, user.Name, user.Email, string(targetRole))
 
 	return c.JSON(fiber.Map{
 		"access_token": newToken,
 		"org_id":       orgID,
+		"org_name":     h.orgNameOf(orgID),
+		"role":         targetRole,
 		"user": fiber.Map{
 			"id":     userID,
 			"org_id": orgID,

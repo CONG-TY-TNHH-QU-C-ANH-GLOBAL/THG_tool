@@ -117,8 +117,18 @@ func (h *LocalConnectorHandler) createConnectorInputCommand(c *fiber.Ctx) error 
 	if req.AccountID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "account_id is required"})
 	}
-	if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
+	acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID)
+	if err != nil || acc == nil {
 		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+	}
+	// PR-2b: remote input = controlling the device streaming this account.
+	// Device privacy (PR-M5) applies — only the owning member may drive it;
+	// admin may drive unassigned org accounts only, NEVER a staff member's.
+	// Previously only the org check above ran, letting any member queue
+	// input against a colleague's browser.
+	role, _ := c.Locals("user_role").(string)
+	if !models.CanViewAccountDevice(acc, userID, role) {
+		return c.Status(403).JSON(fiber.Map{"error": "you do not own this account's device"})
 	}
 	if len(req.Payload) == 0 || string(req.Payload) == "null" {
 		req.Payload = json.RawMessage(`{}`)

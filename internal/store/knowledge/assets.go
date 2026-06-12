@@ -70,6 +70,10 @@ func (s *Store) ListAssetsForOrg(ctx context.Context, orgID int64, filter assets
 		q += ` AND source_id = ?`
 		args = append(args, filter.SourceID)
 	}
+	if filter.ExcludeUnhealthySources {
+		q += unhealthySourceExclusion
+		args = append(args, orgID)
+	}
 	if strings.TrimSpace(filter.SearchQ) != "" {
 		like := "%" + strings.ToLower(strings.TrimSpace(filter.SearchQ)) + "%"
 		q += ` AND (LOWER(title) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(description) LIKE ?)`
@@ -294,6 +298,14 @@ const assetSelect = `
 	       retrieval_count_30d, conversion_count_30d, last_retrieved_at,
 	       created_at, updated_at
 	FROM knowledge_assets`
+
+// unhealthySourceExclusion implements ListFilter.ExcludeUnhealthySources:
+// assets from stale / errored / disconnected sources never reach the
+// retrieval hot path (healthy + syncing remain quotable — a sync in
+// progress still serves its last good snapshot). Takes one org_id arg.
+const unhealthySourceExclusion = ` AND source_id NOT IN (
+		SELECT id FROM knowledge_sources
+		 WHERE org_id = ? AND health_status IN ('stale', 'error', 'needs_auth'))`
 
 func (s *Store) updateAssetField(ctx context.Context, assetID, orgID int64, column string, value any) error {
 	if assetID <= 0 || orgID <= 0 {

@@ -107,13 +107,23 @@ func (s *Store) installOutboundHooks() {
 			if err != nil {
 				return outbound.GuardDecision{}, err
 			}
-			return outbound.GuardDecision{
-				Allowed:        decision.Allowed,
-				Reason:         decision.Reason,
-				LastOutboundAt: decision.CooldownUntil,
-				RiskScore:      decision.RiskScore,
-				RiskCeiling:    decision.RiskCeiling,
-			}, nil
+			if !decision.Allowed {
+				return outbound.GuardDecision{
+					Allowed:        false,
+					Reason:         decision.Reason,
+					LastOutboundAt: decision.CooldownUntil,
+					RiskScore:      decision.RiskScore,
+					RiskCeiling:    decision.RiskCeiling,
+				}, nil
+			}
+			// PR-4 extension version gate: a connector running an
+			// update_required/unsupported build gets NO new outbound
+			// tasks. Audited as blocked_by_extension_version (skipped
+			// ledger row) inside the same tx — never a silent failure.
+			if s.extensionGateForOutbound(tx, accountID, msgType) {
+				return outbound.GuardDecision{Allowed: false, Reason: LedgerReasonExtensionBlocked}, nil
+			}
+			return outbound.GuardDecision{Allowed: true, Reason: decision.Reason}, nil
 		},
 		ConversationGate: func(ctx context.Context, orgID int64, targetURL, profileURL string, cooldown time.Duration) (outbound.GuardDecision, error) {
 			return s.conversationGateForOutbound(ctx, orgID, targetURL, profileURL, cooldown)

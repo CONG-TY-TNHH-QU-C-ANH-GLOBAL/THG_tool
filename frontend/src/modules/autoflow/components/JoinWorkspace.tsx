@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, UserPlus } from 'lucide-react';
-import * as api from '../services/api';
-import { isPlatformRole, type AuthUser } from '../services/authService';
+import { type AuthUser } from '../services/authService';
 import { useAuth } from '../hooks/useAuth';
 import { useAuthStore } from '../stores/authStore';
+import { useAcceptInvite } from './notifications/useAcceptInvite';
 import { LangSwitch } from './ds/LangSwitch';
 import { useLang } from '../i18n/useLang';
 
@@ -17,13 +17,7 @@ interface InviteInfo {
 
 interface JoinWorkspaceProps {
   token: string;
-  onJoined: (role: 'admin' | 'staff' | 'founder' | 'superadmin') => void;
   goBack: () => void;
-}
-
-function routeRoleFor(user?: Partial<AuthUser> | null): 'admin' | 'staff' | 'founder' | 'superadmin' {
-  if (isPlatformRole(user?.role)) return 'founder';
-  return user?.role === 'admin' ? 'admin' : 'staff';
 }
 
 function Shell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' }) {
@@ -59,9 +53,10 @@ function Shell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' }) {
   );
 }
 
-export default function JoinWorkspace({ token, onJoined, goBack }: JoinWorkspaceProps) {
+export default function JoinWorkspace({ token, goBack }: JoinWorkspaceProps) {
   const { user, login, isLoading } = useAuth();
   const { lang } = useLang();
+  const inviteFlow = useAcceptInvite();
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [name, setName] = useState('');
@@ -85,15 +80,13 @@ export default function JoinWorkspace({ token, onJoined, goBack }: JoinWorkspace
   const acceptInvite = async () => {
     setMsg('');
     setLoading(true);
-    try {
-      const data = await api.post<{ access_token: string; user: AuthUser }>(`/auth/join/${encodeURIComponent(token)}`, {});
-      useAuthStore.getState().setAuth(data.access_token, data.user);
-      onJoined(routeRoleFor(data.user));
-    } catch (err) {
-      setMsg(err instanceof Error ? err.message : (lang === 'vi' ? 'Không nhận được invite.' : 'Failed to accept invite.'));
-    } finally {
-      setLoading(false);
+    // Shared accept sequence (PR-1): fresh token → hydrate /auth/me →
+    // joined-toast → route directly into the invited workspace.
+    const data = await inviteFlow.accept(token);
+    if (!data) {
+      setMsg(lang === 'vi' ? 'Không nhận được invite.' : 'Failed to accept invite.');
     }
+    setLoading(false);
   };
 
   const signupAndJoin = async () => {
@@ -117,7 +110,10 @@ export default function JoinWorkspace({ token, onJoined, goBack }: JoinWorkspace
         return;
       }
       useAuthStore.getState().setAuth(data.access_token, data.user);
-      onJoined(routeRoleFor(data.user));
+      // Stay on this page: the signed-in card now shows the explicit
+      // «Đồng ý tham gia workspace» CTA — acceptance is a user action,
+      // never implicit (PR-1).
+      setMsg('');
     } catch {
       setMsg(lang === 'vi' ? 'Lỗi kết nối, thử lại sau.' : 'Connection error, try again.');
     } finally {
@@ -164,8 +160,8 @@ export default function JoinWorkspace({ token, onJoined, goBack }: JoinWorkspace
               {lang === 'vi' ? 'ĐANG ĐĂNG NHẬP' : 'CURRENTLY SIGNED IN'}
             </div>
             <p style={{ fontSize: 13, color: 'var(--text)', marginBottom: 12 }}>{user.email}</p>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={acceptInvite} disabled={loading}>
-              <Check size={13} /> {lang === 'vi' ? 'Nhận invite ngay' : 'Accept invite'}
+            <button type="button" className="btn btn-primary btn-sm" onClick={acceptInvite} disabled={loading}>
+              <Check size={13} /> {loading ? (lang === 'vi' ? 'Đang tham gia…' : 'Joining…') : (lang === 'vi' ? 'Đồng ý tham gia workspace' : 'Accept and join workspace')}
             </button>
           </div>
         )}

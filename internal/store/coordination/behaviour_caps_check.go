@@ -6,46 +6,11 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store/dbutil"
 )
 
-// CapsDecision is the coordination-domain primitive returned by
-// [Store.checkBehaviourCapsTx]. It carries the cap-check result in a
-// shape that does NOT reference any peer domain — the outbound layer's
-// hook adapter (outbound_aliases.go::installOutboundHooks) converts
-// this into [outbound.GuardDecision] at its boundary.
-//
-// Why a coordination-local type: coordination is BELOW outbound in the
-// dependency graph (DOMAINS.md §2). When the coordination subpackage
-// is extracted (Phase 5B), it cannot import outbound — that would be
-// the bidirectional-knowledge violation locked in
-// [[feedback_no_bidirectional_domain_knowledge]]. Decouple-1
-// (2026-05-21) introduced this primitive as pre-work so the 5B move is
-// mechanical.
-//
-// Field semantics:
-//
-//   - Allowed: whether the action passes the cap check.
-//   - Reason: short tag — "ok" | "account_cooldown_active" |
-//     "daily_limit_exceeded" | "risk_ceiling_exceeded". Stable strings
-//     consumed by the outbound dedup/queue layer for telemetry.
-//   - CooldownUntil: zero unless Reason == "account_cooldown_active";
-//     when set, carries the wall-clock instant after which the cap
-//     would re-allow the action. Outbound's adapter maps this into
-//     GuardDecision.LastOutboundAt for back-compat with the existing
-//     consumer shape.
-type CapsDecision struct {
-	Allowed       bool
-	Reason        string
-	CooldownUntil time.Time
-	// RiskScore and RiskCeiling are populated ONLY when
-	// Reason == "risk_ceiling_exceeded". They expose the gate's inputs so
-	// the operator-facing telemetry can show "why was this blocked?"
-	// without a separate diagnostic round-trip.
-	RiskScore   float64
-	RiskCeiling float64
-}
+// CapsDecision + DecideCaps (the pure policy) live in decide_caps.go;
+// this file keeps the DB-reading wrappers that feed them.
 
 // checkBehaviourCapsTx runs the Coordination Plane PR-2 enforcement
 // layer against an open queue transaction. Reasons returned:
@@ -110,52 +75,18 @@ func (s *Store) CheckCapsTx(tx *sql.Tx, accountID int64, msgType string) (CapsDe
 	if cooldownUntilStr != "" {
 		cooldownUntil = dbutil.ParseSQLiteTime(cooldownUntilStr)
 	}
+	// tenant-ok: cross-domain read (coordination -> identities). The admin
+	// assignment-pause switch lives on accounts; the gate reads it via this
+	// single projection query. Strict: a read error blocks (fail-closed) —
+	// a silent not-paused default would defeat the safety switch.
+	var assignmentPaused int
+	if err := tx.QueryRow(
+		`SELECT COALESCE(assignment_paused, 0) FROM accounts WHERE id = ?`, accountID,
+	).Scan(&assignmentPaused); err != nil && err != sql.ErrNoRows {
+		return CapsDecision{}, err
+	}
 	return DecideCaps(time.Now().UTC(), caps, countersDay, commentsToday, inboxToday, groupPostsToday,
-		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, msgType), nil
-}
-
-// DecideCaps is the PURE cap decision — no DB, no side effects, and `now` is passed
-// in (not read from the clock) so callers get deterministic results and the UTC
-// day-rollover comparison can't go flaky in tests. It is the SINGLE source of
-// cap-gate truth, shared by the queue-time gate (CheckCapsTx, which reads + applies
-// risk decay first) and the read-only readiness matrix (EvaluateCaps, no decay) —
-// so the gate and the matrix can never disagree on why an account is blocked.
-func DecideCaps(now time.Time, caps models.BehaviourCaps, countersDay string, commentsToday, inboxToday, groupPostsToday, profilePostsToday int, riskScore float64, cooldownUntil time.Time, actorBlocked bool, msgType string) CapsDecision {
-	now = now.UTC()
-	// Verified-Actor block (P1b): an account caught logged into a different
-	// Facebook identity than expected is denied ALL execution until an operator
-	// clears it. Checked first — a hard integrity stop, not a pacing decision.
-	if actorBlocked {
-		return CapsDecision{Allowed: false, Reason: "actor_mismatch_blocked"}
-	}
-	if !cooldownUntil.IsZero() && now.Before(cooldownUntil.UTC()) {
-		return CapsDecision{Allowed: false, Reason: "account_cooldown_active", CooldownUntil: cooldownUntil}
-	}
-	if caps.RiskScoreCeiling > 0 && riskScore >= caps.RiskScoreCeiling {
-		return CapsDecision{Allowed: false, Reason: "risk_ceiling_exceeded", RiskScore: riskScore, RiskCeiling: caps.RiskScoreCeiling}
-	}
-	if col := counterColumnForAction(msgType); col != "" {
-		cap := caps.CapForAction(msgType)
-		if cap > 0 {
-			counter := 0
-			if countersDay == dbutil.UTCDayKey(now) {
-				switch col {
-				case "comments_today":
-					counter = commentsToday
-				case "inbox_today":
-					counter = inboxToday
-				case "group_posts_today":
-					counter = groupPostsToday
-				case "profile_posts_today":
-					counter = profilePostsToday
-				}
-			}
-			if counter >= cap {
-				return CapsDecision{Allowed: false, Reason: "daily_limit_exceeded"}
-			}
-		}
-	}
-	return CapsDecision{Allowed: true, Reason: "ok"}
+		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, assignmentPaused == 1, msgType), nil
 }
 
 // EvaluateCaps is the READ-ONLY cap check for the readiness matrix (PR-D). Unlike
@@ -190,6 +121,14 @@ func (s *Store) EvaluateCaps(ctx context.Context, accountID int64, msgType strin
 	if cooldownUntilStr != "" {
 		cooldownUntil = dbutil.ParseSQLiteTime(cooldownUntilStr)
 	}
+	// tenant-ok: cross-domain read (coordination -> identities), mirrors
+	// CheckCapsTx so gate and matrix can never disagree on the pause state.
+	var assignmentPaused int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(assignment_paused, 0) FROM accounts WHERE id = ?`, accountID,
+	).Scan(&assignmentPaused); err != nil && err != sql.ErrNoRows {
+		return CapsDecision{}, err
+	}
 	return DecideCaps(time.Now().UTC(), caps, countersDay, commentsToday, inboxToday, groupPostsToday,
-		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, msgType), nil
+		profilePostsToday, riskScore, cooldownUntil, actorBlocked == 1, assignmentPaused == 1, msgType), nil
 }

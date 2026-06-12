@@ -94,6 +94,9 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Get("/connectors/status", h.connectorStatus)
 	// PR-D readiness matrix: per-account, per-capability "can run + why not".
 	group.Get("/accounts/readiness", h.accountReadiness)
+	// PR-3 admin overview: workspace-level operational status (staff →
+	// account → connector/version/readiness). View-only; no device control.
+	group.Get("/admin/connectors/overview", adminOnly, h.connectorOverview)
 	group.Delete("/ai/history", h.aiDeleteHistory)
 	group.Delete("/ai/history/:id", h.aiDeleteHistoryItem)
 

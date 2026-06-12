@@ -4,6 +4,9 @@ import type { ComponentType, CSSProperties } from 'react';
 const DataPrivateView = lazy(() => import('./views/DataPrivateView'));
 const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
 const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
+const AdminConnectorTable = lazy(() => import('./connectorAdmin/AdminConnectorTable'));
+const MyFacebookConnection = lazy(() => import('./connectorAdmin/MyFacebookConnection'));
+const StaffContactProfileForm = lazy(() => import('./connectorAdmin/StaffContactProfileForm'));
 import DefaultAccountSettings from './DefaultAccountSettings';
 import { CompanyIdentityForm } from './companyIdentity/CompanyIdentityForm';
 import TelegramIntegrationPage from './telegram/TelegramIntegrationPage';
@@ -41,6 +44,7 @@ import {
   Mail,
   Palette,
   RefreshCw,
+  MonitorPlay,
   Shield,
   Upload,
   UserCog,
@@ -53,7 +57,7 @@ import {
 
 interface SettingsPageProps { org: Organization; orgId: string; isAdmin: boolean; }
 
-type SettingsTab = 'brand' | 'execution' | 'security' | 'staff' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics' | 'integrations';
+type SettingsTab = 'brand' | 'execution' | 'security' | 'staff' | 'connection' | 'agents' | 'billing' | 'workspace_knowledge' | 'diagnostics' | 'integrations';
 
 const inputStyle: CSSProperties = baseInputStyle;
 
@@ -66,6 +70,7 @@ const TABS: { id: SettingsTab; label: string; Icon: ComponentType<{ size?: numbe
   { id: 'execution', label: 'Tài khoản mặc định', Icon: UserCog },
   { id: 'security', label: 'Bảo mật', Icon: Shield },
   { id: 'staff', label: 'Nhân viên', Icon: Users },
+  { id: 'connection', label: 'Kết nối Facebook', Icon: MonitorPlay },
   { id: 'agents', label: 'AI Agents', Icon: Zap },
   { id: 'billing', label: 'Thanh toán', Icon: CreditCard },
   { id: 'workspace_knowledge', label: 'Kho dữ liệu', Icon: Database },
@@ -347,6 +352,18 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
       </div>
 
       {activeTab === 'execution' && <DefaultAccountSettings />}
+
+      {activeTab === 'connection' && (
+        <Suspense fallback={<Spinner />}>
+          {/* PR-3: admin sees the workspace-wide operational table; staff see
+              only their own connection. Device control stays owner-only.
+              PR-5: everyone edits their OWN contact line below. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {isAdmin ? <AdminConnectorTable /> : <MyFacebookConnection />}
+            <StaffContactProfileForm />
+          </div>
+        </Suspense>
+      )}
 
       {activeTab === 'brand' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

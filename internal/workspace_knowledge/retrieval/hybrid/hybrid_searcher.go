@@ -102,6 +102,8 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 		States:  filter.EffectiveStates(),
 		OrderBy: assets.OrderDefault,
 		Limit:   candidateLimit(k),
+		// Retrieval hot path: never quote from stale/unhealthy catalogs.
+		ExcludeUnhealthySources: true,
 	}
 	candidates, err := s.Lister.ListAssetsForOrg(ctx, orgID, listFilter)
 	if err != nil {

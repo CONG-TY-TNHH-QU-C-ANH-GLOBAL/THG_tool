@@ -6,6 +6,7 @@ import { initAuthSync } from '../../modules/autoflow/services/authSync';
 import { isPlatformRole } from '../../modules/autoflow/services/authService';
 import { useRoleStore } from '../../modules/autoflow/stores/roleStore';
 import TopNav from './TopNav';
+import JoinedWorkspaceToast from '../../modules/autoflow/components/notifications/JoinedWorkspaceToast';
 import { PlatformErrorBoundary } from './PlatformErrorBoundary';
 import '../../modules/autoflow/autoflow.css';
 
@@ -49,6 +50,7 @@ export default function PlatformShell({ children }: PlatformShellProps) {
   return (
     <div className="platform-shell" style={{ display: 'flex', flexDirection: 'column', height: '100vh', minHeight: 0 }}>
       <TopNav />
+      <JoinedWorkspaceToast />
       <div className="platform-outlet" style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <PlatformErrorBoundary>
           <Suspense fallback={<ShellSpinner />}>{children}</Suspense>

@@ -42,6 +42,30 @@ const REASON_MESSAGES: Record<string, ReasonBody> = {
     action: 'Reload hoặc cập nhật THG Connector lên phiên bản mới nhất.',
     severity: 'warning',
   },
+  extension_update_available: {
+    title: 'Có bản cập nhật extension mới',
+    description: 'Có bản cập nhật extension mới. Bạn vẫn có thể dùng, nhưng nên cập nhật để ổn định hơn.',
+    action: 'Cập nhật THG Connector khi thuận tiện.',
+    severity: 'warning',
+  },
+  extension_update_required: {
+    title: 'Cần cập nhật extension để tiếp tục',
+    description: 'Automation đang tạm dừng vì extension của bạn đã cũ. Cập nhật extension để tiếp tục nhận task.',
+    action: 'Cập nhật THG Connector lên phiên bản mới rồi mở lại tab Facebook.',
+    severity: 'blocked',
+  },
+  extension_unsupported: {
+    title: 'Phiên bản extension không còn được hỗ trợ',
+    description: 'Phiên bản extension này không còn được hỗ trợ. Vui lòng cài phiên bản mới.',
+    action: 'Gỡ extension cũ và cài phiên bản mới nhất từ admin.',
+    severity: 'blocked',
+  },
+  blocked_by_extension_version: {
+    title: 'Task bị chặn do phiên bản extension',
+    description: 'Hệ thống không giao task mới vì extension của tài khoản này chưa đạt phiên bản tối thiểu.',
+    action: 'Cập nhật THG Connector để tiếp tục nhận task.',
+    severity: 'blocked',
+  },
   account_cooldown_active: {
     title: 'Tài khoản đang nghỉ an toàn',
     description: 'Hệ thống tạm nghỉ tài khoản này để tránh thao tác quá dày trên Facebook.',
@@ -60,14 +84,25 @@ const REASON_MESSAGES: Record<string, ReasonBody> = {
     action: 'Tài khoản sẽ tiếp tục vào ngày mai hoặc admin điều chỉnh giới hạn.',
     severity: 'waiting',
   },
+  assignment_paused_by_admin: {
+    title: 'Admin đã tạm dừng automation',
+    description: 'Admin đã tạm dừng giao task tự động cho tài khoản này để đảm bảo an toàn.',
+    action: 'Liên hệ admin của workspace để mở lại khi sẵn sàng.',
+    severity: 'blocked',
+  },
 };
 
 // Priority: when several reasons apply at once, surface the most important one.
 const REASON_PRIORITY: string[] = [
+  'assignment_paused_by_admin',
   'actor_mismatch_blocked',
   'actor_identity_unknown',
   'connector_offline',
+  'extension_unsupported',
+  'extension_update_required',
+  'blocked_by_extension_version',
   'extension_version_outdated',
+  'extension_update_available',
   'risk_ceiling_exceeded',
   'account_cooldown_active',
   'daily_limit_exceeded',

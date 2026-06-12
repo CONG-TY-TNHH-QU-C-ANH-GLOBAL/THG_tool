@@ -110,6 +110,8 @@ var EventTypes = []string{
 	// system / health
 	"connector_offline", "account_attention", "automation_paused",
 	"gate1_failure_spike", "submitted_unverified_spike", "circuit_breaker_triggered",
+	// workspace membership + extension lifecycle (SaaS UX Hardening PR-8)
+	"invite_created", "invite_accepted", "extension_update_required",
 }
 
 // IsValidEventType validates one event key against the allow-list.

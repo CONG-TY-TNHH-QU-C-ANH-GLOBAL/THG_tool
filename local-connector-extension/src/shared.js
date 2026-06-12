@@ -33,6 +33,9 @@ var THGShared = globalThis.THGShared || (() => {
     outbound_executor: true,
     extension_bridge: 'supported'
   };
+  // Heartbeat reports this alongside the manifest version so the backend
+  // version gate (PR-4) can distinguish stable/beta builds.
+  const RELEASE_CHANNEL = 'stable';
 
   function normalizeServerUrl(value) {
     const text = String(value || DEFAULT_SERVER_URL).trim();
@@ -72,6 +75,7 @@ var THGShared = globalThis.THGShared || (() => {
     DEFAULT_SERVER_URL,
     FACEBOOK_HOME,
     HEARTBEAT_ALARM,
+    RELEASE_CHANNEL,
     delay,
     injectContentScripts,
     isFacebookUrl,

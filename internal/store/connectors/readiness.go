@@ -20,12 +20,16 @@ const MinExtensionVersion = "0.5.26"
 // literal so the connectors store does not import the gateway package.
 const streamFacebookLoggedIn = "facebook_logged_in"
 
-// Connector-eligibility reason codes (closed set).
+// Connector-eligibility reason codes (closed set). The version gate's
+// blocking reasons (ConnExtensionUpdateRequired / ConnExtensionUnsupported)
+// live in version_policy.go next to the state evaluator.
 const (
-	ConnReady             = "ready"
-	ConnOffline           = "connector_offline"
-	ConnIdentityUnknown   = "actor_identity_unknown"
-	ConnIdentityMismatch  = "actor_mismatch"
+	ConnReady            = "ready"
+	ConnOffline          = "connector_offline"
+	ConnIdentityUnknown  = "actor_identity_unknown"
+	ConnIdentityMismatch = "actor_mismatch"
+	// Deprecated: pre-PR-4 single-floor reason, superseded by
+	// ConnExtensionUpdateRequired. Kept for log/telemetry consumers.
 	ConnExtensionOutdated = "extension_version_outdated"
 )
 
@@ -39,8 +43,9 @@ const (
 //   - its live fb_user_id must be present (else ConnIdentityUnknown) and, when
 //     the account has an expected fb_user_id, must match it (else
 //     ConnIdentityMismatch).
-//   - the extension must be >= minExtVersion (else ConnExtensionOutdated).
-func PickReadyConnector(conns []AgentToken, accountID int64, expectedFBUserID, minExtVersion string) (int64, string) {
+//   - the extension version state must allow automation (PR-4): blocked
+//     states map to ConnExtensionUpdateRequired / ConnExtensionUnsupported.
+func PickReadyConnector(conns []AgentToken, accountID int64, expectedFBUserID string, policy VersionPolicy) (int64, string) {
 	expected := strings.TrimSpace(expectedFBUserID)
 	sawAssigned := false
 	for i := range conns {
@@ -62,8 +67,8 @@ func PickReadyConnector(conns []AgentToken, accountID int64, expectedFBUserID, m
 		if expected != "" && connFB != expected {
 			return 0, ConnIdentityMismatch
 		}
-		if minExtVersion != "" && !versionAtLeast(c.Version, minExtVersion) {
-			return 0, ConnExtensionOutdated
+		if state := EvaluateVersionState(c.Version, policy); !VersionStateAllowsAutomation(state) {
+			return 0, VersionStateReason(state)
 		}
 		return c.ID, ConnReady
 	}

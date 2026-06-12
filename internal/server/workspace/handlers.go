@@ -505,13 +505,15 @@ func (h *Handler) getAccounts(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	accounts := make([]models.Account, 0, len(all))
+	// AccountSafe projection: the store returns decrypted cookies + proxy +
+	// user-agent for internal workers. The previous "[REDACTED]" cookie mask
+	// still leaked proxy_url and user_agent — project instead of mutate.
+	accounts := make([]models.AccountSafe, 0, len(all))
 	for i := range all {
 		if !models.CanViewAccountDevice(&all[i], userID, role) {
 			continue
 		}
-		all[i].CookiesJSON = "[REDACTED]"
-		accounts = append(accounts, all[i])
+		accounts = append(accounts, models.NewAccountSafe(&all[i]))
 	}
 	return c.JSON(fiber.Map{"accounts": accounts, "count": len(accounts)})
 }

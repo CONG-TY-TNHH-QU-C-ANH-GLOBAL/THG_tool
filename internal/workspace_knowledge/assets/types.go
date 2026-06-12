@@ -185,6 +185,8 @@ type ListFilter struct {
 	Limit     int           // 0 = no limit
 	Offset    int
 	OrderBy   ListOrder
+	// Hot path only: AI never quotes stale/error/needs_auth sources.
+	ExcludeUnhealthySources bool
 }
 
 type ListOrder string

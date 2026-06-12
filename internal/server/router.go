@@ -18,11 +18,13 @@ import (
 	serveragent "github.com/thg/scraper/internal/server/agent"
 	serverauth "github.com/thg/scraper/internal/server/auth"
 	"github.com/thg/scraper/internal/server/autoflow"
+	servercontactprofile "github.com/thg/scraper/internal/server/contactprofile"
 	"github.com/thg/scraper/internal/server/crawl"
 	serverintegrations "github.com/thg/scraper/internal/server/integrations"
 	serverknowledge "github.com/thg/scraper/internal/server/knowledge"
 	"github.com/thg/scraper/internal/server/leads"
 	servermw "github.com/thg/scraper/internal/server/middleware"
+	servernotifications "github.com/thg/scraper/internal/server/notifications"
 	serverobservability "github.com/thg/scraper/internal/server/observability"
 	serverorg "github.com/thg/scraper/internal/server/org"
 	serverplatform "github.com/thg/scraper/internal/server/platform"
@@ -125,13 +127,18 @@ func (s *Server) registerRoutes() {
 		ServerHost:         cfg.ServerHost,
 		SSHPort:            cfg.SSHPort,
 		Mailer:             cfg.Mailer,
+		TgEvents:           tgControl, // PR-8: invite lifecycle → org Telegram channels
 	}
 	serverauth.Routes(api, authDeps, authLimiter, regLimiter)
 
 	// Admin-only auth routes
 	adminOnly := authpkg.RequireRole("admin")
 	tenantReady := servermw.TenantReady()
-	protectedAuth := api.Group("/auth", authpkg.RequireAuth(cfg.JWTSecret))
+	// PR-2b: writes re-validate the JWT org claim against the DB so a
+	// token issued before an invite-accept org move cannot mutate the
+	// previous org for the rest of its TTL.
+	freshOrg := servermw.FreshOrgClaim(s.db)
+	protectedAuth := api.Group("/auth", authpkg.RequireAuth(cfg.JWTSecret), freshOrg)
 	serverorg.AuthAdminRoutes(protectedAuth, orgDeps, tenantReady, adminOnly)
 
 	// Public health check (no auth required)
@@ -140,7 +147,12 @@ func (s *Server) registerRoutes() {
 	serverauth.OnboardingRoutes(api, authDeps)
 
 	// Protected API routes — require JWT
-	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady)
+	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady, freshOrg)
+
+	// In-app notification bell (PR-1): invite + connector events.
+	servernotifications.Routes(r, servernotifications.Deps{DB: s.db})
+	// Staff/sales contact profiles (PR-5): self-edit + admin manage.
+	servercontactprofile.Routes(r, servercontactprofile.Deps{DB: s.db}, adminOnly)
 
 	leads.Routes(r, leads.Deps{
 		DB:       s.db,
