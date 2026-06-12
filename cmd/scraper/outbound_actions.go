@@ -143,6 +143,9 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			idProfile = ai.LoadProfileForOrg(db, orgID)
 		}
 		commentIdentity = ai.ResolveCompanyIdentity(idProfile, nil)
+		// PR-5 staff contact: the assigned salesperson's own contact line
+		// replaces the workspace default (fallback/omit per org policy).
+		commentIdentity = resolveStaffContactIdentity(db, orgID, accountID, commentIdentity)
 	}
 	template := argString(args, "template")
 	queued, skipped := 0, 0

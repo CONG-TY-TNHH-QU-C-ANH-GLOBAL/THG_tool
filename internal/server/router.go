@@ -18,6 +18,7 @@ import (
 	serveragent "github.com/thg/scraper/internal/server/agent"
 	serverauth "github.com/thg/scraper/internal/server/auth"
 	"github.com/thg/scraper/internal/server/autoflow"
+	servercontactprofile "github.com/thg/scraper/internal/server/contactprofile"
 	"github.com/thg/scraper/internal/server/crawl"
 	serverintegrations "github.com/thg/scraper/internal/server/integrations"
 	serverknowledge "github.com/thg/scraper/internal/server/knowledge"
@@ -149,6 +150,8 @@ func (s *Server) registerRoutes() {
 
 	// In-app notification bell (PR-1): invite + connector events.
 	servernotifications.Routes(r, servernotifications.Deps{DB: s.db})
+	// Staff/sales contact profiles (PR-5): self-edit + admin manage.
+	servercontactprofile.Routes(r, servercontactprofile.Deps{DB: s.db}, adminOnly)
 
 	leads.Routes(r, leads.Deps{
 		DB:       s.db,

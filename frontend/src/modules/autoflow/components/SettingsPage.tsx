@@ -6,6 +6,7 @@ const ExecutionRealityView = lazy(() => import('./views/ExecutionRealityView'));
 const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingRealityView'));
 const AdminConnectorTable = lazy(() => import('./connectorAdmin/AdminConnectorTable'));
 const MyFacebookConnection = lazy(() => import('./connectorAdmin/MyFacebookConnection'));
+const StaffContactProfileForm = lazy(() => import('./connectorAdmin/StaffContactProfileForm'));
 import DefaultAccountSettings from './DefaultAccountSettings';
 import { CompanyIdentityForm } from './companyIdentity/CompanyIdentityForm';
 import TelegramIntegrationPage from './telegram/TelegramIntegrationPage';
@@ -355,8 +356,12 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
       {activeTab === 'connection' && (
         <Suspense fallback={<Spinner />}>
           {/* PR-3: admin sees the workspace-wide operational table; staff see
-              only their own connection. Device control stays owner-only. */}
-          {isAdmin ? <AdminConnectorTable /> : <MyFacebookConnection />}
+              only their own connection. Device control stays owner-only.
+              PR-5: everyone edits their OWN contact line below. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {isAdmin ? <AdminConnectorTable /> : <MyFacebookConnection />}
+            <StaffContactProfileForm />
+          </div>
         </Suspense>
       )}
 
