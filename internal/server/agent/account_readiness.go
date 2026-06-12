@@ -66,6 +66,16 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		extVer, machineLabel, profileID := "", "", ""
 		if c, ok := connByID[connID]; ok {
 			extVer, machineLabel, profileID = c.Version, c.MachineLabel, c.BrowserProfileID
+		} else {
+			// Blocked connector (e.g. update_required): still surface the
+			// assigned device's version/label so the staff panel can show
+			// WHICH build needs updating instead of a blank row.
+			for j := range conns {
+				if conns[j].AssignedAccountID == acc.ID {
+					extVer, machineLabel, profileID = conns[j].Version, conns[j].MachineLabel, conns[j].BrowserProfileID
+					break
+				}
+			}
 		}
 		ar := models.AccountReadiness{
 			AccountID:        acc.ID,
