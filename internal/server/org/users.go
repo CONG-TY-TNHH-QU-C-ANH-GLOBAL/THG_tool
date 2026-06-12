@@ -1,12 +1,14 @@
 package org
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store"
 )
 
 func (h *Handler) adminUpdateUser(c *fiber.Ctx) error {
@@ -75,7 +77,7 @@ func (h *Handler) adminDeleteUser(c *fiber.Ctx) error {
 	}
 	adminID, _ := c.Locals("user_id").(int64)
 	if id == adminID {
-		return c.Status(400).JSON(fiber.Map{"error": "cannot delete your own account"})
+		return c.Status(400).JSON(fiber.Map{"error": "use the leave-workspace action for your own membership"})
 	}
 	user, err := h.deps.DB.GetUserByID(id)
 	if err != nil || user == nil {
@@ -87,14 +89,23 @@ func (h *Handler) adminDeleteUser(c *fiber.Ctx) error {
 	if !callerIsPlatform && user.OrgID != callerOrgID {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
-	if !callerIsPlatform && models.IsPlatformRole(user.Role) {
-		return c.Status(403).JSON(fiber.Map{"error": "cannot delete founder users"})
+	if models.IsPlatformRole(user.Role) {
+		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
 	}
-	if err := h.deps.DB.DeleteUser(id); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "delete failed"})
+	// Non-destructive (membership-vulnerability fix): the global user
+	// record + login credentials are PRESERVED — only the workspace
+	// membership is detached, and the leaver's accounts are
+	// assignment-paused. Destructive deletion stays founder-only
+	// (superadmin surface).
+	if err := h.deps.DB.DetachUserFromOrg(id, user.OrgID); err != nil {
+		if errors.Is(err, store.ErrLastAdmin) {
+			return c.Status(409).JSON(fiber.Map{"error": "cannot remove the last admin of the workspace", "code": "LAST_ADMIN"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": "remove failed"})
 	}
-	h.deps.DB.InsertAuditLog(adminID, "user_deleted", c.IP(), fmt.Sprintf(`{"deleted_id":%d}`, id))
-	return c.JSON(fiber.Map{"status": "deleted"})
+	h.deps.DB.InsertAuditLog(adminID, "member_removed_from_workspace", c.IP(),
+		fmt.Sprintf(`{"removed_user_id":%d,"org_id":%d}`, id, user.OrgID))
+	return c.JSON(fiber.Map{"status": "removed_from_workspace"})
 }
 
 // listUsers handles GET /api/auth/users â€” scoped to caller's org (superadmin sees all).

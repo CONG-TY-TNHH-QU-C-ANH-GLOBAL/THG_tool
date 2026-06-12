@@ -36,11 +36,8 @@ func (h *Handler) completeProvisionedClaim(userID int64, claim *store.Provisione
 	if claim == nil || userID <= 0 || claim.OrgID <= 0 {
 		return nil
 	}
-	if claim.Source == "invite" {
-		if err := h.deps.DB.MarkInviteUsed(claim.InviteID, userID); err != nil {
-			return err
-		}
-	}
+	// Note: claims are founder-provisioned only — a pending invite is NOT a
+	// claim anymore; membership requires the explicit accept endpoint.
 	if err := h.deps.DB.App().UpsertStaffKPI(userID, claim.OrgID, app.KPIDelta{}); err != nil {
 		return err
 	}

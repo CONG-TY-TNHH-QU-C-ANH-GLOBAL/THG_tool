@@ -19,6 +19,7 @@ interface BackendInvite {
   created_at: string;
   email_status?: string;
   email_error?: string;
+  status?: string;
 }
 interface InviteResponse { invites: BackendInvite[]; count: number; }
 
@@ -51,6 +52,7 @@ function toInvite(inv: BackendInvite): StaffInvite {
     createdAt: inv.created_at,
     emailStatus: inv.email_status,
     emailError: inv.email_error,
+    status: inv.status,
   };
 }
 
@@ -63,7 +65,9 @@ export async function getStaff(orgId: string): Promise<StaffMember[]> {
 export async function getStaffInvites(orgId: string): Promise<StaffInvite[]> {
   void orgId;
   const res = await api.get<InviteResponse>('/org/invites');
-  return (res.invites ?? []).map(toInvite);
+  // The «Invite đang chờ» panel shows PENDING invites only — accepted /
+  // expired / revoked rows are history, never actionable invitations.
+  return (res.invites ?? []).map(toInvite).filter(inv => !inv.status || inv.status === 'pending');
 }
 
 export async function inviteStaff(orgId: string, data: Pick<StaffMember, 'email' | 'role'>): Promise<StaffInvite> {
