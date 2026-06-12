@@ -31,6 +31,10 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Put("/accounts/:id/status", adminOnly, h.updateAccountStatus)
 	group.Put("/accounts/:id/cookies", adminOnly, h.updateAccountCookies)
 	group.Delete("/accounts/:id", adminOnly, h.deleteAccount)
+	// Admin safety switch over task assignment (PR-2b) — pauses queueing,
+	// never touches the device (device privacy stays with the owner).
+	group.Put("/accounts/:id/pause", adminOnly, h.pauseAccountAssignment)
+	group.Put("/accounts/:id/resume", adminOnly, h.resumeAccountAssignment)
 
 	group.Get("/browser/workspaces", h.workspaceList)
 	group.Post("/browser/workspaces/new", h.workspaceNew)

@@ -60,10 +60,17 @@ const REASON_MESSAGES: Record<string, ReasonBody> = {
     action: 'Tài khoản sẽ tiếp tục vào ngày mai hoặc admin điều chỉnh giới hạn.',
     severity: 'waiting',
   },
+  assignment_paused_by_admin: {
+    title: 'Admin đã tạm dừng automation',
+    description: 'Admin đã tạm dừng giao task tự động cho tài khoản này để đảm bảo an toàn.',
+    action: 'Liên hệ admin của workspace để mở lại khi sẵn sàng.',
+    severity: 'blocked',
+  },
 };
 
 // Priority: when several reasons apply at once, surface the most important one.
 const REASON_PRIORITY: string[] = [
+  'assignment_paused_by_admin',
   'actor_mismatch_blocked',
   'actor_identity_unknown',
   'connector_offline',

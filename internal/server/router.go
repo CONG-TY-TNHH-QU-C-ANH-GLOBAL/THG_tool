@@ -131,7 +131,11 @@ func (s *Server) registerRoutes() {
 	// Admin-only auth routes
 	adminOnly := authpkg.RequireRole("admin")
 	tenantReady := servermw.TenantReady()
-	protectedAuth := api.Group("/auth", authpkg.RequireAuth(cfg.JWTSecret))
+	// PR-2b: writes re-validate the JWT org claim against the DB so a
+	// token issued before an invite-accept org move cannot mutate the
+	// previous org for the rest of its TTL.
+	freshOrg := servermw.FreshOrgClaim(s.db)
+	protectedAuth := api.Group("/auth", authpkg.RequireAuth(cfg.JWTSecret), freshOrg)
 	serverorg.AuthAdminRoutes(protectedAuth, orgDeps, tenantReady, adminOnly)
 
 	// Public health check (no auth required)
@@ -140,7 +144,7 @@ func (s *Server) registerRoutes() {
 	serverauth.OnboardingRoutes(api, authDeps)
 
 	// Protected API routes — require JWT
-	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady)
+	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady, freshOrg)
 
 	leads.Routes(r, leads.Deps{
 		DB:       s.db,
