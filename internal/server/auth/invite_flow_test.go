@@ -69,6 +69,7 @@ func (f *inviteFlowFixture) app(userID, orgID int64, role string) *fiber.App {
 	app.Get("/auth/me/invites", f.h.listMyPendingInvites)
 	app.Get("/auth/me/memberships", f.h.listMemberships)
 	app.Post("/auth/refresh-membership", f.h.refreshMembership)
+	app.Post("/auth/me/leave-workspace", f.h.leaveWorkspace)
 	app.Post("/auth/join/:token", f.h.acceptInvite)
 	return app
 }

@@ -60,36 +60,21 @@ type ProvisionedOrgClaim struct {
 }
 
 // FindProvisionedOrgByEmail resolves a pending workspace/org assignment for an
-// email. Invites are explicit and win first; otherwise a Facebook account row
-// with the same email is treated as a founder-provisioned workspace claim.
+// email — founder-provisioned only: a Facebook account row with the same email.
+//
+// PENDING INVITES ARE DELIBERATELY NOT CLAIMS (membership-vulnerability fix):
+// an invite must never grant membership at signup/login — joining requires the
+// explicit «Đồng ý tham gia» accept (POST /auth/join/:token). The invite
+// surfaces through /auth/me/invites + the notification bell instead.
 func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, error) {
 	email = normalizeEmail(email)
 	if email == "" {
 		return nil, nil
 	}
 
-	var inviteID, inviteOrgID int64
-	var inviteRole string
-	err := s.db.QueryRow(`
-		SELECT i.id, i.org_id, COALESCE(NULLIF(i.role, ''), 'sales')
-		FROM org_invites i
-		JOIN organizations o ON o.id = i.org_id
-		WHERE lower(trim(i.email)) = ?
-		  AND i.used_at IS NULL
-		  AND i.expires_at > CURRENT_TIMESTAMP
-		  AND o.active = 1
-		ORDER BY i.created_at DESC
-		LIMIT 1`, email).Scan(&inviteID, &inviteOrgID, &inviteRole)
-	if err == nil {
-		return &ProvisionedOrgClaim{OrgID: inviteOrgID, Role: normalizeWorkspaceRole(inviteRole), Source: "invite", InviteID: inviteID}, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
-	}
-
 	var accountOrgID int64
 	var memberCount int
-	err = s.db.QueryRow(`
+	err := s.db.QueryRow(`
 		SELECT a.org_id,
 		       (SELECT COUNT(1)
 		        FROM users u
@@ -115,15 +100,6 @@ func (s *Store) FindProvisionedOrgByEmail(email string) (*ProvisionedOrgClaim, e
 		role = models.RoleAdmin
 	}
 	return &ProvisionedOrgClaim{OrgID: accountOrgID, Role: role, Source: "account_email"}, nil
-}
-
-func normalizeWorkspaceRole(role string) models.UserRole {
-	switch models.UserRole(strings.ToLower(strings.TrimSpace(role))) {
-	case models.RoleAdmin:
-		return models.RoleAdmin
-	default:
-		return models.RoleSales
-	}
 }
 
 func (s *Store) MarkInviteUsed(inviteID, acceptedBy int64) error {

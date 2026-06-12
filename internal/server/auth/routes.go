@@ -53,6 +53,7 @@ func Routes(api fiber.Router, deps Deps, authLimiter, regLimiter fiber.Handler) 
 	protected.Get("/me/invites", h.listMyPendingInvites)
 	protected.Get("/me/memberships", h.listMemberships)
 	protected.Post("/refresh-membership", h.refreshMembership)
+	protected.Post("/me/leave-workspace", h.leaveWorkspace)
 	protected.Post("/join/:token", h.acceptInvite)
 }
 

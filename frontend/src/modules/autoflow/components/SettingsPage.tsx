@@ -7,6 +7,7 @@ const PromptRoutingRealityView = lazy(() => import('./views/PromptRoutingReality
 const AdminConnectorTable = lazy(() => import('./connectorAdmin/AdminConnectorTable'));
 const MyFacebookConnection = lazy(() => import('./connectorAdmin/MyFacebookConnection'));
 const StaffContactProfileForm = lazy(() => import('./connectorAdmin/StaffContactProfileForm'));
+const LeaveWorkspaceCard = lazy(() => import('./workspace/LeaveWorkspaceCard'));
 import DefaultAccountSettings from './DefaultAccountSettings';
 import { CompanyIdentityForm } from './companyIdentity/CompanyIdentityForm';
 import TelegramIntegrationPage from './telegram/TelegramIntegrationPage';
@@ -548,6 +549,10 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
             )}
           </div>
           </div>
+          {/* Membership fix: non-destructive self-exit — login survives. */}
+          <Suspense fallback={<Spinner />}>
+            <LeaveWorkspaceCard />
+          </Suspense>
         </div>
       )}
 
@@ -617,28 +622,37 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
               </Row>
               {invites.map(inv => {
                 const inviteUrl = inv.inviteFullUrl || `${window.location.origin}${inv.inviteUrl}`;
+                // SMTP unavailable (not_configured): hide email-status noise +
+                // resend; the invite link itself is the delivery channel.
+                const smtpAvailable = inv.emailStatus !== 'not_configured';
                 const statusColor = inv.emailStatus === 'sent' ? theme.green : inv.emailStatus === 'failed' ? theme.red : theme.yellow;
                 return (
                   <Row key={inv.id} style={{ justifyContent: 'space-between', gap: 12, padding: '9px 0', borderTop: `1px solid ${theme.borderAlt}` }}>
                     <div style={{ minWidth: 0 }}>
                       <p style={{ color: theme.text, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{inv.email}</p>
                       <p style={{ color: theme.textFaint, fontSize: 11 }}>Invite #{inv.id} · {inv.role} · hết hạn {formatDate(inv.expiresAt)}</p>
-                      <p style={{ color: statusColor, fontSize: 11, marginTop: 2 }}>Email: {inv.emailStatus || 'pending'}{inv.emailError ? ` · ${inv.emailError}` : ''}</p>
+                      {smtpAvailable ? (
+                        <p style={{ color: statusColor, fontSize: 11, marginTop: 2 }}>Email: {inv.emailStatus || 'pending'}{inv.emailError ? ` · ${inv.emailError}` : ''}</p>
+                      ) : (
+                        <p style={{ color: theme.textFaint, fontSize: 11, marginTop: 2 }}>Gửi link mời cho nhân viên</p>
+                      )}
                     </div>
                     <Row style={{ gap: 6, flexShrink: 0 }}>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const updated = await resendInvite(inv.id);
-                            setStaffMsg(updated.emailStatus === 'sent' ? `Da gui lai email invite cho ${updated.email}.` : `Chua gui duoc email invite cho ${updated.email}.`);
-                          } catch (err) {
-                            setStaffMsg(err instanceof Error ? err.message : 'Khong gui lai duoc invite.');
-                          }
-                        }}
-                        style={secondaryBtn({ padding: '5px 9px', fontSize: 11 })}
-                      >
-                        <Mail size={12} /> Gửi lại
-                      </button>
+                      {smtpAvailable && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const updated = await resendInvite(inv.id);
+                              setStaffMsg(updated.emailStatus === 'sent' ? `Da gui lai email invite cho ${updated.email}.` : `Chua gui duoc email invite cho ${updated.email}.`);
+                            } catch (err) {
+                              setStaffMsg(err instanceof Error ? err.message : 'Khong gui lai duoc invite.');
+                            }
+                          }}
+                          style={secondaryBtn({ padding: '5px 9px', fontSize: 11 })}
+                        >
+                          <Mail size={12} /> Gửi lại
+                        </button>
+                      )}
                       <button onClick={() => navigator.clipboard?.writeText(inviteUrl)} style={secondaryBtn({ padding: '5px 9px', fontSize: 11 })}><Copy size={12} /> Copy link</button>
                       <button onClick={() => revokeInvite(inv.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textFaint }}><X size={13} /></button>
                     </Row>
@@ -721,7 +735,21 @@ export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps)
                       {isAdmin && !isSelf && (
                         <Row style={{ gap: 6 }}>
                           <button onClick={() => toggleStatus(s.id)} style={secondaryBtn({ padding: '4px 8px', fontSize: 10 })}>{s.status === 'Active' ? 'Tạm dừng' : 'Kích hoạt'}</button>
-                          <button onClick={() => remove(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textFaint }}><X size={13} /></button>
+                          <button
+                            title="Gỡ khỏi workspace (tài khoản đăng nhập vẫn còn)"
+                            onClick={async () => {
+                              // Non-destructive detach: membership only — their
+                              // login survives and can join another workspace.
+                              if (!window.confirm(`Gỡ ${s.name} khỏi workspace?\nTài khoản đăng nhập của họ vẫn còn và có thể tham gia workspace khác.`)) return;
+                              try {
+                                await remove(s.id);
+                                setStaffMsg(`Da go ${s.name} khoi workspace.`);
+                              } catch (err) {
+                                setStaffMsg(err instanceof Error ? err.message : 'Khong go duoc thanh vien.');
+                              }
+                            }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textFaint }}
+                          ><X size={13} /></button>
                         </Row>
                       )}
                     </td>

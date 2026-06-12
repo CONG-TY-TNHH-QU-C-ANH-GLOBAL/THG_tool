@@ -148,6 +148,8 @@ export interface StaffInvite {
   createdAt: string;
   emailStatus?: 'sent' | 'failed' | 'not_configured' | 'pending' | string;
   emailError?: string;
+  /** Lifecycle: pending | accepted | expired | revoked (backend-derived). */
+  status?: string;
 }
 
 export interface FileRecord {
