@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/thg/scraper/internal/store/connectors"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 // Pre-queue extension version gate for outbound automation
@@ -47,15 +48,10 @@ func (s *Store) extensionGateForOutbound(tx *sql.Tx, accountID int64, msgType st
 	}
 	// Audit the denial in the action ledger (outcome=skipped) inside the
 	// same queue transaction — blocked_by_extension_version is queryable
-	// next to every other execution outcome. target_url is empty: the
-	// gate fires before a target row exists.
-	if _, err := tx.Exec(
-		`INSERT INTO action_ledger
-			(org_id, action_type, target_type, target_url, account_id, created_by, outbound_id,
-			 performed_at, outcome, reason)
-		 VALUES (?, ?, '', '', ?, 0, 0, CURRENT_TIMESTAMP, 'skipped', ?)`,
-		orgID, msgType, accountID, LedgerReasonExtensionBlocked,
-	); err != nil {
+	// next to every other execution outcome. The write goes through the
+	// coordination domain (it owns ALL action_ledger writes, topology
+	// guard §4); never a silent failure.
+	if err := coordination.RecordBlockedTx(tx, orgID, accountID, msgType, LedgerReasonExtensionBlocked); err != nil {
 		log.Printf("[ExtensionGate] ledger insert failed org=%d account=%d: %v", orgID, accountID, err)
 	}
 	return true
