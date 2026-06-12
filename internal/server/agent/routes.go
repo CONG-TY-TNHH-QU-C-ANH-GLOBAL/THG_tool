@@ -57,6 +57,9 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	group.Get("/connectors/outbox", h.agentAuth, h.agentGetOutbox)
 	group.Post("/connectors/outbox/:id/sent", h.agentAuth, h.agentOutboxSent)
 	group.Post("/connectors/outbox/:id/failed", h.agentAuth, h.agentOutboxFailed)
+	// Forget Device: the extension releases its own binding before wiping
+	// local storage, so the Chrome profile becomes re-pairable by anyone.
+	group.Post("/connectors/self/disconnect", h.agentAuth, h.agentSelfDisconnect)
 
 	agentGrp := group.Group("/agent", h.agentAuth)
 	agentGrp.Post("/heartbeat", h.agentHeartbeat)

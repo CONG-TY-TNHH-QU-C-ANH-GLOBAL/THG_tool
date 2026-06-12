@@ -42,7 +42,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       if (message?.type === 'forget') {
+        // Forget Device clears ONLY this Chrome profile's workspace binding
+        // (token/connector). Release the SERVER binding first so the profile
+        // becomes re-pairable; without this the server row stays active and
+        // blocks the next user with a typed pairing error. Local clear happens
+        // regardless (operator intent), but a failed server release is
+        // surfaced instead of silently swallowed.
+        let releaseError = '';
+        try {
+          const res = await THGApi.agentFetch('/api/connectors/self/disconnect', { method: 'POST' });
+          if (!res.ok) releaseError = `server refused release (${res.status})`;
+        } catch { /* unpaired or offline — nothing to release / can't reach server */ }
+        // browserProfileId is the stable per-profile installation id —
+        // wiping it would make the next pairing look like a brand-new device
+        // and defeat server-side ownership checks.
+        const kept = await chrome.storage.local.get('browserProfileId');
         await chrome.storage.local.clear();
+        if (kept?.browserProfileId) {
+          await chrome.storage.local.set({ browserProfileId: kept.browserProfileId });
+        }
+        if (releaseError) {
+          await THGShared.storageSet({ lastError: `Chưa gỡ được liên kết trên máy chủ (${releaseError}). Dùng nút Ngắt kết nối trên dashboard nếu cần.` });
+        }
         sendResponse({ ok: true });
         return;
       }

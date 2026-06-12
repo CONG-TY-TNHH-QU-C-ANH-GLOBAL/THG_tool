@@ -1,4 +1,16 @@
 var THGApi = globalThis.THGApi || (() => {
+  // Typed pairing errors (backend error_code → operator-facing Vietnamese).
+  const PAIRING_ERROR_VI = {
+    device_instance_already_paired_to_another_user:
+      'Chrome profile này đang được kết nối với tài khoản THG khác. Vui lòng bấm Forget Device hoặc dùng Chrome profile khác.',
+    device_instance_already_paired_to_another_workspace:
+      'Chrome profile này đang được kết nối với workspace khác. Vui lòng bấm Forget Device hoặc dùng Chrome profile khác.',
+    pairing_code_expired:
+      'Mã kết nối đã hết hạn. Tạo mã mới trong Browser dashboard rồi thử lại.',
+    pairing_code_consumed:
+      'Mã kết nối đã được sử dụng. Tạo mã mới trong Browser dashboard rồi thử lại.'
+  };
+
   async function getConfig() {
     const cfg = await THGShared.storageGet(['serverUrl', 'deviceToken', 'connectorId', 'connectorName', 'lastStatus', 'lastError']);
     return {
@@ -50,7 +62,7 @@ var THGApi = globalThis.THGApi || (() => {
   }
 
   async function clearDeviceToken() {
-    await chrome.storage.local.remove(['deviceToken', 'connectorId', 'connectorName', 'lastStatus']);
+    await chrome.storage.local.remove(['deviceToken', 'connectorId', 'connectorName', 'lastStatus', 'pairingSessionId']);
   }
 
   async function pairConnector(serverUrl, code) {
@@ -67,12 +79,16 @@ var THGApi = globalThis.THGApi || (() => {
     if (!res.ok) {
       const text = await res.text();
       let message = text;
+      let errorCode = '';
       try {
         const payload = JSON.parse(text);
         message = payload.error || payload.message || text;
+        errorCode = payload.error_code || '';
       } catch {
         message = text;
       }
+      const typed = PAIRING_ERROR_VI[errorCode];
+      if (typed) throw new Error(typed);
       if (res.status === 400 && /invalid|already used|expired/i.test(message)) {
         throw new Error('Mã kết nối không hợp lệ hoặc đã hết hạn. Tạo mã mới trong Browser dashboard, kiểm tra THG server trùng domain dashboard, rồi kết nối lại.');
       }
@@ -84,6 +100,7 @@ var THGApi = globalThis.THGApi || (() => {
       deviceToken: payload.device_token,
       connectorId: payload.connector?.id || 0,
       connectorName: payload.connector?.name || 'THG Chrome Extension',
+      pairingSessionId: payload.pairing_session_id || 0,
       lastError: ''
     });
     await THGHeartbeat.run();

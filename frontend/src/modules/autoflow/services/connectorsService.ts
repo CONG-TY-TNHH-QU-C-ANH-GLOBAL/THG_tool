@@ -37,6 +37,30 @@ export async function createLocalConnectorPairingCode(name: string, accountId?: 
   return post('/connectors/pairing-code', { name, account_id: accountId ?? 0 });
 }
 
+export type PairingFacebookStatus =
+  | 'waiting_pairing'
+  | 'pairing_code_expired'
+  | 'binding_released'
+  | 'detected'
+  | 'facebook_session_stale'
+  | 'facebook_session_not_detected'
+  | 'facebook_account_already_connected_to_another_member';
+
+export interface PairingFacebookStatusResponse {
+  status: PairingFacebookStatus;
+  pairing_session_id: number;
+  connector_id?: number;
+  fb_user_id?: string;
+  fb_display_name?: string;
+  last_proof_at?: string;
+}
+
+// Verifies the Facebook login of ONE pairing session (exact connector +
+// pairing_session_id) — never "latest workspace heartbeat".
+export async function getPairingFacebookStatus(pairingSessionId: number): Promise<PairingFacebookStatusResponse> {
+  return get(`/connectors/pairing/${pairingSessionId}/facebook-status`);
+}
+
 export async function assignLocalConnectorAccount(id: number, accountId: number): Promise<void> {
   await put(`/connectors/${id}/account`, { account_id: accountId });
 }
