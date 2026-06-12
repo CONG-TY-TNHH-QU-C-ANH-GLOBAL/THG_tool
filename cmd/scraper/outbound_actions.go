@@ -60,8 +60,14 @@ func applyCommentReasoning(ctx context.Context, db *store.Store, kb *knowledgeRu
 		log.Printf("[reasoning] decide org=%d: %v", orgID, err)
 		return fallback
 	}
-	log.Printf("[reasoning:%s] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v caps=%d products=%d proofs=%d",
-		mode, orgID, accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap,
+	// P2d Policy Gate (PR-7): confidence + org policy shape what the
+	// prompt may pitch — high conf → product (+price if allowed), medium
+	// → category/service only (no exact price), low/gap → generic
+	// fallback. Strictly subtractive over the grounded selection.
+	verdict := ai.EvaluateGate(decision, ai.LoadOrgCommentPolicies(db, orgID))
+	decision = ai.ApplyGate(decision, verdict)
+	log.Printf("[reasoning:%s] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v gate=%s caps=%d products=%d proofs=%d",
+		mode, orgID, accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap, verdict.Mode,
 		len(decision.Selected.Capabilities), len(decision.Selected.Products), len(decision.Selected.Proofs))
 	if payload, perr := json.Marshal(decision); perr == nil {
 		_ = db.Prompts().InsertSystemPromptLog(orgID, accountID,
