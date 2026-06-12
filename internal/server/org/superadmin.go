@@ -14,7 +14,10 @@ func (h *Handler) superAdminAccounts(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"accounts": accounts, "count": len(accounts)})
+	// AccountSafe projection: GetAllAccounts returns DECRYPTED cookies +
+	// proxy/user-agent for internal workers — never serialize the raw model.
+	safe := models.AccountSafeList(accounts)
+	return c.JSON(fiber.Map{"accounts": safe, "count": len(safe)})
 }
 
 func (h *Handler) superAdminUsers(c *fiber.Ctx) error {
