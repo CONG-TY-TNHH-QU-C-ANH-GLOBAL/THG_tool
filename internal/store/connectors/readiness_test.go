@@ -23,43 +23,52 @@ func TestVersionAtLeast(t *testing.T) {
 
 func TestPickReadyConnector(t *testing.T) {
 	const acc = int64(50)
+	policy := DefaultVersionPolicy()
 	logged := func(id, accountID int64, fb, ver string) AgentToken {
 		return AgentToken{ID: id, AssignedAccountID: accountID, Online: true, StreamStatus: "facebook_logged_in", FBUserID: fb, Version: ver}
 	}
 
 	// Ready: online + logged in + fb matches + version ok.
-	if id, r := PickReadyConnector([]AgentToken{logged(7, acc, "111", "0.5.29")}, acc, "111", MinExtensionVersion); r != ConnReady || id != 7 {
+	if id, r := PickReadyConnector([]AgentToken{logged(7, acc, "111", "0.5.29")}, acc, "111", policy); r != ConnReady || id != 7 {
 		t.Fatalf("ready: got id=%d reason=%q", id, r)
 	}
 	// Offline: no connector for the account online.
-	if _, r := PickReadyConnector(nil, acc, "111", MinExtensionVersion); r != ConnOffline {
+	if _, r := PickReadyConnector(nil, acc, "111", policy); r != ConnOffline {
 		t.Fatalf("offline empty: %q", r)
 	}
 	off := logged(7, acc, "111", "0.5.29")
 	off.Online = false
-	if _, r := PickReadyConnector([]AgentToken{off}, acc, "111", MinExtensionVersion); r != ConnOffline {
+	if _, r := PickReadyConnector([]AgentToken{off}, acc, "111", policy); r != ConnOffline {
 		t.Fatalf("offline: %q", r)
 	}
 	// A connector bound to a DIFFERENT account is ignored → offline.
-	if _, r := PickReadyConnector([]AgentToken{logged(7, 999, "111", "0.5.29")}, acc, "111", MinExtensionVersion); r != ConnOffline {
+	if _, r := PickReadyConnector([]AgentToken{logged(7, 999, "111", "0.5.29")}, acc, "111", policy); r != ConnOffline {
 		t.Fatalf("other-account ignored: %q", r)
 	}
 	// Identity unknown: online+logged in but no fb_user_id.
-	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "", "0.5.29")}, acc, "111", MinExtensionVersion); r != ConnIdentityUnknown {
+	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "", "0.5.29")}, acc, "111", policy); r != ConnIdentityUnknown {
 		t.Fatalf("identity unknown: %q", r)
 	}
 	// Mismatch: connector logged into a different FB than the account expects.
-	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "222", "0.5.29")}, acc, "111", MinExtensionVersion); r != ConnIdentityMismatch {
+	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "222", "0.5.29")}, acc, "111", policy); r != ConnIdentityMismatch {
 		t.Fatalf("mismatch: %q", r)
 	}
-	// Outdated extension.
-	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "111", "0.5.10")}, acc, "111", MinExtensionVersion); r != ConnExtensionOutdated {
-		t.Fatalf("outdated: %q", r)
+	// Default policy has ONE floor (supported == required), so an old
+	// build is below the supported floor → unsupported.
+	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "111", "0.5.10")}, acc, "111", policy); r != ConnExtensionUnsupported {
+		t.Fatalf("old build under default policy: %q", r)
+	}
+	// Two-floor policy: supported ≤ version < required → update_required.
+	twoFloor := policy
+	twoFloor.MinSupportedVersion = "0.5.5"
+	twoFloor.MinRequiredVersion = "0.5.26"
+	if _, r := PickReadyConnector([]AgentToken{logged(7, acc, "111", "0.5.10")}, acc, "111", twoFloor); r != ConnExtensionUpdateRequired {
+		t.Fatalf("update required: %q", r)
 	}
 	// Not logged into Facebook → offline.
 	notLogged := logged(7, acc, "111", "0.5.29")
 	notLogged.StreamStatus = "idle"
-	if _, r := PickReadyConnector([]AgentToken{notLogged}, acc, "111", MinExtensionVersion); r != ConnOffline {
+	if _, r := PickReadyConnector([]AgentToken{notLogged}, acc, "111", policy); r != ConnOffline {
 		t.Fatalf("not logged in: %q", r)
 	}
 }

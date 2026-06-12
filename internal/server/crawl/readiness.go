@@ -51,7 +51,8 @@ func EvaluateCrawlAccountReadiness(ctx context.Context, db *store.Store, orgID, 
 	}
 
 	conns, _ := db.Connectors().ListLocalConnectors(orgID)
-	_, connReason := connectors.PickReadyConnector(conns, accountID, acc.FBUserID, connectors.MinExtensionVersion)
+	policy, _ := db.Connectors().GetExtensionPolicy()
+	_, connReason := connectors.PickReadyConnector(conns, accountID, acc.FBUserID, policy)
 	switch connReason {
 	case connectors.ConnReady:
 		return ReadinessReady, ""
@@ -59,8 +60,10 @@ func EvaluateCrawlAccountReadiness(ctx context.Context, db *store.Store, orgID, 
 		return ReasonActorIdentityUnknown, "Chrome Extension của account này chưa xác định được danh tính Facebook (chưa đọc được c_user). Mở tab Facebook đã đăng nhập rồi thử lại."
 	case connectors.ConnIdentityMismatch:
 		return ReasonActorMismatchBlocked, "Chrome Extension đang đăng nhập một Facebook KHÁC với account này — hãy đăng nhập đúng tài khoản."
-	case connectors.ConnExtensionOutdated:
-		return ReasonExtensionVersionOutdated, fmt.Sprintf("Chrome Extension đã cũ — hãy cập nhật lên phiên bản ≥ %s.", connectors.MinExtensionVersion)
+	case connectors.ConnExtensionUpdateRequired:
+		return connectors.ConnExtensionUpdateRequired, "Automation đang tạm dừng vì extension của bạn đã cũ. Cập nhật extension để tiếp tục nhận task."
+	case connectors.ConnExtensionUnsupported:
+		return connectors.ConnExtensionUnsupported, "Phiên bản extension này không còn được hỗ trợ. Vui lòng cài phiên bản mới."
 	default: // ConnOffline
 		return ReasonConnectorOffline, fmt.Sprintf("Account #%d chưa có Chrome Extension online + đăng nhập Facebook. Mở Chrome profile đã pair account này, giữ một tab Facebook đã đăng nhập, rồi thử lại.", accountID)
 	}

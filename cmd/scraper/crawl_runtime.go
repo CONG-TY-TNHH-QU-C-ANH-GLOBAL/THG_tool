@@ -309,7 +309,8 @@ func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, strin
 	if acc, _ := db.Identities().GetAccountForOrg(task.AccountID, task.OrgID); acc != nil {
 		expectedFB = acc.FBUserID
 	}
-	id, reason := connectors.PickReadyConnector(conns, task.AccountID, expectedFB, connectors.MinExtensionVersion)
+	policy, _ := db.Connectors().GetExtensionPolicy()
+	id, reason := connectors.PickReadyConnector(conns, task.AccountID, expectedFB, policy)
 	if reason == connectors.ConnReady {
 		return id, ""
 	}

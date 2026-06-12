@@ -31,7 +31,11 @@ type AccountReadiness struct {
 	ConnectorID      int64                 `json:"connector_id"`
 	MachineLabel     string                `json:"machine_label"`      // human label typed at pairing (PR-C)
 	BrowserProfileID string                `json:"browser_profile_id"` // stable per-Chrome-profile id (PR-C)
-	ExtensionVersion string                `json:"extension_version"`
-	Capabilities     []CapabilityReadiness `json:"capabilities"`
-	RequiredAction   string                `json:"required_action"` // top actionable hint, "" when fully ready
+	ExtensionVersion string `json:"extension_version"`
+	// ExtensionVersionState: latest | update_available | update_required |
+	// unsupported (PR-4). update_available still runs (soft warning);
+	// the blocking states also surface as capability reasons.
+	ExtensionVersionState string                `json:"extension_version_state"`
+	Capabilities          []CapabilityReadiness `json:"capabilities"`
+	RequiredAction        string                `json:"required_action"` // top actionable hint, "" when fully ready
 }

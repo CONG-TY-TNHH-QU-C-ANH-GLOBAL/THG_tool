@@ -17,6 +17,8 @@ var THGApi = globalThis.THGApi || (() => {
       hostname: 'Chrome Extension',
       os: `${navigator.platform || 'unknown'} / Chrome`,
       version: chrome.runtime.getManifest().version,
+      build_number: chrome.runtime.getManifest().version_name || chrome.runtime.getManifest().version,
+      release_channel: THGShared.RELEASE_CHANNEL || 'stable',
       kind: 'extension_connector',
       transport: 'chrome_extension',
       capabilities_json: JSON.stringify(THGShared.CAPABILITIES),
