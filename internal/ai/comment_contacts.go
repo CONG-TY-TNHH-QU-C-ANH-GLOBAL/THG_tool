@@ -28,10 +28,31 @@ func allowedContactURLs(id models.CompanyIdentity) []string {
 	return out
 }
 
+// hostOf extracts the registrable host from a normURLForMatch-normalized URL:
+// the part before the first "/", with any trailing punctuation the URL regex may
+// have greedily captured (e.g. "thgfulfill.com," from "...thgfulfill.com, dịch
+// vụ") trimmed off. "thgfulfill.com/thg-fulfill" → "thgfulfill.com".
+func hostOf(normalized string) string {
+	h := normalized
+	if i := strings.Index(h, "/"); i >= 0 {
+		h = h[:i]
+	}
+	return strings.TrimRight(h, ".,;:!?)]}\"'…")
+}
+
+// urlMatchesAny reports whether u's HOST exactly equals an allowed host. The match
+// is host-anchored, NOT a substring: a brand-trust allowlist that used
+// strings.Contains let a lookalike survive (thgfulfill.com.evil.com and
+// fake-thgfulfill.com both "contain" thgfulfill.com). Only the exact configured
+// host matches — www. is already stripped by normURLForMatch, and an intentional
+// subdomain is allowed only when it is itself the configured allowlist host.
 func urlMatchesAny(u string, allowed []string) bool {
-	n := normURLForMatch(u)
+	h := hostOf(normURLForMatch(u))
+	if h == "" {
+		return false
+	}
 	for _, a := range allowed {
-		if a != "" && strings.Contains(n, a) {
+		if a != "" && h == hostOf(a) {
 			return true
 		}
 	}
@@ -75,13 +96,37 @@ func RepairCommentContacts(text string, id models.CompanyIdentity) (string, bool
 		}
 	}
 
+	// PR-6b: keep AT MOST ONE clickable URL. A comment routinely carries TWO
+	// grounded links on the same domain — the bare website AND a service/product
+	// deep link (e.g. thgfulfill.com + thgfulfill.com/thg-fulfill). Both pass the
+	// "is it grounded" test, so the old strip pass kept both and the re-screen
+	// still failed comment_multiple_urls (the dominant comment_all_leads skip).
+	// Collapse to a single company website: keep the FIRST grounded URL (a
+	// deep/service link is normalized down to the bare canonical website — the
+	// only company URL comment policy allows by default), and drop every later
+	// URL plus every non-grounded one.
 	web := id.AllowedURL()
+	canonical := CanonicalWebsite(id.Website)
+	allowed := allowedContactURLs(id)
+	kept := false
 	out = reCommentURL.ReplaceAllStringFunc(out, func(u string) string {
-		if web != "" && strings.Contains(normURLForMatch(u), web) {
-			return u // keep the grounded website
+		if !urlMatchesAny(u, allowed) {
+			changed = true
+			return "" // non-grounded / invented link
 		}
-		changed = true
-		return "" // drop a non-grounded URL
+		if kept {
+			changed = true
+			return "" // already have the one permitted URL — collapse the rest
+		}
+		kept = true
+		// A website deep/service link (thgfulfill.com/thg-fulfill) is collapsed
+		// down to the bare canonical website; product/service URLs are not
+		// allowed in comments unless explicitly enabled by policy.
+		if web != "" && canonical != "" && strings.Contains(normURLForMatch(u), web) && u != canonical {
+			changed = true
+			return canonical
+		}
+		return u
 	})
 
 	if changed {

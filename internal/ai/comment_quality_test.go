@@ -36,10 +36,12 @@ func TestSanitizeComment_DedupeVariants(t *testing.T) {
 }
 
 func TestSanitizeComment_Rejects(t *testing.T) {
-	if _, ok, reason := SanitizeComment("   "); ok || reason != "comment_quality_invalid" {
+	// Each failure now carries a SPECIFIC subreason (investigation ask §3) so the
+	// operator sees WHY a comment failed the quality gate, not an opaque verdict.
+	if _, ok, reason := SanitizeComment("   "); ok || reason != "comment_quality_empty" {
 		t.Fatalf("empty: ok=%v reason=%q", ok, reason)
 	}
-	if _, ok, reason := SanitizeComment("Chào Anonymous participant, inbox em nhé."); ok || reason != "comment_quality_invalid" {
+	if _, ok, reason := SanitizeComment("Chào Anonymous participant, inbox em nhé."); ok || reason != "comment_quality_placeholder" {
 		t.Fatalf("anonymous salutation: ok=%v reason=%q", ok, reason)
 	}
 	// DISTINCT sentences (dedupe must not collapse them) that together exceed the
@@ -48,7 +50,7 @@ func TestSanitizeComment_Rejects(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		fmt.Fprintf(&sb, "Câu số %d là một câu khác nhau để vượt giới hạn độ dài. ", i)
 	}
-	if _, ok, reason := SanitizeComment(sb.String()); ok || reason != "comment_quality_invalid" {
+	if _, ok, reason := SanitizeComment(sb.String()); ok || reason != "comment_quality_too_long" {
 		t.Fatalf("over-length: ok=%v reason=%q", ok, reason)
 	}
 }

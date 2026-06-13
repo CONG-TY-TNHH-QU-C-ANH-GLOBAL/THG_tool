@@ -76,6 +76,22 @@ export interface LeadEngagementEntry {
   performed_at: string;     // ISO-ish from backend
 }
 
+// CommentEligibility (§6) — explains, with the SAME gates as comment_all_leads,
+// whether a lead can be commented now. Counts + reason codes only, no secrets.
+export interface CommentEligibility {
+  next_comment_eligible: boolean;
+  eligibility_state: string;        // 'eligible' | 'no_ready_account' | 'coverage_full' | 'already_commented_by_this_actor' | ...
+  ineligibility_reason: string;
+  ineligibility_message_vi: string;
+  commented_by_count: number;
+  max_coverage: number;
+  candidate_actor_count: number;
+  ready_actor_count: number;
+  eligible_actor_count: number;
+  last_comment_attempt_status: string;
+  last_comment_attempt_reason: string;
+}
+
 export interface LeadEngagementState {
   lead_id: number;
   badge: LeadEngagementBadge;
@@ -84,6 +100,7 @@ export interface LeadEngagementState {
   last_engaged_by: string;
   last_engaged_action: string;
   thread_status: string;
+  eligibility?: CommentEligibility;
 }
 
 export interface Thread {
