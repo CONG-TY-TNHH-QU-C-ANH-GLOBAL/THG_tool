@@ -75,11 +75,11 @@ func (s *Store) CreateConnectorPairingCode(name string, createdBy, orgID, accoun
 	return nil, fmt.Errorf("could not allocate unique pairing code")
 }
 
-func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentToken, string, error) {
+func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*ClaimedPairing, error) {
 	hash := hashPairingCode(code)
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 
@@ -99,16 +99,29 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 		hash,
 	).Scan(&row.ID, &row.OrgID, &row.Name, &row.CreatedBy, &row.AccountID, &row.ExpiresAt, &row.UsedAt)
 	if err == sql.ErrNoRows {
-		return nil, "", fmt.Errorf("invalid pairing code")
+		return nil, ErrPairingCodeInvalid
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if row.UsedAt.Valid {
-		return nil, "", fmt.Errorf("pairing code already used")
+		return nil, ErrPairingCodeConsumed
 	}
 	if time.Now().UTC().After(row.ExpiresAt.UTC()) {
-		return nil, "", fmt.Errorf("pairing code expired")
+		return nil, ErrPairingCodeExpired
+	}
+	// A new pairing MUST carry a stable browser_profile_id — it is the only
+	// thing the ownership guard can bind on. Accepting an empty id would let any
+	// (legacy/tampered) build mint a connector that the no-steal guard cannot
+	// protect. Checked AFTER the code-lifecycle checks so an invalid/used/expired
+	// code still reports its specific reason. Already-paired legacy connectors
+	// are untouched: they heartbeat, they never re-claim.
+	browserProfileID := strings.TrimSpace(p.BrowserProfileID)
+	if browserProfileID == "" {
+		return nil, ErrBrowserProfileRequired
+	}
+	if err := guardBrowserProfileBindingTx(tx, browserProfileID, row.OrgID, row.CreatedBy); err != nil {
+		return nil, err
 	}
 
 	deviceName := strings.TrimSpace(row.Name)
@@ -132,7 +145,7 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return nil, "", fmt.Errorf("generate token: %w", err)
+		return nil, fmt.Errorf("generate token: %w", err)
 	}
 	plain := hex.EncodeToString(b)
 	tokenHash := hashAgentToken(plain)
@@ -141,14 +154,24 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 		`INSERT INTO agent_tokens (
 			org_id, name, token_hash, created_by, kind, transport, assigned_account_id,
 			hostname, os, version, capabilities_json, current_url, fb_user_id,
-			fb_display_name, fb_username, fb_profile_url, stream_status, last_seen
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			fb_display_name, fb_username, fb_profile_url, stream_status,
+			identity_confidence, identity_extraction_method, identity_last_verified_at,
+			browser_profile_id, build_number, release_channel, last_seen
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		row.OrgID, deviceName, tokenHash, row.CreatedBy, kind, transport, row.AccountID,
 		p.Hostname, p.OS, p.Version, defaultString(p.CapabilitiesJSON, "{}"), p.CurrentURL, p.FBUserID,
 		p.FBDisplayName, p.FBUsername, p.FBProfileURL, defaultString(p.StreamStatus, "idle"),
+		p.IdentityConfidence, p.IdentityExtractionMethod, p.IdentityLastVerifiedAt,
+		strings.TrimSpace(p.BrowserProfileID), p.BuildNumber, p.ReleaseChannel,
 	)
 	if err != nil {
-		return nil, "", err
+		// Structural backstop (uq_agent_tokens_active_profile): a concurrent
+		// claim that slipped past the guard SELECT surfaces here as a unique
+		// violation — the profile is already actively bound.
+		if isProfileUniqueViolation(err) {
+			return nil, ErrDevicePairedToAnotherUser
+		}
+		return nil, err
 	}
 	tokenID, _ := res.LastInsertId()
 	updateRes, err := tx.Exec(
@@ -156,18 +179,21 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*AgentT
 		tokenID, row.ID,
 	)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if affected, err := updateRes.RowsAffected(); err == nil && affected != 1 {
-		return nil, "", fmt.Errorf("pairing code already claimed")
+		return nil, ErrPairingCodeConsumed
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	tok, err := s.ValidateAgentToken(plain)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return tok, plain, nil
+	if tok == nil {
+		return nil, fmt.Errorf("claimed connector token not found after commit")
+	}
+	return &ClaimedPairing{Token: tok, DeviceToken: plain, PairingSessionID: row.ID}, nil
 }

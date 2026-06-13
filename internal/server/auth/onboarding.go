@@ -336,7 +336,7 @@ func (h *Handler) createInvite(c *fiber.Ctx) error {
 	emailResult := h.sendWorkspaceInviteEmail(c, inviteID, orgID, userID, req.Email, req.Role, token, expiresAt.Format(time.RFC3339))
 	// Already-registered invitees also get an in-app bell notification.
 	if inviter, _ := h.deps.DB.GetUserByID(userID); inviter != nil {
-		h.notifyInviteReceived(orgID, h.orgNameOf(orgID), inviter.Name, req.Email, req.Role, token)
+		h.notifyInviteReceived(orgID, inviteID, h.orgNameOf(orgID), inviter.Name, req.Email, req.Role, token)
 	}
 
 	return c.Status(201).JSON(fiber.Map{
@@ -523,6 +523,9 @@ func (h *Handler) acceptInvite(c *fiber.Ctx) error {
 		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d,"previous_org_id":%d}`, orgID, targetRole, inviteID, previousOrgID))
 	h.deps.DB.InsertAuditLog(userID, "membership_granted", c.IP(),
 		fmt.Sprintf(`{"org_id":%d,"role":%q,"invite_id":%d}`, orgID, targetRole, inviteID))
+	// Invitee side: clear the now-stale "Bạn được mời…" card(s) + record a
+	// workspace_joined history notification. Admin side: org-wide accepted notice.
+	h.notifyInviteResolvedForInvitee(orgID, userID, h.orgNameOf(orgID), string(targetRole))
 	h.notifyInviteAccepted(orgID, inviteID, user.Name, user.Email, string(targetRole))
 
 	return c.JSON(fiber.Map{

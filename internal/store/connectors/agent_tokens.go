@@ -161,6 +161,7 @@ func (s *Store) ValidateAgentToken(plain string) (*AgentToken, error) {
 		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''),
 		        COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
 		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
+		        COALESCE(browser_profile_id,''),
 		        last_seen, active, created_at
 		 FROM agent_tokens WHERE token_hash = ? AND active = 1`,
 		hash,
@@ -170,6 +171,7 @@ func (s *Store) ValidateAgentToken(plain string) (*AgentToken, error) {
 	err := row.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version,
 		&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
 		&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
+		&t.BrowserProfileID,
 		&lastSeen, &t.Active, &t.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -189,7 +191,25 @@ func (s *Store) UpdateAgentHeartbeat(id int64, hostname, os, version string) err
 	return s.UpdateAgentPresence(id, AgentPresence{Hostname: hostname, OS: os, Version: version})
 }
 
+// UpdateAgentPresence refreshes the live heartbeat snapshot. browser_profile_id
+// is WRITE-ONCE here (backfill-only for legacy tokens): it is the connector
+// ownership boundary, and a token-authenticated heartbeat must never re-bind a
+// connector to a different Chrome profile after pairing.
+//
+// When the backfill collides with uq_agent_tokens_active_profile (another
+// active token already owns the profile), the presence update is retried
+// WITHOUT the backfill — liveness (last_seen) must never silently freeze
+// because of a profile-binding conflict.
 func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
+	err := s.execUpdateAgentPresence(id, p)
+	if err != nil && strings.TrimSpace(p.BrowserProfileID) != "" && isProfileUniqueViolation(err) {
+		p.BrowserProfileID = ""
+		return s.execUpdateAgentPresence(id, p)
+	}
+	return err
+}
+
+func (s *Store) execUpdateAgentPresence(id int64, p AgentPresence) error {
 	_, err := s.db.Exec(
 		`UPDATE agent_tokens SET
 			hostname = CASE WHEN ? != '' THEN ? ELSE hostname END,
@@ -209,7 +229,7 @@ func (s *Store) UpdateAgentPresence(id int64, p AgentPresence) error {
 			identity_confidence = CASE WHEN ? != '' THEN ? ELSE identity_confidence END,
 			identity_extraction_method = CASE WHEN ? != '' THEN ? ELSE identity_extraction_method END,
 			identity_last_verified_at = CASE WHEN ? != '' THEN ? ELSE identity_last_verified_at END,
-			browser_profile_id = CASE WHEN ? != '' THEN ? ELSE browser_profile_id END,
+			browser_profile_id = CASE WHEN browser_profile_id = '' AND ? != '' THEN ? ELSE browser_profile_id END,
 			build_number = CASE WHEN ? != '' THEN ? ELSE build_number END,
 			release_channel = CASE WHEN ? != '' THEN ? ELSE release_channel END,
 			last_seen = CURRENT_TIMESTAMP
@@ -274,51 +294,6 @@ func (s *Store) ListAgentTokens(orgID int64) ([]AgentToken, error) {
 		out = append(out, t)
 	}
 	return out, nil
-}
-
-func (s *Store) ListLocalConnectors(orgID int64) ([]AgentToken, error) {
-	rows, err := s.db.Query(
-		`SELECT id, COALESCE(org_id,0), name, created_by,
-		        COALESCE(hostname,''), COALESCE(os,''), COALESCE(version,''),
-		        COALESCE(kind,'worker'), COALESCE(transport,'poll'), COALESCE(assigned_account_id,0),
-		        COALESCE(capabilities_json,'{}'), COALESCE(current_url,''), COALESCE(fb_user_id,''),
-		        COALESCE(fb_display_name,''), COALESCE(fb_username,''), COALESCE(fb_profile_url,''),
-		        COALESCE(stream_status,'idle'), COALESCE(chrome_error,''),
-		        COALESCE(identity_confidence,''), COALESCE(identity_extraction_method,''),
-		        COALESCE(identity_last_verified_at,''),
-		        COALESCE(browser_profile_id,''), COALESCE(machine_label,''),
-		        COALESCE(build_number,''), COALESCE(release_channel,''),
-		        last_seen, active, created_at
-		 FROM agent_tokens
-		 WHERE org_id = ? AND kind = 'extension_connector'
-		   AND active = 1
-		 ORDER BY last_seen DESC, created_at DESC`,
-		orgID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []AgentToken
-	for rows.Next() {
-		var t AgentToken
-		var lastSeen sql.NullTime
-		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &t.CreatedBy, &t.Hostname, &t.OS, &t.Version,
-			&t.Kind, &t.Transport, &t.AssignedAccountID, &t.CapabilitiesJSON, &t.CurrentURL, &t.FBUserID,
-			&t.FBDisplayName, &t.FBUsername, &t.FBProfileURL, &t.StreamStatus, &t.ChromeError,
-			&t.IdentityConfidence, &t.IdentityExtractionMethod, &t.IdentityLastVerifiedAt,
-			&t.BrowserProfileID, &t.MachineLabel, &t.BuildNumber, &t.ReleaseChannel,
-			&lastSeen, &t.Active, &t.CreatedAt); err != nil {
-			return nil, err
-		}
-		if lastSeen.Valid {
-			t.LastSeen = &lastSeen.Time
-		}
-		t.Online = agentOnline(t.LastSeen, t.Active)
-		out = append(out, t)
-	}
-	return out, rows.Err()
 }
 
 func (s *Store) AssignAgentAccount(id, orgID, accountID int64) error {

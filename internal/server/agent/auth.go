@@ -25,6 +25,7 @@ func (h *Handler) agentAuth(c *fiber.Ctx) error {
 	}
 	c.Locals("agent_id", tok.ID)
 	c.Locals("agent_org_id", tok.OrgID)
+	c.Locals("agent_kind", tok.Kind)
 	c.Locals("agent_name", tok.Name)
 	c.Locals("agent_created_by", tok.CreatedBy)
 	c.Locals("agent_assigned_account_id", tok.AssignedAccountID)

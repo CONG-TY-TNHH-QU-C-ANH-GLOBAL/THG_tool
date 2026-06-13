@@ -8,6 +8,7 @@ import { get, post } from './api';
 export type NotificationType =
   | 'workspace_invite_received'
   | 'workspace_invite_accepted'
+  | 'workspace_joined'
   | 'extension_update_required'
   | string;
 
@@ -25,6 +26,7 @@ export interface AppNotification {
 
 export interface InvitePayload {
   token?: string;
+  invite_id?: string;
   org_name?: string;
   role?: string;
   inviter_name?: string;

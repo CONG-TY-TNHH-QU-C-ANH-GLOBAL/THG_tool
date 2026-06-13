@@ -1,12 +1,15 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  parsePayload,
   type AppNotification,
+  type InvitePayload,
 } from '../../services/notificationsService';
+import { useAuthStore } from '../../stores/authStore';
 import InviteNotificationCard from './InviteNotificationCard';
 
 const POLL_MS = 60_000;
@@ -21,6 +24,7 @@ export default function NotificationBell() {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const myOrgId = useAuthStore(s => s.user?.org_id ?? 0);
 
   const refresh = useCallback(() => {
     listNotifications()
@@ -49,6 +53,34 @@ export default function NotificationBell() {
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
+
+  // Self-heal stale invites: a pending "Bạn được mời…" card for the org the
+  // user is ALREADY a member of is no longer actionable (e.g. accepted via the
+  // /join page, or a row left over from before the accept-resolution fix).
+  // Resolve it server-side so the badge stays correct and the card disappears.
+  useEffect(() => {
+    if (!myOrgId) return;
+    const stale = items.filter(
+      n => n.type === 'workspace_invite_received' && n.org_id === myOrgId && !n.read_at,
+    );
+    if (stale.length === 0) return;
+    void Promise.all(stale.map(n => markNotificationRead(n.id).catch(() => {}))).then(refresh);
+  }, [items, myOrgId, refresh]);
+
+  // Render list: drop invites for the current workspace (already a member) and
+  // collapse duplicate invite cards for the same invite/token to one.
+  const visible = useMemo(() => {
+    const seenInvite = new Set<string>();
+    return items.filter(n => {
+      if (n.type !== 'workspace_invite_received') return true;
+      if (myOrgId && n.org_id === myOrgId) return false;
+      const p = parsePayload<InvitePayload>(n);
+      const key = p?.invite_id || p?.token || `id:${n.id}`;
+      if (seenInvite.has(key)) return false;
+      seenInvite.add(key);
+      return true;
+    });
+  }, [items, myOrgId]);
 
   async function handleHandled(id: number) {
     try {
@@ -102,12 +134,12 @@ export default function NotificationBell() {
               </button>
             )}
           </div>
-          {items.length === 0 && (
+          {visible.length === 0 && (
             <p style={{ padding: 16, fontSize: 12, color: 'var(--text-faint)', margin: 0 }}>
               Chưa có thông báo nào.
             </p>
           )}
-          {items.map(n =>
+          {visible.map(n =>
             n.type === 'workspace_invite_received' && !n.read_at ? (
               <InviteNotificationCard key={n.id} notification={n} onHandled={id => void handleHandled(id)} />
             ) : (

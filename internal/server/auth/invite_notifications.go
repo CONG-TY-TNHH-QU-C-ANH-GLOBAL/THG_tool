@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 // who ALREADY has an account, so the bell surfaces the invite without
 // the email. New (unregistered) emails get the email link only.
 // Also emits the invite_created Telegram channel event (PR-8).
-func (h *Handler) notifyInviteReceived(orgID int64, orgName, inviterName, email, role, token string) {
+func (h *Handler) notifyInviteReceived(orgID, inviteID int64, orgName, inviterName, email, role, token string) {
 	if h.deps.TgEvents != nil {
 		_, _ = h.deps.TgEvents.NotifyEvent(orgID, "invite_created", "facebook",
 			render.InviteCreated(orgName, email, role, time.Now().Add(7*24*time.Hour).Format("02-01-2006")))
@@ -29,8 +30,11 @@ func (h *Handler) notifyInviteReceived(orgID int64, orgName, inviterName, email,
 	if invitee == nil {
 		return
 	}
+	// invite_id links the card to its invite so the frontend can collapse
+	// duplicates; backend resolution (org+user+type) is the durable guarantee.
 	payload, _ := json.Marshal(map[string]string{
 		"token":        token,
+		"invite_id":    fmt.Sprintf("%d", inviteID),
 		"org_name":     orgName,
 		"role":         role,
 		"inviter_name": inviterName,
@@ -45,10 +49,29 @@ func (h *Handler) notifyInviteReceived(orgID int64, orgName, inviterName, email,
 	}
 }
 
+// notifyInviteResolvedForInvitee runs on accept: it clears the invitee's now-stale
+// "Bạn được mời…" card(s) for this workspace (incl. duplicates) and writes a
+// no-CTA workspace_joined history notification so the bell reflects membership,
+// not a pending invite. Best-effort — never blocks the join.
+func (h *Handler) notifyInviteResolvedForInvitee(orgID, userID int64, orgName, role string) {
+	if err := h.deps.DB.ResolveInviteNotificationsForUser(orgID, userID); err != nil {
+		log.Printf("[InviteNotify] resolve invite_received failed org=%d user=%d: %v", orgID, userID, err)
+	}
+	if err := h.deps.DB.InsertNotification(
+		orgID, userID, models.NotificationWorkspaceJoined,
+		"Bạn đã tham gia workspace",
+		"Bạn hiện là thành viên của workspace "+orgName+" với vai trò "+role+".",
+		"{}",
+	); err != nil {
+		log.Printf("[InviteNotify] workspace_joined insert failed org=%d user=%d: %v", orgID, userID, err)
+	}
+}
+
 // notifyInviteAccepted writes the org-wide (admin-visible) notification
 // after an invitee joins, emits the invite_accepted Telegram event, and
 // emails the inviting admin (PR-8). inviteID resolves the inviter.
 func (h *Handler) notifyInviteAccepted(orgID, inviteID int64, memberName, memberEmail, role string) {
+	orgName := h.orgNameOf(orgID)
 	payload, _ := json.Marshal(map[string]string{
 		"member_name":  memberName,
 		"member_email": memberEmail,
@@ -56,13 +79,12 @@ func (h *Handler) notifyInviteAccepted(orgID, inviteID int64, memberName, member
 	})
 	if err := h.deps.DB.InsertNotification(
 		orgID, 0, models.NotificationInviteAccepted,
-		"Thành viên mới đã tham gia",
-		memberName+" ("+memberEmail+") đã tham gia workspace với vai trò "+role+".",
+		"Nhân viên đã tham gia workspace",
+		memberName+" ("+memberEmail+") đã chấp nhận lời mời tham gia workspace "+orgName+" với vai trò "+role+".",
 		string(payload),
 	); err != nil {
 		log.Printf("[InviteNotify] invite_accepted insert failed org=%d: %v", orgID, err)
 	}
-	orgName := h.orgNameOf(orgID)
 	if h.deps.TgEvents != nil {
 		_, _ = h.deps.TgEvents.NotifyEvent(orgID, "invite_accepted", "facebook",
 			render.InviteAccepted(orgName, memberName, memberEmail, role))

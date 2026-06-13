@@ -1,10 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CheckCircle2, Copy, ExternalLink, RefreshCw, X } from 'lucide-react';
 import type { SystemInfo } from '../../services/systemService';
-import { createLocalConnectorPairingCode } from '../../services/connectorsService';
-import { getAccountReadiness } from '../../services/accountHealthService';
+import { createLocalConnectorPairingCode, getPairingFacebookStatus } from '../../services/connectorsService';
+import type { PairingFacebookStatus } from '../../services/connectorsService';
+
+// Per-status operator guidance. Verification is scoped to THIS pairing session
+// — a teammate's connector going ready elsewhere never completes this wizard.
+const STATUS_COPY: Record<Exclude<PairingFacebookStatus, 'detected'>, string> = {
+  waiting_pairing: 'Chrome chưa ghép nối với mã này. Hãy dán mã vào công cụ THG trên Chrome trước.',
+  pairing_code_expired: 'Mã kết nối đã hết hạn. Quay lại bước trước và bấm "Tạo mã mới".',
+  binding_released: 'Thiết bị đã ngắt kết nối khỏi mã này. Quay lại bước trước, tạo mã mới và ghép nối lại.',
+  facebook_session_stale: 'Tín hiệu từ Chrome đã cũ. Giữ Chrome và tab Facebook mở, đợi khoảng 30 giây rồi kiểm tra lại.',
+  facebook_session_not_detected: 'Chưa phát hiện đăng nhập Facebook trên Chrome đã ghép nối. Hãy mở facebook.com và đăng nhập trong đúng Chrome đó.',
+  facebook_account_already_connected_to_another_member: 'Tài khoản Facebook này đã được kết nối bởi một thành viên khác trong workspace. Đăng nhập Facebook khác hoặc liên hệ quản trị viên.',
+};
 
 function storeUrl(s: SystemInfo | null): string {
   const direct = (s?.chrome_extension_store_url || '').trim();
@@ -27,22 +38,20 @@ const STEPS = ['Cài công cụ THG', 'Kết nối Chrome', 'Đăng nhập Faceb
 export function FacebookConnectionWizard({ systemInfo, onClose, onConnected }: Props) {
   const [step, setStep] = useState(1);
   const [code, setCode] = useState('');
+  const [pairingSessionId, setPairingSessionId] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [baselineReady, setBaselineReady] = useState<number | null>(null);
-
-  const readyCount = useCallback(async () => {
-    const accounts = await getAccountReadiness().catch(() => []);
-    return accounts.filter(a => a.capabilities.some(c => c.can)).length;
-  }, []);
-
-  useEffect(() => { void readyCount().then(setBaselineReady); }, [readyCount]);
+  const [notice, setNotice] = useState('');
 
   const genCode = async () => {
     setGenerating(true);
     try {
       const r = await createLocalConnectorPairingCode(`Chrome ${new Date().toLocaleDateString('vi-VN')}`);
       setCode(r.code);
+      setPairingSessionId(r.id);
+      setNotice('');
+    } catch {
+      setNotice('Không tạo được mã kết nối. Thử lại sau vài giây.');
     } finally {
       setGenerating(false);
     }
@@ -50,12 +59,17 @@ export function FacebookConnectionWizard({ systemInfo, onClose, onConnected }: P
 
   const checkReady = async () => {
     setChecking(true);
+    setNotice('');
     try {
-      const now = await readyCount();
-      if (baselineReady === null || now > baselineReady) {
+      const res = await getPairingFacebookStatus(pairingSessionId);
+      if (res.status === 'detected') {
         setStep(4);
         onConnected();
+      } else {
+        setNotice(STATUS_COPY[res.status] ?? 'Chưa xác minh được. Thử lại sau vài giây.');
       }
+    } catch {
+      setNotice('Không kiểm tra được trạng thái. Thử lại sau vài giây.');
     } finally {
       setChecking(false);
     }
@@ -101,16 +115,21 @@ export function FacebookConnectionWizard({ systemInfo, onClose, onConnected }: P
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-elev-2)', borderRadius: 8, padding: '12px 14px' }}>
                 <span className="mono" style={{ fontSize: 22, fontWeight: 700, letterSpacing: 3 }}>{code}</span>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => void navigator.clipboard?.writeText(code)}><Copy size={13} /> Sao chép</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void genCode()} disabled={generating}>
+                  {generating ? <RefreshCw size={13} className="spin" /> : <RefreshCw size={13} />} Tạo mã mới
+                </button>
               </div>
             )}
-            <Nav onBack={() => setStep(1)} onNext={() => setStep(3)} nextDisabled={!code} nextLabel="Đã dán mã, tiếp tục" />
+            <Notice text={notice} />
+            <Nav onBack={() => setStep(1)} onNext={() => { setNotice(''); setStep(3); }} nextDisabled={!code} nextLabel="Đã dán mã, tiếp tục" />
           </Section>
         )}
 
         {step === 3 && (
           <Section title="Đăng nhập Facebook cần dùng" desc="Mở Facebook trong Chrome này. Sau khi đăng nhập, THG sẽ tự xác minh tài khoản và hiển thị trạng thái sẵn sàng.">
             <a className="btn btn-ghost btn-sm" href="https://www.facebook.com" target="_blank" rel="noreferrer"><ExternalLink size={13} /> Mở Facebook</a>
-            <Nav onBack={() => setStep(2)} onNext={() => void checkReady()} nextDisabled={checking} nextLabel={checking ? 'Đang kiểm tra...' : 'Tôi đã đăng nhập, kiểm tra'} />
+            <Notice text={notice} />
+            <Nav onBack={() => { setNotice(''); setStep(2); }} onNext={() => void checkReady()} nextDisabled={checking || !pairingSessionId} nextLabel={checking ? 'Đang kiểm tra...' : 'Tôi đã đăng nhập, kiểm tra'} />
           </Section>
         )}
 
@@ -128,6 +147,11 @@ export function FacebookConnectionWizard({ systemInfo, onClose, onConnected }: P
       </div>
     </div>
   );
+}
+
+function Notice({ text }: { text: string }) {
+  if (!text) return null;
+  return <p style={{ fontSize: 12.5, color: 'var(--warn, #d97706)', margin: 0 }}>{text}</p>;
 }
 
 function Section({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {

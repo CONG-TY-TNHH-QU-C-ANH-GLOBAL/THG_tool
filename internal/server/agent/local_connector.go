@@ -37,6 +37,7 @@ func LocalConnectorRoutes(group fiber.Router, deps LocalConnectorDeps, adminOnly
 	group.Post("/connectors/input", h.createConnectorInputCommand)
 	group.Post("/connectors", h.createLocalConnectorPairingCode)
 	group.Post("/connectors/pairing-code", h.createLocalConnectorPairingCode)
+	group.Get("/connectors/pairing/:id/facebook-status", h.getPairingFacebookStatus)
 	group.Post("/connectors/:id/disconnect", h.disconnectLocalConnectorPost)
 	group.Put("/connectors/:id/account", adminOnly, h.assignLocalConnectorAccount)
 	group.Delete("/connectors/:id", h.revokeLocalConnector)
@@ -235,6 +236,13 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 		FBUsername       string `json:"fb_username"`
 		FBProfileURL     string `json:"fb_profile_url"`
 		StreamStatus     string `json:"stream_status"`
+
+		IdentityConfidence       string `json:"identity_confidence"`
+		IdentityExtractionMethod string `json:"identity_extraction_method"`
+		IdentityLastVerifiedAt   string `json:"identity_last_verified_at"`
+		BrowserProfileID         string `json:"browser_profile_id"`
+		BuildNumber              string `json:"build_number"`
+		ReleaseChannel           string `json:"release_channel"`
 	}
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.Code) == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "pairing code is required"})
@@ -250,24 +258,38 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 	if transport == "" {
 		transport = browsergateway.TransportChromeExtension
 	}
-	tok, deviceToken, err := h.db.Connectors().ClaimConnectorPairingCode(req.Code, connectors.AgentPresence{
-		Hostname:         req.Hostname,
-		OS:               req.OS,
-		Version:          req.Version,
-		Kind:             kind,
-		Transport:        transport,
-		CapabilitiesJSON: req.CapabilitiesJSON,
-		CurrentURL:       req.CurrentURL,
-		FBUserID:         req.FBUserID,
-		FBDisplayName:    req.FBDisplayName,
-		FBUsername:       req.FBUsername,
-		FBProfileURL:     req.FBProfileURL,
-		StreamStatus:     req.StreamStatus,
-	})
+	presence := connectors.AgentPresence{
+		Hostname:                 req.Hostname,
+		OS:                       req.OS,
+		Version:                  req.Version,
+		Kind:                     kind,
+		Transport:                transport,
+		CapabilitiesJSON:         req.CapabilitiesJSON,
+		CurrentURL:               req.CurrentURL,
+		FBUserID:                 req.FBUserID,
+		FBDisplayName:            req.FBDisplayName,
+		FBUsername:               req.FBUsername,
+		FBProfileURL:             req.FBProfileURL,
+		StreamStatus:             req.StreamStatus,
+		IdentityConfidence:       req.IdentityConfidence,
+		IdentityExtractionMethod: req.IdentityExtractionMethod,
+		IdentityLastVerifiedAt:   req.IdentityLastVerifiedAt,
+		BrowserProfileID:         req.BrowserProfileID,
+		BuildNumber:              req.BuildNumber,
+		ReleaseChannel:           req.ReleaseChannel,
+	}
+	// Same clamps as the heartbeat path — claim is unauthenticated and now
+	// persists browser_profile_id into a UNIQUE-indexed column.
+	clampPresenceFields(&presence)
+	claimed, err := h.db.Connectors().ClaimConnectorPairingCode(req.Code, presence)
 	if err != nil {
 		log.Printf("[ConnectorPair] rejected code_fp=%s kind=%s transport=%s ip=%s err=%v", pairingCodeFingerprint(req.Code), kind, transport, c.IP(), err)
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return pairingClaimErrorResponse(c, err)
 	}
+	tok, deviceToken := claimed.Token, claimed.DeviceToken
+	// A successful claim always carries a stable browser_profile_id now —
+	// ClaimConnectorPairingCode rejects empty ids with ErrBrowserProfileRequired
+	// (mapped to 426) so a new pairing can never bypass the ownership guard.
 	log.Printf("[ConnectorPair] claimed connector_id=%d org_id=%d kind=%s transport=%s account_id=%d ip=%s token_fp=%s",
 		tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID, c.IP(), agentTokenFingerprint(deviceToken))
 	_ = h.db.InsertAuditLog(tok.CreatedBy, "local_connector_pairing_claimed", c.IP(),
@@ -292,10 +314,11 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 	}
 
 	return c.Status(201).JSON(fiber.Map{
-		"device_token": deviceToken,
-		"connector":    tok,
-		"ws_path":      "/ws/agent",
-		"api_base":     "/api",
+		"device_token":       deviceToken,
+		"connector":          tok,
+		"pairing_session_id": claimed.PairingSessionID,
+		"ws_path":            "/ws/agent",
+		"api_base":           "/api",
 	})
 }
 
@@ -357,14 +380,7 @@ func (h *LocalConnectorHandler) disconnectLocalConnector(c *fiber.Ctx) error {
 	if !isAdmin && found.CreatedBy != userID {
 		return c.Status(403).JSON(fiber.Map{"error": "you can only disconnect your own device"})
 	}
-	_, _ = store.NewAppStore(h.db)
-	if len(conns) <= 1 {
-		_ = h.db.Connectors().StopAllLocalSessionsForOrg(orgID)
-	} else {
-		_ = h.db.Connectors().StopLocalSessionsForConnector(int64(id), orgID)
-	}
-	_ = h.db.Connectors().DeleteConnectorScreenshotsByAgent(int64(id), orgID)
-	if err := h.db.Connectors().RevokeAgentToken(int64(id), orgID); err != nil {
+	if err := teardownConnectorBinding(h.db, int64(id), orgID); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "connector not found"})
 	}
 	h.db.InsertAuditLog(userID, "local_connector_disconnected", c.IP(), fmt.Sprintf(`{"connector_id":%d}`, id))
