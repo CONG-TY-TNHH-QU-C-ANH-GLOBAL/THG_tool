@@ -90,6 +90,47 @@ func TestRepairCollapsesDuplicateGroundedURLs(t *testing.T) {
 	}
 }
 
+// TestURLHostAnchoring guards the brand-trust allowlist against lookalike hosts:
+// only the EXACT configured host is grounded; a substring match used to let
+// thgfulfill.com.evil.com and fake-thgfulfill.com survive repair.
+func TestURLHostAnchoring(t *testing.T) {
+	id := models.CompanyIdentity{CompanyName: "THG Fulfill", Website: "https://thgfulfill.com"}
+
+	reject := []string{
+		"Xem https://thgfulfill.com.evil.com/phish nhé.", // suffix lookalike
+		"Web https://fake-thgfulfill.com nhé.",           // prefix lookalike
+		"Truy cập https://thgfulfill.com.vn nhé.",        // different registrable host
+	}
+	for _, in := range reject {
+		// The lookalike is the only URL → it must NOT be accepted as the grounded site.
+		if ok, _ := ScreenCommentContacts(in, id); ok {
+			t.Errorf("lookalike host must be rejected, passed: %q", in)
+		}
+		// Repair must strip it (non-grounded), leaving zero company URLs.
+		rep, _ := RepairCommentContacts(in, id)
+		if strings.Contains(rep, "evil.com") || strings.Contains(rep, "fake-thgfulfill") || strings.Contains(rep, "thgfulfill.com.vn") {
+			t.Errorf("repair must strip the lookalike host, got %q", rep)
+		}
+	}
+
+	// Exact host (and www / deep-link / trailing-punctuation variants) still pass.
+	accept := []string{
+		"Web https://thgfulfill.com nhé.",
+		"Web https://www.thgfulfill.com nhé.",
+		"Dịch vụ https://thgfulfill.com/thg-fulfill nhé.",
+		"Web https://thgfulfill.com, inbox em nhé.", // trailing comma captured by the regex
+	}
+	for _, in := range accept {
+		rep, _ := RepairCommentContacts(in, id)
+		if !strings.Contains(rep, "thgfulfill.com") {
+			t.Errorf("exact host must be kept, dropped in %q → %q", in, rep)
+		}
+		if ok, r := ScreenCommentContacts(rep, id); !ok {
+			t.Errorf("repaired exact-host comment must pass, got %s for %q", r, in)
+		}
+	}
+}
+
 // TestRepairKeepsTelegramHandleNotCountedAsURL guards the rule that a Telegram/Zalo
 // handle is NOT a URL: a comment with the website (1 URL) plus a bare @handle stays
 // at one URL and passes — the @handle must never be miscounted as a second link.
