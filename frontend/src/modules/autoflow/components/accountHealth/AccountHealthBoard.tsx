@@ -43,6 +43,16 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
   }, []);
 
   useEffect(() => { void load(); }, [load, orgId]);
+  // Poll while no account has materialised yet. A connector can pair and detect a
+  // Facebook session seconds later (or via the popup "Sync Now"); the account is
+  // bound on the next heartbeat. Without this the board would sit on the empty state
+  // until a manual "Làm mới". Silent refetch (no spinner); stops once an account
+  // appears, so it never polls when there is already data.
+  useEffect(() => {
+    if (loading || error || accounts.length > 0) return;
+    const id = setInterval(() => { getAccountReadiness().then(setAccounts).catch(() => {}); }, 12_000);
+    return () => clearInterval(id);
+  }, [loading, error, accounts.length]);
   useEffect(() => { getSystemInfo().then(setSystemInfo).catch(() => setSystemInfo(null)); }, []);
   useEffect(() => { getDefaultAccountId().then(setDefaultId).catch(() => setDefaultId(0)); }, []);
 

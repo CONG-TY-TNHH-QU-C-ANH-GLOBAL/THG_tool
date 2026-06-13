@@ -100,6 +100,28 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 	// PR-8: blocked extension builds raise a rate-limited alert
 	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
 	h.maybeAlertExtensionOutdated(orgID, agentID, presence.Version)
+	// Organic Sales Network: the heartbeat carries the logged-in Facebook identity.
+	// Bind it to its owning workspace account (create-on-first-sight, no-steal) so a
+	// connector paired WITHOUT a pre-created account still materialises the FB account
+	// on the dashboard. Previously ONLY chrome-status bound it, and chrome-status was
+	// gated behind an existing browser target — which requires an account to already
+	// exist — deadlocking every first-time connection (popup showed a session, the
+	// dashboard stayed at 0 accounts forever).
+	conflict, bindErr := h.syncConnectorFacebookIdentity(c, agentID, serverorg.ConnectorIdentitySnapshot{
+		AccountID: body.AccountID, OrgID: orgID, StreamStatus: body.StreamStatus,
+		CurrentURL: body.CurrentURL, FBUserID: body.FBUserID, FBDisplayName: body.FBDisplayName,
+		FBUsername: body.FBUsername, FBProfileURL: body.FBProfileURL, LoginEmail: body.LoginEmail,
+		ChromeError: body.ChromeError,
+	})
+	if conflict {
+		return connectorIdentityConflictResponse(c)
+	}
+	if bindErr != nil {
+		// Liveness must not depend on identity binding (heartbeat/work decoupling).
+		// Log so a persistence failure is visible server-side rather than silently
+		// surfacing as an empty dashboard; last_seen was already refreshed above.
+		log.Printf("[Heartbeat] FB identity bind failed agent=%d org=%d fb_user=%q: %v", agentID, orgID, body.FBUserID, bindErr)
+	}
 	return c.JSON(fiber.Map{
 		"status":       "ok",
 		"connector_id": agentID,
@@ -159,30 +181,20 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 	// PR-8: blocked extension builds raise a rate-limited alert
 	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
 	h.maybeAlertExtensionOutdated(orgID, agentID, presence.Version)
-	createdBy, _ := c.Locals("agent_created_by").(int64)
-	currentAssigned, _ := c.Locals("agent_assigned_account_id").(int64)
-	if orgID > 0 && (body.AccountID > 0 || strings.TrimSpace(body.FBUserID) != "") {
-		// Organic Sales Network PR2: resolve the logged-in Facebook identity to
-		// its owning account (auto-create owned by the pairing member, rebind the
-		// connector) instead of forcing the extension-reported slot.
-		res, err := serverorg.ResolveConnectorIdentity(h.db, c.Context(), agentID, createdBy, currentAssigned, serverorg.ConnectorIdentitySnapshot{
-			AccountID:     body.AccountID,
-			OrgID:         orgID,
-			StreamStatus:  status,
-			CurrentURL:    body.CurrentURL,
-			FBUserID:      body.FBUserID,
-			FBDisplayName: body.FBDisplayName,
-			FBUsername:    body.FBUsername,
-			FBProfileURL:  body.FBProfileURL,
-			LoginEmail:    body.LoginEmail,
-			ChromeError:   body.ChromeError,
-		})
-		if err != nil {
-			return c.Status(409).JSON(fiber.Map{"error": err.Error()})
-		}
-		if h.auditConnectorIdentity(c, createdBy, body.FBUserID, res) {
-			return c.Status(409).JSON(fiber.Map{"error": "this Facebook account belongs to another member", "reason": "ownership_conflict"})
-		}
+	// Resolve the logged-in Facebook identity to its owning account (auto-create
+	// owned by the pairing member, rebind the connector, no-steal) — shared with the
+	// heartbeat path via syncConnectorFacebookIdentity.
+	conflict, err := h.syncConnectorFacebookIdentity(c, agentID, serverorg.ConnectorIdentitySnapshot{
+		AccountID: body.AccountID, OrgID: orgID, StreamStatus: status,
+		CurrentURL: body.CurrentURL, FBUserID: body.FBUserID, FBDisplayName: body.FBDisplayName,
+		FBUsername: body.FBUsername, FBProfileURL: body.FBProfileURL, LoginEmail: body.LoginEmail,
+		ChromeError: body.ChromeError,
+	})
+	if err != nil {
+		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+	}
+	if conflict {
+		return connectorIdentityConflictResponse(c)
 	}
 	return c.JSON(fiber.Map{
 		"status":        "ok",
