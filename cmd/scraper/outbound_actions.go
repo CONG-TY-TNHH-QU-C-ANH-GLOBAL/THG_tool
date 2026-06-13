@@ -102,6 +102,17 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	}
 	accountID := actx.AccountID
 
+	// §5 readiness preflight: block a comment run up-front when the resolved
+	// Facebook account cannot execute (no online connector / wrong identity /
+	// unsupported extension) instead of queueing comments that imply posting but
+	// can never run. Reuses the shared PR-A preflight. Comment-only here; inbox
+	// keeps its existing behavior.
+	if msgType == "comment" {
+		if blockMsg, blocked := commentReadinessGate(ctx, db, orgID, userID, role, accountID); blocked {
+			return blockMsg, nil
+		}
+	}
+
 	// requestedAuto carries the AI/agent's preference. The store layer
 	// (QueueOutboundForOrg -> IsAutoOutboundEnabledForOrg) is the final
 	// gatekeeper: it downgrades to draft if the org has not opted in.
