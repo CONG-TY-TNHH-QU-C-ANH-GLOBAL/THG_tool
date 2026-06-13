@@ -157,6 +157,18 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	queued, skipped := 0, 0
 	approvedCount := 0
 	skipReasons := map[string]int{}
+	// Diagnosability (investigation ask §1): besides the aggregate count per
+	// reason, keep up to a handful of SAMPLE lead IDs per skip reason so a
+	// "scanned 110, queued 2" run is explainable down to concrete leads in the
+	// logs — not just an opaque histogram.
+	skipSamples := map[string][]int64{}
+	recordSkip := func(reason string, leadID int64) {
+		skipped++
+		skipReasons[reason]++
+		if leadID > 0 && len(skipSamples[reason]) < 5 {
+			skipSamples[reason] = append(skipSamples[reason], leadID)
+		}
+	}
 	var lastGenErr error
 	// riskBlockDetail captures the operator-actionable inputs of the
 	// LAST risk_ceiling_exceeded deny so the response/notification can
@@ -182,8 +194,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		scanned++
 		targetURL, skipReason := resolveOutboundTargetURL(lead, msgType)
 		if skipReason != "" {
-			skipped++
-			skipReasons[skipReason]++
+			recordSkip(skipReason, lead.ID)
 			continue
 		}
 
@@ -195,8 +206,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if msgType == "comment" && lead.ID > 0 {
 			if cov, cerr := db.Leads().GetLeadCoverageState(ctx, orgID, lead.ID, commentIdentity.Website); cerr == nil {
 				if ok, reason := models.EvaluateCoverage(*cov, coveragePolicy, accountID, time.Now().UTC()); !ok {
-					skipped++
-					skipReasons[reason]++
+					recordSkip(reason, lead.ID)
 					continue
 				}
 				// Eligible: shape this actor's comment from the CONTENT-ACCURATE coverage
@@ -231,15 +241,13 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			if genErr != nil {
 				log.Printf("[queueLeadOutreach] AI generation failed for lead %s: %v", targetURL, genErr)
 				lastGenErr = genErr
-				skipped++
-				skipReasons["generation_failed"]++
+				recordSkip("generation_failed", lead.ID)
 				continue
 			}
 		}
 		content = strings.TrimSpace(content)
 		if content == "" {
-			skipped++
-			skipReasons["empty_content"]++
+			recordSkip("empty_content", lead.ID)
 			continue
 		}
 
@@ -257,8 +265,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if msgType == "comment" {
 			cleaned, ok, qreason := ai.SanitizeComment(content)
 			if !ok {
-				skipped++
-				skipReasons[qreason]++
+				recordSkip(qreason, lead.ID)
 				continue
 			}
 			content = cleaned
@@ -266,8 +273,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			// the outbox, even if it survived sentence-level dedup. Typed reason so the
 			// operator sees "Comment bị lặp" instead of garbage on Facebook.
 			if ai.DetectRepeatedText(content) {
-				skipped++
-				skipReasons["comment_quality_duplicate_text"]++
+				recordSkip("comment_quality_duplicate_text", lead.ID)
 				continue
 			}
 			// Brand-trust contact policy: ≤1 URL, grounded website / official contact,
@@ -280,11 +286,10 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 				if changed && rok {
 					content = repaired
 				} else {
-					skipped++
 					if changed {
-						skipReasons[rreason]++
+						recordSkip(rreason, lead.ID)
 					} else {
-						skipReasons[creason]++
+						recordSkip(creason, lead.ID)
 					}
 					continue
 				}
@@ -307,8 +312,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			return "", err
 		}
 		if !result.Decision.Allowed {
-			skipped++
-			skipReasons[result.Decision.Reason]++
+			recordSkip(result.Decision.Reason, lead.ID)
 			if result.Decision.Reason == "risk_ceiling_exceeded" && result.Decision.RiskCeiling > 0 {
 				riskBlockSeen = true
 				riskBlockRisk = result.Decision.RiskScore
@@ -349,6 +353,12 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if notify != nil && queued > 0 {
 		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}
+
+	// Investigation ask §1: one structured, diagnosable line per run — scanned vs
+	// queued vs skipped, the reason histogram AND sample lead IDs per reason — so
+	// "scanned 110, queued 2" is traceable to concrete leads without re-running.
+	log.Printf("[queueLeadOutreach] org=%d type=%s scanned=%d queued=%d skipped=%d reasons=%v samples=%v",
+		orgID, msgType, scanned, queued, skipped, skipReasons, skipSamples)
 
 	errDetails := ""
 	if lastGenErr != nil {
@@ -395,6 +405,9 @@ func friendlySkipReasons(reasons map[string]int) string {
 		"empty_content":                  "không soạn được nội dung",
 		"generation_failed":              "lỗi soạn nội dung",
 		"comment_quality_invalid":        "không đạt kiểm tra chất lượng",
+		"comment_quality_empty":          "nội dung rỗng sau khi xử lý",
+		"comment_quality_too_long":       "nội dung quá dài (vượt giới hạn)",
+		"comment_quality_placeholder":    "còn chứa tên giữ chỗ (anonymous participant)",
 		"comment_quality_duplicate_text": "nội dung bị lặp",
 		"comment_multiple_urls":          "comment có nhiều liên kết",
 		"comment_unsupported_contact":    "comment có liên hệ chưa xác minh",

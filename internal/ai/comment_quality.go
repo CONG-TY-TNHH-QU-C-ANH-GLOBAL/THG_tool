@@ -51,18 +51,22 @@ func dedupeRepeated(text string) string {
 
 // SanitizeComment dedupes repeated sentences/paragraphs and validates quality
 // BEFORE a comment is queued. Returns (cleaned, ok, reasonCode); reasonCode is
-// "" when ok, otherwise "comment_quality_invalid".
+// "" when ok, otherwise a SPECIFIC subreason so the operator can see WHY a
+// comment failed the gate instead of a single opaque "comment_quality_invalid":
+//   - comment_quality_empty       — nothing left after dedupe/trim
+//   - comment_quality_too_long    — exceeds the length cap (maxCommentRunes)
+//   - comment_quality_placeholder — addresses the literal "anonymous participant"
 func SanitizeComment(text string) (string, bool, string) {
 	cleaned := strings.TrimSpace(dedupeRepeated(text))
 	if cleaned == "" {
-		return "", false, "comment_quality_invalid"
+		return "", false, "comment_quality_empty"
 	}
 	if len([]rune(cleaned)) > maxCommentRunes {
-		return cleaned, false, "comment_quality_invalid"
+		return cleaned, false, "comment_quality_too_long"
 	}
 	// An anonymous poster must never be addressed by the literal placeholder.
 	if strings.Contains(strings.ToLower(cleaned), "anonymous participant") {
-		return cleaned, false, "comment_quality_invalid"
+		return cleaned, false, "comment_quality_placeholder"
 	}
 	return cleaned, true, ""
 }

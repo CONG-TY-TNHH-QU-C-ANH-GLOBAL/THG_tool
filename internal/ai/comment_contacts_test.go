@@ -49,3 +49,54 @@ func TestScreenAndRepairContacts(t *testing.T) {
 		t.Error("a phone not in the identity must be rejected")
 	}
 }
+
+// TestRepairCollapsesDuplicateGroundedURLs reproduces the dominant comment_all_leads
+// skip (comment_multiple_urls): the generator emits the bare website AND a service
+// deep link on the SAME domain. Both are "grounded", so the old strip pass kept
+// both and the re-screen still failed. Repair must collapse them to ONE canonical
+// company website so the lead is queued instead of skipped.
+func TestRepairCollapsesDuplicateGroundedURLs(t *testing.T) {
+	id := models.CompanyIdentity{CompanyName: "THG Fulfill", Website: "https://thgfulfill.com"}
+
+	// website + service sub-page link on the same domain → 2 URLs → fails screen.
+	bad := "Bên em hỗ trợ fulfill nhé. Web https://thgfulfill.com, dịch vụ https://thgfulfill.com/thg-fulfill ạ."
+	if ok, r := ScreenCommentContacts(bad, id); ok {
+		t.Fatalf("website + service deep link = 2 URLs should fail before repair, got %s", r)
+	}
+
+	repaired, changed := RepairCommentContacts(bad, id)
+	if !changed {
+		t.Fatalf("repair must collapse the duplicate company URLs, got no change: %q", repaired)
+	}
+	// Exactly one company URL remains, and the deep/service path is gone.
+	if strings.Contains(repaired, "/thg-fulfill") {
+		t.Errorf("service deep link must collapse to the bare website, got %q", repaired)
+	}
+	if n := strings.Count(repaired, "thgfulfill.com"); n != 1 {
+		t.Errorf("exactly one company website URL expected, got %d in %q", n, repaired)
+	}
+	if ok, r := ScreenCommentContacts(repaired, id); !ok {
+		t.Errorf("repaired single-URL comment must pass the gate, got %s", r)
+	}
+
+	// Two bare copies of the same website also collapse to one.
+	dup := "Web https://thgfulfill.com nhé. Liên hệ https://thgfulfill.com ạ."
+	rep2, ch2 := RepairCommentContacts(dup, id)
+	if !ch2 || strings.Count(rep2, "thgfulfill.com") != 1 {
+		t.Errorf("duplicate bare website must collapse to one, got %q", rep2)
+	}
+	if ok, _ := ScreenCommentContacts(rep2, id); !ok {
+		t.Error("collapsed duplicate website must pass the gate")
+	}
+}
+
+// TestRepairKeepsTelegramHandleNotCountedAsURL guards the rule that a Telegram/Zalo
+// handle is NOT a URL: a comment with the website (1 URL) plus a bare @handle stays
+// at one URL and passes — the @handle must never be miscounted as a second link.
+func TestRepairKeepsTelegramHandleNotCountedAsURL(t *testing.T) {
+	id := models.CompanyIdentity{CompanyName: "THG Fulfill", Website: "https://thgfulfill.com", OfficialContact: "@Moonzzz03"}
+	in := "Web https://thgfulfill.com, Telegram @Moonzzz03 nhé."
+	if ok, r := ScreenCommentContacts(in, id); !ok {
+		t.Errorf("website + bare @handle should be a single URL and pass, got %s", r)
+	}
+}

@@ -315,7 +315,9 @@ func friendlyOutboundReason(detail, outcome string) string {
 		return "Chrome profile chưa kết nối"
 	case strings.Contains(s, "actor_mismatch") || strings.Contains(s, "actor_blocked"):
 		return "đăng nhập nhầm Facebook"
-	case strings.Contains(s, "comment_quality_invalid"):
+	case strings.Contains(s, "comment_quality_"):
+		// Covers the whole quality family: invalid + the specific subreasons
+		// (empty / too_long / placeholder / duplicate_text).
 		return "comment không đạt kiểm tra chất lượng"
 	case strings.Contains(s, "required_website_missing"), strings.Contains(s, "unsupported_contact"), strings.Contains(s, "multiple_urls"):
 		return "comment thiếu/sai thông tin liên hệ theo chính sách"
