@@ -14,8 +14,20 @@ import (
 	"github.com/thg/scraper/internal/store/storetest"
 )
 
+// heartbeatTimeoutMs bounds app.Test so it WAITS for the synchronous heartbeat
+// handler (account create + identity upsert + session + presence — several SQLite
+// writes) to finish before returning. Fiber's default is 1000ms; on a slow/loaded
+// CI runner the first bind can exceed that, and a timed-out app.Test orphans the
+// still-running handler goroutine, which then hits the test DB after t.Cleanup
+// closes it ("sql: database is closed"). 10s is generous enough that only a real
+// hang fails — it does not mask the lifecycle bug, it removes the orphaned
+// goroutine by awaiting the (synchronous, bounded) handler.
+const heartbeatTimeoutMs = 10_000
+
 // heartbeatProof posts a connector heartbeat as the given agent principal and
-// returns the HTTP status + decoded JSON body.
+// returns the HTTP status + decoded JSON body. Because the handler binds the
+// account synchronously, a 2xx response guarantees the bind has committed (no
+// background work outlives this call) — the caller can assert immediately.
 func heartbeatProof(t *testing.T, h *Handler, agentID, orgID, createdBy, assigned int64, jsonBody string) (int, map[string]any) {
 	t.Helper()
 	app := fiber.New()
@@ -28,7 +40,7 @@ func heartbeatProof(t *testing.T, h *Handler, agentID, orgID, createdBy, assigne
 	})
 	req := httptest.NewRequest("POST", "/heartbeat", strings.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, heartbeatTimeoutMs)
 	if err != nil {
 		t.Fatalf("heartbeat request: %v", err)
 	}
