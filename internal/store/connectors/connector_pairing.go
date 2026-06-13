@@ -110,7 +110,17 @@ func (s *Store) ClaimConnectorPairingCode(code string, p AgentPresence) (*Claime
 	if time.Now().UTC().After(row.ExpiresAt.UTC()) {
 		return nil, ErrPairingCodeExpired
 	}
-	if err := guardBrowserProfileBindingTx(tx, strings.TrimSpace(p.BrowserProfileID), row.OrgID, row.CreatedBy); err != nil {
+	// A new pairing MUST carry a stable browser_profile_id — it is the only
+	// thing the ownership guard can bind on. Accepting an empty id would let any
+	// (legacy/tampered) build mint a connector that the no-steal guard cannot
+	// protect. Checked AFTER the code-lifecycle checks so an invalid/used/expired
+	// code still reports its specific reason. Already-paired legacy connectors
+	// are untouched: they heartbeat, they never re-claim.
+	browserProfileID := strings.TrimSpace(p.BrowserProfileID)
+	if browserProfileID == "" {
+		return nil, ErrBrowserProfileRequired
+	}
+	if err := guardBrowserProfileBindingTx(tx, browserProfileID, row.OrgID, row.CreatedBy); err != nil {
 		return nil, err
 	}
 

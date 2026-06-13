@@ -29,9 +29,10 @@ func isProfileUniqueViolation(err error) bool {
 //     binding(s) so exactly one active connector represents the profile.
 //
 // The physical device is NOT the boundary — many Chrome profiles (and many THG
-// users) share one laptop. Only the Chrome profile binds. An empty
-// browserProfileID (legacy extension build) skips the guard for backward
-// compatibility.
+// users) share one laptop. Only the Chrome profile binds. Callers MUST reject an
+// empty browserProfileID before reaching the guard (ClaimConnectorPairingCode
+// returns ErrBrowserProfileRequired); the empty check here is a defensive no-op
+// so the guard can never silently "pass" a profile it cannot key on.
 func guardBrowserProfileBindingTx(tx *sql.Tx, browserProfileID string, orgID, createdBy int64) error {
 	if browserProfileID == "" {
 		return nil

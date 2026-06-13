@@ -287,11 +287,9 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 		return pairingClaimErrorResponse(c, err)
 	}
 	tok, deviceToken := claimed.Token, claimed.DeviceToken
-	if strings.TrimSpace(req.BrowserProfileID) == "" {
-		// Legacy extension (<0.5.55) — the profile-ownership guard was skipped.
-		// Logged so silent downgrades of the boundary are observable.
-		log.Printf("[ConnectorPair] legacy claim without browser_profile_id connector_id=%d org_id=%d version=%s ip=%s", tok.ID, tok.OrgID, req.Version, c.IP())
-	}
+	// A successful claim always carries a stable browser_profile_id now —
+	// ClaimConnectorPairingCode rejects empty ids with ErrBrowserProfileRequired
+	// (mapped to 426) so a new pairing can never bypass the ownership guard.
 	log.Printf("[ConnectorPair] claimed connector_id=%d org_id=%d kind=%s transport=%s account_id=%d ip=%s token_fp=%s",
 		tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID, c.IP(), agentTokenFingerprint(deviceToken))
 	_ = h.db.InsertAuditLog(tok.CreatedBy, "local_connector_pairing_claimed", c.IP(),

@@ -8,7 +8,9 @@ var THGApi = globalThis.THGApi || (() => {
     pairing_code_expired:
       'Mã kết nối đã hết hạn. Tạo mã mới trong Browser dashboard rồi thử lại.',
     pairing_code_consumed:
-      'Mã kết nối đã được sử dụng. Tạo mã mới trong Browser dashboard rồi thử lại.'
+      'Mã kết nối đã được sử dụng. Tạo mã mới trong Browser dashboard rồi thử lại.',
+    browser_profile_required:
+      'Phiên bản extension đã cũ và không gửi mã Chrome profile ổn định. Vui lòng cập nhật extension THG lên bản mới nhất rồi kết nối lại.'
   };
 
   async function getConfig() {

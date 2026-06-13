@@ -21,9 +21,14 @@ func pairingClaimErrorResponse(c *fiber.Ctx, err error) error {
 		return c.Status(500).JSON(fiber.Map{"error": "pairing failed, try again"})
 	}
 	status := 400
-	if errors.Is(err, connectors.ErrDevicePairedToAnotherUser) ||
-		errors.Is(err, connectors.ErrDevicePairedToAnotherWorkspace) {
+	switch {
+	case errors.Is(err, connectors.ErrDevicePairedToAnotherUser),
+		errors.Is(err, connectors.ErrDevicePairedToAnotherWorkspace):
 		status = 409
+	case errors.Is(err, connectors.ErrBrowserProfileRequired):
+		// The code is fine; the extension is too old / not sending a stable
+		// profile id. 426 Upgrade Required tells the client to update.
+		status = 426
 	}
 	return c.Status(status).JSON(fiber.Map{"error": err.Error(), "error_code": code})
 }

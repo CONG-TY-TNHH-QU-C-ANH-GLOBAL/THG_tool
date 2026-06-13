@@ -24,6 +24,45 @@ func bootstrapPairingVerifyStore(path string) error {
 	return db.Close()
 }
 
+// pairingClaimErrorResponse maps typed claim errors to a stable status +
+// error_code. browser_profile_required is the force-update case: the code is
+// valid but the extension is too old to be subjected to the ownership guard.
+func TestPairingClaimErrorResponse_StatusAndCode(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantCode int
+		wantBody string
+	}{
+		{"profile required → 426", connectors.ErrBrowserProfileRequired, 426, "browser_profile_required"},
+		{"another user → 409", connectors.ErrDevicePairedToAnotherUser, 409, "device_instance_already_paired_to_another_user"},
+		{"another workspace → 409", connectors.ErrDevicePairedToAnotherWorkspace, 409, "device_instance_already_paired_to_another_workspace"},
+		{"expired code → 400", connectors.ErrPairingCodeExpired, 400, "pairing_code_expired"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			app.Get("/x", func(c *fiber.Ctx) error { return pairingClaimErrorResponse(c, tc.err) })
+			resp, err := app.Test(httptest.NewRequest("GET", "/x", nil))
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.wantCode {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tc.wantCode)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			var body struct {
+				ErrorCode string `json:"error_code"`
+			}
+			_ = json.Unmarshal(raw, &body)
+			if body.ErrorCode != tc.wantBody {
+				t.Errorf("error_code = %q, want %q", body.ErrorCode, tc.wantBody)
+			}
+		})
+	}
+}
+
 // The facebook-status endpoint verifies ONE pairing session and is bound to
 // its creator: other members (admin included) get 403, other workspaces 404,
 // and the verdict comes from the exact paired connector only.

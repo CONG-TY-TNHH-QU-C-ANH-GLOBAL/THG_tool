@@ -21,6 +21,14 @@ var (
 	// must Forget Device (or use another Chrome profile) first.
 	ErrDevicePairedToAnotherUser      = errors.New("device instance already paired to another user")
 	ErrDevicePairedToAnotherWorkspace = errors.New("device instance already paired to another workspace")
+
+	// A NEW pairing claim arrived without a stable browser_profile_id. Such a
+	// claim cannot be subjected to the ownership guard (it has nothing to bind
+	// on), so allowing it would let any extension build silently bypass the
+	// no-steal boundary. New pairings are therefore rejected and the operator
+	// is told to update the extension. Already-paired legacy connectors are
+	// unaffected — they live on the heartbeat path, never re-claim.
+	ErrBrowserProfileRequired = errors.New("stable browser profile id required to pair")
 )
 
 // PairingErrorCode returns the stable machine-readable code for a typed
@@ -37,6 +45,8 @@ func PairingErrorCode(err error) string {
 		return "device_instance_already_paired_to_another_user"
 	case errors.Is(err, ErrDevicePairedToAnotherWorkspace):
 		return "device_instance_already_paired_to_another_workspace"
+	case errors.Is(err, ErrBrowserProfileRequired):
+		return "browser_profile_required"
 	default:
 		return ""
 	}

@@ -103,21 +103,29 @@ func TestPairingOwnershipBoundary(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy extension without profile id skips the guard", func(t *testing.T) {
-		if _, err := claimProfile(t, db, orgX, userA, ""); err != nil {
-			t.Fatalf("legacy claim A: %v", err)
+	t.Run("new pairing without a stable profile id is blocked, not bypassed", func(t *testing.T) {
+		// A NEW claim with no browser_profile_id must be refused (force-update),
+		// never silently paired — else the no-steal guard is bypassable.
+		_, err := claimProfile(t, db, orgX, userA, "")
+		if !errors.Is(err, connectors.ErrBrowserProfileRequired) {
+			t.Fatalf("want ErrBrowserProfileRequired, got %v", err)
 		}
-		if _, err := claimProfile(t, db, orgX, userB, ""); err != nil {
-			t.Fatalf("legacy claim B: %v", err)
+		if _, err := claimProfile(t, db, orgX, userB, "  "); !errors.Is(err, connectors.ErrBrowserProfileRequired) {
+			t.Fatalf("whitespace-only id must be rejected too, got %v", err)
+		}
+		if n := countActiveProfile(t, db, orgX, ""); n != 0 {
+			t.Fatalf("blocked claims must not mint a connector, got %d empty-profile tokens", n)
 		}
 	})
 
-	t.Run("typed code lifecycle errors", func(t *testing.T) {
+	t.Run("typed code lifecycle errors take precedence over profile requirement", func(t *testing.T) {
+		// An invalid/used/expired code reports its own reason before the profile gate.
 		pair, err := db.Connectors().CreateConnectorPairingCode("dev", userA, orgX, 0, time.Minute)
 		if err != nil {
 			t.Fatalf("CreateConnectorPairingCode: %v", err)
 		}
-		if _, err := db.Connectors().ClaimConnectorPairingCode(pair.Code, connectors.AgentPresence{}); err != nil {
+		valid := connectors.AgentPresence{BrowserProfileID: "profile-lifecycle"}
+		if _, err := db.Connectors().ClaimConnectorPairingCode(pair.Code, valid); err != nil {
 			t.Fatalf("first claim: %v", err)
 		}
 		if _, err := db.Connectors().ClaimConnectorPairingCode(pair.Code, connectors.AgentPresence{}); !errors.Is(err, connectors.ErrPairingCodeConsumed) {
