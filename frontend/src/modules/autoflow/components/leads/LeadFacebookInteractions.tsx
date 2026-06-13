@@ -2,7 +2,8 @@
 
 import { Users } from 'lucide-react';
 import { ActorVerdictChip } from '../ActorVerdictChip';
-import type { LeadEngagementEntry } from '../../types';
+import type { CommentEligibility, LeadEngagementEntry } from '../../types';
+import { eligibilityLine } from './eligibilityCopy';
 
 // "Tương tác Facebook" — which Facebook account(s) already commented this SHARED
 // lead. Execution is OWNED (per account) even though the lead is shared; multiple
@@ -11,7 +12,14 @@ import type { LeadEngagementEntry } from '../../types';
 
 interface Props {
   entries: LeadEngagementEntry[];
+  eligibility?: CommentEligibility;
 }
+
+const ELIGIBILITY_TONE: Record<string, { color: string; bg: string }> = {
+  ok: { color: 'var(--success, #15803d)', bg: 'var(--bg-elev-2)' },
+  warn: { color: 'var(--warning, #b45309)', bg: 'var(--bg-elev-2)' },
+  mute: { color: 'var(--text-mute)', bg: 'var(--bg-elev-2)' },
+};
 
 const ACTION_LABEL: Record<string, string> = {
   comment: 'Comment', inbox: 'Nhắn tin', group_post: 'Đăng bài', profile_post: 'Đăng bài',
@@ -31,12 +39,13 @@ function timeAgoVi(iso: string): string {
   return `${Math.floor(hr / 24)} ngày trước`;
 }
 
-export function LeadFacebookInteractions({ entries }: Props) {
+export function LeadFacebookInteractions({ entries, eligibility }: Props) {
   const seen = new Set<number>();
   const fb = (entries || [])
     .filter(e => e.account_id > 0 && (e.channel ?? 'facebook') === 'facebook')
     .filter(e => (seen.has(e.account_id) ? false : (seen.add(e.account_id), true)));
   const nameOf = (e: LeadEngagementEntry) => e.fb_display_name || e.account_name || `Account #${e.account_id}`;
+  const line = eligibilityLine(eligibility);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -51,10 +60,21 @@ export function LeadFacebookInteractions({ entries }: Props) {
         )}
       </div>
 
-      {fb.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: 'var(--text-mute)', background: 'var(--bg-elev-2)', borderRadius: 8, padding: '10px 12px' }}>
-          Chưa có account Facebook nào comment lead này. Lead vẫn được chia sẻ — bất kỳ account nào cũng có thể comment để tạo thêm tương tác.
+      {/* §6: precise comment-eligibility state (same gates as comment_all_leads),
+          replacing the old "Lead vẫn được chia sẻ…" copy that implied any account
+          could always comment. */}
+      {line && (
+        <div style={{ fontSize: 12.5, color: ELIGIBILITY_TONE[line.tone].color, background: ELIGIBILITY_TONE[line.tone].bg, borderRadius: 8, padding: '8px 12px' }}>
+          {line.text}
         </div>
+      )}
+
+      {fb.length === 0 ? (
+        !line && (
+          <div style={{ fontSize: 12.5, color: 'var(--text-mute)', background: 'var(--bg-elev-2)', borderRadius: 8, padding: '10px 12px' }}>
+            Chưa có tài khoản Facebook nào comment lead này.
+          </div>
+        )
       ) : (
         <>
           {fb.slice(0, MAX_ROWS).map(e => (

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/thg/scraper/internal/models"
 )
 
 // Coordination Plane PR-4: Lead Engagement State endpoints.
@@ -27,10 +29,13 @@ func getLeadEngagement(deps Deps) fiber.Handler {
 		if orgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
 		}
-		state, err := deps.DB.Leads().GetLeadEngagement(context.Background(), orgID, id)
+		ctx := context.Background()
+		state, err := deps.DB.Leads().GetLeadEngagement(ctx, orgID, id)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		// §6: explain comment eligibility using the same gates as comment_all_leads.
+		attachEligibility(ctx, deps.DB, orgID, map[int64]*models.LeadEngagementState{id: state})
 		return c.JSON(state)
 	}
 }
@@ -64,10 +69,13 @@ func getLeadEngagementsBatch(deps Deps) fiber.Handler {
 			}
 			ids = append(ids, id)
 		}
-		states, err := deps.DB.Leads().GetLeadEngagementsBatch(context.Background(), orgID, ids)
+		ctx := context.Background()
+		states, err := deps.DB.Leads().GetLeadEngagementsBatch(ctx, orgID, ids)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		// §6: per-lead comment eligibility (workspace readiness computed once).
+		attachEligibility(ctx, deps.DB, orgID, states)
 		return c.JSON(fiber.Map{"engagements": states})
 	}
 }

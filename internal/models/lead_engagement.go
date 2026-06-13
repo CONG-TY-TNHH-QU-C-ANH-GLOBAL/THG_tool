@@ -67,6 +67,13 @@ type LeadEngagementState struct {
 	// surface "what's happening" so the team self-coordinates by visibility.
 	ActiveContributors []string `json:"active_contributors"` // distinct member names who engaged this lead
 	Champion           string   `json:"champion"`            // top contributor (most verified touches); analytics only, no rights
+
+	// Eligibility is the §6 comment-eligibility projection. NIL from the store
+	// projection — the SERVER layer fills it (it needs connector readiness +
+	// coverage, which the leads store must not read), so the store stays free of
+	// cross-domain reads. omitempty keeps the engagement contract unchanged when
+	// eligibility isn't computed.
+	Eligibility *CommentEligibility `json:"eligibility,omitempty"`
 }
 
 // DeriveChampion is a pure projection over the engagement entries: it returns

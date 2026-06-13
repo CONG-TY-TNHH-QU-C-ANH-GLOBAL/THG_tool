@@ -908,7 +908,7 @@ export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
                 </p>
 
                 <div style={{ marginTop: 20 }}>
-                  <LeadFacebookInteractions entries={selectedLead.engagement?.entries ?? []} />
+                  <LeadFacebookInteractions entries={selectedLead.engagement?.entries ?? []} eligibility={selectedLead.engagement?.eligibility} />
                 </div>
 
                 <div className="sidebar-section" style={{ marginTop: 20, paddingLeft: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
