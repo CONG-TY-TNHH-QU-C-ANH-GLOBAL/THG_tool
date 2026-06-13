@@ -9,6 +9,7 @@ import "time"
 const (
 	NotificationInviteReceived          = "workspace_invite_received"
 	NotificationInviteAccepted          = "workspace_invite_accepted"
+	NotificationWorkspaceJoined         = "workspace_joined"
 	NotificationExtensionUpdateRequired = "extension_update_required"
 )
 

@@ -27,6 +27,21 @@ func (s *Store) InsertNotification(orgID, userID int64, ntype, title, body, payl
 	return err
 }
 
+// ResolveInviteNotificationsForUser marks every unread workspace_invite_received
+// notification for (user, org) as read. Called on invite accept: once the user is
+// a member of that org no pending invite to it is actionable any more, so this
+// clears the stale "Bạn được mời…" card AND collapses any duplicate cards for the
+// same workspace in a single statement (the matching is by org+user+type, so it
+// resolves every invite_received row regardless of which invite_id minted it).
+func (s *Store) ResolveInviteNotificationsForUser(orgID, userID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE notifications SET read_at = CURRENT_TIMESTAMP
+		   WHERE user_id = ? AND org_id = ? AND type = ? AND read_at IS NULL`,
+		userID, orgID, models.NotificationInviteReceived,
+	)
+	return err
+}
+
 // ListNotificationsForUser returns the caller's visible notifications,
 // newest first. isAdmin additionally surfaces the caller-org's
 // org-wide rows.
