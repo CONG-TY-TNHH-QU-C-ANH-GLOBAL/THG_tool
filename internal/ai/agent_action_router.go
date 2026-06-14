@@ -26,6 +26,27 @@ func deterministicFacebookAction(prompt string, orgID, accountID int64) (string,
 		containsAnyFolded(folded, []string{"lead", "leads", "tep khach", "khach hang", "tat ca", "all"}) {
 		return "inbox_all_leads", args, true
 	}
+	// §7 direct-link comment: a specific Facebook POST + comment intent, with NO
+	// crawl verb (a crawl verb means "scrape this post's comments", handled
+	// below). Checked BEFORE comment_all_leads so "comment lead này <url>"
+	// targets the one post, not the whole pool. The orchestrator does URL
+	// normalization + lead lookup + the shared eligibility gates.
+	if containsAnyFolded(folded, []string{"comment", "binh luan"}) &&
+		!containsAnyFolded(folded, []string{"cao", "crawl", "scrape", "quet"}) {
+		if u := firstFacebookURL(prompt); u != "" && isLikelyFacebookPostURL(u) {
+			args["post_url"] = u
+			args["nl_prompt"] = stripDashboardContext(prompt)
+			return "comment_single_post", args, true
+		}
+		// No URL but explicit singular-post phrasing ("comment bài này") and NOT
+		// the bulk-leads scope → single-post flow; the orchestrator asks for the link.
+		if firstFacebookURL(prompt) == "" &&
+			containsAnyFolded(folded, []string{"bai nay", "post nay", "bai viet nay"}) &&
+			!containsAnyFolded(folded, []string{"lead", "leads", "tat ca", "all", "tep khach", "khach hang"}) {
+			args["nl_prompt"] = stripDashboardContext(prompt)
+			return "comment_single_post", args, true
+		}
+	}
 	if containsAnyFolded(folded, []string{"comment", "binh luan"}) &&
 		containsAnyFolded(folded, []string{"lead", "leads", "tep khach", "khach hang", "tat ca", "all"}) {
 		return "comment_all_leads", args, true
