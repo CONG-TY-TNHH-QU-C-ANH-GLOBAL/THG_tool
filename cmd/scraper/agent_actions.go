@@ -100,6 +100,8 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_search", URL: searchURL, Label: "group_search"}}, args)
 		case "auto_comment", "comment_all_leads":
 			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args, notify)
+		case "comment_single_post":
+			return commentSinglePost(context.Background(), db, msgGen, args, notify)
 		case "auto_inbox", "inbox_all_leads":
 			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args, notify)
 		case "create_job_post":

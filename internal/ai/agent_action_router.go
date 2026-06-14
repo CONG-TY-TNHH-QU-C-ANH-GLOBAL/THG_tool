@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/thg/scraper/internal/fburl"
 )
 
 func deterministicFacebookAction(prompt string, orgID, accountID int64) (string, map[string]any, bool) {
@@ -26,8 +28,35 @@ func deterministicFacebookAction(prompt string, orgID, accountID int64) (string,
 		containsAnyFolded(folded, []string{"lead", "leads", "tep khach", "khach hang", "tat ca", "all"}) {
 		return "inbox_all_leads", args, true
 	}
+	// §7 direct-link comment: a specific Facebook POST + comment intent, with NO
+	// crawl verb (a crawl verb means "scrape this post's comments", handled
+	// below). Checked BEFORE comment_all_leads so "comment lead này <url>"
+	// targets the one post, not the whole pool. The orchestrator does URL
+	// normalization + lead lookup + the shared eligibility gates.
 	if containsAnyFolded(folded, []string{"comment", "binh luan"}) &&
-		containsAnyFolded(folded, []string{"lead", "leads", "tep khach", "khach hang", "tat ca", "all"}) {
+		!containsAnyFolded(folded, []string{"cao", "crawl", "scrape", "quet"}) {
+		if u := firstFacebookURL(prompt); u != "" && isLikelyFacebookPostURL(u) {
+			args["post_url"] = u
+			args["nl_prompt"] = stripDashboardContext(prompt)
+			return "comment_single_post", args, true
+		}
+		// No URL but explicit SINGULAR phrasing ("comment bài này", "comment lead
+		// này") and NOT an explicit BULK scope → single-post flow; the orchestrator
+		// asks for the link. "lead này" is one specific lead — distinct from the
+		// bulk "leads" / "tất cả" / "tệp khách" scope that comment_all_leads owns;
+		// since this is checked first, "comment lead này" no longer misroutes to bulk.
+		if firstFacebookURL(prompt) == "" &&
+			containsAnyFolded(folded, []string{"bai nay", "post nay", "bai viet nay", "lead nay"}) &&
+			!containsAnyFolded(folded, []string{"tat ca", "all", "tep khach", "khach hang"}) {
+			args["nl_prompt"] = stripDashboardContext(prompt)
+			return "comment_single_post", args, true
+		}
+	}
+	// Bulk comment requires an EXPLICIT bulk scope — never a bare singular "lead"
+	// (that is intercepted above as comment_single_post "lead này"). Plural
+	// "leads", "các lead", "tất cả", "all", "tệp khách", "khách hàng" are bulk.
+	if containsAnyFolded(folded, []string{"comment", "binh luan"}) &&
+		containsAnyFolded(folded, []string{"leads", "cac lead", "tep khach", "khach hang", "tat ca", "all"}) {
 		return "comment_all_leads", args, true
 	}
 	if containsAnyFolded(folded, []string{"dang bai", "posting", "post len", "tao bai"}) {
@@ -67,24 +96,26 @@ func containsAnyFolded(value string, needles []string) bool {
 	return false
 }
 
+// firstFacebookURL returns the first Facebook URL in the prompt. Host
+// recognition is delegated to fburl (single source of truth, host-anchored —
+// rejects lookalike hosts like facebook.com.evil.com).
 func firstFacebookURL(prompt string) string {
-	for _, raw := range regexp.MustCompile(`https?://[^\s]+`).FindAllString(prompt, -1) {
-		u := strings.TrimRight(raw, ".,);]")
-		lower := strings.ToLower(u)
-		if strings.Contains(lower, "facebook.com") || strings.Contains(lower, "fb.com") {
-			return u
-		}
+	if urls := fburl.ExtractFacebookURLs(prompt); len(urls) > 0 {
+		return urls[0]
 	}
 	return ""
 }
 
+// isLikelyFacebookPostURL reports whether u points at a commentable/crawlable FB
+// post. Post detection is delegated to fburl.LooksLikePostURL; videos/reels are a
+// crawl-path extension kept here (the direct-link comment flow validates posts
+// via fburl.CanonicalizePostURL, which excludes them).
 func isLikelyFacebookPostURL(u string) bool {
+	if fburl.LooksLikePostURL(u) {
+		return true
+	}
 	lower := strings.ToLower(u)
-	return strings.Contains(lower, "/posts/") ||
-		strings.Contains(lower, "/permalink/") ||
-		strings.Contains(lower, "story_fbid=") ||
-		strings.Contains(lower, "/videos/") ||
-		strings.Contains(lower, "/reel/")
+	return strings.Contains(lower, "/videos/") || strings.Contains(lower, "/reel/")
 }
 
 func extractMaxItemsFromPrompt(prompt string) int64 {

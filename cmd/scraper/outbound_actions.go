@@ -459,6 +459,20 @@ func friendlySkipReasons(reasons map[string]int) string {
 }
 
 func leadsFromActionArgs(ctx context.Context, db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {
+	// §7 direct-link comment: act on ONE existing lead (resolved by the
+	// orchestrator from a Facebook post URL) so it carries real content +
+	// coverage history — not a synthetic shell. Empty result → the normal
+	// "no eligible lead" path.
+	if lid := argInt64(args, "lead_id"); lid > 0 {
+		lead, err := db.Leads().GetLeadByID(ctx, orgID, lid)
+		if err != nil {
+			return nil, err
+		}
+		if lead == nil {
+			return nil, nil
+		}
+		return []models.Lead{*lead}, nil
+	}
 	if msgType == "comment" {
 		if target := textutil.FirstNonEmpty(argString(args, "post_url"), argString(args, "target_url")); target != "" {
 			return []models.Lead{{
