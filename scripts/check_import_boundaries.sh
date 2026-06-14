@@ -1,44 +1,69 @@
 #!/usr/bin/env bash
-# check_import_boundaries.sh — early, warn-only architecture import guard.
+# check_import_boundaries.sh — architecture import guard (WARN-ONLY).
 #
-# Statically checks a SUBSET of the module-boundary rules in
-# docs/architecture/MODULE_BOUNDARIES.md by grepping Go import paths. It is an
-# early guardrail, NOT a full linter, and it is intentionally permissive:
+# Statically checks the module-boundary rules in
+# docs/architecture/MODULE_BOUNDARIES.md (+ MODULE_OWNERSHIP.yml) by grepping Go
+# import paths. It is an early guardrail, NOT a full linter:
 #
-#   * it prints WARN lines for likely violations (rule name + file + package);
-#   * it ALWAYS exits 0 (never fails CI) in this phase;
-#   * aspirational modules that don't exist yet (services/taobao, drivers split)
-#     are documented in MODULE_BOUNDARIES.md, not checked here.
+#   * prints WARN lines (rule + file + package + the roadmap phase that fixes it);
+#   * annotates KNOWN documented gaps (expected today, tracked in CURRENT_CODE_AUDIT.md);
+#   * ALWAYS exits 0 (never fails CI) in this phase;
+#   * aspirational modules with no code yet are scaffolds — their rules are reserved
+#     and simply find nothing.
 #
 # Usage:
 #   bash scripts/check_import_boundaries.sh
-#   OK                          # no warnings
-#   WARN [RULE] path imports github.com/thg/scraper/internal/...   # a violation
-#
-# Promotion to fail-hard CI is a later phase (REFACTOR_ROADMAP.md), once the
-# warnings are triaged to zero or an explicit allowlist.
+# Output: a WARN line per likely violation, then a summary (rules checked / warnings
+# / known gaps). Promotion to fail-hard CI is a later roadmap phase.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 0
-WARN=0
 
-# emit RULE < grep-output(path:line:content)
+# All rule names (the count reported as "rules checked").
+RULE_NAMES="AI_PURE AI_NO_EXECUTION COPILOT_NO_DIRECT_REPO OUTBOUND_NO_FACEBOOK \
+OUTBOUND_NO_COPILOT OUTBOUND_APP_FACEBOOK PLATFORM_NO_SERVICES SERVICES_NO_SIBLINGS \
+SERVICES_FB_NO_COPILOT STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC NO_CONTRACTS_GODPKG"
+RULES=$(echo "$RULE_NAMES" | wc -w | tr -d ' ')
+WARN=0
+KNOWN=0
+
+# next_phase RULE -> the roadmap phase (REFACTOR_ROADMAP.md) that resolves it.
+next_phase() {
+  case "$1" in
+    AI_PURE|AI_NO_EXECUTION)        echo "B (pure AI boundary)";;
+    COPILOT_NO_DIRECT_REPO)         echo "D (typed CommandBus) then G (drop store dep)";;
+    OUTBOUND_NO_FACEBOOK|OUTBOUND_APP_FACEBOOK) echo "C/I (split neutral core from FB resolution)";;
+    OUTBOUND_NO_COPILOT)            echo "C";;
+    PLATFORM_NO_SERVICES)           echo "B/C";;
+    SERVICES_NO_SIBLINGS)           echo "post-E";;
+    SERVICES_FB_NO_COPILOT)         echo "C/G";;
+    STORE_NO_SERVER)                echo "invariant (must stay clean)";;
+    NOTIFICATIONS_NO_FB_LOGIC)      echo "E (subscribe to outbox events)";;
+    NO_CONTRACTS_GODPKG)            echo "design rule (never create it)";;
+    *)                              echo "?";;
+  esac
+}
+
+# known_gap RULE -> 0 (true) when warnings here are EXPECTED today and documented.
+known_gap() { case "$1" in COPILOT_NO_DIRECT_REPO) return 0;; *) return 1;; esac; }
+
+# emit RULE  (reads grep output path:line:content on stdin)
 emit() {
-  local rule="$1"
-  local line file pkg
+  local rule="$1" phase tag="" line file pkg
+  phase="$(next_phase "$rule")"
+  known_gap "$rule" && tag=" [known gap]"
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     file="${line%%:*}"
     pkg="$(printf '%s' "$line" | grep -oE 'github\.com/thg/scraper/internal/[a-z0-9_/]+' | head -1)"
-    printf 'WARN [%s] %s imports %s\n' "$rule" "$file" "$pkg"
+    printf 'WARN [%s]%s %s imports %s  -> fix in phase: %s\n' "$rule" "$tag" "$file" "$pkg" "$phase"
     WARN=$((WARN + 1))
+    known_gap "$rule" && KNOWN=$((KNOWN + 1))
   done
 }
 
-# scan_dir RULE FORBIDDEN_ERE DIR
-# Greps non-test Go files under DIR for an import of a forbidden thg package.
-# Uses a here-string (not a pipe) into emit so the WARN counter survives.
+# scan_dir RULE FORBIDDEN_ERE DIR  (recursive, non-test). here-string keeps counters.
 scan_dir() {
   local rule="$1" forbidden="$2" dir="$3" out
   [ -d "$dir" ] || return 0
@@ -58,43 +83,53 @@ scan_glob() {
   return 0
 }
 
-echo "== import-boundary check (warn-only) =="
+echo "== architecture import-boundary check (warn-only) =="
 
 # 1. ai/comment is PURE intelligence — only models + stdlib.
-scan_dir AI_PURE 'store|server|browsergateway|jobs|jobhandlers|leadingest|fburl|telegram|connectors' internal/ai/comment
+scan_dir AI_PURE 'store|server|browsergateway|jobs|jobhandlers|leadingest|fburl|telegram|connectors|platform' internal/ai/comment
 
 # 2. AI must not import the execution layer (outbound/connectors/browser/jobs).
 scan_dir AI_NO_EXECUTION 'store/outbound|store/connectors|browsergateway|jobhandlers' internal/ai
 
-# 3. Copilot DRIVER must not import DB repositories directly (root internal/ai files).
+# 3. Copilot DRIVER must not import DB repositories directly.
 scan_glob COPILOT_NO_DIRECT_REPO 'store' internal/ai/*.go
+scan_dir  COPILOT_NO_DIRECT_REPO 'store($|/)' internal/drivers/copilot
 
-# 4. outbound store must stay vertical-neutral (no Facebook / no copilot).
-scan_dir OUTBOUND_NO_FACEBOOK 'fburl|jobhandlers|leadingest' internal/store/outbound
-scan_dir OUTBOUND_NO_COPILOT 'ai($|/)' internal/store/outbound
+# 4. outbound must stay vertical-neutral: no Facebook service, no copilot driver.
+scan_dir OUTBOUND_NO_FACEBOOK 'fburl|jobhandlers|leadingest|services/' internal/store/outbound
+scan_dir OUTBOUND_NO_FACEBOOK 'fburl|jobhandlers|leadingest|services/' internal/outbound
+scan_dir OUTBOUND_NO_COPILOT  'ai($|/)|drivers/copilot' internal/store/outbound
+scan_dir OUTBOUND_NO_COPILOT  'ai($|/)|drivers/copilot' internal/outbound
 
 # 5. outbound application orchestrator (cmd/scraper) — surface FB coupling (advisory).
 scan_glob OUTBOUND_APP_FACEBOOK 'fburl|jobhandlers' cmd/scraper/outbound_actions.go
 
 # 6. platform must not import business services / intelligence.
-scan_dir PLATFORM_NO_BUSINESS 'ai($|/)|jobhandlers|leadingest' internal/platform
+scan_dir PLATFORM_NO_SERVICES 'ai($|/)|jobhandlers|leadingest|services($|/)' internal/platform
 
-# 7. store must not import the HTTP server (transport must stay above the store).
+# 7. service modules must not import each other; facebook must not import the driver.
+scan_dir SERVICES_NO_SIBLINGS   'services/(taobao|alibaba1688|1688)' internal/services/facebook
+scan_dir SERVICES_FB_NO_COPILOT 'drivers/copilot' internal/services/facebook
+
+# 8. store must not import the HTTP server.
 scan_dir STORE_NO_SERVER 'server($|/)' internal/store
 
-# 8. notifications must not own Facebook lead logic.
+# 9. notifications must not own Facebook lead logic.
 scan_dir NOTIFICATIONS_NO_FB_LOGIC 'leadingest|jobhandlers|fburl|store/leads' internal/telegram/control
+scan_dir NOTIFICATIONS_NO_FB_LOGIC 'leadingest|jobhandlers|fburl|store/leads' internal/notifications
 
-# 9. no global contracts god-package.
+# 10. no global contracts god-package.
 if [ -d internal/contracts ]; then
-  printf 'WARN [NO_CONTRACTS_GODPKG] internal/contracts exists — interfaces belong with their consumer (see PORTS_AND_ADAPTERS.md)\n'
+  printf 'WARN [NO_CONTRACTS_GODPKG] internal/contracts exists — interfaces belong with their consumer (PORTS_AND_ADAPTERS.md)  -> fix in phase: design rule\n'
   WARN=$((WARN + 1))
 fi
 
 echo "== summary =="
+echo "rules checked:        ${RULES}"
+echo "warnings:             ${WARN}  (${KNOWN} known documented gap(s), $((WARN - KNOWN)) other)"
 if [ "$WARN" -eq 0 ]; then
-  echo "OK"
+  echo "status:               OK"
 else
-  echo "${WARN} warning(s) — WARN-ONLY, exit 0 (see docs/architecture/MODULE_BOUNDARIES.md)"
+  echo "status:               WARN-ONLY (exit 0) — see docs/architecture/MODULE_OWNERSHIP.yml for phases"
 fi
 exit 0

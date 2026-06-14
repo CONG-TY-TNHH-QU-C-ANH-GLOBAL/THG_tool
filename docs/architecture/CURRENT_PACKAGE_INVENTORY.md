@@ -1,0 +1,110 @@
+# Current Package Inventory
+
+**Status:** AUDIT (Phase A) — describes `internal/` as-of-now (base commit
+`6bd9efb6`). No code is moved by this document. Companion of
+`CURRENT_CODE_AUDIT.md` (which is the gap/severity view) and `MODULE_OWNERSHIP.yml`
+(machine-readable owner/target/status). Counts are production `.go` files at the
+package root (excluding `_test.go` and subpackages).
+
+Status legend: 🟢 aligned · 🟡 partial/tolerated · 🔴 gap. "Target module" /
+"Phase" reference `ARCHITECTURE_STANDARD.md` + `REFACTOR_ROADMAP.md`.
+
+---
+
+## Intelligence & Copilot driver
+
+| Package | Files | Responsibility (current) | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `internal/ai` | 28 | MIXED: pure generators (msggen, classifier schemas) **and** the Copilot driver (agent*.go, intent_*.go, brain*.go). Driver holds `*store.Store` + untyped `ActionHandler`. | 🟡 | split: `ai` (pure) + `drivers/copilot` (driver) | B + D/G |
+| `internal/ai/comment` | 5 | Pure comment decision/repair intelligence. Imports **only** `models`. | 🟢 | `ai` (intelligence) | — (already clean) |
+| `internal/fburl` | 2 | Host-anchored Facebook URL trust + canonicalization. Pure. | 🟢 | `services/facebook` (platform-trust leaf) | C (stays pure) |
+
+**Obvious misplacements:** the copilot driver files (`agent.go`, `business.go`,
+`classifier.go`, `policy_gate.go`, `intent_*.go`, `brain_*.go`) live under
+`internal/ai` but are an inbound **driver**, not intelligence — they belong in
+`internal/drivers/copilot` and must shed the direct store dependency (the
+`COPILOT_NO_DIRECT_REPO` warnings). `internal/ai/comment_decision.go` (pure) is fine
+to stay as intelligence but should be catalogued under the `ai` module, not the driver.
+
+## Store domains (data layer)
+
+| Package | Files | Responsibility | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `internal/store` | 18 | infra (Store, schema, migrations) + top-level domains (users/org/leads/identities legacy). | 🟡 | platform(users/org) + per-domain | B/C |
+| `internal/store/coordination` | 18 | append-only `execution_attempts` + `action_ledger`, reverify, attribution, behaviour caps. **Sole writer** of the ledger. | 🟢 | `outbound` (coordination) | — (invariant holds) |
+| `internal/store/outbound` | 11 | queue/dedup/claim/lease/transition/finalize/policy. Import-clean (models+events+dbutil). | 🟢 | `outbound` | C/I (split orchestrator) |
+| `internal/store/connectors` | 13 | connector commands/pairing/screenshots/policy, agent tokens, selector cache. | 🟢 | `connectors` | F |
+| `internal/store/crawl` | 6 | posts/groups/jobs/intents crawl artifacts. | 🟢 | `crawl/jobs` | C |
+| `internal/store/leads` | 12 | leads, engagement projection, classification_log, `user_context` KV. | 🟡 | `leads` (KV usage flagged) | C/H |
+
+**Note (append-only):** confirmed **zero** raw `execution_attempts`/`action_ledger`
+writes outside `internal/store/coordination`. The single-writer rule is intact.
+
+## Crawl / jobs / ingest / scoring
+
+| Package | Files | Responsibility | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `internal/jobs` | 5 | crawl job Task/Job model, Store, scheduler (`Submit`/`Claim`/`Complete`). | 🟢 | `crawl/jobs` (infra) | C |
+| `internal/jobhandlers` | 0 (subpkgs) | crawl handler(s); `facebook_crawl` subpackage runs the crawl + `IngestPost`. | 🟡 | `services/facebook` (FB handler) | C |
+| `internal/leadingest` | 1 | `IngestPost` (real-content gate) + `OnLeadCreated` hook. Shared by both ingestion paths. | 🟡 | `services/facebook` (ingest) + emits events | C/E |
+| `internal/scoring` | 1 | lead scoring config/scorer. | 🟢 | `ai`/`services` (via port) | B/C |
+
+**Obvious misplacement:** `internal/leadingest` fires `OnLeadCreated` consumed by
+composition-root callbacks (worker + server). That cross-module reaction should
+become a durable `FacebookLeadCreated`/`FacebookPostImported` event (Phase E), not a
+callback.
+
+## Connector / browser
+
+| Package | Files | Responsibility | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `internal/server/agent` | 23 | extension driver: heartbeat, crawl-result, outbox, commands, screenshots. | 🟡 | `drivers/connector` | F |
+| `internal/browsergateway` | 1 | stream-status constants / browser gateway contract. | 🟢 | `connectors` | F |
+
+**Note:** `internal/server/agent` is large (23 files) and mixes the connector driver
+with some outbound/reverify handlers — a hotspot for the `drivers/connector` extraction.
+
+## Outbound (application orchestrator)
+
+| Package | Files | Responsibility | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `cmd/scraper/outbound_actions.go` | 1 (886 LOC) | `queueLeadOutreach` — the outbound orchestrator; mixes vertical-neutral queueing with FB target-URL resolution. Legacy god file (allowlisted). | 🟡 | `services/facebook` (FB part) + `outbound` (neutral part) | C/I |
+| `internal/store/outbound_aliases.go` | 1 | 28 Deprecated L2 bridge wrappers (e.g. `QueueOutboundForOrg`). | 🟡 | remove | I (PR2B, gated) |
+
+## Notifications / Telegram
+
+| Package | Files | Responsibility | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `internal/telegram/control` | 10 | per-org Telegram channel notifications (`NotifyLead`/`NotifyAction`). A sink. | 🟡 | `notifications` | E |
+| `internal/server/system/notifications.go` | 1 | in-app bell rows. | 🟡 | `notifications` | E |
+
+**Note:** notifications are fed by **direct calls** (`tgEvents.NotifyLead`) inside
+crawl/outbox handlers, not by subscribing to durable events — the Phase E change.
+
+## Knowledge
+
+| Package | Files | Responsibility | Status | Target module | Phase |
+|---|---|---|---|---|---|
+| `internal/store/knowledge` | (subpkg) | knowledge assets/sources/events/feedback. | 🟢 | `knowledge` | post-C |
+| `internal/workspace_knowledge` | 1 (+subpkgs) | ingestion/retrieval/soak. | 🟡 | `knowledge` | post-C |
+
+---
+
+## Phase-A scaffold packages (this PR, empty markers)
+
+`internal/platform`, `internal/drivers`, `internal/drivers/copilot`,
+`internal/services`, `internal/services/facebook`, `internal/outbound`,
+`internal/knowledge`, `internal/brand`, `internal/notifications` (new `doc.go` only);
+`internal/events`, `internal/ai` (added `doc.go` to existing packages). They build
+clean and contain NO runtime code — they mark target boundaries so future move-only
+PRs have a destination and the import guard has paths to check.
+
+## Biggest inventory takeaways
+
+1. **`internal/ai` mixes intelligence + driver** — the single highest-value split
+   (Phase B/G); it is also the only source of current guard warnings.
+2. **Facebook logic is spread** across `cmd/scraper`, `jobhandlers/facebook_crawl`,
+   `leadingest`, `fburl` — no `services/facebook` home yet (Phase C).
+3. **Cross-module reactions are callbacks, not events** (`leadingest.OnLeadCreated`,
+   `tgEvents.NotifyLead`) — the durable-outbox keystone (Phase E).
+4. **Append-only + tenant isolation are already clean** — do not regress them.
