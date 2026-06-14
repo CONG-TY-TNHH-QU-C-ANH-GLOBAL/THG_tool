@@ -95,12 +95,14 @@ func RouteDecisionFor(prompt string) RouteDecision {
 		conf, reason = ConfidenceHigh, "deterministic keyword/URL match"
 	}
 	return RouteDecision{
-		Action:           action,
-		Confidence:       conf,
-		Reason:           reason,
-		URLCount:         len(ent.FacebookURLs),
-		HasSpecificScope: ent.HasSpecificScope,
-		HasBulkScope:     ent.HasBulkScope,
-		HasCrawlVerb:     ent.HasCrawlVerb,
+		Action:              action,
+		Confidence:          conf,
+		Reason:              reason,
+		URLCount:            len(ent.FacebookURLs),
+		HasSpecificScope:    ent.HasSpecificScope,
+		HasBulkScope:        ent.HasBulkScope,
+		HasCommentBulkScope: ent.HasCommentBulkScope,
+		HasInboxBulkScope:   ent.HasInboxBulkScope,
+		HasCrawlVerb:        ent.HasCrawlVerb,
 	}
 }

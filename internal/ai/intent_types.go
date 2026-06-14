@@ -24,8 +24,13 @@ type IntentEntities struct {
 	HasPostURL       bool     // first FB URL looks like a commentable/crawlable post
 	HasGroupURL      bool     // an FB URL is present but not a specific post (group/page/profile shell)
 	HasSpecificScope bool     // singular phrasing: "bài này" / "post này" / "lead này"
-	HasBulkScope     bool     // explicit bulk scope: "leads" / "các lead" / "tất cả" / "tệp khách" …
-	HasCrawlVerb     bool     // cào / crawl / scrape / quét
+	// Bulk scope is branch-specific: the comment-bulk and inbox-bulk lexicons
+	// differ (inbox bulk still accepts a bare "lead"). Keep both so observability
+	// matches the branch that actually routed; HasBulkScope is their OR.
+	HasCommentBulkScope bool // "leads" / "các lead" / "tất cả" / "tệp khách" …
+	HasInboxBulkScope   bool // comment-bulk set PLUS a bare singular "lead"
+	HasBulkScope        bool // HasCommentBulkScope || HasInboxBulkScope
+	HasCrawlVerb        bool // cào / crawl / scrape / quét
 }
 
 // IntentDecision is the classifier output: an action name + why. Entities are
@@ -40,11 +45,13 @@ type IntentDecision struct {
 // RouteDecision is the safe, secret-free observability view of a routing
 // decision (no cookies/tokens/session/payload). Build it with routeDecision().
 type RouteDecision struct {
-	Action           string     `json:"action"`
-	Confidence       Confidence `json:"confidence"`
-	Reason           string     `json:"reason"`
-	URLCount         int        `json:"url_count"`
-	HasSpecificScope bool       `json:"has_specific_scope"`
-	HasBulkScope     bool       `json:"has_bulk_scope"`
-	HasCrawlVerb     bool       `json:"has_crawl_verb"`
+	Action              string     `json:"action"`
+	Confidence          Confidence `json:"confidence"`
+	Reason              string     `json:"reason"`
+	URLCount            int        `json:"url_count"`
+	HasSpecificScope    bool       `json:"has_specific_scope"`
+	HasBulkScope        bool       `json:"has_bulk_scope"`
+	HasCommentBulkScope bool       `json:"has_comment_bulk_scope"`
+	HasInboxBulkScope   bool       `json:"has_inbox_bulk_scope"`
+	HasCrawlVerb        bool       `json:"has_crawl_verb"`
 }

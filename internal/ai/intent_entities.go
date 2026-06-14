@@ -64,11 +64,13 @@ func extractMaxItemsFromPrompt(prompt string) int64 {
 func extractIntentEntities(folded, prompt string) IntentEntities {
 	urls := fburl.ExtractFacebookURLs(prompt)
 	e := IntentEntities{
-		FacebookURLs:     urls,
-		HasSpecificScope: containsAnyFolded(folded, lexSpecificScope),
-		HasBulkScope:     containsAnyFolded(folded, lexCommentBulkScope),
-		HasCrawlVerb:     containsAnyFolded(folded, lexCrawlVerbs),
+		FacebookURLs:        urls,
+		HasSpecificScope:    containsAnyFolded(folded, lexSpecificScope),
+		HasCommentBulkScope: containsAnyFolded(folded, lexCommentBulkScope),
+		HasInboxBulkScope:   containsAnyFolded(folded, lexInboxBulkScope),
+		HasCrawlVerb:        containsAnyFolded(folded, lexCrawlVerbs),
 	}
+	e.HasBulkScope = e.HasCommentBulkScope || e.HasInboxBulkScope
 	if len(urls) > 0 {
 		if isLikelyFacebookPostURL(urls[0]) {
 			e.HasPostURL = true

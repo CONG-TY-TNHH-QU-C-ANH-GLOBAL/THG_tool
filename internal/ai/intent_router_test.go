@@ -62,6 +62,41 @@ func TestRouteDecisionFor(t *testing.T) {
 	}
 }
 
+// Branch-aware bulk-scope observability: the debug flags must reflect the branch
+// that actually routed (inbox bulk accepts a bare "lead"; comment bulk does not).
+// Routing itself is asserted unchanged.
+func TestRouteDecisionFor_BranchAwareBulkScope(t *testing.T) {
+	// inbox bulk via a bare singular "lead" → inbox_all_leads; inbox bulk flag set,
+	// comment bulk flag NOT set (this was the mislabel the fix targets).
+	in := RouteDecisionFor("inbox lead này")
+	if in.Action != "inbox_all_leads" {
+		t.Fatalf("routing changed: inbox lead này → %q (want inbox_all_leads)", in.Action)
+	}
+	if !in.HasInboxBulkScope || in.HasCommentBulkScope || !in.HasBulkScope {
+		t.Errorf("inbox-bulk flags wrong: %+v", in)
+	}
+
+	// comment bulk → comment_all_leads; comment bulk flag set, inbox-only bare-lead
+	// not the trigger here ("tất cả leads" is in BOTH sets, so inbox flag is also true —
+	// the point is comment bulk is correctly true and routing is comment_all_leads).
+	cm := RouteDecisionFor("comment tất cả leads")
+	if cm.Action != "comment_all_leads" {
+		t.Fatalf("routing changed: comment tất cả leads → %q", cm.Action)
+	}
+	if !cm.HasCommentBulkScope || !cm.HasBulkScope {
+		t.Errorf("comment-bulk flags wrong: %+v", cm)
+	}
+
+	// direct single-post comment → comment_single_post; NO bulk scope of either kind.
+	sp := RouteDecisionFor("comment bài này https://www.facebook.com/groups/1/posts/2/")
+	if sp.Action != "comment_single_post" {
+		t.Fatalf("routing changed: single post → %q", sp.Action)
+	}
+	if sp.HasBulkScope || sp.HasCommentBulkScope || sp.HasInboxBulkScope {
+		t.Errorf("single-post must have no bulk scope, got %+v", sp)
+	}
+}
+
 // TODO(nlu): when the typo-tolerant / multilingual NLU lands, add characterization
 // cases here (e.g. "comment bài nay" without diacritic, English "comment this post
 // <url>"). They are intentionally NOT added as failing tests yet — this PR is the
