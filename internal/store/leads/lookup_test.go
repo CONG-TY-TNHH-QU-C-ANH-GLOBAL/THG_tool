@@ -67,3 +67,52 @@ func TestGetLeadByPostRefAndID(t *testing.T) {
 		t.Fatalf("GetLeadByID: err=%v lead=%+v", err, byID)
 	}
 }
+
+// Legacy URL shapes: a lead crawled with a mobile/tracking/trailing-slash
+// source_url is still found by the CANONICAL post id (post_fbid is stable across
+// URL shapes). When post_fbid is missing AND the stored URL differs from the
+// canonical form, the lookup misses — a documented limitation, never fabricated.
+func TestGetLeadByPostRef_LegacyURLShapes(t *testing.T) {
+	ctx := context.Background()
+	dst := storetest.CopyTemplate(t, bootstrapLeadsStore, "leads_lookup_legacy")
+	db, err := store.New(dst)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const orgID = int64(7)
+
+	// Messy stored URL (mobile host + tracking params) but a clean post_fbid.
+	id, err := db.Leads().InsertLead(&models.Lead{
+		OrgID: orgID, SourceType: "post",
+		SourceURL: "https://m.facebook.com/groups/123/posts/456/?ref=share&mibextid=x",
+		PostFBID:  "456", GroupFBID: "123",
+		Platform: models.PlatformFacebook, Author: "An", Content: "x", Score: models.LeadHot,
+	})
+	if err != nil || id <= 0 {
+		t.Fatalf("InsertLead: id=%d err=%v", id, err)
+	}
+	// Canonical lookup finds it via the stable post id despite the messy stored URL.
+	got, err := db.Leads().GetLeadByPostRef(ctx, orgID, "456", "https://www.facebook.com/groups/123/permalink/456/")
+	if err != nil || got == nil || got.ID != id {
+		t.Fatalf("legacy-shaped lead must be found by post_fbid: err=%v lead=%+v", err, got)
+	}
+
+	// Documented limitation: no post_fbid + a stored URL unequal to the canonical
+	// form → miss (nil, nil). The caller asks the user to scan/import; it never
+	// fabricates post content.
+	if _, err := db.Leads().InsertLead(&models.Lead{
+		OrgID: orgID, SourceType: "post",
+		SourceURL: "https://m.facebook.com/story.php?story_fbid=789&id=1", PostFBID: "",
+		Platform: models.PlatformFacebook, Author: "B", Content: "y", Score: models.LeadHot,
+	}); err != nil {
+		t.Fatalf("InsertLead 2: %v", err)
+	}
+	miss, err := db.Leads().GetLeadByPostRef(ctx, orgID, "789", "https://www.facebook.com/permalink.php?story_fbid=789")
+	if err != nil {
+		t.Fatalf("limitation lookup err: %v", err)
+	}
+	if miss != nil {
+		t.Fatalf("documented limitation expected miss (no post_fbid + non-canonical URL), got %+v", miss)
+	}
+}

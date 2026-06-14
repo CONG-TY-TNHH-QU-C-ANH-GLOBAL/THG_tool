@@ -1,6 +1,7 @@
 package fburl
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -51,11 +52,41 @@ func CanonicalizePostURL(raw string) (string, bool) {
 	return "", false
 }
 
-// isFacebookHost reports whether u points at a Facebook-owned host (so a
-// non-Facebook URL carrying a "/posts/" segment is not mistaken for a FB post).
-func isFacebookHost(u string) bool {
-	l := strings.ToLower(u)
-	return strings.Contains(l, "facebook.com") || strings.Contains(l, "fb.com") || strings.Contains(l, "fb.watch")
+var fbBaseHosts = []string{"facebook.com", "fb.com", "fb.watch"}
+
+// isFacebookHost reports whether u's HOST is a Facebook-owned host. The match is
+// host-anchored via net/url (exact base or a real subdomain), NOT a substring —
+// so lookalikes are rejected: facebook.com.evil.com, notfacebook.com,
+// fake-facebook.com, fb.com.evil.com, a userinfo trick (facebook.com@evil.com),
+// and facebook.com appearing only in a query/path of a non-Facebook host.
+func isFacebookHost(raw string) bool {
+	h := hostOfURL(raw)
+	if h == "" {
+		return false
+	}
+	for _, base := range fbBaseHosts {
+		if h == base || strings.HasSuffix(h, "."+base) {
+			return true
+		}
+	}
+	return false
+}
+
+// hostOfURL returns the lowercased hostname of raw (port + userinfo stripped),
+// adding a scheme when absent so a bare "www.facebook.com/..." still parses.
+func hostOfURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	if !strings.Contains(s, "://") {
+		s = "https://" + s
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
 }
 
 // extractGroupFBID returns the numeric group id from a /groups/{id}/ path, or "".

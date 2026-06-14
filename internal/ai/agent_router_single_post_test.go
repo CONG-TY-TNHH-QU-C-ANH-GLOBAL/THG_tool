@@ -16,10 +16,14 @@ func TestDeterministicFacebookAction_CommentSinglePost(t *testing.T) {
 		{"comment lead này + url stays single post", "hãy comment lead này " + fbPost, "comment_single_post", fbPost},
 		{"đăng comment vào post này + url", "đăng comment vào post này " + fbPost, "comment_single_post", fbPost},
 		{"comment giúp tôi bài này + url", "comment giúp tôi bài này " + fbPost, "comment_single_post", fbPost},
+		{"comment giúp tôi lead này + url", "comment giúp tôi lead này " + fbPost, "comment_single_post", fbPost},
+		{"mobile facebook url", "comment bài này https://m.facebook.com/groups/1/posts/2", "comment_single_post", "https://m.facebook.com/groups/1/posts/2"},
 		{"no url but bài này → single post (asks for link)", "soạn comment cho bài này", "comment_single_post", ""},
+		{"no url but lead này → single post (asks for link)", "comment giúp tôi lead này", "comment_single_post", ""},
 
+		{"bulk comment tất cả leads unchanged", "comment tất cả leads", "comment_all_leads", ""},
 		{"bulk comment all leads unchanged", "comment tất cả lead", "comment_all_leads", ""},
-		{"bulk comment leads unchanged", "comment cho các lead", "comment_all_leads", ""},
+		{"bulk comment các lead unchanged", "comment cho các lead", "comment_all_leads", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -37,11 +41,26 @@ func TestDeterministicFacebookAction_CommentSinglePost(t *testing.T) {
 }
 
 // A crawl verb means "scrape this post's comments", NOT post a comment — it must
-// NOT be hijacked by the single-post comment intent.
-func TestDeterministicFacebookAction_CrawlVerbIsNotSinglePost(t *testing.T) {
+// route to scrape_comments (unchanged), not the single-post comment intent.
+func TestDeterministicFacebookAction_CrawlVerbStaysScrapeComments(t *testing.T) {
 	action, _, ok := deterministicFacebookAction(
 		"cào comment bài viết https://www.facebook.com/groups/123/posts/456/", 5, 0)
-	if ok && action == "comment_single_post" {
-		t.Fatalf("crawl verb must not route to comment_single_post, got %q", action)
+	if !ok || action != "scrape_comments" {
+		t.Fatalf("crawl verb + comment + post url must route to scrape_comments, got %q (ok=%v)", action, ok)
+	}
+}
+
+// Lookalike Facebook hosts and non-Facebook URLs must NOT be captured as a
+// direct-comment post target (host anchoring via fburl).
+func TestDeterministicFacebookAction_RejectsLookalikeAndNonFacebook(t *testing.T) {
+	for _, prompt := range []string{
+		"comment https://facebook.com.evil.com/posts/123",
+		"comment https://notfacebook.com/posts/123",
+		"comment https://example.com/posts/1",
+	} {
+		action, args, _ := deterministicFacebookAction(prompt, 5, 0)
+		if action == "comment_single_post" && argStringFromMap(args, "post_url") != "" {
+			t.Errorf("lookalike/non-FB must not be captured as post_url: prompt %q -> %q", prompt, argStringFromMap(args, "post_url"))
+		}
 	}
 }
