@@ -52,8 +52,11 @@ func deterministicFacebookAction(prompt string, orgID, accountID int64) (string,
 			return "comment_single_post", args, true
 		}
 	}
+	// Bulk comment requires an EXPLICIT bulk scope — never a bare singular "lead"
+	// (that is intercepted above as comment_single_post "lead này"). Plural
+	// "leads", "các lead", "tất cả", "all", "tệp khách", "khách hàng" are bulk.
 	if containsAnyFolded(folded, []string{"comment", "binh luan"}) &&
-		containsAnyFolded(folded, []string{"lead", "leads", "tep khach", "khach hang", "tat ca", "all"}) {
+		containsAnyFolded(folded, []string{"leads", "cac lead", "tep khach", "khach hang", "tat ca", "all"}) {
 		return "comment_all_leads", args, true
 	}
 	if containsAnyFolded(folded, []string{"dang bai", "posting", "post len", "tao bai"}) {

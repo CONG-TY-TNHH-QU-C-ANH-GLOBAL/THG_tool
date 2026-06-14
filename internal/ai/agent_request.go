@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/thg/scraper/internal/fburl"
 )
 
 func wantsAutoOutbound(prompt string) bool {
@@ -67,8 +69,12 @@ func extractDashboardAccountID(prompt string) int64 {
 }
 
 func requiresFacebookBrowser(prompt string) bool {
-	lower := strings.ToLower(stripDashboardContext(prompt))
-	if strings.Contains(lower, "facebook.com") || strings.Contains(lower, "fb.com") {
+	clean := stripDashboardContext(prompt)
+	lower := strings.ToLower(clean)
+	// A real Facebook URL (host-anchored via fburl) requires the FB browser; a
+	// lookalike host does not. Bare FB-topic prompts are still caught by the
+	// trigger keywords below.
+	if len(fburl.ExtractFacebookURLs(clean)) > 0 {
 		return true
 	}
 	triggers := []string{

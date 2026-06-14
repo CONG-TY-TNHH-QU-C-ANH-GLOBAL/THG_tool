@@ -52,6 +52,12 @@ func CanonicalizePostURL(raw string) (string, bool) {
 	return "", false
 }
 
+// IsFacebookURL reports whether raw is a URL on a genuine Facebook host. The
+// single, host-anchored source of truth for "is this a Facebook URL?" — callers
+// across the codebase must use it instead of substring-matching the host, which
+// accepts lookalikes (facebook.com.evil.com, fb.com.evil.com, ...).
+func IsFacebookURL(raw string) bool { return isFacebookHost(raw) }
+
 var fbBaseHosts = []string{"facebook.com", "fb.com", "fb.watch"}
 
 // isFacebookHost reports whether u's HOST is a Facebook-owned host. The match is

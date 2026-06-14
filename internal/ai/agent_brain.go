@@ -9,11 +9,11 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/fburl"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/textutil"
 )
@@ -517,17 +517,11 @@ func brainToolIsOutbound(tool string) bool {
 	return outboundToolUsesPolicy(tool)
 }
 
+// isFacebookURL delegates to the host-anchored fburl source of truth so brain
+// action validation rejects lookalike hosts (facebook.com.evil.com) that the old
+// substring check accepted.
 func isFacebookURL(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return false
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	host := strings.ToLower(u.Host)
-	return strings.Contains(host, "facebook.com") || strings.Contains(host, "fb.com")
+	return fburl.IsFacebookURL(raw)
 }
 
 func tooBroadBrainQuery(query string) bool {

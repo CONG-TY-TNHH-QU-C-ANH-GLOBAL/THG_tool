@@ -24,6 +24,18 @@ func TestFacebookHostAnchoring(t *testing.T) {
 		if _, ok := CanonicalizePostURL(in); ok {
 			t.Errorf("lookalike must not canonicalize: %q", in)
 		}
+		// IsFacebookURL (the brain's validation gate) must also reject the lookalike.
+		if IsFacebookURL(in) {
+			t.Errorf("IsFacebookURL must reject lookalike host: %q", in)
+		}
+	}
+	for _, ok := range []string{
+		"https://www.facebook.com/groups/1/posts/2", "https://m.facebook.com/x",
+		"https://fb.com/y", "https://fb.watch/z",
+	} {
+		if !IsFacebookURL(ok) {
+			t.Errorf("IsFacebookURL must accept genuine host: %q", ok)
+		}
 	}
 
 	accept := map[string][]string{
