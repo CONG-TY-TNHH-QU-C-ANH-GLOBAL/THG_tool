@@ -60,9 +60,15 @@ def main() -> int:
             if not files:
                 continue
             rel = os.path.relpath(dirpath, repo).replace("\\", "/")
+            # The >15 trigger is about SOURCE files (rule 2). Count non-test
+            # .go files; report _test.go separately as test_count so a
+            # test-heavy package isn't flagged for its tests.
+            src = [f for f in files if not f.endswith("_test.go")]
+            test_count = len(files) - len(src)
 
-            if len(files) > MAX_FILES and rel not in COUNT_EXEMPT:
-                file_warn.append(f"  {len(files):3d} files  {rel}  (> {MAX_FILES})")
+            if len(src) > MAX_FILES and rel not in COUNT_EXEMPT:
+                file_warn.append(
+                    f"  {len(src):3d} src (+{test_count} test)  {rel}  (> {MAX_FILES} source)")
 
             clusters: dict[str, int] = defaultdict(int)
             for f in files:
@@ -86,7 +92,7 @@ def main() -> int:
             print(r)
         print()
 
-    section(f"packages > {MAX_FILES} .go files", file_warn)
+    section(f"packages > {MAX_FILES} source .go files (excl. _test.go)", file_warn)
     section(f"prefix clusters > {MAX_PREFIX} files", prefix_warn)
     section("vague catch-all files", vague_warn)
 

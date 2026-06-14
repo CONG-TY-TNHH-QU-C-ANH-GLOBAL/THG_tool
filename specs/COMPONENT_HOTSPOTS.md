@@ -84,6 +84,41 @@ the bounded component soonest; (2) then `internal/ai/agent/`; (3) then
 guards green between, no feature work mixed in. Resolve the **shared-core
 placement** (open item 1 above) in PR (1)'s design step before moving anything.
 
-### Why not in THIS PR
-Per the no-big-bang rule and the original directive, this PR is docs+guards only.
-The comment/ extraction is the **next** PR (move-only).
+### Status — comment/ extraction PR1 SHIPPED (move-only, 2026-06-14)
+Branch `refactor/internal-ai-comment-boundary`. **Moved** the self-contained
+platform-neutral cluster into `internal/ai/comment/` (package `comment`):
+
+| old (internal/ai) | new (internal/ai/comment) |
+|---|---|
+| `comment_quality.go` | `quality.go` |
+| `comment_contacts.go` | `contact_grounding.go` |
+| `url_normalize.go` | `brand_url.go` |
+| `comment_duplicate.go` | `duplicate.go` |
+| (+ their `_test.go`) | (+ `quality_test.go` / `contact_grounding_test.go` / `brand_url_test.go` / `duplicate_test.go`) |
+| — | `doc.go` (package boundary) |
+
+`internal/ai/comment` imports only `internal/models` + stdlib — boundary
+verified (`go list -deps`): it imports NO store/server/platform/parent-ai
+package. Callers updated: `cmd/scraper/outbound_actions.go` and
+`internal/ai/comment_decision.go` now call `comment.*`. No wrappers added.
+
+**Stayed at root (`internal/ai`), with follow-up reasons (NOT forced — rule 3/4):**
+- `policy_gate.go` — imports `internal/store` (`LoadOrgCommentPolicies`); moving
+  it would pull store into the neutral layer. Follow-up: split the pure
+  `EvaluateGate`/`ApplyGate` from the store-bound loader, or relocate to the
+  usecase layer.
+- `comment_decision.go` — `DecideComment`/`GenerateCommentV2` are methods on the
+  root `MessageGenerator` (msggen.go, which also does inbox/recruitment), and it
+  defines `buildCompanyBlock`/`buildContactRule` consumed by msggen. Follow-up:
+  export the builder helpers + move generation into the comment package, or keep
+  generation as a usecase concern.
+- `comment_persona.go` — `buildPersonaRule` (unexported) is consumed by msggen.
+  Follow-up: export + move with the generation split above.
+
+Two identity→repair→screen pipeline tests were relocated from
+`url_normalize_test.go` into root `comment_brand_test.go` (they exercise root
+`ResolveCompanyIdentity`/`buildContactRule` + the moved `comment.*` calls).
+
+**Next:** `agent/` then `scoring/` (separate move-only PRs), and the comment
+generation/persona/policy follow-ups above once the platform/usecase boundary is
+introduced. Behavior unchanged in this PR.

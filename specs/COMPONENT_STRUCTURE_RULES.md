@@ -6,6 +6,33 @@ These rules are binding for Claude and every human/agent refactor. They sit alon
 
 > Companion docs: `specs/COMPONENT_HOTSPOTS.md` (current inventory + first refactor target), `internal/store/DOMAINS.md` (store domain map), `specs/RUNTIME_TOPOLOGY.md` + `scripts/check_topology.sh` (boundary enforcement).
 
+## 0. Architecture layers (binding direction)
+
+This is a SaaS automation platform; Facebook is only the FIRST surface (Instagram /
+TikTok / Telegram / Taobao / 1688 / POD come later). Structure must never become
+Facebook-only. Three layers, with a one-way dependency direction:
+
+1. **Intelligence layer** (`internal/ai/<capability>/`, e.g. `internal/ai/comment/`) —
+   platform-NEUTRAL reasoning over text + grounded business identity (comment
+   quality / repair / brand-URL / contact grounding / persona / duplicate /
+   neutral prompt+decision helpers). MUST NOT import any platform / Facebook /
+   outbound / connector / server / store package.
+2. **Platform adapter layer** (`internal/platform/<platform>/` or existing
+   connector packages) — platform-specific details: URL parsing, post/group/page
+   context, actor/session/account rules, composer/runtime. May depend on
+   platform-neutral interfaces/types.
+3. **Application / usecase orchestration** (`internal/usecase/<workflow>/` or the
+   existing command/service wiring) — gets context from a platform adapter, calls
+   the intelligence layer to validate/repair/generate, calls outbound + connector
+   readiness, notifies Telegram/Copilot.
+
+**Dependency direction (one way):** usecase → (intelligence, platform adapters,
+outbound); platform adapters → neutral types; **intelligence imports none of the
+platform / outbound / connector / server layers**. Reusable intelligence stays
+platform-neutral. Do not create the full platform/usecase layer speculatively —
+extract a neutral intelligence component first; place platform-specific logic in
+the adapter/usecase layer, never under `internal/ai`.
+
 ---
 
 ## 1. Component-first thinking

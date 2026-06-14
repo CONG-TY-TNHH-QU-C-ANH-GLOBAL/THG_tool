@@ -1,4 +1,4 @@
-package ai
+package comment
 
 import "testing"
 
@@ -6,8 +6,8 @@ func TestDetectRepeatedText(t *testing.T) {
 	const A = "Bên THG Fulfill có hỗ trợ sourcing Tumbler 20oz. Nếu cần, inbox THG Fulfill nhé."
 
 	dup := map[string]string{
-		"A+A":          A + A,
-		"A + space + A": A + " " + A,
+		"A+A":             A + A,
+		"A + space + A":   A + " " + A,
 		"A + newline + A": A + "\n" + A,
 	}
 	for name, in := range dup {

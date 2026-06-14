@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/thg/scraper/internal/ai/comment"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 )
@@ -344,7 +345,7 @@ func ResolveCompanyIdentity(profile *BusinessProfile, groundedCTA *models.Ground
 		// PR-6: the website enters the identity in canonical clickable
 		// form (https://, healed spacing, no trailing slash) so the
 		// prompt cites it exactly and the guard repairs variants to it.
-		id.Website = CanonicalWebsite(profile.Website)
+		id.Website = comment.CanonicalWebsite(profile.Website)
 		id.OfficialContact = strings.TrimSpace(profile.OfficialContact)
 		id.PrimaryCTA = strings.TrimSpace(profile.PrimaryCTA)
 		id.ServiceSummary = strings.TrimSpace(orFallback(profile.Services, profile.Description))

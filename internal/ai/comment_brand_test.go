@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thg/scraper/internal/ai/comment"
 	"github.com/thg/scraper/internal/models"
 )
 
@@ -59,10 +60,46 @@ func TestScreenCommentContacts(t *testing.T) {
 		{"grounded phone ok", "Gọi 0901234567 nhé.", grounded, true, ""},
 	}
 	for _, c := range cases {
-		ok, code := ScreenCommentContacts(c.text, c.id)
+		ok, code := comment.ScreenCommentContacts(c.text, c.id)
 		if ok != c.wantOK || code != c.wantCode {
 			t.Fatalf("%s: got ok=%v code=%q, want ok=%v code=%q", c.name, ok, code, c.wantOK, c.wantCode)
 		}
+	}
+}
+
+// Case 4 (relocated from url_normalize_test.go in the comment-boundary move):
+// empty website → no website mention ever. Exercises the root contact rule plus
+// the moved comment.RepairCommentContacts — this is why it stays at root.
+func TestEmptyWebsite_NoMention(t *testing.T) {
+	id := models.CompanyIdentity{CompanyName: "THG Fulfill"} // no website
+	if rule := buildContactRule(id); !strings.Contains(rule, "do NOT include any URL") {
+		t.Errorf("contact rule must forbid URLs when website empty: %q", rule)
+	}
+	repaired, changed := comment.RepairCommentContacts("Ghé thgfulfill.com/vi nhé", id)
+	if !changed || strings.Contains(repaired, "thgfulfill") {
+		t.Errorf("non-grounded URL must be stripped when no website configured: %q", repaired)
+	}
+}
+
+// Case 5 (relocated): the identity → repair → screen pipeline ends with the
+// official website EXACTLY as the normalized canonical value and passes the
+// contact guard. Spans root identity resolution + moved comment.* calls.
+func TestCommentPipeline_UsesCanonicalWebsiteExactly(t *testing.T) {
+	profile := &BusinessProfile{Name: "THG Fulfill", Website: "thgfulfill.com/vi"}
+	id := ResolveCompanyIdentity(profile, nil)
+	if id.Website != "https://thgfulfill.com/vi" {
+		t.Fatalf("identity website not canonical: %q", id.Website)
+	}
+	raw := "Bên mình hỗ trợ fulfill — xem thgfulfill. com/vi để biết thêm."
+	repaired, changed := comment.RepairCommentContacts(raw, id)
+	if !changed || !strings.Contains(repaired, "https://thgfulfill.com/vi") {
+		t.Fatalf("spaced mention not repaired to canonical: %q", repaired)
+	}
+	if strings.Contains(repaired, ". com") || strings.Contains(strings.ToLower(repaired), "thgfulfill com") {
+		t.Fatalf("spaced domain survived repair: %q", repaired)
+	}
+	if ok, reason := comment.ScreenCommentContacts(repaired, id); !ok {
+		t.Fatalf("repaired canonical comment must pass screening, got %s", reason)
 	}
 }
 
