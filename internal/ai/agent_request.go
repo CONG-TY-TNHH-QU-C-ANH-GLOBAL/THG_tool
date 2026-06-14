@@ -50,13 +50,7 @@ func outboundToolUsesPolicy(tool string) bool {
 	}
 }
 
-func stripDashboardContext(prompt string) string {
-	marker := "\n\nDashboard context:"
-	if idx := strings.Index(prompt, marker); idx >= 0 {
-		return strings.TrimSpace(prompt[:idx])
-	}
-	return strings.TrimSpace(prompt)
-}
+// stripDashboardContext moved to intent_normalize.go (Copilot intent layer).
 
 func extractDashboardAccountID(prompt string) int64 {
 	re := regexp.MustCompile(`account_id\s*=\s*(\d+)`)

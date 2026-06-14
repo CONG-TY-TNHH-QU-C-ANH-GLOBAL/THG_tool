@@ -96,7 +96,6 @@ internal/store/connectors/agent_tokens.go  # 352 lines
 internal/server/workspace/screen_proxy.go  # 350 lines
 internal/agentloop/loop.go  # 347 lines
 internal/server/agent/heartbeat.go  # 344 lines
-internal/ai/agent_action_router.go  # 341 lines
 internal/server/system/notifications.go  # 338 lines
 internal/store/knowledge/embeddings.go  # 336 lines
 cmd/scraper/main.go  # 335 lines
