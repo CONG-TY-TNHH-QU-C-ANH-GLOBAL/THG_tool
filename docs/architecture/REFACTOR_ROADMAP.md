@@ -52,8 +52,35 @@ inventory/move-only** (give FB workflows a `services/facebook` home). Do NOT sch
 product features (P1/P2 re-implementation, Phase H) until the boundaries + outbox
 (Phase E) are in place.
 
+## Architecture Foundation Sprint log (`refactor/architecture-foundation-sprint`)
+
+One sprint, multiple independently-revertible commits. SAFE moves + additive scaffolds
+only; risky moves deferred with evidence.
+
+| Commit | Phase | Result |
+|---|---|---|
+| A | B (pure AI) | **DONE** — moved `BuildPersonaRule` (was `buildPersonaRule`) into `internal/ai/comment`; `go list -deps` proves comment purity (comment + models only). |
+| — | B.2 (copilot driver) | **DEFERRED — import cycle.** `buildDynamicSystemPrompt` (defined in driver `agent_prompt.go`) is consumed by `classifier.go` (a staying generator, also store-coupled). Moving the driver → `ai`→`copilot` (via classifier) while `copilot`→`ai` (driver uses `MessageGenerator`/`BusinessProfile`) = cycle. Export-surface the other way is 0, so the ONLY blocker is this back-reference + `classifier`/`buildDynamicSystemPrompt`/`MessageGenerator` entanglement. Needs a decouple (behavior-sensitive), not a move-only. The 4 `COPILOT_NO_DIRECT_REPO` warnings correctly stay on `internal/ai/...`. |
+| B | D (ports) | **DONE (scaffold)** — `internal/outbound/ports.ActionExecutor` + `internal/services/facebook/ports.OutboundPlanner` (consumer-owned, compile-safe, NOT wired). Zero thg deps. |
+| C | E (events) | **DONE (scaffold)** — `internal/events/{outbox,relay,bus}`; `outbox` has `Envelope`/`EventType`(×7)/`Status` TYPES only. No table, no relay, no migration. |
+| — | C (FB runtime) | **DEFERRED — wide ripple / wrong-direction.** `fburl` (pure) has 8 importers incl. `internal/ai` → moving it under `services/facebook` would create an illegal `ai`→`services` edge (it's a cross-cutting platform-trust leaf, keep it out of the service). `leadingest` ripples to server+worker and is itself the Phase-E callback. Audit map below; runtime move deferred to a dedicated Phase C PR. |
+| D | F (docs/guards) | **DONE** — this docs update + MODULE_OWNERSHIP.yml statuses. Import guard unchanged (paths didn't move out of `internal/ai`). |
+
+### Phase C migration audit map (what eventually moves to `services/facebook`)
+
+| Source (today) | Eventually | Blocker / risk |
+|---|---|---|
+| `cmd/scraper/outbound_actions.go` `queueLeadOutreach` | FB part → `services/facebook`; neutral queue → `outbound` | god file (886 LOC), hot path — needs char-tests + the outbound neutral/FB split (Phase C/I) |
+| `internal/jobhandlers/facebook_crawl` | `services/facebook` (crawl handler) | imported by worker + website ingestor; move ripples to `cmd/worker` |
+| `internal/leadingest` | `services/facebook` (ingest) + emits `FacebookLeadCreated` | server + worker importers; OnLeadCreated is the Phase-E event target — move WITH the outbox |
+| `internal/fburl` | stays a pure platform-trust leaf (NOT under services) | 8 importers incl. `internal/ai`; moving under services breaks the ai-no-services rule |
+| connector / lead / comment / posting / inbox handlers | `services/facebook` + `connectors` (Phase F) | spread across `internal/server/agent` (23 files) + store domains |
+
 ## Phase B — Pure AI boundary
 
+- **Status:** partially done in the foundation sprint (Commit A moved `BuildPersonaRule`).
+  Remaining pure-comment extraction (`comment_decision.go` pure functions) is blocked by
+  `MessageGenerator` methods + `BusinessProfile` coupling — see Phase B.2 / G.
 - **Goal:** make the `ai` intelligence module import-clean and physically distinct from
   the Copilot driver. Catalog `internal/ai/comment` + pure generators as `ai`; mark
   `agent*.go`/`intent_*.go`/`brain*.go` as `drivers/copilot`.
