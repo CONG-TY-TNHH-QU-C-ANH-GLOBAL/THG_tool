@@ -1,4 +1,4 @@
-package ai
+package comment
 
 import (
 	"strings"
@@ -6,11 +6,14 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// buildPersonaRule turns an ActorPersona (spec: MULTI_ACTOR_COVERAGE_POLICY) into a
+// BuildPersonaRule turns an ActorPersona (spec: MULTI_ACTOR_COVERAGE_POLICY) into a
 // prompt rule so a SECOND account covering the same lead adds a DIFFERENT angle —
 // no repeated website, no repeated hard CTA, no repeated phrasing. Empty persona
 // (a fresh lead / first actor) adds nothing. Numbered 9 to follow the contact rule.
-func buildPersonaRule(p models.ActorPersona) string {
+//
+// Pure platform-neutral comment intelligence (Phase B): models + stdlib only.
+// Exported on the package split so the ai message generator (msggen.go) can call it.
+func BuildPersonaRule(p models.ActorPersona) string {
 	if p.Role == "" && p.Tone == "" && p.LinkPolicy == "" && p.AllowedCTAStyle == "" && len(p.ForbiddenRepeatedPhrases) == 0 {
 		return ""
 	}
