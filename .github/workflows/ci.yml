@@ -29,6 +29,14 @@ jobs:
       - name: Runtime topology contract (specs/RUNTIME_TOPOLOGY.md §6)
         run: bash scripts/check_topology.sh
 
+      # Architecture import-boundary guard — WARN-ONLY (Phase A). Prints module
+      # boundary warnings + the roadmap phase that fixes each; it must NEVER fail
+      # the pipeline. Promotion to fail-hard is a later phase (docs/architecture/
+      # REFACTOR_ROADMAP.md). `|| true` is belt-and-suspenders; the script already
+      # exits 0 by design.
+      - name: Architecture import boundaries (warn-only)
+        run: bash scripts/check_import_boundaries.sh || true
+
       - name: go vet
         run: go vet ./...
 

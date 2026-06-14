@@ -1,0 +1,119 @@
+# Module Ownership Manifest
+#
+# Machine-readable companion to MODULE_BOUNDARIES.md. One entry per logical module.
+# `status` is the honest current state, NOT an aspiration:
+#   documented          - boundary written down (docs) only
+#   scaffolded          - a doc.go package marker exists at the target path (Phase A)
+#   partially_migrated  - some runtime code at the target path, some still elsewhere
+#   enforced            - boundary is checked fail-hard in CI
+#
+# Phase A (this PR) scaffolds the target roots and documents ownership. No runtime
+# code has moved. See REFACTOR_ROADMAP.md for phases.
+
+version: 1
+generated_for_commit_base: 6bd9efb6   # architecture standard v3 merge
+phase: A
+
+modules:
+  - name: platform
+    current_paths: [internal/platform/services, internal/workspace, internal/store]  # users/org at top-level store
+    target_paths: [internal/platform]
+    responsibility: >-
+      Neutral multi-service shell: service registry, workspace/org tenancy root,
+      composition of the service list. Hosts services; never knows their internals.
+    allowed_dependency_direction: "platform -> {models, store(users/org), service contracts}"
+    forbidden_imports: [services/*, ai(intelligence), jobhandlers, leadingest, drivers/*]
+    status: scaffolded
+    next_phase: "B/C (extract org/workspace shell; registry stays)"
+
+  - name: drivers/copilot
+    current_paths: [internal/ai/agent_*.go, internal/ai/intent_*.go, internal/ai/brain_*.go]
+    target_paths: [internal/drivers/copilot]
+    responsibility: "NL prompt -> normalized intent -> typed application command. Routing + NLU + ask-back."
+    allowed_dependency_direction: "copilot -> {ai(intent), fburl, CommandBus port, models}"
+    forbidden_imports: [internal/store/*, internal/server, store/outbound, connectors]
+    status: documented   # still in internal/ai; holds *store.Store (known gap)
+    next_phase: "D (typed CommandBus port) then G (drop store dependency)"
+    known_gap: "agent.go/business.go/classifier.go/policy_gate.go import internal/store (COPILOT_NO_DIRECT_REPO)"
+
+  - name: services/facebook
+    current_paths: [cmd/scraper, internal/jobhandlers/facebook_crawl, internal/leadingest, internal/fburl]
+    target_paths: [internal/services/facebook]
+    responsibility: "Facebook workflows: crawl, import post, plan comment/inbox, post. Owns FB sequencing + gates."
+    allowed_dependency_direction: "facebook -> {ai, fburl, outbound(port), connectors(port), leads, crawl, events, models}"
+    forbidden_imports: [drivers/copilot, services/taobao, services/1688, internal/server]
+    status: scaffolded
+    next_phase: "C (boundary, move-only) then H (features on the outbox)"
+
+  - name: services/taobao
+    current_paths: [internal/platform/services/resolver]   # stub only
+    target_paths: [internal/services/taobao]
+    responsibility: "Future Taobao sourcing workflows on shared primitives."
+    allowed_dependency_direction: "taobao -> {shared primitives via ports, models}"
+    forbidden_imports: [services/facebook, services/1688, drivers/*]
+    status: documented
+    next_phase: "post-E (after outbox + ports stable)"
+
+  - name: services/1688
+    current_paths: [internal/platform/services/resolver]   # stub only
+    target_paths: [internal/services/alibaba1688]
+    responsibility: "Future 1688 sourcing workflows on shared primitives."
+    allowed_dependency_direction: "1688 -> {shared primitives via ports, models}"
+    forbidden_imports: [services/facebook, services/taobao, drivers/*]
+    status: documented
+    next_phase: "post-E"
+
+  - name: ai
+    current_paths: [internal/ai/comment, internal/ai (generators)]
+    target_paths: [internal/ai]
+    responsibility: "PURE intelligence: classify, generate/repair, score, intent shape. IO-free, platform-neutral."
+    allowed_dependency_direction: "ai -> {models, stdlib}"
+    forbidden_imports: [store, server, connectors, browsergateway, outbound, jobs, services/*]
+    status: partially_migrated   # ai/comment pure; root ai mixes the copilot driver
+    next_phase: "B (separate pure ai from the copilot driver)"
+
+  - name: outbound
+    current_paths: [internal/store/outbound, internal/store/coordination, cmd/scraper/outbound_actions.go]
+    target_paths: [internal/outbound]
+    responsibility: "Vertical-neutral outbound coordination spine: queue, claim(CAS/lease), transition, policy, append-only ledger."
+    allowed_dependency_direction: "outbound -> {models, coordination ledger types, events, store/dbutil}"
+    forbidden_imports: [services/*, drivers/copilot, fburl, jobhandlers, internal/server]
+    status: partially_migrated   # store/outbound clean; orchestrator FB-adjacent
+    next_phase: "C/I (split neutral core from FB target-URL resolution)"
+    owns_port: outbound.ActionExecutor
+
+  - name: events
+    current_paths: [internal/events, internal/runtime/events, runtime_events table]
+    target_paths: [internal/events]
+    responsibility: "Durable transactional outbox + relay; single source of truth for critical cross-module events."
+    allowed_dependency_direction: "events -> {models, store(outbox table), stdlib}"
+    forbidden_imports: [services/*, drivers/*, business domain internals]
+    status: scaffolded   # in-memory SSE bus only; durable outbox not built
+    next_phase: "E (keystone: outbox table + relay + idempotency)"
+
+  - name: knowledge
+    current_paths: [internal/store/knowledge, internal/workspace_knowledge]
+    target_paths: [internal/knowledge]
+    responsibility: "KnowledgeOS assets/sources/retrieval; grounding substrate for outbound claims."
+    allowed_dependency_direction: "knowledge -> {models, store(knowledge), ai(port)}"
+    forbidden_imports: [outbound, services/*, internal/server, connectors]
+    status: scaffolded
+    next_phase: "post-C"
+
+  - name: brand
+    current_paths: [internal/server/contactprofile, staff_contact_profiles table]
+    target_paths: [internal/brand]
+    responsibility: "Brand/company identity, contact profiles, personas — verified grounding facts."
+    allowed_dependency_direction: "brand -> {models, store}"
+    forbidden_imports: [services/*, outbound, internal/server, connectors]
+    status: scaffolded
+    next_phase: "post-C"
+
+  - name: notifications
+    current_paths: [internal/telegram/control, internal/server/system/notifications.go, notifications table]
+    target_paths: [internal/notifications]
+    responsibility: "Deliver notifications (Telegram channel, in-app bell) from durable events. A sink."
+    allowed_dependency_direction: "notifications -> {models, telegram client, store, events(subscribe)}"
+    forbidden_imports: [services/facebook(lead/comment logic), outbound internals, connectors]
+    status: scaffolded   # fed by direct calls today, not event subscription
+    next_phase: "E (subscribe to outbox events)"

@@ -15,14 +15,42 @@ the outbox exist, so they are built right the first time.
 
 ---
 
-## Phase A — Architecture docs + guards  ◀ (this PR)
+## Phase A — Architecture docs + guards  ✅ STARTED
 
-- **Goal:** publish the standard (`docs/architecture/*`) + warn-only import-boundary
-  script. Establish the contract before moving code.
-- **Files/modules:** `docs/architecture/*`, `scripts/check_import_boundaries.sh`.
-- **Behavior-change risk:** none (docs + warn-only tooling).
-- **Rollback:** delete the docs/script; nothing references them at runtime.
-- **Tests/guards:** `check_import_boundaries.sh` exits 0; existing guards unchanged.
+**A.1 — docs (DONE, merged `6bd9efb6`):** the 8 standard docs + warn-only
+`scripts/check_import_boundaries.sh`.
+
+**A.2 — guardrails scaffold (this PR, `refactor/architecture-phase-a-guardrails`):**
+- `doc.go` package markers at the target roots (`internal/platform`, `internal/drivers`,
+  `internal/drivers/copilot`, `internal/services`, `internal/services/facebook`,
+  `internal/outbound`, `internal/events`, `internal/knowledge`, `internal/brand`,
+  `internal/notifications`, `internal/ai`) — empty boundary markers, no runtime code moved;
+- `docs/architecture/MODULE_OWNERSHIP.yml` (machine-readable owner/target/status/phase);
+- `docs/architecture/CURRENT_PACKAGE_INVENTORY.md` (per-package status + target + phase);
+- hardened import guard (12 rules, rule/warning counts, known-gap + next-phase annotation);
+- warn-only CI hook in `ci.yml` (`bash scripts/check_import_boundaries.sh || true`).
+
+- **Goal:** turn the standard into enforceable, VISIBLE guardrails without moving
+  runtime logic. Establish the contract + scaffolds before any code move.
+- **Files/modules:** `docs/architecture/*`, `scripts/check_import_boundaries.sh`,
+  `.github/workflows/ci.yml`, `internal/*/doc.go` (scaffolds only).
+- **Behavior-change risk:** none (docs + empty packages + warn-only tooling/CI).
+- **Rollback:** delete the docs/script/scaffolds; the CI step is `|| true`.
+- **Tests/guards:** `check_import_boundaries.sh` exits 0 (12 rules, 4 known-gap
+  warnings, 0 other); `go build ./...`/`go vet ./...` clean with the empty packages;
+  all existing guards unchanged.
+
+### ▶ Next PR recommendation
+
+**Phase B — Pure AI boundary (move-only, lowest risk).** Separate the pure
+intelligence (`internal/ai/comment` + generators) from the Copilot driver
+(`agent*.go`/`intent_*.go`/`brain*.go`) so the `ai` package becomes import-clean.
+This is move-only/behavior-preserving, directly retires the 4 `COPILOT_NO_DIRECT_REPO`
+warnings' first half, and unblocks Phase D (typed `CommandBus`).
+Alternative if FB sequencing is the priority: **Phase C — Facebook service boundary
+inventory/move-only** (give FB workflows a `services/facebook` home). Do NOT schedule
+product features (P1/P2 re-implementation, Phase H) until the boundaries + outbox
+(Phase E) are in place.
 
 ## Phase B — Pure AI boundary
 
