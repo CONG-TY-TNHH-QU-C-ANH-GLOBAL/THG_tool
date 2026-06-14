@@ -154,3 +154,21 @@ A (contract) ─▶ B (pure AI) ─▶ C (FB boundary) ─▶ D (ports)
   the paused P1/P2 stack is held: P1 is a useful prototype but belongs on E.
 - I (PR2B) is last and gated — it touches the same spine every feature uses; doing it
   before the features are stable risks mixing failure domains.
+
+## Paused feature-stack disposition (2026-06-14)
+
+The accelerated direct-comment sprint produced a stacked prototype. Disposition:
+
+- **P0** `fix/copilot-direct-comment-routing` (`4d2b8335`, incl. fburl `331dc602`):
+  **MAY merge separately as a production hotfix after review.** It is a real,
+  isolated routing fix (direct-comment early-bypass + user_id/user_role threading);
+  it does not depend on any later phase.
+- **P1** `feat/direct-comment-import-unknown-post` (`4b651dcb`): **prototype / reference
+  ONLY — do NOT merge as-is.** Re-implement on the outbox (Phase **H1**): a durable
+  `FacebookPostImported` event + a `services/facebook` process manager with its own
+  continuation table, not `user_context`.
+- **P2** `feat/copilot-typo-multilingual-intent` (`167a2e72`): **do NOT merge while
+  stacked on P1.** Preserve tests/ideas; rebase / cherry-pick into `drivers/copilot`
+  after Phase **G** (Phase **H2**).
+- **Outbound PR2B**: **remains DEFERRED** (Phase **I**, gated on the
+  `specs/V2_OUTBOUND_REFACTOR_DESIGN.md` prerequisites).
