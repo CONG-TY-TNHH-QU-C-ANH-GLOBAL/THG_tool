@@ -6,6 +6,7 @@ Facebook Sales Intelligence and Automation workspace.
 **Before implementing, follow `CLAUDE.md`, especially:**
 - **Hard Rules**
 - **Engineering Guardrails** (200-line rule, no god files, `scripts/check_file_size.py`, `docs/PR_CHECKLIST.md`)
+- **Component structure** — before adding/moving files, classify the component owner and check `specs/COMPONENT_STRUCTURE_RULES.md` (triage: `specs/COMPONENT_HOTSPOTS.md`; guard: `scripts/check_component_structure.py`)
 - **Verification**
 
 Start here before making changes:
