@@ -126,6 +126,17 @@ platforms/   Facebook/Taobao/1688-specific selectors and actions
 content/     thin bridge/entrypoint only
 ```
 
+### Component structure (think in components before adding files)
+
+**Binding:** before adding OR moving any file, classify the component owner and check
+`specs/COMPONENT_STRUCTURE_RULES.md`. A package is a bounded component, not a flat
+dumping ground of same-prefix peers (`comment_*`, `agent_*`, `business_*`). For each
+new file, name: (1) the owning component, (2) its public facade, (3) the tests that
+prove it, (4) the boundary it must not cross. A package trips review when it has >15
+`.go` files or >5 same-prefix files — triaged in `specs/COMPONENT_HOTSPOTS.md` and
+surfaced (warn-only) by `scripts/check_component_structure.py`. Structural refactors
+are move-only/wrapper-first and declare their PR type (no big-bang).
+
 ### No god files
 
 Do not add more responsibility to files that are already large.

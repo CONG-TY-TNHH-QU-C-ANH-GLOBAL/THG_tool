@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/ai/comment"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/textutil"
@@ -274,7 +275,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// any source) must NEVER reach Facebook. Reject with a typed reason instead
 		// of posting garbage.
 		if msgType == "comment" {
-			cleaned, ok, qreason := ai.SanitizeComment(content)
+			cleaned, ok, qreason := comment.SanitizeComment(content)
 			if !ok {
 				recordSkip(qreason, lead.ID)
 				continue
@@ -283,7 +284,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			// Duplicate guard (incident PR-1): an A+A repeated block must never enter
 			// the outbox, even if it survived sentence-level dedup. Typed reason so the
 			// operator sees "Comment bị lặp" instead of garbage on Facebook.
-			if ai.DetectRepeatedText(content) {
+			if comment.DetectRepeatedText(content) {
 				recordSkip("comment_quality_duplicate_text", lead.ID)
 				continue
 			}
@@ -291,9 +292,9 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			// no fabricated email/phone. On a violation, REPAIR toward the Company
 			// Identity (t.me link → @handle, drop non-grounded URLs) and re-screen;
 			// only drop the lead if the repaired comment still fails.
-			if cok, creason := ai.ScreenCommentContacts(content, commentIdentity); !cok {
-				repaired, changed := ai.RepairCommentContacts(content, commentIdentity)
-				rok, rreason := ai.ScreenCommentContacts(repaired, commentIdentity)
+			if cok, creason := comment.ScreenCommentContacts(content, commentIdentity); !cok {
+				repaired, changed := comment.RepairCommentContacts(content, commentIdentity)
+				rok, rreason := comment.ScreenCommentContacts(repaired, commentIdentity)
 				if changed && rok {
 					content = repaired
 				} else {
