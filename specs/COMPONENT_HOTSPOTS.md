@@ -75,5 +75,15 @@ internal/ai/scoring/      (package scoring)
 3. **Tests move with files** (rule 9); no behavior change (rule 5/8 — extraction is not redesign).
 4. **Sequence:** one move-only PR (or staged: comment first, then agent, then scoring), each behavior-preserving, guards green, before resuming feature work.
 
-### Why not now
-Per the no-big-bang rule and the user's directive, this PR is docs+guards only. The `internal/ai` move-only PR is the **proposed next** structural step, scheduled after the current sprint and any in-flight feature work (§7 NL direct-link comment) is sequenced.
+### Decision (founder, 2026-06-14): comment/ FIRST, staged
+The `internal/ai` split is **staged move-only PRs in this order**: (1) extract
+`internal/ai/comment/` first — it is the most active surface (4 comment fixes
+just shipped there: URL-collapse repair, host-anchoring, eligibility), so it earns
+the bounded component soonest; (2) then `internal/ai/agent/`; (3) then
+`internal/ai/scoring/`. Each PR is behavior-preserving, tests move with the files,
+guards green between, no feature work mixed in. Resolve the **shared-core
+placement** (open item 1 above) in PR (1)'s design step before moving anything.
+
+### Why not in THIS PR
+Per the no-big-bang rule and the original directive, this PR is docs+guards only.
+The comment/ extraction is the **next** PR (move-only).
