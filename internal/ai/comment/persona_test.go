@@ -1,4 +1,4 @@
-package ai
+package comment
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 
 func TestBuildPersonaRule(t *testing.T) {
 	// First actor (empty persona) → no rule.
-	if r := buildPersonaRule(models.ActorPersona{}); r != "" {
+	if r := BuildPersonaRule(models.ActorPersona{}); r != "" {
 		t.Errorf("empty persona should add no rule, got %q", r)
 	}
 	// Later actor: no link + experience-share + avoid used angles.
@@ -19,7 +19,7 @@ func TestBuildPersonaRule(t *testing.T) {
 		ForbiddenRepeatedPhrases: []string{"price_focus"},
 		Role:                     "fulfillment advisor",
 	}
-	r := buildPersonaRule(p)
+	r := BuildPersonaRule(p)
 	for _, want := range []string{"DIFFERENT angle", "Do NOT include any website", "Do NOT use a hard inbox CTA", "price_focus", "fulfillment advisor"} {
 		if !strings.Contains(r, want) {
 			t.Errorf("persona rule missing %q, got: %q", want, r)

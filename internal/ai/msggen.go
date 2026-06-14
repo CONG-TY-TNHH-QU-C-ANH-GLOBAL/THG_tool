@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/ai/comment"
 	"github.com/thg/scraper/internal/models"
 )
 
@@ -132,7 +133,7 @@ func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, post
 	contactRule := buildContactRule(identity)
 	// Multi-actor coverage: when a teammate already covered this lead, the persona
 	// forces a different angle (no repeated website/CTA/phrasing). Empty for the first.
-	personaRule := buildPersonaRule(persona)
+	personaRule := comment.BuildPersonaRule(persona)
 
 	prompt := fmt.Sprintf(`You are a senior sales professional with 10+ years of experience. Write a natural, human-sounding comment on this post.
 

@@ -99,6 +99,21 @@ crawl/outbox handlers, not by subscribing to durable events — the Phase E chan
 clean and contain NO runtime code — they mark target boundaries so future move-only
 PRs have a destination and the import guard has paths to check.
 
+## Foundation sprint deltas (since Phase A)
+
+- **Moved:** `internal/ai/comment_persona.go` → `internal/ai/comment/persona.go`
+  (`buildPersonaRule` → `BuildPersonaRule`). `internal/ai/comment` is now 6 files,
+  still pure (comment + models only, proven by `go list -deps`).
+- **Added (additive scaffolds, not wired):** `internal/outbound/ports`
+  (`ActionExecutor`), `internal/services/facebook/ports` (`OutboundPlanner`),
+  `internal/events/{outbox,relay,bus}` (`outbox` has `Envelope`/`EventType`/`Status`
+  types only — no table/relay/migration).
+- **Deferred with documented blockers:** Phase B.2 copilot-driver move (import cycle
+  via `buildDynamicSystemPrompt`↔`classifier.go`); Phase C FB-runtime moves (fburl
+  cross-cutting + leadingest server/worker ripple). See REFACTOR_ROADMAP.md sprint log.
+- Root `internal/ai` is now 27 production files (was 28); still holds the copilot
+  driver — the 4 `COPILOT_NO_DIRECT_REPO` warnings correctly remain there.
+
 ## Biggest inventory takeaways
 
 1. **`internal/ai` mixes intelligence + driver** — the single highest-value split

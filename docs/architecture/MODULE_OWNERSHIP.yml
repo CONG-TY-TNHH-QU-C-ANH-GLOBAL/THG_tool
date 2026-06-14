@@ -7,12 +7,14 @@
 #   partially_migrated  - some runtime code at the target path, some still elsewhere
 #   enforced            - boundary is checked fail-hard in CI
 #
-# Phase A (this PR) scaffolds the target roots and documents ownership. No runtime
-# code has moved. See REFACTOR_ROADMAP.md for phases.
+# Phase A scaffolds the target roots + ownership. The architecture foundation
+# sprint then performed the first SAFE move (Phase B persona) + additive ports/events
+# scaffolds; Phase B.2 (copilot driver) and Phase C (FB runtime) were deferred with
+# documented blockers. See REFACTOR_ROADMAP.md for phases + the sprint log.
 
 version: 1
-generated_for_commit_base: 6bd9efb6   # architecture standard v3 merge
-phase: A
+generated_for_commit_base: d35cf919   # Phase A merge
+phase: "A done; foundation sprint: B(partial)+D+E done, B.2+C deferred"
 
 modules:
   - name: platform
@@ -42,8 +44,9 @@ modules:
     responsibility: "Facebook workflows: crawl, import post, plan comment/inbox, post. Owns FB sequencing + gates."
     allowed_dependency_direction: "facebook -> {ai, fburl, outbound(port), connectors(port), leads, crawl, events, models}"
     forbidden_imports: [drivers/copilot, services/taobao, services/1688, internal/server]
-    status: scaffolded
-    next_phase: "C (boundary, move-only) then H (features on the outbox)"
+    status: scaffolded   # doc.go + ports.OutboundPlanner scaffolded (Phase D); runtime moves DEFERRED
+    next_phase: "C (boundary, move-only) then H (features on the outbox). DEFERRED blockers: fburl has 8 importers incl. internal/ai (moving it under services/facebook would create ai->services); leadingest ripples to server+worker and is the Phase-E callback target"
+    owns_port: internal/services/facebook/ports.OutboundPlanner   # scaffolded Phase D (additive, not wired)
 
   - name: services/taobao
     current_paths: [internal/platform/services/resolver]   # stub only
@@ -69,8 +72,8 @@ modules:
     responsibility: "PURE intelligence: classify, generate/repair, score, intent shape. IO-free, platform-neutral."
     allowed_dependency_direction: "ai -> {models, stdlib}"
     forbidden_imports: [store, server, connectors, browsergateway, outbound, jobs, services/*]
-    status: partially_migrated   # ai/comment pure; root ai mixes the copilot driver
-    next_phase: "B (separate pure ai from the copilot driver)"
+    status: partially_migrated   # ai/comment pure (+BuildPersonaRule moved in Phase B); root ai still mixes the copilot driver
+    next_phase: "B.2 (copilot driver out) — DEFERRED: import cycle via buildDynamicSystemPrompt (agent_prompt.go, driver) consumed by classifier.go (staying generator); needs MessageGenerator/classifier decouple first"
 
   - name: outbound
     current_paths: [internal/store/outbound, internal/store/coordination, cmd/scraper/outbound_actions.go]
@@ -78,9 +81,9 @@ modules:
     responsibility: "Vertical-neutral outbound coordination spine: queue, claim(CAS/lease), transition, policy, append-only ledger."
     allowed_dependency_direction: "outbound -> {models, coordination ledger types, events, store/dbutil}"
     forbidden_imports: [services/*, drivers/copilot, fburl, jobhandlers, internal/server]
-    status: partially_migrated   # store/outbound clean; orchestrator FB-adjacent
+    status: partially_migrated   # store/outbound clean; orchestrator FB-adjacent; ports.ActionExecutor scaffolded (not wired)
     next_phase: "C/I (split neutral core from FB target-URL resolution)"
-    owns_port: outbound.ActionExecutor
+    owns_port: internal/outbound/ports.ActionExecutor   # scaffolded Phase D (additive, not wired)
 
   - name: events
     current_paths: [internal/events, internal/runtime/events, runtime_events table]
@@ -88,8 +91,8 @@ modules:
     responsibility: "Durable transactional outbox + relay; single source of truth for critical cross-module events."
     allowed_dependency_direction: "events -> {models, store(outbox table), stdlib}"
     forbidden_imports: [services/*, drivers/*, business domain internals]
-    status: scaffolded   # in-memory SSE bus only; durable outbox not built
-    next_phase: "E (keystone: outbox table + relay + idempotency)"
+    status: scaffolded   # outbox/relay/bus subpackages + Envelope/EventType/Status TYPES scaffolded (Phase E); NO table/relay/migration yet
+    next_phase: "E (keystone: outbox table + relay + idempotency) — table is a gated additive migration, deferred"
 
   - name: knowledge
     current_paths: [internal/store/knowledge, internal/workspace_knowledge]
