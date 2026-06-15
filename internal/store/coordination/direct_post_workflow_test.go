@@ -139,3 +139,31 @@ func TestDirectPostWorkflow_RetryAndClaim(t *testing.T) {
 		t.Errorf("retry-scheduled-for-later must not be claimed yet, got %d", len(notYet))
 	}
 }
+
+// A claim whose lease has EXPIRED becomes reclaimable by another worker (the first
+// poller crashed before reporting) — but NOT before the lease elapses.
+func TestDirectPostWorkflow_ExpiredLeaseReclaim(t *testing.T) {
+	ctx := context.Background()
+	_, c := newCoordinationStore(t, "dpw_expired_lease")
+	const org = int64(7)
+	w, err := c.CreateOrGetDirectPostCommentWorkflow(ctx, mkInput(org, 3, 99, "https://www.facebook.com/groups/g/permalink/3/"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UTC()
+
+	// Claim with a SHORT lease expiring at base+10s.
+	claimed, err := c.ClaimDueDirectPostCommentWorkflows(ctx, base, "worker-a", base.Add(10*time.Second), 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("first claim: %d rows err=%v", len(claimed), err)
+	}
+	// Within the lease (base+5s) → not reclaimable.
+	if within, _ := c.ClaimDueDirectPostCommentWorkflows(ctx, base.Add(5*time.Second), "worker-b", base.Add(time.Minute), 10); len(within) != 0 {
+		t.Errorf("within an unexpired lease must not reclaim, got %d", len(within))
+	}
+	// After the lease expires (base+11s) → reclaimable by a different worker.
+	reclaimed, err := c.ClaimDueDirectPostCommentWorkflows(ctx, base.Add(11*time.Second), "worker-c", base.Add(2*time.Minute), 10)
+	if err != nil || len(reclaimed) != 1 || reclaimed[0].ID != w.ID {
+		t.Fatalf("expired lease must be reclaimable: %d rows err=%v", len(reclaimed), err)
+	}
+}
