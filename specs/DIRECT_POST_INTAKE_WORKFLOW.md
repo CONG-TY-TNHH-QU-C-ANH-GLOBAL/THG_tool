@@ -242,7 +242,16 @@ Account note: the single-post import is deliberately not pinned to the requester
 the workflow's account — so an import on a different account (#50) than the comment (#49) is
 **by design**, not a routing bug. That an import account may not be a group member (→ FB
 serves a wrong/unavailable post) is a plausible contributor to wrong extraction, but the
-P1.3A/B validation catches the wrong content regardless of which account scraped it.
+P1.3A/B validation catches the wrong content regardless of which account scraped it. The
+split is now observable: `enqueueSinglePostImport` logs
+`action_account` + the auto-picked `import_account` + `import_task_id` in one line.
+
+> **TODO (follow-up, not this hotfix):** the import account is logged but NOT persisted on
+> the workflow. To make the import→comment account split durably diagnosable (and to let
+> the import navigate as a group member), either pin the single-post import to the action
+> account (`workflow.account_id`) when it is a ready connector, or persist an
+> `import_account_id` on `direct_post_comment_workflows`. Requires an account-routing
+> decision + (for the column) a migration, so it is deferred from this safety hotfix.
 
 ### P1.3C — send-time visual verification (NEXT REQUIRED PR, not in this hotfix)
 

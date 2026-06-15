@@ -93,10 +93,19 @@ func Validate(exp ExpectedTarget, obs ObservedItem) Validation {
 // present and equals the requested id (or, when the requested id is unknown, the source
 // URL positively canonicalizes to the requested canonical). An absent observed id is
 // NEVER assumed to be the requested post.
+//
+// Identity evidence comes from the connector's explicit post_fbid first. The URL fallback
+// is trusted ONLY when it carries reliable context: a group-permalink observed URL (group
+// context preserved) or a non-group workflow. A bare permalink.php?story_fbid= observed URL
+// is the P1.1-AMBIGUOUS global story id — a group permalink id N and a global story_fbid N
+// can be DIFFERENT posts — so for a group workflow it is NOT positive proof on its own.
 func PositivePostIDMatch(exp ExpectedTarget, obs ObservedItem) (bool, string) {
-	obsPID := strings.TrimSpace(obs.PostFBID)
+	obsPID := strings.TrimSpace(obs.PostFBID) // connector-reported id (strongest evidence)
 	if obsPID == "" {
-		obsPID = fburl.ExtractFacebookPostID(obs.SourceURL)
+		if fburl.IsGroupPermalinkURL(obs.SourceURL) || strings.TrimSpace(exp.GroupRef) == "" {
+			obsPID = fburl.ExtractFacebookPostID(obs.SourceURL)
+		}
+		// else: bare permalink.php for a group workflow → leave obsPID empty (unverified).
 	}
 	expPID := strings.TrimSpace(exp.PostFBID)
 	if expPID != "" {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/thg/scraper/internal/jobs"
@@ -114,5 +115,13 @@ func (s *directPostIntake) enqueueSinglePostImport(ctx context.Context, in direc
 	if _, err := submitOpenCrawl(ctx, s.db, s.jobStore, "facebook_crawl", sources, args); err != nil {
 		return "", err
 	}
-	return openCrawlTaskID("facebook_crawl", sources, args), nil
+	taskID := openCrawlTaskID("facebook_crawl", sources, args)
+	// Correlation diagnostics: submitOpenCrawl mutates args["account_id"] with the
+	// auto-picked READ connector, while the COMMENT later uses the action account
+	// (workflow.account_id). Log both so a "import ran on #50, comment on #49" split is
+	// diagnosable in one line. Follow-up (spec §8c): pin to the action account or persist
+	// import_account_id on the workflow.
+	log.Printf("[DirectPostIntake] single-post import enqueued org=%d action_account=%d import_account=%d import_task_id=%q canonical=%q",
+		in.OrgID, in.AccountID, argInt64(args, "account_id"), taskID, in.CanonicalPostURL)
+	return taskID, nil
 }
