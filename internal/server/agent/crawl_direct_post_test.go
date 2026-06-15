@@ -3,52 +3,90 @@ package agent
 import (
 	"testing"
 
+	"github.com/thg/scraper/internal/directpost"
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
-// C) Source-URL preservation + identity matching for the connector crawl-result ingest.
-// The connector reports a lossy permalink.php URL; the explicit direct-post lead must
-// instead carry the requested context-preserving group permalink, and only the post the
-// workflow actually requested may be overridden.
-func TestDirectPostItemOverride(t *testing.T) {
-	const requested = "https://www.facebook.com/groups/ship.viet.my/permalink/4505595319766639/"
-	const observedLossy = "https://www.facebook.com/permalink.php?story_fbid=4505595319766639"
-	wf := &coordination.DirectPostCommentWorkflow{
-		ID: 11, CanonicalPostURL: requested, PostFBID: "4505595319766639", GroupRef: "ship.viet.my",
-	}
+const (
+	dpPostID    = "4506703172989187"
+	dpGroup     = "ship.viet.my"
+	dpCanonical = "https://www.facebook.com/groups/ship.viet.my/permalink/4506703172989187/"
+	dpLossy     = "https://www.facebook.com/permalink.php?story_fbid=4506703172989187"
+	dpForeignGr = "https://www.facebook.com/groups/1112083256270739/user/100029/"
+	dpShipping  = "Em ở Q7 HCM cần gửi hàng đông lạnh tầm 22kg đi Texas ạ."
+	dpJobs      = "Backend & Frontend Developer Vietnam (Jobs) [CLUEGA] TUYỂN DỤNG BACKEND ENGINEER (AI SAAS)"
+)
 
-	// Observed lossy permalink.php for the SAME post id → override to the canonical
-	// group URL (preserves group context; lets the P1.1 exact-canonical lookup match).
-	id, ok := directPostItemOverride(wf, observedLossy, "4505595319766639")
-	if !ok {
-		t.Fatal("the requested post must be overridden")
-	}
-	if id.primaryURL != requested {
-		t.Errorf("primaryURL must be the requested group permalink, got %q", id.primaryURL)
-	}
-	if id.postFBID != "4505595319766639" || id.groupRef != "ship.viet.my" {
-		t.Errorf("identity not preserved: %+v", id)
-	}
+func dpWF() *coordination.DirectPostCommentWorkflow {
+	return &coordination.DirectPostCommentWorkflow{ID: 4, PostFBID: dpPostID, GroupRef: dpGroup, CanonicalPostURL: dpCanonical}
+}
 
-	// Post id inferred from the URL when the connector omits post_fbid.
-	if _, ok := directPostItemOverride(wf, observedLossy, ""); !ok {
-		t.Error("must infer post id from the observed URL when post_fbid is empty")
+// E — a valid observed item (lossy URL, matching id, normal author, real shipping text)
+// passes and the canonical URL is stamped (context preserved).
+func TestValidateDirectPostObservedItem_ValidStampsCanonical(t *testing.T) {
+	id, v := validateDirectPostObservedItem(dpWF(), directpost.ObservedItem{
+		PostFBID: dpPostID, SourceURL: dpLossy,
+		AuthorName: "Nhii Tran", AuthorProfileURL: "https://www.facebook.com/nhii.tran", Content: dpShipping,
+	})
+	if !v.Valid {
+		t.Fatalf("valid item must pass, got %+v", v)
 	}
-
-	// A DIFFERENT post returned by the same crawl is NOT overridden (normal filtering).
-	if _, ok := directPostItemOverride(wf, "https://www.facebook.com/groups/ship.viet.my/permalink/999/", "999"); ok {
-		t.Error("a different post must not be overridden")
+	if id.primaryURL != dpCanonical || id.postFBID != dpPostID || id.groupRef != dpGroup {
+		t.Errorf("valid item must stamp the canonical identity, got %+v", id)
 	}
+}
 
-	// Nil workflow (ordinary crawl) → never overridden.
-	if _, ok := directPostItemOverride(nil, observedLossy, "4505595319766639"); ok {
-		t.Error("nil workflow must not override")
+// A — no extractable post id → not the requested post, no override, no canonical stamp.
+func TestValidateDirectPostObservedItem_MissingPostID(t *testing.T) {
+	id, v := validateDirectPostObservedItem(dpWF(), directpost.ObservedItem{
+		PostFBID: "", SourceURL: "https://www.facebook.com/groups/ship.viet.my/", Content: dpShipping,
+	})
+	if v.Valid || v.IdentityMatched {
+		t.Fatalf("missing post id must not validate/identity-match, got %+v", v)
 	}
+	if id.primaryURL != "" {
+		t.Errorf("no canonical stamp on unverified item, got %q", id.primaryURL)
+	}
+}
 
-	// Empty canonical degrades to the observed URL (never empties the lead URL).
-	wfNoCanon := &coordination.DirectPostCommentWorkflow{ID: 12, PostFBID: "4505595319766639"}
-	got, ok := directPostItemOverride(wfNoCanon, observedLossy, "4505595319766639")
-	if !ok || got.primaryURL != observedLossy {
-		t.Errorf("empty canonical must degrade to observed URL, got ok=%v url=%q", ok, got.primaryURL)
+// B — different post id → not the requested post.
+func TestValidateDirectPostObservedItem_DifferentPostID(t *testing.T) {
+	_, v := validateDirectPostObservedItem(dpWF(), directpost.ObservedItem{
+		PostFBID: "9999999999999999", SourceURL: dpLossy, Content: dpShipping,
+	})
+	if v.Valid || v.IdentityMatched || v.Reason != directpost.ReasonPostIDMismatch {
+		t.Fatalf("different post id must be a non-matching rejection, got %+v", v)
+	}
+}
+
+// C — matching id but a foreign-group author + jobs content → the requested post is
+// poisoned: IdentityMatched, invalid, group conflict, no canonical stamp.
+func TestValidateDirectPostObservedItem_GroupConflict(t *testing.T) {
+	id, v := validateDirectPostObservedItem(dpWF(), directpost.ObservedItem{
+		PostFBID: dpPostID, SourceURL: dpCanonical, GroupFBID: dpGroup,
+		AuthorName: "Backend & Frontend Developer Vietnam (Jobs)", AuthorProfileURL: dpForeignGr, Content: dpJobs,
+	})
+	if !v.IdentityMatched || v.Valid || v.Reason != directpost.ReasonGroupConflict {
+		t.Fatalf("foreign-group requested post must be identity-matched + invalid (group conflict), got %+v", v)
+	}
+	if id.primaryURL != "" {
+		t.Errorf("no canonical stamp on a poisoned item, got %q", id.primaryURL)
+	}
+	if got := importContextMismatchCode(v.Reason); got != coordination.DPErrImportedItemContextMismatch {
+		t.Errorf("group conflict must map to imported_item_context_mismatch, got %q", got)
+	}
+}
+
+// D — matching id but boilerplate content → poisoned (content invalid).
+func TestValidateDirectPostObservedItem_Boilerplate(t *testing.T) {
+	_, v := validateDirectPostObservedItem(dpWF(), directpost.ObservedItem{
+		PostFBID: dpPostID, SourceURL: dpCanonical,
+		AuthorName: "x", AuthorProfileURL: "https://www.facebook.com/nhii.tran", Content: "Facebook Facebook Facebook Facebook",
+	})
+	if !v.IdentityMatched || v.Valid || v.Reason != directpost.ReasonContentInvalid {
+		t.Fatalf("boilerplate requested post must be identity-matched + content-invalid, got %+v", v)
+	}
+	if got := importContextMismatchCode(v.Reason); got != coordination.DPErrLeadContentInvalid {
+		t.Errorf("content invalid must map to lead_content_invalid, got %q", got)
 	}
 }

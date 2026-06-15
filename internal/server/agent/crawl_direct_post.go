@@ -4,22 +4,22 @@ import (
 	"context"
 	"strings"
 
-	"github.com/thg/scraper/internal/leadingest"
+	"github.com/thg/scraper/internal/directpost"
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
-// Explicit direct-post intake support for the connector crawl-result ingest
-// (hotfix fix/direct-post-intake-filter-bypass). When a user issues
-// "Comment bài này cho tôi <url>", the single-post import that results MUST create the
-// lead even if the generic market-signal filter would reject it, AND keep the requested
-// group-context URL rather than the connector's lossy permalink.php. The DURABLE link
-// is body.TaskID == direct_post_comment_workflows.import_task_id — no in-memory state.
+// Explicit direct-post intake support for the connector crawl-result ingest. When a user
+// issues "Comment bài này cho tôi <url>", the single-post import that results may create a
+// lead even if the market filter would reject it (P1.2 ForceLead) — BUT only after the
+// observed item is ZERO-TRUST validated against the requested target (P1.3A): positive
+// post-id identity, no conflicting group/page context, and meaningful content. The durable
+// link is body.TaskID == direct_post_comment_workflows.import_task_id.
 
 // directPostLeadIdentity is the context-preserving identity an explicit direct-post lead
-// must carry so a connector's lossy permalink.php never overwrites the requested group
-// permalink (which would also defeat the P1.1 exact-canonical identity lookup).
+// must carry once validation passes, so a connector's lossy permalink.php never overwrites
+// the requested group permalink (which also lets the P1.1 exact-canonical lookup match).
 type directPostLeadIdentity struct {
-	primaryURL string // requested canonical group permalink (not permalink.php)
+	primaryURL string
 	postFBID   string
 	groupRef   string
 }
@@ -38,23 +38,47 @@ func (h *Handler) resolveDirectPostIntake(ctx context.Context, orgID int64, task
 	return wf
 }
 
-// directPostItemOverride reports whether `item` is the explicit post `wf` requested and,
-// if so, the context-preserving identity to persist. A neighbouring post returned by the
-// same crawl (different post id) is NOT overridden and goes through normal filtering.
-func directPostItemOverride(wf *coordination.DirectPostCommentWorkflow, observedURL, itemPostFBID string) (directPostLeadIdentity, bool) {
+// validateDirectPostObservedItem zero-trust validates the observed item against the
+// workflow target. On Valid it returns the context-preserving identity to persist; the
+// Validation tells the caller whether a non-valid result is "the requested post but
+// poisoned" (IdentityMatched → fail the workflow) or "a different/neighbour post"
+// (skip, let normal filtering handle it). The canonical URL is stamped ONLY when valid —
+// never onto unverified content.
+func validateDirectPostObservedItem(wf *coordination.DirectPostCommentWorkflow, obs directpost.ObservedItem) (directPostLeadIdentity, directpost.Validation) {
 	if wf == nil {
-		return directPostLeadIdentity{}, false
+		return directPostLeadIdentity{}, directpost.Validation{}
 	}
-	pid := strings.TrimSpace(itemPostFBID)
-	if pid == "" {
-		pid = leadingest.ExtractFacebookPostID(observedURL)
-	}
-	if wf.PostFBID != "" && pid != "" && pid != wf.PostFBID {
-		return directPostLeadIdentity{}, false // a different post — not the one requested
+	v := directpost.Validate(directpost.ExpectedTarget{
+		PostFBID:     wf.PostFBID,
+		GroupRef:     wf.GroupRef,
+		CanonicalURL: wf.CanonicalPostURL,
+	}, obs)
+	if !v.Valid {
+		return directPostLeadIdentity{}, v
 	}
 	primary := strings.TrimSpace(wf.CanonicalPostURL)
 	if primary == "" {
-		primary = strings.TrimSpace(observedURL) // degrade gracefully; never empty the URL
+		primary = strings.TrimSpace(obs.SourceURL) // degrade gracefully; never empty the URL
 	}
-	return directPostLeadIdentity{primaryURL: primary, postFBID: wf.PostFBID, groupRef: wf.GroupRef}, true
+	return directPostLeadIdentity{primaryURL: primary, postFBID: wf.PostFBID, groupRef: wf.GroupRef}, v
+}
+
+// importContextMismatchCode maps a validation reason to the typed terminal workflow error
+// for the ingest path: a content failure vs a context/identity conflict.
+func importContextMismatchCode(reason string) string {
+	if reason == directpost.ReasonContentInvalid {
+		return coordination.DPErrLeadContentInvalid
+	}
+	return coordination.DPErrImportedItemContextMismatch
+}
+
+// contentPreview returns a short, single-line, secret-free snippet of post content for
+// diagnostics. Post text is user-visible Facebook content (no cookies/tokens/session).
+func contentPreview(content string) string {
+	s := strings.Join(strings.Fields(content), " ")
+	const max = 160
+	if len([]rune(s)) > max {
+		return string([]rune(s)[:max]) + "…"
+	}
+	return s
 }

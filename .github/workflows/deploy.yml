@@ -162,6 +162,20 @@ jobs:
           script: |
             set -euo pipefail
 
+            # P1.3 incident containment (fix/direct-post-content-target-mismatch-p1):
+            # while this marker exists the deploy MUST NOT enable/start/restart thg-worker —
+            # it is intentionally held STOPPED. scraper/frontend/brain still deploy normally.
+            # Remove /opt/thg-scraper/.worker-hold to resume the worker on the next deploy.
+            WORKER_HOLD=/opt/thg-scraper/.worker-hold
+            restart_worker_unless_held() {
+              if [ -f "$WORKER_HOLD" ]; then
+                echo "thg-worker HELD (marker $WORKER_HOLD present) — skipping enable/restart; worker stays stopped"
+              else
+                sudo systemctl enable thg-worker 2>/dev/null || true
+                sudo systemctl restart thg-worker
+              fi
+            }
+
             # Retire old split API service. cmd/api was removed; cmd/scraper
             # now owns the Fiber API on port 8080.
             sudo systemctl disable --now thg-api 2>/dev/null || true
@@ -311,8 +325,9 @@ jobs:
 
             rm -rf /tmp/thg-deploy /tmp/frontend-standalone.tar.gz
 
-            # Restart services.
-            sudo systemctl enable thg-scraper thg-frontend thg-worker thg-agent-brain 2>/dev/null || true
+            # Restart services. thg-worker is enabled/restarted separately and ONLY when
+            # the hold marker is absent (see restart_worker_unless_held).
+            sudo systemctl enable thg-scraper thg-frontend thg-agent-brain 2>/dev/null || true
             sudo systemctl restart thg-agent-brain
             sleep 3
             if curl -sf http://127.0.0.1:8091/healthz > /dev/null 2>&1; then
@@ -321,7 +336,8 @@ jobs:
               echo "Agent Brain not responding (non-fatal, scraper falls back to deterministic)"
               sudo journalctl -u thg-agent-brain --no-pager -n 10 || true
             fi
-            sudo systemctl restart thg-scraper thg-worker
+            sudo systemctl restart thg-scraper
+            restart_worker_unless_held
             sleep 5
             sudo systemctl restart thg-frontend
             sleep 5
@@ -367,7 +383,8 @@ jobs:
                   sudo chmod 750 /opt/thg-scraper/$bin
                 fi
               done
-              sudo systemctl restart thg-scraper thg-worker
+              sudo systemctl restart thg-scraper
+              restart_worker_unless_held
               sudo journalctl -u thg-scraper --no-pager -n 50
               exit 1
             fi
@@ -418,4 +435,4 @@ jobs:
               echo "Beta route verified: version $LIVE_BETA_VERSION"
             fi
 
-            echo "Deployment complete: scraper ok, worker restarted, frontend $([ $FRONTEND_OK -eq 1 ] && echo ok || echo warning)"
+            echo "Deployment complete: scraper ok, worker $([ -f "$WORKER_HOLD" ] && echo HELD/stopped || echo restarted), frontend $([ $FRONTEND_OK -eq 1 ] && echo ok || echo warning)"

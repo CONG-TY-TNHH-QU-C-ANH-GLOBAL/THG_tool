@@ -201,6 +201,69 @@ This override lives ONLY in the explicit direct-post path. The worker (`facebook
 in-process FetchBatch path is not used for Facebook in the current deployment and is not
 wired for `ForceLead` — if it is ever used, the same `import_task_id` lookup applies.
 
+## 8c. Zero-trust content/context validation (P1.3 — wrong-content guard)
+
+P1.2's force-lead override was **fail-open**: it could stamp the requested canonical URL
+onto an observed item whose post id/context/content was not proven to be the requested
+post, and `ForceLead` then bypassed the market veto that was the *only* thing detecting the
+mismatch. Incident: a Backend-Jobs post (`author = …(Jobs)`, author profile =
+`/groups/1112083256270739/`) was stamped with a `ship.viet.my` URL, force-created as lead
+#313, and a jobs-themed comment was posted to a shipping group.
+
+The fix is a shared zero-trust validator (`internal/directpost`) enforcing three layered
+invariants, used by **two** independent guards. `ForceLead` may still bypass MARKET-FIT
+(cold/relevance) vetoes — it must **never** bypass these:
+
+1. **Identity is positive, never assumed** (`PositivePostIDMatch`, fail-CLOSED): the
+   observed post id must be present and equal the requested id (or the source URL must
+   positively canonicalize to the requested canonical when the requested id is unknown).
+   An absent observed id is never assumed to be the requested post.
+2. **Context must not conflict** (`ContextConflict`): an author profile that is a
+   `/groups/{other}/` URL (a real post author is a user, so a group author = foreign-context
+   grab), or a different **named** source/group, is a conflict. A different **numeric**
+   group is left ambiguous (possible vanity→numeric redirect) to preserve valid P1.2 cases.
+3. **Content must be meaningful** (`ValidContent`): after stripping FB UI-chrome tokens and
+   collapsing repetition, near-empty / boilerplate extractions are rejected. The floor is
+   low so short-but-real posts pass.
+
+**P1.3A — ingest force-gate** (`internal/server/agent/crawl_direct_post.go`,
+`validateDirectPostObservedItem`): only a `Valid` item is force-created with the canonical
+URL stamped. A `IdentityMatched` but invalid item (the requested post came back poisoned)
+fails the workflow with `imported_item_context_mismatch` / `lead_content_invalid` and
+creates **no** lead. A non-matching neighbour falls through to normal filtering.
+
+**P1.3B — pre-comment gate** (`cmd/scraper/direct_post_guard.go`,
+`directPostLeadTargetMismatch`): even a strict-canonical-matched lead (P1.1) is re-validated
+before queueing; a poisoned lead already in the DB (incl. pre-fix rows) fails the workflow
+with `lead_target_context_mismatch` and queues **no** comment.
+
+Account note: the single-post import is deliberately not pinned to the requester's account
+(it only *reads*; `submitOpenCrawl` auto-picks any ready connector), while the comment uses
+the workflow's account — so an import on a different account (#50) than the comment (#49) is
+**by design**, not a routing bug. That an import account may not be a group member (→ FB
+serves a wrong/unavailable post) is a plausible contributor to wrong extraction, but the
+P1.3A/B validation catches the wrong content regardless of which account scraped it. The
+split is now observable: `enqueueSinglePostImport` logs
+`action_account` + the auto-picked `import_account` + `import_task_id` in one line.
+
+> **TODO (follow-up, not this hotfix):** the import account is logged but NOT persisted on
+> the workflow. To make the import→comment account split durably diagnosable (and to let
+> the import navigate as a group member), either pin the single-post import to the action
+> account (`workflow.account_id`) when it is a ready connector, or persist an
+> `import_account_id` on `direct_post_comment_workflows`. Requires an account-routing
+> decision + (for the column) a migration, so it is deferred from this safety hotfix.
+
+### P1.3C — send-time visual verification (NEXT REQUIRED PR, not in this hotfix)
+
+Backend containment (A+B) cannot see what the browser renders. P1.3C must add a **pre-submit**
+check in the connector/executor: before clicking Send, verify the *currently visible* target
+(URL / post id / group / page / author) matches the expected target; on mismatch or unknown,
+**abort before Send**, keep the tab open for inspection, and report a typed reason
+(`context_mismatch` / `human_required`). It must never submit first and label it
+`submitted_unverified`. No existing lightweight pre-submit backend hook can do this without a
+browser/extension change, so it is deferred to its own PR. Operational pause until then:
+`systemctl stop thg-worker.service`.
+
 ## 9. Ownership & boundaries
 
 - `direct_post_comment_workflows` is owned by `internal/store/coordination` (process-

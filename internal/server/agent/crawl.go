@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/directpost"
 	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/server/system"
@@ -164,20 +165,53 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 			sourceURL = strings.TrimSpace(item.ID)
 		}
 
-		// Per-item identity + filter policy. For the explicit post a direct-post intake
-		// requested, override to the context-preserving canonical URL and force lead
-		// creation; neighbouring posts (different id) keep normal filtering.
+		// Per-item identity + filter policy. For an explicit direct-post intake the
+		// observed item is ZERO-TRUST validated before any override (P1.3A): only a
+		// positively-identified, non-conflicting, meaningful post is force-created with
+		// the context-preserving canonical URL. A poisoned REQUESTED post fails the
+		// workflow; a different/neighbour post falls through to normal filtering.
 		primaryURL := sourceURL
 		postFBID := strings.TrimSpace(item.PostFBID)
 		groupFBID := strings.TrimSpace(item.GroupFBID)
 		itemDeps := deps
-		if id, ok := directPostItemOverride(directPost, sourceURL, item.PostFBID); ok {
-			primaryURL = id.primaryURL
-			postFBID = id.postFBID
-			groupFBID = id.groupRef
-			itemDeps.ForceLead = true
-			log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d intake_key=%q import_task_id=%q requested_url=%q observed_source_url=%q filter_override_applied=true",
-				directPost.ID, directPost.IntakeKey, body.TaskID, primaryURL, sourceURL)
+		if directPost != nil {
+			obs := directpost.ObservedItem{
+				PostFBID:         strings.TrimSpace(item.PostFBID),
+				SourceURL:        sourceURL,
+				GroupFBID:        strings.TrimSpace(item.GroupFBID),
+				AuthorName:       strings.TrimSpace(item.AuthorName),
+				AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
+				Content:          content,
+			}
+			id, v := validateDirectPostObservedItem(directPost, obs)
+			switch {
+			case v.Valid:
+				primaryURL = id.primaryURL
+				postFBID = id.postFBID
+				groupFBID = id.groupRef
+				itemDeps.ForceLead = true
+				itemDeps.ExtraSignals = append(append([]string{}, deps.ExtraSignals...),
+					"direct_post_context_validation:passed",
+					"observed_source_url:"+sourceURL,
+					"observed_author_name:"+obs.AuthorName,
+					"observed_author_profile_url:"+obs.AuthorProfileURL)
+				log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q requested_url=%q observed_source_url=%q observed_author=%q context_validation_result=passed filter_override_applied=true",
+					directPost.ID, body.TaskID, primaryURL, sourceURL, obs.AuthorName)
+			case v.IdentityMatched:
+				// The REQUESTED post came back poisoned (foreign group/page context or
+				// garbage content). Refuse to create a lead or stamp the canonical URL;
+				// fail the workflow with a typed reason instead of poisoning a lead.
+				log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q requested_url=%q observed_source_url=%q observed_author=%q observed_author_profile_url=%q context_validation_result=failed context_mismatch_reason=%s observed_content_preview=%q",
+					directPost.ID, body.TaskID, directPost.CanonicalPostURL, sourceURL, obs.AuthorName, obs.AuthorProfileURL, v.Reason, contentPreview(content))
+				_, _ = h.db.Coordination().MarkDirectPostFailed(c.Context(), orgID, directPost.ID,
+					importContextMismatchCode(v.Reason), "direct-post import item failed context/content validation")
+				continue
+			default:
+				// A different/neighbour post (identity not the requested one) — let normal
+				// market filtering decide; do not force, do not fail the workflow.
+				log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q observed_source_url=%q context_validation_result=skipped reason=%s",
+					directPost.ID, body.TaskID, sourceURL, v.Reason)
+			}
 		}
 		if primarySourceURL == "" && primaryURL != "" {
 			primarySourceURL = primaryURL
