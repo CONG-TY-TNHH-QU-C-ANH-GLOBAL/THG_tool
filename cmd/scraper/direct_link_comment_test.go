@@ -76,22 +76,23 @@ func TestCommentSinglePost_Delegation(t *testing.T) {
 		t.Fatalf("InsertLead: %v", err)
 	}
 
-	// Unknown post → must ask to scan/import, never fabricate.
+	// Unknown post with NO intake service wired (nil) → defensive legacy fallback.
+	// The production intake behavior is covered in direct_post_intake_test.go.
 	unknown, err := commentSinglePost(ctx, db, msgGen, map[string]any{
 		"org_id": orgID, "nl_prompt": "comment bài này https://www.facebook.com/groups/123/posts/999/",
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatalf("unknown: %v", err)
 	}
 	if !strings.Contains(unknown, "chưa có trong hệ thống") {
-		t.Errorf("unknown post should ask to scan/import, got %q", unknown)
+		t.Errorf("nil-intake fallback should ask to scan/import, got %q", unknown)
 	}
 
 	// Existing post → delegate to the shared gates; with no ready connector the
 	// §5 readiness gate blocks (proves the gates are reused, not bypassed).
 	found, err := commentSinglePost(ctx, db, msgGen, map[string]any{
 		"org_id": orgID, "nl_prompt": "comment bài này " + post,
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatalf("found: %v", err)
 	}

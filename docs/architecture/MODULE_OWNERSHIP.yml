@@ -12,10 +12,11 @@
 # scaffolds; Phase B.2 (copilot driver) and Phase C (FB runtime) were deferred with
 # documented blockers. See REFACTOR_ROADMAP.md for phases + the sprint log.
 #
-# H1 PR-1 (data foundation, additive): internal/store/coordination owns the new
-# direct_post_comment_workflows table (durable direct-post intake process-manager
-# state); internal/store/leads gained GetPostLeadByRef. No runtime behavior yet —
-# the poller + Copilot intake are PR-2. Spec: specs/DIRECT_POST_INTAKE_WORKFLOW.md.
+# H1 (direct-post intake → comment continuation): PR-1 = data foundation
+# (coordination owns direct_post_comment_workflows; leads.GetPostLeadByRef). PR-2 =
+# runtime in cmd/scraper (directPostIntake service + runDirectPostIntakeScheduler DB
+# poller; unknown post → import + async ack, then observe lead → queue comment). No
+# in-memory callback, no user_context KV. Spec: specs/DIRECT_POST_INTAKE_WORKFLOW.md.
 
 version: 1
 generated_for_commit_base: d35cf919   # Phase A merge

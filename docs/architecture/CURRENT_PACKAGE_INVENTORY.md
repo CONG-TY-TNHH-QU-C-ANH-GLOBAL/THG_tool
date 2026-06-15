@@ -133,8 +133,12 @@ correctly points at `internal/drivers/copilot/agent.go`). `internal/ai` shrank f
 `0022`): the durable process-manager state for direct-post intake → comment
 continuation (`direct_post_workflow.go` + `direct_post_workflow_transitions.go`, CRUD +
 CAS/lease). `internal/store/leads` gained `GetPostLeadByRef` (post-only lookup,
-excludes commenter leads). **No runtime behavior** yet — the poller + Copilot intake
-land in PR-2. Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`.
+excludes commenter leads). **PR-2 runtime** added in `cmd/scraper`:
+`direct_post_intake.go` (the `directPostIntake` service — unknown post → import +
+async ack) and `direct_post_intake_scheduler.go` (the `runDirectPostIntakeScheduler`
+DB poller → observe lead → queue comment). `commentSinglePost` now uses
+`GetPostLeadByRef` + the intake service instead of the scan-required copy. `jobs.Store`
+gained `Close()`. Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`.
 
 ## Biggest inventory takeaways
 

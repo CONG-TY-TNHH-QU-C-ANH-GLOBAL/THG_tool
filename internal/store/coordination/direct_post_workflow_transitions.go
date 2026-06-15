@@ -89,7 +89,9 @@ func (s *Store) MarkDirectPostImportQueued(ctx context.Context, orgID, id int64,
 		orgID, id, DPStatusRequested, DPStatusRetryScheduled)
 }
 
-// MarkDirectPostLeadCreated: import_queued/importing → lead_created (records lead_id).
+// MarkDirectPostLeadCreated: import_queued/importing/retry_scheduled → lead_created
+// (records lead_id). retry_scheduled is accepted because the poller claims a
+// retry-scheduled workflow whose post lead has since appeared and advances it.
 func (s *Store) MarkDirectPostLeadCreated(ctx context.Context, orgID, id, leadID int64) (bool, error) {
 	if leadID <= 0 {
 		return false, fmt.Errorf("lead_created requires lead_id")
@@ -97,9 +99,9 @@ func (s *Store) MarkDirectPostLeadCreated(ctx context.Context, orgID, id, leadID
 	return s.casOK(ctx,
 		`UPDATE direct_post_comment_workflows
 		 SET status = ?, lead_id = ?, lease_owner = '', lease_until = NULL, updated_at = ?
-		 WHERE org_id = ? AND id = ? AND status IN (?, ?)`,
+		 WHERE org_id = ? AND id = ? AND status IN (?, ?, ?)`,
 		DPStatusLeadCreated, leadID, dpwTime(time.Now()),
-		orgID, id, DPStatusImportQueued, DPStatusImporting)
+		orgID, id, DPStatusImportQueued, DPStatusImporting, DPStatusRetryScheduled)
 }
 
 // MarkDirectPostCommentQueued: lead_created → comment_queued. No outbound id is stored
@@ -134,6 +136,21 @@ func (s *Store) MarkDirectPostFailed(ctx context.Context, orgID, id int64, error
 		 WHERE org_id = ? AND id = ? AND status NOT IN ('completed','failed','cancelled')`,
 		DPStatusFailed, strings.TrimSpace(errorCode), strings.TrimSpace(errorMessage),
 		dpwTime(time.Now()), dpwTime(time.Now()), orgID, id)
+}
+
+// ResetDirectPostWorkflowForRetry re-opens a TERMINAL failed/cancelled workflow on a
+// fresh user request (so a re-prompt after a transient failure retries instead of
+// dead-ending): status → requested, retry_count → 0, error + import_task_id + lease
+// cleared, runnable now. CAS-guarded (no-op when the workflow is not terminal-failed).
+func (s *Store) ResetDirectPostWorkflowForRetry(ctx context.Context, orgID, id int64) (bool, error) {
+	now := dpwTime(time.Now())
+	return s.casOK(ctx,
+		`UPDATE direct_post_comment_workflows
+		 SET status = ?, retry_count = 0, error_code = '', error_message = '',
+		     import_task_id = '', lease_owner = '', lease_until = NULL,
+		     completed_at = NULL, next_run_at = ?, updated_at = ?
+		 WHERE org_id = ? AND id = ? AND status IN (?, ?)`,
+		DPStatusRequested, now, now, orgID, id, DPStatusFailed, DPStatusCancelled)
 }
 
 // ScheduleDirectPostRetry re-queues a non-terminal workflow for a later attempt:

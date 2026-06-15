@@ -48,18 +48,34 @@ func resolveDirectCommentURL(prompt, postURLArg string) directCommentResolution 
 // post URL, find the EXISTING lead (never fabricate post content), then delegate
 // to queueLeadOutreach scoped to that one lead so every eligibility/readiness/
 // coverage/quality/dedup gate and its status copy are reused unchanged.
-func commentSinglePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
+func commentSinglePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string), intake *directPostIntake) (string, error) {
 	res := resolveDirectCommentURL(argString(args, "nl_prompt"), argString(args, "post_url"))
 	if res.blocked {
 		return res.message, nil
 	}
 	orgID := argInt64(args, "org_id")
-	lead, err := db.Leads().GetLeadByPostRef(ctx, orgID, fburl.ExtractFacebookPostID(res.canonical), res.canonical)
+	postFBID := fburl.ExtractFacebookPostID(res.canonical)
+	// POST lead only (not a commenter lead sharing the same post ref).
+	lead, err := db.Leads().GetPostLeadByRef(ctx, orgID, postFBID, res.canonical)
 	if err != nil {
 		return "", err
 	}
 	if lead == nil {
-		return "Bài viết này chưa có trong hệ thống. Hãy quét/import bài viết trước khi comment.", nil
+		// Unknown post → durable intake: import this one post, then the poller queues
+		// the comment once the lead exists. NOT scrape_comments, NOT bulk crawl.
+		// intake==nil keeps the legacy scan-required copy (defensive; tests without wiring).
+		if intake == nil {
+			return "Bài viết này chưa có trong hệ thống. Hãy quét/import bài viết trước khi comment.", nil
+		}
+		return intake.request(ctx, directPostCommentInput{
+			OrgID:             orgID,
+			RequestedByUserID: argInt64(args, "user_id"),
+			AccountID:         argInt64(args, "account_id"),
+			UserRole:          argString(args, "user_role"),
+			CanonicalPostURL:  res.canonical,
+			PostFBID:          postFBID,
+			Prompt:            argString(args, "nl_prompt"),
+		})
 	}
 	// Scope the planner to this one existing lead (lead_id) so it carries real
 	// content + coverage history. queueLeadOutreach runs the §5 readiness gate,
