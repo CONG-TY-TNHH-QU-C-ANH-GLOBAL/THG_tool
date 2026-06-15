@@ -382,17 +382,29 @@ func (mg *MessageGenerator) ExtractJobKeywords(job models.CareerJob) []string {
 	t := strings.ToLower(job.Title)
 	switch {
 	case strings.Contains(t, "sales") || strings.Contains(t, "kinh doanh"):
-		add("tuyển dụng sales"); add("nhân viên kinh doanh"); add("kinh doanh")
+		add("tuyển dụng sales")
+		add("nhân viên kinh doanh")
+		add("kinh doanh")
 	case strings.Contains(t, "accountant") || strings.Contains(t, "kế toán"):
-		add("tuyển kế toán"); add("nhân viên kế toán"); add("kế toán")
+		add("tuyển kế toán")
+		add("nhân viên kế toán")
+		add("kế toán")
 	case strings.Contains(t, "ai") || strings.Contains(t, "research") || strings.Contains(t, "intern"):
-		add("tuyển dụng AI"); add("thực tập sinh"); add("intern IT")
+		add("tuyển dụng AI")
+		add("thực tập sinh")
+		add("intern IT")
 	case strings.Contains(t, "operations") || strings.Contains(t, "vận hành"):
-		add("nhân viên vận hành"); add("e-commerce operations"); add("ecommerce")
+		add("nhân viên vận hành")
+		add("e-commerce operations")
+		add("ecommerce")
 	case strings.Contains(t, "warehouse") || strings.Contains(t, "kho"):
-		add("kho vận"); add("logistics"); add("warehouse")
+		add("kho vận")
+		add("logistics")
+		add("warehouse")
 	case strings.Contains(t, "china") || strings.Contains(t, "trung quốc"):
-		add("china desk"); add("tiếng trung"); add("nhập khẩu trung quốc")
+		add("china desk")
+		add("tiếng trung")
+		add("nhập khẩu trung quốc")
 	}
 	add("tuyển dụng")
 	if job.Location != "" {

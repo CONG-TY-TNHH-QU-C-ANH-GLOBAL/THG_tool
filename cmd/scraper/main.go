@@ -13,6 +13,7 @@ import (
 	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/browser"
 	"github.com/thg/scraper/internal/config"
+	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/logstream"
 	"github.com/thg/scraper/internal/mailer"
@@ -201,15 +202,15 @@ func main() {
 	// model field. Splitting the two avoids paying for the strong model on
 	// every classified post.
 	var telegramNotify func(string)
-	var agent *ai.Agent
+	var agent *copilot.Agent
 	var classifierMg, commentMg *ai.MessageGenerator
 	skillRegistry := skills.NewRegistry()
 	if cfg.OpenAIAPIKey != "" {
 		classifierMg = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAIClassifierModel)
 		commentMg = ai.NewMessageGenerator(cfg.OpenAIAPIKey, cfg.OpenAICommentModel)
-		agent = ai.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
+		agent = copilot.NewAgent(cfg.OpenAIAPIKey, cfg.OpenAICommentModel, db)
 		if cfg.AgentBrainURL != "" {
-			agent.SetBrainClient(ai.NewBrainClient(cfg.AgentBrainURL, time.Duration(cfg.AgentBrainTimeout)*time.Millisecond))
+			agent.SetBrainClient(copilot.NewBrainClient(cfg.AgentBrainURL, time.Duration(cfg.AgentBrainTimeout)*time.Millisecond))
 			log.Printf("✅ Agent Brain sidecar enabled: %s", cfg.AgentBrainURL)
 		}
 		actionHandler := makeAgentActionHandler(db, jobStore, commentMg, func(msg string) {

@@ -1,4 +1,4 @@
-package ai
+package copilot
 
 type openAIResponse struct {
 	Choices []struct {

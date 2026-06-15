@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thg/scraper/internal/ai"
 	authpkg "github.com/thg/scraper/internal/auth"
+	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/models"
 	serveragent "github.com/thg/scraper/internal/server/agent"
 	serverauth "github.com/thg/scraper/internal/server/auth"
@@ -233,7 +234,7 @@ func (s *Server) registerRoutes() {
 	// stays decoupled from internal/ai while still using the same gate.
 	serverobservability.Routes(r, serverobservability.Deps{
 		DB:                     s.db,
-		PromptIsSelfSufficient: ai.PromptIsSelfSufficient,
+		PromptIsSelfSufficient: copilot.PromptIsSelfSufficient,
 	})
 
 	// Browser workspace — per-account Chrome management

@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/agentloop"
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/mailer"
 	serveragent "github.com/thg/scraper/internal/server/agent"
@@ -50,7 +51,7 @@ type Server struct {
 	app          *fiber.App
 	db           *store.Store
 	jobStore     *jobs.Store
-	agent        *ai.Agent
+	agent        *copilot.Agent
 	aiClass      *ai.MessageGenerator
 	wsHub        *serveragent.WSHub
 	workspace    *workspace.Manager
@@ -61,7 +62,7 @@ type Server struct {
 }
 
 // New creates a new API server with JWT auth, RBAC, and rate limiting.
-func New(db *store.Store, jobStore *jobs.Store, agent *ai.Agent, wm *workspace.Manager, cfg Config) *Server {
+func New(db *store.Store, jobStore *jobs.Store, agent *copilot.Agent, wm *workspace.Manager, cfg Config) *Server {
 	if cfg.JWTSecret == "" {
 		log.Println("[Server] WARNING: JWT_SECRET not set — authentication is DISABLED. Set JWT_SECRET in production!")
 	}

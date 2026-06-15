@@ -60,11 +60,38 @@ only; risky moves deferred with evidence.
 | Commit | Phase | Result |
 |---|---|---|
 | A | B (pure AI) | **DONE** — moved `BuildPersonaRule` (was `buildPersonaRule`) into `internal/ai/comment`; `go list -deps` proves comment purity (comment + models only). |
-| — | B.2 (copilot driver) | **DEFERRED — import cycle.** `buildDynamicSystemPrompt` (defined in driver `agent_prompt.go`) is consumed by `classifier.go` (a staying generator, also store-coupled). Moving the driver → `ai`→`copilot` (via classifier) while `copilot`→`ai` (driver uses `MessageGenerator`/`BusinessProfile`) = cycle. Export-surface the other way is 0, so the ONLY blocker is this back-reference + `classifier`/`buildDynamicSystemPrompt`/`MessageGenerator` entanglement. Needs a decouple (behavior-sensitive), not a move-only. The 4 `COPILOT_NO_DIRECT_REPO` warnings correctly stay on `internal/ai/...`. |
+| — | B.2 (copilot driver) | ⚠️ **The earlier "import cycle" here was a FALSE POSITIVE — corrected.** The prior analysis claimed `classifier.go` consumed the driver's `buildDynamicSystemPrompt`; in fact `classifier.go` defines its OWN same-named **method** `func (c *Classifier) buildDynamicSystemPrompt()` — a symbol-name collision, not a cross-reference. A corrected scan (filtering method definitions + comments) found **zero** real staying→driver references. The driver move is cycle-free. **DONE** in `refactor/copilot-driver-move-b2` — see the B.2 row below. |
 | B | D (ports) | **DONE (scaffold)** — `internal/outbound/ports.ActionExecutor` + `internal/services/facebook/ports.OutboundPlanner` (consumer-owned, compile-safe, NOT wired). Zero thg deps. |
 | C | E (events) | **DONE (scaffold)** — `internal/events/{outbox,relay,bus}`; `outbox` has `Envelope`/`EventType`(×7)/`Status` TYPES only. No table, no relay, no migration. |
 | — | C (FB runtime) | **DEFERRED — wide ripple / wrong-direction.** `fburl` (pure) has 8 importers incl. `internal/ai` → moving it under `services/facebook` would create an illegal `ai`→`services` edge (it's a cross-cutting platform-trust leaf, keep it out of the service). `leadingest` ripples to server+worker and is itself the Phase-E callback. Audit map below; runtime move deferred to a dedicated Phase C PR. |
 | D | F (docs/guards) | **DONE** — this docs update + MODULE_OWNERSHIP.yml statuses. Import guard unchanged (paths didn't move out of `internal/ai`). |
+
+### B.2 — Copilot driver move (`refactor/copilot-driver-move-b2`, after the false-positive correction)
+
+**DONE, move-only, behavior-preserving.** Moved the Copilot driver + intent + routing
+out of `internal/ai` into `internal/drivers/copilot` (15 production files + 6 tests):
+`agent*.go` (Agent, brain, memory, preflight, prompt, request, responses, tools,
+action_router), `intent_*.go` (×5), `routing_decision.go`. The cycle was debunked, so
+the move is clean: `copilot → ai` is one-way (driver references only `ai.BusinessProfile`
++ `ai.ProfileFromContext`, qualified mechanically), and **no** staying-ai file references
+a driver symbol, so `ai` does NOT import `copilot`.
+
+- **Stayed in `internal/ai`** (NOT forced into copilot): `business.go`, `classifier.go`,
+  `policy_gate.go`, `universal.go`, `comment_decision.go`, `group_scorer.go`, `msggen.go`,
+  `pricer.go`, `profile_inference.go`, `selector*.go`. `business`/`classifier` hold
+  `MessageGenerator` methods + `BusinessProfile`; `policy_gate` is comment/outbound policy
+  (used by `outbound_actions.go`), not the prompt-routing driver.
+- **External call sites updated** (wiring/adapter layers only): `internal/server/{agent/
+  routes,server,skills/handlers}.go`, `internal/server/router.go`, `cmd/scraper/main.go`
+  — `ai.Agent`→`copilot.Agent`, `ai.NewAgent`/`ai.NewBrainClient`→`copilot.*`,
+  `ai.PromptIsSelfSufficient`→`copilot.*`. `ai.ClassifyIntent` stayed (`universal.go`).
+- **Guard taxonomy refined honestly:** `COPILOT_NO_DIRECT_REPO` now points at
+  `internal/drivers/copilot/agent.go` (the moved driver still imports store → Phase G).
+  The store-coupled files that REMAINED in `ai` are tracked under a new, accurate
+  `AI_STORE_COUPLED` rule (business/classifier/policy_gate → Phase G+). No warnings hidden.
+- **promptbuilder extraction:** still useful (a neutral, testable prompt builder) but
+  **deferred** — it was only needed to break the (non-existent) cycle, so it is no longer
+  a blocker. Optional follow-up cleanup.
 
 ### Phase C migration audit map (what eventually moves to `services/facebook`)
 

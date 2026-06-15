@@ -1,4 +1,4 @@
-package ai
+package copilot
 
 import (
 	"encoding/json"
@@ -44,11 +44,11 @@ type RoutingDecision struct {
 
 // Routes — the four orchestration layers.
 const (
-	RouteDeterministic = "deterministic"  // self-sufficient prompt → direct dispatch
-	RouteBrain         = "brain"          // brain planner handled (execute / ask_user / chat / refuse)
-	RouteLLMFallback   = "llm_fallback"   // OpenAI tool-call last-resort
-	RouteScopeGuard    = "scope_guard"    // facebook scope guard blocked (out-of-domain prompt)
-	RoutePreflight     = "preflight"      // business / browser preflight blocked
+	RouteDeterministic = "deterministic" // self-sufficient prompt → direct dispatch
+	RouteBrain         = "brain"         // brain planner handled (execute / ask_user / chat / refuse)
+	RouteLLMFallback   = "llm_fallback"  // OpenAI tool-call last-resort
+	RouteScopeGuard    = "scope_guard"   // facebook scope guard blocked (out-of-domain prompt)
+	RoutePreflight     = "preflight"     // business / browser preflight blocked
 )
 
 // Reason codes — machine-readable. Dashboards aggregate on these; free
@@ -74,12 +74,12 @@ const (
 
 	// Missing signals — these surface in MissingSignals and as the
 	// dominant ReasonCode for ask-backs.
-	ReasonMissingSource            = "missing_source"
-	ReasonMissingAction            = "missing_action"
-	ReasonMissingTarget            = "missing_target"
-	ReasonMissingMarket            = "missing_market"
-	ReasonMissingQuantity          = "missing_quantity"
-	ReasonAmbiguousTarget          = "ambiguous_target"
+	ReasonMissingSource   = "missing_source"
+	ReasonMissingAction   = "missing_action"
+	ReasonMissingTarget   = "missing_target"
+	ReasonMissingMarket   = "missing_market"
+	ReasonMissingQuantity = "missing_quantity"
+	ReasonAmbiguousTarget = "ambiguous_target"
 
 	// Preflight blockers.
 	ReasonScopeGuardBlocked        = "scope_guard_blocked"
@@ -87,8 +87,8 @@ const (
 	ReasonBrowserPreflightBlocked  = "browser_preflight_blocked"
 
 	// LLM fallback.
-	ReasonLLMFallback              = "llm_fallback_dispatch"
-	ReasonFallbackNoMatch          = "fallback_no_match"
+	ReasonLLMFallback     = "llm_fallback_dispatch"
+	ReasonFallbackNoMatch = "fallback_no_match"
 )
 
 // MissingSignal enumerates the operational signals a fully-specified

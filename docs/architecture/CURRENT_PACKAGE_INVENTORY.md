@@ -114,10 +114,24 @@ PRs have a destination and the import guard has paths to check.
 - Root `internal/ai` is now 27 production files (was 28); still holds the copilot
   driver — the 4 `COPILOT_NO_DIRECT_REPO` warnings correctly remain there.
 
+## B.2 update — Copilot driver moved out of `internal/ai`
+
+The Copilot driver/intent/routing (15 files + 6 tests: `agent*.go`, `intent_*.go`,
+`routing_decision.go`) **moved** from `internal/ai` to **`internal/drivers/copilot`**
+(move-only, behavior-preserving). The earlier "cycle" blocker was a FALSE POSITIVE
+(`classifier.go`'s own same-named `buildDynamicSystemPrompt` method). `copilot → ai`
+is one-way (`ai.BusinessProfile`/`ai.ProfileFromContext` only); `ai` does not import
+`copilot`. Store-coupled files `business.go`/`classifier.go`/`policy_gate.go` **stayed**
+in `ai` (generators + comment/outbound policy, not the driver) and are now tracked under
+the new `AI_STORE_COUPLED` guard rule, distinct from `COPILOT_NO_DIRECT_REPO` (which now
+correctly points at `internal/drivers/copilot/agent.go`). `internal/ai` shrank from 27 to
+12 production files.
+
 ## Biggest inventory takeaways
 
-1. **`internal/ai` mixes intelligence + driver** — the single highest-value split
-   (Phase B/G); it is also the only source of current guard warnings.
+1. **`internal/ai` is now intelligence/generation/scoring** — the Copilot driver moved
+   to `internal/drivers/copilot` (B.2). Remaining `ai` store coupling
+   (business/classifier/policy_gate) is the `AI_STORE_COUPLED` gap (Phase G+).
 2. **Facebook logic is spread** across `cmd/scraper`, `jobhandlers/facebook_crawl`,
    `leadingest`, `fburl` — no `services/facebook` home yet (Phase C).
 3. **Cross-module reactions are callbacks, not events** (`leadingest.OnLeadCreated`,

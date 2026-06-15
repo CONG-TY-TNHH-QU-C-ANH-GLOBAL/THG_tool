@@ -1,4 +1,4 @@
-package ai
+package copilot
 
 // Copilot intent/routing contract types (Architecture-first refactor — see
 // specs/COPILOT_INTENT_ROUTING_ARCHITECTURE.md). These give the routing pipeline

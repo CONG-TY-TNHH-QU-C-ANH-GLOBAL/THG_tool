@@ -1,4 +1,4 @@
-package ai
+package copilot
 
 import (
 	"encoding/json"

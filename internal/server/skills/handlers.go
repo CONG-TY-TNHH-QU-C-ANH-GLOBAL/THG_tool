@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/store"
 )
 
 // Deps holds dependencies needed by the skills API handlers.
 type Deps struct {
 	DB    *store.Store
-	Agent *ai.Agent
+	Agent *copilot.Agent
 }
 
 // skillsList returns the catalog of every registered skill, with a
