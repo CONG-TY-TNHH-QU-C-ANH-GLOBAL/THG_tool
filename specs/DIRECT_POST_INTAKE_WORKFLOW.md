@@ -137,22 +137,34 @@ sharing the same number (`/groups/ship.viet.my/permalink/N` ≠
 post (a Data-Engineer `permalink.php` lead matched a `ship.viet.my` shipping post).
 
 Guard (`GetPostLeadByDirectPostRef` + `FindConflictingPostLead`, used by both the
-immediate-comment path and the poller):
+immediate-comment path and the poller). The bar is **provable identity only**:
 
 - **Match only** (a) the exact canonical `source_url`, OR (b) the same `post_fbid` whose
-  lead source is **group-compatible**: a `/groups/{ref}/permalink|posts/` URL with the
-  same group ref, or a **numeric** group ref (Facebook vanity→numeric redirect of the
-  same post the import navigated to).
+  lead is in the **same group ref** (`/groups/{ref}/permalink|posts/`, vanity==vanity or
+  numeric==numeric).
 - **Never match** a bare `post_fbid`, a generic `permalink.php?story_fbid=` lead (no
-  group context), or a **different named group**.
+  group context), a **different named group**, or a **different numeric group**.
 - The workflow now carries `group_ref` (populated from the canonical URL).
-- If a same-`post_fbid` lead exists but its group/source context conflicts, the poller
-  fails the workflow with `error_code = imported_lead_identity_mismatch` and logs SAFE
-  diagnostics (requested/canonical/group_ref/post_fbid + observed lead_id/source_url/
-  post_fbid/group_fbid) — **no secrets** — instead of commenting on the wrong post.
-- If neither a safe match nor a conflict is found, it is treated as "import pending" and
-  retries (per §7) — a vanity-requested post whose lead hasn't appeared yet is not a
-  mismatch.
+- **Three-way classification of a same-`post_fbid`, non-matching lead:**
+  - generic `permalink.php` (no group) or a **different named** group → a **definite
+    conflict**: the poller fails the workflow with
+    `error_code = imported_lead_identity_mismatch` and logs SAFE diagnostics
+    (requested/canonical/group_ref/post_fbid + observed lead_id/source_url/post_fbid/
+    group_fbid — **no secrets**) instead of commenting on the wrong post.
+  - a **different numeric** group → **ambiguous, not asserted as a conflict**: it may be
+    a Facebook vanity→numeric redirect of the *same* post or an unrelated numeric group
+    that merely shares the id — indistinguishable **without import provenance**. The
+    poller therefore **retries** (per §7) and lands on the honest
+    `lead_not_observed_after_retries`, never a wrong comment and never a false mismatch.
+  - no candidate at all → "import pending" → retry (per §7).
+
+**Known limitation (provenance gap):** a legit vanity→numeric *redirect* whose imported
+lead is stored under the **numeric** group id (the crawler followed the redirect) does
+**not** auto-match — only the exact canonical URL does. It safely degrades to
+`lead_not_observed` rather than risking a wrong comment. Closing this needs a
+**lead↔import-task provenance link** (the canonical `leads` table carries none today),
+so the numeric redirect can be accepted *because it was produced by this workflow's
+import* — tracked as PR-3 hardening, not part of this hotfix.
 
 ## 9. Ownership & boundaries
 

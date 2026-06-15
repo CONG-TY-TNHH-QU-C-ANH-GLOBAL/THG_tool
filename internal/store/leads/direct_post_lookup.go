@@ -14,29 +14,56 @@ import (
 // the same number — which let a generic permalink.php lead attach to a group post.
 
 // directPostGroupCompatible reports whether a candidate post lead's source URL is a
-// SAFE match for a direct-post workflow's group context.
+// PROVABLY-SAFE match for a direct-post workflow's group context. The bar is exact
+// group identity only:
 //
+//   - the SAME group ref (vanity==vanity or numeric==numeric) → compatible;
 //   - generic permalink.php?story_fbid= (no group context) → NOT compatible (the
 //     production bug: a Data-Engineer permalink.php lead matched a ship.viet.my post);
-//   - same group ref (vanity==vanity or numeric==numeric) → compatible;
-//   - requested vanity + observed NUMERIC group → compatible (Facebook vanity→numeric
-//     redirect of the SAME post the import navigated to);
-//   - a DIFFERENT named group → NOT compatible.
+//   - a DIFFERENT group ref (named OR numeric) → NOT compatible.
 //
-// When the workflow carries no group context (groupRef==""), any group permalink is
-// accepted best-effort (still rejects the lossy permalink.php form).
+// We do NOT accept a numeric group merely because the request was a vanity slug: a
+// Facebook vanity→numeric redirect of the SAME post and an UNRELATED numeric group
+// that happens to share the post id are indistinguishable WITHOUT import provenance
+// (the canonical `leads` table carries no import_task linkage). Accepting it blind
+// would reintroduce the cross-context wrong-attach class this hotfix exists to close.
+// A legit redirect therefore matches only via the exact-canonical path in
+// GetPostLeadByDirectPostRef (the import navigates to the canonical URL); when that
+// fails it degrades safely to retry/lead_not_observed, never a wrong comment. Proper
+// vanity→numeric acceptance needs a lead↔import-task provenance link (follow-up).
+//
+// groupRef=="" (a non-group direct post) never matches via this path — only the exact
+// canonical URL may match a non-group post — so a group lead can never be attached to
+// a non-group request by a bare post_fbid.
 func directPostGroupCompatible(leadSourceURL, groupRef string) bool {
+	if groupRef == "" || !fburl.IsGroupPermalinkURL(leadSourceURL) {
+		return false
+	}
+	return fburl.ExtractGroupRef(leadSourceURL) == groupRef
+}
+
+// isDirectPostConflict reports whether a same-post_fbid lead is DEFINITELY a different
+// post from the requested group post (the wrong-attach bug class) — i.e. safe to fail
+// the workflow with imported_lead_identity_mismatch:
+//
+//   - a generic permalink.php lead (no group context — the original decoy), OR
+//   - a DIFFERENT NAMED (non-numeric) group.
+//
+// A DIFFERENT NUMERIC group is AMBIGUOUS (it may be a vanity→numeric redirect of the
+// same post — unprovable without import provenance), so it is NOT asserted as a
+// conflict: the poller retries rather than claiming a mismatch it cannot stand behind.
+func isDirectPostConflict(leadSourceURL, groupRef string) bool {
+	if groupRef == "" {
+		return false
+	}
 	if !fburl.IsGroupPermalinkURL(leadSourceURL) {
-		return false
-	}
-	leadGroup := fburl.ExtractGroupRef(leadSourceURL)
-	if leadGroup == "" {
-		return false
-	}
-	if groupRef == "" || leadGroup == groupRef {
 		return true
 	}
-	return isAllDigits(leadGroup) // vanity→numeric redirect of the same post
+	leadGroup := fburl.ExtractGroupRef(leadSourceURL)
+	if leadGroup == "" || leadGroup == groupRef {
+		return false
+	}
+	return !isAllDigits(leadGroup)
 }
 
 func isAllDigits(s string) bool {
@@ -105,10 +132,13 @@ func (s *Store) GetPostLeadByDirectPostRef(ctx context.Context, orgID int64, pos
 }
 
 // FindConflictingPostLead returns a post lead that shares the requested post_fbid but
-// is NOT group-compatible (a different group, or a generic permalink.php lead) — the
-// "decoy" a bare post_fbid match would have wrongly attached. The poller uses it to
-// fail a workflow with imported_lead_identity_mismatch instead of attaching the wrong
-// lead. Only meaningful for group posts (groupRef != ""); (nil, nil) otherwise.
+// is DEFINITELY a different post (isDirectPostConflict: a generic permalink.php lead or
+// a different NAMED group) — the "decoy" a bare post_fbid match would have wrongly
+// attached. The poller uses it to fail a workflow with imported_lead_identity_mismatch
+// instead of attaching the wrong lead. An AMBIGUOUS numeric-group lead is deliberately
+// NOT returned here (it is not a provable conflict) so the poller retries rather than
+// asserting a mismatch. Only meaningful for group posts (groupRef != ""); (nil, nil)
+// otherwise.
 func (s *Store) FindConflictingPostLead(ctx context.Context, orgID int64, postFBID, canonicalURL, groupRef string) (*models.Lead, error) {
 	if strings.TrimSpace(postFBID) == "" || strings.TrimSpace(groupRef) == "" {
 		return nil, nil
@@ -121,7 +151,7 @@ func (s *Store) FindConflictingPostLead(ctx context.Context, orgID int64, postFB
 		if cands[i].SourceURL == canonicalURL {
 			continue // the exact requested post is not a conflict
 		}
-		if !directPostGroupCompatible(cands[i].SourceURL, groupRef) {
+		if isDirectPostConflict(cands[i].SourceURL, groupRef) {
 			return &cands[i], nil
 		}
 	}
