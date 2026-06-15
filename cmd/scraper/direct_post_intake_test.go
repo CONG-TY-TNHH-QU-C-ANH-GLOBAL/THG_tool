@@ -128,3 +128,29 @@ func TestDirectPostIntake_IdempotentRepeat(t *testing.T) {
 		t.Errorf("repeat request must not duplicate the import job, got %d", countImportJobs(t, js))
 	}
 }
+
+// Re-prompt after a TERMINAL failure re-opens the workflow (status → requested →
+// import_queued with a fresh import) instead of dead-ending on a lying ack.
+func TestDirectPostIntake_ReRequestAfterFailed(t *testing.T) {
+	ctx := context.Background()
+	db, js := newIntakeEnv(t)
+	intake := newDirectPostIntake(db, js)
+	in := directPostCommentInput{OrgID: 7, RequestedByUserID: 99, AccountID: 3, UserRole: "sales", CanonicalPostURL: intakeCanonical, PostFBID: intakePostFBID, Prompt: "comment bài này"}
+	if _, err := intake.request(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	key := coordination.DirectPostIdempotencyKey(7, 3, 99, intakeCanonical)
+	w, _ := db.Coordination().GetDirectPostCommentWorkflowByIdempotencyKey(ctx, 7, key)
+	// Drive it to terminal failure.
+	if ok, err := db.Coordination().MarkDirectPostFailed(ctx, 7, w.ID, coordination.DPErrLeadNotObserved, "x"); err != nil || !ok {
+		t.Fatalf("mark failed: ok=%v err=%v", ok, err)
+	}
+	// Re-prompt → reset to a fresh import_queued (NOT stuck failed).
+	if _, err := intake.request(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := db.Coordination().GetDirectPostCommentWorkflowByIdempotencyKey(ctx, 7, key)
+	if again.Status != coordination.DPStatusImportQueued || again.RetryCount != 0 || again.ErrorCode != "" {
+		t.Errorf("re-request after failure should re-open the workflow: status=%s n=%d code=%s", again.Status, again.RetryCount, again.ErrorCode)
+	}
+}

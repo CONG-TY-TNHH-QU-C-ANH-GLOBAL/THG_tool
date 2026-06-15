@@ -98,10 +98,21 @@ source.
 
 ## 7. Failure / retry semantics
 
-Typed `error_code` (e.g. `login_required`, `import_failed`) + a short `error_message`
-for operator drill-down. **No secrets** (cookies/tokens/session) ever in
-`error_message`. `ScheduleDirectPostRetry` increments `retry_count`, sets `next_run_at`,
-and releases the lease; PR-2 stops retrying at `DPMaxRetryCount` → `failed`.
+Typed `error_code` + a short `error_message` for operator drill-down. **No secrets**
+(cookies/tokens/session) ever in `error_message`. `ScheduleDirectPostRetry` increments
+`retry_count`, sets `next_run_at` (exponential backoff `DPBaseRetryDelay<<n`), and
+releases the lease; PR-2 stops at `DPMaxRetryCount` (~31-min window) → `failed`.
+
+**Honest terminal reason.** The poller observes only the LEAD (no job-status oracle),
+so the terminal `error_code` is `lead_not_observed_after_retries` (`DPErrLeadNotObserved`)
+— it does NOT claim a connector/import failure it cannot confirm.
+
+**Re-prompt after failure.** A fresh request for a TERMINAL `failed`/`cancelled`
+workflow re-opens it (`ResetDirectPostWorkflowForRetry`: status → `requested`,
+`retry_count`→0, error/import_task_id/lease cleared) so the import retries instead of
+the ack lying about a dead workflow. `retry_scheduled`/in-progress re-prompts return the
+ack and let the poller continue; a different actor whose peer workflow is terminal-failed
+gets a NEW workflow + its own import (the failed one's task is not reused).
 
 ## 8. Migration & rollback caveat
 

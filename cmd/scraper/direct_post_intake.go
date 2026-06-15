@@ -60,6 +60,16 @@ func (s *directPostIntake) request(ctx context.Context, in directPostCommentInpu
 	if err != nil {
 		return "", err
 	}
+	// A fresh request after a TERMINAL failure re-opens the workflow so the import
+	// retries — otherwise the ack would lie (promise a comment a dead workflow can't
+	// deliver). Completed / in-progress workflows are left as-is.
+	if w.Status == coordination.DPStatusFailed || w.Status == coordination.DPStatusCancelled {
+		if ok, _ := s.db.Coordination().ResetDirectPostWorkflowForRetry(ctx, in.OrgID, w.ID); ok {
+			if rw, _ := s.db.Coordination().GetDirectPostCommentWorkflowByID(ctx, in.OrgID, w.ID); rw != nil {
+				w = rw
+			}
+		}
+	}
 	// Already past the import gate (in-flight or done) → don't re-enqueue; just ack.
 	if w.Status != coordination.DPStatusRequested {
 		return directPostIntakeAck, nil

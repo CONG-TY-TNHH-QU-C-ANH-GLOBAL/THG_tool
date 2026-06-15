@@ -79,8 +79,8 @@ func TestDirectPostIntake_RetryThenImportFailed(t *testing.T) {
 	}
 	advanceDirectPostWorkflow(ctx, db, ai.NewMessageGenerator("", ""), nil, got)
 	final, _ := db.Coordination().GetDirectPostCommentWorkflowByID(ctx, org, w.ID)
-	if final.Status != coordination.DPStatusFailed || final.ErrorCode != coordination.DPStatusImportFailed {
-		t.Errorf("at max retries with no lead → failed(import_failed), got status=%s code=%s", final.Status, final.ErrorCode)
+	if final.Status != coordination.DPStatusFailed || final.ErrorCode != coordination.DPErrLeadNotObserved {
+		t.Errorf("at max retries with no lead → failed(lead_not_observed_after_retries), got status=%s code=%s", final.Status, final.ErrorCode)
 	}
 }
 

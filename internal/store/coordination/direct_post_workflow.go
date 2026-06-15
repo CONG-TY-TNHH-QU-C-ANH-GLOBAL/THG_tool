@@ -35,14 +35,20 @@ const (
 )
 
 // Process-manager tuning (consumed by the PR-2 poller; defined here so PR-2 has no
-// magic numbers). MaxRetryCount=5 gives transient connector walls (login/challenge/
-// offline) several spaced attempts before giving up. DefaultLeaseDuration mirrors
-// the reverify claim lease so a crashed poller's claim is re-offered within 5 min.
+// magic numbers). MaxRetryCount=5 with exponential backoff (BaseRetryDelay<<n) spans a
+// ~31-minute window (1+2+4+8+16 min) before giving up — generous for normal connector
+// import latency. DefaultLeaseDuration mirrors the reverify claim lease so a crashed
+// poller's claim is re-offered within 5 min.
 const (
-	DPMaxRetryCount       = 5
+	DPMaxRetryCount        = 5
 	DPDefaultLeaseDuration = 5 * time.Minute
 	DPBaseRetryDelay       = 1 * time.Minute
 )
+
+// DPErrLeadNotObserved is the terminal error_code when the post lead never appears
+// within the retry window. We only observe the LEAD (no job-status oracle), so this is
+// honest: it does NOT claim a connector/import failure that we cannot actually confirm.
+const DPErrLeadNotObserved = "lead_not_observed_after_retries"
 
 // DirectPostCommentWorkflow is one row of direct_post_comment_workflows.
 type DirectPostCommentWorkflow struct {

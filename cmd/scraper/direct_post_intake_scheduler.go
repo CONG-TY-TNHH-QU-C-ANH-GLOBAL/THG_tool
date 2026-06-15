@@ -82,8 +82,10 @@ func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.
 		// then a typed actionable failure (no hallucinated comment, no silent drop).
 		now := time.Now().UTC()
 		if w.RetryCount >= coordination.DPMaxRetryCount {
+			// Honest terminal reason: we only observe the lead, not the job — so we say
+			// "lead not observed", NOT "import failed" (which we can't confirm).
 			_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
-				coordination.DPStatusImportFailed, "post not imported after max retries")
+				coordination.DPErrLeadNotObserved, "post lead not observed after max retries")
 			return
 		}
 		delay := coordination.DPBaseRetryDelay << uint(w.RetryCount)

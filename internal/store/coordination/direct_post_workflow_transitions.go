@@ -138,6 +138,21 @@ func (s *Store) MarkDirectPostFailed(ctx context.Context, orgID, id int64, error
 		dpwTime(time.Now()), dpwTime(time.Now()), orgID, id)
 }
 
+// ResetDirectPostWorkflowForRetry re-opens a TERMINAL failed/cancelled workflow on a
+// fresh user request (so a re-prompt after a transient failure retries instead of
+// dead-ending): status → requested, retry_count → 0, error + import_task_id + lease
+// cleared, runnable now. CAS-guarded (no-op when the workflow is not terminal-failed).
+func (s *Store) ResetDirectPostWorkflowForRetry(ctx context.Context, orgID, id int64) (bool, error) {
+	now := dpwTime(time.Now())
+	return s.casOK(ctx,
+		`UPDATE direct_post_comment_workflows
+		 SET status = ?, retry_count = 0, error_code = '', error_message = '',
+		     import_task_id = '', lease_owner = '', lease_until = NULL,
+		     completed_at = NULL, next_run_at = ?, updated_at = ?
+		 WHERE org_id = ? AND id = ? AND status IN (?, ?)`,
+		DPStatusRequested, now, now, orgID, id, DPStatusFailed, DPStatusCancelled)
+}
+
 // ScheduleDirectPostRetry re-queues a non-terminal workflow for a later attempt:
 // status → retry_scheduled, next_run_at = nextRunAt, retry_count++, lease released.
 // errorCode carries the actionable reason (e.g. login_required) for observability.
