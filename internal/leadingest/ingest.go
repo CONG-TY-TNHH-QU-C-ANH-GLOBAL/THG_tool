@@ -45,6 +45,12 @@ type Deps struct {
 	// (e.g. to push a Telegram channel notification). Wired by the caller; nil = no notification.
 	// It must never block or fail the ingest path.
 	OnLeadCreated func(LeadEvent)
+	// ForceLead, when true, marks this ingest as an EXPLICIT direct-post intake: the user
+	// already chose the post as a lead candidate, so a market-signal veto (deterministic
+	// reject, signal gate, AI reject, cold) is downgraded to annotation and the lead is
+	// still created/upserted. Set ONLY by the direct-post intake path — never by broad
+	// crawls — so normal filtering is unchanged. See force_lead.go.
+	ForceLead bool
 }
 
 // LeadEvent is the data a notification needs when a new lead is created. Excerpt is RAW post text
@@ -267,7 +273,9 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	}
 	if sr.Category == "rejected" {
 		out.Skipped = "rejected"
-		return out, nil
+		if !deps.overrideVeto(&out, "deterministic_rejected") {
+			return out, nil
+		}
 	}
 
 	// Brain-derived market_signal_gate: hard reject when any negative phrase
@@ -276,13 +284,17 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 		out.Skipped = "gate_negative"
 		out.Category = "rejected"
 		out.Signals = append(out.Signals, "gate_reject:"+hit)
-		return out, nil
+		if !deps.overrideVeto(&out, "gate_reject:"+hit) {
+			return out, nil
+		}
 	}
 	if hit := matchAny(content, deps.SignalGate.NegativeSignals); hit != "" {
 		out.Skipped = "gate_negative"
 		out.Category = "rejected"
 		out.Signals = append(out.Signals, "gate_negative:"+hit)
-		return out, nil
+		if !deps.overrideVeto(&out, "gate_negative:"+hit) {
+			return out, nil
+		}
 	}
 
 	// AI classifier overrides deterministic when configured (or when an explicit prompt is provided).
@@ -359,33 +371,43 @@ func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 				if deps.LegacyDB != nil {
 					_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
 				}
-				return out, nil
-			}
-			out.Score = aiResult.Score * 100
-			out.Category = aiResult.Priority
-			out.AIIntent = aiResult.Intent
-			out.AIReason = aiResult.Reason
-			out.Signals = append(out.Signals,
-				"ai_intent:"+aiResult.Intent,
-				"ai_reason:"+aiResult.Reason,
-			)
-			if out.Category == "" {
-				out.Category = "cold"
-			}
-			if out.Category == "cold" {
-				logEntry.Decision = leads.ClassificationCold
+				// Explicit direct-post intake: record the AI verdict above (observability)
+				// but still create the lead — the user chose this post. AIIntent/AIReason
+				// are preserved so the dashboard shows WHY the generic filter would reject.
+				if !deps.overrideVeto(&out, "ai_rejected:"+aiResult.Intent) {
+					return out, nil
+				}
+				out.AIIntent = aiResult.Intent
+				out.AIReason = aiResult.Reason
 			} else {
-				logEntry.Decision = leads.ClassificationKept
-			}
-			if deps.LegacyDB != nil {
-				_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
+				out.Score = aiResult.Score * 100
+				out.Category = aiResult.Priority
+				out.AIIntent = aiResult.Intent
+				out.AIReason = aiResult.Reason
+				out.Signals = append(out.Signals,
+					"ai_intent:"+aiResult.Intent,
+					"ai_reason:"+aiResult.Reason,
+				)
+				if out.Category == "" {
+					out.Category = "cold"
+				}
+				if out.Category == "cold" {
+					logEntry.Decision = leads.ClassificationCold
+				} else {
+					logEntry.Decision = leads.ClassificationKept
+				}
+				if deps.LegacyDB != nil {
+					_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
+				}
 			}
 		}
 	}
 
 	if out.Category == "cold" {
 		out.Skipped = "cold"
-		return out, nil
+		if !deps.overrideVeto(&out, "cold") {
+			return out, nil
+		}
 	}
 
 	// Phase B — thread role. Derived deterministically from the crawler's

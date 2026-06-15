@@ -166,6 +166,41 @@ lead is stored under the **numeric** group id (the crawler followed the redirect
 so the numeric redirect can be accepted *because it was produced by this workflow's
 import* — tracked as PR-3 hardening, not part of this hotfix.
 
+## 8b. Explicit-intake filter override (hotfix — market-signal veto bypass)
+
+A direct-post comment command (`Comment bài này cho tôi <url>`) means the user has
+**already chosen** the post as a lead candidate. The generic market-signal filter (the
+deterministic scorer, the brain signal gate, and the AI classifier) must therefore **not
+veto lead creation** for that one post — otherwise the import analyses the post, rejects
+it (`0 qualified leads, 1 rejected by market signal filter`), no lead is created, and the
+workflow can never queue the comment (it retries to `lead_not_observed`).
+
+Mechanism (no schema change, no in-memory state):
+
+- The connector crawl-result ingest (`/api/connectors/crawl-result`) recognises an
+  explicit intake by the **durable provenance link** `body.TaskID ==
+  direct_post_comment_workflows.import_task_id`
+  (`FindDirectPostWorkflowByImportTaskID`). Only the post the workflow requested
+  (matched by `post_fbid`) is treated as explicit; neighbours keep normal filtering.
+- For that post, ingest sets `leadingest.Deps.ForceLead`: every market-signal veto
+  (deterministic reject / signal gate / AI reject / cold) is **downgraded to annotation**
+  — recorded on the lead as `market_filter_result:<verdict>`,
+  `filter_override_applied:true`, `explicit_user_requested:true` — and the lead is
+  created/upserted anyway (category floored to `warm`). Normal broad crawls never set
+  `ForceLead`, so their filtering is byte-for-byte unchanged.
+- **Source-URL preservation:** the connector often reports the lossy
+  `permalink.php?story_fbid=N`. Ingest overrides the lead's `source_url`/`post_fbid`/
+  `group` to the workflow's **context-preserving canonical** group permalink. This both
+  keeps the navigable group URL AND lets the §8a P1.1 exact-canonical lookup match the
+  lead (a `permalink.php` lead would otherwise be a §8a *definite conflict*).
+- The lead is created through the **normal** ingest path, so the existing lead-created
+  Telegram notification fires once, and the poller then observes the lead via the strict
+  §8a lookup and queues the comment exactly once. The §8a identity guard is **unchanged**.
+
+This override lives ONLY in the explicit direct-post path. The worker (`facebook_crawl`)
+in-process FetchBatch path is not used for Facebook in the current deployment and is not
+wired for `ForceLead` — if it is ever used, the same `import_task_id` lookup applies.
+
 ## 9. Ownership & boundaries
 
 - `direct_post_comment_workflows` is owned by `internal/store/coordination` (process-
