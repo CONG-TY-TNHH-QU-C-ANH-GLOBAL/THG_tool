@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+// Vanity group permalink grammar: /groups/{group_ref}/{permalink|posts}/{post_id}
+// where group_ref is a DYNAMIC segment (numeric id OR vanity slug). The slug must
+// be preserved in the canonical group permalink, not dropped to the global form.
+func TestCanonicalizePostURL_VanityGroup(t *testing.T) {
+	accept := map[string]string{
+		// numeric group id — unchanged
+		"https://www.facebook.com/groups/1312868109620530/permalink/2045056849734982/": "https://www.facebook.com/groups/1312868109620530/permalink/2045056849734982/",
+		// vanity slug with dots — kept in the group permalink (was the production bug)
+		"https://www.facebook.com/groups/ship.viet.my/permalink/4504452536547584/": "https://www.facebook.com/groups/ship.viet.my/permalink/4504452536547584/",
+		// vanity slug with dashes via /posts/ — normalized to /permalink/, group kept
+		"https://www.facebook.com/groups/some-group-name/posts/1234567890/": "https://www.facebook.com/groups/some-group-name/permalink/1234567890/",
+		// mobile host → www, slug kept
+		"https://m.facebook.com/groups/ship.viet.my/permalink/4504452536547584/": "https://www.facebook.com/groups/ship.viet.my/permalink/4504452536547584/",
+	}
+	for in, want := range accept {
+		if got, ok := CanonicalizePostURL(in); !ok || got != want {
+			t.Errorf("CanonicalizePostURL(%q) = (%q, %v), want (%q, true)", in, got, ok, want)
+		}
+	}
+	reject := []string{
+		"https://facebook.com.evil.com/groups/ship.viet.my/permalink/4504452536547584/", // lookalike host
+		"https://evil-facebook.com/groups/ship.viet.my/permalink/4504452536547584/",      // lookalike host
+		"https://notfacebook.com/groups/ship.viet.my/permalink/4504452536547584/",        // lookalike host
+		"https://facebook.com/groups/ship.viet.my/",                                      // group shell, not a post
+		"https://facebook.com/groups/ship.viet.my/members",                               // group members, not a post
+	}
+	for _, in := range reject {
+		if _, ok := CanonicalizePostURL(in); ok {
+			t.Errorf("must reject %q", in)
+		}
+	}
+}
+
 // Host anchoring: only genuine Facebook hosts are accepted; lookalikes that merely
 // contain the brand text are rejected (security: substring matching let them in).
 func TestFacebookHostAnchoring(t *testing.T) {

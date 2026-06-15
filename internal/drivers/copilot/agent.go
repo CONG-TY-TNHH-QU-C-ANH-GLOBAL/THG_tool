@@ -116,20 +116,25 @@ func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[st
 // means no pattern matched and the caller should fall through to the
 // next dispatch layer (brain planner or LLM tool-call fallback).
 //
-// Two callers (reasonCode disambiguates them on the routing dashboard):
+// Callers (reasonCode disambiguates them on the routing dashboard):
 //
 //  1. The over-defensive-gating bypass — when promptIsSelfSufficient
 //     returns true, we run this BEFORE the brain so a fully-specified
 //     prompt never gets a "configure business profile" ask-back.
 //     reasonCode = ReasonSelfSufficient.
-//  2. The legacy late-path — after brain decides not to handle and the
+//  2. The lead-action bypass (promptIsLeadActionSelfSufficient) and the
+//     direct-comment bypass (promptIsDirectPostComment) — same BEFORE-brain
+//     rationale. reasonCode = ReasonSelfSufficientLeadAction /
+//     ReasonDirectPostComment.
+//  3. The legacy late-path — after brain decides not to handle and the
 //     preflights pass. Behaviour-identical to the inline code it replaced.
 //     reasonCode = ReasonDeterministicMatched.
 //
-// accounts is consumed only to pick a ready account when selectedAccountID
-// is 0 AND the matched action requires a browser — same picker the legacy
-// late-path used.
-func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedAccountID, userID int64, accounts []models.Account, reasonCode string) (string, bool) {
+// role/userID are threaded into the action args so outbound handlers can
+// enforce execution-layer ownership. accounts is consumed only to pick a
+// ready account when selectedAccountID is 0 AND the matched action requires
+// a browser — same picker the legacy late-path used.
+func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedAccountID, userID int64, role string, accounts []models.Account, reasonCode string) (string, bool) {
 	action, args, ok := deterministicFacebookAction(prompt, orgID, selectedAccountID)
 	if !ok || a.ActionHandler == nil {
 		return "", false
@@ -144,6 +149,17 @@ func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedA
 	}
 	if outboundToolUsesPolicy(action) && a.shouldAutoOutbound(prompt, orgID) {
 		args["auto"] = true
+	}
+	// Thread caller identity into the action args so outbound handlers
+	// (commentSinglePost → queueLeadOutreach) can enforce execution-layer
+	// ownership. The legacy ActionHandler does NOT receive userID/role
+	// out-of-band like dispatchToolCall does, so without this the fast-path
+	// queued outbound with user_id=0 and could not attribute/authorize it.
+	if userID > 0 {
+		args["user_id"] = userID
+	}
+	if role != "" {
+		args["user_role"] = role
 	}
 	args["user_prompt"] = prompt
 	fnResult, err := a.ActionHandler(action, args)
@@ -230,7 +246,20 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 	// produces "please position your business" ask-backs that the user
 	// already answered in the prompt itself. See promptIsSelfSufficient.
 	if promptIsSelfSufficient(prompt) {
-		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, accounts, ReasonSelfSufficient); handled {
+		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, role, accounts, ReasonSelfSufficient); handled {
+			return response, nil
+		}
+	}
+
+	// Direct-comment bypass: "comment THIS post <url>" is fully specified — the
+	// post URL names the target and the comment verb names the action, so it must
+	// reach the deterministic comment_single_post route BEFORE the brain.
+	// Otherwise the brain handles it first and returns generic Copilot text,
+	// pre-empting the route (the production "generic response" bug). Downstream
+	// gates are unchanged: commentSinglePost still returns the scan-required
+	// message for an unknown post. See promptIsDirectPostComment.
+	if promptIsDirectPostComment(prompt) {
+		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, role, accounts, ReasonDirectPostComment); handled {
 			return response, nil
 		}
 	}
@@ -242,7 +271,7 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 	// position their business even when they have qualified leads ready to
 	// act on. Skip the brain when the prompt clearly says act-on-leads.
 	if promptIsLeadActionSelfSufficient(prompt) {
-		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, accounts, ReasonSelfSufficientLeadAction); handled {
+		if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, role, accounts, ReasonSelfSufficientLeadAction); handled {
 			return response, nil
 		}
 	}
@@ -269,7 +298,7 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 			selectedAccountID = pickReadyFacebookAccountID(accounts)
 		}
 	}
-	if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, accounts, ReasonDeterministicMatched); handled {
+	if response, handled := a.runDeterministicFastPath(prompt, source, orgID, selectedAccountID, userID, role, accounts, ReasonDeterministicMatched); handled {
 		return response, nil
 	}
 
