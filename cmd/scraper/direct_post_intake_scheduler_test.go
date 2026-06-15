@@ -100,3 +100,41 @@ func TestDirectPostIntake_GracefulShutdown(t *testing.T) {
 		t.Fatal("scheduler did not exit promptly on context cancellation")
 	}
 }
+
+// E — identity mismatch: a lead sharing the post id but with a CONFLICTING group/
+// source (the production bug: a permalink.php Data-Engineer lead) must NOT be
+// commented on. The poller fails the workflow with imported_lead_identity_mismatch.
+func TestDirectPostIntake_IdentityMismatch(t *testing.T) {
+	ctx := context.Background()
+	db := newIntakeDB(t)
+	const org int64 = 7
+	const postFBID = "4505595319766639"
+	const canonical = "https://www.facebook.com/groups/ship.viet.my/permalink/4505595319766639/"
+
+	w, err := db.Coordination().CreateOrGetDirectPostCommentWorkflow(ctx, coordination.DirectPostWorkflowInput{
+		OrgID: org, RequestedByUserID: 9, UserRole: "sales", CanonicalPostURL: canonical,
+		PostFBID: postFBID, GroupRef: "ship.viet.my", Prompt: "comment bài này",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Coordination().MarkDirectPostImportQueued(ctx, org, w.ID, "task")
+	w, _ = db.Coordination().GetDirectPostCommentWorkflowByID(ctx, org, w.ID)
+
+	// The DECOY: same post id, generic permalink.php (wrong post), no group context.
+	if _, err := db.Leads().InsertLead(&models.Lead{
+		OrgID: org, SourceType: "post", SourceURL: "https://www.facebook.com/permalink.php?story_fbid=4505595319766639",
+		PostFBID: postFBID, Platform: models.PlatformFacebook, Author: "x", Content: "Data Engineer job post", Score: models.LeadHot,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	advanceDirectPostWorkflow(ctx, db, ai.NewMessageGenerator("", ""), nil, w)
+	got, _ := db.Coordination().GetDirectPostCommentWorkflowByID(ctx, org, w.ID)
+	if got.Status != coordination.DPStatusFailed || got.ErrorCode != coordination.DPErrIdentityMismatch {
+		t.Errorf("decoy lead must fail with identity mismatch (no comment), got status=%s code=%s", got.Status, got.ErrorCode)
+	}
+	if got.LeadID.Valid {
+		t.Errorf("must NOT attach the decoy lead, got lead_id=%d", got.LeadID.Int64)
+	}
+}

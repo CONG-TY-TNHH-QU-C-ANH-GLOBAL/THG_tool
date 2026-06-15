@@ -114,3 +114,27 @@ func TestCanonicalizePostURL(t *testing.T) {
 		})
 	}
 }
+
+// ExtractGroupRef + IsGroupPermalinkURL: group context detection for the direct-post
+// identity guard. The generic permalink.php form must report NO group context.
+func TestExtractGroupRefAndIsGroupPermalink(t *testing.T) {
+	cases := []struct {
+		url       string
+		wantRef   string
+		wantGroup bool
+	}{
+		{"https://www.facebook.com/groups/ship.viet.my/permalink/456/", "ship.viet.my", true},
+		{"https://www.facebook.com/groups/123456789/permalink/456/", "123456789", true},
+		{"https://www.facebook.com/groups/ship.viet.my/posts/456/", "ship.viet.my", true},
+		{"https://www.facebook.com/permalink.php?story_fbid=456", "", false}, // lossy form → no group context
+		{"https://www.facebook.com/somepage/posts/456", "", false},
+	}
+	for _, c := range cases {
+		if got := ExtractGroupRef(c.url); got != c.wantRef {
+			t.Errorf("ExtractGroupRef(%q) = %q, want %q", c.url, got, c.wantRef)
+		}
+		if got := IsGroupPermalinkURL(c.url); got != c.wantGroup {
+			t.Errorf("IsGroupPermalinkURL(%q) = %v, want %v", c.url, got, c.wantGroup)
+		}
+	}
+}

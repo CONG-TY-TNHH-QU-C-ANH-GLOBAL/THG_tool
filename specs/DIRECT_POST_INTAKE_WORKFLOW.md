@@ -129,6 +129,31 @@ DROP TABLE direct_post_comment_workflows;
   imports/continuations are lost). Acceptable because the table is additive and
   feature-owned, but it is **NOT** "no data loss".
 
+## 8a. Identity guard (hotfix — wrong-post protection)
+
+A Facebook GROUP permalink id and a global `story_fbid` can be **different posts**
+sharing the same number (`/groups/ship.viet.my/permalink/N` ≠
+`permalink.php?story_fbid=N`). A bare `post_fbid` match therefore attached the wrong
+post (a Data-Engineer `permalink.php` lead matched a `ship.viet.my` shipping post).
+
+Guard (`GetPostLeadByDirectPostRef` + `FindConflictingPostLead`, used by both the
+immediate-comment path and the poller):
+
+- **Match only** (a) the exact canonical `source_url`, OR (b) the same `post_fbid` whose
+  lead source is **group-compatible**: a `/groups/{ref}/permalink|posts/` URL with the
+  same group ref, or a **numeric** group ref (Facebook vanity→numeric redirect of the
+  same post the import navigated to).
+- **Never match** a bare `post_fbid`, a generic `permalink.php?story_fbid=` lead (no
+  group context), or a **different named group**.
+- The workflow now carries `group_ref` (populated from the canonical URL).
+- If a same-`post_fbid` lead exists but its group/source context conflicts, the poller
+  fails the workflow with `error_code = imported_lead_identity_mismatch` and logs SAFE
+  diagnostics (requested/canonical/group_ref/post_fbid + observed lead_id/source_url/
+  post_fbid/group_fbid) — **no secrets** — instead of commenting on the wrong post.
+- If neither a safe match nor a conflict is found, it is treated as "import pending" and
+  retries (per §7) — a vanity-requested post whose lead hasn't appeared yet is not a
+  mismatch.
+
 ## 9. Ownership & boundaries
 
 - `direct_post_comment_workflows` is owned by `internal/store/coordination` (process-

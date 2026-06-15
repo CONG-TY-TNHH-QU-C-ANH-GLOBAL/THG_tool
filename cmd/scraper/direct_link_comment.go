@@ -55,8 +55,11 @@ func commentSinglePost(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	}
 	orgID := argInt64(args, "org_id")
 	postFBID := fburl.ExtractFacebookPostID(res.canonical)
-	// POST lead only (not a commenter lead sharing the same post ref).
-	lead, err := db.Leads().GetPostLeadByRef(ctx, orgID, postFBID, res.canonical)
+	groupRef := fburl.ExtractGroupRef(res.canonical)
+	// STRICT post-lead lookup: exact canonical OR same post_fbid in the SAME group —
+	// never a bare post_fbid match (a group permalink id and a global story_fbid can be
+	// DIFFERENT posts), so we never comment on the wrong post.
+	lead, err := db.Leads().GetPostLeadByDirectPostRef(ctx, orgID, postFBID, res.canonical, groupRef)
 	if err != nil {
 		return "", err
 	}
@@ -74,6 +77,7 @@ func commentSinglePost(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 			UserRole:          argString(args, "user_role"),
 			CanonicalPostURL:  res.canonical,
 			PostFBID:          postFBID,
+			GroupRef:          groupRef,
 			Prompt:            argString(args, "nl_prompt"),
 		})
 	}
