@@ -114,6 +114,23 @@ func extractGroupFBID(u string) string {
 	return seg
 }
 
+// ExtractGroupRef returns the {group_ref} of a /groups/{group_ref}/ Facebook URL
+// (vanity slug OR numeric group id), or "". Exported so the direct-post intake flow
+// can carry + validate GROUP context — the bare numeric post id is ambiguous (a group
+// permalink id vs a global story_fbid can be DIFFERENT posts), so group context is
+// required to avoid attaching the wrong post.
+func ExtractGroupRef(u string) string { return extractGroupFBID(u) }
+
+// IsGroupPermalinkURL reports whether u is a Facebook GROUP post URL
+// (/groups/{ref}/permalink|posts/{id}) — i.e. group context is PRESERVED. The generic
+// permalink.php?story_fbid= form returns false because it has lost group context and
+// must not be treated as equivalent to a group post.
+func IsGroupPermalinkURL(u string) bool {
+	lu := strings.ToLower(u)
+	return strings.Contains(lu, "/groups/") &&
+		(strings.Contains(lu, "/permalink/") || strings.Contains(lu, "/posts/"))
+}
+
 // cleanPathPostURL normalizes the mobile host to www and drops the query/tracking
 // params for a path-based (pfbid) post URL whose id lives in the path.
 func cleanPathPostURL(u string) string {

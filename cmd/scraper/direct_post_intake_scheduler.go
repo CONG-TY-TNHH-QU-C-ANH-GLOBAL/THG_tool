@@ -72,12 +72,27 @@ func processDueDirectPostWorkflows(ctx context.Context, db *store.Store, msgGen 
 
 // advanceDirectPostWorkflow runs one CAS-guarded step for a claimed workflow.
 func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, notify func(string), w *coordination.DirectPostCommentWorkflow) {
-	lead, err := db.Leads().GetPostLeadByRef(ctx, w.OrgID, w.PostFBID, w.CanonicalPostURL)
+	// STRICT match only (exact canonical OR same post_fbid in the SAME group). A bare
+	// post_fbid match is unsafe — a group permalink id and a global story_fbid can be
+	// DIFFERENT posts, which is how the wrong post got commented.
+	lead, err := db.Leads().GetPostLeadByDirectPostRef(ctx, w.OrgID, w.PostFBID, w.CanonicalPostURL, w.GroupRef)
 	if err != nil {
 		log.Printf("[DirectPostIntake] lookup org=%d wf=%d: %v", w.OrgID, w.ID, err)
 		return
 	}
 	if lead == nil {
+		// No SAFE match. If a lead with the SAME post id but a conflicting group/source
+		// exists, that is an identity mismatch (the wrong-post bug) — refuse to comment
+		// and surface it, rather than attaching it or retrying forever.
+		if decoy, _ := db.Leads().FindConflictingPostLead(ctx, w.OrgID, w.PostFBID, w.CanonicalPostURL, w.GroupRef); decoy != nil {
+			log.Printf("[DirectPostIntake] IDENTITY MISMATCH org=%d wf=%d: requested_url=%q canonical=%q group_ref=%q post_fbid=%q "+
+				"observed lead_id=%d source_url=%q post_fbid=%q group_fbid=%q — refusing to comment",
+				w.OrgID, w.ID, w.Prompt, w.CanonicalPostURL, w.GroupRef, w.PostFBID,
+				decoy.ID, decoy.SourceURL, decoy.PostFBID, decoy.GroupFBID)
+			_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
+				coordination.DPErrIdentityMismatch, "post id matches but group/source context conflicts")
+			return
+		}
 		// Import not visible yet. No job-status oracle → bounded retry with backoff,
 		// then a typed actionable failure (no hallucinated comment, no silent drop).
 		now := time.Now().UTC()

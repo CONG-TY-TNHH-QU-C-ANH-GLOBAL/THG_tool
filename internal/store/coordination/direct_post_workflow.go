@@ -50,6 +50,12 @@ const (
 // honest: it does NOT claim a connector/import failure that we cannot actually confirm.
 const DPErrLeadNotObserved = "lead_not_observed_after_retries"
 
+// DPErrIdentityMismatch is the terminal error_code when a post lead sharing the
+// requested post id exists but its GROUP/source context conflicts with the requested
+// post (a different group, or a generic permalink.php lead). We refuse to comment on a
+// possibly-wrong post and surface it for operator review instead.
+const DPErrIdentityMismatch = "imported_lead_identity_mismatch"
+
 // DirectPostCommentWorkflow is one row of direct_post_comment_workflows.
 type DirectPostCommentWorkflow struct {
 	ID                int64
