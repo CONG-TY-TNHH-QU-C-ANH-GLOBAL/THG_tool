@@ -95,13 +95,23 @@ func hostOfURL(raw string) string {
 	return strings.ToLower(u.Hostname())
 }
 
-// extractGroupFBID returns the numeric group id from a /groups/{id}/ path, or "".
+// extractGroupFBID returns the group reference from a /groups/{group_ref}/ path.
+// group_ref is a DYNAMIC path segment — a numeric group id OR a vanity slug
+// ("ship.viet.my", "some-group-name", dots/dashes/underscores) — so it is read as
+// the whole segment up to the next "/", NOT numeric-only. Returns "" when there is
+// no /groups/ segment. This keeps a vanity-group post's canonical in the reliable
+// /groups/{group_ref}/permalink/{post}/ form instead of dropping the group and
+// falling back to the global permalink.php?story_fbid= form.
 func extractGroupFBID(u string) string {
 	i := strings.Index(u, "/groups/")
 	if i < 0 {
 		return ""
 	}
-	return cutAtNonDigit(u[i+len("/groups/"):])
+	seg := u[i+len("/groups/"):]
+	if j := strings.IndexByte(seg, '/'); j >= 0 {
+		return seg[:j]
+	}
+	return seg
 }
 
 // cleanPathPostURL normalizes the mobile host to www and drops the query/tracking
