@@ -144,6 +144,15 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	inserted := 0
 	fetched := 0
 	primarySourceURL := ""
+
+	// Explicit direct-post intake? (body.TaskID == workflow.import_task_id). When so, the
+	// chosen post must be force-created as a lead even if the market filter would reject
+	// it, and must keep the requested group-context URL — see crawl_direct_post.go.
+	directPost := h.resolveDirectPostIntake(c.Context(), orgID, body.TaskID)
+	if directPost != nil && strings.TrimSpace(directPost.CanonicalPostURL) != "" {
+		primarySourceURL = strings.TrimSpace(directPost.CanonicalPostURL) // summary prefers requested URL
+	}
+
 	for _, item := range body.Items {
 		content := strings.TrimSpace(item.Content)
 		if content == "" || len([]rune(content)) < 20 {
@@ -154,25 +163,41 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		if sourceURL == "" {
 			sourceURL = strings.TrimSpace(item.ID)
 		}
-		if primarySourceURL == "" && sourceURL != "" {
-			primarySourceURL = sourceURL
+
+		// Per-item identity + filter policy. For the explicit post a direct-post intake
+		// requested, override to the context-preserving canonical URL and force lead
+		// creation; neighbouring posts (different id) keep normal filtering.
+		primaryURL := sourceURL
+		postFBID := strings.TrimSpace(item.PostFBID)
+		groupFBID := strings.TrimSpace(item.GroupFBID)
+		itemDeps := deps
+		if id, ok := directPostItemOverride(directPost, sourceURL, item.PostFBID); ok {
+			primaryURL = id.primaryURL
+			postFBID = id.postFBID
+			groupFBID = id.groupRef
+			itemDeps.ForceLead = true
+			log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d intake_key=%q import_task_id=%q requested_url=%q observed_source_url=%q filter_override_applied=true",
+				directPost.ID, directPost.IntakeKey, body.TaskID, primaryURL, sourceURL)
+		}
+		if primarySourceURL == "" && primaryURL != "" {
+			primarySourceURL = primaryURL
 		}
 
 		// 1. Deduplicate: Memory check before hitting AI.
 		// Prevents bringing in duplicate leads and wasting expensive LLM tokens across multiple scrapes.
-		if sourceURL != "" && appStore != nil {
-			if exists, _ := appStore.HasLeadWithSourceURL(c.Context(), orgID, sourceURL); exists {
+		if primaryURL != "" && appStore != nil {
+			if exists, _ := appStore.HasLeadWithSourceURL(c.Context(), orgID, primaryURL); exists {
 				continue
 			}
 		}
 
-		outcome, err := leadingest.IngestPost(c.Context(), deps, leadingest.Input{
+		outcome, err := leadingest.IngestPost(c.Context(), itemDeps, leadingest.Input{
 			TaskID:           body.TaskID,
 			OrgID:            orgID,
 			SourceType:       "post",
-			PrimaryURL:       sourceURL,
-			PostFBID:         strings.TrimSpace(item.PostFBID),
-			GroupFBID:        strings.TrimSpace(item.GroupFBID),
+			PrimaryURL:       primaryURL,
+			PostFBID:         postFBID,
+			GroupFBID:        groupFBID,
 			PostedAt:         parsePostedAtRFC3339(item.PostedAt),
 			AuthorName:       strings.TrimSpace(item.AuthorName),
 			AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
