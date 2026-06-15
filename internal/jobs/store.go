@@ -30,6 +30,10 @@ func NewStore(dsn string) (*Store, error) {
 	return s, nil
 }
 
+// Close releases the underlying database handle. Production runs for the process
+// lifetime; tests use it so the temp SQLite file can be removed on cleanup.
+func (s *Store) Close() error { return s.db.Close() }
+
 func (s *Store) migrate() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS scheduler_jobs (

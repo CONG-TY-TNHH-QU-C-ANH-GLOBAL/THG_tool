@@ -191,10 +191,12 @@ The features prototyped in the paused stack are RE-IMPLEMENTED here, correctly:
   lead and queues the comment, idempotent via CAS + a two-key model (`intake_key` vs
   `idempotency_key`). NO `user_context` KV, NO in-memory callback as source of truth.
   Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`. **PR-1 (data foundation) DONE** —
-  migration `0022` + coordination store (CRUD + CAS/lease) + `GetPostLeadByRef` +
-  tests; no runtime behavior. **PR-2 (intake service + poller + Copilot ack) pending.**
-  Telegram stays the existing lead-created notification; a future outbox (Phase E)
-  hardens exactly-once delivery.
+  migration `0022` + coordination store (CRUD + CAS/lease) + `GetPostLeadByRef`.
+  **PR-2 (runtime) DONE** — the `directPostIntake` service (unknown post → import +
+  async ack, replacing scan-required), the `runDirectPostIntakeScheduler` DB poller
+  (observe lead → queue comment, CAS-guarded, bounded retry, graceful shutdown), wired
+  in `cmd/scraper/main.go`. Telegram stays the existing lead-created notification; a
+  future outbox (Phase E) hardens exactly-once delivery.
 - **H2 — Typo/multilingual NLU.** Port P2's guarded fuzzy verbs (`commend`/`cmt`,
   scope-gated) into the `drivers/copilot` intent layer. P2 is behavior-isolated and can
   largely cherry-pick once the driver boundary (Phase G) lands.

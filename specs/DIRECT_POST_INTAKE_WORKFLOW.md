@@ -1,6 +1,6 @@
 # Direct-Post Intake → Comment Continuation
 
-**Status:** ACTIVE (PR-1 data foundation landed; PR-2 runtime pending).
+**Status:** ACTIVE (PR-1 data foundation + PR-2 runtime loop landed).
 **Track:** Comment Intelligence / Facebook automation. **Aligns with** Architecture
 Standard V3 (durable workflow + process manager; no in-memory callback as source of
 truth, no `user_context` KV continuation, no generic transactional outbox yet).
@@ -27,15 +27,23 @@ bulk crawling.
 
 ## 2. PR split
 
-- **PR-1 — data foundation (this PR):** migration `0022_direct_post_comment_workflows`,
+- **PR-1 — data foundation (DONE):** migration `0022_direct_post_comment_workflows`,
   typed coordination store (CRUD + CAS/lease transitions), `GetPostLeadByRef`, status/
-  config constants, tests. **No runtime behavior change** — nothing reads/writes the
-  table except tests.
-- **PR-2 — runtime:** narrow intake service + Copilot unknown→intake (replaces the
-  scan-required copy with the async ack) + the DB-polling process manager
-  (`runDirectPostIntakeScheduler`: observe post lead → queue comment, idempotent,
-  failure/actionable states) + full A–F test matrix.
-- **PR-3 — optional hardening:** worker-path coverage, expiry/retry tuning, observability.
+  config constants, tests. No runtime behavior change.
+- **PR-2 — runtime (DONE):** the narrow `directPostIntake` service (cmd/scraper) that
+  `commentSinglePost` calls for an unknown post — it creates/resumes the workflow,
+  enqueues ONE `facebook_post` import per `intake_key` (auto-picked connector / worker
+  fallback; reused across actors), and returns the async ack (replacing the
+  scan-required copy). The DB-polling process manager `runDirectPostIntakeScheduler`
+  observes the post lead (`GetPostLeadByRef`) and queues the comment via
+  `queueLeadOutreach` exactly once (CAS-guarded), with bounded retry → typed terminal
+  failure when the import never materializes. The poller exits cleanly on
+  `context.Done()`; leased rows recover via lease expiry. Telegram is NOT sent by the
+  workflow (the lead's own creation notification fires once). Copilot owns no
+  persistence — it only routes to the cmd/scraper handler.
+- **PR-3 — optional hardening:** dedicated worker-binary poller, expiry tuning, a
+  job-status oracle (vs. the current bounded-retry-then-import_failed), observability
+  for actionable states, and a transactional outbox to harden exactly-once Telegram.
 
 ## 3. Idempotency model (TWO keys — deliberately separate)
 

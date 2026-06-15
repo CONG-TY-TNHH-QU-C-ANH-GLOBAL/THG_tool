@@ -169,3 +169,20 @@ func (s *Store) FindActiveDirectPostCommentWorkflowByIntakeKey(ctx context.Conte
 		   AND status NOT IN ('completed','failed','cancelled')
 		 ORDER BY created_at DESC, id DESC LIMIT 1`, orgID, intakeKey))
 }
+
+// FindActiveImportTaskForIntakeKey returns the import_task_id of the FIRST (oldest)
+// non-terminal workflow that already dispatched the single-post import for this
+// intake_key, or "". This enforces ONE import per post: later workflows (other
+// actors/accounts) reuse the shared task id instead of enqueuing a duplicate crawl.
+func (s *Store) FindActiveImportTaskForIntakeKey(ctx context.Context, orgID int64, intakeKey string) (string, error) {
+	var taskID string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT import_task_id FROM direct_post_comment_workflows
+		 WHERE org_id = ? AND intake_key = ? AND import_task_id <> ''
+		   AND status NOT IN ('completed','failed','cancelled')
+		 ORDER BY created_at ASC, id ASC LIMIT 1`, orgID, intakeKey).Scan(&taskID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return taskID, err
+}

@@ -266,6 +266,15 @@ func main() {
 	go runCommentReverifyScheduler(ctx, db, cfg)
 	log.Println("✅ Comment reverify scheduler started (submitted_unverified → reverify queue)")
 
+	// P1 PR-2: direct-post intake process manager — observes the imported post lead
+	// and queues the comment durably (no-op when no comment generator is configured).
+	go runDirectPostIntakeScheduler(ctx, db, commentMg, func(msg string) {
+		if telegramNotify != nil {
+			telegramNotify(msg)
+		}
+	})
+	log.Println("✅ Direct-post intake scheduler started (unknown post → import → auto-comment)")
+
 	// Start web server (non-blocking)
 	srv := server.New(db, jobStore, agent, workspaceMgr, server.Config{
 		Port:                        cfg.WebPort,

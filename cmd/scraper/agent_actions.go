@@ -12,6 +12,9 @@ import (
 )
 
 func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.MessageGenerator, notify func(string)) func(string, map[string]any) (string, error) {
+	// Direct-post intake service (P1 PR-2): unknown direct-comment posts are imported
+	// + continued durably instead of asking the user to manually scan/import.
+	intake := newDirectPostIntake(db, jobStore)
 	return func(action string, args map[string]any) (string, error) {
 		switch action {
 		case "set_context":
@@ -101,7 +104,7 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 		case "auto_comment", "comment_all_leads":
 			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args, notify)
 		case "comment_single_post":
-			return commentSinglePost(context.Background(), db, msgGen, args, notify)
+			return commentSinglePost(context.Background(), db, msgGen, args, notify, intake)
 		case "auto_inbox", "inbox_all_leads":
 			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args, notify)
 		case "create_job_post":
