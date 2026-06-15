@@ -127,6 +127,15 @@ the new `AI_STORE_COUPLED` guard rule, distinct from `COPILOT_NO_DIRECT_REPO` (w
 correctly points at `internal/drivers/copilot/agent.go`). `internal/ai` shrank from 27 to
 12 production files.
 
+## P1 data foundation (H1, PR-1)
+
+`internal/store/coordination` now owns `direct_post_comment_workflows` (migration
+`0022`): the durable process-manager state for direct-post intake → comment
+continuation (`direct_post_workflow.go` + `direct_post_workflow_transitions.go`, CRUD +
+CAS/lease). `internal/store/leads` gained `GetPostLeadByRef` (post-only lookup,
+excludes commenter leads). **No runtime behavior** yet — the poller + Copilot intake
+land in PR-2. Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`.
+
 ## Biggest inventory takeaways
 
 1. **`internal/ai` is now intelligence/generation/scoring** — the Copilot driver moved
