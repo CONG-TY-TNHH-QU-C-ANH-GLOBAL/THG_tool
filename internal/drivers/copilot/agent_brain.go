@@ -1,4 +1,4 @@
-package ai
+package copilot
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/fburl"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/textutil"
@@ -78,15 +79,15 @@ func (c *BrainClient) Plan(ctx context.Context, req BrainPlanRequest) (*BrainPla
 }
 
 type BrainPlanRequest struct {
-	OrgID             int64              `json:"org_id"`
-	Source            string             `json:"source"`
-	Prompt            string             `json:"prompt"`
-	BusinessProfile   *BusinessProfile   `json:"business_profile,omitempty"`
-	SelectedAccountID int64              `json:"selected_account_id,omitempty"`
-	Accounts          []BrainAccount     `json:"accounts"`
-	DataSummaries     BrainDataSummaries `json:"data_summaries"`
-	ToolCapabilities  []string           `json:"tool_capabilities"`
-	Policy            BrainPolicy        `json:"policy"`
+	OrgID             int64               `json:"org_id"`
+	Source            string              `json:"source"`
+	Prompt            string              `json:"prompt"`
+	BusinessProfile   *ai.BusinessProfile `json:"business_profile,omitempty"`
+	SelectedAccountID int64               `json:"selected_account_id,omitempty"`
+	Accounts          []BrainAccount      `json:"accounts"`
+	DataSummaries     BrainDataSummaries  `json:"data_summaries"`
+	ToolCapabilities  []string            `json:"tool_capabilities"`
+	Policy            BrainPolicy         `json:"policy"`
 }
 
 type BrainAccount struct {
@@ -155,7 +156,7 @@ func (a *Agent) processBrainPlan(ctx context.Context, prompt, source string, org
 		return msg, true
 	}
 
-	profile := ProfileFromContext(userContext)
+	profile := ai.ProfileFromContext(userContext)
 	req := BrainPlanRequest{
 		OrgID:             orgID,
 		Source:            source,

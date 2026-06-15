@@ -3,13 +3,14 @@ package agent
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
 )
 
 type Deps struct {
 	DB       *store.Store
-	Agent    *ai.Agent
+	Agent    *copilot.Agent
 	AIClass  func() *ai.MessageGenerator
 	WSHub    *WSHub
 	Notifier func(string)
@@ -22,7 +23,7 @@ type Deps struct {
 
 type Handler struct {
 	db       *store.Store
-	agent    *ai.Agent
+	agent    *copilot.Agent
 	aiClass  func() *ai.MessageGenerator
 	wsHub    *WSHub
 	notifier func(string)

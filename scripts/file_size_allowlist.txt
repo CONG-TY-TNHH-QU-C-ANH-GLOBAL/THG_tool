@@ -57,7 +57,7 @@ internal/store/crawl/intents.go  # 622 lines
 internal/store/coordination/execution_attempts.go  # 612 lines
 internal/server/leads/handlers.go  # 585 lines
 internal/leadingest/ingest.go  # 580 lines
-internal/ai/agent_brain.go  # 573 lines
+internal/drivers/copilot/agent_brain.go  # 573 lines
 internal/server/agent/outbox_agent.go  # 560 lines
 internal/agentloop/verifier.go  # 524 lines
 internal/server/auth/onboarding.go  # 516 lines
@@ -65,7 +65,7 @@ internal/models/models.go  # 503 lines
 internal/runtime/verifier.go  # 493 lines
 internal/ai/comment_decision.go  # 490 lines
 internal/store/coordination/behaviour_profile.go  # 458 lines
-internal/ai/agent.go  # 450 lines
+internal/drivers/copilot/agent.go  # 450 lines
 internal/workspace_knowledge/soak/report.go  # 450 lines
 internal/store/identities/accounts.go  # 449 lines
 internal/jobhandlers/facebook_crawl/handler.go  # 440 lines
@@ -85,7 +85,7 @@ internal/runtime/cdp_runtime.go  # 391 lines
 internal/ai/universal.go  # 387 lines
 internal/workspace_knowledge/products/canonical.go  # 376 lines
 internal/server/auth/handlers.go  # 371 lines
-internal/ai/agent_preflight.go  # 367 lines
+internal/drivers/copilot/agent_preflight.go  # 367 lines
 internal/store/outbound_aliases.go  # 366 lines
 internal/server/knowledge/handlers.go  # 363 lines
 internal/store/knowledge/events.go  # 358 lines
@@ -112,7 +112,7 @@ internal/ai/classifier.go  # 314 lines
 internal/store/knowledge/sources.go  # 314 lines
 internal/server/agent/crawl.go  # 312 lines
 internal/server/observability/handlers.go  # 305 lines
-internal/ai/agent_prompt.go  # 302 lines
+internal/drivers/copilot/agent_prompt.go  # 302 lines
 internal/store/knowledge/replay.go  # 301 lines
 internal/ai/profile_inference.go  # 297 lines
 internal/workspace_knowledge/retrieval/rrf/rrf_searcher.go  # 295 lines
@@ -129,13 +129,13 @@ internal/server/autoflow/threads.go  # 257 lines
 internal/workspace_knowledge/ingestion/rest_json/config.go  # 251 lines
 internal/store/coordination/action_ledger.go  # 243 lines
 internal/config/config.go  # 242 lines
-internal/ai/agent_tools.go  # 241 lines
+internal/drivers/copilot/agent_tools.go  # 241 lines
 internal/workspace_knowledge/embedding/worker.go  # 241 lines
 internal/store/outbound/dedup.go  # 238 lines
 internal/runtime/stateful.go  # 237 lines
 internal/skills/registry.go  # 237 lines
 internal/workspace_knowledge/soak/failure_modes.go  # 237 lines
-internal/ai/routing_decision.go  # 235 lines
+internal/drivers/copilot/routing_decision.go  # 235 lines
 internal/server/crawl/intent.go  # 234 lines
 internal/workspace_knowledge/ingestion/rest_json/fieldmap.go  # 234 lines
 internal/store/prompts/skills.go  # 233 lines

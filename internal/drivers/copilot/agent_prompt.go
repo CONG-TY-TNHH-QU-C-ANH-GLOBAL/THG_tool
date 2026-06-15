@@ -1,14 +1,15 @@
-package ai
+package copilot
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
 )
 
 func buildDynamicSystemPrompt(userCtx map[string]string, accounts []models.Account) string {
-	profile := ProfileFromContext(userCtx)
+	profile := ai.ProfileFromContext(userCtx)
 	var sb strings.Builder
 
 	// ── 1. IDENTITY ─────────────────────────────────────────────────────────

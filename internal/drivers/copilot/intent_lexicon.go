@@ -1,4 +1,4 @@
-package ai
+package copilot
 
 // Copilot routing lexicon — the keyword sets the deterministic classifier matches
 // against (folded, accent-insensitive). Named here so the routing logic reads as

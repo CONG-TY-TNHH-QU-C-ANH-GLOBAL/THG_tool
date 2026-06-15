@@ -29,14 +29,14 @@ modules:
     next_phase: "B/C (extract org/workspace shell; registry stays)"
 
   - name: drivers/copilot
-    current_paths: [internal/ai/agent_*.go, internal/ai/intent_*.go, internal/ai/brain_*.go]
+    current_paths: [internal/drivers/copilot]   # MOVED here in B.2 (was internal/ai/agent*.go/intent_*.go/routing_decision.go)
     target_paths: [internal/drivers/copilot]
     responsibility: "NL prompt -> normalized intent -> typed application command. Routing + NLU + ask-back."
-    allowed_dependency_direction: "copilot -> {ai(intent), fburl, CommandBus port, models}"
-    forbidden_imports: [internal/store/*, internal/server, store/outbound, connectors]
-    status: documented   # still in internal/ai; holds *store.Store (known gap)
-    next_phase: "D (typed CommandBus port) then G (drop store dependency)"
-    known_gap: "agent.go/business.go/classifier.go/policy_gate.go import internal/store (COPILOT_NO_DIRECT_REPO)"
+    allowed_dependency_direction: "copilot -> {ai(BusinessProfile/ProfileFromContext), fburl, store(temp), skills, models}"
+    forbidden_imports: [internal/server, store/outbound, connectors]   # store still imported (Phase G), but copilot must not import server/outbound/connectors
+    status: partially_migrated   # driver physically moved; agent.go still imports store (Phase G)
+    next_phase: "G (drop store dependency via typed CommandBus / injected inputs)"
+    known_gap: "internal/drivers/copilot/agent.go imports internal/store (COPILOT_NO_DIRECT_REPO). NOTE: the earlier B.2 'cycle' blocker was a FALSE POSITIVE (classifier.go's own same-named method); the move was clean and cycle-free."
 
   - name: services/facebook
     current_paths: [cmd/scraper, internal/jobhandlers/facebook_crawl, internal/leadingest, internal/fburl]
@@ -72,8 +72,8 @@ modules:
     responsibility: "PURE intelligence: classify, generate/repair, score, intent shape. IO-free, platform-neutral."
     allowed_dependency_direction: "ai -> {models, stdlib}"
     forbidden_imports: [store, server, connectors, browsergateway, outbound, jobs, services/*]
-    status: partially_migrated   # ai/comment pure (+BuildPersonaRule moved in Phase B); root ai still mixes the copilot driver
-    next_phase: "B.2 (copilot driver out) — DEFERRED: import cycle via buildDynamicSystemPrompt (agent_prompt.go, driver) consumed by classifier.go (staying generator); needs MessageGenerator/classifier decouple first"
+    status: partially_migrated   # ai/comment pure; copilot driver MOVED OUT (B.2). Remaining store-coupled generators/policy (business/classifier/policy_gate) are the AI_STORE_COUPLED gap.
+    next_phase: "G+ (business/classifier/policy_gate should receive store-derived inputs instead of importing store). The B.2 driver move is DONE (the earlier cycle blocker was a false positive)."
 
   - name: outbound
     current_paths: [internal/store/outbound, internal/store/coordination, cmd/scraper/outbound_actions.go]

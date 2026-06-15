@@ -21,9 +21,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 0
 
 # All rule names (the count reported as "rules checked").
-RULE_NAMES="AI_PURE AI_NO_EXECUTION COPILOT_NO_DIRECT_REPO OUTBOUND_NO_FACEBOOK \
-OUTBOUND_NO_COPILOT OUTBOUND_APP_FACEBOOK PLATFORM_NO_SERVICES SERVICES_NO_SIBLINGS \
-SERVICES_FB_NO_COPILOT STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC NO_CONTRACTS_GODPKG"
+RULE_NAMES="AI_PURE AI_NO_EXECUTION AI_STORE_COUPLED COPILOT_NO_DIRECT_REPO \
+OUTBOUND_NO_FACEBOOK OUTBOUND_NO_COPILOT OUTBOUND_APP_FACEBOOK PLATFORM_NO_SERVICES \
+SERVICES_NO_SIBLINGS SERVICES_FB_NO_COPILOT STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC \
+NO_CONTRACTS_GODPKG"
 RULES=$(echo "$RULE_NAMES" | wc -w | tr -d ' ')
 WARN=0
 KNOWN=0
@@ -32,6 +33,7 @@ KNOWN=0
 next_phase() {
   case "$1" in
     AI_PURE|AI_NO_EXECUTION)        echo "B (pure AI boundary)";;
+    AI_STORE_COUPLED)               echo "G+ (inject store-derived inputs into generators/policy; stop importing store)";;
     COPILOT_NO_DIRECT_REPO)         echo "D (typed CommandBus) then G (drop store dep)";;
     OUTBOUND_NO_FACEBOOK|OUTBOUND_APP_FACEBOOK) echo "C/I (split neutral core from FB resolution)";;
     OUTBOUND_NO_COPILOT)            echo "C";;
@@ -46,7 +48,7 @@ next_phase() {
 }
 
 # known_gap RULE -> 0 (true) when warnings here are EXPECTED today and documented.
-known_gap() { case "$1" in COPILOT_NO_DIRECT_REPO) return 0;; *) return 1;; esac; }
+known_gap() { case "$1" in COPILOT_NO_DIRECT_REPO|AI_STORE_COUPLED) return 0;; *) return 1;; esac; }
 
 # emit RULE  (reads grep output path:line:content on stdin)
 emit() {
@@ -91,9 +93,17 @@ scan_dir AI_PURE 'store|server|browsergateway|jobs|jobhandlers|leadingest|fburl|
 # 2. AI must not import the execution layer (outbound/connectors/browser/jobs).
 scan_dir AI_NO_EXECUTION 'store/outbound|store/connectors|browsergateway|jobhandlers' internal/ai
 
-# 3. Copilot DRIVER must not import DB repositories directly.
-scan_glob COPILOT_NO_DIRECT_REPO 'store' internal/ai/*.go
-scan_dir  COPILOT_NO_DIRECT_REPO 'store($|/)' internal/drivers/copilot
+# 3. Copilot DRIVER must not import DB repositories directly (now in internal/drivers/copilot).
+#    NOTE: forbidden ERE is plain 'store' — `store($|/)` never matched the trailing-quote
+#    import path, so the old dir scan was a silent no-op (fixed here after the B.2 move).
+scan_dir COPILOT_NO_DIRECT_REPO 'store' internal/drivers/copilot
+
+# 3b. Store-coupled AI generators/policy that REMAINED in internal/ai after the B.2
+#     driver move (business/classifier/policy_gate) — a DISTINCT known gap from the
+#     copilot driver: these are generators/policy that read business profile / comment
+#     policy from the store. Tracked separately so the taxonomy stays honest; the fix
+#     is to inject store-derived inputs rather than import store.
+scan_dir AI_STORE_COUPLED 'store' internal/ai
 
 # 4. outbound must stay vertical-neutral: no Facebook service, no copilot driver.
 scan_dir OUTBOUND_NO_FACEBOOK 'fburl|jobhandlers|leadingest|services/' internal/store/outbound
