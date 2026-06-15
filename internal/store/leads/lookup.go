@@ -56,6 +56,22 @@ func (s *Store) GetLeadByPostRef(ctx context.Context, orgID int64, postFBID, can
 	return oneLeadOrNil(row)
 }
 
+// GetPostLeadByRef finds the org-scoped POST lead (source_type='post') for a
+// canonical Facebook post — by post id OR canonical source_url. Unlike
+// GetLeadByPostRef it EXCLUDES commenter leads (source_type='comment'), which share
+// the same post_fbid/source_url: the direct-post intake continuation must resume on
+// the post author's lead, never on a commenter. Archived excluded; (nil, nil) when
+// no post lead exists. Deterministic order (created_at DESC, id DESC) on duplicates.
+func (s *Store) GetPostLeadByRef(ctx context.Context, orgID int64, postFBID, canonicalURL string) (*models.Lead, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+leadLookupColumns+` FROM leads l
+		 WHERE l.org_id = ? AND l.archived_at IS NULL AND l.source_type = 'post'
+		   AND ((? <> '' AND l.post_fbid = ?) OR (? <> '' AND l.source_url = ?))
+		 ORDER BY l.created_at DESC, l.id DESC LIMIT 1`,
+		orgID, postFBID, postFBID, canonicalURL, canonicalURL)
+	return oneLeadOrNil(row)
+}
+
 func oneLeadOrNil(row interface{ Scan(...any) error }) (*models.Lead, error) {
 	l, err := scanLeadRow(row)
 	if err == sql.ErrNoRows {

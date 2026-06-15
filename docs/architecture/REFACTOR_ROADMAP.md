@@ -185,11 +185,16 @@ a driver symbol, so `ai` does NOT import `copilot`.
 
 The features prototyped in the paused stack are RE-IMPLEMENTED here, correctly:
 
-- **H1 — Direct-comment unknown-post import continuation.** Re-do P1 on the outbox: a
-  `FacebookPostImported` event + a process manager in `services/facebook` with its own
-  continuation table (not `user_context`), idempotent by event id, working on BOTH
-  ingestion paths (connector + worker). Reuse the proven id-tolerant matching and the
-  `queueLeadOutreach` gates.
+- **H1 — Direct-post intake → comment continuation (durable).** Re-implemented as a
+  focused **process manager**, not the generic outbox (which would be overkill): a
+  `direct_post_comment_workflows` table + a DB-polling poller that observes the post
+  lead and queues the comment, idempotent via CAS + a two-key model (`intake_key` vs
+  `idempotency_key`). NO `user_context` KV, NO in-memory callback as source of truth.
+  Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`. **PR-1 (data foundation) DONE** —
+  migration `0022` + coordination store (CRUD + CAS/lease) + `GetPostLeadByRef` +
+  tests; no runtime behavior. **PR-2 (intake service + poller + Copilot ack) pending.**
+  Telegram stays the existing lead-created notification; a future outbox (Phase E)
+  hardens exactly-once delivery.
 - **H2 — Typo/multilingual NLU.** Port P2's guarded fuzzy verbs (`commend`/`cmt`,
   scope-gated) into the `drivers/copilot` intent layer. P2 is behavior-isolated and can
   largely cherry-pick once the driver boundary (Phase G) lands.

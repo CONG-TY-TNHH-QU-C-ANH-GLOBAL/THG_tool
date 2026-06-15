@@ -116,3 +116,56 @@ func TestGetLeadByPostRef_LegacyURLShapes(t *testing.T) {
 		t.Fatalf("documented limitation expected miss (no post_fbid + non-canonical URL), got %+v", miss)
 	}
 }
+
+// GetPostLeadByRef returns the POST lead only — never a commenter lead that shares
+// the same post ref — excludes archived, and is org-isolated.
+func TestGetPostLeadByRef(t *testing.T) {
+	ctx := context.Background()
+	dst := storetest.CopyTemplate(t, bootstrapLeadsStore, "leads_post_ref")
+	db, err := store.New(dst)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const orgID = int64(7)
+	const canonical = "https://www.facebook.com/groups/123/permalink/456/"
+
+	// A commenter lead sharing the same post_fbid/source_url (created first).
+	if _, err := db.Leads().InsertLead(&models.Lead{
+		OrgID: orgID, SourceType: "comment", SourceURL: canonical, SecondaryURL: canonical + "?comment_id=9",
+		PostFBID: "456", CommentFBID: "9", GroupFBID: "123", Platform: models.PlatformFacebook,
+		Author: "Commenter", Content: "tôi cũng làm dịch vụ này", Score: models.LeadWarm,
+	}); err != nil {
+		t.Fatalf("InsertLead commenter: %v", err)
+	}
+	// The post author's lead.
+	postID, err := db.Leads().InsertLead(&models.Lead{
+		OrgID: orgID, SourceType: "post", SourceURL: canonical, PostFBID: "456", GroupFBID: "123",
+		Platform: models.PlatformFacebook, Author: "An", Content: "ai làm fulfill US", Score: models.LeadHot,
+	})
+	if err != nil || postID <= 0 {
+		t.Fatalf("InsertLead post: id=%d err=%v", postID, err)
+	}
+
+	// Returns the POST lead, not the commenter.
+	got, err := db.Leads().GetPostLeadByRef(ctx, orgID, "456", canonical)
+	if err != nil || got == nil {
+		t.Fatalf("GetPostLeadByRef: got=%v err=%v", got, err)
+	}
+	if got.ID != postID || got.SourceType != "post" || got.Author != "An" {
+		t.Errorf("expected the post lead (id=%d author=An), got id=%d source=%s author=%s", postID, got.ID, got.SourceType, got.Author)
+	}
+
+	// Org isolation: a different org sees nothing.
+	if other, _ := db.Leads().GetPostLeadByRef(ctx, 8, "456", canonical); other != nil {
+		t.Errorf("org 8 must not see org 7's post lead, got %+v", other)
+	}
+
+	// Archived post lead is excluded.
+	if err := db.Leads().ArchiveLead(ctx, orgID, postID, "test"); err != nil {
+		t.Fatalf("ArchiveLead: %v", err)
+	}
+	if got, _ := db.Leads().GetPostLeadByRef(ctx, orgID, "456", canonical); got != nil {
+		t.Errorf("archived post lead must be excluded, got id=%d source=%s", got.ID, got.SourceType)
+	}
+}
