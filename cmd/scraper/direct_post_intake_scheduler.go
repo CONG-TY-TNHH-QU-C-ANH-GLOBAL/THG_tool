@@ -108,6 +108,15 @@ func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.
 			coordination.DPStatusImporting, "awaiting single-post import")
 		return
 	}
+	// P1.3B pre-comment invariant: a strict-canonical-matched lead can still be POISONED
+	// (foreign-group author / boilerplate content) — e.g. a pre-fix row, or any lead whose
+	// stored canonical URL was decoupled from its real content. Re-validate before queueing;
+	// a mismatch fails the workflow (lead_target_context_mismatch) and queues NO comment.
+	if reason, blocked := directPostLeadTargetMismatch(w, lead); blocked {
+		blockDirectPostComment(ctx, db, w, lead, reason)
+		return
+	}
+
 	// Lead exists → CAS to lead_created (idempotent: a racing poller that already
 	// advanced it makes this a clean no-op, so the comment is never queued twice).
 	if ok, _ := db.Coordination().MarkDirectPostLeadCreated(ctx, w.OrgID, w.ID, lead.ID); !ok {
