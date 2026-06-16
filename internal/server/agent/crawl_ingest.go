@@ -76,6 +76,7 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 	// neither, the connector returned nothing usable for the requested post and the workflow
 	// is failed deterministically below (no silent retry-forever loop).
 	dpValidObserved, dpFailed := false, false
+	dpFailureCode := ""
 	inserted, fetched := 0, 0
 	for _, item := range req.Items {
 		o := h.processConnectorCrawlItem(ctx, orgID, req.TaskID, item, deps, appStore, directPost)
@@ -93,6 +94,9 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 		}
 		if o.dpFailed {
 			dpFailed = true
+			if o.dpFailureCode != "" {
+				dpFailureCode = o.dpFailureCode
+			}
 		}
 	}
 
@@ -100,11 +104,15 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 	// produced no valid requested-post lead (and did not already fail on a poisoned item),
 	// fail the workflow deterministically with a typed reason instead of leaving the poller
 	// to retry until the generic lead_not_observed timeout. (CAS-guarded: stale/racing → no-op.)
+	// failDirectPostImport also surfaces the typed reason in the requester's Copilot history.
 	if code, fail := directPostImportFailureCode(dpValidObserved, dpFailed); fail && directPost != nil {
 		log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q expected_post_fbid=%q expected_group_ref=%q raw_items=%d — no valid observed item for requested post; failing workflow code=%s",
 			directPost.ID, req.TaskID, directPost.PostFBID, directPost.GroupRef, len(req.Items), code)
-		_, _ = h.db.Coordination().MarkDirectPostFailed(ctx, orgID, directPost.ID,
-			code, "import finished but the requested post was not observed")
+		dpFailureCode = code
+		h.failDirectPostImport(ctx, orgID, directPost, code, "import finished but the requested post was not observed")
+	}
+	if directPost != nil {
+		logDirectPostImportForensics(ctx, req, directPost, dpValidObserved, dpFailed || dpFailureCode != "", dpFailureCode)
 	}
 
 	_ = appStore.CompleteTask(ctx, req.TaskID, fetched, inserted)

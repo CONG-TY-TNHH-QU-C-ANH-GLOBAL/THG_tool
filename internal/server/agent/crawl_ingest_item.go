@@ -20,6 +20,7 @@ type connectorCrawlItemOutcome struct {
 	primaryURL      string
 	dpValidObserved bool
 	dpFailed        bool
+	dpFailureCode   string // typed terminal code when this item poisoned the workflow
 }
 
 // processConnectorCrawlItem runs the per-item ingest for one observed post. Behavior-identical
@@ -51,6 +52,7 @@ func (h *Handler) processConnectorCrawlItem(ctx context.Context, orgID int64, ta
 		eval := h.evaluateDirectPostCrawlItem(ctx, orgID, taskID, directPost, item, baseDeps, sourceURL, content)
 		out.dpValidObserved = eval.validObserved
 		out.dpFailed = eval.failedWorkflow
+		out.dpFailureCode = eval.failureCode
 		if eval.failedWorkflow {
 			return out // poisoned requested post — no lead/outbound, workflow already failed
 		}

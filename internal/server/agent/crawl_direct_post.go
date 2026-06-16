@@ -22,6 +22,7 @@ type directPostEval struct {
 	groupFBID      string
 	validObserved  bool
 	failedWorkflow bool
+	failureCode    string // typed terminal code set when failedWorkflow (for forensics)
 }
 
 // evaluateDirectPostCrawlItem runs the direct-post zero-trust validation for one observed item
@@ -70,8 +71,8 @@ func (h *Handler) evaluateDirectPostCrawlItem(ctx context.Context, orgID int64, 
 		// reason instead of poisoning a lead.
 		log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q requested_url=%q observed_source_url=%q observed_author=%q observed_author_profile_url=%q context_validation_result=failed context_mismatch_reason=%s observed_content_preview=%q",
 			wf.ID, taskID, wf.CanonicalPostURL, sourceURL, obs.AuthorName, obs.AuthorProfileURL, v.Reason, contentPreview(content))
-		_, _ = h.db.Coordination().MarkDirectPostFailed(ctx, orgID, wf.ID,
-			importContextMismatchCode(v.Reason), "direct-post import item failed context/content validation")
+		eval.failureCode = importContextMismatchCode(v.Reason)
+		h.failDirectPostImport(ctx, orgID, wf, eval.failureCode, "direct-post import item failed context/content validation")
 		eval.failedWorkflow = true
 	default:
 		// A different/neighbour post (identity not the requested one) — let normal market
