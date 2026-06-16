@@ -69,6 +69,15 @@ func pickReadyFacebookAccountID(accounts []models.Account) int64 {
 	return 0
 }
 
+// isRiskyDirectAccountAction reports whether an action must NOT silently first-ready-pick a
+// Facebook account (P1.3D). The direct-post single-comment flow resolves its account from
+// LIVE connector identity and fails closed downstream (commentSinglePost.guardDirectPostAccount),
+// so picking an arbitrary ready account here would run a comment from the wrong identity.
+// Scoped to the audited direct-post path; broad crawl / bulk fallback is unchanged.
+func isRiskyDirectAccountAction(action string) bool {
+	return action == "comment_single_post"
+}
+
 // businessCalibrationPreflight is a no-op kept for the two legacy call sites.
 // Crawl is no longer blocked by missing profile — instead, mergeEphemeralCrawlTargeting
 // derives target_author_role, target_signals, and negative_signals from the user's

@@ -307,6 +307,39 @@ The earlier note deferred send-time verification to a future PR; §8d.3 implemen
 half. Operational pause mechanism remains `systemctl stop thg-worker.service` (deploy keeps it
 stopped while `/opt/thg-scraper/.worker-hold` exists — see ci/deploy worker-hold).
 
+## 8e. Live-profile account invariant (P1.3D — selected vs live Chrome identity)
+
+P1.3C guaranteed `workflow.account == import == comment`, but NOT that this is the account
+the user's Chrome is actually logged into. Two gaps: the Copilot dropdown auto-selected by a
+cached session flag / first-array (ignoring `/connectors/status`), and the backend
+`pickReadyFacebookAccountID` fell back to the first-ready account by flags. So a comment could
+run, correctly and verified, **from the wrong Facebook identity** (e.g. "Thg Holding" while
+Chrome is "Anth Đức").
+
+Required invariant for explicit direct-post/comment:
+`active_connector_fb_identity → resolved_account == selected == workflow == import == comment`.
+
+**Backend (authoritative, fail-closed)** — `cmd/scraper/direct_post_account_guard.go`,
+`guardDirectPostAccount`, called first in `commentSinglePost`:
+
+- An explicit selection must be backed by a **live, identity-matched, ready** connector
+  (`connectors.PickReadyConnector(... acc.FBUserID ...) == ConnReady`); else block with a
+  typed Vietnamese reason (mismatch / offline / unknown / version).
+- No selection → resolve from live connectors, **confident only**: a UNIQUE online +
+  identity-matched + ready account (`liveReadyAccountIDs` via `GetAccountByFacebookIdentity`).
+  Zero → "chưa xác định"; multiple → "chọn rõ tài khoản". **Never first-ready.**
+- On block: return the message, create **NO** workflow / import / outbound.
+- The Copilot fast-path no longer first-ready-picks for `comment_single_post`
+  (`isRiskyDirectAccountAction`); broad crawl / bulk / post fallback is unchanged.
+
+**Frontend (UX)** — `WorkspaceChatView`: consults `GET /api/connectors/status`, auto-selects
+the UNIQUE live-matched account (`state === 'online'`), switches a stale selection to the live
+account (with a notice), shows a per-option live / wrong_account / offline / verifying badge,
+and warns when the chosen account is not live (the hard block stays server-side, so non-comment
+prompts like crawl are not disabled). Ambiguous/none → leaves "Auto" and the backend fail-closes.
+
+No schema change, no hardcoded account ids, reuses existing identity primitives.
+
 ## 9. Ownership & boundaries
 
 - `direct_post_comment_workflows` is owned by `internal/store/coordination` (process-

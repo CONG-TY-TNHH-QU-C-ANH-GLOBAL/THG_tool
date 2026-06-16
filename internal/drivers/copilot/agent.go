@@ -139,9 +139,13 @@ func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedA
 	if !ok || a.ActionHandler == nil {
 		return "", false
 	}
-	// Pick an account when the action requires a browser and the caller
-	// didn't already select one. Mirrors the brain path's behaviour.
-	if selectedAccountID == 0 && brainToolNeedsAccount(action) {
+	// Pick an account when the action requires a browser and the caller didn't already
+	// select one. Mirrors the brain path's behaviour — EXCEPT for risky explicit
+	// direct-post/comment actions (P1.3D): those must NOT first-ready-pick an account.
+	// They resolve the account from LIVE connector identity (and fail closed) downstream in
+	// commentSinglePost's guardDirectPostAccount, so leaving account_id unset here is
+	// correct — the wrong-account hazard is exactly the silent first-ready fallback.
+	if selectedAccountID == 0 && brainToolNeedsAccount(action) && !isRiskyDirectAccountAction(action) {
 		if picked := pickReadyFacebookAccountID(accounts); picked > 0 {
 			selectedAccountID = picked
 			args["account_id"] = picked
