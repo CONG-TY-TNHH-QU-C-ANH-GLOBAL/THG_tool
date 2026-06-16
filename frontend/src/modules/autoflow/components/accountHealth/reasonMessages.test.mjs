@@ -12,7 +12,7 @@ const ts = require('typescript');
 const src = readFileSync(new URL('./reasonMessages.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(src, { compilerOptions: { module: 'ES2020', target: 'ES2020' } }).outputText;
 const mod = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
-const { mapReason, pickPrimaryReason, overallStatus } = mod;
+const { mapReason, pickPrimaryReason, overallStatus, execState, accountExecState } = mod;
 
 const KNOWN = [
   'connector_offline', 'actor_identity_unknown', 'actor_mismatch_blocked',
@@ -53,5 +53,29 @@ assert.strictEqual(overallStatus([]).severity, 'ready');
 assert.strictEqual(overallStatus([]).label, 'Sẵn sàng');
 assert.strictEqual(overallStatus(['account_cooldown_active']).severity, 'waiting');
 assert.strictEqual(overallStatus(['connector_offline', 'account_cooldown_active']).severity, 'blocked');
+
+// P1.3E executability states: each exec_reason_code → the required Vietnamese label + severity.
+assert.strictEqual(execState('ready').label, 'Sẵn sàng');
+assert.strictEqual(execState('ready').severity, 'ready');
+assert.strictEqual(execState('no_connector').label, 'Chưa kết nối Chrome');
+assert.strictEqual(execState('no_connector').severity, 'blocked');
+assert.strictEqual(execState('connector_stale').label, 'Mất kết nối Chrome');
+assert.strictEqual(execState('pairing_pending').label, 'Đang chờ pair extension');
+assert.strictEqual(execState('identity_mismatch').label, 'Sai Facebook profile');
+assert.strictEqual(execState('session_blocked').label, 'Session bị chặn/checkpoint');
+assert.strictEqual(execState('account_blocked').label, 'Đang bị chặn');
+assert.strictEqual(execState('not_controllable').label, 'Bạn không có quyền dùng tài khoản này');
+assert.ok(!execState('not_controllable').label.includes('_'), 'exec label must not leak the raw code');
+// Unknown / passthrough (e.g. version) code → friendly fallback, never the raw code.
+assert.ok(!execState('extension_update_required').label.includes('_'));
+
+// accountExecState: green "Sẵn sàng" ONLY when executable === true.
+assert.strictEqual(accountExecState({ executable: true, exec_reason_code: 'ready' }).severity, 'ready');
+assert.strictEqual(accountExecState({ executable: true }).label, 'Sẵn sàng');
+// Not executable → never green, even if a stale exec_reason_code says 'ready'.
+assert.notStrictEqual(accountExecState({ executable: false, exec_reason_code: 'no_connector' }).severity, 'ready');
+assert.strictEqual(accountExecState({ executable: false, exec_reason_code: 'identity_mismatch' }).label, 'Sai Facebook profile');
+// Missing fields (old client) → safe not-ready default.
+assert.strictEqual(accountExecState({}).severity, 'blocked');
 
 console.log('Account Health reasonMessages: PASS');

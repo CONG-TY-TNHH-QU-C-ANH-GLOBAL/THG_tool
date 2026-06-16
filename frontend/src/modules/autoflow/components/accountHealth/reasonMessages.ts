@@ -152,3 +152,37 @@ export function overallStatus(allReasons: string[]): { severity: Severity; label
 export function severityLabel(s: Severity): string {
   return SEVERITY_LABEL[s];
 }
+
+// P1.3E account-level EXECUTABILITY states. The backend computes `executable` + a typed
+// `exec_reason_code` from the REQUESTER's OWN live connector (not org-wide). These drive the
+// green "Sẵn sàng" badge and the "Sẵn sàng" summary count strictly — green ONLY when executable.
+export interface ExecStateMessage extends ReasonBody {
+  label: string; // the headline badge label for this state
+}
+
+const EXEC_STATE: Record<string, ExecStateMessage> = {
+  ready: { label: 'Sẵn sàng', severity: 'ready', title: 'Sẵn sàng', description: 'Chrome của bạn đang online đúng tài khoản Facebook này.', action: '' },
+  no_connector: { label: 'Chưa kết nối Chrome', severity: 'blocked', title: 'Chưa kết nối Chrome', description: 'Tài khoản này chưa có Chrome (THG Connector) của bạn đang kết nối.', action: 'Mở Chrome profile của bạn, đăng nhập Facebook và ghép nối THG Connector.' },
+  connector_stale: { label: 'Mất kết nối Chrome', severity: 'blocked', title: 'Mất kết nối Chrome', description: 'Chrome đã từng kết nối nhưng hiện không còn nhịp tín hiệu (offline).', action: 'Mở lại Chrome profile và đảm bảo THG Connector đang bật.' },
+  pairing_pending: { label: 'Đang chờ pair extension', severity: 'warning', title: 'Đang chờ ghép nối extension', description: 'Chrome đang online nhưng chưa đăng nhập/ghép nối xong với tài khoản này.', action: 'Hoàn tất đăng nhập Facebook và nhập mã ghép nối trong extension.' },
+  identity_mismatch: { label: 'Sai Facebook profile', severity: 'blocked', title: 'Sai Facebook profile', description: 'Chrome đang đăng nhập một Facebook khác với tài khoản này.', action: 'Đăng nhập đúng Facebook cho tài khoản này trong Chrome profile.' },
+  session_blocked: { label: 'Session bị chặn/checkpoint', severity: 'blocked', title: 'Phiên Facebook bị chặn', description: 'Facebook đang ở checkpoint/login wall hoặc đã đăng xuất.', action: 'Mở Chrome, vượt checkpoint hoặc đăng nhập lại Facebook.' },
+  account_blocked: { label: 'Đang bị chặn', severity: 'blocked', title: 'Tài khoản đang bị chặn', description: 'Tài khoản đang bị tạm ngưng hoặc bị hệ thống chặn để bảo vệ.', action: 'Liên hệ admin hoặc chờ hệ thống mở lại.' },
+  not_controllable: { label: 'Bạn không có quyền dùng tài khoản này', severity: 'blocked', title: 'Không có quyền điều khiển', description: 'Bạn có thể xem nhưng không được điều khiển tài khoản này.', action: 'Dùng tài khoản Facebook do bạn kết nối, hoặc nhờ admin gán quyền.' },
+};
+
+// execState maps one exec_reason_code to its headline message. Unknown codes (e.g. version
+// codes the backend passes through) fall back to the existing reason map, never the raw code.
+export function execState(execReasonCode: string): ExecStateMessage {
+  const e = EXEC_STATE[execReasonCode];
+  if (e) return e;
+  const m = mapReason(execReasonCode || '');
+  return { label: SEVERITY_LABEL[m.severity], severity: m.severity, title: m.title, description: m.description, action: m.action };
+}
+
+// accountExecState is the account-level headline driven STRICTLY by `executable`. A green
+// "Sẵn sàng" appears only when executable === true; otherwise the typed not-executable state.
+export function accountExecState(account: { executable?: boolean; exec_reason_code?: string }): ExecStateMessage {
+  if (account.executable) return EXEC_STATE.ready;
+  return execState(account.exec_reason_code || 'no_connector');
+}
