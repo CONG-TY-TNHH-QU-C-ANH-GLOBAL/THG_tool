@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -52,7 +53,14 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "task_id and account_id are required"})
 	}
 
-	res, err := h.processConnectorCrawlResult(c.Context(), agentID, orgID, req)
+	// Hand the processor a STANDARD context, never the Fiber/fasthttp request ctx (c.Context()):
+	// the processor layer must not see framework types. c.UserContext() is a plain
+	// context.Context (non-nil empty when unset); the guard keeps it defensive.
+	ctx := c.UserContext()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	res, err := h.processConnectorCrawlResult(ctx, agentID, orgID, req)
 	if err != nil {
 		switch {
 		case errors.Is(err, errCrawlForbiddenAccount), errors.Is(err, errCrawlForbiddenStream):
