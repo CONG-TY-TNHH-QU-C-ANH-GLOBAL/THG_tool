@@ -91,6 +91,7 @@ func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.
 				decoy.ID, decoy.SourceURL, decoy.PostFBID, decoy.GroupFBID)
 			_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
 				coordination.DPErrIdentityMismatch, "post id matches but group/source context conflicts")
+			notifyDirectPostFailed(notify, w, coordination.DPErrIdentityMismatch)
 			return
 		}
 		// Import not visible yet. No job-status oracle → bounded retry with backoff,
@@ -98,14 +99,19 @@ func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.
 		now := time.Now().UTC()
 		if w.RetryCount >= coordination.DPMaxRetryCount {
 			// Honest terminal reason: we only observe the lead, not the job — so we say
-			// "lead not observed", NOT "import failed" (which we can't confirm).
+			// "lead not observed", NOT "import failed" (which we can't confirm). The ingest
+			// path (crawl-result) already converts a FINISHED-but-empty import to the more
+			// precise direct_post_import_no_observed_item; this covers the case where no
+			// result ever arrived (connector never ran / silent drop).
 			_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
 				coordination.DPErrLeadNotObserved, "post lead not observed after max retries")
+			notifyDirectPostFailed(notify, w, coordination.DPErrLeadNotObserved)
 			return
 		}
 		delay := coordination.DPBaseRetryDelay << uint(w.RetryCount)
 		_, _ = db.Coordination().ScheduleDirectPostRetry(ctx, w.OrgID, w.ID, now.Add(delay),
-			coordination.DPStatusImporting, "awaiting single-post import")
+			coordination.DPStatusImporting,
+			fmt.Sprintf("awaiting single-post import (account=%d attempt=%d/%d)", w.AccountID, w.RetryCount+1, coordination.DPMaxRetryCount))
 		return
 	}
 	// P1.3B pre-comment invariant: a strict-canonical-matched lead can still be POISONED
@@ -114,6 +120,7 @@ func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.
 	// a mismatch fails the workflow (lead_target_context_mismatch) and queues NO comment.
 	if reason, blocked := directPostLeadTargetMismatch(w, lead); blocked {
 		blockDirectPostComment(ctx, db, w, lead, reason)
+		notifyDirectPostFailed(notify, w, coordination.DPErrLeadTargetMismatch)
 		return
 	}
 
