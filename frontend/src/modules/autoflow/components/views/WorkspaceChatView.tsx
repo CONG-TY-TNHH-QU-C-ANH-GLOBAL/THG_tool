@@ -11,8 +11,29 @@ import {
   type AgentChatHistoryItem,
 } from '../../services/agentChatService';
 import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
+import { getConnectorStatus, type ConnectorAccountStatus } from '../../services/connectorService';
 import MissionCard from '../missions/MissionCard';
 import { useLang } from '../../i18n/useLang';
+
+// P1.3D live-profile reconciliation: the Copilot account selector must reflect the LIVE
+// Chrome connector identity (GET /api/connectors/status), not just the cached
+// /browser/workspaces session snapshot. A short label per state lets the user see whether
+// the chosen account is the one actually logged into Chrome right now.
+function connectorStateLabel(state?: ConnectorAccountStatus['state']): string {
+  switch (state) {
+    case 'online':
+      return '● live';
+    case 'wrong_account':
+      return '⚠ sai tài khoản FB';
+    case 'logged_out':
+      return '○ chưa đăng nhập';
+    case 'offline':
+    case 'no_connector':
+      return '○ offline';
+    default:
+      return '… đang xác minh';
+  }
+}
 
 interface WorkspaceChatViewProps {
   orgId: string;
@@ -95,6 +116,7 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const { workspaces, refresh } = useWorkspaces();
   const [accountId, setAccountId] = useState<number | ''>('');
+  const [connectorStatuses, setConnectorStatuses] = useState<ConnectorAccountStatus[]>([]);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [crawlIntents, setCrawlIntents] = useState<CrawlIntent[]>([]);
@@ -112,6 +134,29 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   );
   const selectedAccount = activeAccounts.find((workspace) => workspace.accountId === accountId);
   const enabledIntents = crawlIntents.filter((intent) => intent.enabled);
+
+  // Live connector identity, keyed by account. state === 'online' means the bound account's
+  // fb_user_id matches what Chrome is CURRENTLY logged into (the authoritative live identity).
+  const statusByAccount = useMemo(() => {
+    const m = new Map<number, ConnectorAccountStatus>();
+    for (const s of connectorStatuses) m.set(s.account_id, s);
+    return m;
+  }, [connectorStatuses]);
+  const liveMatches = useMemo(
+    () => connectorStatuses.filter((s) => s.state === 'online'),
+    [connectorStatuses],
+  );
+  const selectedStatus = accountId === '' ? undefined : statusByAccount.get(Number(accountId));
+
+  const appendSystemMessage = useCallback(
+    (text: string) => {
+      setMessages((prev) => [
+        ...prev,
+        { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: false },
+      ]);
+    },
+    [locale],
+  );
 
   const loadCrawlIntents = useCallback(async () => {
     setLoadingIntents(true);
@@ -135,11 +180,51 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
     }
   }, [locale]);
 
+  // Poll live connector identity/status (separate from the workspaces session snapshot).
   useEffect(() => {
-    if (accountId !== '' || activeAccounts.length === 0) return;
-    const loggedIn = activeAccounts.find((workspace) => workspace.loggedIn);
-    setAccountId((loggedIn ?? activeAccounts[0]).accountId);
-  }, [accountId, activeAccounts]);
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await getConnectorStatus();
+        if (alive) setConnectorStatuses(res.accounts ?? []);
+      } catch {
+        if (alive) setConnectorStatuses([]);
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 10000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  // Auto-select from the LIVE connector identity (P1.3D), not the cached session flag /
+  // first-array. Only when exactly ONE account is live-matched (state === 'online') do we
+  // auto-pick it; with zero or multiple live identities we leave "Auto" so the user picks
+  // explicitly — and the backend fail-closes for direct-post if it cannot resolve confidently.
+  useEffect(() => {
+    if (accountId !== '') return;
+    if (liveMatches.length === 1) {
+      setAccountId(liveMatches[0].account_id);
+    }
+  }, [accountId, liveMatches]);
+
+  // Stale selection vs live identity: if the chosen account is NOT the one Chrome is logged
+  // into, and exactly one other account IS live, switch to it and notify (live wins — never
+  // silently keep the stale account).
+  useEffect(() => {
+    if (accountId === '') return;
+    const sel = statusByAccount.get(Number(accountId));
+    if (sel && sel.state === 'online') return; // already the live one
+    if (liveMatches.length === 1 && liveMatches[0].account_id !== accountId) {
+      const live = liveMatches[0];
+      setAccountId(live.account_id);
+      appendSystemMessage(
+        `Đã chuyển sang tài khoản đang đăng nhập trong Chrome: ${live.account_fb_display_name || live.account_name}.`,
+      );
+    }
+  }, [accountId, liveMatches, statusByAccount]);
 
   useEffect(() => {
     void loadHistory();
@@ -167,13 +252,6 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
-
-  const appendSystemMessage = (text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: false },
-    ]);
-  };
 
   const handleSend = async () => {
     const text = draft.trim();
@@ -368,10 +446,29 @@ export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
               <option value="">{tv.accountAuto}</option>
               {activeAccounts.map((workspace) => (
                 <option key={workspace.accountId} value={workspace.accountId}>
-                  {workspace.accountName} | {workspaceIdentityLabel(workspace)}
+                  {workspace.accountName} | {workspaceIdentityLabel(workspace)} {connectorStateLabel(statusByAccount.get(workspace.accountId)?.state)}
                 </option>
               ))}
             </select>
+
+            {/* P1.3D live-identity status: warn when the chosen account is NOT the one Chrome
+                is currently logged into (direct comment/post is fail-closed server-side until
+                it is), or when no/ambiguous live identity requires an explicit pick. */}
+            {accountId !== '' && selectedStatus && selectedStatus.state !== 'online' && (
+              <div className="banner" style={{ marginTop: 12, fontSize: 12, color: 'var(--hot)' }}>
+                Tài khoản đã chọn {connectorStateLabel(selectedStatus.state)} — lệnh comment/đăng bài trực tiếp sẽ bị chặn cho đến khi đúng tài khoản đang đăng nhập trong Chrome.
+              </div>
+            )}
+            {accountId === '' && liveMatches.length > 1 && (
+              <div className="banner" style={{ marginTop: 12, fontSize: 12 }}>
+                Có nhiều tài khoản Facebook đang online — hãy chọn rõ tài khoản để comment bài viết cụ thể.
+              </div>
+            )}
+            {accountId === '' && liveMatches.length === 0 && activeAccounts.length > 0 && (
+              <div className="banner" style={{ marginTop: 12, fontSize: 12 }}>
+                Đang xác minh tài khoản Facebook trong Chrome profile…
+              </div>
+            )}
 
             {activeAccounts.length === 0 && (
               <div className="banner" style={{ marginTop: 12, fontSize: 12 }}>

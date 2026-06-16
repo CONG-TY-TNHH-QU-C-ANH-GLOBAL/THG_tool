@@ -49,9 +49,11 @@ func bootstrapDirectStore(path string) error {
 	return db.Close()
 }
 
-// commentSinglePost: unknown post → scan-required; existing post → delegates to
-// the shared gates (reaches §5 readiness, since the seeded account has no ready
-// connector) — proving it does NOT bypass eligibility.
+// commentSinglePost: the P1.3D live-identity account guard fires FIRST. With no live Chrome
+// connector, BOTH the unknown-post and existing-post paths fail closed on the account
+// identity — proving no workflow/import/outbound is created when the live account is
+// unknown (the wrong-account hazard). Downstream delegation to the shared gates (when an
+// account IS resolved) is covered by direct_post_intake_test.go + queueLeadOutreach tests.
 func TestCommentSinglePost_Delegation(t *testing.T) {
 	ctx := context.Background()
 	dst := storetest.CopyTemplate(t, bootstrapDirectStore, "direct_link_comment")
@@ -76,27 +78,28 @@ func TestCommentSinglePost_Delegation(t *testing.T) {
 		t.Fatalf("InsertLead: %v", err)
 	}
 
-	// Unknown post with NO intake service wired (nil) → defensive legacy fallback.
-	// The production intake behavior is covered in direct_post_intake_test.go.
+	// Proven requester (user_id) but NO live Chrome connector → the account guard blocks BEFORE
+	// the lead lookup, for both an unknown post (no workflow/import created) ...
 	unknown, err := commentSinglePost(ctx, db, msgGen, map[string]any{
-		"org_id": orgID, "nl_prompt": "comment bài này https://www.facebook.com/groups/123/posts/999/",
+		"org_id": orgID, "user_id": int64(7),
+		"nl_prompt": "comment bài này https://www.facebook.com/groups/123/posts/999/",
 	}, nil, nil)
 	if err != nil {
 		t.Fatalf("unknown: %v", err)
 	}
-	if !strings.Contains(unknown, "chưa có trong hệ thống") {
-		t.Errorf("nil-intake fallback should ask to scan/import, got %q", unknown)
+	if !strings.Contains(unknown, "đăng nhập trong Chrome") {
+		t.Errorf("unknown post must fail closed on the live-account guard, got %q", unknown)
 	}
 
-	// Existing post → delegate to the shared gates; with no ready connector the
-	// §5 readiness gate blocks (proves the gates are reused, not bypassed).
+	// ... and an existing post (no outbound queued) — fail closed on the account identity.
 	found, err := commentSinglePost(ctx, db, msgGen, map[string]any{
-		"org_id": orgID, "nl_prompt": "comment bài này " + post,
+		"org_id": orgID, "user_id": int64(7),
+		"nl_prompt": "comment bài này " + post,
 	}, nil, nil)
 	if err != nil {
 		t.Fatalf("found: %v", err)
 	}
-	if !strings.Contains(found, "Facebook sẵn sàng") {
-		t.Errorf("existing post should reach the shared readiness gate, got %q", found)
+	if !strings.Contains(found, "đăng nhập trong Chrome") {
+		t.Errorf("existing post must fail closed on the live-account guard, got %q", found)
 	}
 }

@@ -107,6 +107,17 @@ func (a *Agent) dispatchToolCall(ctx context.Context, fnName string, args map[st
 	if a.ActionHandler == nil {
 		return "", fmt.Errorf("no executor available for %q", fnName)
 	}
+	// Thread caller identity into the legacy action args so the Facebook write guard /
+	// distributed-pool resolver can enforce requester ownership (PR-1). The deterministic
+	// fast-path already injects these; the LLM tool-call fallback did not, which would have
+	// left write actions org-scoped (user_id=0) on this route. Set them here so all routes
+	// carry the requester identity.
+	if userID > 0 {
+		args["user_id"] = userID
+	}
+	if role != "" {
+		args["user_role"] = role
+	}
 	return a.ActionHandler(fnName, args)
 }
 
@@ -139,9 +150,13 @@ func (a *Agent) runDeterministicFastPath(prompt, source string, orgID, selectedA
 	if !ok || a.ActionHandler == nil {
 		return "", false
 	}
-	// Pick an account when the action requires a browser and the caller
-	// didn't already select one. Mirrors the brain path's behaviour.
-	if selectedAccountID == 0 && brainToolNeedsAccount(action) {
+	// Pick an account when the action requires a browser and the caller didn't already
+	// select one. Mirrors the brain path's behaviour — EXCEPT for risky explicit
+	// direct-post/comment actions (P1.3D): those must NOT first-ready-pick an account.
+	// They resolve the account from LIVE connector identity (and fail closed) downstream in
+	// commentSinglePost's guardDirectPostAccount, so leaving account_id unset here is
+	// correct — the wrong-account hazard is exactly the silent first-ready fallback.
+	if selectedAccountID == 0 && brainToolNeedsAccount(action) && !isRiskyDirectAccountAction(action) {
 		if picked := pickReadyFacebookAccountID(accounts); picked > 0 {
 			selectedAccountID = picked
 			args["account_id"] = picked
@@ -236,8 +251,11 @@ func (a *Agent) ProcessPromptForOrgWithUser(ctx context.Context, prompt, source 
 	if requiresFacebookBrowser(prompt) {
 		mergeEphemeralCrawlTargeting(userContext, prompt)
 	}
-	// Load accounts for AI account mapping
-	accounts, _ := a.db.Identities().GetAllAccounts(orgID)
+	// Load accounts for AI account mapping. PR-1 context isolation: the action-planning
+	// context must contain ONLY the requester-controllable accounts (own + admin-visible
+	// unassigned) — never another member's account, even for a workspace admin. This is the
+	// SAME boundary the dropdown / presence board enforce. Legacy (userID==0) keeps org-wide.
+	accounts := a.accountsForActionPlanning(orgID, userID)
 
 	// Over-defensive-gating bug fix: when the prompt is self-sufficient
 	// (URL + crawl verb + max_items OR inferred target signals), bypass the

@@ -69,6 +69,23 @@ func pickReadyFacebookAccountID(accounts []models.Account) int64 {
 	return 0
 }
 
+// isRiskyDirectAccountAction reports whether an action is a Facebook WRITE action that must
+// NOT silently first-ready-pick an account (P1.3D). These resolve their account from LIVE
+// connector identity and fail closed downstream (guardFacebookWriteAccount), so picking an
+// arbitrary ready account here would run a comment/post/message from the wrong identity.
+// Broad read/crawl/search actions (scrape_group, scrape_comments, search_groups, recurring
+// crawl) are NOT listed — they create no public side effect and keep their fallback.
+func isRiskyDirectAccountAction(action string) bool {
+	switch action {
+	case "comment_single_post",
+		"auto_comment", "comment_all_leads",
+		"auto_inbox", "inbox_all_leads",
+		"create_job_post", "post_to_profile":
+		return true
+	}
+	return false
+}
+
 // businessCalibrationPreflight is a no-op kept for the two legacy call sites.
 // Crawl is no longer blocked by missing profile — instead, mergeEphemeralCrawlTargeting
 // derives target_author_role, target_signals, and negative_signals from the user's

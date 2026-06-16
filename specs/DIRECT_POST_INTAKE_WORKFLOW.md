@@ -307,6 +307,99 @@ The earlier note deferred send-time verification to a future PR; §8d.3 implemen
 half. Operational pause mechanism remains `systemctl stop thg-worker.service` (deploy keeps it
 stopped while `/opt/thg-scraper/.worker-hold` exists — see ci/deploy worker-hold).
 
+## 8e. Live-profile account invariant (P1.3D — selected vs live Chrome identity)
+
+P1.3C guaranteed `workflow.account == import == comment`, but NOT that this is the account
+the user's Chrome is actually logged into. Two gaps: the Copilot dropdown auto-selected by a
+cached session flag / first-array (ignoring `/connectors/status`), and the backend
+`pickReadyFacebookAccountID` fell back to the first-ready account by flags. So a comment could
+run, correctly and verified, **from the wrong Facebook identity** (e.g. "Thg Holding" while
+Chrome is "Anth Đức").
+
+Required invariant for explicit direct-post/comment:
+`active_connector_fb_identity → resolved_account == selected == workflow == import == comment`.
+
+**Backend (authoritative, fail-closed)** — `cmd/scraper/direct_post_account_guard.go`,
+`guardDirectPostAccount`, called first in `commentSinglePost`:
+
+- An explicit selection must be backed by a **live, identity-matched, ready** connector
+  (`connectors.PickReadyConnector(... acc.FBUserID ...) == ConnReady`); else block with a
+  typed Vietnamese reason (mismatch / offline / unknown / version).
+- No selection → resolve from live connectors, **confident only**: a UNIQUE online +
+  identity-matched + ready account (`liveReadyAccountIDs` via `GetAccountByFacebookIdentity`).
+  Zero → "chưa xác định"; multiple → "chọn rõ tài khoản". **Never first-ready.**
+- On block: return the message, create **NO** workflow / import / outbound / post job.
+- `guardFacebookWriteAccount` runs for **all Facebook WRITE actions** — `comment_single_post`,
+  `comment_all_leads`/`auto_comment`, `inbox_all_leads`/`auto_inbox`, `create_job_post`,
+  `post_to_profile` — and the Copilot fast-path no longer first-ready-picks for any of them
+  (`isRiskyDirectAccountAction`). Broad **read/crawl/search** actions (`scrape_group`,
+  `scrape_comments`, `search_groups`, recurring crawl) are **not** guarded and keep their
+  existing fallback (they create no public side effect). Follow-up: `scan_fanpage_inbox` /
+  `care_fanpage` are not yet wired to production handlers, so they are out of scope.
+
+**Frontend (UX)** — `WorkspaceChatView`: consults `GET /api/connectors/status`, auto-selects
+the UNIQUE live-matched account (`state === 'online'`), switches a stale selection to the live
+account (with a notice), shows a per-option live / wrong_account / offline / verifying badge,
+and warns when the chosen account is not live (the hard block stays server-side, so non-comment
+prompts like crawl are not disabled). Ambiguous/none → leaves "Auto" and the backend fail-closes.
+
+No schema change, no hardcoded account ids, reuses existing identity primitives.
+
+## 8f. Requester ownership/control + distributed pool (PR-1 + PR-2)
+
+§8e fixed wrong-*identity* but resolved over the **whole org** with no requester filter, so a
+member (or an admin) could auto-resolve / select **another member's** live account — a wrong-
+*owner* write. CONTROL is not VISIBILITY and not ROLE.
+
+**Control predicate (MVP)** — `cmd/scraper/facebook_account_scope.go`. A Facebook WRITE may run
+on an account only when **all** hold (decomposed so each fact is checked once):
+
+`connector.created_by == requester` (`controllableConnectors`) **AND**
+`connector.live_fb_user_id == account.fb_user_id` (`PickReadyConnector`) **AND**
+( `account.assigned_user_id == requester` **OR** ( `account.assigned_user_id == 0` **AND** the
+requester owns the live connector on it ) ) (`canRequesterControlAccount` — own or unassigned).
+
+`models.CanViewAccountDevice` (visibility) and admin **role** are deliberately **not** consulted:
+a member-owned account is never controllable by an admin; an unassigned account is controllable
+only via the requester's own live connector. **`requester <= 0` fails closed** for every write
+resolver (`msgDPRequesterRequired`) — no org-wide resolution; Telegram/legacy must first map its
+identity to a platform user. Org-scope survives only for read/crawl/system flows, which never
+reach these resolvers. Future shared-account control is a clean seam: a
+`facebook_account_authorizations(account_id, user_id, permission='control')` lookup ORs into
+`canRequesterControlAccount` without touching callers.
+
+- **Single-task** (`comment_single_post`, `create_job_post`, `post_to_profile`):
+  `resolveDirectPostAccount(db, org, selected, requesterUserID, role)` — one account; one own
+  live → auto-use, multiple own live → ask, **never** first-ready, **never** a member's account.
+  A brain/upstream pre-picked `account_id` the requester does not own is treated as a selection
+  and **blocked** (not silently honoured).
+- **Distributed pool** (`comment_all_leads`/`auto_comment`, `inbox_all_leads`/`auto_inbox`):
+  `runPooledOutreach` → `resolveControllablePool` = `live_matched ∩ requester_controllable`. Each
+  eligible account runs its own `queueLeadOutreach` (own outbound items, gated per-account by
+  readiness / coverage / risk / daily limits). Other members' live accounts are **silently
+  excluded** — never enlisted, never a reason to fail the whole action. Empty pool → fail closed.
+  This is **not** broadcast/seeding: no same-post fan-out, no persona content; per-account volume
+  stays bounded by the existing multi-actor coverage policy.
+
+**Pool duplicate-safety** — `runPooledOutreach` does NOT make every account blindly comment the
+same lead: each eligible account runs its own `queueLeadOutreach`, which applies the existing
+per-account multi-actor coverage gate (`EvaluateCoverage`, capped by `DefaultCoveragePolicy`),
+dedup (`action_policies` BlockOnPlanned/Executing + verified-success cooldown), risk ceiling and
+daily limits; the outbound `execution_id` CAS prevents duplicate side effects. One account's
+error is logged and reported per account — it does **not** abort the others.
+
+**LLM/Brain context isolation** — `internal/drivers/copilot/account_context.go`,
+`accountsForActionPlanning`: the action-planning account set is filtered to the requester's own
++ unassigned org accounts (the SAME account-side boundary the write guard enforces; role grants
+nothing), so the model never sees another member's `account_id` and cannot select/hallucinate it.
+`requester <= 0` returns the org-wide set for read/crawl only — every write fails closed at the
+guard. The LLM tool-call path now also threads `user_id`/`user_role` into legacy action args (the
+deterministic fast-path already did), so the write guard enforces ownership on every route.
+
+**Frontend** — `/browser/workspaces` and `/connectors/status` already filter by
+`CanViewAccountDevice`, so the Copilot account dropdown / live chips are already member-isolated;
+no FE change in this revision. No schema change, no destructive SQL, reuses existing primitives.
+
 ## 9. Ownership & boundaries
 
 - `direct_post_comment_workflows` is owned by `internal/store/coordination` (process-
