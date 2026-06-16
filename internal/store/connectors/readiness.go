@@ -76,6 +76,24 @@ func PickReadyConnector(conns []AgentToken, accountID int64, expectedFBUserID st
 	return 0, ConnOffline
 }
 
+// OwnedBy returns the connectors PAIRED BY (created_by) requesterUserID — the requester's own
+// Chrome connectors. PURE. requesterUserID <= 0 (unproven requester) owns nothing → empty,
+// so executability fails closed. Mirrors the P1.3D execution rule (connector.created_by ==
+// requester) so the readiness UI is scoped to the SAME connectors execution will actually use,
+// never an org-wide / another member's connector.
+func OwnedBy(conns []AgentToken, requesterUserID int64) []AgentToken {
+	if requesterUserID <= 0 {
+		return nil
+	}
+	out := make([]AgentToken, 0, len(conns))
+	for i := range conns {
+		if conns[i].CreatedBy == requesterUserID {
+			out = append(out, conns[i])
+		}
+	}
+	return out
+}
+
 // versionAtLeast compares dotted version strings numerically segment by segment
 // ("0.5.29.878" >= "0.5.26" → true). Missing trailing segments count as 0.
 func versionAtLeast(v, min string) bool {

@@ -94,6 +94,22 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		}
 		connReady := connReason == connectors.ConnReady
 		actorBlocked := actorStates[acc.ID].Blocked
+
+		// P1.3E requester-scoped executability: green "Sẵn sàng" must mean the REQUESTER can run
+		// now via their OWN live connector — never an org-wide / other member's connector. This is
+		// additive; capabilities[].can below stays the org-wide projection other UIs consume.
+		ex := resolveAccountExecutable(acc, connectors.OwnedBy(conns, userID), policy,
+			actorBlocked, acc.Status == models.AccountActive, userID)
+		ar.Configured = ex.configured
+		ar.ControlAllowed = ex.controlAllowed
+		ar.Paired = ex.paired
+		ar.ConnectorOnline = ex.connectorOnline
+		ar.HeartbeatFresh = ex.connectorOnline
+		ar.LiveIdentityMatched = ex.liveIdentityMatched
+		ar.SessionUsable = ex.sessionUsable
+		ar.Executable = ex.executable
+		ar.ExecReasonCode = ex.reasonCode
+		ar.ExecReasonMessage = execReasonMessage(ex.reasonCode)
 		for _, capName := range readinessCapabilities {
 			// Non-nil so JSON is `[]`, never `null` — a nil slice would marshal to
 			// null and crash the FE (`cap.reasons[0]`). Contract: reasons is always
