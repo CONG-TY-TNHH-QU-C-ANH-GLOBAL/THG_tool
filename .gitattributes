@@ -1,0 +1,5 @@
+# Deploy/runtime shell scripts execute on the Linux production host — they MUST
+# keep LF line endings regardless of contributor OS (a CRLF checkout would fail
+# with `$'\r': command not found`). Scoped narrowly to avoid renormalizing the
+# rest of the tree.
+scripts/deploy/*.sh text eol=lf
