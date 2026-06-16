@@ -102,21 +102,17 @@ func makeAgentActionHandler(db *store.Store, jobStore *jobs.Store, msgGen *ai.Me
 			searchURL := "https://www.facebook.com/search/groups/?q=" + url.QueryEscape(query)
 			return submitOpenCrawl(context.Background(), db, jobStore, "facebook_crawl", []jobs.Source{{Type: "facebook_search", URL: searchURL, Label: "group_search"}}, args)
 		case "auto_comment", "comment_all_leads":
-			// P1.3D Facebook write guard: resolve+verify the account from LIVE connector
-			// identity (fail closed; never first-ready) before queueing any comment.
-			if msg, blocked := guardFacebookWriteAccount(db, args); blocked {
-				return msg, nil
-			}
-			return queueLeadOutreach(context.Background(), db, msgGen, "comment", args, notify)
+			// PR-2 DISTRIBUTED pool: run on the requester-controllable live accounts
+			// (live ∩ owned). Other members' live accounts are silently excluded — never
+			// enlisted, never a reason to fail the whole action. Empty pool fails closed.
+			return runPooledOutreach(context.Background(), db, msgGen, "comment", args, notify)
 		case "comment_single_post":
 			// comment_single_post runs guardFacebookWriteAccount inside commentSinglePost
 			// (after URL resolution), so it is not double-guarded here.
 			return commentSinglePost(context.Background(), db, msgGen, args, notify, intake)
 		case "auto_inbox", "inbox_all_leads":
-			if msg, blocked := guardFacebookWriteAccount(db, args); blocked {
-				return msg, nil
-			}
-			return queueLeadOutreach(context.Background(), db, msgGen, "inbox", args, notify)
+			// PR-2 DISTRIBUTED pool: same ownership-filtered pool rule as comment.
+			return runPooledOutreach(context.Background(), db, msgGen, "inbox", args, notify)
 		case "create_job_post":
 			if msg, blocked := guardFacebookWriteAccount(db, args); blocked {
 				return msg, nil
