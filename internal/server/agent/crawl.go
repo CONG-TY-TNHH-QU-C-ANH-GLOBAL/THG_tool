@@ -153,6 +153,11 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	if directPost != nil && strings.TrimSpace(directPost.CanonicalPostURL) != "" {
 		primarySourceURL = strings.TrimSpace(directPost.CanonicalPostURL) // summary prefers requested URL
 	}
+	// P1.3C import-result bubbling: track whether THIS finished import produced a valid
+	// requested-post lead (dpValidObserved) or already failed the workflow (dpFailed). If
+	// neither, the connector returned nothing usable for the requested post and the workflow
+	// is failed deterministically below (no silent retry-forever loop).
+	dpValidObserved, dpFailed := false, false
 
 	for _, item := range body.Items {
 		content := strings.TrimSpace(item.Content)
@@ -186,6 +191,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 			id, v := validateDirectPostObservedItem(directPost, obs)
 			switch {
 			case v.Valid:
+				dpValidObserved = true
 				primaryURL = id.primaryURL
 				postFBID = id.postFBID
 				groupFBID = id.groupRef
@@ -205,6 +211,7 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 					directPost.ID, body.TaskID, directPost.CanonicalPostURL, sourceURL, obs.AuthorName, obs.AuthorProfileURL, v.Reason, contentPreview(content))
 				_, _ = h.db.Coordination().MarkDirectPostFailed(c.Context(), orgID, directPost.ID,
 					importContextMismatchCode(v.Reason), "direct-post import item failed context/content validation")
+				dpFailed = true
 				continue
 			default:
 				// A different/neighbour post (identity not the requested one) — let normal
@@ -247,6 +254,18 @@ func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 		if outcome.Inserted {
 			inserted++
 		}
+	}
+	// P1.3C: the import task FINISHED. If this was an explicit direct-post intake and it
+	// produced no valid requested-post lead (and did not already fail on a poisoned item),
+	// the connector returned nothing usable for the requested post — fail the workflow
+	// deterministically with a typed reason instead of leaving the poller to retry until the
+	// generic lead_not_observed timeout. (Best-effort + CAS-guarded: a stale/racing call is
+	// a clean no-op.)
+	if code, fail := directPostImportFailureCode(dpValidObserved, dpFailed); fail && directPost != nil {
+		log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q expected_post_fbid=%q expected_group_ref=%q raw_items=%d — no valid observed item for requested post; failing workflow code=%s",
+			directPost.ID, body.TaskID, directPost.PostFBID, directPost.GroupRef, len(body.Items), code)
+		_, _ = h.db.Coordination().MarkDirectPostFailed(c.Context(), orgID, directPost.ID,
+			code, "import finished but the requested post was not observed")
 	}
 	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
 	// PR-CRAWL1 forensic: when a crawl yields suspiciously few raw posts, log the

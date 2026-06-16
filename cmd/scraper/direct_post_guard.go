@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -38,6 +39,32 @@ func blockDirectPostComment(ctx context.Context, db *store.Store, w *coordinatio
 		w.OrgID, w.ID, lead.ID, w.CanonicalPostURL, w.GroupRef, lead.SourceURL, lead.Author, lead.AuthorURL, directPostContentPreview(lead.Content), reason)
 	_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
 		coordination.DPErrLeadTargetMismatch, "lead content/context conflicts with requested target")
+}
+
+// directPostFailureReasons maps a typed workflow error_code to a short, honest Vietnamese
+// explanation the requester sees (P1.3C — no overpromise, clear failed reason). Unknown
+// codes degrade to a generic verification-failed message rather than silence.
+var directPostFailureReasons = map[string]string{
+	coordination.DPErrIdentityMismatch:          "bài viết tìm thấy không khớp đúng bài/nhóm bạn yêu cầu",
+	coordination.DPErrLeadTargetMismatch:        "nội dung/ngữ cảnh bài viết không khớp mục tiêu — không comment để tránh sai bài",
+	coordination.DPErrImportNoObservedItem:      "không đọc được đúng bài viết bạn yêu cầu (có thể tài khoản chưa ở trong nhóm hoặc bài không hiển thị)",
+	coordination.DPErrImportGroupMismatch:       "bài đọc được thuộc nhóm/trang khác với yêu cầu",
+	coordination.DPErrImportBoilerplateContent:  "không trích xuất được nội dung bài viết hợp lệ",
+	coordination.DPErrImportNoMeaningfulContent: "bài viết không có nội dung đủ để comment",
+	coordination.DPErrLeadNotObserved:           "chưa quan sát được bài viết sau nhiều lần thử",
+}
+
+// notifyDirectPostFailed sends one honest, secret-free failure line to the requester when a
+// direct-post workflow reaches a terminal failure. Best-effort: nil notify is a no-op.
+func notifyDirectPostFailed(notify func(string), w *coordination.DirectPostCommentWorkflow, code string) {
+	if notify == nil {
+		return
+	}
+	reason := directPostFailureReasons[code]
+	if reason == "" {
+		reason = "không xác minh được bài viết/ngữ cảnh"
+	}
+	notify(fmt.Sprintf("⚠️ Không thể comment bài %s — %s (mã: %s).", w.CanonicalPostURL, reason, code))
 }
 
 // directPostContentPreview returns a short, single-line, secret-free content snippet.

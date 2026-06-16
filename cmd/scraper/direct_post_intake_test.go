@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/store"
@@ -13,6 +14,24 @@ import (
 
 const intakeCanonical = "https://www.facebook.com/groups/ship.viet.my/permalink/4504452536547584/"
 const intakePostFBID = "4504452536547584"
+
+// seedDispatchableSession makes the P1.3C account-pinned import dispatchable in tests: the
+// import is now pinned to the action account, so submitConnectorCrawl needs a usable session
+// for that account to fall through to the worker queue (routed=false). In production the
+// action account is online; here we seed an idle CDP session per account.
+func seedDispatchableSession(t *testing.T, db *store.Store, orgID, accountID int64) {
+	t.Helper()
+	appStore, err := store.NewAppStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appStore.UpsertSession(context.Background(), store.BrowserSession{
+		AccountID: accountID, OrgID: orgID, Status: "idle", CDPPort: 9222,
+		StartedAt: time.Now().UTC(), LastActiveAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newIntakeDB(t *testing.T) *store.Store {
 	t.Helper()
@@ -59,6 +78,7 @@ func TestDirectPostIntake_UnknownPost(t *testing.T) {
 	db, js := newIntakeEnv(t)
 	intake := newDirectPostIntake(db, js)
 	const org, user, acct int64 = 7, 99, 3
+	seedDispatchableSession(t, db, org, acct)
 
 	msg, err := intake.request(ctx, directPostCommentInput{
 		OrgID: org, RequestedByUserID: user, AccountID: acct, UserRole: "sales",
@@ -67,7 +87,7 @@ func TestDirectPostIntake_UnknownPost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(msg, "tự động comment") || strings.Contains(msg, "Hãy quét/import") {
+	if !strings.Contains(msg, "CHỈ comment nếu xác minh") || strings.Contains(msg, "Hãy quét/import") {
 		t.Errorf("unknown post must return the async intake ack, got %q", msg)
 	}
 	w, _ := db.Coordination().GetDirectPostCommentWorkflowByIdempotencyKey(ctx, org,
@@ -86,6 +106,8 @@ func TestDirectPostIntake_MultiActorSharesImport(t *testing.T) {
 	db, js := newIntakeEnv(t)
 	intake := newDirectPostIntake(db, js)
 	const org int64 = 7
+	seedDispatchableSession(t, db, org, 3)
+	seedDispatchableSession(t, db, org, 5)
 	base := directPostCommentInput{OrgID: org, UserRole: "sales", CanonicalPostURL: intakeCanonical, PostFBID: intakePostFBID, Prompt: "comment bài này"}
 
 	a := base
@@ -117,6 +139,7 @@ func TestDirectPostIntake_IdempotentRepeat(t *testing.T) {
 	ctx := context.Background()
 	db, js := newIntakeEnv(t)
 	intake := newDirectPostIntake(db, js)
+	seedDispatchableSession(t, db, 7, 3)
 	in := directPostCommentInput{OrgID: 7, RequestedByUserID: 99, AccountID: 3, UserRole: "sales", CanonicalPostURL: intakeCanonical, PostFBID: intakePostFBID, Prompt: "comment bài này"}
 	if _, err := intake.request(ctx, in); err != nil {
 		t.Fatal(err)
@@ -135,6 +158,7 @@ func TestDirectPostIntake_ReRequestAfterFailed(t *testing.T) {
 	ctx := context.Background()
 	db, js := newIntakeEnv(t)
 	intake := newDirectPostIntake(db, js)
+	seedDispatchableSession(t, db, 7, 3)
 	in := directPostCommentInput{OrgID: 7, RequestedByUserID: 99, AccountID: 3, UserRole: "sales", CanonicalPostURL: intakeCanonical, PostFBID: intakePostFBID, Prompt: "comment bài này"}
 	if _, err := intake.request(ctx, in); err != nil {
 		t.Fatal(err)

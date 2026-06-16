@@ -58,6 +58,7 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	group.Get("/connectors/outbox", h.agentAuth, h.agentGetOutbox)
 	group.Post("/connectors/outbox/:id/sent", h.agentAuth, h.agentOutboxSent)
 	group.Post("/connectors/outbox/:id/failed", h.agentAuth, h.agentOutboxFailed)
+	group.Post("/connectors/outbox/:id/pre-submit-verify", h.agentAuth, h.agentOutboxPreSubmitVerify) // Layer C (P1.3C)
 	// Forget Device: the extension releases its own binding before wiping
 	// local storage, so the Chrome profile becomes re-pairable by anyone.
 	group.Post("/connectors/self/disconnect", h.agentAuth, h.agentSelfDisconnect)
@@ -74,6 +75,7 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	agentGrp.Get("/outbox", h.agentGetOutbox)
 	agentGrp.Post("/outbox/:id/sent", h.agentOutboxSent)
 	agentGrp.Post("/outbox/:id/failed", h.agentOutboxFailed)
+	agentGrp.Post("/outbox/:id/pre-submit-verify", h.agentOutboxPreSubmitVerify) // Layer C (P1.3C)
 	// Async comment reverify (spec: specs/COMMENT_ASYNC_REVERIFY.md).
 	agentGrp.Get("/reverify/claim", h.agentReverifyClaim)
 	agentGrp.Post("/reverify/result", h.agentReverifyResult)

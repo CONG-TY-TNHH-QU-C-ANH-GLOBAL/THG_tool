@@ -253,16 +253,59 @@ split is now observable: `enqueueSinglePostImport` logs
 > `import_account_id` on `direct_post_comment_workflows`. Requires an account-routing
 > decision + (for the column) a migration, so it is deferred from this safety hotfix.
 
-### P1.3C — send-time visual verification (NEXT REQUIRED PR, not in this hotfix)
+## 8d. Reliability + final pre-submit safety (P1.3C)
 
-Backend containment (A+B) cannot see what the browser renders. P1.3C must add a **pre-submit**
-check in the connector/executor: before clicking Send, verify the *currently visible* target
-(URL / post id / group / page / author) matches the expected target; on mismatch or unknown,
-**abort before Send**, keep the tab open for inspection, and report a typed reason
-(`context_mismatch` / `human_required`). It must never submit first and label it
-`submitted_unverified`. No existing lightweight pre-submit backend hook can do this without a
-browser/extension change, so it is deferred to its own PR. Operational pause until then:
-`systemctl stop thg-worker.service`.
+P1.3 A+B stopped wrong comments but a smoke (workflow #5) then imported nothing and looped
+in `retry_scheduled/importing` — a FUNCTIONAL fail. Logs showed the import ran on a different
+account (#50) than the action/comment account (#49). P1.3C fixes routing + bubbling and adds
+the final browser-side guard.
+
+**1. Account routing consistency.** The single-post import is now PINNED to the action
+account (`directPostImportArgs` sets `account_id = workflow.account_id`); `submitOpenCrawl` no
+longer auto-picks a different connector account for an explicit direct-post command. The read
+happens from the same viewpoint that will comment (an import account that is not a group
+member is a likely cause of wrong/empty extraction). No silent cross-account fallback — fail
+closed. Structured log: `action_account`, `import_account`, `account_pinned`, `workflow_id`,
+`org_id`, `import_task_id`, `expected_post_fbid`, `expected_group_ref`, `canonical`.
+
+**2. Import error bubbling (no silent retry-forever).** The ingest path now fails the workflow
+deterministically with a typed code when a FINISHED import yields nothing usable, instead of
+looping to the generic `lead_not_observed` timeout. Codes (`internal/store/coordination/
+direct_post_errors.go`): `direct_post_import_no_observed_item` (finished, requested post never
+observed), `direct_post_import_group_mismatch`, `direct_post_import_boilerplate_content`,
+`direct_post_import_rejected_by_guard` (identity-matched item rejected by the P1.3A guard),
+plus `direct_post_import_no_meaningful_content`, `direct_post_import_post_id_missing`,
+`direct_post_import_post_id_mismatch`, `direct_post_import_account_mismatch` (reserved for
+detection/diagnostics). The poller still owns `lead_not_observed_after_retries` for the case
+where no result ever arrives. Retry messages now carry account + attempt counters.
+
+**3. Layer C — browser pre-submit verification.** New `POST
+/api/agent/outbox/:id/pre-submit-verify` (+ `/api/connectors/...`): the executor calls it
+AFTER navigating but BEFORE typing/Send, reporting the live `current_post_fbid` /
+`current_story_fbid` / `current_group_ref` / `current_url` / `author_snippet`. The backend
+runs the pure `directpost.VerifyBrowserContext` (evidence priority: post id → group → URL →
+author) and returns `{allowed, reason}`. On `allowed=false` the executor MUST abort before
+Send and report via the existing `/failed` callback with the reason; the backend never posts
+a wrong comment. Typed reasons: `browser_post_id_missing`, `browser_post_id_mismatch`,
+`browser_group_mismatch`, `browser_context_mismatch`. The endpoint is a side-effect-free
+verification oracle; the terminal transition stays owned by `/failed`. It composes with the
+existing POST-submit `EnforceTargetIdentity` backstop (downgrades to `context_drift`).
+
+> **Remaining extension work (P1.3C-ext):** the Chrome extension must be updated to CALL the
+> pre-submit endpoint after navigation and ABORT on `allowed=false` (keep the tab open, no
+> blind submit). The backend half (endpoint + verifier + reasons) ships here; until the
+> extension calls it, the post-submit `EnforceTargetIdentity` backstop still applies.
+
+**4. Messaging.** The intake ack no longer overpromises an automatic comment — it says the
+system will import and comment ONLY if it verifies the right post/context, else report the
+reason. Terminal failures now notify the requester with the honest typed reason
+(`notifyDirectPostFailed`).
+
+### P1.3C send-time history (superseded by §8d.3)
+
+The earlier note deferred send-time verification to a future PR; §8d.3 implements the backend
+half. Operational pause mechanism remains `systemctl stop thg-worker.service` (deploy keeps it
+stopped while `/opt/thg-scraper/.worker-hold` exists — see ci/deploy worker-hold).
 
 ## 9. Ownership & boundaries
 

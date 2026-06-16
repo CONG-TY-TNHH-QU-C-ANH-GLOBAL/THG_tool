@@ -19,9 +19,11 @@ import (
 // ingest + outbound paths; the poller (direct_post_intake_scheduler.go) drives the
 // continuation. Copilot owns none of this persistence.
 
-// directPostIntakeAck is the async acknowledgement for an unknown post — promised
-// ONLY because a durable workflow + single-post import are actually created here.
-const directPostIntakeAck = "Đã nhận bài viết này. Mình sẽ đưa bài viết vào leads của workspace, đọc nội dung và tự động comment khi đủ dữ liệu."
+// directPostIntakeAck is the async acknowledgement for an unknown post. It does NOT
+// promise an automatic comment (P1.3C): the comment only happens if the import positively
+// verifies the requested post + context. Overpromising "will auto-comment" was wrong — a
+// failed verification must surface honestly via the workflow's typed error_code.
+const directPostIntakeAck = "Đã nhận bài viết. Mình sẽ import và CHỈ comment nếu xác minh đúng bài viết và đúng context. Nếu không xác minh được, mình sẽ báo lý do thay vì comment sai."
 
 type directPostIntake struct {
 	db       *store.Store
@@ -85,7 +87,7 @@ func (s *directPostIntake) request(ctx context.Context, in directPostCommentInpu
 		// Enqueue exactly one single-post import (facebook_post, max_items=1). If it
 		// cannot be dispatched, leave the workflow in 'requested' so the poller/user
 		// can retry, and still ack honestly (we accepted the post).
-		newTask, derr := s.enqueueSinglePostImport(ctx, in)
+		newTask, derr := s.enqueueSinglePostImport(ctx, in, w.ID)
 		if derr != nil {
 			return directPostIntakeAck, nil
 		}
@@ -95,15 +97,11 @@ func (s *directPostIntake) request(ctx context.Context, in directPostCommentInpu
 	return directPostIntakeAck, nil
 }
 
-// enqueueSinglePostImport submits ONE facebook_post crawl (max_items=1) and returns
-// the deterministic task id it was filed under. The task id is recomputed AFTER
-// submitOpenCrawl so it reflects the auto-picked account (submitOpenCrawl mutates
-// args), matching the actual job for correlation/dedup.
-func (s *directPostIntake) enqueueSinglePostImport(ctx context.Context, in directPostCommentInput) (string, error) {
-	// NOTE: account_id is deliberately NOT pinned. The import only needs to READ the
-	// post, so submitOpenCrawl auto-picks any ready connector (or falls back to the
-	// worker queue) instead of hard-failing when the actor's own connector is offline.
-	// The actor's account_id is used later for the COMMENT (workflow.account_id).
+// directPostImportArgs builds the single-post crawl args, PINNING the import to the action
+// account (workflow.account_id) when present so the read happens from the same viewpoint
+// that will comment. When AccountID is absent we leave account_id unset (the caller logs a
+// warning); we never substitute a different account for an explicit direct-post command.
+func directPostImportArgs(in directPostCommentInput) map[string]any {
 	args := map[string]any{
 		"org_id":      in.OrgID,
 		"user_id":     in.RequestedByUserID,
@@ -111,17 +109,42 @@ func (s *directPostIntake) enqueueSinglePostImport(ctx context.Context, in direc
 		"max_items":   int64(1), // exactly this one post — never a broad crawl
 		"user_prompt": in.Prompt,
 	}
+	if in.AccountID > 0 {
+		args["account_id"] = in.AccountID // PIN — no cross-account auto-pick
+	}
+	return args
+}
+
+// enqueueSinglePostImport submits ONE facebook_post crawl (max_items=1) and returns
+// the deterministic task id it was filed under.
+//
+// P1.3C account routing: the import is PINNED to the action account (workflow.account_id)
+// — the same account that will post the comment. The earlier design left account_id unset
+// and let submitOpenCrawl auto-pick ANY ready connector, which let the import run on a
+// different account (#50) than the comment (#49); if that import account is not a member of
+// the target group, Facebook serves a wrong/unavailable post and the explicit intake either
+// imports the wrong content or nothing. Pinning makes the read happen from the SAME
+// viewpoint that will act. We do NOT silently fall back to another account for an explicit
+// direct-post command (fail closed): if the action account's connector cannot run the
+// import, submitOpenCrawl returns an error and the workflow surfaces it rather than reading
+// the post through a stranger's session.
+func (s *directPostIntake) enqueueSinglePostImport(ctx context.Context, in directPostCommentInput, workflowID int64) (string, error) {
+	args := directPostImportArgs(in)
+	if in.AccountID <= 0 {
+		log.Printf("[DirectPostIntake] WARN org=%d wf=%d no action account on workflow; import cannot be account-pinned canonical=%q",
+			in.OrgID, workflowID, in.CanonicalPostURL)
+	}
 	sources := []jobs.Source{{Type: "facebook_post", URL: in.CanonicalPostURL, Label: "direct_post_intake"}}
 	if _, err := submitOpenCrawl(ctx, s.db, s.jobStore, "facebook_crawl", sources, args); err != nil {
 		return "", err
 	}
 	taskID := openCrawlTaskID("facebook_crawl", sources, args)
-	// Correlation diagnostics: submitOpenCrawl mutates args["account_id"] with the
-	// auto-picked READ connector, while the COMMENT later uses the action account
-	// (workflow.account_id). Log both so a "import ran on #50, comment on #49" split is
-	// diagnosable in one line. Follow-up (spec §8c): pin to the action account or persist
-	// import_account_id on the workflow.
-	log.Printf("[DirectPostIntake] single-post import enqueued org=%d action_account=%d import_account=%d import_task_id=%q canonical=%q",
-		in.OrgID, in.AccountID, argInt64(args, "account_id"), taskID, in.CanonicalPostURL)
+	importAccount := argInt64(args, "account_id")
+	// Structured correlation log. action_account == import_account is now the invariant for
+	// explicit direct-post; a divergence here is a bug to investigate (see error code
+	// direct_post_import_account_mismatch).
+	log.Printf("[DirectPostIntake] single-post import enqueued org=%d wf=%d action_account=%d import_account=%d account_pinned=%t import_task_id=%q expected_post_fbid=%q expected_group_ref=%q canonical=%q",
+		in.OrgID, workflowID, in.AccountID, importAccount, in.AccountID > 0 && importAccount == in.AccountID,
+		taskID, in.PostFBID, in.GroupRef, in.CanonicalPostURL)
 	return taskID, nil
 }

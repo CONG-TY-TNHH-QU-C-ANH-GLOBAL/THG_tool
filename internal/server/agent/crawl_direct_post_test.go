@@ -72,8 +72,40 @@ func TestValidateDirectPostObservedItem_GroupConflict(t *testing.T) {
 	if id.primaryURL != "" {
 		t.Errorf("no canonical stamp on a poisoned item, got %q", id.primaryURL)
 	}
-	if got := importContextMismatchCode(v.Reason); got != coordination.DPErrImportedItemContextMismatch {
-		t.Errorf("group conflict must map to imported_item_context_mismatch, got %q", got)
+	if got := importContextMismatchCode(v.Reason); got != coordination.DPErrImportGroupMismatch {
+		t.Errorf("group conflict must map to direct_post_import_group_mismatch, got %q", got)
+	}
+}
+
+// C — granular import error-code mapping for an identity-matched-but-poisoned item.
+func TestImportContextMismatchCode(t *testing.T) {
+	if got := importContextMismatchCode(directpost.ReasonGroupConflict); got != coordination.DPErrImportGroupMismatch {
+		t.Errorf("group conflict → %q, want %q", got, coordination.DPErrImportGroupMismatch)
+	}
+	if got := importContextMismatchCode(directpost.ReasonContentInvalid); got != coordination.DPErrImportBoilerplateContent {
+		t.Errorf("content invalid → %q, want %q", got, coordination.DPErrImportBoilerplateContent)
+	}
+	if got := importContextMismatchCode("anything_else"); got != coordination.DPErrImportRejectedByGuard {
+		t.Errorf("unknown → %q, want %q", got, coordination.DPErrImportRejectedByGuard)
+	}
+}
+
+// D — a FINISHED import with no valid observed item (and no item-level failure) fails the
+// workflow deterministically with no_observed_item, instead of silent retry-forever.
+func TestDirectPostImportFailureCode(t *testing.T) {
+	// Valid item was created → nothing to do.
+	if _, fail := directPostImportFailureCode(true, false); fail {
+		t.Error("a valid observed item must not fail the workflow")
+	}
+	// An item-level guard already failed it → nothing to add.
+	if _, fail := directPostImportFailureCode(false, true); fail {
+		t.Error("an already-failed workflow must not be re-failed")
+	}
+	// Neither → deterministic no_observed_item failure.
+	code, fail := directPostImportFailureCode(false, false)
+	if !fail || code != coordination.DPErrImportNoObservedItem {
+		t.Errorf("no valid item + no prior failure → fail with %q, got fail=%v code=%q",
+			coordination.DPErrImportNoObservedItem, fail, code)
 	}
 }
 
@@ -86,7 +118,7 @@ func TestValidateDirectPostObservedItem_Boilerplate(t *testing.T) {
 	if !v.IdentityMatched || v.Valid || v.Reason != directpost.ReasonContentInvalid {
 		t.Fatalf("boilerplate requested post must be identity-matched + content-invalid, got %+v", v)
 	}
-	if got := importContextMismatchCode(v.Reason); got != coordination.DPErrLeadContentInvalid {
-		t.Errorf("content invalid must map to lead_content_invalid, got %q", got)
+	if got := importContextMismatchCode(v.Reason); got != coordination.DPErrImportBoilerplateContent {
+		t.Errorf("content invalid must map to direct_post_import_boilerplate_content, got %q", got)
 	}
 }
