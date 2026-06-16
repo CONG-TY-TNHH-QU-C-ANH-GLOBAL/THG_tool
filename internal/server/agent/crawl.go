@@ -1,20 +1,17 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"log"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
-	"github.com/thg/scraper/internal/directpost"
-	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/server/system"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/telegram/control"
 )
 
 // parsePostedAtRFC3339 parses a Facebook post timestamp emitted by the
@@ -37,259 +34,49 @@ func parsePostedAtRFC3339(s string) time.Time {
 // The extension runs inside the user's signed-in Chrome, so this is the
 // production path for Facebook sessions that the server does not own directly.
 // POST /api/connectors/crawl-result
+//
+// Thin edge adapter ONLY: parse + edge-validate, then delegate to the Fiber-free
+// processConnectorCrawlResult (crawl_ingest.go) and map domain errors to HTTP status.
+// All ingest logic lives in the processor — keep this handler boring.
 func (h *Handler) agentConnectorCrawlResult(c *fiber.Ctx) error {
 	agentID, _ := c.Locals("agent_id").(int64)
 	orgID, _ := c.Locals("agent_org_id").(int64)
 	if orgID <= 0 {
 		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
 	}
-	var body struct {
-		TaskID           string         `json:"task_id"`
-		Intent           string         `json:"intent"`
-		AccountID        int64          `json:"account_id"`
-		IntentID         int64          `json:"intent_id"` // recurring crawl intent id; 0 for one-shot runs
-		Status           string         `json:"status"`
-		Error            string         `json:"error"`
-		ExitReason       string         `json:"exit_reason"`
-		ScrollDiag       map[string]any `json:"scroll_diag"` // PR-CRAWL1 forensic: passes / max_articles / scroll_moved_ever / ...
-		Keywords         []string       `json:"keywords"`
-		MarketSignalGate map[string]any `json:"market_signal_gate"`
-		UserPrompt       string         `json:"user_prompt"`
-		Items            []struct {
-			ID               string `json:"id"`
-			SourceURL        string `json:"source_url"`
-			AuthorProfileURL string `json:"author_profile_url"`
-			AuthorName       string `json:"author_name"`
-			Content          string `json:"content"`
-			Reactions        int    `json:"reactions"`
-			Comments         int    `json:"comments"`
-			Shares           int    `json:"shares"`
-			// Routing/cursor fields emitted by the DOM crawler (extension).
-			// Backward-compatible — older extensions that don't emit these
-			// will leave them empty, and the server falls back to URL parsing.
-			PostFBID  string `json:"post_fbid"`
-			GroupFBID string `json:"group_fbid"`
-			PostedAt  string `json:"posted_at"` // RFC3339; empty when crawler can't extract
-		} `json:"items"`
-	}
-	if err := c.BodyParser(&body); err != nil {
+	var req connectorCrawlResultRequest
+	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
-	body.TaskID = strings.TrimSpace(body.TaskID)
-	if body.TaskID == "" || body.AccountID <= 0 {
+	req.TaskID = strings.TrimSpace(req.TaskID)
+	if req.TaskID == "" || req.AccountID <= 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "task_id and account_id are required"})
 	}
-	if acc, err := h.db.Identities().GetAccountForOrg(body.AccountID, orgID); err != nil || acc == nil {
-		return c.Status(403).JSON(fiber.Map{"error": "account does not belong to this organization"})
+
+	// Hand the processor a STANDARD context, never the Fiber/fasthttp request ctx (c.Context()):
+	// the processor layer must not see framework types. c.UserContext() is a plain
+	// context.Context (non-nil empty when unset); the guard keeps it defensive.
+	ctx := c.UserContext()
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, body.AccountID)
+	res, err := h.processConnectorCrawlResult(ctx, agentID, orgID, req)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	if !ownsStream {
-		return c.Status(403).JSON(fiber.Map{"error": "connector does not own this account stream"})
-	}
-
-	appStore, err := store.NewAppStore(h.db)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	intent := strings.TrimSpace(body.Intent)
-	if intent == "" {
-		intent = "facebook_crawl"
-	}
-	_ = appStore.CreateTask(c.Context(), body.TaskID, orgID, intent)
-	_ = appStore.StartTask(c.Context(), body.TaskID)
-	if strings.EqualFold(body.Status, "failed") || strings.TrimSpace(body.Error) != "" {
-		errMsg := strings.TrimSpace(body.Error)
-		if errMsg == "" {
-			errMsg = "Chrome Extension crawl failed"
-		}
-		_ = appStore.FailTask(c.Context(), body.TaskID, errMsg)
-		system.NotifyCrawlFailure(h.db, h.notifier, orgID, body.AccountID, body.TaskID, errMsg)
-		return c.JSON(fiber.Map{"status": "failed", "error": errMsg})
-	}
-
-	guidance := orgScoringGuidance(h.db, orgID)
-	keywords := normalizeCrawlKeywords(append(body.Keywords, orgIntelligenceKeywords(h.db, orgID)...))
-	businessProfile := ai.LoadProfileForOrg(h.db, orgID)
-	gate := leadingest.SignalGateFromMap(body.MarketSignalGate)
-	var aiClass *ai.MessageGenerator
-	if h.aiClass != nil {
-		aiClass = h.aiClass()
-	}
-	deps := leadingest.Deps{
-		AppStore:        appStore,
-		LegacyDB:        h.db,
-		Scorer:          scoring.New(scoring.DefaultConfig()),
-		Guidance:        guidance,
-		BusinessProfile: businessProfile,
-		AIClass:         aiClass,
-		SignalGate:      gate,
-		Keywords:        keywords,
-		UserPrompt:      strings.TrimSpace(body.UserPrompt),
-		ExtraSignals:    []string{"chrome_extension_crawl"},
-		IntentID:        body.IntentID,
-		OnLeadCreated: func(ev leadingest.LeadEvent) {
-			workspace := ""
-			if org, _ := h.db.GetOrganization(ev.OrgID); org != nil {
-				workspace = org.Name
-			}
-			h.tgEvents.NotifyLead(control.LeadNotice{
-				OrgID: ev.OrgID, LeadID: ev.LeadID, Channel: "facebook", Workspace: workspace,
-				Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: h.baseURL,
-			})
-		},
-	}
-
-	inserted := 0
-	fetched := 0
-	primarySourceURL := ""
-
-	// Explicit direct-post intake? (body.TaskID == workflow.import_task_id). When so, the
-	// chosen post must be force-created as a lead even if the market filter would reject
-	// it, and must keep the requested group-context URL — see crawl_direct_post.go.
-	directPost := h.resolveDirectPostIntake(c.Context(), orgID, body.TaskID)
-	if directPost != nil && strings.TrimSpace(directPost.CanonicalPostURL) != "" {
-		primarySourceURL = strings.TrimSpace(directPost.CanonicalPostURL) // summary prefers requested URL
-	}
-	// P1.3C import-result bubbling: track whether THIS finished import produced a valid
-	// requested-post lead (dpValidObserved) or already failed the workflow (dpFailed). If
-	// neither, the connector returned nothing usable for the requested post and the workflow
-	// is failed deterministically below (no silent retry-forever loop).
-	dpValidObserved, dpFailed := false, false
-
-	for _, item := range body.Items {
-		content := strings.TrimSpace(item.Content)
-		if content == "" || len([]rune(content)) < 20 {
-			continue
-		}
-		fetched++
-		sourceURL := strings.TrimSpace(item.SourceURL)
-		if sourceURL == "" {
-			sourceURL = strings.TrimSpace(item.ID)
-		}
-
-		// Per-item identity + filter policy. For an explicit direct-post intake the
-		// observed item is ZERO-TRUST validated before any override (P1.3A): only a
-		// positively-identified, non-conflicting, meaningful post is force-created with
-		// the context-preserving canonical URL. A poisoned REQUESTED post fails the
-		// workflow; a different/neighbour post falls through to normal filtering.
-		primaryURL := sourceURL
-		postFBID := strings.TrimSpace(item.PostFBID)
-		groupFBID := strings.TrimSpace(item.GroupFBID)
-		itemDeps := deps
-		if directPost != nil {
-			obs := directpost.ObservedItem{
-				PostFBID:         strings.TrimSpace(item.PostFBID),
-				SourceURL:        sourceURL,
-				GroupFBID:        strings.TrimSpace(item.GroupFBID),
-				AuthorName:       strings.TrimSpace(item.AuthorName),
-				AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
-				Content:          content,
-			}
-			id, v := validateDirectPostObservedItem(directPost, obs)
-			switch {
-			case v.Valid:
-				dpValidObserved = true
-				primaryURL = id.primaryURL
-				postFBID = id.postFBID
-				groupFBID = id.groupRef
-				itemDeps.ForceLead = true
-				itemDeps.ExtraSignals = append(append([]string{}, deps.ExtraSignals...),
-					"direct_post_context_validation:passed",
-					"observed_source_url:"+sourceURL,
-					"observed_author_name:"+obs.AuthorName,
-					"observed_author_profile_url:"+obs.AuthorProfileURL)
-				log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q requested_url=%q observed_source_url=%q observed_author=%q context_validation_result=passed filter_override_applied=true",
-					directPost.ID, body.TaskID, primaryURL, sourceURL, obs.AuthorName)
-			case v.IdentityMatched:
-				// The REQUESTED post came back poisoned (foreign group/page context or
-				// garbage content). Refuse to create a lead or stamp the canonical URL;
-				// fail the workflow with a typed reason instead of poisoning a lead.
-				log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q requested_url=%q observed_source_url=%q observed_author=%q observed_author_profile_url=%q context_validation_result=failed context_mismatch_reason=%s observed_content_preview=%q",
-					directPost.ID, body.TaskID, directPost.CanonicalPostURL, sourceURL, obs.AuthorName, obs.AuthorProfileURL, v.Reason, contentPreview(content))
-				_, _ = h.db.Coordination().MarkDirectPostFailed(c.Context(), orgID, directPost.ID,
-					importContextMismatchCode(v.Reason), "direct-post import item failed context/content validation")
-				dpFailed = true
-				continue
-			default:
-				// A different/neighbour post (identity not the requested one) — let normal
-				// market filtering decide; do not force, do not fail the workflow.
-				log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q observed_source_url=%q context_validation_result=skipped reason=%s",
-					directPost.ID, body.TaskID, sourceURL, v.Reason)
-			}
-		}
-		if primarySourceURL == "" && primaryURL != "" {
-			primarySourceURL = primaryURL
-		}
-
-		// 1. Deduplicate: Memory check before hitting AI.
-		// Prevents bringing in duplicate leads and wasting expensive LLM tokens across multiple scrapes.
-		if primaryURL != "" && appStore != nil {
-			if exists, _ := appStore.HasLeadWithSourceURL(c.Context(), orgID, primaryURL); exists {
-				continue
-			}
-		}
-
-		outcome, err := leadingest.IngestPost(c.Context(), itemDeps, leadingest.Input{
-			TaskID:           body.TaskID,
-			OrgID:            orgID,
-			SourceType:       "post",
-			PrimaryURL:       primaryURL,
-			PostFBID:         postFBID,
-			GroupFBID:        groupFBID,
-			PostedAt:         parsePostedAtRFC3339(item.PostedAt),
-			AuthorName:       strings.TrimSpace(item.AuthorName),
-			AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
-			Content:          content,
-			Reactions:        item.Reactions,
-			Comments:         item.Comments,
-			Shares:           item.Shares,
-		})
-		if err != nil {
-			log.Printf("[ConnectorCrawl] ingest failed task=%s: %v", body.TaskID, err)
-			continue
-		}
-		if outcome.Inserted {
-			inserted++
+		switch {
+		case errors.Is(err, errCrawlForbiddenAccount), errors.Is(err, errCrawlForbiddenStream):
+			return c.Status(403).JSON(fiber.Map{"error": err.Error()})
+		default:
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
-	// P1.3C: the import task FINISHED. If this was an explicit direct-post intake and it
-	// produced no valid requested-post lead (and did not already fail on a poisoned item),
-	// the connector returned nothing usable for the requested post — fail the workflow
-	// deterministically with a typed reason instead of leaving the poller to retry until the
-	// generic lead_not_observed timeout. (Best-effort + CAS-guarded: a stale/racing call is
-	// a clean no-op.)
-	if code, fail := directPostImportFailureCode(dpValidObserved, dpFailed); fail && directPost != nil {
-		log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q expected_post_fbid=%q expected_group_ref=%q raw_items=%d — no valid observed item for requested post; failing workflow code=%s",
-			directPost.ID, body.TaskID, directPost.PostFBID, directPost.GroupRef, len(body.Items), code)
-		_, _ = h.db.Coordination().MarkDirectPostFailed(c.Context(), orgID, directPost.ID,
-			code, "import finished but the requested post was not observed")
+	if res.Status == "failed" {
+		return c.JSON(fiber.Map{"status": "failed", "error": res.Error})
 	}
-	_ = appStore.CompleteTask(c.Context(), body.TaskID, fetched, inserted)
-	// PR-CRAWL1 forensic: when a crawl yields suspiciously few raw posts, log the
-	// scroll diagnostic so we can tell WHY without guessing. scroll_moved_ever=
-	// false ⇒ our scroll never moved the feed (window minimized → rAF throttle, or
-	// wrong scroll target); true with max_articles_seen≈1 ⇒ FB stopped loading
-	// despite scrolling (platform side / genuinely few CHRONOLOGICAL posts).
-	scrollNote := ""
-	if len(body.Items) <= 2 && body.ScrollDiag != nil {
-		sd := body.ScrollDiag
-		scrollNote = fmt.Sprintf("moved=%v passes=%v max_articles=%v target=%v",
-			sd["scroll_moved_ever"], sd["passes"], sd["max_articles_seen"], sd["final_scroll_target"])
-		slog.WarnContext(c.Context(), "crawl-forensic: low yield",
-			"org_id", orgID, "account_id", body.AccountID, "task_id", body.TaskID,
-			"raw_items", len(body.Items), "exit_reason", body.ExitReason,
-			"scroll_diag", body.ScrollDiag,
-		)
-	}
-	system.NotifyCrawlSummary(h.db, h.notifier, orgID, body.AccountID, body.TaskID, intent, len(body.Items), fetched, inserted, primarySourceURL, body.ExitReason, scrollNote)
 	return c.JSON(fiber.Map{
 		"status":   "stored",
-		"task_id":  body.TaskID,
-		"fetched":  fetched,
-		"inserted": inserted,
+		"task_id":  res.TaskID,
+		"fetched":  res.Fetched,
+		"inserted": res.Inserted,
 	})
 }
 
