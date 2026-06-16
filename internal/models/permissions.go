@@ -45,3 +45,17 @@ func CanViewAccountDevice(acc *Account, userID int64, role string) bool {
 	r := UserRole(strings.TrimSpace(strings.ToLower(role)))
 	return acc.AssignedUserID == 0 && (IsPlatformRole(r) || r == RoleAdmin)
 }
+
+// AccountControlAllowed is the EXECUTION-control predicate for the readiness UI (P1.3E),
+// deliberately stricter than CanViewAccountDevice: VISIBILITY is not CONTROL. An account is
+// controllable by a requester only when it is ASSIGNED to them — admin role and inventory
+// visibility grant NOTHING here, so an admin viewing an unassigned/member account does not
+// control it. requesterUserID <= 0 (unauthenticated) controls nothing. It is intentionally
+// no looser than the shipped P1.3D execution gate (own connector + own/unassigned account):
+// the readiness UI may only ever UNDER-promise executability, never over-promise it.
+func AccountControlAllowed(acc *Account, requesterUserID int64) bool {
+	if acc == nil || requesterUserID <= 0 {
+		return false
+	}
+	return acc.AssignedUserID == requesterUserID
+}

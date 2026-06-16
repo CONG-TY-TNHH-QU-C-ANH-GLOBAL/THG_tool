@@ -72,9 +72,16 @@ export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props
     finally { setSettingDefault(false); }
   };
 
+  // P1.3E: "Sẵn sàng" counts only EXECUTABLE accounts (requester-owned live connector), never
+  // "no blocking reasons". Non-executable accounts fall into their health/connector bucket; an
+  // account with no per-capability health reason but executable=false (e.g. not_controllable /
+  // connector/control issue) is counted as blocked, never as ready.
   const counts: Record<Severity, number> = { ready: 0, warning: 0, blocked: 0, waiting: 0 };
   for (const a of accounts) {
-    counts[overallStatus(Array.from(new Set(a.capabilities.flatMap(c => c.reasons ?? [])))).severity] += 1;
+    if (a.executable) { counts.ready += 1; continue; }
+    let sev = overallStatus(Array.from(new Set(a.capabilities.flatMap(c => c.reasons ?? [])))).severity;
+    if (sev === 'ready') sev = 'blocked';
+    counts[sev] += 1;
   }
 
   return (
