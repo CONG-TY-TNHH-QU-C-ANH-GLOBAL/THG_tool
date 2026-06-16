@@ -59,7 +59,7 @@ func commentSinglePost(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// fallback) when identity is missing / ambiguous / mismatched — creating NO workflow,
 	// NO import, NO outbound. On success it pins args["account_id"] to the resolved account
 	// so the whole chain (workflow == import == comment) uses one identity-verified account.
-	if msg, blocked := guardDirectPostAccount(db, args); blocked {
+	if msg, blocked := guardFacebookWriteAccount(db, args); blocked {
 		return msg, nil
 	}
 	postFBID := fburl.ExtractFacebookPostID(res.canonical)

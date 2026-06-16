@@ -328,9 +328,14 @@ Required invariant for explicit direct-post/comment:
 - No selection → resolve from live connectors, **confident only**: a UNIQUE online +
   identity-matched + ready account (`liveReadyAccountIDs` via `GetAccountByFacebookIdentity`).
   Zero → "chưa xác định"; multiple → "chọn rõ tài khoản". **Never first-ready.**
-- On block: return the message, create **NO** workflow / import / outbound.
-- The Copilot fast-path no longer first-ready-picks for `comment_single_post`
-  (`isRiskyDirectAccountAction`); broad crawl / bulk / post fallback is unchanged.
+- On block: return the message, create **NO** workflow / import / outbound / post job.
+- `guardFacebookWriteAccount` runs for **all Facebook WRITE actions** — `comment_single_post`,
+  `comment_all_leads`/`auto_comment`, `inbox_all_leads`/`auto_inbox`, `create_job_post`,
+  `post_to_profile` — and the Copilot fast-path no longer first-ready-picks for any of them
+  (`isRiskyDirectAccountAction`). Broad **read/crawl/search** actions (`scrape_group`,
+  `scrape_comments`, `search_groups`, recurring crawl) are **not** guarded and keep their
+  existing fallback (they create no public side effect). Follow-up: `scan_fanpage_inbox` /
+  `care_fanpage` are not yet wired to production handlers, so they are out of scope.
 
 **Frontend (UX)** — `WorkspaceChatView`: consults `GET /api/connectors/status`, auto-selects
 the UNIQUE live-matched account (`state === 'online'`), switches a stale selection to the live

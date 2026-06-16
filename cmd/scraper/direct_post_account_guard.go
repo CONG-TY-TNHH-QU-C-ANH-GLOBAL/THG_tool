@@ -8,20 +8,21 @@ import (
 	"github.com/thg/scraper/internal/store/connectors"
 )
 
-// Live-connector account resolution + fail-closed guard for explicit direct-post comment
-// (P1.3D). It enforces the invariant
+// Live-connector account resolution + fail-closed guard for Facebook WRITE actions (P1.3D):
+// direct-post comment, bulk comment, inbox messages, group posts, profile posts. It enforces
 //
-//	active_connector_fb_identity -> resolved_account == selected == workflow == import == comment
+//	active_connector_fb_identity -> resolved_account == selected == workflow/action account
 //
 // by resolving the Facebook account from the LIVE Chrome connector identity and refusing
 // (fail closed) when identity is missing, ambiguous, or conflicts with the selected account.
-// It NEVER first-ready-picks an account for a risky direct-post command — that silent
-// fallback is exactly what let a comment run from the wrong Facebook identity.
+// It NEVER first-ready-picks an account for a write action — that silent fallback is exactly
+// what let a comment/post run from the wrong Facebook identity. Broad read/crawl/search
+// actions are NOT guarded (they create no public side effect) and keep their own fallback.
 
 // Customer-facing block messages (Vietnamese; no secrets/ids beyond what the user chose).
 const (
 	msgDPAccountNoLiveIdentity = "Chưa xác định được tài khoản Facebook đang đăng nhập trong Chrome. Hãy mở/kết nối lại Chrome profile rồi gửi lại lệnh."
-	msgDPAccountAmbiguous      = "Có nhiều tài khoản Facebook đang online. Hãy chọn rõ tài khoản Facebook để comment bài này."
+	msgDPAccountAmbiguous      = "Có nhiều tài khoản Facebook đang online. Hãy chọn rõ tài khoản Facebook để thực hiện hành động này."
 	msgDPAccountMismatch       = "Tài khoản đã chọn không khớp với Facebook đang đăng nhập trong Chrome. Hãy chọn đúng tài khoản hoặc mở Chrome đúng profile rồi thử lại."
 	msgDPAccountOffline        = "Tài khoản đã chọn chưa có kết nối Chrome online. Hãy mở Chrome và kết nối lại tài khoản đó."
 	msgDPAccountUnknown        = "Chưa đọc được danh tính Facebook từ Chrome. Hãy đợi đồng bộ vài giây hoặc kết nối lại Chrome profile."
@@ -126,11 +127,11 @@ func connectorBlockMessage(reason string) string {
 	}
 }
 
-// guardDirectPostAccount resolves+validates the account for a direct-post comment and, on
-// success, PINS it into args["account_id"] so workflow/import/comment all use the same
-// identity-verified account. On block it returns (message, true) for the caller to return —
-// NO workflow/import/outbound is created.
-func guardDirectPostAccount(db *store.Store, args map[string]any) (string, bool) {
+// guardFacebookWriteAccount resolves+validates the account for a Facebook WRITE action and,
+// on success, PINS it into args["account_id"] so the whole chain (workflow/import/comment or
+// post/inbox) uses the same identity-verified account. On block it returns (message, true)
+// for the caller to return — NO workflow / outbound / post job is created.
+func guardFacebookWriteAccount(db *store.Store, args map[string]any) (string, bool) {
 	orgID := argInt64(args, "org_id")
 	selected := argInt64(args, "account_id")
 	res := resolveDirectPostAccount(db, orgID, selected)
