@@ -39,24 +39,37 @@ type directPostAccountResolution struct {
 	message   string
 }
 
-// resolveDirectPostAccount resolves the account an explicit direct-post comment must run on,
-// using ONLY live connector identity. selectedAccountID is the dashboard selection (0 = none).
-// It never falls back to first-ready.
-func resolveDirectPostAccount(db *store.Store, orgID, selectedAccountID int64) directPostAccountResolution {
+// resolveDirectPostAccount resolves the SINGLE account an explicit direct-post / single-task
+// write action must run on, using ONLY live connector identity, restricted to accounts the
+// requester can CONTROL (PR-1). selectedAccountID is the dashboard selection (0 = none);
+// requesterUserID/role are the caller identity (0 = legacy/unauthenticated → org-scoped).
+// It never falls back to first-ready and never resolves another member's account.
+func resolveDirectPostAccount(db *store.Store, orgID, selectedAccountID, requesterUserID int64) directPostAccountResolution {
 	if db == nil || orgID <= 0 {
 		return directPostAccountResolution{message: msgDPAccountLookupError}
+	}
+	if requesterUserID <= 0 {
+		// A Facebook WRITE side-effect requires a proven requester — never resolve org-wide.
+		return directPostAccountResolution{message: msgDPRequesterRequired}
 	}
 	conns, err := db.Connectors().ListLocalConnectors(orgID)
 	if err != nil {
 		return directPostAccountResolution{message: msgDPAccountLookupError}
 	}
+	conns = controllableConnectors(conns, requesterUserID) // PR-1: requester-owned connectors only
 	policy, _ := db.Connectors().GetExtensionPolicy()
 
-	// Explicit selection → it must be backed by a live, identity-matched, ready connector.
+	// Explicit selection → requester must CONTROL it AND it must be backed by a live,
+	// identity-matched, ready connector the requester owns. A non-controllable selection
+	// (another member's account, or a brain/first-ready pre-pick the requester does not own)
+	// is blocked — never silently honoured.
 	if selectedAccountID > 0 {
 		acc, _ := db.Identities().GetAccountForOrg(selectedAccountID, orgID)
 		if acc == nil {
 			return directPostAccountResolution{message: msgDPAccountNotFound}
+		}
+		if !canRequesterControlAccount(acc, requesterUserID) {
+			return directPostAccountResolution{message: msgDPAccountNotControllable}
 		}
 		_, reason := connectors.PickReadyConnector(conns, selectedAccountID, acc.FBUserID, policy)
 		if reason != connectors.ConnReady {
@@ -65,14 +78,10 @@ func resolveDirectPostAccount(db *store.Store, orgID, selectedAccountID int64) d
 		return directPostAccountResolution{accountID: selectedAccountID, ok: true}
 	}
 
-	// No selection → resolve from the live connectors, CONFIDENT ONLY: a UNIQUE online +
-	// identity-matched + ready account. Zero → no identity; multiple → ambiguous.
-	matched := liveReadyAccountIDs(conns, policy, func(fb string) int64 {
-		if acc, _ := db.Identities().GetAccountByFacebookIdentity(orgID, fb); acc != nil {
-			return acc.ID
-		}
-		return 0
-	})
+	// No selection → resolve from the requester-controllable live connectors, CONFIDENT ONLY:
+	// a UNIQUE online + identity-matched + ready account the requester owns. Zero → no identity;
+	// multiple → ambiguous. Other members' live accounts are never counted (PR-1).
+	matched := liveReadyControllableAccountIDs(db, conns, policy, orgID, requesterUserID)
 	switch len(matched) {
 	case 1:
 		return directPostAccountResolution{accountID: matched[0], ok: true}
@@ -134,12 +143,13 @@ func connectorBlockMessage(reason string) string {
 func guardFacebookWriteAccount(db *store.Store, args map[string]any) (string, bool) {
 	orgID := argInt64(args, "org_id")
 	selected := argInt64(args, "account_id")
-	res := resolveDirectPostAccount(db, orgID, selected)
+	requester := argInt64(args, "user_id")
+	res := resolveDirectPostAccount(db, orgID, selected, requester)
 	if !res.ok {
-		log.Printf("[DirectPostAccount] BLOCK org=%d selected_account=%d resolved_account=0 reason=%q", orgID, selected, res.message)
+		log.Printf("[DirectPostAccount] BLOCK org=%d requester=%d selected_account=%d resolved_account=0 reason=%q", orgID, requester, selected, res.message)
 		return res.message, true
 	}
-	log.Printf("[DirectPostAccount] org=%d selected_account=%d resolved_account=%d live_identity_matched=true", orgID, selected, res.accountID)
+	log.Printf("[DirectPostAccount] org=%d requester=%d selected_account=%d resolved_account=%d live_identity_matched=true control_ok=true", orgID, requester, selected, res.accountID)
 	args["account_id"] = res.accountID
 	return "", false
 }

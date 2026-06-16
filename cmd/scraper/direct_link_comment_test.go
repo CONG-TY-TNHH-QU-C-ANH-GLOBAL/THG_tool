@@ -78,10 +78,11 @@ func TestCommentSinglePost_Delegation(t *testing.T) {
 		t.Fatalf("InsertLead: %v", err)
 	}
 
-	// No live Chrome connector → the account guard blocks BEFORE the lead lookup, for both
-	// an unknown post (no workflow/import created) ...
+	// Proven requester (user_id) but NO live Chrome connector → the account guard blocks BEFORE
+	// the lead lookup, for both an unknown post (no workflow/import created) ...
 	unknown, err := commentSinglePost(ctx, db, msgGen, map[string]any{
-		"org_id": orgID, "nl_prompt": "comment bài này https://www.facebook.com/groups/123/posts/999/",
+		"org_id": orgID, "user_id": int64(7),
+		"nl_prompt": "comment bài này https://www.facebook.com/groups/123/posts/999/",
 	}, nil, nil)
 	if err != nil {
 		t.Fatalf("unknown: %v", err)
@@ -92,7 +93,8 @@ func TestCommentSinglePost_Delegation(t *testing.T) {
 
 	// ... and an existing post (no outbound queued) — fail closed on the account identity.
 	found, err := commentSinglePost(ctx, db, msgGen, map[string]any{
-		"org_id": orgID, "nl_prompt": "comment bài này " + post,
+		"org_id": orgID, "user_id": int64(7),
+		"nl_prompt": "comment bài này " + post,
 	}, nil, nil)
 	if err != nil {
 		t.Fatalf("found: %v", err)

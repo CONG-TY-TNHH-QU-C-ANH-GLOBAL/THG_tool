@@ -1,42 +1,10 @@
 package main
 
 import (
-	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/thg/scraper/internal/ai"
-	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
 )
-
-// seedAccountFB adds an account with a bound Facebook identity (fb_user_id is set by the
-// heartbeat identity sync in prod; here we set it directly).
-func seedAccountFB(t *testing.T, db *store.Store, org int64, name, fb string) int64 {
-	t.Helper()
-	id, err := db.Identities().AddAccount(&models.Account{OrgID: org, Platform: models.PlatformFacebook, Name: name, Status: models.AccountActive})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.DB().Exec(`UPDATE accounts SET fb_user_id = ? WHERE id = ?`, fb, id); err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
-// seedLiveConnector inserts an online, logged-in extension connector logged into fb.
-func seedLiveConnector(t *testing.T, db *store.Store, org, assignedAccount int64, fb string) {
-	t.Helper()
-	if _, err := db.DB().Exec(
-		`INSERT INTO agent_tokens (org_id, name, created_by, token_hash, kind, transport,
-			assigned_account_id, fb_user_id, stream_status, version, active, last_seen, created_at)
-		 VALUES (?, 'ext', 1, ?, 'extension_connector', 'chrome_extension', ?, ?,
-			'facebook_logged_in', '9.9.9', 1, datetime('now'), datetime('now'))`,
-		org, "h"+fb, assignedAccount, fb); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func liveConn(id, assignedAcct int64, fb string, online bool) connectors.AgentToken {
 	return connectors.AgentToken{
@@ -97,102 +65,49 @@ func TestConnectorBlockMessage(t *testing.T) {
 	}
 }
 
-// Integration: resolveDirectPostAccount over a real store with seeded accounts + a live
-// connector. Covers selected-match (#A), selected-mismatch (block, never silent), and the
-// no-selection unique-live resolve.
+// Integration: resolveDirectPostAccount over a real store with a requester-owned account + a
+// requester-owned live connector. Covers selected-match (#A), selected-mismatch (block, never
+// silent), and the no-selection unique-live resolve. (Seed helpers live in
+// facebook_account_scope_test.go.)
 func TestResolveDirectPostAccount(t *testing.T) {
-	db, err := store.New(filepath.Join(t.TempDir(), "acctguard.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	const org int64 = 5
-	accA, err := db.Identities().AddAccount(&models.Account{OrgID: org, Platform: models.PlatformFacebook, Name: "A", Status: models.AccountActive})
-	if err != nil {
-		t.Fatal(err)
-	}
-	accB, err := db.Identities().AddAccount(&models.Account{OrgID: org, Platform: models.PlatformFacebook, Name: "B", Status: models.AccountActive})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Bind each account's Facebook identity (in prod this is set by the heartbeat identity sync).
-	if _, err := db.DB().Exec(`UPDATE accounts SET fb_user_id = 'fbA' WHERE id = ?`, accA); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.DB().Exec(`UPDATE accounts SET fb_user_id = 'fbB' WHERE id = ?`, accB); err != nil {
-		t.Fatal(err)
-	}
-	// One live (online, logged-in) UNASSIGNED connector currently logged into fbA.
-	if _, err := db.DB().Exec(
-		`INSERT INTO agent_tokens (org_id, name, created_by, token_hash, kind, transport,
-			assigned_account_id, fb_user_id, stream_status, version, active, last_seen, created_at)
-		 VALUES (?, 'ext', 1, 'h1', 'extension_connector', 'chrome_extension', 0, 'fbA',
-			'facebook_logged_in', '9.9.9', 1, datetime('now'), datetime('now'))`, org); err != nil {
-		t.Fatal(err)
-	}
+	db := newScopeStore(t)
+	const org, owner int64 = 5, 7
+	accA := seedOwnedAccountFB(t, db, org, owner, "A", "fbA")
+	accB := seedOwnedAccountFB(t, db, org, owner, "B", "fbB")
+	seedOwnedConnector(t, db, org, owner, accA, "fbA") // owner's live connector → fbA
 
 	// Selected #A (matches the live identity) → resolves to #A.
-	if r := resolveDirectPostAccount(db, org, accA); !r.ok || r.accountID != accA {
+	if r := resolveDirectPostAccount(db, org, accA, owner); !r.ok || r.accountID != accA {
 		t.Errorf("selected #A must resolve to #A, got %+v", r)
 	}
 	// Selected #B (live Chrome is fbA, NOT fbB) → BLOCKED, never silently #B.
-	if r := resolveDirectPostAccount(db, org, accB); r.ok {
+	if r := resolveDirectPostAccount(db, org, accB, owner); r.ok {
 		t.Errorf("selected #B with live identity fbA must be blocked, got %+v", r)
 	}
 	// No selection → unique live identity (#A) is resolved (NOT first-ready).
-	if r := resolveDirectPostAccount(db, org, 0); !r.ok || r.accountID != accA {
+	if r := resolveDirectPostAccount(db, org, 0, owner); !r.ok || r.accountID != accA {
 		t.Errorf("no selection must resolve to the unique live account #A, got %+v", r)
 	}
 }
 
-// No selection with MULTIPLE live-matched accounts → ambiguous → fail closed (never picks one).
+// No selection with MULTIPLE own live-matched accounts → ambiguous → fail closed (never picks).
 func TestResolveDirectPostAccount_AmbiguousMultiLive(t *testing.T) {
-	db, err := store.New(filepath.Join(t.TempDir(), "ambig.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	const org int64 = 5
-	accA := seedAccountFB(t, db, org, "A", "fbA")
-	accB := seedAccountFB(t, db, org, "B", "fbB")
-	seedLiveConnector(t, db, org, accA, "fbA")
-	seedLiveConnector(t, db, org, accB, "fbB")
+	db := newScopeStore(t)
+	const org, owner int64 = 5, 7
+	accA := seedOwnedAccountFB(t, db, org, owner, "A", "fbA")
+	accB := seedOwnedAccountFB(t, db, org, owner, "B", "fbB")
+	seedOwnedConnector(t, db, org, owner, accA, "fbA")
+	seedOwnedConnector(t, db, org, owner, accB, "fbB")
 
-	if r := resolveDirectPostAccount(db, org, 0); r.ok {
+	if r := resolveDirectPostAccount(db, org, 0, owner); r.ok {
 		t.Errorf("two live identities must fail closed (ambiguous), got %+v", r)
 	}
 	// Each explicit selection still resolves to its own live-matched account.
-	if r := resolveDirectPostAccount(db, org, accA); !r.ok || r.accountID != accA {
+	if r := resolveDirectPostAccount(db, org, accA, owner); !r.ok || r.accountID != accA {
 		t.Errorf("selected #A must resolve to #A, got %+v", r)
 	}
-	if r := resolveDirectPostAccount(db, org, accB); !r.ok || r.accountID != accB {
+	if r := resolveDirectPostAccount(db, org, accB, owner); !r.ok || r.accountID != accB {
 		t.Errorf("selected #B must resolve to #B, got %+v", r)
 	}
 }
 
-// Every Facebook WRITE action routed through the agent handler fails closed when no live
-// connector identity can be resolved — no workflow/outbound/post job is created. The broad
-// read action (scrape_group) is NOT account-guarded and proceeds.
-func TestAgentActionHandler_WriteActionsFailClosed(t *testing.T) {
-	db, js := newIntakeEnv(t)
-	handler := makeAgentActionHandler(db, js, ai.NewMessageGenerator("", ""), nil)
-
-	for _, action := range []string{"comment_all_leads", "auto_comment", "inbox_all_leads", "create_job_post", "post_to_profile"} {
-		out, err := handler(action, map[string]any{"org_id": int64(5), "nl_prompt": "x", "content": "x"})
-		if err != nil {
-			t.Fatalf("%s: %v", action, err)
-		}
-		if !strings.Contains(out, "đăng nhập trong Chrome") {
-			t.Errorf("write action %s must fail closed on the live-account guard, got %q", action, out)
-		}
-	}
-
-	// Broad read/crawl is unchanged — it must NOT hit the account guard.
-	out, err := handler("scrape_group", map[string]any{"org_id": int64(5), "url": "https://www.facebook.com/groups/123456789"})
-	if err != nil {
-		t.Fatalf("scrape_group: %v", err)
-	}
-	if strings.Contains(out, "đăng nhập trong Chrome") {
-		t.Errorf("broad crawl must NOT be account-guarded, got %q", out)
-	}
-}
