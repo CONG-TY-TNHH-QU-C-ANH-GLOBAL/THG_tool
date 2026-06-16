@@ -43,6 +43,7 @@ apt-get install -y --no-install-recommends \
     logrotate \
     ca-certificates \
     openssl \
+    sqlite3 \
     python3 \
     python3-venv \
     python3-pip

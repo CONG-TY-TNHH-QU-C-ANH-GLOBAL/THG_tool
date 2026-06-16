@@ -148,7 +148,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ steps.cfg.outputs.ssh_port }}
-          source: "frontend-standalone.tar.gz,docker/,deploy/,services/agent-brain/,thg-extension-store-package/thg-chrome-extension.zip"
+          source: "frontend-standalone.tar.gz,docker/,deploy/,services/agent-brain/,thg-extension-store-package/thg-chrome-extension.zip,scripts/deploy/predeploy_sqlite_backup.sh"
           target: "/tmp/thg-deploy/"
           overwrite: true
 
@@ -161,6 +161,22 @@ jobs:
           port: ${{ steps.cfg.outputs.ssh_port }}
           script: |
             set -euo pipefail
+
+            # ── Pre-deploy SQLite backup (FAIL CLOSED) ──────────────────────────────
+            # MUST run before binary replacement, service restart, and the startup-
+            # embedded migrations the new scraper applies on boot. If the backup script
+            # exits non-zero, `set -euo pipefail` aborts this step here — nothing below
+            # runs, so NO `systemctl restart` happens on an un-backed-up database.
+            # The Go binaries build CGO-free (pure-Go SQLite driver), so the sqlite3 CLI
+            # the online .backup needs is not guaranteed present — install it on demand
+            # (same pattern as the node/python provisioning below). A failed install
+            # also aborts before restart.
+            if ! command -v sqlite3 >/dev/null 2>&1; then
+              echo "sqlite3 CLI not found — installing (required for pre-deploy DB backup)"
+              sudo apt-get update
+              sudo apt-get install -y sqlite3
+            fi
+            sudo bash /tmp/thg-deploy/scripts/deploy/predeploy_sqlite_backup.sh
 
             # P1.3 incident containment (fix/direct-post-content-target-mismatch-p1):
             # while this marker exists the deploy MUST NOT enable/start/restart thg-worker —
