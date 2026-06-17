@@ -67,4 +67,38 @@ assert.strictEqual(r.ok, false);
 assert.strictEqual(r.reason, 'submit_not_accepted');
 assert.notStrictEqual(r.reason, 'hidden_by_facebook');
 
+// Ghost-button → real-button: the FIRST submit-button generation is a no-op (click
+// does not clear the composer); a LATER generation works. Success here is only possible
+// because the state machine RE-QUERIES findSubmitButtons each attempt instead of reusing
+// the stale pre-flush node. Proves the atomic-readiness fix (ghost/stale-button gap).
+{
+  let gen = 0;
+  let composerFull = true;
+  globalThis.THGCommentSubmit = {
+    findSubmitButtons: () => { gen += 1; return [{ id: 'btn', gen }]; },
+    pressEnter: () => true,
+  };
+  const deps = {
+    executorPath: 'test',
+    // Only the 2nd+ generation button is wired — clicking gen 1 is a ghost no-op.
+    clickLikeUser: (b) => { if (b && b.gen >= 2) composerFull = false; return true; },
+    editorContainsContent: () => composerFull,
+    waitFor: async (pred) => pred(),
+    wait: async () => {},
+    submitDeps: {},
+  };
+  const rr = await SM.runComposerToSubmit(
+    { text: 'A', _prep: { ok: true, diagnostic: {} }, _assert: () => ({ ok: true, actual_length: 1 }) },
+    'A', null, deps);
+  assert.strictEqual(rr.ok, true, 'submit succeeds once a fresh generation is re-queried');
+  assert.ok(gen >= 2, 'submit button must be RE-QUERIED across attempts (not reused)');
+  assert.ok(rr.diagnostic.submit_requeried_attempts >= 2, 'diagnostic records re-query attempts');
+}
+
+// Restore the default submit stub for any later cases.
+globalThis.THGCommentSubmit = {
+  findSubmitButtons: () => { submitFinds++; return [{ id: 'btn' }]; },
+  pressEnter: () => true,
+};
+
 console.log('comment_state_machine: PASS');
