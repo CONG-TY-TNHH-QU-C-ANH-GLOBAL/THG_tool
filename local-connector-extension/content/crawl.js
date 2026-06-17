@@ -375,6 +375,151 @@ var THGContentCrawl = (() => {
     target.dispatchEvent(new Event('scroll', { bubbles: true }));
   }
 
+  // ── P1.3E direct-post permalink target-aware extraction ──────────────────────
+  // Broad crawl and direct-post permalink MUST NOT share candidate acceptance. For an
+  // explicit direct-post import the extension must extract ONLY the requested post container,
+  // prove its post id + group ref, reject sidebar/related/foreign-group/boilerplate, and
+  // return a TYPED failure (in crawl_result.error) when the target is not rendered — never a
+  // fake analyzable item. The backend directpost.Validate remains the authoritative second line.
+
+  // UI-chrome tokens dropped before measuring "real" post text — mirror of the Go
+  // directpost.MeaningfulText so "Facebook Facebook…" / "Like Comment Share" reduce to nothing.
+  const DP_CHROME_TOKENS = new Set(['facebook', 'like', 'comment', 'comments', 'share', 'shares',
+    'follow', 'following', 'reply', 'replies', 'reactions', 'react']);
+
+  function directPostMeaningful(content) {
+    const out = [];
+    let prev = '';
+    for (const f of String(content || '').split(/\s+/)) {
+      const norm = f.toLowerCase().replace(/^[·.,:;!?()[\]{}"'…]+|[·.,:;!?()[\]{}"'…]+$/g, '');
+      if (!norm || DP_CHROME_TOKENS.has(norm)) continue;
+      if (norm === prev) continue; // collapse the scraped-chrome repetition signature
+      out.push(f);
+      prev = norm;
+    }
+    return out.join(' ');
+  }
+
+  // True when content has < 12 meaningful code points after chrome stripping (boilerplate).
+  function directPostBoilerplate(content) {
+    return Array.from(directPostMeaningful(content).trim()).length < 12;
+  }
+
+  function directPostGroupRef(url) {
+    const m = String(url || '').match(/\/groups\/([^/?#]+)/);
+    return m ? m[1] : '';
+  }
+
+  // directPostVerdict is the PURE per-item gate (mirror of the backend invariants, run here as a
+  // pre-filter so a poisoned candidate never even leaves the browser). match=false means "not the
+  // requested post id" (keep scanning); match=true+ok=false means "the requested post came back
+  // poisoned" with a typed reason; match=true+ok=true means emit it.
+  function directPostVerdict(item, target) {
+    const tPost = String(target?.post_fbid || '').trim();
+    const tGroup = String(target?.group_ref || '').trim();
+    const obsPost = String(item?.post_fbid || '').trim() || extractPostFBID(item?.source_url || '');
+    if (tPost) {
+      if (obsPost !== tPost) return { match: false };
+    } else if (!obsPost) {
+      return { match: false };
+    }
+    if (tGroup) {
+      const ag = directPostGroupRef(item?.author_profile_url || '');
+      if (ag && ag !== tGroup) return { match: true, ok: false, reason: 'direct_post_group_mismatch' };
+      const sg = directPostGroupRef(item?.source_url || '');
+      if (sg && /^\D/.test(sg) && sg !== tGroup) return { match: true, ok: false, reason: 'direct_post_group_mismatch' };
+    }
+    if (directPostBoilerplate(item?.content || '')) {
+      return { match: true, ok: false, reason: 'direct_post_boilerplate_content' };
+    }
+    return { match: true, ok: true };
+  }
+
+  // buildTargetCandidate extracts one article into the item shape (same helpers the broad loop
+  // uses), scoped to a single container so foreign-group anchors elsewhere on the page cannot leak.
+  function buildTargetCandidate(article, expectedUrl, groupFBID) {
+    const content = THGContentShared.textOf(article);
+    if (content.length < 20) return null;
+    const author = authorFromArticle(article);
+    const url = postPermalink(article);
+    let postFBID = extractPostFBID(url);
+    if (!postFBID) {
+      for (const a of article.querySelectorAll('a[href]')) {
+        const id = extractPostFBID(a.getAttribute('href') || '');
+        if (id) { postFBID = id; break; }
+      }
+    }
+    let sourceURL = '';
+    if (url && looksLikePostURL(url) && url !== location.href) sourceURL = url;
+    else if (postFBID) sourceURL = canonicalPostPermalink(groupFBID, postFBID);
+    if (!sourceURL) sourceURL = expectedUrl || location.href;
+    return {
+      id: `dp:${postFBID || sourceURL}`, source_url: sourceURL,
+      author_profile_url: author.author_profile_url, author_name: author.author_name,
+      content, reactions: 0, comments: 0, shares: 0, post_fbid: postFBID, group_fbid: groupFBID, posted_at: ''
+    };
+  }
+
+  // selectDirectPostTargetItem scans candidate articles for the ONE that is the requested post.
+  // Returns {item} for a clean target, {reason} when the requested post id matched but the item
+  // is poisoned, or {reason:''} when no candidate matched the target id yet (keep waiting).
+  function selectDirectPostTargetItem(articles, target, expectedUrl, groupFBID) {
+    let poison = '';
+    for (const article of articles) {
+      const item = buildTargetCandidate(article, expectedUrl, groupFBID);
+      if (!item) continue;
+      const v = directPostVerdict(item, target);
+      if (!v.match) continue;
+      if (v.ok) return { item };
+      if (!poison) poison = v.reason;
+    }
+    return { reason: poison };
+  }
+
+  function directPostResult(task, items, exitReason, error, passes, maxArticles) {
+    const cr = {
+      crawler_version: CRAWLER_VERSION,
+      task_id: task?.task_id || '',
+      intent: task?.intent || 'facebook_crawl',
+      keywords: [],
+      items,
+      exit_reason: exitReason,
+      direct_post: true,
+      scroll_diag: {
+        passes, max_articles_seen: maxArticles, max_scroll_y: 0, max_doc_height: 0,
+        scroll_moved_ever: false, final_scroll_target: '', landed_url: location.href || '',
+      },
+    };
+    if (error) cr.error = error; // a non-empty error drives the backend's typed direct-post failure
+    return { ok: true, crawl_result: cr };
+  }
+
+  // crawlDirectPostTarget: bounded, target-only loop. Waits (with small nudges) for the target
+  // post container to render, emits ONLY it, and returns a typed failure if it never appears.
+  async function crawlDirectPostTarget(task, expectedUrl, accountId, target) {
+    const groupFBID = extractGroupFBID(expectedUrl || location.href);
+    const MAX_ATTEMPTS = 12; // ~12s bounded; the target is one post, not a feed
+    let maxArticles = 0;
+    emitProgress(task, accountId, 'started', 0, 1);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000));
+      const articles = collectPostCandidates();
+      if (articles.length > maxArticles) maxArticles = articles.length;
+      const sel = selectDirectPostTargetItem(articles, target, expectedUrl, groupFBID);
+      if (sel.item) {
+        emitProgress(task, accountId, 'finished', 1, 1);
+        return directPostResult(task, [sel.item], 'direct_post_target_found', '', attempt + 1, maxArticles);
+      }
+      if (sel.reason) { // requested post id matched but poisoned — fail typed, don't keep waiting
+        emitProgress(task, accountId, 'finished', 0, 1);
+        return directPostResult(task, [], sel.reason, sel.reason, attempt + 1, maxArticles);
+      }
+      try { window.scrollBy({ top: Math.floor(window.innerHeight * 0.6) }); } catch { /* best effort */ }
+    }
+    emitProgress(task, accountId, 'finished', 0, 1);
+    return directPostResult(task, [], 'direct_post_target_not_rendered', 'direct_post_target_not_rendered', MAX_ATTEMPTS, maxArticles);
+  }
+
   async function crawlVisibleFacebookPosts(task, expectedUrl, accountId) {
     // Refuse to scrape if Facebook redirected us off the requested page (e.g.
     // newsfeed). Without this guard the extension silently scraped the wrong
@@ -384,6 +529,13 @@ var THGContentCrawl = (() => {
         ok: false,
         error: `wrong_page: expected ${expectedUrl} but tab is on ${location.href}`
       };
+    }
+    // P1.3E: explicit direct-post permalink import → target-aware extraction (NOT the feed
+    // scanner). Gated on a target identity in task.extras; broad crawl never sets this, so feed
+    // behaviour is byte-identical below.
+    const dpTarget = task && task.extras && task.extras.direct_post_target;
+    if (dpTarget && (String(dpTarget.post_fbid || '').trim() || String(dpTarget.canonical_url || '').trim())) {
+      return await crawlDirectPostTarget(task, expectedUrl, accountId, dpTarget);
     }
     const maxItems = Math.max(1, Math.min(200, Number(task?.crawl_plan?.max_items || 20)));
     // Recurring crawl cursor — when present, stop traversal as soon as we
@@ -568,6 +720,8 @@ var THGContentCrawl = (() => {
     };
   }
 
-  return { crawlVisibleFacebookPosts };
+  return { crawlVisibleFacebookPosts, directPostBoilerplate, directPostMeaningful, directPostVerdict, directPostGroupRef, selectDirectPostTargetItem };
 })();
 globalThis.THGContentCrawl = THGContentCrawl;
+// CommonJS export for the node test harness (content/*.test.mjs). No-op in the extension.
+if (typeof module !== 'undefined' && module.exports) module.exports = THGContentCrawl;

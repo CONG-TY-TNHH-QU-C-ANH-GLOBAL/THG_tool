@@ -49,6 +49,17 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	if up := strings.TrimSpace(argString(args, "user_prompt")); up != "" {
 		extras["user_prompt"] = up
 	}
+	// P1.3E direct-post target: when the caller pins an explicit permalink target (direct-post
+	// intake), forward it to the connector so the extension extracts ONLY that post and fails
+	// typed when it is not rendered. Presence of post_fbid OR canonical marks the targeted mode;
+	// broad crawl/search never sets these args, so the extension keeps its feed behaviour.
+	if dpFB := strings.TrimSpace(argString(args, "direct_post_post_fbid")); dpFB != "" || strings.TrimSpace(argString(args, "direct_post_canonical")) != "" {
+		extras["direct_post_target"] = map[string]any{
+			"post_fbid":     dpFB,
+			"group_ref":     strings.TrimSpace(argString(args, "direct_post_group_ref")),
+			"canonical_url": strings.TrimSpace(argString(args, "direct_post_canonical")),
+		}
+	}
 	task := &jobs.Task{
 		SchemaVersion: "1",
 		TaskID:        openCrawlTaskID(intent, sources, args),
