@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // UniversalClassifyResult is the structured output of UniversalClassify.
@@ -247,8 +248,40 @@ INTENT OPTIONS (must use exactly one of these strings):
 		},
 	}
 
+	// ── Phase-1 cost control: exact result cache + structured usage log ──
+	// The cache key hashes the model + the EXACT composed prompt (which embeds the
+	// business profile, the per-crawl intent, the author and the fixed template) +
+	// the JSON schema, so any drift in model/prompt/profile/intent/schema misses
+	// automatically. Cache is opt-out via LLM_CLASSIFIER_CACHE_ENABLED.
+	cache := getClassifierCache()
+	schemaJSON := ""
+	if b, mErr := json.Marshal(schema); mErr == nil {
+		schemaJSON = string(b)
+	}
+	cacheKey := classifierCacheKey(mg.model, prompt, schemaJSON)
+	if cached, ok := cache.Get(cacheKey, time.Now()); ok {
+		logClassifierUsage(map[string]any{
+			"model": mg.model, "success": true, "tokens_unknown": true,
+			"retry_count": 0, "cache_enabled": true, "cache_hit": true,
+			"cache_reason": "hit", "cache_key_hash_prefix": keyHashPrefix(cacheKey),
+			"reason": "classifier_cache_hit",
+		})
+		out := cached // value copy — caller cannot mutate the cached entry
+		return &out, nil
+	}
+
+	start := time.Now()
 	var result UniversalClassifyResult
-	if err := mg.callOpenAIStrictJSON(ctx, prompt, "lead_classification", schema, &result); err != nil {
+	usage, err := mg.callOpenAIStrictJSON(ctx, prompt, "lead_classification", schema, &result)
+	latencyMs := time.Since(start).Milliseconds()
+	if err != nil {
+		// Fail-closed: surface the error, never cache it.
+		logClassifierUsage(map[string]any{
+			"model": mg.model, "success": false, "error_code": classifyErrCode(err),
+			"latency_ms": latencyMs, "tokens_unknown": !usage.Known, "retry_count": 0,
+			"cache_enabled": cache.Enabled(), "cache_hit": false,
+			"cache_reason": "error_not_cached", "reason": "classifier_live_call",
+		})
 		return nil, fmt.Errorf("universal classify: %w", err)
 	}
 
@@ -258,6 +291,24 @@ INTENT OPTIONS (must use exactly one of these strings):
 	if result.Score > 1 {
 		result.Score = 1
 	}
+
+	logFields := map[string]any{
+		"model": mg.model, "success": true, "latency_ms": latencyMs,
+		"retry_count": 0, "cache_enabled": cache.Enabled(), "cache_hit": false,
+		"cache_reason": "miss", "cache_key_hash_prefix": keyHashPrefix(cacheKey),
+		"reason": "classifier_live_call",
+	}
+	if usage.Known {
+		logFields["prompt_tokens"] = usage.Prompt
+		logFields["completion_tokens"] = usage.Completion
+		logFields["total_tokens"] = usage.Total
+	} else {
+		logFields["tokens_unknown"] = true
+	}
+	logClassifierUsage(logFields)
+
+	// Cache only the validated, clamped, successful result.
+	cache.Set(cacheKey, result, time.Now())
 	return &result, nil
 }
 

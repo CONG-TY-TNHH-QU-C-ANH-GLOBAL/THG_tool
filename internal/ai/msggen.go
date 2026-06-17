@@ -552,7 +552,21 @@ CHỈ TRẢ VỀ NỘI DUNG TIN NHẮN.`,
 // Temperature and max_tokens are intentionally omitted so this helper
 // works on both classic chat models (gpt-4o*) and reasoning models
 // (gpt-5*) without callers having to special-case the model family.
-func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, schemaName string, schema map[string]any, out any) error {
+// tokenUsage carries the OpenAI usage counts for cost logging. Known is false
+// when the response omitted usage, so callers log tokens_unknown instead of zeros.
+type tokenUsage struct {
+	Prompt     int
+	Completion int
+	Total      int
+	Known      bool
+}
+
+// callOpenAIStrictJSON is single-caller (UniversalClassify). It now also returns
+// the token usage so the classifier cost path can log real prompt/completion/total
+// tokens. Behaviour (request, schema, validation) is unchanged — only the usage is
+// surfaced; the comment-generation path uses callOpenAI and is untouched.
+func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, schemaName string, schema map[string]any, out any) (tokenUsage, error) {
+	var usage tokenUsage
 	body := map[string]any{
 		"model": mg.model,
 		"messages": []map[string]string{
@@ -571,20 +585,20 @@ func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, sc
 	jsonBody, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
 	if err != nil {
-		return err
+		return usage, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+mg.apiKey)
 
 	resp, err := mg.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("OpenAI request failed: %w", err)
+		return usage, fmt.Errorf("OpenAI request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("OpenAI HTTP %d: %s", resp.StatusCode, string(respBody))
+		return usage, fmt.Errorf("OpenAI HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var result struct {
@@ -594,21 +608,32 @@ func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, sc
 				Refusal string `json:"refusal"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return err
+		return usage, err
+	}
+	usage = tokenUsage{
+		Prompt:     result.Usage.PromptTokens,
+		Completion: result.Usage.CompletionTokens,
+		Total:      result.Usage.TotalTokens,
+		Known:      result.Usage.TotalTokens > 0 || result.Usage.PromptTokens > 0,
 	}
 	if len(result.Choices) == 0 {
-		return fmt.Errorf("no response from OpenAI")
+		return usage, fmt.Errorf("no response from OpenAI")
 	}
 	if refusal := strings.TrimSpace(result.Choices[0].Message.Refusal); refusal != "" {
-		return fmt.Errorf("OpenAI refused: %s", refusal)
+		return usage, fmt.Errorf("OpenAI refused: %s", refusal)
 	}
 	content := result.Choices[0].Message.Content
 	if strings.TrimSpace(content) == "" {
-		return fmt.Errorf("empty content from OpenAI")
+		return usage, fmt.Errorf("empty content from OpenAI")
 	}
-	return json.Unmarshal([]byte(content), out)
+	return usage, json.Unmarshal([]byte(content), out)
 }
 
 // isReasoningModel reports whether model is an OpenAI reasoning-class model
