@@ -29,10 +29,15 @@ const articleWith = (editables) => ({
   querySelectorAll: (sel) =>
     (sel.includes('textbox') || sel.includes('contenteditable') || sel.includes('textarea')) ? editables : [],
 });
-const depsFor = (docEditables, closest) => ({
+// classifyHost is the host-identity verdict the channel adapter injects in production
+// (outbound.js classifyHostFor → commentSurfaceDeps/discoverDeps). The generic core relies on
+// it to reject a foreign post; tests that exercise neighbour/foreign rejection MUST supply it,
+// exactly as production does. Omitted by default for the no-host happy paths.
+const depsFor = (docEditables, closest, classifyHost) => ({
   visible: () => true,
   closestArticle: (el) => (closest ? closest(el) : el._closest),
   docEditables: () => docEditables,
+  ...(classifyHost ? { classifyHost } : {}),
 });
 
 // 1. The EXACT operator case: visible DIV role=textbox contenteditable aria="Write an answer…"
@@ -72,11 +77,43 @@ const depsFor = (docEditables, closest) => ({
 }
 
 // 5. A neighbouring post's composer (closest is a DIFFERENT article) must be rejected.
+//    Production ALWAYS injects deps.classifyHost (outbound.js classifyHostFor): on a feed
+//    surface a different post's article returns 'foreign', and the generic core rejects it as
+//    wrong_post BEFORE any keyword/shape fallback. The pre-channel-verdict version of this test
+//    omitted classifyHost, so the core could not know the neighbour was foreign and fell back to
+//    the comment-shape accept (target_discussion_region) — that stale mock was the H-2 red
+//    baseline. This now models production faithfully; the reject intent + assertion are intact.
 {
   const art = articleWith([]);
   const neighbour = {};
   const ed = editable({ role: 'textbox', contenteditable: 'true', aria: 'Write a comment…', closest: neighbour });
-  const r = CC.findComposerEntry(art, depsFor([ed]));
+  const classifyHost = (h) => (h === neighbour ? 'foreign' : 'unknown');
+  const r = CC.findComposerEntry(art, depsFor([ed], null, classifyHost));
+  assert.strictEqual(r.el, null);
+  assert.strictEqual(r.candidates[0].reason, 'wrong_post');
+}
+
+// 5b. SAFETY (fail closed): a positive 'foreign' host verdict OVERRIDES the comment/answer
+//     keyword shape. Even a box reading "Write a comment… / Bình luận" is rejected when
+//     classifyHost proves its host is a different post — the detector must never accept a
+//     neighbour post's composer just because the label looks right.
+{
+  const art = articleWith([]);
+  const foreignHost = {};
+  const ed = editable({ role: 'textbox', contenteditable: 'true', aria: 'Write a comment… Bình luận', closest: foreignHost });
+  const r = CC.findComposerEntry(art, depsFor([ed], null, () => 'foreign'));
+  assert.strictEqual(r.el, null);
+  assert.strictEqual(r.candidates[0].reason, 'wrong_post');
+}
+
+// 5c. FAIL-CLOSED on ambiguity: a box whose host article is NOT the target, whose verdict is
+//     'unknown', and whose text is NOT comment/answer/reply-shaped is rejected (wrong_post). An
+//     unknown-identity, non-discussion editable is never accepted by shape alone.
+{
+  const art = articleWith([]);
+  const otherHost = {};
+  const ed = editable({ role: 'textbox', contenteditable: 'true', aria: 'Search Facebook', closest: otherHost });
+  const r = CC.findComposerEntry(art, depsFor([ed], null, () => 'unknown'));
   assert.strictEqual(r.el, null);
   assert.strictEqual(r.candidates[0].reason, 'wrong_post');
 }
