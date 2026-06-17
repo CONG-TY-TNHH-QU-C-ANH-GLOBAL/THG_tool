@@ -92,6 +92,51 @@ func TestSeedThreadForOrg_ConversationGateAllowsFirstSend(t *testing.T) {
 	}
 }
 
+// TestGetThreadsByOrg_ListsSeededThread is the regression guard for the
+// recurring `500 GET /api/threads`. GetThreadsByOrg selects
+// COALESCE(last_inbound_at, last_outbound_at, created_at) — a SQL expression
+// with NO column type affinity, which modernc/sqlite returns as a string. The
+// handler scanned it straight into a time.Time, so the query errored on every
+// poll (deterministic, ~1ms) and the handler returned 500. A freshly seeded
+// thread (NULL inbound/outbound, real created_at) is the exact production shape.
+func TestGetThreadsByOrg_ListsSeededThread(t *testing.T) {
+	s := newSharedStore(t, "threads_list_by_org.db")
+	const orgID = int64(7)
+	const profileURL = "https://www.facebook.com/profile.threadlist"
+
+	if _, err := s.Threads().SeedThreadForOrg(orgID, 0, "facebook", profileURL, "List View", ""); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	rows, err := s.Threads().GetThreadsByOrg(orgID, 100)
+	if err != nil {
+		t.Fatalf("GetThreadsByOrg returned error (this is the /api/threads 500): %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(rows))
+	}
+	if rows[0].ProfileName != "List View" {
+		t.Errorf("profile_name = %q, want List View", rows[0].ProfileName)
+	}
+	// last_at must fall back to created_at (inbound/outbound are NULL on a seed).
+	if rows[0].LastAt.IsZero() {
+		t.Error("last_at should fall back to created_at, got zero time")
+	}
+}
+
+// TestGetThreadsByOrg_EmptyReturnsNoRows confirms an org with no threads yields
+// an empty result and no error (the handler then returns 200 []).
+func TestGetThreadsByOrg_EmptyReturnsNoRows(t *testing.T) {
+	s := newSharedStore(t, "threads_list_empty.db")
+	rows, err := s.Threads().GetThreadsByOrg(999, 100)
+	if err != nil {
+		t.Fatalf("GetThreadsByOrg(empty org) errored: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected 0 threads, got %d", len(rows))
+	}
+}
+
 func TestSeedThreadForOrg_RejectsEmptyInputs(t *testing.T) {
 	s := newSharedStore(t, "threads_seed_reject.db")
 	tests := []struct {

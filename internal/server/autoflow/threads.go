@@ -2,6 +2,7 @@ package autoflow
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -10,14 +11,27 @@ import (
 )
 
 func (h *Handler) autoflowListThreads(c *fiber.Ctx) error {
-	orgID := c.Locals("org_id").(int64)
+	// Missing org context is an auth/state problem (stale/unauthenticated poll),
+	// not a server fault — surface 401, never panic into a 500. user_id is logged
+	// for correlation only; it is never required to serve the list.
+	orgID, ok := c.Locals("org_id").(int64)
+	if !ok || orgID <= 0 {
+		log.Printf("[AutoflowThreads] route=%s code=missing_org_context", c.Path())
+		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	userID, _ := c.Locals("user_id").(int64)
 	threads, err := h.deps.DB.Threads().GetThreadsByOrg(orgID, 100)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		// Structured server-side detail (route/org/user/code + DB error) — no tokens,
+		// cookies, auth headers, or message content. Client gets a generic message so
+		// raw DB internals are not leaked.
+		log.Printf("[AutoflowThreads] route=%s org=%d user=%d code=threads_query_failed db_err=%v", c.Path(), orgID, userID, err)
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load threads"})
 	}
 	unreadCount, err := h.deps.DB.Threads().CountThreadUnreadByOrg(orgID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		log.Printf("[AutoflowThreads] route=%s org=%d user=%d code=unread_count_failed db_err=%v", c.Path(), orgID, userID, err)
+		return c.Status(500).JSON(fiber.Map{"error": "failed to load threads"})
 	}
 	type row struct {
 		ID          int64     `json:"id"`

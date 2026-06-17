@@ -294,12 +294,21 @@ func (s *Store) GetThreadsByOrg(orgID int64, limit int) ([]ThreadSummary, error)
 	var out []ThreadSummary
 	for rows.Next() {
 		var r ThreadSummary
-		if err := rows.Scan(&r.ID, &r.ProfileName, &r.ProfileURL, &r.Status, &r.UnreadCount, &r.LastMessage, &r.LastAt); err != nil {
+		// last_at is COALESCE(last_inbound_at, last_outbound_at, created_at) — a SQL
+		// expression with NO column type affinity, so modernc/sqlite returns it as a
+		// string. Scan into a string then ParseSQLiteTime (the same pattern every
+		// other query in this file uses). Scanning a COALESCE time expression straight
+		// into time.Time errors on every row ("unsupported Scan, storing driver.Value
+		// type string into type *time.Time") and was the root cause of the recurring
+		// `500 GET /api/threads`.
+		var lastAt string
+		if err := rows.Scan(&r.ID, &r.ProfileName, &r.ProfileURL, &r.Status, &r.UnreadCount, &r.LastMessage, &lastAt); err != nil {
 			return nil, err
 		}
+		r.LastAt = dbutil.ParseSQLiteTime(lastAt)
 		out = append(out, r)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func (s *Store) CountThreadUnreadByOrg(orgID int64) (int, error) {
