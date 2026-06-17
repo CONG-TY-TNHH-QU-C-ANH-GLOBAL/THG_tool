@@ -56,7 +56,18 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 			errMsg = "Chrome Extension crawl failed"
 		}
 		_ = appStore.FailTask(ctx, req.TaskID, errMsg)
-		system.NotifyCrawlFailure(h.db, h.notifier, orgID, req.AccountID, req.TaskID, errMsg)
+		// P1.3E: when a FAILED crawl is an explicit direct-post import (target not rendered /
+		// boilerplate / typed group/post mismatch reported by the extension), fail the workflow
+		// terminally with the typed code AND surface it to the requester — instead of only an
+		// admin crawl-failure notice + a poller timeout. No lead / no outbound / no comment.
+		if wf := h.resolveDirectPostIntake(ctx, orgID, req.TaskID); wf != nil {
+			code := directPostFailureCodeFromExtensionError(errMsg)
+			log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q extension_error=%q → terminal code=%s",
+				wf.ID, req.TaskID, errMsg, code)
+			h.failDirectPostImport(ctx, orgID, wf, code, "direct-post import failed in connector: "+errMsg)
+		} else {
+			system.NotifyCrawlFailure(h.db, h.notifier, orgID, req.AccountID, req.TaskID, errMsg)
+		}
 		return connectorCrawlProcessResult{Status: "failed", Error: errMsg}, nil
 	}
 

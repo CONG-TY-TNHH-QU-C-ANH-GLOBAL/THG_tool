@@ -17,11 +17,29 @@ func TestDirectPostFailureUserMessage(t *testing.T) {
 		coordination.DPErrImportGroupMismatch:      "lệch group/context",
 		coordination.DPErrImportNoObservedItem:     "chưa quan sát được bài viết mục tiêu",
 		coordination.DPErrImportBoilerplateContent: "giao diện Facebook",
+		coordination.DPErrImportTargetNotRendered:  "chưa hiển thị được bài viết mục tiêu",
 		"some_unknown_code":                        "không xác minh được bài viết mục tiêu",
 	}
 	for code, want := range cases {
 		if msg := directPostFailureUserMessage(code); !strings.Contains(msg, want) {
 			t.Errorf("code %q → %q, want substring %q", code, msg, want)
+		}
+	}
+}
+
+// P1.3E: the extension-reported typed crawl error maps to the right terminal workflow code.
+func TestDirectPostFailureCodeFromExtensionError(t *testing.T) {
+	cases := map[string]string{
+		"direct_post_target_not_rendered": coordination.DPErrImportTargetNotRendered,
+		"wrong_page: expected X got Y":    coordination.DPErrImportTargetNotRendered,
+		"direct_post_boilerplate_content": coordination.DPErrImportBoilerplateContent,
+		"direct_post_group_mismatch":      coordination.DPErrImportGroupMismatch,
+		"direct_post_post_mismatch":       coordination.DPErrImportPostIDMismatch,
+		"some other connector error":      coordination.DPErrImportNoObservedItem,
+	}
+	for errMsg, want := range cases {
+		if got := directPostFailureCodeFromExtensionError(errMsg); got != want {
+			t.Errorf("extension error %q → %q, want %q", errMsg, got, want)
 		}
 	}
 }

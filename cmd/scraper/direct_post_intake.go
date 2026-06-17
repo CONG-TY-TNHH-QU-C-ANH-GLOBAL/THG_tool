@@ -108,6 +108,13 @@ func directPostImportArgs(in directPostCommentInput) map[string]any {
 		"user_role":   in.UserRole,
 		"max_items":   int64(1), // exactly this one post — never a broad crawl
 		"user_prompt": in.Prompt,
+		// P1.3E target identity: the extension uses this to wait for + extract ONLY the
+		// requested post container (never a sidebar/related/foreign-group candidate), and to
+		// return a typed failure when the target is not rendered. submitOpenCrawl forwards it
+		// into task.extras["direct_post_target"]; broad crawl never sets these keys.
+		"direct_post_post_fbid": in.PostFBID,
+		"direct_post_group_ref": in.GroupRef,
+		"direct_post_canonical": in.CanonicalPostURL,
 	}
 	if in.AccountID > 0 {
 		args["account_id"] = in.AccountID // PIN — no cross-account auto-pick

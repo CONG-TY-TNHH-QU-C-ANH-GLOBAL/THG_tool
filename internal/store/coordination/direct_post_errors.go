@@ -49,4 +49,9 @@ const (
 	DPErrImportAccountMismatch = "direct_post_import_account_mismatch"
 	// DPErrImportBoilerplateContent — the requested post's content was boilerplate/UI chrome.
 	DPErrImportBoilerplateContent = "direct_post_import_boilerplate_content"
+	// DPErrImportTargetNotRendered — the connector reached the permalink but the TARGET post
+	// container never rendered within the bounded wait (P1.3E target-aware extraction), so no
+	// item was emitted. Distinct from no_observed_item: the extension actively refused to grab
+	// a non-target candidate rather than returning an empty feed scan.
+	DPErrImportTargetNotRendered = "direct_post_import_target_not_rendered"
 )
