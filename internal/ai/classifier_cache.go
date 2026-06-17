@@ -64,27 +64,31 @@ func (c *classifierCache) Get(key string, now time.Time) (UniversalClassifyResul
 	return e.result, true
 }
 
-// Set stores a validated result. Bounded memory: when at capacity it first sweeps
-// expired entries, then (if still full) evicts arbitrary entries — Go map iteration
-// is randomized — until below max. No LRU and no background goroutine: bounded
-// memory and safety are preferred over ideal eviction for Phase 1.
+// Set stores a validated result. Bounded eviction: when at capacity it evicts
+// entries (effectively random — Go map iteration is randomized) until back under
+// max, deleting exactly one per iteration. In steady state this removes a single
+// entry, so Set NEVER holds the lock for an O(max) full-table scan — keeping the
+// critical section tiny under high classifier traffic. TTL correctness is enforced
+// by Get (it never returns an expired entry and deletes it on read); expired
+// entries that are never re-read are reclaimed here under capacity pressure. No LRU
+// and no background goroutine: bounded memory + a minimal critical section are
+// preferred over ideal eviction for Phase 1.
 func (c *classifierCache) Set(key string, result UniversalClassifyResult, now time.Time) {
 	if !c.Enabled() {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.entries) >= c.max {
-		for k, e := range c.entries {
-			if now.After(e.expiresAt) {
-				delete(c.entries, k)
-			}
-		}
+	// Evict down to max-1 so the new entry fits without exceeding the bound.
+	for len(c.entries) >= c.max {
+		evicted := false
 		for k := range c.entries {
-			if len(c.entries) < c.max {
-				break
-			}
 			delete(c.entries, k)
+			evicted = true
+			break
+		}
+		if !evicted {
+			break // map already empty (defensive; cannot happen while len >= max >= 1)
 		}
 	}
 	c.entries[key] = classifierCacheEntry{result: result, expiresAt: now.Add(c.ttl)}
