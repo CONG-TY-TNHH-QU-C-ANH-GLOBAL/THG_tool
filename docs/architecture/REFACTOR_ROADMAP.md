@@ -210,6 +210,41 @@ extraction only). Isolated PR off `main` after D.0 (Batch 1) merged via PR #12.
   ~35 more across `internal/{drivers/copilot,leadingest,server,store,ai}` — one batch
   at a time after review.
 
+### D.2 — Sonar cognitive-complexity hygiene, batch 3 (refactor-only)  ✅ DONE
+
+Third one-issue hygiene batch, same doctrine as D.0/D.1 (no Phase D redesign; local
+extraction only). Isolated PR off `main` after D.1 (Batch 2) merged via PR #13.
+
+- **Branch:** `refactor/sonar-cognitive-batch-3` (from `origin/main` @ `3b4fff5e`).
+- **Sonar issue/rule fixed:** `AZ7askww1xM_XIKj2DTh` — `go:S3776` (cognitive
+  complexity 17 → ≤15) on `internal/server/leads/lifecycle.go:20`
+  `getLeadLifecyclesBatch` (read-only `GET /api/leads/lifecycle?ids=` projection).
+- **Changed files:** `internal/server/leads/lifecycle.go` (this `REFACTOR_ROADMAP.md` note).
+- **Risk level:** **LOW** — drivers/http transport handler; read-only endpoint, no DB
+  writes, no outbound / connector claim-CAS-lease / ledger-execution_attempts / policy /
+  auth-logic / migration touched.
+- **Refactor-only or behavior-changing:** **refactor-only.**
+- **What changed:** extracted the comma-separated `?ids=` parsing/validation loop into a
+  same-package private helper `parseLeadLifecycleIDs(raw) ([]int64, error)`. The handler
+  keeps the `org_id` guard, the empty-`raw` 200 early-return, the store call, and the
+  500 path verbatim.
+- **Behavior preserved:** yes — identical 100-id cap, empty-segment skipping, and id
+  validation; the helper returns errors whose `.Error()` strings match the previous 400
+  bodies exactly (`max 100 ids per call`, `invalid id: <p>`), so the wire contract is
+  unchanged. `org_id` tenant scoping untouched. One new stdlib import (`errors`) — chosen
+  over `fmt.Errorf` to avoid a `go vet` non-constant-format-string warning.
+- **Validation:** `gofmt` clean; `go vet ./...` clean; `go build ./...` clean;
+  `go test ./...` PASS (`internal/server/leads` ok); `-race` not runnable in this Windows
+  env (`CGO_ENABLED=0`, no C compiler — leave to CI/Linux); `check_import_boundaries.sh`
+  exit 0 (4 pre-existing known-gap warnings, **0 new**); `check_file_size.py` PASS;
+  `git diff --check` clean.
+- **Remaining risks:** none identified (mechanical move; same package, same calls).
+- **Remaining Sonar `go:S3776` backlog (low-risk non-test pool, cx asc):**
+  `internal/server/org/handlers.go:289 (16)`, `internal/server/org/superadmin.go:160 (16)`,
+  `internal/server/leads/engagement.go:46 (17)`, `internal/server/workspace/watchers.go:331 (17)`,
+  `internal/server/org/users.go:14 (18, auth — handle with care)`, plus ~100 more across
+  cmd/server/store/ai — one batch at a time after review.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,

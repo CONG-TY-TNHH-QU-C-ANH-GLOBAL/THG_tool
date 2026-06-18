@@ -2,6 +2,7 @@ package leads
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,29 @@ import (
 // actions. Org-scoping is the standard protected-route guard; no extra access gate
 // (battlefield model). Archiving never hard-deletes — it flips archived_at.
 
+// parseLeadLifecycleIDs parses the comma-separated ?ids= list: it caps the
+// request at 100 ids, skips empty segments, and rejects any non-positive or
+// non-numeric id. Error messages match the endpoint's previous 400 bodies
+// verbatim so the wire contract is unchanged.
+func parseLeadLifecycleIDs(raw string) ([]int64, error) {
+	parts := strings.Split(raw, ",")
+	if len(parts) > 100 {
+		return nil, errors.New("max 100 ids per call")
+	}
+	ids := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, errors.New("invalid id: " + p)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // getLeadLifecyclesBatch handles GET /api/leads/lifecycle?ids=1,2,3 — a map keyed by
 // lead_id for list-view grouping. Capped at 100 ids per call.
 func getLeadLifecyclesBatch(deps Deps) fiber.Handler {
@@ -27,20 +51,9 @@ func getLeadLifecyclesBatch(deps Deps) fiber.Handler {
 		if raw == "" {
 			return c.JSON(fiber.Map{"lifecycles": map[string]any{}})
 		}
-		parts := strings.Split(raw, ",")
-		if len(parts) > 100 {
-			return c.Status(400).JSON(fiber.Map{"error": "max 100 ids per call"})
-		}
-		ids := make([]int64, 0, len(parts))
-		for _, p := range parts {
-			if p = strings.TrimSpace(p); p == "" {
-				continue
-			}
-			id, err := strconv.ParseInt(p, 10, 64)
-			if err != nil || id <= 0 {
-				return c.Status(400).JSON(fiber.Map{"error": "invalid id: " + p})
-			}
-			ids = append(ids, id)
+		ids, err := parseLeadLifecycleIDs(raw)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 		states, err := deps.DB.Leads().GetLeadLifecyclesBatch(context.Background(), orgID, ids, models.DefaultLeadLifecyclePolicy())
 		if err != nil {
