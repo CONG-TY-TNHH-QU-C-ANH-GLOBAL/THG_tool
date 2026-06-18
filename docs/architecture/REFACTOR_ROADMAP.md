@@ -178,6 +178,38 @@ easier and the `go:S3776` debt stops blocking the quality gate.
   intent_router.go:14(28)}`, `internal/leadingest/ingest.go:223(105)`, and ~35 more across
   server/store/ai — to be taken one batch at a time after review.
 
+### D.1 — Sonar cognitive-complexity hygiene, batch 2 (refactor-only)  ✅ DONE
+
+Second one-issue hygiene batch, same doctrine as D.0 (no Phase D redesign; local
+extraction only). Isolated PR off `main` after D.0 (Batch 1) merged via PR #12.
+
+- **Branch:** `refactor/sonar-cognitive-batch-2` (from `origin/main` @ `f7cb2c7b`).
+- **Sonar issue/rule fixed:** `AZ7askWv1xM_XIKj2DHJ` — `go:S3776` (cognitive
+  complexity 22 → ≤15) on `cmd/scraper/crawl_runtime.go:19` `submitOpenCrawl`.
+- **Changed files:** `cmd/scraper/crawl_runtime.go` (this `REFACTOR_ROADMAP.md` note).
+- **What changed:** extracted four pure-local private helpers from the arg-resolution
+  prefix of `submitOpenCrawl` — `resolveCrawlMaxItems`, `resolveCrawlKeywords`,
+  `resolveCrawlAccountID`, `buildCrawlExtras`. The `jobs.Task` literal and the
+  submit/route tail (`submitConnectorCrawl` / `jobStore.Submit`) are untouched.
+- **Refactor-only or behavior-changing:** **refactor-only.**
+- **Behavior preserved:** yes — identical fallback chains, the `args["account_id"]`
+  write-back on auto-pick, `Task` fields, `context`/error strings, logs, and call
+  order. No connector claim / CAS / lease / ledger / outbound hot-path logic touched
+  (those live in `submitConnectorCrawl`/`enqueueConnectorCrawlCommand`, unchanged).
+  `org_id` tenant scoping preserved. No package move, no new import, no new boundary.
+- **Validation:** `gofmt` clean; `go vet ./...` clean; `go build ./...` clean;
+  `go test ./...` PASS (`cmd/scraper` ok); `-race` not runnable in this Windows env
+  (`CGO_ENABLED=0`, no C compiler — leave to CI/Linux); `check_import_boundaries.sh`
+  exit 0 (4 pre-existing known-gap warnings, **0 new**); `check_file_size.py` PASS;
+  `git diff --check` clean.
+- **Remaining risks:** none identified (mechanical move; same package, same calls).
+- **Remaining Sonar `go:S3776` backlog (cmd/scraper):** `crawl_runtime.go:114 (29)`
+  `pickReadyFacebookAccountIDForCrawl` (connector-readiness — higher risk),
+  `main.go:28 (64)`, `outbound_actions.go:90 (95)/698 (19)/806 (33)` (outbound hot
+  path — gated on characterization tests, Phase C/I), `skills_register.go (22)`; plus
+  ~35 more across `internal/{drivers/copilot,leadingest,server,store,ai}` — one batch
+  at a time after review.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,
