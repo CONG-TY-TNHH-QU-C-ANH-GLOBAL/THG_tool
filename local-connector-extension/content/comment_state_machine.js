@@ -66,21 +66,44 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
       return done(false, check.duplicate ? 'comment_text_doubled' : 'comment_text_mismatch');
     }
 
-    // 3. find the submit control.
+    // 3+4. SUBMIT — atomic readiness against Facebook's React/Lexical send button.
+    // After execCommand('insertText') activates Lexical's EditorState (done in the guard
+    // above), Facebook attaches/enables/RE-MOUNTS the real send button on a React flush.
+    // Clicking the pre-flush generation is a ghost-button no-op (the "1–3 attempts before
+    // submit succeeds" symptom). So:
+    //   (a) wait one short React-flush window, then
+    //   (b) RE-QUERY the submit control FRESH on EVERY attempt — never reuse a node
+    //       captured before the flush; it may be stale/detached/replaced.
+    // Unchanged: findSubmitButtons stays scoped to THIS editor (no global "Comment"
+    // search), keeps its visible/enabled/reject-label filtering, RE-ASSERT-before-click
+    // guards against a doubled composer, and submit "success" is still proven only by the
+    // composer clearing. Post/account identity gates are upstream (executeComment) and
+    // untouched. Synthetic clicks are NOT trusted input — success is effect-verified.
     diag.phase = 'submit';
-    const buttons = Sub.findSubmitButtons(editor, [commentButton], deps.submitDeps);
-    diag.submit_button_found = buttons.length > 0;
+    const FLUSH_MS = 150; // React virtual-DOM flush window (50–200ms) to attach/enable submit
+    await deps.wait(FLUSH_MS);
+    diag.react_flush_wait_ms = FLUSH_MS;
 
-    // 4. click → check cleared. RE-ASSERT before EACH click (catch a late draft re-mount).
     let clicked = false;
     let cleared = false;
-    for (const b of buttons) {
+    let sawButton = false;
+    const MAX_SUBMIT_ATTEMPTS = 4;
+    let submitAttempts = 0;
+    for (let attempt = 0; attempt < MAX_SUBMIT_ATTEMPTS && !cleared; attempt += 1) {
+      submitAttempts = attempt + 1;
+      // Double-submit guard: once a click has fired, a cleared composer means the submit
+      // was ACCEPTED (FB cleared it, possibly slowly) — stop; never click a second time.
+      if (clicked && !deps.editorContainsContent(editor, expected)) { cleared = true; break; }
       check = G.assertComposerExactlyExpected(editor, expected);
       if (!check.ok) {
         diag.composer_before_submit_is_duplicate_of_expected = check.duplicate;
         await G.clearComposerUntilEmpty(editor);
         return done(false, check.duplicate ? 'comment_text_doubled' : 'comment_text_mismatch');
       }
+      // RE-QUERY fresh — the current generation of the send button, scoped to this editor.
+      const fresh = Sub.findSubmitButtons(editor, [commentButton], deps.submitDeps);
+      if (fresh.length > 0) sawButton = true;
+      const b = fresh[0];
       if (b && deps.clickLikeUser(b)) {
         clicked = true;
         cleared = await deps.waitFor(() => !deps.editorContainsContent(editor, expected), 7000, 250);
@@ -88,6 +111,8 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
       }
       await deps.wait(400);
     }
+    diag.submit_button_found = sawButton;
+    diag.submit_requeried_attempts = submitAttempts;
     if (!cleared) {
       check = G.assertComposerExactlyExpected(editor, expected);
       if (check.ok && Sub.pressEnter(editor)) {
