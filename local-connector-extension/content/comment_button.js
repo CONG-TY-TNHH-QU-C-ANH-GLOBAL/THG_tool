@@ -11,10 +11,9 @@
 // Pure logic + injected DOM deps (visible/labelOf/findCommentEditor/scrollIntoCenter/wait/
 // now) so it is unit-testable with plain fake nodes — no jsdom.
 var THGCommentButton = globalThis.THGCommentButton || (() => {
-  const COMMENT_KEYS = [
-    'comment', 'write a comment', 'binh luan', 'viet binh luan',
-    'bình luận', 'viết bình luận', 'add a comment',
-  ];
+  const K = globalThis.THGCommentConstants
+    || (typeof require !== 'undefined' ? require('./comment_constants.js') : null);
+  const COMMENT_KEYS = K.COMMENT_KEYS;
   const BUTTON_SEL = 'div[role="button"], button, a[role="button"], span[role="button"], [aria-label]';
 
   function labelHasComment(label) {

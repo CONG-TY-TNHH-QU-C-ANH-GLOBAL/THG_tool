@@ -46,8 +46,12 @@ var sandboxCopyExts = map[string]bool{
 // NewIsolatedSandbox creates a temp directory and copies all Go source files
 // from baseDir into it, preserving the directory structure.
 func NewIsolatedSandbox(traceID, baseDir string) (*IsolatedSandbox, error) {
-	sandboxDir := filepath.Join(os.TempDir(), "agentloop-"+traceID)
-	if err := os.MkdirAll(sandboxDir, 0755); err != nil {
+	// Use MkdirTemp instead of a predictable TempDir()/agentloop-<traceID>
+	// path: it appends a random suffix and creates the directory with 0700
+	// perms, so a local attacker can neither pre-create nor read/write the
+	// sandbox in the shared, world-writable temp root (sonar go:S5443).
+	sandboxDir, err := os.MkdirTemp("", "agentloop-"+traceID+"-")
+	if err != nil {
 		return nil, fmt.Errorf("isolated sandbox: create dir: %w", err)
 	}
 

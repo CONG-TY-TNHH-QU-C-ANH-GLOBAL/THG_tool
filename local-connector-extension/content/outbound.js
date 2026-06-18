@@ -1,4 +1,6 @@
 var THGContentOutbound = globalThis.THGContentOutbound || (() => {
+  const K = globalThis.THGCommentConstants
+    || (typeof require !== 'undefined' ? require('./comment_constants.js') : null);
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const norm = (value) => String(value || '')
     .normalize('NFD')
@@ -33,7 +35,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   function dispatchMouseLike(el, type, x, y, extra = {}) {
     try {
       el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
-    } catch (_) {}
+    } catch (_) { /* synthetic event dispatch is best-effort; ignore */ }
   }
 
   function dispatchPointerLike(el, type, x, y, extra = {}) {
@@ -46,12 +48,22 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         buttons: type.endsWith('down') ? 1 : 0,
         ...extra
       })));
-    } catch (_) {}
+    } catch (_) { /* synthetic event dispatch is best-effort; ignore */ }
   }
 
+  // clickLikeUser fires a full pointer→mouse→click sequence at the element's centre.
+  // It RE-VALIDATES eligibility AT CLICK TIME and returns HONESTLY: false when the
+  // element is null, detached from the document, invisible, or disabled — so the
+  // submit state machine is never told a click "succeeded" against a ghost / stale /
+  // hidden node and stops retrying on a no-op. (Previously it returned true
+  // unconditionally; a synthetic click on a detached button registered as success.)
   function clickLikeUser(el) {
     if (!el) return false;
-    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+    // The node may have detached / hidden / disabled between selection and here —
+    // FB re-mounts the send button on React flushes. Re-check before dispatching.
+    if (el.isConnected === false) return false;
+    if (!visible(el) || !enabledButton(el)) return false;
+    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) { /* scroll is best-effort */ }
     const rect = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
     const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
@@ -66,6 +78,8 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       el.click();
       return true;
     } catch (_) {
+      // Synthetic dispatch threw — fall back to a native click, reporting success
+      // only if that native click itself does not throw.
       try { el.click(); return true; } catch (_) { return false; }
     }
   }
@@ -182,11 +196,11 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     } catch (_) {
       editor.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    try { editor.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+    try { editor.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) { /* change event is best-effort; ignore */ }
   }
 
   function setEditableText(editor, text) {
-    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) {} }
+    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) { /* focus is best-effort; ignore */ } }
     if (editor.isContentEditable) {
       // PR8D + PR-DUP: clear any pre-existing / FB-restored draft BEFORE inserting.
       // FB persists an unsent comment draft per post; on a retry it re-mounts the
@@ -197,7 +211,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       for (let i = 0; i < 6; i += 1) {
         if (norm(textOfEditable(editor)).length === 0) break;
         selectEditableContents(editor);
-        try { document.execCommand('delete', false, null); } catch (_) {}
+        try { document.execCommand('delete', false, null); } catch (_) { /* draft clear is best-effort; ignore */ }
       }
       selectEditableContents(editor);
       document.execCommand('insertText', false, text);
@@ -526,7 +540,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   }
 
   function findCommentEditor(scope) {
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const commentKeys = K.COMMENT_KEYS;
     const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
     const root = scope || document;
     const editors = Array.from(root.querySelectorAll('[contenteditable="true"], textarea, input[type="text"]'))
@@ -555,7 +569,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const inArticle = findCommentEditor(targetArticle);
     if (inArticle) return inArticle;
     const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const commentKeys = K.COMMENT_KEYS;
     const onPermalink = onTargetPermalinkPage(id);
     let scope = targetArticle.parentElement;
     for (let depth = 0; scope && depth < 6; depth += 1, scope = scope.parentElement) {
@@ -589,9 +603,9 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return THGCommentComposer.findComposerEntry(article, commentSurfaceDeps(targetPostId));
   }
 
-  // (submitScore / submitCandidateSpatial / findSubmitButtons moved to
-  // content/comment_submit.js — THGCommentSubmit.findSubmitButtons(editor, excluded,
-  // submitDeps).)
+  // (Submit-button ranking + settle gate live in content/comment_submit.js —
+  // THGCommentSubmit.findSubmitButtons / waitForStableSubmitTarget(editor, excluded,
+  // submitDeps). The old submitScore heuristic was replaced by strict tiers there.)
 
   // probeCommentGates inspects the live DOM ONCE and reports the three PR8A
   // pre-comment signals for the target post WITHOUT mutating anything:
@@ -609,7 +623,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
         'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
       );
     }
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const commentKeys = K.COMMENT_KEYS;
     const buttons = Array.from(scope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     out.commentButtonFound = buttons.some(el => {
       const label = labelOf(el);
@@ -624,7 +638,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // composer_count==0) from a composer/typing failure — WITHOUT a screenshot.
   // Pure read, no mutation.
   function domCounts() {
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const commentKeys = K.COMMENT_KEYS;
     const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     const commentButtons = buttons.filter(el => {
       const label = labelOf(el);
@@ -838,7 +852,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     }
     const searchRoot = targetScope || document;
 
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const commentKeys = K.COMMENT_KEYS;
     const buttons = Array.from(searchRoot.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     const commentButton = buttons.find(el => {
       const label = labelOf(el);
@@ -961,7 +975,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
       executorPath: permalinkPage ? 'permalink_page' : 'permalink_article',
       outboundId: opts.outboundId || 0,
-      clickLikeUser, editorContainsContent, waitFor, wait, submitDeps,
+      clickLikeUser, editorContainsContent, waitFor, wait, now: () => Date.now(), submitDeps,
     });
     if (!sm.ok) {
       return commentResult(false, sm.reason, null, ctx,
@@ -1234,12 +1248,12 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     }
 
     // Scroll target into view so FB doesn't unmount it as we click.
-    try { targetScope.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch {}
+    try { targetScope.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch { /* scroll is best-effort; ignore */ }
     await wait(400);
 
     // Find Comment button inside the article scope (NOT document-wide
     // — feed has many articles, document-wide would click the wrong one).
-    const commentKeys = ['comment', 'write a comment', 'binh luan', 'viet binh luan'];
+    const commentKeys = K.COMMENT_KEYS;
     const buttons = Array.from(targetScope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
     const commentButton = buttons.find(el => {
       const label = labelOf(el);
@@ -1317,7 +1331,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
       executorPath: 'group_feed',
       outboundId: Number(message?.id || message?.outbound_id || 0) || 0,
-      clickLikeUser, editorContainsContent, waitFor, wait, submitDeps,
+      clickLikeUser, editorContainsContent, waitFor, wait, now: () => Date.now(), submitDeps,
     });
     if (!sm.ok) {
       return commentResult(false, sm.reason, null, ctx,

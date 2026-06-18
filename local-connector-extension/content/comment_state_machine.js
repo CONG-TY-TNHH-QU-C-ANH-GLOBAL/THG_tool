@@ -9,6 +9,9 @@
 // Composer mechanics live in THGCommentGuard, button finding in THGCommentSubmit.
 // Shared DOM helpers + outboundId + executorPath are threaded in via `deps`.
 var THGCommentSM = globalThis.THGCommentSM || (() => {
+  const K = globalThis.THGCommentConstants
+    || (typeof require !== 'undefined' ? require('./comment_constants.js') : null);
+  const { TIMING } = K;
   const DEBUG_COMPOSER = true; // flip false to silence telemetry after the incident
   const EXT_VERSION = (() => { try { return chrome.runtime.getManifest().version; } catch (_) { return ''; } })();
 
@@ -71,7 +74,8 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
     // above), Facebook attaches/enables/RE-MOUNTS the real send button on a React flush.
     // Clicking the pre-flush generation is a ghost-button no-op (the "1–3 attempts before
     // submit succeeds" symptom). So:
-    //   (a) wait one short React-flush window, then
+    //   (a) SETTLE GATE — poll until the top submit candidate stops being re-created
+    //       (waitForStableSubmitTarget), instead of a blind fixed-ms wait, then
     //   (b) RE-QUERY the submit control FRESH on EVERY attempt — never reuse a node
     //       captured before the flush; it may be stale/detached/replaced.
     // Unchanged: findSubmitButtons stays scoped to THIS editor (no global "Comment"
@@ -80,16 +84,16 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
     // composer clearing. Post/account identity gates are upstream (executeComment) and
     // untouched. Synthetic clicks are NOT trusted input — success is effect-verified.
     diag.phase = 'submit';
-    const FLUSH_MS = 150; // React virtual-DOM flush window (50–200ms) to attach/enable submit
-    await deps.wait(FLUSH_MS);
-    diag.react_flush_wait_ms = FLUSH_MS;
+    const settledTarget = await Sub.waitForStableSubmitTarget(editor, [commentButton], deps.submitDeps, {
+      wait: deps.wait, now: deps.now,
+    });
+    diag.submit_target_settled = !!settledTarget;
 
     let clicked = false;
     let cleared = false;
     let sawButton = false;
-    const MAX_SUBMIT_ATTEMPTS = 4;
     let submitAttempts = 0;
-    for (let attempt = 0; attempt < MAX_SUBMIT_ATTEMPTS && !cleared; attempt += 1) {
+    for (let attempt = 0; attempt < TIMING.maxSubmitAttempts && !cleared; attempt += 1) {
       submitAttempts = attempt + 1;
       // Double-submit guard: once a click has fired, a cleared composer means the submit
       // was ACCEPTED (FB cleared it, possibly slowly) — stop; never click a second time.
@@ -106,10 +110,10 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
       const b = fresh[0];
       if (b && deps.clickLikeUser(b)) {
         clicked = true;
-        cleared = await deps.waitFor(() => !deps.editorContainsContent(editor, expected), 7000, 250);
+        cleared = await deps.waitFor(() => !deps.editorContainsContent(editor, expected), TIMING.clearedTimeoutMs, TIMING.clearedPollMs);
         if (cleared) break;
       }
-      await deps.wait(400);
+      await deps.wait(TIMING.submitRetryWaitMs);
     }
     diag.submit_button_found = sawButton;
     diag.submit_requeried_attempts = submitAttempts;
@@ -117,7 +121,7 @@ var THGCommentSM = globalThis.THGCommentSM || (() => {
       check = G.assertComposerExactlyExpected(editor, expected);
       if (check.ok && Sub.pressEnter(editor)) {
         clicked = true;
-        cleared = await deps.waitFor(() => !deps.editorContainsContent(editor, expected), 7000, 250);
+        cleared = await deps.waitFor(() => !deps.editorContainsContent(editor, expected), TIMING.clearedTimeoutMs, TIMING.clearedPollMs);
       }
     }
     diag.submit_clicked = clicked;

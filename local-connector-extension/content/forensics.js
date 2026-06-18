@@ -73,7 +73,12 @@ var THGForensics = globalThis.THGForensics || (() => {
   // The injected MAIN-world patch (src/outbox.js forensicPatchMain) posts every
   // history.pushState/replaceState/popstate here with FB's stack trace.
   window.addEventListener('message', (ev) => {
+    // Only trust messages this document posted to itself: same window AND
+    // same origin. The MAIN-world patch (outbox.js) posts with the page's
+    // own origin as the target, so a genuine forensic event always matches
+    // location.origin (sonar js:S2819).
     if (ev.source !== window) return;
+    if (ev.origin !== window.location.origin) return;
     const d = ev.data;
     if (!d || d.source !== 'THG_FORENSIC_PUSHSTATE') return;
     pushStates.push({

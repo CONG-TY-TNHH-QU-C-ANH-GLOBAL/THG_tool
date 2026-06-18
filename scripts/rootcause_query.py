@@ -7,7 +7,12 @@ between data/scraper.db (the server default DB_PATH) and data/local.db.
 
 Usage (from repo root):
     python scripts/rootcause_query.py
-    python scripts/rootcause_query.py path\\to\\your.db   # explicit DB
+    DB_PATH=path/to/your.db python scripts/rootcause_query.py   # explicit DB
+
+The DB is selected from the DB_PATH environment variable (if set) and the
+two known in-repo candidates only. Accepting a database path as a CLI
+argument was removed deliberately: it let an arbitrary, caller-supplied
+path flow straight into sqlite3.connect (sonar pythonsecurity:S8706).
 
 It prints:
   1) phase distribution across the last 20 failed comment attempts
@@ -17,14 +22,11 @@ Nothing is written. Safe to run as many times as you like.
 import json
 import os
 import sqlite3
-import sys
 
 FAIL_FILTER = "outcome NOT IN ('dom_verified','optimistic_success','duplicate_blocked')"
 
 
-def candidate_dbs(argv):
-    if len(argv) > 1:
-        return [argv[1]]
+def candidate_dbs():
     # server default first (config.go DB_PATH default), then the common alt.
     env = os.environ.get("DB_PATH")
     out = []
@@ -56,9 +58,9 @@ def has_comment_attempts(path):
             pass
 
 
-def pick_db(argv):
+def pick_db():
     best, best_n = None, -1
-    for p in candidate_dbs(argv):
+    for p in candidate_dbs():
         n = has_comment_attempts(p)
         if n > best_n:
             best, best_n = p, n
@@ -80,10 +82,10 @@ def jx(evidence, path):
 
 
 def main():
-    db, n = pick_db(sys.argv)
+    db, n = pick_db()
     if db is None or n <= 0:
         print("No failed comment attempts found in any candidate DB.")
-        print("Checked:", ", ".join(candidate_dbs(sys.argv)))
+        print("Checked:", ", ".join(candidate_dbs()))
         print("Run >=1 comment_all_leads against a running server first, then re-run.")
         return
     print(f"DB = {db}   (failed comment attempts: {n})")

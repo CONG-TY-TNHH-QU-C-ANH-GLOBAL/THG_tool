@@ -9,6 +9,11 @@ const assert = require('assert');
 const { makeEl, makeArticle, sizeVisible } = require('./fake_dom');
 require('../content/comment_composer'); // sets globalThis.THGCommentComposer (button.js depends on it)
 const B = require('../content/comment_button');
+const K = require('../content/comment_constants');
+
+// S6 lock-in: the comment vocabulary is sourced from the ONE shared constants module
+// (no per-file re-declaration that can drift). comment_button.js must expose exactly it.
+assert.strictEqual(B.COMMENT_KEYS, K.COMMENT_KEYS, 'COMMENT_KEYS must come from THGCommentConstants');
 
 const labelOf = (el) => String(el.getAttribute('aria-label') || '').toLowerCase();
 const answerBox = () => makeEl({ role: 'textbox', ce: 'true', aria: 'Write an answer…', parentText: 'Write an answer…', w: 450, h: 20 });

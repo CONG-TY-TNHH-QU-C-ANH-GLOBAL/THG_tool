@@ -16,6 +16,9 @@ globalThis.THGCommentGuard = {
 };
 globalThis.THGCommentSubmit = {
   findSubmitButtons: () => { submitFinds++; return [{ id: 'btn' }]; },
+  // Settle gate (Fix B). Stubbed to a no-op resolver: the loop below still RE-QUERIES
+  // findSubmitButtons each attempt, which is the behaviour these tests exercise.
+  waitForStableSubmitTarget: async () => null,
   pressEnter: () => true,
 };
 
@@ -28,6 +31,7 @@ const baseDeps = {
   editorContainsContent: () => false, // composer cleared after submit
   waitFor: async pred => pred(),
   wait: async () => {},
+  now: () => 0,
   submitDeps: {},
 };
 
@@ -39,6 +43,7 @@ let r = await SM.runComposerToSubmit(
 assert.strictEqual(r.ok, true);
 assert.ok(submitFinds > 0, 'submit attempted on a clean composer');
 assert.strictEqual(r.diagnostic.phase, 'verify');
+assert.strictEqual(r.diagnostic.submit_target_settled, false, 'settle-gate result recorded in diagnostic');
 
 // A+A — prep reports doubled → abort, submit NEVER reached.
 submitFinds = 0;
@@ -76,6 +81,9 @@ assert.notStrictEqual(r.reason, 'hidden_by_facebook');
   let composerFull = true;
   globalThis.THGCommentSubmit = {
     findSubmitButtons: () => { gen += 1; return [{ id: 'btn', gen }]; },
+    // Settle gate stubbed to no-op so it does not consume a generation — the loop's
+    // RE-QUERY across attempts is what must surface the working button generation.
+    waitForStableSubmitTarget: async () => null,
     pressEnter: () => true,
   };
   const deps = {
@@ -85,6 +93,7 @@ assert.notStrictEqual(r.reason, 'hidden_by_facebook');
     editorContainsContent: () => composerFull,
     waitFor: async (pred) => pred(),
     wait: async () => {},
+    now: () => 0,
     submitDeps: {},
   };
   const rr = await SM.runComposerToSubmit(
@@ -98,7 +107,9 @@ assert.notStrictEqual(r.reason, 'hidden_by_facebook');
 // Restore the default submit stub for any later cases.
 globalThis.THGCommentSubmit = {
   findSubmitButtons: () => { submitFinds++; return [{ id: 'btn' }]; },
+  waitForStableSubmitTarget: async () => null,
   pressEnter: () => true,
 };
 
 console.log('comment_state_machine: PASS');
+

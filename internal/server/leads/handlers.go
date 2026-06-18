@@ -249,6 +249,13 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 func deleteAllLeads(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		niche := c.Query("niche", "")
+		// Validate against the slug allowlist before the value reaches the
+		// delete filter, the audit log, or the application log. Rejecting
+		// anything outside [a-z0-9_-] also strips CR/LF, so user input can
+		// no longer forge log records (sonar gosecurity:S5145).
+		if niche != "" && !nicheSlugRe.MatchString(niche) {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid niche: use lowercase letters, digits, '-' or '_' (max 64)"})
+		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
