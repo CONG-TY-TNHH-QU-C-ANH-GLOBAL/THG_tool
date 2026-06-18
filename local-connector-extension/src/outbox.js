@@ -515,13 +515,17 @@ var THGOutbox = globalThis.THGOutbox || (() => {
       window.__thgForensicPatched = true;
       const post = (method, url) => {
         try {
+          // Same-document handoff to the isolated content script: scope the
+          // target origin to this page's own origin instead of '*' so the
+          // forensic payload is never delivered to a cross-origin frame
+          // (sonar js:S2819).
           window.postMessage({
             source: 'THG_FORENSIC_PUSHSTATE',
             method,
             url: String(url || location.href),
             ts: Date.now(),
             stack: String((new Error()).stack || '').slice(0, 900),
-          }, '*');
+          }, window.location.origin);
         } catch (_) {}
       };
       const op = history.pushState;
