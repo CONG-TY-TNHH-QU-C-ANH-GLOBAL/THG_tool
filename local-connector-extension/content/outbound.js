@@ -1,6 +1,6 @@
 var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   const K = globalThis.THGCommentConstants
-    || (typeof require !== 'undefined' ? require('./comment_constants.js') : null);
+    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const norm = (value) => String(value || '')
     .normalize('NFD')
