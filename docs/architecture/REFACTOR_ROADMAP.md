@@ -145,6 +145,39 @@ a driver symbol, so `ai` does NOT import `copilot`.
 - **Tests/guards:** routing characterization tests; no `map[string]any` cross-module
   contracts for new code.
 
+### D.0 — Sonar cognitive-complexity hygiene (pre-Phase-D, refactor-only)  ✅ DONE
+
+A pure-readability batch that does **not** start the Phase D typed-`CommandBus`
+redesign — it only de-nests the legacy dispatcher so the eventual extraction is
+easier and the `go:S3776` debt stops blocking the quality gate.
+
+- **Branch:** `refactor/sonar-cognitive-agent-actions` (from `origin/main` @ `2afbd2a7`).
+- **Sonar issue/rule fixed:** `AZ7askWm1xM_XIKj2DHI` — `go:S3776` (cognitive
+  complexity 55 → ≤15) on `cmd/scraper/agent_actions.go:14` `makeAgentActionHandler`.
+- **Changed files:** `cmd/scraper/agent_actions.go` (this `REFACTOR_ROADMAP.md` note).
+- **What changed:** introduced an unexported `agentActionRouter` struct holding the
+  existing deps (`db`, `jobStore`, `msgGen`, `notify`, `intake`); `makeAgentActionHandler`
+  keeps its exact signature and returns `r.handle`; `handle` is now a thin dispatch
+  switch and each former case body moved verbatim into a small private method.
+- **Refactor-only or behavior-changing:** **refactor-only.**
+- **Behavior preserved:** yes — identical action set, args, `context.Background()`
+  usage, error strings, comments, and per-branch call order; the outbound safety
+  spine (`runPooledOutreach`/`commentSinglePost`/`guardFacebookWriteAccount`/
+  `queueGroupPost`/`queueProfilePost`) and `org_id` tenant scoping are untouched.
+  Does NOT introduce a typed CommandBus or cross any package boundary (stays in
+  `cmd/scraper`); Phase D itself remains open.
+- **Validation:** `gofmt` clean; `go vet ./...` clean; `go build ./...` clean;
+  `go test ./...` PASS (full suite; `-race` not runnable in this Windows env —
+  `CGO_ENABLED=0`, no C compiler — run it in CI/Linux); `cmd/scraper` coverage 34.5%;
+  `check_import_boundaries.sh` exit 0 (4 pre-existing known-gap warnings, **0 new**);
+  `check_file_size.py` PASS.
+- **Remaining risks:** none identified (mechanical move; same package, same calls).
+- **Remaining Sonar `go:S3776` issues (NOT in this batch):** still open in
+  `cmd/scraper/{main.go:28(64), crawl_runtime.go:19(22)/114(29), outbound_actions.go:90(95)/806(33),
+  skills_register.go:331(22)}`, `internal/drivers/copilot/{agent.go:225(97), agent_brain.go:150(39),
+  intent_router.go:14(28)}`, `internal/leadingest/ingest.go:223(105)`, and ~35 more across
+  server/store/ai — to be taken one batch at a time after review.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,
