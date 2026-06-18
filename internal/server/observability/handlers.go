@@ -71,6 +71,39 @@ type recentAttemptRow struct {
 	FinishedAt     string         `json:"finished_at,omitempty"`
 }
 
+// buildRecentAttemptRow maps one execution_attempts record to its wire row,
+// parsing the embedded evidence_json into a structured object server-side.
+// Extracted verbatim from executionRecent's loop body so the handler stays a
+// thin fetch→map→respond; behavior (fields, formats, evidence parsing) is
+// unchanged.
+func buildRecentAttemptRow(a models.ExecutionAttempt) recentAttemptRow {
+	row := recentAttemptRow{
+		ID:             a.ID,
+		ActionLedgerID: a.ActionLedgerID,
+		OutboundID:     a.OutboundID,
+		OrgID:          a.OrgID,
+		AccountID:      a.AccountID,
+		TargetURL:      a.TargetURL,
+		ActionType:     a.ActionType,
+		Attempt:        a.Attempt,
+		Status:         string(a.Status),
+		Outcome:        string(a.Outcome),
+		FailureReason:  a.FailureReason,
+		DOMVerified:    a.DOMVerified,
+		StartedAt:      a.StartedAt.Format(time.RFC3339),
+	}
+	if !a.FinishedAt.IsZero() {
+		row.FinishedAt = a.FinishedAt.Format(time.RFC3339)
+	}
+	if strings.TrimSpace(a.EvidenceJSON) != "" {
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(a.EvidenceJSON), &ev); err == nil && len(ev) > 0 {
+			row.Evidence = ev
+		}
+	}
+	return row
+}
+
 // executionRecent serves GET /api/observability/execution/recent.
 // Returns the most recent execution_attempts rows for the org, newest
 // first. Default 100 rows, max 500. The `evidence_json` column is parsed
@@ -103,31 +136,7 @@ func executionRecent(deps Deps) fiber.Handler {
 		}
 		out := make([]recentAttemptRow, 0, len(attempts))
 		for _, a := range attempts {
-			row := recentAttemptRow{
-				ID:             a.ID,
-				ActionLedgerID: a.ActionLedgerID,
-				OutboundID:     a.OutboundID,
-				OrgID:          a.OrgID,
-				AccountID:      a.AccountID,
-				TargetURL:      a.TargetURL,
-				ActionType:     a.ActionType,
-				Attempt:        a.Attempt,
-				Status:         string(a.Status),
-				Outcome:        string(a.Outcome),
-				FailureReason:  a.FailureReason,
-				DOMVerified:    a.DOMVerified,
-				StartedAt:      a.StartedAt.Format(time.RFC3339),
-			}
-			if !a.FinishedAt.IsZero() {
-				row.FinishedAt = a.FinishedAt.Format(time.RFC3339)
-			}
-			if strings.TrimSpace(a.EvidenceJSON) != "" {
-				var ev map[string]any
-				if err := json.Unmarshal([]byte(a.EvidenceJSON), &ev); err == nil && len(ev) > 0 {
-					row.Evidence = ev
-				}
-			}
-			out = append(out, row)
+			out = append(out, buildRecentAttemptRow(a))
 		}
 		return c.JSON(fiber.Map{
 			"window_hours": hours,

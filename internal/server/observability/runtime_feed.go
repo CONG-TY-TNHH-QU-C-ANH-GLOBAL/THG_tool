@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 // runtimeFeedRow is the wire shape the dashboard renders. attrs_json
@@ -22,6 +23,31 @@ type runtimeFeedRow struct {
 	TargetURL  string         `json:"target_url,omitempty"`
 	Attrs      map[string]any `json:"attrs,omitempty"`
 	CreatedAt  string         `json:"created_at"`
+}
+
+// buildRuntimeFeedRow maps one runtime_events record to its wire row, parsing
+// attrs_json server-side. Extracted verbatim from runtimeFeed's loop body so
+// the handler keeps only the level/event filtering; behavior (fields, format,
+// attrs parsing) is unchanged.
+func buildRuntimeFeedRow(r coordination.RuntimeEvent) runtimeFeedRow {
+	row := runtimeFeedRow{
+		ID:         r.ID,
+		OrgID:      r.OrgID,
+		AccountID:  r.AccountID,
+		Event:      r.Event,
+		Level:      r.Level,
+		OutboundID: r.OutboundID,
+		AttemptID:  r.AttemptID,
+		TargetURL:  r.TargetURL,
+		CreatedAt:  r.CreatedAt.Format(time.RFC3339),
+	}
+	if r.AttrsJSON != "" && r.AttrsJSON != "{}" {
+		var attrs map[string]any
+		if err := json.Unmarshal([]byte(r.AttrsJSON), &attrs); err == nil && len(attrs) > 0 {
+			row.Attrs = attrs
+		}
+	}
+	return row
 }
 
 // runtimeFeed serves GET /api/observability/runtime-feed.
@@ -71,24 +97,7 @@ func runtimeFeed(deps Deps) fiber.Handler {
 			if eventFilter != "" && r.Event != eventFilter {
 				continue
 			}
-			row := runtimeFeedRow{
-				ID:         r.ID,
-				OrgID:      r.OrgID,
-				AccountID:  r.AccountID,
-				Event:      r.Event,
-				Level:      r.Level,
-				OutboundID: r.OutboundID,
-				AttemptID:  r.AttemptID,
-				TargetURL:  r.TargetURL,
-				CreatedAt:  r.CreatedAt.Format(time.RFC3339),
-			}
-			if r.AttrsJSON != "" && r.AttrsJSON != "{}" {
-				var attrs map[string]any
-				if err := json.Unmarshal([]byte(r.AttrsJSON), &attrs); err == nil && len(attrs) > 0 {
-					row.Attrs = attrs
-				}
-			}
-			out = append(out, row)
+			out = append(out, buildRuntimeFeedRow(r))
 		}
 
 		return c.JSON(fiber.Map{

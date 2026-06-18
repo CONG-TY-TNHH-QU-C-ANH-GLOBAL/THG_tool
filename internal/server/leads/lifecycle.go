@@ -16,11 +16,12 @@ import (
 // actions. Org-scoping is the standard protected-route guard; no extra access gate
 // (battlefield model). Archiving never hard-deletes — it flips archived_at.
 
-// parseLeadLifecycleIDs parses the comma-separated ?ids= list: it caps the
-// request at 100 ids, skips empty segments, and rejects any non-positive or
-// non-numeric id. Error messages match the endpoint's previous 400 bodies
-// verbatim so the wire contract is unchanged.
-func parseLeadLifecycleIDs(raw string) ([]int64, error) {
+// parseLeadIDsCSV parses the comma-separated ?ids= list shared by the lead
+// lifecycle and engagement batch endpoints: it caps the request at 100 ids,
+// skips empty segments, and rejects any non-positive or non-numeric id. Error
+// messages match those endpoints' previous 400 bodies verbatim so the wire
+// contract is unchanged.
+func parseLeadIDsCSV(raw string) ([]int64, error) {
 	parts := strings.Split(raw, ",")
 	if len(parts) > 100 {
 		return nil, errors.New("max 100 ids per call")
@@ -51,7 +52,7 @@ func getLeadLifecyclesBatch(deps Deps) fiber.Handler {
 		if raw == "" {
 			return c.JSON(fiber.Map{"lifecycles": map[string]any{}})
 		}
-		ids, err := parseLeadLifecycleIDs(raw)
+		ids, err := parseLeadIDsCSV(raw)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}

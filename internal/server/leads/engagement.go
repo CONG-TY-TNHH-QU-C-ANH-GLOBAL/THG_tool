@@ -53,21 +53,9 @@ func getLeadEngagementsBatch(deps Deps) fiber.Handler {
 		if raw == "" {
 			return c.JSON(fiber.Map{"engagements": map[string]any{}})
 		}
-		parts := strings.Split(raw, ",")
-		if len(parts) > 100 {
-			return c.Status(400).JSON(fiber.Map{"error": "max 100 ids per call"})
-		}
-		ids := make([]int64, 0, len(parts))
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			id, err := strconv.ParseInt(p, 10, 64)
-			if err != nil || id <= 0 {
-				return c.Status(400).JSON(fiber.Map{"error": "invalid id: " + p})
-			}
-			ids = append(ids, id)
+		ids, err := parseLeadIDsCSV(raw)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 		ctx := context.Background()
 		states, err := deps.DB.Leads().GetLeadEngagementsBatch(ctx, orgID, ids)

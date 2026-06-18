@@ -245,6 +245,64 @@ extraction only). Isolated PR off `main` after D.1 (Batch 2) merged via PR #13.
   `internal/server/org/users.go:14 (18, auth — handle with care)`, plus ~100 more across
   cmd/server/store/ai — one batch at a time after review.
 
+### D.3 — Sonar low-risk cleanup sprint 1 (refactor-only)  ✅ DONE
+
+First **risk-lane sprint** (the doctrine shift from "one issue per PR" to "one
+low-risk lane per PR"): multiple `go:S3776` issues fixed in one branch/PR because
+they share one provably behavior-free category — **read-only GET projection
+handlers in `internal/server`**. Same mechanical-extraction doctrine as D.0/D.1/D.2;
+no Phase D redesign.
+
+- **Branch:** `refactor/sonar-low-risk-sprint-1` (from `origin/main` @ `ffe31390`,
+  the Batch-3/PR#14 merge).
+- **Lane:** **B — low-risk local handler refactors.** Lane A (2 trivial
+  `docker:S7031` "merge consecutive RUN" on the root `Dockerfile`) was deferred as
+  too small per the planner rule.
+- **Sonar issues/rule fixed (3 × `go:S3776`):**
+  - `AZ7askxg1xM_XIKj2DTx` — `internal/server/observability/handlers.go:84`
+    `executionRecent` (cx 21 → ≤15), `GET /api/observability/execution/recent`.
+  - `AZ7askxZ1xM_XIKj2DTv` — `internal/server/observability/runtime_feed.go:43`
+    `runtimeFeed` (cx 27 → ≤15), `GET /api/observability/runtime-feed`.
+  - `AZ7askw11xM_XIKj2DTi` — `internal/server/leads/engagement.go:46`
+    `getLeadEngagementsBatch` (cx 17 → ≤15), `GET /api/leads/engagement?ids=`.
+- **Changed files:** `internal/server/observability/handlers.go`,
+  `internal/server/observability/runtime_feed.go`, `internal/server/leads/engagement.go`,
+  `internal/server/leads/lifecycle.go` (helper rename only), and this note.
+- **Risk level:** **LOW** — all three are read-only HTTP projection handlers; no DB
+  writes, no auth/admin, no connector claim-CAS-lease, no ledger/execution_attempts
+  *logic* (they only project those rows read-only), no policy/readiness, no outbound
+  spine, no migration.
+- **Refactor-only or behavior-changing:** **refactor-only.**
+- **What changed:** extracted each handler's per-row mapping loop body **verbatim**
+  into a same-package private helper — `buildRecentAttemptRow(models.ExecutionAttempt)`
+  and `buildRuntimeFeedRow(coordination.RuntimeEvent)` (both element types already
+  imported by their packages; `runtime_feed.go` gained the already-in-package
+  `coordination` import, **no new dependency edge** — import-guard reports 0 new
+  warnings). For `getLeadEngagementsBatch`, the duplicated `?ids=` parse loop was
+  replaced by the **shipped Batch-3 helper** (DRY): `parseLeadLifecycleIDs` was renamed
+  to the endpoint-neutral `parseLeadIDsCSV` and reused by both batch endpoints.
+- **Behavior preserved:** yes — identical status codes (400/403/500), JSON keys/shape,
+  error strings (`max 100 ids per call`, `invalid id: <p>`), `time.RFC3339` formats,
+  evidence/attrs JSON parsing, query-param clamps, and the `org_id` guards verbatim.
+  The leads parser reuse is exact (same cap/skip/reject + identical 400 bodies).
+- **Validation:** `gofmt` clean; `go vet ./...` clean; `go build ./...` clean;
+  `go test ./...` PASS (full suite; `internal/server/leads` ok, observability has no
+  test files); `-race` not runnable in this Windows env (`CGO_ENABLED=0`, no C
+  compiler — leave to CI/Linux); `check_import_boundaries.sh` exit 0 (4 pre-existing
+  known-gap warnings, **0 new**); `check_file_size.py` PASS (0 new oversized);
+  `git diff --check` clean. The `specs/RETRIEVAL_SOAK_REPORT.md` rewrite that
+  `go test ./...` produces was reverted, not staged.
+- **Remaining risks:** none identified (mechanical verbatim moves; same packages,
+  same calls).
+- **Remaining Sonar `go:S3776` backlog by lane (after this sprint):** Lane A — 2
+  `docker:S7031` (root `Dockerfile`). Lane B — remaining read-only handlers, plus
+  higher-cx server handlers (`leads/handlers.go:116 (55)`, `workspace/handlers.go:27 (33)`,
+  `knowledge/handlers.go:174 (26)`) deferred for individual review. Lane D/E (excluded
+  here) — `org/{handlers,users,superadmin,identity}.go` (auth/admin/connector binding),
+  `workspace/{watchers,handlers,screen_proxy}.go` (CDP/connector), `crawl/intent.go`
+  (job submission), `system/notifications.go` (outbound Report). ~100 more across
+  cmd/store/ai/copilot — one safe lane at a time after review.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,
