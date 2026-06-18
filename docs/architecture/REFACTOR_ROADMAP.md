@@ -292,6 +292,15 @@ no Phase D redesign.
   known-gap warnings, **0 new**); `check_file_size.py` PASS (0 new oversized);
   `git diff --check` clean. The `specs/RETRIEVAL_SOAK_REPORT.md` rewrite that
   `go test ./...` produces was reverted, not staged.
+- **Fix-up (new-code duplication):** the first Sonar PR scan failed the gate on
+  Duplicated Lines on New Code (5.63% > 3.0%, = 4 new lines). Cause: reusing
+  `parseLeadIDsCSV` made `getLeadEngagementsBatch`'s `?ids=` prologue token-identical
+  to `getLeadLifecyclesBatch`'s, so CPD flagged the shared block. Fix: extracted that
+  prologue (org guard + empty-`ids` early return + parse) into one same-package helper
+  `leadBatchIDsFromQuery(c, emptyKey)` used by both batch handlers; removed the now-
+  unused `strings` import from `engagement.go`. Behavior/wire bodies identical (same
+  400/200 status, same empty-map keys `engagements`/`lifecycles`, same error strings).
+  Expected new-code duplication after re-scan: 0%. No new files; no scope change.
 - **Remaining risks:** none identified (mechanical verbatim moves; same packages,
   same calls).
 - **Remaining Sonar `go:S3776` backlog by lane (after this sprint):** Lane A — 2

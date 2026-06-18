@@ -3,7 +3,6 @@ package leads
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -45,17 +44,9 @@ func getLeadEngagement(deps Deps) fiber.Handler {
 // 100 ids per call to keep the projection cheap.
 func getLeadEngagementsBatch(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		orgID, _ := c.Locals("org_id").(int64)
-		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
-		}
-		raw := strings.TrimSpace(c.Query("ids", ""))
-		if raw == "" {
-			return c.JSON(fiber.Map{"engagements": map[string]any{}})
-		}
-		ids, err := parseLeadIDsCSV(raw)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		orgID, ids, done, err := leadBatchIDsFromQuery(c, "engagements")
+		if done {
+			return err
 		}
 		ctx := context.Background()
 		states, err := deps.DB.Leads().GetLeadEngagementsBatch(ctx, orgID, ids)
