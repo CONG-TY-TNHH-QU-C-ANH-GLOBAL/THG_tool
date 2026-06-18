@@ -16,11 +16,12 @@ import (
 // actions. Org-scoping is the standard protected-route guard; no extra access gate
 // (battlefield model). Archiving never hard-deletes — it flips archived_at.
 
-// parseLeadLifecycleIDs parses the comma-separated ?ids= list: it caps the
-// request at 100 ids, skips empty segments, and rejects any non-positive or
-// non-numeric id. Error messages match the endpoint's previous 400 bodies
-// verbatim so the wire contract is unchanged.
-func parseLeadLifecycleIDs(raw string) ([]int64, error) {
+// parseLeadIDsCSV parses the comma-separated ?ids= list shared by the lead
+// lifecycle and engagement batch endpoints: it caps the request at 100 ids,
+// skips empty segments, and rejects any non-positive or non-numeric id. Error
+// messages match those endpoints' previous 400 bodies verbatim so the wire
+// contract is unchanged.
+func parseLeadIDsCSV(raw string) ([]int64, error) {
 	parts := strings.Split(raw, ",")
 	if len(parts) > 100 {
 		return nil, errors.New("max 100 ids per call")
@@ -39,21 +40,36 @@ func parseLeadLifecycleIDs(raw string) ([]int64, error) {
 	return ids, nil
 }
 
+// leadBatchIDsFromQuery is the shared prologue for the ?ids= batch endpoints
+// (engagement + lifecycle): it enforces org scoping and parses the capped id
+// list. When the request is already answered — missing org context (400), no
+// ids supplied (200 with an empty map under emptyKey), or an invalid id list
+// (400) — it returns done=true plus the response error to return verbatim;
+// otherwise it returns the org id and parsed ids with done=false. The status
+// codes and wire bodies are identical to the previous inline prologues.
+func leadBatchIDsFromQuery(c *fiber.Ctx, emptyKey string) (int64, []int64, bool, error) {
+	orgID, _ := c.Locals("org_id").(int64)
+	if orgID <= 0 {
+		return 0, nil, true, c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+	}
+	raw := strings.TrimSpace(c.Query("ids", ""))
+	if raw == "" {
+		return orgID, nil, true, c.JSON(fiber.Map{emptyKey: map[string]any{}})
+	}
+	ids, err := parseLeadIDsCSV(raw)
+	if err != nil {
+		return orgID, nil, true, c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	return orgID, ids, false, nil
+}
+
 // getLeadLifecyclesBatch handles GET /api/leads/lifecycle?ids=1,2,3 — a map keyed by
 // lead_id for list-view grouping. Capped at 100 ids per call.
 func getLeadLifecyclesBatch(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		orgID, _ := c.Locals("org_id").(int64)
-		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
-		}
-		raw := strings.TrimSpace(c.Query("ids", ""))
-		if raw == "" {
-			return c.JSON(fiber.Map{"lifecycles": map[string]any{}})
-		}
-		ids, err := parseLeadLifecycleIDs(raw)
-		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		orgID, ids, done, err := leadBatchIDsFromQuery(c, "lifecycles")
+		if done {
+			return err
 		}
 		states, err := deps.DB.Leads().GetLeadLifecyclesBatch(context.Background(), orgID, ids, models.DefaultLeadLifecyclePolicy())
 		if err != nil {
