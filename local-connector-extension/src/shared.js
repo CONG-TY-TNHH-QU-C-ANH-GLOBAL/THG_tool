@@ -24,6 +24,7 @@ var THGShared = globalThis.THGShared || (() => {
     'content/proof.js',
     'content/navreport.js',
     'content/forensics.js',
+    'content/comment_constants.js',
     'content/comment_composer_guard.js',
     'content/execution_dedup.js',
     'content/comment_submit.js',
