@@ -1,40 +1,56 @@
 // Comment submit machinery (Browser Automation Kit — comment executor extraction).
-// The send-button finder + Enter fallback for the Facebook comment composer, moved
-// out of the outbound.js god file so the "typed but not submitted" bug can be fixed
-// here, in one place, instead of scattered across the executor paths.
+// The send-button finder + settle gate + Enter fallback for the Facebook comment
+// composer. Owns the answer to "which control is the real send button, and has it
+// finished mounting?" so the executor never blind-clicks a pre-mount ghost node or
+// a toolbar icon.
 //
-// Refactor-only: functions moved VERBATIM from outbound.js. Shared DOM predicates
-// (labelOf/norm/hasAny/visible/enabledButton) are threaded in via a `deps` object so
-// the module stays DRY (no duplicated primitives) and unit-testable.
+// Shared DOM predicates (labelOf/norm/hasAny/visible/enabledButton) are threaded in
+// via a `deps` object; keyword sets + geometry + timings come from THGCommentConstants
+// so nothing here is duplicated or a magic number.
 var THGCommentSubmit = globalThis.THGCommentSubmit || (() => {
-  const SUBMIT_KEYS = ['comment', 'post', 'send', 'binh luan', 'dang', 'gui'];
-  const REJECT_KEYS = [
-    'share', 'like', 'cancel', 'photo', 'gif', 'emoji', 'sticker', 'anh', 'huy', 'thich', 'chia se',
-    'nhan dan', 'bieu tuong cam xuc', 'cam xuc', 'avatar', 'may anh', 'hinh anh', 'dinh kem', 'tep', 'tap tin',
-  ];
+  const K = globalThis.THGCommentConstants
+    || (typeof require !== 'undefined' ? require('./comment_constants.js') : null);
+  const { SUBMIT_KEYS, REJECT_KEYS, SPATIAL, TIMING } = K;
 
   function rejectActionLabel(label, d) { return d.hasAny(label, REJECT_KEYS); }
 
-  function submitScore(editor, button, d) {
+  // spatialDistance is the LEGITIMATE proximity signal: vertical-centre delta plus a
+  // small penalty for sitting left of the editor. Lower = closer to the composer's
+  // send corner. This is the only geometric term used for ranking — the old
+  // submitScore additionally carried two INVERTED heuristics (it rewarded text-less
+  // icon buttons and penalised the labelled submit button), which is exactly why the
+  // executor used to click stickers/avatars before the real send control. Deleted.
+  function spatialDistance(editor, button) {
     const er = editor.getBoundingClientRect();
     const br = button.getBoundingClientRect();
     const ey = er.top + er.height / 2;
     const by = br.top + br.height / 2;
-    let score = Math.abs(ey - by) + Math.max(0, er.left - br.left) / 3;
-    const label = d.labelOf(button);
-    const text = d.norm(button.innerText || '');
-    if (!text) score -= 20;
-    if (text && d.hasAny(text, ['comment', 'binh luan'])) score += 80;
-    if (!d.hasAny(label, SUBMIT_KEYS)) score += 100;
-    return score;
+    return Math.abs(ey - by) + Math.max(0, er.left - br.left) / SPATIAL.leftPenaltyDivisor;
+  }
+
+  // submitRank assigns a STRICT deterministic tier (lower = preferred):
+  //   0 — labelled ("Bình luận"/"Send"/…) AND enabled → the real submit button
+  //   1 — labelled but not currently enabled (text typed-but-not-flushed yet)
+  //   2 — spatial-only (no submit label; a compact control next to the composer)
+  // Replaces submitScore. Ties inside a tier break by spatial proximity, so the
+  // ordering is total and reproducible.
+  function submitRank(button, d) {
+    if (!d.hasAny(d.labelOf(button), SUBMIT_KEYS)) return 2;
+    return d.enabledButton(button) ? 0 : 1;
+  }
+
+  function compareSubmitCandidates(editor, a, b, d) {
+    const rankDelta = submitRank(a, d) - submitRank(b, d);
+    if (rankDelta !== 0) return rankDelta;
+    return spatialDistance(editor, a) - spatialDistance(editor, b);
   }
 
   function submitCandidateSpatial(editor, button) {
     const er = editor.getBoundingClientRect();
     const br = button.getBoundingClientRect();
-    const verticallyNear = br.bottom >= er.top - 28 && br.top <= er.bottom + 42;
-    const toRight = br.left >= er.left - 10;
-    const compact = br.width <= 110 && br.height <= 72;
+    const verticallyNear = br.bottom >= er.top - SPATIAL.aboveEditorPx && br.top <= er.bottom + SPATIAL.belowEditorPx;
+    const toRight = br.left >= er.left - SPATIAL.leftSlackPx;
+    const compact = br.width <= SPATIAL.maxWidthPx && br.height <= SPATIAL.maxHeightPx;
     return verticallyNear && toRight && compact;
   }
 
@@ -64,18 +80,48 @@ var THGCommentSubmit = globalThis.THGCommentSubmit || (() => {
       }
       if (candidates.length >= 3) break;
     }
-    // Try LABELED submit buttons ("Bình luận"/"Gửi") before spatial-only toolbar
-    // icons so the executor never clicks a sticker/avatar icon first.
-    const labeled = candidates.filter(el => d.hasAny(d.labelOf(el), SUBMIT_KEYS));
-    const spatialOnly = candidates.filter(el => !d.hasAny(d.labelOf(el), SUBMIT_KEYS));
-    labeled.sort((a, b) => submitScore(editor, a, d) - submitScore(editor, b, d));
-    spatialOnly.sort((a, b) => submitScore(editor, a, d) - submitScore(editor, b, d));
-    return labeled.concat(spatialOnly).slice(0, 5);
+    // Single deterministic ordering: labelled-and-enabled, then labelled, then
+    // spatial-only — each tier by spatial proximity. The executor never reaches a
+    // sticker/avatar icon before the labelled send button.
+    candidates.sort((a, b) => compareSubmitCandidates(editor, a, b, d));
+    return candidates.slice(0, TIMING.maxSubmitCandidates);
+  }
+
+  // waitForStableSubmitTarget replaces the old fixed 150ms "React flush" guess.
+  // After execCommand('insertText') activates Lexical's EditorState, Facebook
+  // attaches / enables / RE-MOUNTS the real send button on a React flush whose
+  // timing varies (50–200ms+). A fixed wait either clicks a pre-mount GHOST node
+  // (too early) or wastes time (too late). Instead we poll findSubmitButtons until
+  // the top-ranked candidate is the SAME element for settleStableMs continuous ms
+  // (it has mounted and stopped being re-created), or until settleTimeoutMs. Returns
+  // the settled button, or the freshest candidate at timeout (never blocks forever).
+  async function waitForStableSubmitTarget(editor, excluded, d, opts) {
+    const o = opts || {};
+    const wait = o.wait;
+    const now = o.now;
+    const timeoutMs = typeof o.timeoutMs === 'number' ? o.timeoutMs : TIMING.settleTimeoutMs;
+    const pollMs = typeof o.pollMs === 'number' ? o.pollMs : TIMING.settlePollMs;
+    const stableMs = typeof o.stableMs === 'number' ? o.stableMs : TIMING.settleStableMs;
+    const deadline = now() + timeoutMs;
+    let last = null;
+    let stableSince = 0;
+    while (now() < deadline) {
+      const top = findSubmitButtons(editor, excluded, d)[0] || null;
+      if (top && top === last) {
+        if (stableSince === 0) stableSince = now();
+        if (now() - stableSince >= stableMs) return top;
+      } else {
+        last = top;
+        stableSince = 0; // target changed (or vanished) — restart the stability window
+      }
+      await wait(pollMs);
+    }
+    return findSubmitButtons(editor, excluded, d)[0] || null;
   }
 
   function pressEnter(editor) {
     if (!editor) return false;
-    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) {} }
+    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) { /* focus is best-effort */ } }
     const init = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, composed: true };
     try {
       editor.dispatchEvent(new KeyboardEvent('keydown', init));
@@ -85,7 +131,12 @@ var THGCommentSubmit = globalThis.THGCommentSubmit || (() => {
     } catch (_) { return false; }
   }
 
-  return { findSubmitButtons, pressEnter, _rejectActionLabel: rejectActionLabel, _submitCandidateSpatial: submitCandidateSpatial };
+  return {
+    findSubmitButtons, waitForStableSubmitTarget, pressEnter,
+    _rejectActionLabel: rejectActionLabel, _submitCandidateSpatial: submitCandidateSpatial,
+    _submitRank: submitRank, _spatialDistance: spatialDistance,
+  };
 })();
+globalThis.THGCommentSubmit = THGCommentSubmit;
 
 if (typeof module !== 'undefined' && module.exports) module.exports = THGCommentSubmit;
