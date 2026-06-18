@@ -78,7 +78,7 @@ var THGForensics = globalThis.THGForensics || (() => {
     // own origin as the target, so a genuine forensic event always matches
     // location.origin (sonar js:S2819).
     if (ev.source !== window) return;
-    if (ev.origin !== window.location.origin) return;
+    if (ev.origin !== globalThis.location.origin) return;
     const d = ev.data;
     if (!d || d.source !== 'THG_FORENSIC_PUSHSTATE') return;
     pushStates.push({

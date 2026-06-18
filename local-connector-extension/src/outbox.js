@@ -525,7 +525,7 @@ var THGOutbox = globalThis.THGOutbox || (() => {
             url: String(url || location.href),
             ts: Date.now(),
             stack: String((new Error()).stack || '').slice(0, 900),
-          }, window.location.origin);
+          }, globalThis.location.origin);
         } catch (_) {}
       };
       const op = history.pushState;
