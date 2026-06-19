@@ -47,6 +47,27 @@ forbidden forever**.
 Use the triage → specialist → review chain: `sonar-triage` proposes a lane, the matching
 specialist implements (or plans), `qa-test-engineer` validates, and `code-reviewer` gates the diff.
 
+## Runtime healthcheck
+
+During Sprint 3, named subagents became unavailable mid-session, so work
+continued via direct-role execution as a fallback. Before and during a sprint:
+
+- After restarting Claude Code, run `/agents` and confirm all 10 project agents
+  above are listed.
+- Run `/status` to confirm the active main model.
+- Agents must **inherit the main model** — frontmatter `model` is omitted or
+  `model: inherit`, and `CLAUDE_CODE_SUBAGENT_MODEL` is unset or `inherit`.
+- If subagents drop mid-session, **stop high-risk work and restart** the
+  session; do not push on with fallback.
+- Direct-role fallback is allowed **only** for low-risk type-only (Lane F) or
+  mechanical/devops (Lane A) work that touches no controlled zone.
+- Direct-role fallback is **forbidden** for Security, Reliability bugs, and any
+  controlled high-risk zone (auth/session/tenant, outbound/connector/ledger,
+  migrations, backend runtime, API contracts, fullstack flows).
+
+See [`HEALTHCHECK.md`](./HEALTHCHECK.md) for the full verification and recovery
+runbook.
+
 ## Provenance
 
 The `latest` `claude-code-templates` CLI installer is currently broken on this host
