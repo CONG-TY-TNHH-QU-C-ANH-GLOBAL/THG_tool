@@ -147,12 +147,12 @@ function ReplayRow({
   lang,
   expanded,
   onToggle,
-}: {
+}: Readonly<{
   event: ReplayEvent;
   lang: 'vi' | 'en';
   expanded: boolean;
   onToggle: () => void;
-}) {
+}>) {
   const { t } = useKnowledgeStrings();
   const oc = OUTCOME_COLOR[event.outcome];
 
@@ -400,7 +400,7 @@ function ReplayRow({
   );
 }
 
-function DetailBlock({ label, content }: { label: string; content: React.ReactNode }) {
+function DetailBlock({ label, content }: Readonly<{ label: string; content: React.ReactNode }>) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span

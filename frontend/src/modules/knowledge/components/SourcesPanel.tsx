@@ -104,7 +104,7 @@ export function SourcesPanel() {
   );
 }
 
-function SourceCard({ source, lang }: { source: KnowledgeSource; lang: 'vi' | 'en' }) {
+function SourceCard({ source, lang }: Readonly<{ source: KnowledgeSource; lang: 'vi' | 'en' }>) {
   const { t } = useKnowledgeStrings();
   const healthC = HEALTH_COLOR[source.health_status];
   const tint = SOURCE_TINTS[source.type];
@@ -226,7 +226,7 @@ function SourceCard({ source, lang }: { source: KnowledgeSource; lang: 'vi' | 'e
   );
 }
 
-function HealthChip({ status, label }: { status: HealthStatus; label: string }) {
+function HealthChip({ status, label }: Readonly<{ status: HealthStatus; label: string }>) {
   const c = HEALTH_COLOR[status];
   return (
     <span
@@ -259,7 +259,7 @@ function HealthChip({ status, label }: { status: HealthStatus; label: string }) 
   );
 }
 
-function MetaCell({ label, value }: { label: string; value: string }) {
+function MetaCell({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <span
@@ -278,7 +278,7 @@ function MetaCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-function EmptyState({ title, desc }: { title: string; desc: string }) {
+function EmptyState({ title, desc }: Readonly<{ title: string; desc: string }>) {
   return (
     <div
       style={{
