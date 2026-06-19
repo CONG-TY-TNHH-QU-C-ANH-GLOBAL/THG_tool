@@ -18,7 +18,7 @@ interface Props {
   lang: 'vi' | 'en';
 }
 
-export function LifecycleTabs({ active, counts, onSelect, lang }: Props) {
+export function LifecycleTabs({ active, counts, onSelect, lang }: Readonly<Props>) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {LIFECYCLE_TABS.map((tab) => (

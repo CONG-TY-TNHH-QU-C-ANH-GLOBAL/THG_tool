@@ -19,7 +19,7 @@ const SUMMARY_COLOR: Record<Severity, string> = {
   ready: 'var(--ok)', warning: 'var(--warn)', waiting: '#3b82f6', blocked: 'var(--hot)',
 };
 
-export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Props) {
+export default function AccountHealthBoard({ orgId, isAdmin, onNavigate }: Readonly<Props>) {
   const [accounts, setAccounts] = useState<AccountReadiness[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

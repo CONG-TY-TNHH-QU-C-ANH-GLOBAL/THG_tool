@@ -370,6 +370,61 @@ mechanical-extraction doctrine as D.0–D.3; no Phase D redesign.
   `workspace_knowledge/{retrieval,ingestion/rest_json}` + `store/{leads,knowledge}` for
   a future batch.
 
+### D.5 — Sonar cleanup sprint 3 (refactor-only)  ✅ DONE
+
+Third risk-lane sprint, **Lane F** (frontend-only low-risk), Sprint Option 3 —
+a high-throughput bulk-safe sweep of one provably zero-runtime rule family,
+**`typescript:S6759` ("React component props should be read-only")**. Fix is a
+pure compile-time annotation: each component's props parameter type wrapped in
+`Readonly<…>`. Emitted JS is byte-identical. Pivoted off the Go lanes (D.0–D.4
+already harvested the safe `go:S3776`/helper backlog; remaining Go issues sit in
+Lane D/E controlled zones).
+
+- **Branch:** `refactor/sonar-cleanup-sprint-3` (from `origin/main` @ `3f382ac5`,
+  the `.claude/agents` framework PR #17 merge).
+- **Lane / agents (direct role execution — the named project subagents under
+  `.claude/agents/` were dropped by the runtime mid-session, so each role's
+  checklist was executed inline and labelled explicitly):** Lane F —
+  `senior-architect` (gate: ALLOW WITH CONDITIONS) + `senior-frontend` (implement)
+  + `code-reviewer` (final gate) + `qa-test-engineer` (validation). `sonar-triage`
+  produced the inventory + lane classification.
+- **Sonar issues/rule fixed (26 × `typescript:S6759`, 22 files):** all in
+  `frontend/` presentational React components — `components/data/` (9:
+  BusinessMemoryPanel ×2, ConfidenceTag, ContextSummaryPanel, DataSourcesPanel,
+  DataStatsGrid, MagicOmnibox, OutboundPolicyPanel, PrivateFilesTable),
+  `frontend/components/` (5: StatusBadge ×2, KPICard, ProgressBar, PageWrapper),
+  `src/marketing/` (5: PlatformLanding ×3, ComingSoonLanding, MarketingNav),
+  plus ActorVerdictChip, InviteNotificationCard, LifecycleTabs,
+  FacebookProductLanding, AccountHealthCard, AccountHealthBoard, NextStepsPanel.
+- **Changed files:** the 22 `.tsx` files above + this note.
+- **Risk level:** **LOW** — `Readonly<T>` is erased at emit and marks only the
+  props object's own properties immutable (no deep array conversion), so it cannot
+  compile-fail unless code reassigns a prop (none do; verified). None touch outbound
+  spine / connector claim-CAS-lease / ledger / policy-readiness / auth-admin /
+  migrations / workspace-switching. `OutboundPolicyPanel` is presentational (calls
+  injected `onChange` only); the spine stays server-side.
+- **Refactor-only or behavior-changing:** **refactor-only.**
+- **Behavior preserved:** no JSX, copy, `className`, route, API call, client state,
+  effect-dependency, or event-handler changed. Diff is exactly 26 added / 26 removed
+  lines, every added line a `Readonly<…>` wrap.
+- **Excluded controlled zones:** `internal/server/auth|org/*` cookie code
+  (14 × `go:S2092`, Lane S∩E), migrations (`plsql`, Lane E), `local-connector-extension/*`
+  (Lane E), all `views/*` + `JoinWorkspace`/`FileUploadPanel` carrying deferred
+  `S2871` sort / `S1082` a11y / `S3923` / `S1763` reliability bugs (Lane R, test-first).
+- **Validation:** `next build` ✓ compiled + "checking validity of types" PASS (no
+  type errors); `next lint` **not configured** (drops to interactive setup) — noted,
+  not run; `check_file_size.py` PASS (0 new oversized; `PlatformLanding.tsx` is an
+  allowlisted legacy 800-line file, touched at +0 net lines — annotation can't be
+  extracted, did not grow); `git diff --check` clean; `.mcp.json` untracked, not
+  staged; no build/coverage artifacts staged (`.next/` git-ignored).
+- **Code-reviewer result:** PASS (every change maps to a selected S6759 issue; no
+  controlled file; no runtime/UX/API change; no duplication risk — annotations, not
+  shared helpers).
+- **Remaining Sonar backlog:** ~1250 open after this sweep. `typescript:S6759` drops
+  ~106 → ~80 (remainder in `views/`, auth, telegram-connect, workspace-switch files
+  excluded here). Reliability (122) + Security (15) untouched — deferred to Lane R
+  (test-first) / `security-review` (the `go:S2092` cookie proposal from D.4).
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,

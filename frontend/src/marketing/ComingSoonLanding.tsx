@@ -27,7 +27,7 @@ const RATIONALES: Record<string, { vi: string; en: string }> = {
   },
 };
 
-export default function ComingSoonLanding({ slug, onLogin, onRegister }: ComingSoonLandingProps) {
+export default function ComingSoonLanding({ slug, onLogin, onRegister }: Readonly<ComingSoonLandingProps>) {
   const { lang } = useLang();
   const svc = MARKETING_SERVICES.find(s => s.slug === slug);
   const rationale = RATIONALES[slug];

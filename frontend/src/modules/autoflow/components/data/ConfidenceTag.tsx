@@ -16,7 +16,7 @@ interface ConfidenceTagProps {
  * either the field is empty or the user has edited it and now owns the
  * value.
  */
-export default function ConfidenceTag({ confidence }: ConfidenceTagProps) {
+export default function ConfidenceTag({ confidence }: Readonly<ConfidenceTagProps>) {
   if (confidence == null || confidence <= 0) return null;
 
   const palette = (() => {

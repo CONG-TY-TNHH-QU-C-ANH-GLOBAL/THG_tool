@@ -11,7 +11,7 @@ interface OutboundPolicyPanelProps {
   onChange: (next: OutboundMode) => void | Promise<void>;
 }
 
-export default function OutboundPolicyPanel({ mode, message, isSaving, isAdmin, onChange }: OutboundPolicyPanelProps) {
+export default function OutboundPolicyPanel({ mode, message, isSaving, isAdmin, onChange }: Readonly<OutboundPolicyPanelProps>) {
   const isAuto = mode === 'auto';
   const disabled = isSaving || !isAdmin;
 

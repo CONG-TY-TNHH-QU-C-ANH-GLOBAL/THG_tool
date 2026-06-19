@@ -13,7 +13,7 @@ const colorMap = {
   indigo:  'text-indigo-400',
 }
 
-export function KPICard({ label, value, sub, color = 'default' }: KPICardProps) {
+export function KPICard({ label, value, sub, color = 'default' }: Readonly<KPICardProps>) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>

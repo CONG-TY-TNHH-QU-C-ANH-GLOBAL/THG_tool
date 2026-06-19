@@ -12,7 +12,7 @@ function formatBytes(bytes: number) {
   return `${bytes} B`;
 }
 
-export default function DataStatsGrid({ files, sources }: DataStatsGridProps) {
+export default function DataStatsGrid({ files, sources }: Readonly<DataStatsGridProps>) {
   const totalSize = files.reduce((sum, f) => sum + (f.sizeBytes || 0), 0);
   const syncedSources = sources.filter(s => s.status === 'synced').length;
 

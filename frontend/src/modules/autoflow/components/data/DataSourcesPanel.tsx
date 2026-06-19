@@ -24,7 +24,7 @@ function sourceLabel(type: DataSourceType) {
   return type === 'google_sheet' ? 'Google Sheet' : 'Google Drive';
 }
 
-export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd, onSync, onRemove }: DataSourcesPanelProps) {
+export default function DataSourcesPanel({ sources, isLoading, isSyncing, onAdd, onSync, onRemove }: Readonly<DataSourcesPanelProps>) {
   const [form, setForm] = useState<{ type: DataSourceType; name: string; source_url: string }>({
     type: 'google_sheet',
     name: '',

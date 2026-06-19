@@ -25,7 +25,7 @@ function nameOf(a: AccountReadiness): string {
   return a.fb_display_name || a.account_name || `Tài khoản #${a.account_id}`;
 }
 
-export function NextStepsPanel({ accounts, onNavigate, defaultAccountId, onSetDefault, settingDefault }: Props) {
+export function NextStepsPanel({ accounts, onNavigate, defaultAccountId, onSetDefault, settingDefault }: Readonly<Props>) {
   const ready = accounts.filter(a => overallStatus(reasonsOf(a)).severity === 'ready');
   const needsWork = accounts.filter(a => overallStatus(reasonsOf(a)).severity !== 'ready');
   const defaultIsReady = ready.some(a => a.account_id === defaultAccountId);

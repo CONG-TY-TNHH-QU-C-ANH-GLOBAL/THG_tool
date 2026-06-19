@@ -16,7 +16,7 @@ interface Props {
  * The explicit invite acceptance card (PR-1): an invite is never
  * auto-accepted — the user must press «Đồng ý tham gia».
  */
-export default function InviteNotificationCard({ notification, onHandled }: Props) {
+export default function InviteNotificationCard({ notification, onHandled }: Readonly<Props>) {
   const { accept, accepting, error } = useAcceptInvite();
   const payload = parsePayload<InvitePayload>(notification);
 
