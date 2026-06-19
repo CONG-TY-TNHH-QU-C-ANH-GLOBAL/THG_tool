@@ -61,7 +61,7 @@ export function OperatorReplay() {
           const label =
             outcome === 'all'
               ? t.products.filterAll
-              : t.replay.outcomes[outcome as ReplayEvent['outcome']];
+              : t.replay.outcomes[outcome];
           const count =
             outcome === 'all' ? events.length : events.filter((e) => e.outcome === outcome).length;
           return (
