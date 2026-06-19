@@ -1,9 +1,9 @@
 // Package governance implements the THREE governance layers
 // mandated by goal G4:
 //
-//   Layer 1 — Retrieval filter      (filter unsafe assets at search time)
-//   Layer 2 — Prompt constraint     (constrain what the LLM is told to do)
-//   Layer 3 — Output validation     (validate generated text BEFORE send)
+//	Layer 1 — Retrieval filter      (filter unsafe assets at search time)
+//	Layer 2 — Prompt constraint     (constrain what the LLM is told to do)
+//	Layer 3 — Output validation     (validate generated text BEFORE send)
 //
 // THIS FILE implements Layer 3. Layers 1 + 2 live elsewhere:
 //   - L1 is the banned_claim filter in retrieval/hybrid + retrieval/pgvector.
@@ -35,14 +35,14 @@
 //
 // Design contract:
 //
-//  - The validator takes the RETRIEVED ASSETS (the same set the LLM
-//    saw) as ground truth. Any factual claim in the output that
-//    doesn't trace back to an asset is suspect.
-//  - The validator is CONSERVATIVE: it blocks when uncertain.
-//    Production caller's recourse is to mark the message as draft
-//    (human-review) rather than auto-send.
-//  - The validator produces a structured Verdict so the Operator
-//    Replay surface can show WHICH check failed and WHY.
+//   - The validator takes the RETRIEVED ASSETS (the same set the LLM
+//     saw) as ground truth. Any factual claim in the output that
+//     doesn't trace back to an asset is suspect.
+//   - The validator is CONSERVATIVE: it blocks when uncertain.
+//     Production caller's recourse is to mark the message as draft
+//     (human-review) rather than auto-send.
+//   - The validator produces a structured Verdict so the Operator
+//     Replay surface can show WHICH check failed and WHY.
 package governance
 
 import (
@@ -80,12 +80,12 @@ type ValidationReason struct {
 type ValidationCode string
 
 const (
-	CodeFabricatedPricing  ValidationCode = "fabricated_pricing"
-	CodeFakeGuarantee      ValidationCode = "fake_guarantee"
-	CodeHallucinatedShip   ValidationCode = "hallucinated_shipping"
-	CodeBannedClaimMatch   ValidationCode = "banned_claim_match"
-	CodeEmptyOutput        ValidationCode = "empty_output"
-	CodeExcessiveLength    ValidationCode = "excessive_length"
+	CodeFabricatedPricing ValidationCode = "fabricated_pricing"
+	CodeFakeGuarantee     ValidationCode = "fake_guarantee"
+	CodeHallucinatedShip  ValidationCode = "hallucinated_shipping"
+	CodeBannedClaimMatch  ValidationCode = "banned_claim_match"
+	CodeEmptyOutput       ValidationCode = "empty_output"
+	CodeExcessiveLength   ValidationCode = "excessive_length"
 )
 
 // ValidateOutput is the Layer-3 governance check.
@@ -128,29 +128,9 @@ func ValidateOutput(generatedText string, retrievedAssets []*assets.Asset) Valid
 
 	// Check 1: banned-claim direct match. If ANY of the org's
 	// banned-claim assets appears literally in the output, hard fail.
-	for _, a := range retrievedAssets {
-		if a == nil || a.Type != assets.AssetBannedClaim {
-			continue
-		}
-		// Banned-claim asset title or description IS the phrase to
-		// block. Lowercase substring match — case-insensitive.
-		needles := []string{
-			strings.ToLower(strings.TrimSpace(a.Title)),
-			strings.ToLower(strings.TrimSpace(a.Description)),
-		}
-		for _, needle := range needles {
-			if needle == "" {
-				continue
-			}
-			if strings.Contains(lower, needle) {
-				v.Allow = false
-				v.Reasons = append(v.Reasons, ValidationReason{
-					Code:    CodeBannedClaimMatch,
-					Snippet: needle,
-					Detail:  "output contains a phrase marked as banned in the org's compliance assets",
-				})
-			}
-		}
+	if reasons := bannedClaimReasons(lower, retrievedAssets); len(reasons) > 0 {
+		v.Allow = false
+		v.Reasons = append(v.Reasons, reasons...)
 	}
 
 	// Check 2: fake-guarantee phrases. These are NEVER safe unless an
@@ -183,18 +163,61 @@ func ValidateOutput(generatedText string, retrievedAssets []*assets.Asset) Valid
 	// Check 4: fabricated pricing. Look for dollar/percent/currency
 	// figures in the output; assert each one appears in one of the
 	// retrieved assets' price-bearing fields.
+	if reasons := fabricatedPriceReasons(generatedText, retrievedAssets); len(reasons) > 0 {
+		v.Allow = false
+		v.Reasons = append(v.Reasons, reasons...)
+	}
+
+	return v
+}
+
+// bannedClaimReasons returns one reason per org banned-claim asset whose title
+// or description appears literally (case-insensitive) in the already-lowercased
+// output. Extracted verbatim from ValidateOutput Check 1 — same matches, same
+// order; the caller still sets Allow=false when any reason is returned.
+func bannedClaimReasons(lower string, retrievedAssets []*assets.Asset) []ValidationReason {
+	var reasons []ValidationReason
+	for _, a := range retrievedAssets {
+		if a == nil || a.Type != assets.AssetBannedClaim {
+			continue
+		}
+		// Banned-claim asset title or description IS the phrase to
+		// block. Lowercase substring match — case-insensitive.
+		needles := []string{
+			strings.ToLower(strings.TrimSpace(a.Title)),
+			strings.ToLower(strings.TrimSpace(a.Description)),
+		}
+		for _, needle := range needles {
+			if needle == "" {
+				continue
+			}
+			if strings.Contains(lower, needle) {
+				reasons = append(reasons, ValidationReason{
+					Code:    CodeBannedClaimMatch,
+					Snippet: needle,
+					Detail:  "output contains a phrase marked as banned in the org's compliance assets",
+				})
+			}
+		}
+	}
+	return reasons
+}
+
+// fabricatedPriceReasons returns one reason per price figure in the output that
+// is not grounded in a retrieved asset. Extracted verbatim from ValidateOutput
+// Check 4 — same claims, same order.
+func fabricatedPriceReasons(generatedText string, retrievedAssets []*assets.Asset) []ValidationReason {
+	var reasons []ValidationReason
 	for _, claim := range extractPriceClaims(generatedText) {
 		if !priceClaimGrounded(claim, retrievedAssets) {
-			v.Allow = false
-			v.Reasons = append(v.Reasons, ValidationReason{
+			reasons = append(reasons, ValidationReason{
 				Code:    CodeFabricatedPricing,
 				Snippet: claim,
 				Detail:  "output mentions a price not present in retrieved assets",
 			})
 		}
 	}
-
-	return v
+	return reasons
 }
 
 // --- guarantee-phrase matching ---

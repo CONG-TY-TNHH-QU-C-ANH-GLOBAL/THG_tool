@@ -135,8 +135,7 @@ func writeSection(b *strings.Builder, label string, hits []retrieval.Hit, withMe
 
 func renderProduct(h retrieval.Hit, withMetrics bool) string {
 	a := h.Asset
-	var parts []string
-	parts = append(parts, a.Title)
+	parts := []string{a.Title}
 
 	// Try the structured PayloadV1 first (PR-1 product-catalog assets).
 	// Every product written by the rest_json / shopify / future
@@ -149,38 +148,7 @@ func renderProduct(h retrieval.Hit, withMetrics bool) string {
 	// org's catalog table.
 	var pv products.PayloadV1
 	if len(a.Payload) > 0 && json.Unmarshal(a.Payload, &pv) == nil && pv.SchemaVersion > 0 {
-		if pv.Origin != "" {
-			parts = append(parts, "origin: "+pv.Origin)
-		}
-		if priceStr := formatPriceRange(pv.PriceMin, pv.PriceMax, pv.Currency); priceStr != "" {
-			parts = append(parts, "price: "+priceStr)
-		}
-		if len(pv.Sizes) > 0 {
-			parts = append(parts, "sizes: "+strings.Join(pv.Sizes, "/"))
-		}
-		if pv.DisplaySKU != "" {
-			parts = append(parts, "sku: "+pv.DisplaySKU)
-		}
-		// Surface availability ONLY when it signals a constraint the
-		// LLM should reflect in its draft. in_stock is the default
-		// assumption; unknown is noise; the other three values matter.
-		switch pv.Availability {
-		case products.AvailLowStock:
-			parts = append(parts, "low stock")
-		case products.AvailOutOfStock:
-			parts = append(parts, "out of stock")
-		case products.AvailDiscontinued:
-			parts = append(parts, "discontinued")
-		}
-		// Source URL lands LAST so the LLM can choose to drop it into
-		// the comment as a citation (or omit it for casual tone).
-		if pv.SourceURL != "" {
-			parts = append(parts, pv.SourceURL)
-		}
-		if withMetrics {
-			parts = append(parts, fmt.Sprintf("score=%.2f", h.Score))
-		}
-		return strings.Join(parts, " · ")
+		return strings.Join(appendStructuredProductParts(parts, pv, h.Score, withMetrics), " · ")
 	}
 
 	// Legacy path: free-form Description + naive substring price.
@@ -194,6 +162,45 @@ func renderProduct(h retrieval.Hit, withMetrics bool) string {
 		parts = append(parts, fmt.Sprintf("score=%.2f", h.Score))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// appendStructuredProductParts appends the structured PayloadV1 fields (origin,
+// price, sizes, sku, availability constraint, source URL, optional score) onto
+// parts in the exact order renderProduct's structured branch produced them.
+// Extracted verbatim from renderProduct so the renderer stays flat.
+func appendStructuredProductParts(parts []string, pv products.PayloadV1, score float64, withMetrics bool) []string {
+	if pv.Origin != "" {
+		parts = append(parts, "origin: "+pv.Origin)
+	}
+	if priceStr := formatPriceRange(pv.PriceMin, pv.PriceMax, pv.Currency); priceStr != "" {
+		parts = append(parts, "price: "+priceStr)
+	}
+	if len(pv.Sizes) > 0 {
+		parts = append(parts, "sizes: "+strings.Join(pv.Sizes, "/"))
+	}
+	if pv.DisplaySKU != "" {
+		parts = append(parts, "sku: "+pv.DisplaySKU)
+	}
+	// Surface availability ONLY when it signals a constraint the
+	// LLM should reflect in its draft. in_stock is the default
+	// assumption; unknown is noise; the other three values matter.
+	switch pv.Availability {
+	case products.AvailLowStock:
+		parts = append(parts, "low stock")
+	case products.AvailOutOfStock:
+		parts = append(parts, "out of stock")
+	case products.AvailDiscontinued:
+		parts = append(parts, "discontinued")
+	}
+	// Source URL lands LAST so the LLM can choose to drop it into
+	// the comment as a citation (or omit it for casual tone).
+	if pv.SourceURL != "" {
+		parts = append(parts, pv.SourceURL)
+	}
+	if withMetrics {
+		parts = append(parts, fmt.Sprintf("score=%.2f", score))
+	}
+	return parts
 }
 
 // formatPriceRange renders the canonical price interval into the

@@ -312,6 +312,64 @@ no Phase D redesign.
   (job submission), `system/notifications.go` (outbound Report). ~100 more across
   cmd/store/ai/copilot — one safe lane at a time after review.
 
+### D.4 — Sonar cleanup sprint 2 (refactor-only)  ✅ DONE
+
+Second risk-lane sprint, **Lane C** (local helper extraction). Bulk-fixed five
+`go:S3776` cognitive-complexity issues that share one provably behavior-free
+category — **pure-compute / read-model functions** (KnowledgeOS governance,
+assembly, ingestion, products + one read-only store aggregation). Same
+mechanical-extraction doctrine as D.0–D.3; no Phase D redesign.
+
+- **Branch:** `refactor/sonar-cleanup-sprint-2` (from `origin/main` @ `86e6b66f`,
+  the Sprint-1/PR#15 merge).
+- **Lane / agents (simulated — named subagents not available in this env, roles
+  labelled explicitly):** Lane C — `/senior-architect` + `/senior-backend` +
+  `/code-reviewer` (+ `/qa-test-engineer`). `/security-review` confirmed **no**
+  security-relevant code is touched.
+- **Sonar issues/rule fixed (5 × `go:S3776`):**
+  - `AZ7askjz1xM_XIKj2DP5` — `workspace_knowledge/governance/output_validator.go:102`
+    `ValidateOutput` (cx 23 → ≤15); extracted `bannedClaimReasons` + `fabricatedPriceReasons`.
+  - `AZ7askl91xM_XIKj2DQc` — `workspace_knowledge/assembly/context_assembly.go:136`
+    `renderProduct` (cx 19 → ≤15); extracted `appendStructuredProductParts`.
+  - `AZ7askjf1xM_XIKj2DP2` — `workspace_knowledge/ingestion/csv/columns.go:129`
+    `toAsset` (cx 23 → ≤15); extracted `rowPayloadJSON`.
+  - `AZ7askl11xM_XIKj2DQb` — `workspace_knowledge/products/canonical.go:202`
+    `Validate` (cx 31 → ≤15); extracted `validateHeader` + `validateVariant`.
+  - `AZ7askoB1xM_XIKj2DQ4` — `store/knowledge/cost.go:143` `ListOrgsByEmbeddingCost`
+    (cx 18 → ≤15); extracted `accumulateOrgEmbeddingCost` + `sortOrgEmbeddingCostByTokensDesc`.
+- **Changed files:** the five files above + this note.
+- **Risk level:** **LOW** — four are pure functions (no IO); the fifth is a read-only
+  `SELECT` aggregation (explicitly cross-org superadmin, no per-tenant gate). None
+  touch outbound spine / connector claim-CAS-lease / ledger-execution_attempts /
+  policy-readiness / auth-admin / migrations / `internal/ai`.
+- **Refactor-only or behavior-changing:** **refactor-only.**
+- **Behavior preserved:** verbatim moves — identical validation verdicts/reason codes
+  and order, identical rendered product strings + ` · ` separators, identical CSV
+  payload JSON, identical error strings/order, identical SQL + O(n²) sort tie-order +
+  limit. The two validator helpers take pointers to slice elements so the in-place
+  `Availability=AvailUnknown` defaulting still mutates the originals.
+- **Validation:** `gofmt` clean; `go vet ./...` clean; `go build ./...` clean;
+  `go test ./...` PASS (changed-package fixtures — governance, products' 7 fixtures,
+  csv, assembly, store/knowledge — all green); `-race` not runnable in this Windows
+  env (`CGO_ENABLED=0`, no C compiler — leave to CI/Linux); `check_import_boundaries.sh`
+  exit 0 (4 pre-existing known-gap warnings, **0 new**); `check_file_size.py` PASS;
+  `git diff --check` clean. Soak-report test side-effect reverted, not staged.
+- **Code-reviewer result:** PASS (no medium/high-risk file changed; mutation semantics,
+  error strings, ordering all preserved). Watch-item: confirm new-code duplication
+  stays ≤3% on the next Sonar PR scan (helper shapes similar but bodies non-identical).
+- **Remaining risks:** none identified (mechanical verbatim moves; same packages).
+- **Deferred security proposal (Lane S, NOT edited):** the 14 `go:S2092` "cookie
+  missing Secure flag" vulnerabilities live in `internal/server/auth/handlers.go` (11)
+  + `internal/server/org` (3). Setting `Secure: true` is auth-sensitive and
+  behavior-changing (breaks non-HTTPS/dev). Proposal: gate the flag on an env/config
+  (`Secure: cfg.CookieSecure`, default true in prod) behind a characterization-test-first
+  plan + `/security-review` approval — a future Lane S sprint, not this one.
+- **Remaining Sonar backlog:** ~1276 open (Maintainability 1172, Reliability 122,
+  Security 15). `go:S3776` now ~104 (mostly Lane D/E: agent/workspace/auth/copilot/
+  cmd-scraper). Other safe Lane C pure-compute `go:S3776` remain in
+  `workspace_knowledge/{retrieval,ingestion/rest_json}` + `store/{leads,knowledge}` for
+  a future batch.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,
