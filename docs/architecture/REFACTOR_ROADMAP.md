@@ -6,6 +6,11 @@ phase is **additive-first, behavior-preserving where possible, independently
 revertible**. No big-bang. Product features (Phase H) come AFTER the boundaries and
 the outbox exist, so they are built right the first time.
 
+**Sonar cleanup work** (the `D.*` sprints below and all future ones) is governed by
+the [**Sonar Factory Operating Protocol**](./SONAR_FACTORY_PROTOCOL.md) — risk
+classes, batch budgets, controlled zones, and the agent workflow. This roadmap is
+the *record*; that protocol is the *policy*.
+
 **Global rules for every phase**
 - A refactor-only PR changes NO behavior (move/rename/split only).
 - A behavior-changing PR ships tests + typed reason codes.
