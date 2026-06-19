@@ -153,12 +153,12 @@ RULES:
 3. 2–4 sentences. Natural tone — NOT a bot
 4. Acknowledge their specific need or pain point
 5. Introduce your most relevant offering naturally
-6. End with a soft CTA, and if a Website and/or Official contact ARE listed in COMPANY IDENTITY, include them so the lead can reach you (each at most once).
+6. End with a soft CTA%s. Follow the CONTACT POLICY below for the website/contact.
 7. NO EMOJIS. Professional but human.
 %s
 %s
 
-RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, langRule, contactRule, personaRule)
+RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, langRule, ctaSuffix(identity.PrimaryCTA), contactRule, personaRule)
 
 	return mg.callOpenAI(ctx, prompt)
 }

@@ -48,43 +48,64 @@ func commentReasoningMode() string {
 // persisted for observation in BOTH modes. Best-effort: it can never break the
 // queue path — every failure returns `fallback`. See
 // specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2c).
-func applyCommentReasoning(ctx context.Context, db *store.Store, kb *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, mode string, profile *ai.BusinessProfile, orgID, accountID int64, leadContent, author, fallback string) string {
+// commentReasoningInput groups the inputs of applyCommentReasoning (S107: a flat
+// 12-arg signature). It only bundles existing values — no new logic or behavior.
+type commentReasoningInput struct {
+	db              *store.Store
+	kb              *knowledgeRuntime.Builder
+	msgGen          *ai.MessageGenerator
+	mode            string
+	profile         *ai.BusinessProfile
+	orgID           int64
+	accountID       int64
+	initiatorUserID int64
+	leadContent     string
+	author          string
+	fallback        string
+}
+
+func applyCommentReasoning(ctx context.Context, in commentReasoningInput) string {
 	rctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	candidates, retrievalID, err := kb.CandidatesForLead(rctx, orgID, leadContent)
+	candidates, retrievalID, err := in.kb.CandidatesForLead(rctx, in.orgID, in.leadContent)
 	if err != nil {
-		log.Printf("[reasoning] candidates org=%d: %v", orgID, err)
-		return fallback
+		log.Printf("[reasoning] candidates org=%d: %v", in.orgID, err)
+		return in.fallback
 	}
-	decision, err := msgGen.DecideComment(rctx, leadContent, author, profile, candidates, retrievalID)
+	decision, err := in.msgGen.DecideComment(rctx, in.leadContent, in.author, in.profile, candidates, retrievalID)
 	if err != nil || decision == nil {
-		log.Printf("[reasoning] decide org=%d: %v", orgID, err)
-		return fallback
+		log.Printf("[reasoning] decide org=%d: %v", in.orgID, err)
+		return in.fallback
 	}
 	// P2d Policy Gate (PR-7): confidence + org policy shape what the
 	// prompt may pitch — high conf → product (+price if allowed), medium
 	// → category/service only (no exact price), low/gap → generic
 	// fallback. Strictly subtractive over the grounded selection.
-	verdict := ai.EvaluateGate(decision, ai.LoadOrgCommentPolicies(db, orgID))
+	verdict := ai.EvaluateGate(decision, ai.LoadOrgCommentPolicies(in.db, in.orgID))
 	decision = ai.ApplyGate(decision, verdict)
 	log.Printf("[reasoning:%s] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v gate=%s caps=%d products=%d proofs=%d",
-		mode, orgID, accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap, verdict.Mode,
+		in.mode, in.orgID, in.accountID, decision.Intent, decision.Confidence, decision.KnowledgeGap, verdict.Mode,
 		len(decision.Selected.Capabilities), len(decision.Selected.Products), len(decision.Selected.Proofs))
 	if payload, perr := json.Marshal(decision); perr == nil {
-		_ = db.Prompts().InsertSystemPromptLog(orgID, accountID,
-			"agent comment decision ("+mode+")", "comment_decision_"+mode, string(payload), !decision.KnowledgeGap)
+		_ = in.db.Prompts().InsertSystemPromptLog(in.orgID, in.accountID,
+			"agent comment decision ("+in.mode+")", "comment_decision_"+in.mode, string(payload), !decision.KnowledgeGap)
 	}
-	if mode == "live" && !decision.KnowledgeGap {
-		text, gerr := msgGen.GenerateCommentV2(rctx, leadContent, author, profile, decision)
+	if in.mode == "live" && !decision.KnowledgeGap {
+		// Same resolver/contract as the normal path: staff contact channels + CTA
+		// win, the company website is preserved, and the per-lead grounded CTA
+		// seeds the identity. The live prompt must NOT re-derive a company-only
+		// identity (that dropped the staff swap before this fix).
+		liveIdentity := resolveCommentIdentity(in.db, in.orgID, in.initiatorUserID, in.accountID, in.profile, decision.Selected.CTA)
+		text, gerr := in.msgGen.GenerateCommentV2(rctx, in.leadContent, in.author, in.profile, decision, liveIdentity)
 		if gerr != nil {
-			log.Printf("[reasoning:live] GenerateCommentV2 org=%d: %v — falling back", orgID, gerr)
-			return fallback
+			log.Printf("[reasoning:live] GenerateCommentV2 org=%d: %v — falling back", in.orgID, gerr)
+			return in.fallback
 		}
 		if t := strings.TrimSpace(text); t != "" {
 			return t // grounded decision drives the live comment text
 		}
 	}
-	return fallback
+	return in.fallback
 }
 
 func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
@@ -160,13 +181,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if idProfile == nil {
 			idProfile = ai.LoadProfileForOrg(db, orgID)
 		}
-		commentIdentity = ai.ResolveCompanyIdentity(idProfile, nil)
-		// PR-5 staff contact (Sprint 5): the responsible salesperson's own
-		// contact line replaces the workspace default. Precedence: the
-		// initiating sales agent (actx.InitiatorUserID, the member handling this
-		// outreach) → the executing account's assignee → company default/omit
-		// per org policy.
-		commentIdentity = resolveStaffContactIdentity(db, orgID, actx.InitiatorUserID, accountID, commentIdentity)
+		// Contact identity (Sprint 5/6): ONE shared resolver builds the grounded
+		// identity — company website + service from the profile, then the
+		// responsible salesperson's contact channels + CTA swapped in. Precedence:
+		// initiating sales agent (actx.InitiatorUserID) → executing account
+		// assignee → company default/omit per org policy. The company website is
+		// preserved through the swap. The reasoning=live path below uses the SAME
+		// resolver so both paths cite the identical contact contract.
+		commentIdentity = resolveCommentIdentity(db, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
 	}
 	template := argString(args, "template")
 	queued, skipped := 0, 0
@@ -270,7 +292,12 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// grounded decision drive the comment text (fallback to `content` on
 		// knowledge_gap or error). off → no-op. Comment-type only.
 		if reasoningMode != "off" && msgType == "comment" {
-			content = applyCommentReasoning(ctx, db, knowledgeBuilder, msgGen, reasoningMode, reasoningProfile, orgID, accountID, lead.Content, lead.Author, content)
+			content = applyCommentReasoning(ctx, commentReasoningInput{
+				db: db, kb: knowledgeBuilder, msgGen: msgGen, mode: reasoningMode,
+				profile: reasoningProfile, orgID: orgID, accountID: accountID,
+				initiatorUserID: actx.InitiatorUserID, leadContent: lead.Content,
+				author: lead.Author, fallback: content,
+			})
 		}
 
 		// PR-1 Comment Quality Hotfix: dedupe repeated sentences/paragraphs and
@@ -308,6 +335,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 					}
 					continue
 				}
+			}
+			// Deterministic website inclusion: a configured workspace website must
+			// appear in every comment even when the model omitted it (the prompt
+			// instruction alone is not enough). Grounded-only — never invents a URL,
+			// no-op when already present. Runs after the screen so it appends the
+			// single canonical website to an otherwise URL-free, screen-clean comment.
+			if web, added := comment.EnsureWebsite(content, commentIdentity); added {
+				content = web
 			}
 		}
 

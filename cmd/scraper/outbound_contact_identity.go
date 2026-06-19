@@ -4,9 +4,23 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 )
+
+// resolveCommentIdentity builds the SINGLE grounded comment identity that BOTH
+// the normal comment path and the reasoning=live path share, so the contact
+// precedence contract lives in exactly one place. It seeds the company identity
+// (brand + website + per-lead grounded CTA) then applies the staff-contact swap
+// (channels + CTA). groundedCTA is nil on the normal path and decision.Selected.CTA
+// on the live path. The company WEBSITE always comes from the company identity and
+// is preserved through the staff swap (ApplyStaffContact overrides only the contact
+// channels + CTA), so a staff contact never drops the company website.
+func resolveCommentIdentity(db *store.Store, orgID, initiatorUserID, accountID int64, profile *ai.BusinessProfile, groundedCTA *models.GroundedItem) models.CompanyIdentity {
+	id := ai.ResolveCompanyIdentity(profile, groundedCTA)
+	return resolveStaffContactIdentity(db, orgID, initiatorUserID, accountID, id)
+}
 
 // resolveStaffContactIdentity swaps the workspace-default contact for the
 // responsible salesperson's own contact line (PR-5; Sprint 5 precedence fix)
