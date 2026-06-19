@@ -45,13 +45,24 @@ Never stage `.mcp.json`.
 - [ ] Validation results (each command).
 - [ ] Refactor-only or behavior-changing.
 
-## Forbidden / high-risk areas — do NOT edit (characterization-test-first plan only)
-`cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, connector claim/CAS/lease,
-`action_ledger`/`execution_attempts`, policy/readiness gates, auth/admin/tenant isolation,
-migrations, `internal/server/agent/*`, workspace CDP/session/connector flows,
-`queueLeadOutreach`, `runPooledOutreach`, `commentSinglePost`, `guardFacebookWriteAccount`,
-`queueGroupPost`, `queueProfilePost`, Phase D typed `CommandBus`, `.mcp.json`.
+## Controlled high-risk zones (gated — NOT forbidden forever)
 
-## High-risk rule
-If the task touches any forbidden area, STOP and produce a characterization-test-first plan
-(tests that pin current behavior first) for approval — do not edit the runtime path.
+These are controlled zones, not permanent bans. **Default during any generic cleanup/refactor
+sprint: do NOT edit — STOP and produce a characterization-test-first plan only.** A zone becomes
+editable ONLY when the current sprint prompt explicitly approves, supplying all six: (1) exact
+files/functions in scope, (2) required characterization tests, (3) expected behavior contracts,
+(4) rollback plan, (5) required reviewer roles, (6) user approval before implementation.
+
+Controlled zones: `cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, connector
+claim/CAS/lease, `action_ledger` / `execution_attempts`, policy/readiness gates,
+auth/admin/tenant isolation, migrations, `internal/server/agent/*`, workspace
+CDP/session/connector flows, `queueLeadOutreach`, `runPooledOutreach`, `commentSinglePost`,
+`guardFacebookWriteAccount`, `queueGroupPost`, `queueProfilePost`, Phase D typed `CommandBus`.
+
+## Hard rules (always — these stay hard)
+- Never commit `.mcp.json`; never commit secrets.
+- Never lower a Sonar Quality Gate threshold.
+- Never mark a Sonar issue accepted / won't-fix / false-positive without explicit user approval.
+- Never merge a PR without user approval.
+- Do not modify behavior outside the approved sprint scope; do not delete files casually.
+- Do not start the Phase D typed `CommandBus` unless explicitly approved.

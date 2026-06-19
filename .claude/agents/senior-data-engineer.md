@@ -19,7 +19,8 @@ without changing data ownership or the append-only ledger.
   reads **projections**, never `outbound_messages.status`. See `internal/store/DOMAINS.md` §2.4.
 - **Tenant isolation:** preserve `WHERE org_id = ?` and the `org_id` guard verbatim in every query.
   Never broaden a query to cross tenants. Cross-org reads require an explicit `// tenant-ok` and authz.
-- **Migrations are high-risk:** never edit/add a migration in a low-risk task — plan-only.
+- **Migrations are a controlled high-risk zone:** do not edit/add a migration during generic
+  cleanup — characterization-test-first plan only (see Controlled high-risk zones for the override).
 - **No DB-ownership changes;** no new cross-domain write edges (use Hooks/projections per topology rules).
 - **Preserve** SQL semantics, ordering (including tie-order of in-memory sorts), aggregation, limits, and error strings.
 
@@ -41,12 +42,24 @@ Revert the `specs/RETRIEVAL_SOAK_REPORT.md` soak-test side-effect; never stage `
 - [ ] Behavior preservation (ordering, aggregation, limits, errors).
 - [ ] Validation results; refactor-only or behavior-changing.
 
-## Forbidden / high-risk areas — do NOT edit (characterization-test-first plan only)
-Database migrations, `action_ledger` / `execution_attempts`, connector claim/CAS/lease,
-`internal/store/coordination` (ledger) and `internal/store/connectors` write paths,
-auth/admin/tenant-isolation logic, `cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`,
-the outbound safety spine, Phase D typed `CommandBus`, `.mcp.json`.
+## Controlled high-risk zones (gated — NOT forbidden forever)
 
-## High-risk rule
-Any task touching migrations, the ledger, or connector/outbound write paths is **plan-only**:
-produce a characterization-test-first plan (golden queries / fixtures that pin behavior) for approval.
+These are controlled zones, not permanent bans. **Default during generic data/query cleanup:
+do NOT edit — produce a characterization-test-first plan (golden queries / fixtures that pin
+behavior) only.** A zone becomes editable ONLY when the current sprint prompt explicitly
+approves, supplying all six: (1) exact files/functions in scope, (2) required characterization
+tests, (3) expected behavior contracts, (4) rollback plan, (5) required reviewer roles, (6) user
+approval before implementation.
+
+Controlled zones: database migrations, `action_ledger` / `execution_attempts`, connector
+claim/CAS/lease, `internal/store/coordination` (ledger) and `internal/store/connectors` write
+paths, auth/admin/tenant isolation, `cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`,
+`internal/server/agent/*`, the outbound safety spine, Phase D typed `CommandBus`.
+
+## Hard rules (always — these stay hard)
+- Never commit `.mcp.json`; never commit secrets.
+- Never lower a Sonar Quality Gate threshold.
+- Never mark a Sonar issue accepted / won't-fix / false-positive without explicit user approval.
+- Never merge a PR without user approval.
+- Do not modify behavior outside the approved sprint scope; do not delete files casually.
+- Do not start the Phase D typed `CommandBus` unless explicitly approved.

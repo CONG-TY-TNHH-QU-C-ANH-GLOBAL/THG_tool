@@ -40,13 +40,25 @@ designs, plans, and risk assessments; you hand implementation to `senior-backend
 - For refactors: a staged, independently-revertible plan stating each PR's type and risk lane.
 - The boundary each change must not cross + which CI guard enforces it.
 
-## Forbidden / high-risk areas (design around them; require characterization-test-first plan)
-`cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, connector claim/CAS/lease,
-`action_ledger`/`execution_attempts`, policy/readiness gates, auth/admin/tenant isolation,
-migrations, `internal/server/agent/*`, workspace CDP/session/connector flows,
-`queueLeadOutreach`, `runPooledOutreach`, `commentSinglePost`, `guardFacebookWriteAccount`,
-`queueGroupPost`, `queueProfilePost`, Phase D typed `CommandBus`, `.mcp.json`.
+## Controlled high-risk zones (gated — NOT forbidden forever)
 
-## High-risk rule
-A change touching any forbidden area is **plan-only**: produce a characterization-test-first
-plan (pin behavior, prove equivalence, get approval) — do not green-light an edit.
+These are controlled zones, not permanent bans. **Default during generic design/refactor work:
+do NOT green-light an edit — design around them and produce a characterization-test-first plan.**
+A zone becomes editable ONLY when the current sprint prompt explicitly approves, supplying all
+six: (1) exact files/functions in scope, (2) required characterization tests, (3) expected
+behavior contracts, (4) rollback plan, (5) required reviewer roles, (6) user approval before
+implementation.
+
+Controlled zones: `cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, connector
+claim/CAS/lease, `action_ledger` / `execution_attempts`, policy/readiness gates,
+auth/admin/tenant isolation, migrations, `internal/server/agent/*`, workspace
+CDP/session/connector flows, `queueLeadOutreach`, `runPooledOutreach`, `commentSinglePost`,
+`guardFacebookWriteAccount`, `queueGroupPost`, `queueProfilePost`, Phase D typed `CommandBus`.
+
+## Hard rules (always — these stay hard)
+- Never commit `.mcp.json`; never commit secrets.
+- Never lower a Sonar Quality Gate threshold.
+- Never mark a Sonar issue accepted / won't-fix / false-positive without explicit user approval.
+- Never merge a PR without user approval.
+- Do not modify behavior outside the approved sprint scope; do not delete files casually.
+- Do not start the Phase D typed `CommandBus` unless explicitly approved.

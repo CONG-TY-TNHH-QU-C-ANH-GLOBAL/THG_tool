@@ -23,17 +23,30 @@ agent was **adapted from the upstream template content** (fetched from
 | `code-reviewer` | `development-tools/code-reviewer.md` |
 
 Each file keeps the professional core of its base template, then adds: THG AutoFlow
-constraints, the explicit forbidden/high-risk areas, an output checklist, and the rule that
-high-risk areas get a **characterization-test-first plan only**.
+constraints, the **controlled high-risk zones** (gated, not permanently forbidden), an output
+checklist, and the rule that controlled zones get a **characterization-test-first plan only**
+unless the sprint prompt supplies an explicit override.
 
-## Forbidden / high-risk areas (shared by every agent)
+## Controlled high-risk zones (shared by every agent)
 
-`cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, connector claim/CAS/lease,
+These are **controlled, not banned forever.** Default during any generic cleanup/refactor/Sonar
+sprint: do **not** edit — produce a characterization-test-first plan only. A zone becomes editable
+only when the current sprint prompt explicitly approves and supplies all six: (1) exact
+files/functions, (2) required characterization tests, (3) expected behavior contracts,
+(4) rollback plan, (5) required reviewer roles, (6) user approval before implementation.
+
+Zones: `cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, connector claim/CAS/lease,
 `action_ledger` / `execution_attempts`, policy/readiness gates, auth/admin/tenant isolation,
 migrations, `internal/server/agent/*`, workspace CDP/session/connector flows,
 `queueLeadOutreach`, `runPooledOutreach`, `commentSinglePost`, `guardFacebookWriteAccount`,
-`queueGroupPost`, `queueProfilePost`, the Phase D typed `CommandBus` (unless explicitly
-approved), and `.mcp.json`.
+`queueGroupPost`, `queueProfilePost`, and the Phase D typed `CommandBus`.
+
+## Hard rules (shared by every agent — these stay hard)
+
+Never commit `.mcp.json` or secrets; never lower a Sonar Quality Gate threshold; never mark a
+Sonar issue accepted/won't-fix/false-positive without approval; never merge without user
+approval; do not modify behavior outside the approved sprint scope; do not delete files casually;
+do not start the Phase D typed `CommandBus` unless explicitly approved.
 
 ## Note on version control
 

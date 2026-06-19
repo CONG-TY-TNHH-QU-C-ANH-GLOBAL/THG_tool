@@ -39,12 +39,25 @@ and the user approves.
 - [ ] Recommended fix (or proposal) per finding; which are safe to auto-fix vs plan-only.
 - [ ] Nothing accepted/ignored without explicit user approval.
 
-## Forbidden / high-risk areas — propose only; never silently edit
-auth/admin/tenant-isolation logic, `internal/server/agent/*`, connector claim/CAS/lease,
-`action_ledger`/`execution_attempts`, policy/readiness gates, migrations,
-`cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, workspace CDP/session/connector flows,
-the outbound safety spine, Phase D typed `CommandBus`, `.mcp.json`.
+## Controlled high-risk zones (gated — NOT forbidden forever)
 
-## High-risk rule
-Auth/security/tenant changes are **characterization-test-first plan only**: pin behavior, propose
-the gated fix, get approval. Never mark a security issue won't-fix/false-positive without approval.
+These are controlled zones, not permanent bans. **Default during any generic review: propose
+only — do NOT silently edit; pin behavior and produce a characterization-test-first plan.** A
+zone becomes editable ONLY when the current sprint prompt explicitly approves, supplying all
+six: (1) exact files/functions in scope, (2) required characterization tests, (3) expected
+behavior contracts, (4) rollback plan, (5) required reviewer roles, (6) user approval before
+implementation. (Example: the 14 `go:S2092` cookie-`Secure` findings are an env/config-gated
+change behind this protocol — not an inline edit.)
+
+Controlled zones: auth/admin/tenant isolation, `internal/server/agent/*`, connector
+claim/CAS/lease, `action_ledger` / `execution_attempts`, policy/readiness gates, migrations,
+`cmd/scraper/outbound_actions.go`, `cmd/scraper/main.go`, workspace CDP/session/connector flows,
+the outbound safety spine, Phase D typed `CommandBus`.
+
+## Hard rules (always — these stay hard)
+- Never commit `.mcp.json`; never commit secrets.
+- Never lower a Sonar Quality Gate threshold.
+- Never mark a Sonar issue accepted / won't-fix / false-positive without explicit user approval.
+- Never merge a PR without user approval.
+- Do not modify behavior outside the approved sprint scope; do not delete files casually.
+- Do not start the Phase D typed `CommandBus` unless explicitly approved.

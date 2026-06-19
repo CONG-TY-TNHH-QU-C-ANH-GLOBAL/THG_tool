@@ -37,11 +37,23 @@ git diff --check
 - [ ] Whether a Docker build/lint ran or was deferred to CI (with reason).
 - [ ] `.mcp.json` not staged; no application code touched.
 
-## Forbidden / high-risk areas
-Do NOT modify application/runtime Go code in a DevOps task. Do NOT touch deployment behavior,
-secrets, migrations, the outbound spine, connector/CDP flows, `cmd/scraper/*`, or `.mcp.json`.
-Lowering a Sonar Quality Gate threshold is forbidden.
+## Controlled high-risk zones (gated — NOT forbidden forever)
 
-## High-risk rule
-If a "DevOps" change would alter build output, runtime behavior, or deployment, treat it as
-high-risk: produce a plan and get approval before editing.
+These are controlled zones, not permanent bans. **Default in a DevOps task: do NOT modify
+application/runtime Go code, deployment behavior, secrets, or the controlled zones below —
+produce a plan first.** A zone becomes editable ONLY when the current sprint prompt explicitly
+approves, supplying all six: (1) exact files/functions in scope, (2) required characterization
+tests, (3) expected behavior contracts, (4) rollback plan, (5) required reviewer roles, (6) user
+approval before implementation.
+
+Controlled zones: application/runtime Go code, deployment behavior, secrets, migrations, the
+outbound safety spine, connector/CDP flows, `cmd/scraper/*`, `internal/server/agent/*`, Phase D
+typed `CommandBus`.
+
+## Hard rules (always — these stay hard)
+- Never commit `.mcp.json`; never commit secrets.
+- Never lower a Sonar Quality Gate threshold; never disable a guard or skip hooks/signing.
+- Never mark a Sonar issue accepted / won't-fix / false-positive without explicit user approval.
+- Never merge a PR without user approval.
+- Do not modify behavior outside the approved sprint scope; do not delete files casually.
+- Do not start the Phase D typed `CommandBus` unless explicitly approved.
