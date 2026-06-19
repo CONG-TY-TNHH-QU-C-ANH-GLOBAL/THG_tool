@@ -135,3 +135,26 @@ func RepairCommentContacts(text string, id models.CompanyIdentity) (string, bool
 	}
 	return out, changed
 }
+
+// EnsureWebsite deterministically guarantees a CONFIGURED company website appears
+// in the comment EXACTLY ONCE (Sprint-6 follow-up). The prompt asks the model to
+// include it, but a model can still omit it; this guard closes that gap WITHOUT
+// fabricating — it only ever appends `id.Website` (the grounded, canonical URL),
+// never an invented one. No-op when no website is grounded, the text is empty, or
+// a grounded website variant is already present (http/www/bare all match by host).
+// It appends the single canonical URL, so a comment that had no URL stays within
+// the ≤1-URL contact policy. Run it AFTER RepairCommentContacts/ScreenCommentContacts.
+func EnsureWebsite(text string, id models.CompanyIdentity) (string, bool) {
+	canonical := CanonicalWebsite(id.Website)
+	if canonical == "" || strings.TrimSpace(text) == "" {
+		return text, false
+	}
+	// Any URL already present — the website in any variant, OR a grounded contact
+	// link such as t.me/handle — is a no-op, so we never push the comment to two
+	// URLs (the ≤1-URL contact policy). By this point the screen/repair pass has
+	// already stripped non-grounded links, so a surviving URL is grounded.
+	if reCommentURL.MatchString(text) {
+		return text, false
+	}
+	return strings.TrimRight(strings.TrimSpace(text), " .") + ". " + canonical, true
+}

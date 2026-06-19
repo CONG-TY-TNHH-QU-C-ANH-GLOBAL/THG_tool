@@ -315,6 +315,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 					continue
 				}
 			}
+			// Deterministic website inclusion: a configured workspace website must
+			// appear in every comment even when the model omitted it (the prompt
+			// instruction alone is not enough). Grounded-only — never invents a URL,
+			// no-op when already present. Runs after the screen so it appends the
+			// single canonical website to an otherwise URL-free, screen-clean comment.
+			if web, added := comment.EnsureWebsite(content, commentIdentity); added {
+				content = web
+			}
 		}
 
 		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{

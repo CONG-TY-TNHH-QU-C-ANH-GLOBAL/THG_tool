@@ -599,10 +599,18 @@ consistent across BOTH comment generation paths.
   the staff Telegram/Zalo + staff CTA AND the company website (no company hotline/email);
   staff-phone case uses staff phone + website; empty staff contact falls back to company
   + website; `reasoning=live` produces the same contact result as the normal path.
-- **Remaining risk:** website inclusion is now MANDATED in the prompt (deterministic
-  instruction) but final emission still depends on LLM compliance — the guard preserves
-  a present grounded website but cannot fabricate one. CPD watch: the two prompt
-  templates share more helper calls now (verify duplication stays ≤ 3%).
+- **Deterministic website guard (same-branch fix-up):** prompt instruction alone could
+  still be omitted by the model, so `comment.EnsureWebsite` (`internal/ai/comment/contact_grounding.go`)
+  now guarantees a configured company website appears in the final draft EXACTLY ONCE —
+  grounded-only (only ever appends `CanonicalWebsite(id.Website)`, never invents), no-op
+  when no website is configured or any URL is already present (so it never breaks the
+  ≤1-URL policy). Invoked once at the shared screen/repair convergence point in
+  `cmd/scraper/outbound_actions.go`, covering BOTH the normal and reasoning=live paths.
+  +30 production LOC across 2 files; `contact_grounding.go` 160 (<200).
+- **Remaining risk:** CPD watch — the two prompt templates share more helper calls now
+  (verify duplication stays ≤ 3%). A future change that stops `RepairCommentContacts`
+  from normalizing a `t.me` contact link to `@handle` would need a characterization test,
+  since `EnsureWebsite` no-ops when any grounded URL is already present.
 
 ## Phase E — Transactional outbox foundation  ★ keystone
 
