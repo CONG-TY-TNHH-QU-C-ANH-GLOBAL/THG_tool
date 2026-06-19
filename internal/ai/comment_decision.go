@@ -395,6 +395,20 @@ func buildContactRule(id models.CompanyIdentity) string {
 	return rule
 }
 
+// intentRuleFor returns prompt rule #4 bound to what the lead wants. Pure
+// projection extracted from buildGroundedCommentPrompt — the wording is byte-for-byte
+// the prior inline switch (default = the generic rule), so prompt output is unchanged.
+func intentRuleFor(intent string) string {
+	switch intent {
+	case models.IntentProductSeeking:
+		return "4. This lead is PRODUCT-SEEKING: lead with the specific product and its REAL price/SKU from the offer above — be concrete, no vague pitch."
+	case models.IntentServiceSeeking:
+		return "4. This lead is SERVICE-SEEKING: pitch the capability + ONE proof point + a soft CTA from the service knowledge above; do NOT push a product SKU."
+	default:
+		return "4. Mention at most ONE capability/product and at most ONE proof point from the list above."
+	}
+}
+
 // buildGroundedCommentPrompt is the PURE, testable prompt builder for the grounded
 // comment (PR-2 depth upgrade). It is INTENT-AWARE: a product-seeking lead leads
 // with the real SKU + price; a service-seeking lead leads with capability + proof +
@@ -434,13 +448,7 @@ func buildGroundedCommentPrompt(leadContent, authorName string, profile *Busines
 	ctaLine := strings.TrimSpace(identity.PrimaryCTA)
 
 	// Intent-aware emphasis — bind the comment to what the lead actually wants.
-	intentRule := "4. Mention at most ONE capability/product and at most ONE proof point from the list above."
-	switch decision.Intent {
-	case models.IntentProductSeeking:
-		intentRule = "4. This lead is PRODUCT-SEEKING: lead with the specific product and its REAL price/SKU from the offer above — be concrete, no vague pitch."
-	case models.IntentServiceSeeking:
-		intentRule = "4. This lead is SERVICE-SEEKING: pitch the capability + ONE proof point + a soft CTA from the service knowledge above; do NOT push a product SKU."
-	}
+	intentRule := intentRuleFor(decision.Intent)
 
 	profileBlock := ""
 	if profile != nil && profile.IsConfigured() {
