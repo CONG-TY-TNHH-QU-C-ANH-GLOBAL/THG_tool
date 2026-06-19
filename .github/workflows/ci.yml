@@ -1,17 +1,330 @@
 name: CI
 
+# Path- and risk-aware validation.
+#
+# PRs get a FAST but SAFE gate scoped to what changed (see the `changes` job and
+# the per-lane jobs below). Pushes to `main`/`develop` always run the FULL STRICT
+# production gate (`main-full-gate`) exactly as before, plus a frontend build.
+#
+# IMPORTANT — do not rename this workflow. `deploy.yml` triggers on
+# `workflow_run: workflows: ["CI"], branches: [main]` and only deploys when this
+# workflow concludes `success` on `main`. Keep the name `CI`, keep `main-full-gate`
+# running on push to `main`, and keep its failure blocking the workflow so a broken
+# main never deploys. This file does NOT change any deploy behavior.
+#
+# Fail-safe (§7 of docs/architecture/SONAR_FACTORY_PROTOCOL.md): if classification
+# is ambiguous, the filter setup fails, or the PR touches CI / workflow / scripts /
+# dependency files, we run the heavy checks (both frontend and backend, with the
+# race detector) rather than skipping.
+
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
 
+# Cancel superseded PR runs to keep the PR gate fast. NEVER cancel push runs on
+# main/develop — `deploy.yml` depends on the main CI run completing.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
-  build-and-test:
-    name: Build & Test
+  # ──────────────────────────────────────────────────────────────────────────
+  # Path classification (PR only). Produces booleans consumed by the lane jobs.
+  # ──────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Classify changed paths
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      contract: ${{ steps.filter.outputs.contract }}
+      controlled: ${{ steps.filter.outputs.controlled }}
+      ci_meta: ${{ steps.filter.outputs.ci_meta }}
+      hot_fn: ${{ steps.hotfn.outputs.hot_fn }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Path filters
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            controlled:
+              - 'cmd/scraper/outbound_actions.go'
+              - 'cmd/scraper/main.go'
+              - 'cmd/scraper/facebook_account_scope.go'
+              - 'cmd/scraper/direct_post_account_guard.go'
+              - 'cmd/scraper/direct_link_comment.go'
+              - 'internal/store/outbound/**'
+              - 'internal/store/coordination/**'
+              - 'internal/store/connectors/**'
+              - 'internal/store/migrations/**'
+              - 'internal/server/agent/**'
+              - 'internal/server/auth/**'
+              - 'internal/server/middleware/**'
+              - 'internal/server/org/**'
+              - 'internal/auth/**'
+              - 'internal/session/**'
+              - 'internal/livesession/**'
+              - 'internal/cdpclient/**'
+              - 'internal/browsergateway/**'
+              - 'internal/browser/**'
+              - 'internal/models/execution_outcome.go'
+              - 'internal/models/lead_engagement.go'
+              - 'internal/models/lead_lifecycle.go'
+              - 'internal/models/outbound_state.go'
+              - 'internal/models/comment_forensics.go'
+              - 'internal/models/soft_touch.go'
+              - 'internal/models/nav_diagnostic.go'
+              - 'frontend/src/modules/autoflow/components/views/CommentingView.tsx'
+              - 'frontend/src/modules/autoflow/components/views/PostingView.tsx'
+              - 'frontend/src/modules/autoflow/components/views/MissionsView.tsx'
+              - 'frontend/src/modules/autoflow/components/missions/**'
+              - 'frontend/src/modules/autoflow/components/commentExecution/**'
+              - 'frontend/src/modules/autoflow/components/browser/**'
+              - 'local-connector-extension/content/**'
+              - 'local-connector-extension/content.js'
+              - 'local-connector-extension/automation/**'
+              - 'local-connector-extension/channels/**'
+              - 'local-connector-extension/background.js'
+              - 'local-connector-extension/manifest.json'
+            contract:
+              - 'go.mod'
+              - 'go.sum'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'internal/models/**'
+              - 'internal/platform/**'
+              - 'internal/services/**'
+              - 'internal/server/router.go'
+              - 'internal/server/server.go'
+              - 'internal/server/**/routes.go'
+              - 'internal/server/**/router.go'
+              - 'frontend/src/platform/**'
+              - 'frontend/src/**/services/**'
+              - 'frontend/src/**/types.ts'
+              - 'frontend/src/**/*.types.ts'
+            frontend:
+              - 'frontend/**'
+            backend:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+            ci_meta:
+              - '.github/workflows/**'
+              - 'scripts/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'Dockerfile'
+              - 'docker/**'
+
+      - name: Hot-function fallback (controlled-by-content)
+        id: hotfn
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          HOT='queueLeadOutreach|runPooledOutreach|commentSinglePost|guardFacebookWriteAccount|queueGroupPost|queueProfilePost'
+          found=false
+          # Limit to changed Go files; treat the whole file as hot if it contains a
+          # hot function (conservative — errs toward running the heavy gate).
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            [ -f "$f" ] || continue
+            if grep -Eq "$HOT" "$f"; then
+              echo "hot function present in changed file: $f"
+              found=true
+            fi
+          done < <(git diff --name-only "$BASE" "$HEAD" -- '*.go')
+          echo "hot_fn=$found" >> "$GITHUB_OUTPUT"
+          echo "hot_fn=$found"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Always-run fast PR guard. No Go toolchain, no race detector — grep/python only.
+  # ──────────────────────────────────────────────────────────────────────────
+  pr-guard:
+    name: PR guard (always)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Changed files
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          git diff --name-only "$BASE" "$HEAD" | tee /tmp/changed_files.txt
+
+      - name: Whitespace / conflict-marker check (git diff --check)
+        shell: bash
+        run: git diff --check '${{ steps.diff.outputs.base }}' '${{ steps.diff.outputs.head }}'
+
+      - name: .mcp.json / secrets guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Hard fail: .mcp.json must never be committed (deterministic).
+          if grep -qxF '.mcp.json' /tmp/changed_files.txt; then
+            echo "::error::.mcp.json is staged in this PR — it must remain untracked."
+            exit 1
+          fi
+          # Warn-only secret heuristic on added lines (avoid blocking on false positives).
+          ADDED=$(git diff '${{ steps.diff.outputs.base }}' '${{ steps.diff.outputs.head }}' | grep -E '^\+' || true)
+          if printf '%s\n' "$ADDED" | grep -Eiq '(BEGIN [A-Z ]*PRIVATE KEY|aws_secret_access_key|-----BEGIN OPENSSH|xox[baprs]-[0-9A-Za-z-]+)'; then
+            echo "::warning::Possible secret pattern in added lines — please review before merge."
+          fi
+
+      - name: File-size guardrail (200-line rule, baseline-aware)
+        run: python3 scripts/check_file_size.py
+
+      - name: Runtime topology contract (fast, fail-hard)
+        run: bash scripts/check_topology.sh
+
+      - name: Tenant isolation guard (fast, fail-hard)
+        run: bash scripts/check_tenant_isolation.sh
+
+      - name: Architecture import boundaries (warn-only)
+        run: bash scripts/check_import_boundaries.sh || true
+
+      - name: Component structure (warn-only)
+        run: python3 scripts/check_component_structure.py || true
+
+      - name: No generated artifacts staged
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Eq '(^|/)(node_modules/|\.next/|__pycache__/)|\.(tar\.gz|tgz|exe)$|^(scraper|thg-worker)$' /tmp/changed_files.txt; then
+            echo "::error::A generated/build artifact appears to be staged. Remove it from the PR."
+            grep -E '(^|/)(node_modules/|\.next/|__pycache__/)|\.(tar\.gz|tgz|exe)$|^(scraper|thg-worker)$' /tmp/changed_files.txt || true
+            exit 1
+          fi
+          echo "no generated artifacts staged"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Frontend fast path. Runs for frontend, contract, controlled, or fail-safe PRs.
+  # No Go race detector here — that's the whole point of the fast path.
+  # ──────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend build & typecheck
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.frontend == 'true' ||
+       needs.changes.outputs.contract == 'true' ||
+       needs.changes.outputs.controlled == 'true' ||
+       needs.changes.outputs.ci_meta == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Typecheck + build (next build runs lint + type validation)
+        working-directory: frontend
+        run: npm run build
+      - name: Frontend tests (only if a non-interactive test script exists)
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            echo "test script found — running (non-interactive)"
+            CI=true npm test --silent
+          else
+            echo "no frontend test script defined — skipping honestly"
+          fi
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # Backend Go path. Race detector ONLY for controlled / hot-fn / fail-safe PRs.
+  # ──────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend Go (vet/build/test)
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.contract == 'true' ||
+       needs.changes.outputs.controlled == 'true' ||
+       needs.changes.outputs.ci_meta == 'true' ||
+       needs.changes.outputs.hot_fn == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download dependencies
+        run: go mod download
+      - name: go vet
+        run: go vet ./...
+      - name: Build production Go binaries
+        run: go build ./cmd/scraper/ ./cmd/worker/
+      - name: Decide race detector
+        id: race
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ needs.changes.outputs.controlled }}' = 'true' ] || \
+             [ '${{ needs.changes.outputs.ci_meta }}' = 'true' ] || \
+             [ '${{ needs.changes.outputs.hot_fn }}' = 'true' ]; then
+            echo "race=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "race=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "race detector: $(cat "$GITHUB_OUTPUT" | grep race=)"
+      - name: Run tests (race detector for controlled/hot/fail-safe paths)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ steps.race.outputs.race }}' = 'true' ]; then
+            echo "running heavy path: go test -race"
+            go test -race -timeout 120s ./...
+          else
+            echo "running fast path: go test (no race)"
+            go test -timeout 120s ./...
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # FULL STRICT production gate — push to main/develop only.
+  # The Go steps are byte-for-byte the historical gate (file-size → topology →
+  # import-boundaries warn → vet → build scraper+worker → test -race). A frontend
+  # build is added so a broken frontend fails CI before deploy is ever triggered.
+  # `deploy.yml` consumes this workflow's `success` conclusion on main.
+  # ──────────────────────────────────────────────────────────────────────────
+  main-full-gate:
+    name: Main full gate (strict + race + frontend)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +358,22 @@ jobs:
 
       - name: Run tests (with race detector)
         run: go test -race -timeout 120s ./...
+
+      # Strengthening (not in the historical gate): build the frontend so a broken
+      # Next.js build fails CI here instead of mid-deploy. Does not change deploy.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js frontend (typecheck + lint + build)
+        working-directory: frontend
+        run: npm run build
 
       - name: Generate fix request on failure
         if: failure()
