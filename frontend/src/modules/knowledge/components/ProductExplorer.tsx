@@ -176,11 +176,11 @@ function AssetCard({
   asset,
   lang,
   onPatch,
-}: {
+}: Readonly<{
   asset: KnowledgeAsset;
   lang: 'vi' | 'en';
   onPatch: (updater: (a: KnowledgeAsset) => KnowledgeAsset) => void;
-}) {
+}>) {
   const { t } = useKnowledgeStrings();
   const tint = TYPE_TINT[asset.type];
   const isHidden = asset.state === 'hidden';
@@ -399,11 +399,11 @@ function Metric({
   label,
   value,
   accent,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   accent?: string;
-}) {
+}>) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <span
@@ -435,11 +435,11 @@ function BoostSlider({
   value,
   onChange,
   label,
-}: {
+}: Readonly<{
   value: number;
   onChange: (v: number) => void;
   label: string;
-}) {
+}>) {
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
       <span

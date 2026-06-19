@@ -208,11 +208,11 @@ function ClaimRow({
   claim,
   lang,
   onDelete,
-}: {
+}: Readonly<{
   claim: BannedClaim;
   lang: 'vi' | 'en';
   onDelete: () => void;
-}) {
+}>) {
   const { t } = useKnowledgeStrings();
   const c = claim.severity === 'block' ? 'var(--hot)' : 'var(--warn)';
   return (
@@ -299,7 +299,7 @@ function ClaimRow({
   );
 }
 
-function Field({ label, input }: { label: string; input: React.ReactNode }) {
+function Field({ label, input }: Readonly<{ label: string; input: React.ReactNode }>) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span
@@ -318,7 +318,7 @@ function Field({ label, input }: { label: string; input: React.ReactNode }) {
   );
 }
 
-function Th({ children, align }: { children?: React.ReactNode; align?: 'left' | 'right' }) {
+function Th({ children, align }: Readonly<{ children?: React.ReactNode; align?: 'left' | 'right' }>) {
   return (
     <th
       style={{
@@ -341,10 +341,10 @@ function Th({ children, align }: { children?: React.ReactNode; align?: 'left' | 
 function Td({
   children,
   align,
-}: {
+}: Readonly<{
   children: React.ReactNode;
   align?: 'left' | 'right';
-}) {
+}>) {
   return (
     <td
       style={{
