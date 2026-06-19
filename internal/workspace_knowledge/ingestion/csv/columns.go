@@ -151,22 +151,11 @@ func (p *picker) toAsset(row []string, typ assets.AssetType, rowNum int) (*asset
 	// Build payload from non-reserved columns. The payload is a JSON
 	// object keyed by the original header, value the trimmed cell.
 	if len(p.payloadCols) > 0 {
-		payload := make(map[string]string, len(p.payloadCols))
-		for _, pc := range p.payloadCols {
-			if pc.idx >= len(row) {
-				continue
-			}
-			v := strings.TrimSpace(row[pc.idx])
-			if v == "" {
-				continue
-			}
-			payload[pc.header] = v
+		b, err := p.rowPayloadJSON(row)
+		if err != nil {
+			return nil, err
 		}
-		if len(payload) > 0 {
-			b, err := json.Marshal(payload)
-			if err != nil {
-				return nil, err
-			}
+		if b != nil {
 			a.Payload = b
 		}
 	}
@@ -179,6 +168,28 @@ func (p *picker) toAsset(row []string, typ assets.AssetType, rowNum int) (*asset
 		a.ExternalID = assets.ContentFingerprint(a.Title, a.Description, a.Tags, a.Payload)
 	}
 	return a, nil
+}
+
+// rowPayloadJSON marshals the row's non-reserved payload columns into a JSON
+// object keyed by the original header (trimmed cell values; empty cells and
+// out-of-range columns skipped). Returns (nil, nil) when no payload cell has a
+// value. Extracted verbatim from toAsset's payload-building block.
+func (p *picker) rowPayloadJSON(row []string) ([]byte, error) {
+	payload := make(map[string]string, len(p.payloadCols))
+	for _, pc := range p.payloadCols {
+		if pc.idx >= len(row) {
+			continue
+		}
+		v := strings.TrimSpace(row[pc.idx])
+		if v == "" {
+			continue
+		}
+		payload[pc.header] = v
+	}
+	if len(payload) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(payload)
 }
 
 // splitTagField breaks a tag-column cell into individual tags. Accepts

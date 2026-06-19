@@ -162,24 +162,7 @@ func (s *Store) ListOrgsByEmbeddingCost(ctx context.Context, limit int) ([]OrgEm
 		if err := rows.Scan(&orgID, &blob); err != nil {
 			return nil, err
 		}
-		var p struct {
-			TokensServed int64 `json:"tokens_served"`
-			Succeeded    int   `json:"succeeded"`
-			Failed       int   `json:"failed"`
-			SourceID     int64 `json:"source_id"`
-		}
-		if err := json.Unmarshal([]byte(blob), &p); err != nil {
-			continue
-		}
-		entry, ok := byOrg[orgID]
-		if !ok {
-			entry = &OrgEmbeddingCost{OrgID: orgID, BySource: map[string]int64{}}
-			byOrg[orgID] = entry
-		}
-		entry.BatchCount30d++
-		entry.TokensServed30d += p.TokensServed
-		entry.SucceededAssets += p.Succeeded
-		entry.FailedAssets += p.Failed
+		accumulateOrgEmbeddingCost(byOrg, orgID, blob)
 	}
 	out := make([]OrgEmbeddingCost, 0, len(byOrg))
 	for _, e := range byOrg {
@@ -187,6 +170,42 @@ func (s *Store) ListOrgsByEmbeddingCost(ctx context.Context, limit int) ([]OrgEm
 		out = append(out, *e)
 	}
 	// Sort by token usage descending. Simple slice sort.
+	sortOrgEmbeddingCostByTokensDesc(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// accumulateOrgEmbeddingCost folds one knowledge_events embedding row's payload
+// into the per-org tally, creating the entry on first sight. A row whose
+// data_json fails to unmarshal is skipped. Extracted verbatim from
+// ListOrgsByEmbeddingCost's scan loop body (skip-on-error preserved).
+func accumulateOrgEmbeddingCost(byOrg map[int64]*OrgEmbeddingCost, orgID int64, blob string) {
+	var p struct {
+		TokensServed int64 `json:"tokens_served"`
+		Succeeded    int   `json:"succeeded"`
+		Failed       int   `json:"failed"`
+		SourceID     int64 `json:"source_id"`
+	}
+	if err := json.Unmarshal([]byte(blob), &p); err != nil {
+		return
+	}
+	entry, ok := byOrg[orgID]
+	if !ok {
+		entry = &OrgEmbeddingCost{OrgID: orgID, BySource: map[string]int64{}}
+		byOrg[orgID] = entry
+	}
+	entry.BatchCount30d++
+	entry.TokensServed30d += p.TokensServed
+	entry.SucceededAssets += p.Succeeded
+	entry.FailedAssets += p.Failed
+}
+
+// sortOrgEmbeddingCostByTokensDesc orders the slice in place by 30d tokens
+// served, descending. Preserves the original O(n²) selection-swap so tie
+// ordering is byte-for-byte identical to the previous inline loop.
+func sortOrgEmbeddingCostByTokensDesc(out []OrgEmbeddingCost) {
 	for i := range out {
 		for j := i + 1; j < len(out); j++ {
 			if out[j].TokensServed30d > out[i].TokensServed30d {
@@ -194,8 +213,4 @@ func (s *Store) ListOrgsByEmbeddingCost(ctx context.Context, limit int) ([]OrgEm
 			}
 		}
 	}
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
 }

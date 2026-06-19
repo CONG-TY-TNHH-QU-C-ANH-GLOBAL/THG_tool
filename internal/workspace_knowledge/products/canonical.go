@@ -203,6 +203,25 @@ func (p *CanonicalProduct) Validate() error {
 	if p == nil {
 		return errors.New("products: nil product")
 	}
+	if err := p.validateHeader(); err != nil {
+		return err
+	}
+	for i := range p.Variants {
+		if err := validateVariant(i, &p.Variants[i]); err != nil {
+			return err
+		}
+	}
+	if p.RawPayloadHash != "" && !isHex(p.RawPayloadHash) {
+		return fmt.Errorf("products: raw_payload_hash is not hex")
+	}
+	return nil
+}
+
+// validateHeader checks the product-level required fields, defaults a blank
+// availability to AvailUnknown (in place), and validates the availability,
+// currency, and price-range shape. Extracted verbatim from Validate — same
+// checks, same order, same error strings, same in-place defaulting.
+func (p *CanonicalProduct) validateHeader() error {
 	if strings.TrimSpace(p.SourceID) == "" {
 		return errors.New("products: source_id is required")
 	}
@@ -229,29 +248,32 @@ func (p *CanonicalProduct) Validate() error {
 	if p.PriceMin != nil && p.PriceMax != nil && *p.PriceMin > *p.PriceMax {
 		return fmt.Errorf("products: price_min %v > price_max %v", *p.PriceMin, *p.PriceMax)
 	}
-	for i := range p.Variants {
-		if strings.TrimSpace(p.Variants[i].SKU) == "" {
-			return fmt.Errorf("products: variant[%d].sku is required", i)
-		}
-		if p.Variants[i].Availability == "" {
-			p.Variants[i].Availability = AvailUnknown
-		}
-		if !p.Variants[i].Availability.IsKnown() {
-			return fmt.Errorf("products: variant[%d] unknown availability %q", i, string(p.Variants[i].Availability))
-		}
-		if p.Variants[i].Currency != "" {
-			cur := p.Variants[i].Currency
-			if len(cur) != 3 || strings.ToUpper(cur) != cur {
-				return fmt.Errorf("products: variant[%d] currency %q is not a 3-letter uppercase code", i, cur)
-			}
-		}
-		if p.Variants[i].PriceMin != nil && p.Variants[i].PriceMax != nil &&
-			*p.Variants[i].PriceMin > *p.Variants[i].PriceMax {
-			return fmt.Errorf("products: variant[%d] price_min > price_max", i)
+	return nil
+}
+
+// validateVariant checks one variant's SKU, defaults a blank availability to
+// AvailUnknown (in place), and validates the availability, currency, and
+// price-range shape. Extracted verbatim from Validate's variant loop body —
+// same checks, same order, same indexed error strings, same in-place defaulting.
+func validateVariant(i int, vr *ProductVariant) error {
+	if strings.TrimSpace(vr.SKU) == "" {
+		return fmt.Errorf("products: variant[%d].sku is required", i)
+	}
+	if vr.Availability == "" {
+		vr.Availability = AvailUnknown
+	}
+	if !vr.Availability.IsKnown() {
+		return fmt.Errorf("products: variant[%d] unknown availability %q", i, string(vr.Availability))
+	}
+	if vr.Currency != "" {
+		cur := vr.Currency
+		if len(cur) != 3 || strings.ToUpper(cur) != cur {
+			return fmt.Errorf("products: variant[%d] currency %q is not a 3-letter uppercase code", i, cur)
 		}
 	}
-	if p.RawPayloadHash != "" && !isHex(p.RawPayloadHash) {
-		return fmt.Errorf("products: raw_payload_hash is not hex")
+	if vr.PriceMin != nil && vr.PriceMax != nil &&
+		*vr.PriceMin > *vr.PriceMax {
+		return fmt.Errorf("products: variant[%d] price_min > price_max", i)
 	}
 	return nil
 }
