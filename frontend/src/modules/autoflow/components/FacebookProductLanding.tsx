@@ -251,7 +251,7 @@ export default function FacebookProductLanding({ onLogin, onRegister, onAdmin }:
               {copy.metrics.map((m) => (
                 <div key={m.label} className={styles.metric}>
                   <small>{m.label}</small>
-                  <b className={m.tone ? styles[m.tone as 'cy' | 'li'] : ''}>{m.value}</b>
+                  <b className={m.tone ? styles[m.tone] : ''}>{m.value}</b>
                 </div>
               ))}
             </div>
