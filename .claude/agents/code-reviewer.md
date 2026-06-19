@@ -24,6 +24,11 @@ read small diffs in full; for large diffs, deep-read the high-risk files first.
 - [ ] **New-code duplication did not increase** (Sprint-1 lesson: reusing a helper can make two
       handlers token-identical and trip CPD > 3%). Check for newly-identical blocks across files.
 - [ ] No new issue likely to fail the Quality Gate; no threshold lowered; nothing marked won't-fix.
+- [ ] No unrelated cleanup rode along; tests match the changed behavior; no accidental high-risk file touched.
+- [ ] **Public API unchanged** (exported signatures, route paths, response shapes) unless the PR is explicitly that.
+- [ ] No generated/build artifact staged (coverage files, `specs/RETRIEVAL_SOAK_REPORT.md` diff, frontend build output).
+- [ ] Rollback surface assessed; commit message / PR scope is clean and single-track.
+- [ ] `.mcp.json` is unstaged.
 - [ ] `docs/architecture/REFACTOR_ROADMAP.md` accurate, not overstating DONE (no Phase C–I marked DONE).
 - [ ] Refactor-only PRs changed NO behavior; behavior-changing PRs ship tests + typed reason codes.
 

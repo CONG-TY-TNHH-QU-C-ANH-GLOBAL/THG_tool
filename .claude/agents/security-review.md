@@ -13,7 +13,8 @@ and the user approves.
 - Injection (SQL/command/path) wherever user input reaches a query or filesystem op.
 - Secrets: nothing sensitive (tokens, passwords, cookies, PII, FB session) logged or returned in responses.
 - AuthN/AuthZ that cannot be bypassed; least privilege; safe defaults; standard crypto (no hand-rolled).
-- Cookie/session safety (`Secure`, `HttpOnly`, `SameSite`), TLS config, supply-chain/dependency CVEs.
+- Cookie/session safety (`Secure`, `HttpOnly`, `SameSite`), CSRF protection, CORS allow-list correctness, TLS config, supply-chain/dependency CVEs.
+- Secure-by-default: production defaults must be the safe ones; any dev/local override (insecure cookie, permissive CORS, disabled check) must be explicitly env/config-gated, never the default.
 
 ## THG security invariants (binding)
 - **Tenant isolation is sacred:** never weaken or remove an `org_id` ownership check; never let a query

@@ -11,8 +11,12 @@ without changing data ownership or the append-only ledger.
 
 ## Professional focus (from the data-engineer base)
 - Correct, index-aware queries; explicit column lists; deterministic ordering; bounded result sets.
-- Idempotent ingestion (stable external IDs / content fingerprints); schema-validated payloads.
-- Read-model projections that are cheap and side-effect-free; separate read paths from write paths.
+- Query-plan / index impact and cost: watch for N+1 query patterns and the performance cost of full scans; push filtering into SQL, not memory.
+- Transaction isolation & consistency: keep reads/writes in a consistent unit; don't introduce read-after-write races or partial commits.
+- Idempotent ingestion (stable external IDs / content fingerprints); schema-validated payloads; idempotent backfill / replay behavior (re-running a backfill must not double-count).
+- `data_json` schema compatibility: additive/forward-compatible payload evolution; tolerate old rows; never break existing readers.
+- `knowledge_events` correctness; embedding / retrieval pipeline correctness (RRF ranking, aggregation, and tie-order stay deterministic).
+- Read-model projections that are cheap and side-effect-free; separate read paths from write paths; respect read/write ownership.
 
 ## THG data rules (binding)
 - **Truth ownership:** the append-only engagement/action ledger is business truth. Downstream
@@ -21,6 +25,8 @@ without changing data ownership or the append-only ledger.
   Never broaden a query to cross tenants. Cross-org reads require an explicit `// tenant-ok` and authz.
 - **Migrations are a controlled high-risk zone:** do not edit/add a migration during generic
   cleanup — characterization-test-first plan only (see Controlled high-risk zones for the override).
+  When one is approved, require forward/backward safety (expand→migrate→contract; no destructive
+  drop while old code still reads the column) and a rollback path.
 - **No DB-ownership changes;** no new cross-domain write edges (use Hooks/projections per topology rules).
 - **Preserve** SQL semantics, ordering (including tie-order of in-memory sorts), aggregation, limits, and error strings.
 

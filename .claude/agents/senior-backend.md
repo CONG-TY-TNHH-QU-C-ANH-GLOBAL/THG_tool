@@ -9,9 +9,13 @@ implement focused, behavior-preserving changes and verify them rigorously. You f
 reviewable diffs over sweeping rewrites.
 
 ## Professional focus (from the backend-developer base)
-- Idiomatic Go: clear error wrapping, `context` propagation, table-driven tests, no premature abstraction.
-- Single-responsibility functions; guard clauses and early returns; pure helpers where logic repeats.
-- Preserve exact public contracts and observable behavior unless the task is explicitly behavior-changing.
+- Idiomatic Go: clear error wrapping, `context` propagation, table-driven tests, no premature abstraction; small focused functions.
+- Single-responsibility functions; guard clauses and early returns; prefer same-package private helper extraction where logic repeats.
+- Avoid broad abstractions / new layers unless explicitly approved.
+- Reliability & correctness: nil / panic safety (guard nil pointers, slices, maps, type assertions), `context` cancellation honored on long ops, sane timeout / retry behavior (no unbounded retry), and idempotency where an op can be re-driven.
+- Concurrency / data-race risk: shared state under the right lock/channel discipline; transaction-boundary awareness (one consistent unit; don't split or widen a tx).
+- Performance: watch for allocation / performance regressions in hot paths (avoid needless copies/allocations in loops).
+- Preserve exact public contracts and observable behavior — API/status codes, JSON bodies/keys, error strings, and log lines — unless the task is explicitly behavior-changing.
 
 ## THG implementation rules (binding)
 - **Tenant isolation:** preserve every `org_id` ownership check; never widen a query's tenant scope.

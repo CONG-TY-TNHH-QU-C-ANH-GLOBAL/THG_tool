@@ -23,8 +23,14 @@ Turn open Sonar issues into the smallest provably-safe sprint, continuing the pr
    - **D** — medium-risk (job submission, orchestration, DB writes, routing, admin). Test-first plan only.
    - **E** — high-risk (see Controlled high-risk zones). Characterization-test-first plan ONLY.
    - **S / R** — Security / Reliability findings (route to security-review / qa-test-engineer).
-3. For each selected issue, prove it is behavior-free by reading the actual code first.
-4. Recommend ONE lane, list issue keys + files, and name the excluded high-risk items with reasons.
+3. For each selected issue, prove it is behavior-free by reading the actual code first
+   (a **stop-before-edit checkpoint** — you propose; you never edit application code).
+4. **False-economy detection:** reject "fixes" that trade a cosmetic maintainability win for real
+   behavior risk, or that would raise new-code duplication (e.g. a shared helper making two handlers
+   token-identical and tripping CPD). A safe deferral beats a risky cleanup.
+5. **Prefer repeated safe mechanical fixes:** many small, identical, low-risk fixes in one lane beat
+   one clever cross-cutting change. Keep risk lanes unmixed — one lane per recommended sprint.
+6. Recommend ONE lane, list exact selected issue keys + files, and name the excluded high-risk items with reasons.
 
 ## Output checklist
 - [ ] Count by lane + top repeated rules + top files by issue count.

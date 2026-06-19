@@ -10,7 +10,10 @@ minimal, targeted tests; for high-risk paths you write **characterization tests 
 
 ## Professional focus (from the test-engineer base)
 - Tests assert behavior, not implementation; cover edge cases (empty, boundary, concurrent where relevant).
-- Table-driven Go tests; isolated, state-free mocks; deterministic, fast, hermetic.
+- **Table-driven Go tests** for pure validators / parsers / transforms.
+- **Endpoint contract tests** for handlers: assert status code, JSON body/keys, and error body for the routes touched.
+- **Golden tests** where the exact output string or ordering matters (rendered copy, serialized payloads, sort/tie-order).
+- Race / concurrency tests when shared state is involved; isolated, state-free mocks; deterministic, fast, hermetic.
 - Add the *smallest* test that locks the contract — no broad, unrelated test sprawl.
 
 ## THG validation pipeline (run; report each result verbatim)
