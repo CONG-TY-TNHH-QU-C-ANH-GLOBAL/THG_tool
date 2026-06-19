@@ -1,24 +1,402 @@
 name: CI
 
+# Path- and risk-aware validation.
+#
+# PRs get a FAST but SAFE gate scoped to what changed (see the `changes` job and
+# the per-lane jobs below). Pushes to `main`/`develop` always run the FULL STRICT
+# production gate (`main-full-gate`) exactly as before, plus a frontend build.
+#
+# IMPORTANT — do not rename this workflow. `deploy.yml` triggers on
+# `workflow_run: workflows: ["CI"], branches: [main]` and only deploys when this
+# workflow concludes `success` on `main`. Keep the name `CI`, keep `main-full-gate`
+# running on push to `main`, and keep its failure blocking the workflow so a broken
+# main never deploys. This file does NOT change any deploy behavior.
+#
+# Fail-safe (§7 of docs/architecture/SONAR_FACTORY_PROTOCOL.md): if classification
+# is ambiguous, the filter setup fails, or the PR touches CI / workflow / scripts /
+# dependency files, we run the heavy checks (both frontend and backend, with the
+# race detector) rather than skipping.
+
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
 
-jobs:
-  build-and-test:
-    name: Build & Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+# Cancel superseded PR runs to keep the PR gate fast. NEVER cancel push runs on
+# main/develop — `deploy.yml` depends on the main CI run completing.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least privilege: no workflow-level permissions. Each job declares only what it
+# needs (repo read for checkout; PR read for path filtering). The aggregate gate
+# needs nothing.
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Path classification (PR only). Produces booleans consumed by the lane jobs.
+  # ──────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Classify changed paths
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      contract: ${{ steps.filter.outputs.contract }}
+      controlled: ${{ steps.filter.outputs.controlled }}
+      ci_meta: ${{ steps.filter.outputs.ci_meta }}
+      extension: ${{ steps.filter.outputs.extension }}
+      hot_fn: ${{ steps.hotfn.outputs.hot_fn }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+        with:
+          fetch-depth: 0
+
+      - name: Path filters
+        id: filter
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # dorny/paths-filter v3
+        with:
+          filters: |
+            controlled:
+              - 'cmd/scraper/outbound_actions.go'
+              - 'cmd/scraper/main.go'
+              - 'cmd/scraper/facebook_account_scope.go'
+              - 'cmd/scraper/direct_post_account_guard.go'
+              - 'cmd/scraper/direct_link_comment.go'
+              - 'internal/store/outbound/**'
+              - 'internal/store/coordination/**'
+              - 'internal/store/connectors/**'
+              - 'internal/store/migrations/**'
+              - 'internal/server/agent/**'
+              - 'internal/server/auth/**'
+              - 'internal/server/middleware/**'
+              - 'internal/server/org/**'
+              - 'internal/auth/**'
+              - 'internal/session/**'
+              - 'internal/livesession/**'
+              - 'internal/cdpclient/**'
+              - 'internal/browsergateway/**'
+              - 'internal/browser/**'
+              - 'internal/models/execution_outcome.go'
+              - 'internal/models/lead_engagement.go'
+              - 'internal/models/lead_lifecycle.go'
+              - 'internal/models/outbound_state.go'
+              - 'internal/models/comment_forensics.go'
+              - 'internal/models/soft_touch.go'
+              - 'internal/models/nav_diagnostic.go'
+              - 'frontend/src/modules/autoflow/components/views/CommentingView.tsx'
+              - 'frontend/src/modules/autoflow/components/views/PostingView.tsx'
+              - 'frontend/src/modules/autoflow/components/views/MissionsView.tsx'
+              - 'frontend/src/modules/autoflow/components/missions/**'
+              - 'frontend/src/modules/autoflow/components/commentExecution/**'
+              - 'frontend/src/modules/autoflow/components/browser/**'
+              - 'local-connector-extension/content/**'
+              - 'local-connector-extension/content.js'
+              - 'local-connector-extension/src/**'
+              - 'local-connector-extension/automation/**'
+              - 'local-connector-extension/channels/**'
+              - 'local-connector-extension/background.js'
+              - 'local-connector-extension/manifest.json'
+            contract:
+              - 'go.mod'
+              - 'go.sum'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'internal/models/**'
+              - 'internal/platform/**'
+              - 'internal/services/**'
+              # Backend HTTP/API surface — the whole server package is the
+              # frontend-facing contract boundary (routes, handlers, middleware,
+              # DTOs). Conservative on purpose: any server change runs BOTH lanes.
+              - 'internal/server/**'
+              - 'internal/server/**/handlers.go'
+              - 'internal/server/**/*handler*.go'
+              - 'frontend/src/platform/**'
+              - 'frontend/src/**/services/**'
+              - 'frontend/src/**/types.ts'
+              - 'frontend/src/**/*.types.ts'
+            frontend:
+              - 'frontend/**'
+            backend:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+            extension:
+              - 'local-connector-extension/**'
+            ci_meta:
+              - '.github/workflows/**'
+              - 'scripts/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'Dockerfile'
+              - 'docker/**'
+
+      - name: Controlled-by-content fallback (hot functions + sensitive tokens)
+        id: hotfn
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          # Hot functions + sensitive ledger/connector/reason-code tokens. Catches
+          # controlled logic scattered outside the path globs. Scanned on changed
+          # *.go files only — migrations (*.sql) and the extension are already
+          # covered by their controlled path globs, and scanning frontend *.ts(x)
+          # for reason-code strings would needlessly defeat the fast path.
+          HOT='queueLeadOutreach|runPooledOutreach|commentSinglePost|guardFacebookWriteAccount|queueGroupPost|queueProfilePost'
+          HOT="$HOT|execution_attempts|action_ledger|outbound_messages|connector_pairing|lease_expiry"
+          HOT="$HOT|ClaimPlanned|PickReadyConnector|CommandBus|human_required|challenge_required"
+          found=false
+          # Treat the whole file as hot if it contains any token (conservative —
+          # errs toward running the heavy gate).
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            [ -f "$f" ] || continue
+            if grep -Eq "$HOT" "$f"; then
+              echo "controlled token present in changed file: $f"
+              found=true
+            fi
+          done < <(git diff --name-only "$BASE" "$HEAD" -- '*.go')
+          echo "hot_fn=$found" >> "$GITHUB_OUTPUT"
+          echo "hot_fn=$found"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Always-run fast PR guard. No Go toolchain, no race detector — grep/python only.
+  # ──────────────────────────────────────────────────────────────────────────
+  pr-guard:
+    name: PR guard (always)
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+        with:
+          fetch-depth: 0
+
+      - name: Changed files
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          git diff --name-only "$BASE" "$HEAD" | tee /tmp/changed_files.txt
+
+      - name: Whitespace / conflict-marker check (git diff --check)
+        shell: bash
+        run: git diff --check '${{ steps.diff.outputs.base }}' '${{ steps.diff.outputs.head }}'
+
+      - name: .mcp.json / secrets guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Hard fail: .mcp.json must never be committed (deterministic).
+          if grep -qxF '.mcp.json' /tmp/changed_files.txt; then
+            echo "::error::.mcp.json is staged in this PR — it must remain untracked."
+            exit 1
+          fi
+          # Warn-only secret heuristic on added lines (avoid blocking on false positives).
+          ADDED=$(git diff '${{ steps.diff.outputs.base }}' '${{ steps.diff.outputs.head }}' | grep -E '^\+' || true)
+          if printf '%s\n' "$ADDED" | grep -Eiq '(BEGIN [A-Z ]*PRIVATE KEY|aws_secret_access_key|-----BEGIN OPENSSH|xox[baprs]-[0-9A-Za-z-]+)'; then
+            echo "::warning::Possible secret pattern in added lines — please review before merge."
+          fi
 
       - name: File-size guardrail (200-line rule, baseline-aware)
         run: python3 scripts/check_file_size.py
 
-      - uses: actions/setup-go@v5
+      - name: Runtime topology contract (fast, fail-hard)
+        run: bash scripts/check_topology.sh
+
+      - name: Tenant isolation guard (fast, fail-hard)
+        run: bash scripts/check_tenant_isolation.sh
+
+      - name: Architecture import boundaries (warn-only)
+        run: bash scripts/check_import_boundaries.sh || true
+
+      - name: Component structure (warn-only)
+        run: python3 scripts/check_component_structure.py || true
+
+      - name: No generated artifacts staged
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Eq '(^|/)(node_modules/|\.next/|__pycache__/)|\.(tar\.gz|tgz|exe)$|^(scraper|thg-worker)$' /tmp/changed_files.txt; then
+            echo "::error::A generated/build artifact appears to be staged. Remove it from the PR."
+            grep -E '(^|/)(node_modules/|\.next/|__pycache__/)|\.(tar\.gz|tgz|exe)$|^(scraper|thg-worker)$' /tmp/changed_files.txt || true
+            exit 1
+          fi
+          echo "no generated artifacts staged"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Frontend fast path. Runs for frontend, contract, controlled, or fail-safe PRs.
+  # No Go race detector here — that's the whole point of the fast path.
+  # ──────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend build & typecheck
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.frontend == 'true' ||
+       needs.changes.outputs.contract == 'true' ||
+       needs.changes.outputs.controlled == 'true' ||
+       needs.changes.outputs.ci_meta == 'true')
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Typecheck + build (next build runs lint + type validation)
+        working-directory: frontend
+        run: npm run build
+      - name: Frontend tests (only if a non-interactive test script exists)
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            echo "test script found — running (non-interactive)"
+            CI=true npm test --silent
+          else
+            echo "no frontend test script defined — skipping honestly"
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Backend Go path. Race detector ONLY for controlled / hot-fn / fail-safe PRs.
+  # ──────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend Go (vet/build/test)
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.contract == 'true' ||
+       needs.changes.outputs.controlled == 'true' ||
+       needs.changes.outputs.ci_meta == 'true' ||
+       needs.changes.outputs.hot_fn == 'true')
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download dependencies
+        run: go mod download
+      - name: go vet
+        run: go vet ./...
+      - name: Build production Go binaries
+        run: go build ./cmd/scraper/ ./cmd/worker/
+      - name: Decide race detector
+        id: race
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ needs.changes.outputs.controlled }}' = 'true' ] || \
+             [ '${{ needs.changes.outputs.ci_meta }}' = 'true' ] || \
+             [ '${{ needs.changes.outputs.hot_fn }}' = 'true' ]; then
+            echo "race=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "race=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "race detector: $(cat "$GITHUB_OUTPUT" | grep race=)"
+      - name: Run tests (race detector for controlled/hot/fail-safe paths)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ steps.race.outputs.race }}' = 'true' ]; then
+            echo "running heavy path: go test -race"
+            go test -race -timeout 120s ./...
+          else
+            echo "running fast path: go test (no race)"
+            go test -timeout 120s ./...
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Chrome extension validation. Runs whenever local-connector-extension/**
+  # changes. Validates the extension on its OWN terms with node --test — never
+  # relies on the Next.js frontend build to exercise the extension.
+  # ──────────────────────────────────────────────────────────────────────────
+  extension:
+    name: Chrome extension tests
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.changes.outputs.extension == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
+        with:
+          node-version: "20"
+      - name: Run extension unit tests (node --test)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          # Directories that may hold node --test files.
+          DIRS=()
+          for d in local-connector-extension/src local-connector-extension/content local-connector-extension/test; do
+            [ -d "$d" ] || continue
+            matches=( "$d"/**/*.test.mjs "$d"/**/*.test.js )
+            if [ ${#matches[@]} -gt 0 ]; then
+              DIRS+=("$d")
+            fi
+          done
+          if [ ${#DIRS[@]} -eq 0 ]; then
+            echo "no extension test files found — skipping honestly (nothing to validate)"
+            exit 0
+          fi
+          echo "running node --test on: ${DIRS[*]}"
+          node --test "${DIRS[@]}"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # FULL STRICT production gate — push to main/develop only.
+  # The Go steps are byte-for-byte the historical gate (file-size → topology →
+  # import-boundaries warn → vet → build scraper+worker → test -race). A frontend
+  # build is added so a broken frontend fails CI before deploy is ever triggered.
+  # `deploy.yml` consumes this workflow's `success` conclusion on main.
+  # ──────────────────────────────────────────────────────────────────────────
+  main-full-gate:
+    name: Main full gate (strict + race + frontend)
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+
+      - name: File-size guardrail (200-line rule, baseline-aware)
+        run: python3 scripts/check_file_size.py
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go v5
         with:
           go-version-file: go.mod
           cache: true
@@ -46,14 +424,143 @@ jobs:
       - name: Run tests (with race detector)
         run: go test -race -timeout 120s ./...
 
+      # Strengthening (not in the historical gate): build the frontend so a broken
+      # Next.js build fails CI here instead of mid-deploy. Does not change deploy.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js frontend (typecheck + lint + build)
+        working-directory: frontend
+        run: npm run build
+
       - name: Generate fix request on failure
         if: failure()
         run: |
           echo '{"failure_type":"ci","message":"Build or test failed","instructions":"Fix all errors. Max 3 retry attempts."}' > fix_request.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact v4
         if: failure()
         with:
           name: fix-request
           path: fix_request.json
           retention-days: 3
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Stable aggregate gate. THIS is the only check branch protection needs to
+  # require — name it exactly "Build & Test" in required status checks. It runs
+  # for every event (`if: always()`), waits on all lanes, and is EVENT-AWARE and
+  # CHANGES-OUTPUT-AWARE — a lane may be skipped ONLY when the path-filter outputs
+  # say it was not required:
+  #
+  #   pull_request:
+  #     - changes  MUST succeed   (classification itself must be trustworthy)
+  #     - pr-guard MUST succeed   (always-run guard)
+  #     - frontend MUST succeed IFF outputs imply it (frontend|contract|controlled|ci_meta)
+  #     - backend  MUST succeed IFF outputs imply it (backend|contract|controlled|ci_meta|hot_fn)
+  #         (race runs INSIDE backend for controlled|ci_meta|hot_fn — backend success covers it)
+  #     - extension MUST succeed IFF outputs imply it (extension)
+  #     - any non-required lane may be skipped, but must never be failure/cancelled
+  #     - main-full-gate is expected skipped on PR
+  #   push (main/develop):
+  #     - main-full-gate MUST succeed
+  #     - the PR-only lanes may be skipped (but never failure/cancelled)
+  #
+  # Because it never lets a real failure or an illegitimate skip through, the
+  # workflow's `success` conclusion that deploy.yml consumes on main stays accurate.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    if: always()
+    needs: [changes, pr-guard, frontend, backend, extension, main-full-gate]
+    permissions: {}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate lane results (event- and output-aware)
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          R_CHANGES: ${{ needs.changes.result }}
+          R_PR_GUARD: ${{ needs.pr-guard.result }}
+          R_FRONTEND: ${{ needs.frontend.result }}
+          R_BACKEND: ${{ needs.backend.result }}
+          R_EXTENSION: ${{ needs.extension.result }}
+          R_MAIN: ${{ needs.main-full-gate.result }}
+          O_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          O_BACKEND: ${{ needs.changes.outputs.backend }}
+          O_CONTRACT: ${{ needs.changes.outputs.contract }}
+          O_CONTROLLED: ${{ needs.changes.outputs.controlled }}
+          O_CI_META: ${{ needs.changes.outputs.ci_meta }}
+          O_EXTENSION: ${{ needs.changes.outputs.extension }}
+          O_HOT_FN: ${{ needs.changes.outputs.hot_fn }}
+        run: |
+          set -uo pipefail
+          echo "event=$EVENT"
+          echo "results: changes=$R_CHANGES pr-guard=$R_PR_GUARD frontend=$R_FRONTEND backend=$R_BACKEND extension=$R_EXTENSION main-full-gate=$R_MAIN"
+          echo "outputs: frontend=$O_FRONTEND backend=$O_BACKEND contract=$O_CONTRACT controlled=$O_CONTROLLED ci_meta=$O_CI_META extension=$O_EXTENSION hot_fn=$O_HOT_FN"
+
+          fail=0
+          is_true() { [ "$1" = "true" ]; }
+          # A lane that was expected to run MUST have succeeded.
+          require_success() {
+            local name="$1" res="$2"
+            if [ "$res" != "success" ]; then
+              echo "::error::Required lane '$name' must be success but result='$res'"
+              fail=1
+            fi
+          }
+          # A lane that was NOT required may be skipped/success, but never broken.
+          forbid_broken() {
+            local name="$1" res="$2"
+            if [ "$res" = "failure" ] || [ "$res" = "cancelled" ]; then
+              echo "::error::Lane '$name' result='$res'"
+              fail=1
+            fi
+          }
+
+          case "$EVENT" in
+            pull_request)
+              require_success changes "$R_CHANGES"
+              require_success pr-guard "$R_PR_GUARD"
+
+              # Re-derive each lane's expectation from the classification outputs,
+              # mirroring the lane `if:` conditions exactly.
+              exp_fe=false; exp_be=false; exp_ext=false
+              if is_true "$O_FRONTEND" || is_true "$O_CONTRACT" || is_true "$O_CONTROLLED" || is_true "$O_CI_META"; then exp_fe=true; fi
+              if is_true "$O_BACKEND" || is_true "$O_CONTRACT" || is_true "$O_CONTROLLED" || is_true "$O_CI_META" || is_true "$O_HOT_FN"; then exp_be=true; fi
+              if is_true "$O_EXTENSION"; then exp_ext=true; fi
+              echo "expected lanes: frontend=$exp_fe backend=$exp_be extension=$exp_ext"
+
+              if [ "$exp_fe" = true ]; then require_success frontend "$R_FRONTEND"; else forbid_broken frontend "$R_FRONTEND"; fi
+              if [ "$exp_be" = true ]; then require_success backend "$R_BACKEND"; else forbid_broken backend "$R_BACKEND"; fi
+              if [ "$exp_ext" = true ]; then require_success extension "$R_EXTENSION"; else forbid_broken extension "$R_EXTENSION"; fi
+              # main full gate is push-only; it must not have run/broken here.
+              forbid_broken main-full-gate "$R_MAIN"
+              ;;
+            push)
+              require_success main-full-gate "$R_MAIN"
+              # PR-only lanes are expected skipped on push, but never broken.
+              forbid_broken changes "$R_CHANGES"
+              forbid_broken pr-guard "$R_PR_GUARD"
+              forbid_broken frontend "$R_FRONTEND"
+              forbid_broken backend "$R_BACKEND"
+              forbid_broken extension "$R_EXTENSION"
+              ;;
+            *)
+              echo "::error::Unexpected event '$EVENT'"
+              fail=1
+              ;;
+          esac
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Build & Test: FAIL"
+            exit 1
+          fi
+          echo "Build & Test: PASS (required lanes succeeded; skips were legitimate)"
