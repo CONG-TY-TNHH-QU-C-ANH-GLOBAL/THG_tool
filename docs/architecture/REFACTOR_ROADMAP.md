@@ -601,16 +601,19 @@ consistent across BOTH comment generation paths.
   + website; `reasoning=live` produces the same contact result as the normal path.
 - **Deterministic website guard (same-branch fix-up):** prompt instruction alone could
   still be omitted by the model, so `comment.EnsureWebsite` (`internal/ai/comment/contact_grounding.go`)
-  now guarantees a configured company website appears in the final draft EXACTLY ONCE —
-  grounded-only (only ever appends `CanonicalWebsite(id.Website)`, never invents), no-op
-  when no website is configured or any URL is already present (so it never breaks the
-  ≤1-URL policy). Invoked once at the shared screen/repair convergence point in
-  `cmd/scraper/outbound_actions.go`, covering BOTH the normal and reasoning=live paths.
-  +30 production LOC across 2 files; `contact_grounding.go` 160 (<200).
-- **Remaining risk:** CPD watch — the two prompt templates share more helper calls now
-  (verify duplication stays ≤ 3%). A future change that stops `RepairCommentContacts`
-  from normalizing a `t.me` contact link to `@handle` would need a characterization test,
-  since `EnsureWebsite` no-ops when any grounded URL is already present.
+  now makes the configured company website the SINGLE, preferred/required URL of the
+  final draft under the ≤1-URL policy — grounded-only (only ever emits
+  `CanonicalWebsite(id.Website)`, never invents). It delegates to `RepairCommentContacts`
+  (t.me→@handle, normalize website variants, dedupe, strip non-grounded) and then: if the
+  website is present it is the one canonical URL; if a competing link took the slot or no
+  URL was cited, the leftover URL is dropped and the website appended once. No-op when no
+  website is configured. Staff Telegram/Zalo TEXT handles are never touched. Invoked once
+  at the shared screen/repair convergence point in `cmd/scraper/outbound_actions.go`,
+  covering BOTH the normal and reasoning=live paths. `contact_grounding.go` 188 (<200);
+  tests split into `ensure_website_test.go` to keep each file <200.
+- **Remaining risk:** the final output still depends on a company website being configured
+  (`WebsiteURL` set) — when unset, no URL is cited (by design, never invented). CPD watch:
+  the two prompt templates share more helper calls now (verify duplication stays ≤ 3%).
 
 ## Phase E — Transactional outbox foundation  ★ keystone
 

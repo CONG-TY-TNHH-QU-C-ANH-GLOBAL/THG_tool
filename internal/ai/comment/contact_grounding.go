@@ -136,25 +136,53 @@ func RepairCommentContacts(text string, id models.CompanyIdentity) (string, bool
 	return out, changed
 }
 
-// EnsureWebsite deterministically guarantees a CONFIGURED company website appears
-// in the comment EXACTLY ONCE (Sprint-6 follow-up). The prompt asks the model to
-// include it, but a model can still omit it; this guard closes that gap WITHOUT
-// fabricating — it only ever appends `id.Website` (the grounded, canonical URL),
-// never an invented one. No-op when no website is grounded, the text is empty, or
-// a grounded website variant is already present (http/www/bare all match by host).
-// It appends the single canonical URL, so a comment that had no URL stays within
-// the ≤1-URL contact policy. Run it AFTER RepairCommentContacts/ScreenCommentContacts.
+// EnsureWebsite deterministically makes the CONFIGURED company website the SINGLE
+// URL of the comment (Sprint-6 follow-up). The company website is the preferred /
+// required URL under the ≤1-URL contact policy. The prompt asks the model to cite
+// it, but a model can still omit it or cite a competing link, so this guard closes
+// the gap WITHOUT fabricating — it only ever emits CanonicalWebsite(id.Website):
+//   - empty website OR empty text → no-op (never invent a URL);
+//   - website variant already present (www/scheme/spaced/deep-link) → normalized to
+//     the ONE canonical form, deduped to a single mention (via RepairCommentContacts);
+//   - a DIFFERENT URL present (e.g. t.me) → RepairCommentContacts first turns an
+//     official t.me handle into an @handle and strips non-grounded links; if the
+//     website is still absent we drop any leftover URL and append the website, so
+//     the comment is left with the website as its single URL — never two;
+//   - no URL at all → the canonical website is appended once.
+//
+// It never touches phone/email/handle TEXT, so staff Telegram/Zalo handles survive.
+// Run it AFTER ScreenCommentContacts at the shared screen/repair convergence point.
 func EnsureWebsite(text string, id models.CompanyIdentity) (string, bool) {
 	canonical := CanonicalWebsite(id.Website)
 	if canonical == "" || strings.TrimSpace(text) == "" {
 		return text, false
 	}
-	// Any URL already present — the website in any variant, OR a grounded contact
-	// link such as t.me/handle — is a no-op, so we never push the comment to two
-	// URLs (the ≤1-URL contact policy). By this point the screen/repair pass has
-	// already stripped non-grounded links, so a surviving URL is grounded.
-	if reCommentURL.MatchString(text) {
-		return text, false
+	// Reuse the full repair: t.me→@handle, normalize website variants to canonical,
+	// keep ≤1 grounded URL, strip non-grounded links. After this the only URL that
+	// can remain is the grounded website.
+	out, changed := RepairCommentContacts(text, id)
+	if websitePresent(out, id) {
+		return out, changed // website already occupies the single URL slot
 	}
-	return strings.TrimRight(strings.TrimSpace(text), " .") + ". " + canonical, true
+	// Website still absent (a contact link took the slot, or there was no URL) →
+	// make the canonical website the one URL: drop any leftover URL, append once.
+	out = strings.TrimSpace(reCommentURL.ReplaceAllString(out, ""))
+	out = strings.TrimSpace(regexp.MustCompile(`\s{2,}`).ReplaceAllString(out, " "))
+	out = strings.TrimRight(strings.TrimSpace(out), " .") + ". " + canonical
+	return out, true
+}
+
+// websitePresent reports whether the grounded company website (any host-matching
+// variant) already appears as a URL in text.
+func websitePresent(text string, id models.CompanyIdentity) bool {
+	web := id.AllowedURL()
+	if web == "" {
+		return false
+	}
+	for _, u := range reCommentURL.FindAllString(text, -1) {
+		if urlMatchesAny(u, []string{web}) {
+			return true
+		}
+	}
+	return false
 }
