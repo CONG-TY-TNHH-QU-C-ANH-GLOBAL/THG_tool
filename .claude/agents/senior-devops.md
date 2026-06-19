@@ -20,7 +20,10 @@ infrastructure hygiene (Dockerfiles, CI workflows, build config) and release hyg
 - Verify the Dockerfile RUNs are genuinely mergeable (no intervening `COPY`/`ENV`/`WORKDIR` that changes
   semantics) before merging them. If a Docker build/lint command exists in the repo, run it; if Docker is
   unavailable on this host, state that clearly and leave the build to CI.
-- **CI config:** never weaken a quality gate, never disable a guard, never skip hooks/signing.
+- **CI config:** never weaken a quality gate, never disable a guard, never skip hooks/signing. Do
+  not hide failures by changing thresholds — fix the cause, not the gate.
+- **Generated-artifact cleanup:** keep build/test artifacts out of commits (coverage files, the
+  `specs/RETRIEVAL_SOAK_REPORT.md` test side-effect, frontend build output); ensure they stay ignored / unstaged.
 - **Release hygiene:** branch off `main`; commit/push only when asked; end commit messages with the
   required `Co-Authored-By` trailer; never merge unless explicitly told; never stage `.mcp.json`.
 
