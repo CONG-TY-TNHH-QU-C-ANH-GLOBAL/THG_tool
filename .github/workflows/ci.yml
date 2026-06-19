@@ -442,15 +442,25 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # Stable aggregate gate. THIS is the only check branch protection needs to
   # require — name it exactly "Build & Test" in required status checks. It runs
-  # for every event (`if: always()`), waits on all lanes, and:
-  #   - FAILS if any lane failed or was cancelled (including the push full gate),
-  #   - FAILS if an upstream lane (changes / pr-guard) failed and silently skipped
-  #     its dependents — so a skip is only accepted when it was legitimate,
-  #   - PASSES when the lanes that ran succeeded and the rest were correctly
-  #     skipped (e.g. backend skipped on a frontend-only PR, all PR lanes skipped
-  #     on a main push).
-  # Because it never lets a real failure through, the workflow's `success`
-  # conclusion that deploy.yml consumes on main stays accurate.
+  # for every event (`if: always()`), waits on all lanes, and is EVENT-AWARE and
+  # CHANGES-OUTPUT-AWARE — a lane may be skipped ONLY when the path-filter outputs
+  # say it was not required:
+  #
+  #   pull_request:
+  #     - changes  MUST succeed   (classification itself must be trustworthy)
+  #     - pr-guard MUST succeed   (always-run guard)
+  #     - frontend MUST succeed IFF outputs imply it (frontend|contract|controlled|ci_meta)
+  #     - backend  MUST succeed IFF outputs imply it (backend|contract|controlled|ci_meta|hot_fn)
+  #         (race runs INSIDE backend for controlled|ci_meta|hot_fn — backend success covers it)
+  #     - extension MUST succeed IFF outputs imply it (extension)
+  #     - any non-required lane may be skipped, but must never be failure/cancelled
+  #     - main-full-gate is expected skipped on PR
+  #   push (main/develop):
+  #     - main-full-gate MUST succeed
+  #     - the PR-only lanes may be skipped (but never failure/cancelled)
+  #
+  # Because it never lets a real failure or an illegitimate skip through, the
+  # workflow's `success` conclusion that deploy.yml consumes on main stays accurate.
   # ──────────────────────────────────────────────────────────────────────────
   build-and-test:
     name: Build & Test
@@ -459,30 +469,84 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Aggregate lane results
+      - name: Aggregate lane results (event- and output-aware)
         shell: bash
         env:
+          EVENT: ${{ github.event_name }}
           R_CHANGES: ${{ needs.changes.result }}
           R_PR_GUARD: ${{ needs.pr-guard.result }}
           R_FRONTEND: ${{ needs.frontend.result }}
           R_BACKEND: ${{ needs.backend.result }}
           R_EXTENSION: ${{ needs.extension.result }}
           R_MAIN: ${{ needs.main-full-gate.result }}
+          O_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          O_BACKEND: ${{ needs.changes.outputs.backend }}
+          O_CONTRACT: ${{ needs.changes.outputs.contract }}
+          O_CONTROLLED: ${{ needs.changes.outputs.controlled }}
+          O_CI_META: ${{ needs.changes.outputs.ci_meta }}
+          O_EXTENSION: ${{ needs.changes.outputs.extension }}
+          O_HOT_FN: ${{ needs.changes.outputs.hot_fn }}
         run: |
-          set -euo pipefail
-          echo "changes=$R_CHANGES pr-guard=$R_PR_GUARD frontend=$R_FRONTEND backend=$R_BACKEND extension=$R_EXTENSION main-full-gate=$R_MAIN"
+          set -uo pipefail
+          echo "event=$EVENT"
+          echo "results: changes=$R_CHANGES pr-guard=$R_PR_GUARD frontend=$R_FRONTEND backend=$R_BACKEND extension=$R_EXTENSION main-full-gate=$R_MAIN"
+          echo "outputs: frontend=$O_FRONTEND backend=$O_BACKEND contract=$O_CONTRACT controlled=$O_CONTROLLED ci_meta=$O_CI_META extension=$O_EXTENSION hot_fn=$O_HOT_FN"
+
           fail=0
-          for kv in "changes:$R_CHANGES" "pr-guard:$R_PR_GUARD" "frontend:$R_FRONTEND" \
-                    "backend:$R_BACKEND" "extension:$R_EXTENSION" "main-full-gate:$R_MAIN"; do
-            name="${kv%%:*}"; res="${kv#*:}"
-            # Empty result == the job did not exist for this event; treat as skipped.
-            if [ "$res" = "failure" ] || [ "$res" = "cancelled" ]; then
-              echo "::error::Required lane '$name' result=$res"
+          is_true() { [ "$1" = "true" ]; }
+          # A lane that was expected to run MUST have succeeded.
+          require_success() {
+            local name="$1" res="$2"
+            if [ "$res" != "success" ]; then
+              echo "::error::Required lane '$name' must be success but result='$res'"
               fail=1
             fi
-          done
+          }
+          # A lane that was NOT required may be skipped/success, but never broken.
+          forbid_broken() {
+            local name="$1" res="$2"
+            if [ "$res" = "failure" ] || [ "$res" = "cancelled" ]; then
+              echo "::error::Lane '$name' result='$res'"
+              fail=1
+            fi
+          }
+
+          case "$EVENT" in
+            pull_request)
+              require_success changes "$R_CHANGES"
+              require_success pr-guard "$R_PR_GUARD"
+
+              # Re-derive each lane's expectation from the classification outputs,
+              # mirroring the lane `if:` conditions exactly.
+              exp_fe=false; exp_be=false; exp_ext=false
+              if is_true "$O_FRONTEND" || is_true "$O_CONTRACT" || is_true "$O_CONTROLLED" || is_true "$O_CI_META"; then exp_fe=true; fi
+              if is_true "$O_BACKEND" || is_true "$O_CONTRACT" || is_true "$O_CONTROLLED" || is_true "$O_CI_META" || is_true "$O_HOT_FN"; then exp_be=true; fi
+              if is_true "$O_EXTENSION"; then exp_ext=true; fi
+              echo "expected lanes: frontend=$exp_fe backend=$exp_be extension=$exp_ext"
+
+              if [ "$exp_fe" = true ]; then require_success frontend "$R_FRONTEND"; else forbid_broken frontend "$R_FRONTEND"; fi
+              if [ "$exp_be" = true ]; then require_success backend "$R_BACKEND"; else forbid_broken backend "$R_BACKEND"; fi
+              if [ "$exp_ext" = true ]; then require_success extension "$R_EXTENSION"; else forbid_broken extension "$R_EXTENSION"; fi
+              # main full gate is push-only; it must not have run/broken here.
+              forbid_broken main-full-gate "$R_MAIN"
+              ;;
+            push)
+              require_success main-full-gate "$R_MAIN"
+              # PR-only lanes are expected skipped on push, but never broken.
+              forbid_broken changes "$R_CHANGES"
+              forbid_broken pr-guard "$R_PR_GUARD"
+              forbid_broken frontend "$R_FRONTEND"
+              forbid_broken backend "$R_BACKEND"
+              forbid_broken extension "$R_EXTENSION"
+              ;;
+            *)
+              echo "::error::Unexpected event '$EVENT'"
+              fail=1
+              ;;
+          esac
+
           if [ "$fail" -ne 0 ]; then
             echo "Build & Test: FAIL"
             exit 1
           fi
-          echo "Build & Test: PASS (lanes succeeded or legitimately skipped)"
+          echo "Build & Test: PASS (required lanes succeeded; skips were legitimate)"
