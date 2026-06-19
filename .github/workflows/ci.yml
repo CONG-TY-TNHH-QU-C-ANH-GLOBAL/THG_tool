@@ -48,6 +48,7 @@ jobs:
       contract: ${{ steps.filter.outputs.contract }}
       controlled: ${{ steps.filter.outputs.controlled }}
       ci_meta: ${{ steps.filter.outputs.ci_meta }}
+      extension: ${{ steps.filter.outputs.extension }}
       hot_fn: ${{ steps.hotfn.outputs.hot_fn }}
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +95,7 @@ jobs:
               - 'frontend/src/modules/autoflow/components/browser/**'
               - 'local-connector-extension/content/**'
               - 'local-connector-extension/content.js'
+              - 'local-connector-extension/src/**'
               - 'local-connector-extension/automation/**'
               - 'local-connector-extension/channels/**'
               - 'local-connector-extension/background.js'
@@ -106,10 +108,12 @@ jobs:
               - 'internal/models/**'
               - 'internal/platform/**'
               - 'internal/services/**'
-              - 'internal/server/router.go'
-              - 'internal/server/server.go'
-              - 'internal/server/**/routes.go'
-              - 'internal/server/**/router.go'
+              # Backend HTTP/API surface — the whole server package is the
+              # frontend-facing contract boundary (routes, handlers, middleware,
+              # DTOs). Conservative on purpose: any server change runs BOTH lanes.
+              - 'internal/server/**'
+              - 'internal/server/**/handlers.go'
+              - 'internal/server/**/*handler*.go'
               - 'frontend/src/platform/**'
               - 'frontend/src/**/services/**'
               - 'frontend/src/**/types.ts'
@@ -120,6 +124,8 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+            extension:
+              - 'local-connector-extension/**'
             ci_meta:
               - '.github/workflows/**'
               - 'scripts/**'
@@ -130,22 +136,29 @@ jobs:
               - 'Dockerfile'
               - 'docker/**'
 
-      - name: Hot-function fallback (controlled-by-content)
+      - name: Controlled-by-content fallback (hot functions + sensitive tokens)
         id: hotfn
         shell: bash
         run: |
           set -euo pipefail
           BASE='${{ github.event.pull_request.base.sha }}'
           HEAD='${{ github.event.pull_request.head.sha }}'
+          # Hot functions + sensitive ledger/connector/reason-code tokens. Catches
+          # controlled logic scattered outside the path globs. Scanned on changed
+          # *.go files only — migrations (*.sql) and the extension are already
+          # covered by their controlled path globs, and scanning frontend *.ts(x)
+          # for reason-code strings would needlessly defeat the fast path.
           HOT='queueLeadOutreach|runPooledOutreach|commentSinglePost|guardFacebookWriteAccount|queueGroupPost|queueProfilePost'
+          HOT="$HOT|execution_attempts|action_ledger|outbound_messages|connector_pairing|lease_expiry"
+          HOT="$HOT|ClaimPlanned|PickReadyConnector|CommandBus|human_required|challenge_required"
           found=false
-          # Limit to changed Go files; treat the whole file as hot if it contains a
-          # hot function (conservative — errs toward running the heavy gate).
+          # Treat the whole file as hot if it contains any token (conservative —
+          # errs toward running the heavy gate).
           while IFS= read -r f; do
             [ -n "$f" ] || continue
             [ -f "$f" ] || continue
             if grep -Eq "$HOT" "$f"; then
-              echo "hot function present in changed file: $f"
+              echo "controlled token present in changed file: $f"
               found=true
             fi
           done < <(git diff --name-only "$BASE" "$HEAD" -- '*.go')
@@ -314,6 +327,45 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────────────────────────────────
+  # Chrome extension validation. Runs whenever local-connector-extension/**
+  # changes. Validates the extension on its OWN terms with node --test — never
+  # relies on the Next.js frontend build to exercise the extension.
+  # ──────────────────────────────────────────────────────────────────────────
+  extension:
+    name: Chrome extension tests
+    needs: changes
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.changes.outputs.extension == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run extension unit tests (node --test)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          # Directories that may hold node --test files.
+          DIRS=()
+          for d in local-connector-extension/src local-connector-extension/content local-connector-extension/test; do
+            [ -d "$d" ] || continue
+            matches=( "$d"/**/*.test.mjs "$d"/**/*.test.js )
+            if [ ${#matches[@]} -gt 0 ]; then
+              DIRS+=("$d")
+            fi
+          done
+          if [ ${#DIRS[@]} -eq 0 ]; then
+            echo "no extension test files found — skipping honestly (nothing to validate)"
+            exit 0
+          fi
+          echo "running node --test on: ${DIRS[*]}"
+          node --test "${DIRS[@]}"
+
+  # ──────────────────────────────────────────────────────────────────────────
   # FULL STRICT production gate — push to main/develop only.
   # The Go steps are byte-for-byte the historical gate (file-size → topology →
   # import-boundaries warn → vet → build scraper+worker → test -race). A frontend
@@ -386,3 +438,51 @@ jobs:
           name: fix-request
           path: fix_request.json
           retention-days: 3
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Stable aggregate gate. THIS is the only check branch protection needs to
+  # require — name it exactly "Build & Test" in required status checks. It runs
+  # for every event (`if: always()`), waits on all lanes, and:
+  #   - FAILS if any lane failed or was cancelled (including the push full gate),
+  #   - FAILS if an upstream lane (changes / pr-guard) failed and silently skipped
+  #     its dependents — so a skip is only accepted when it was legitimate,
+  #   - PASSES when the lanes that ran succeeded and the rest were correctly
+  #     skipped (e.g. backend skipped on a frontend-only PR, all PR lanes skipped
+  #     on a main push).
+  # Because it never lets a real failure through, the workflow's `success`
+  # conclusion that deploy.yml consumes on main stays accurate.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    if: always()
+    needs: [changes, pr-guard, frontend, backend, extension, main-full-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate lane results
+        shell: bash
+        env:
+          R_CHANGES: ${{ needs.changes.result }}
+          R_PR_GUARD: ${{ needs.pr-guard.result }}
+          R_FRONTEND: ${{ needs.frontend.result }}
+          R_BACKEND: ${{ needs.backend.result }}
+          R_EXTENSION: ${{ needs.extension.result }}
+          R_MAIN: ${{ needs.main-full-gate.result }}
+        run: |
+          set -euo pipefail
+          echo "changes=$R_CHANGES pr-guard=$R_PR_GUARD frontend=$R_FRONTEND backend=$R_BACKEND extension=$R_EXTENSION main-full-gate=$R_MAIN"
+          fail=0
+          for kv in "changes:$R_CHANGES" "pr-guard:$R_PR_GUARD" "frontend:$R_FRONTEND" \
+                    "backend:$R_BACKEND" "extension:$R_EXTENSION" "main-full-gate:$R_MAIN"; do
+            name="${kv%%:*}"; res="${kv#*:}"
+            # Empty result == the job did not exist for this event; treat as skipped.
+            if [ "$res" = "failure" ] || [ "$res" = "cancelled" ]; then
+              echo "::error::Required lane '$name' result=$res"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "Build & Test: FAIL"
+            exit 1
+          fi
+          echo "Build & Test: PASS (lanes succeeded or legitimately skipped)"
