@@ -8,6 +8,14 @@ package fburl
 
 import "strings"
 
+// Facebook URL path/query markers, factored out to avoid duplicated string
+// literals (go:S1192). Values are byte-identical to the originals.
+const (
+	pathPosts      = "/posts/"
+	pathPermalink  = "/permalink/"
+	paramStoryFBID = "story_fbid="
+)
+
 // LooksLikePostURL is true when the URL carries an identifier that
 // resolves to a specific Facebook post when opened. Group / page /
 // profile shells (e.g. facebook.com/groups/123 with no further path)
@@ -16,9 +24,9 @@ func LooksLikePostURL(u string) bool {
 	if u == "" {
 		return false
 	}
-	return strings.Contains(u, "/posts/") ||
-		strings.Contains(u, "/permalink/") ||
-		strings.Contains(u, "story_fbid=") ||
+	return strings.Contains(u, pathPosts) ||
+		strings.Contains(u, pathPermalink) ||
+		strings.Contains(u, paramStoryFBID) ||
 		strings.Contains(u, "multi_permalinks=") ||
 		strings.Contains(u, "fbid=")
 }
@@ -41,8 +49,8 @@ func LooksLikeCommentOnlyURL(u string) bool {
 // DOM-scraped URL is a group / profile shell — common when Facebook
 // virtualises the permalink anchor until hover.
 //
-//   groupFBID empty → falls back to the global permalink form.
-//   postFBID empty  → returns "" (no rescue possible).
+//	groupFBID empty → falls back to the global permalink form.
+//	postFBID empty  → returns "" (no rescue possible).
 //
 // Synthesis uses the /permalink/ URL form (NOT /posts/). The /permalink/
 // form is the canonical Facebook navigation path for group posts and
@@ -57,7 +65,7 @@ func CanonicalPostPermalink(groupFBID, postFBID string) string {
 		return ""
 	}
 	if g := strings.TrimSpace(groupFBID); g != "" {
-		return "https://www.facebook.com/groups/" + g + "/permalink/" + postFBID + "/"
+		return "https://www.facebook.com/groups/" + g + pathPermalink + postFBID + "/"
 	}
 	return "https://www.facebook.com/permalink.php?story_fbid=" + postFBID
 }
@@ -75,7 +83,7 @@ func ExtractFacebookPostID(u string) string {
 	if u == "" {
 		return ""
 	}
-	for _, marker := range []string{"/permalink/", "story_fbid=", "?fbid=", "&fbid=", "/posts/"} {
+	for _, marker := range []string{pathPermalink, paramStoryFBID, "?fbid=", "&fbid=", pathPosts} {
 		i := strings.Index(u, marker)
 		if i < 0 {
 			continue
@@ -149,7 +157,7 @@ func ExtractFacebookEntityID(u string) string {
 	// Numeric identifiers. Marker order matches [ExtractFacebookPostID]
 	// for consistency: /permalink/ first because that path always carries
 	// the URL-resolvable story_fbid.
-	for _, marker := range []string{"/permalink/", "story_fbid=", "?fbid=", "&fbid=", "/posts/", "?v=", "&v="} {
+	for _, marker := range []string{pathPermalink, paramStoryFBID, "?fbid=", "&fbid=", pathPosts, "?v=", "&v="} {
 		i := strings.Index(u, marker)
 		if i < 0 {
 			continue

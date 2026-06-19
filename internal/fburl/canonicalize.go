@@ -8,6 +8,10 @@ import (
 
 var reAnyURL = regexp.MustCompile(`https?://[^\s]+`)
 
+// pathGroups is the Facebook group path segment, factored out to avoid a
+// duplicated string literal (go:S1192). Byte-identical to the original.
+const pathGroups = "/groups/"
+
 // ExtractFacebookURLs returns every Facebook URL in text, with trailing
 // sentence punctuation trimmed. Platform layer owns FB URL recognition so the
 // usecase orchestrator can count/validate links without embedding FB knowledge.
@@ -103,11 +107,11 @@ func hostOfURL(raw string) string {
 // /groups/{group_ref}/permalink/{post}/ form instead of dropping the group and
 // falling back to the global permalink.php?story_fbid= form.
 func extractGroupFBID(u string) string {
-	i := strings.Index(u, "/groups/")
+	i := strings.Index(u, pathGroups)
 	if i < 0 {
 		return ""
 	}
-	seg := u[i+len("/groups/"):]
+	seg := u[i+len(pathGroups):]
 	if j := strings.IndexByte(seg, '/'); j >= 0 {
 		return seg[:j]
 	}
@@ -127,7 +131,7 @@ func ExtractGroupRef(u string) string { return extractGroupFBID(u) }
 // must not be treated as equivalent to a group post.
 func IsGroupPermalinkURL(u string) bool {
 	lu := strings.ToLower(u)
-	return strings.Contains(lu, "/groups/") &&
+	return strings.Contains(lu, pathGroups) &&
 		(strings.Contains(lu, "/permalink/") || strings.Contains(lu, "/posts/"))
 }
 
