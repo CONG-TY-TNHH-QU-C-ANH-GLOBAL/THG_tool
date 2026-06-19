@@ -47,6 +47,17 @@ forbidden forever**.
 Use the triage → specialist → review chain: `sonar-triage` proposes a lane, the matching
 specialist implements (or plans), `qa-test-engineer` validates, and `code-reviewer` gates the diff.
 
+## Binding protocol — read before any Sonar cleanup
+
+All Sonar Factory work is governed by the
+[**THG Sonar Factory Operating Protocol**](../../docs/architecture/SONAR_FACTORY_PROTOCOL.md)
+(`docs/architecture/SONAR_FACTORY_PROTOCOL.md`). It is **mandatory** and defines the
+risk classes (P/S/F/M), batch-size budgets, main-stability and parallel-PR rules,
+the zero-New-Issues rule, the no-blind-deletion and JS/TS scope-altering rules, the
+noisy-diff rule, the §10 agent workflow (Phase A→E maps onto the agents above), git
+traceability, validation, next-sprint selection, and the required final report.
+Follow it for every Sonar PR; the agent roles here are the executors of that protocol.
+
 ## Runtime healthcheck
 
 During Sprint 3, named subagents became unavailable mid-session, so work
