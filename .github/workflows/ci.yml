@@ -29,9 +29,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-permissions:
-  contents: read
-  pull-requests: read
+# Least privilege: no workflow-level permissions. Each job declares only what it
+# needs (repo read for checkout; PR read for path filtering). The aggregate gate
+# needs nothing.
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
@@ -40,6 +40,9 @@ jobs:
   changes:
     name: Classify changed paths
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -51,13 +54,13 @@ jobs:
       extension: ${{ steps.filter.outputs.extension }}
       hot_fn: ${{ steps.hotfn.outputs.hot_fn }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
           fetch-depth: 0
 
       - name: Path filters
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # dorny/paths-filter v3
         with:
           filters: |
             controlled:
@@ -171,10 +174,12 @@ jobs:
   pr-guard:
     name: PR guard (always)
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
           fetch-depth: 0
 
@@ -247,11 +252,13 @@ jobs:
        needs.changes.outputs.contract == 'true' ||
        needs.changes.outputs.controlled == 'true' ||
        needs.changes.outputs.ci_meta == 'true')
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
         with:
           node-version: "20"
           cache: "npm"
@@ -287,11 +294,13 @@ jobs:
        needs.changes.outputs.controlled == 'true' ||
        needs.changes.outputs.ci_meta == 'true' ||
        needs.changes.outputs.hot_fn == 'true')
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go v5
         with:
           go-version-file: go.mod
           cache: true
@@ -337,11 +346,13 @@ jobs:
     if: >
       github.event_name == 'pull_request' &&
       needs.changes.outputs.extension == 'true'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
         with:
           node-version: "20"
       - name: Run extension unit tests (node --test)
@@ -375,15 +386,17 @@ jobs:
   main-full-gate:
     name: Main full gate (strict + race + frontend)
     if: github.event_name == 'push'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
 
       - name: File-size guardrail (200-line rule, baseline-aware)
         run: python3 scripts/check_file_size.py
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go v5
         with:
           go-version-file: go.mod
           cache: true
@@ -413,7 +426,7 @@ jobs:
 
       # Strengthening (not in the historical gate): build the frontend so a broken
       # Next.js build fails CI here instead of mid-deploy. Does not change deploy.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
         with:
           node-version: "20"
           cache: "npm"
@@ -432,7 +445,7 @@ jobs:
         run: |
           echo '{"failure_type":"ci","message":"Build or test failed","instructions":"Fix all errors. Max 3 retry attempts."}' > fix_request.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact v4
         if: failure()
         with:
           name: fix-request
@@ -466,6 +479,7 @@ jobs:
     name: Build & Test
     if: always()
     needs: [changes, pr-guard, frontend, backend, extension, main-full-gate]
+    permissions: {}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
