@@ -18,7 +18,7 @@ interface BusinessMemoryPanelProps {
 const fieldStyle = { display: 'flex', flexDirection: 'column', gap: 6 } as const;
 const labelStyle = { color: theme.textFaint, fontSize: 11, fontWeight: 700 } as const;
 
-function Label({ text, confidence }: { text: string; confidence?: number }) {
+function Label({ text, confidence }: Readonly<{ text: string; confidence?: number }>) {
   return (
     <span style={{ ...labelStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       {text}
@@ -27,7 +27,7 @@ function Label({ text, confidence }: { text: string; confidence?: number }) {
   );
 }
 
-export default function BusinessMemoryPanel({ context, message, isSaving, confidences, onChange, onSave }: BusinessMemoryPanelProps) {
+export default function BusinessMemoryPanel({ context, message, isSaving, confidences, onChange, onSave }: Readonly<BusinessMemoryPanelProps>) {
   // When the user edits a field, we drop its confidence — the value is
   // now user-owned, not AI-suggested. This is a no-op when confidences
   // wasn't passed in.

@@ -45,7 +45,7 @@ export default function MarketingNav({
   onRegister,
   currentServiceSlug,
   sectionLinks = [],
-}: MarketingNavProps) {
+}: Readonly<MarketingNavProps>) {
   const { lang } = useLang();
   const [servicesOpen, setServicesOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);

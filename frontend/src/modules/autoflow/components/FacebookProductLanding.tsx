@@ -186,7 +186,7 @@ const COPY = {
   },
 } as const;
 
-export default function FacebookProductLanding({ onLogin, onRegister, onAdmin }: FacebookProductLandingProps) {
+export default function FacebookProductLanding({ onLogin, onRegister, onAdmin }: Readonly<FacebookProductLandingProps>) {
   const { lang } = useLang();
   const copy = COPY[lang];
 

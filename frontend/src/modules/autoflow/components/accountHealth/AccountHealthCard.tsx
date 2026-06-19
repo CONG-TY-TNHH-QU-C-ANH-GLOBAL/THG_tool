@@ -30,7 +30,7 @@ interface Props {
   multiAccount?: boolean;
 }
 
-export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing, multiAccount }: Props) {
+export function AccountHealthCard({ account, isAdmin, onClearBlock, clearing, multiAccount }: Readonly<Props>) {
   const [showTech, setShowTech] = useState(false);
   const allReasons = Array.from(new Set(account.capabilities.flatMap(c => c.reasons ?? [])));
   // P1.3E: the account headline is driven STRICTLY by requester-scoped executability — green

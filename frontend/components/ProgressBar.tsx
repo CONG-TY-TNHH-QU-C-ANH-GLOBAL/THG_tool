@@ -4,7 +4,7 @@ interface ProgressBarProps {
   size?: 'sm' | 'md'
 }
 
-export function ProgressBar({ value, label = false, size = 'sm' }: ProgressBarProps) {
+export function ProgressBar({ value, label = false, size = 'sm' }: Readonly<ProgressBarProps>) {
   const pct = Math.min(100, Math.max(0, value))
   const h = size === 'md' ? 'h-2.5' : 'h-1.5'
   const color = pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-indigo-500' : 'bg-gray-700'

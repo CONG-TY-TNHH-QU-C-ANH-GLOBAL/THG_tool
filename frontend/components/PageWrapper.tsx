@@ -1,7 +1,7 @@
 'use client'
 import { usePathname } from 'next/navigation'
 
-export function PageWrapper({ children }: { children: React.ReactNode }) {
+export function PageWrapper({ children }: Readonly<{ children: React.ReactNode }>) {
   const path = usePathname()
   const fullBleed = path?.startsWith('/browser')
   if (fullBleed) return <div className="h-full overflow-hidden">{children}</div>

@@ -10,7 +10,7 @@ interface Props {
   lang?: 'vi' | 'en';
 }
 
-export function ActorVerdictChip({ actorVerdict, actorBlocked, lang = 'vi' }: Props) {
+export function ActorVerdictChip({ actorVerdict, actorBlocked, lang = 'vi' }: Readonly<Props>) {
   if (actorBlocked) {
     return (
       <span className="tag tag-hot" title={lang === 'vi' ? 'Tài khoản bị chặn auto do sai danh tính FB — cần operator gỡ' : 'Account blocked from auto-execute on actor mismatch'}>

@@ -13,7 +13,7 @@ const LEAD_COLORS: Record<LeadCategory, string> = {
   cold: 'bg-blue-900/60 text-blue-300',
 }
 
-export function JobStatusBadge({ status }: { status: JobStatus }) {
+export function JobStatusBadge({ status }: Readonly<{ status: JobStatus }>) {
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${JOB_COLORS[status]}`}>
       {status}
@@ -21,7 +21,7 @@ export function JobStatusBadge({ status }: { status: JobStatus }) {
   )
 }
 
-export function LeadCategoryBadge({ category }: { category: LeadCategory }) {
+export function LeadCategoryBadge({ category }: Readonly<{ category: LeadCategory }>) {
   const icons: Record<LeadCategory, string> = { hot: '🔥', warm: '☀️', cold: '❄️' }
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium ${LEAD_COLORS[category]}`}>

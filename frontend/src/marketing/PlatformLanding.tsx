@@ -314,7 +314,7 @@ const COPY = {
   },
 } as const;
 
-export default function PlatformLanding({ onLogin, onRegister }: PlatformLandingProps) {
+export default function PlatformLanding({ onLogin, onRegister }: Readonly<PlatformLandingProps>) {
   const { lang } = useLang();
   const copy = COPY[lang];
   const year = 2026;
@@ -699,7 +699,7 @@ export default function PlatformLanding({ onLogin, onRegister }: PlatformLanding
  * Inline SVG illustrations — built by hand per CLAUDE.md (no AI art). *
  * ------------------------------------------------------------------ */
 
-function SolutionArt({ slug }: { slug: string }) {
+function SolutionArt({ slug }: Readonly<{ slug: string }>) {
   if (slug === 'facebook-automation') {
     // chat threads + signal capture
     return (
@@ -750,7 +750,7 @@ function SolutionArt({ slug }: { slug: string }) {
   );
 }
 
-function WhyViz({ kind }: { kind: string }) {
+function WhyViz({ kind }: Readonly<{ kind: string }>) {
   if (kind === 'hub') {
     // shared data hub — many staff, one source
     return (

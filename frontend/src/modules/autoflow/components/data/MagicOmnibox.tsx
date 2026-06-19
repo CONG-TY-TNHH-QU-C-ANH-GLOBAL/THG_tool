@@ -14,7 +14,7 @@ interface MagicOmniboxProps {
 
 const URL_HINT = /^(https?:\/\/)/i;
 
-export default function MagicOmnibox({ onInferred, busy }: MagicOmniboxProps) {
+export default function MagicOmnibox({ onInferred, busy }: Readonly<MagicOmniboxProps>) {
   const [input, setInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

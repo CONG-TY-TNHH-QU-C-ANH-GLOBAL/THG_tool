@@ -7,7 +7,7 @@ interface ContextSummaryPanelProps {
   dataSourcesSummary: string;
 }
 
-export default function ContextSummaryPanel({ privateFilesSummary, dataSourcesSummary }: ContextSummaryPanelProps) {
+export default function ContextSummaryPanel({ privateFilesSummary, dataSourcesSummary }: Readonly<ContextSummaryPanelProps>) {
   if (!privateFilesSummary && !dataSourcesSummary) return null;
 
   return (

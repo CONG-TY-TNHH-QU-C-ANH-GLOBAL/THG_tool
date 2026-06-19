@@ -8,7 +8,7 @@ interface PrivateFilesTableProps {
   onRemove: (id: number) => void;
 }
 
-export default function PrivateFilesTable({ files, onRemove }: PrivateFilesTableProps) {
+export default function PrivateFilesTable({ files, onRemove }: Readonly<PrivateFilesTableProps>) {
   return (
     <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}>
       <div style={{ padding: '11px 16px', borderBottom: `1px solid ${theme.border}` }}>
