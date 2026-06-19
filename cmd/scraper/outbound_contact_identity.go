@@ -8,31 +8,53 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// resolveStaffContactIdentity swaps the workspace-default contact for
-// the ASSIGNED salesperson's own contact line (PR-5) before comment
-// generation. Resolution chain:
+// resolveStaffContactIdentity swaps the workspace-default contact for the
+// responsible salesperson's own contact line (PR-5; Sprint 5 precedence fix)
+// before comment generation. Resolution chain, first usable wins:
 //
-//	assigned staff contact → company default (only when the workspace
-//	allows fallback) → omit the contact line entirely.
+//	1. the INITIATING sales agent (actx.InitiatorUserID = created_by — the
+//	   member handling this outreach; "lead do bạn phụ trách"). Leads are
+//	   SHARED with no per-lead owner, so execution ownership names the agent.
+//	2. the executing account's ASSIGNED salesperson (acc.AssignedUserID) —
+//	   covers automated/scheduled runs with no human initiator contact.
+//	3. company default — only when the workspace allows fallback.
+//	4. omit the contact line entirely.
 //
-// The executing account's AssignedUserID names the salesperson; the
-// returned identity feeds both the prompt (buildCompanyBlock) and the
-// contact guard (ScreenCommentContacts), so a comment can only ever
-// cite the contact that was actually resolved here.
-func resolveStaffContactIdentity(db *store.Store, orgID, accountID int64, id models.CompanyIdentity) models.CompanyIdentity {
+// A profile is "usable" only when Active with a non-empty ContactLine; an empty
+// or inactive profile falls through to the next tier (this is what makes the
+// initiator-first rule degrade safely to the assignee for a contactless admin).
+// The returned identity feeds both the prompt (buildCompanyBlock) and the
+// contact guard (ScreenCommentContacts), so a comment can only ever cite the
+// contact that was actually resolved here. Never invents contact data.
+func resolveStaffContactIdentity(db *store.Store, orgID, initiatorUserID, accountID int64, id models.CompanyIdentity) models.CompanyIdentity {
 	allowFallback := companyContactFallbackAllowed(db, orgID)
-	if accountID <= 0 {
-		return models.ApplyStaffContact(nil, id, allowFallback)
+	if staff := usableStaffContact(db, orgID, initiatorUserID); staff != nil {
+		return models.ApplyStaffContact(staff, id, allowFallback)
 	}
-	acc, err := db.Identities().GetAccountForOrg(accountID, orgID)
-	if err != nil || acc == nil || acc.AssignedUserID <= 0 {
-		return models.ApplyStaffContact(nil, id, allowFallback)
+	if accountID > 0 {
+		if acc, err := db.Identities().GetAccountForOrg(accountID, orgID); err == nil && acc != nil {
+			if staff := usableStaffContact(db, orgID, acc.AssignedUserID); staff != nil {
+				return models.ApplyStaffContact(staff, id, allowFallback)
+			}
+		}
 	}
-	staff, err := db.GetStaffContactProfile(orgID, acc.AssignedUserID)
-	if err != nil {
-		return models.ApplyStaffContact(nil, id, allowFallback)
+	return models.ApplyStaffContact(nil, id, allowFallback)
+}
+
+// usableStaffContact returns the org-scoped staff profile for userID ONLY when
+// it is selectable for grounding — Active with a non-empty ContactLine. Returns
+// nil on any miss (non-positive id, no row, DB error, inactive, or empty) so the
+// caller falls through to the next precedence tier. org-scoped: the orgID filter
+// keeps a profile from another tenant unreachable.
+func usableStaffContact(db *store.Store, orgID, userID int64) *models.StaffContactProfile {
+	if userID <= 0 {
+		return nil
 	}
-	return models.ApplyStaffContact(staff, id, allowFallback)
+	staff, err := db.GetStaffContactProfile(orgID, userID)
+	if err != nil || staff == nil || !staff.Active || staff.ContactLine() == "" {
+		return nil
+	}
+	return staff
 }
 
 // companyContactFallbackAllowed reads the org policy flag

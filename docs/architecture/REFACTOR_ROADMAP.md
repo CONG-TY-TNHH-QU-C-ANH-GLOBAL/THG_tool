@@ -484,6 +484,65 @@ and found correct + secure, so they were left untouched.
   `*.thgfulfill.com` is an environment/config issue, now surfaced as a timeout error
   rather than a hang.
 
+### D.7 — Comment AI sales-contact resolution, sprint 5 (behavior-changing)  ✅ DONE
+
+Customer bug: a sales agent configured their own Comment-AI contact ("Liên hệ của
+tôi trong comment AI" — Telegram @hairypotter98 · Zalo 0949716391, CTA set) and the
+preview was correct, but generated comments still cited the **company/workspace
+contact**. UI promise: *"Khi lead do bạn phụ trách, AI dùng liên hệ này thay cho liên
+hệ chung của công ty."* Backend-only fix; no migration, no schema, no frontend.
+
+- **Branch:** `fix/comment-ai-sales-contact-sprint-5` (from `origin/main` @ `35fbf9aa`,
+  the Sprint-4 merge).
+- **Lane / agents:** `senior-frontend` + `senior-backend` + `senior-fullstack`
+  (3-layer contact-flow inventory), `sonar-triage` (focused scan), `senior-architect`
+  (gate: **ALLOW WITH CONDITIONS**, confirmed Contract A), `security-review`
+  (**CONFIRM**), `qa-test-engineer` (8 precedence tests), `code-reviewer` (**APPROVE**).
+- **Root cause:** `resolveStaffContactIdentity` (`cmd/scraper/outbound_contact_identity.go`)
+  keyed the staff contact ONLY on the executing FB account's `AssignedUserID`, ignoring
+  `actx.InitiatorUserID` (the member who owns the execution = `created_by` — the agent
+  handling this outreach). Leads are SHARED (no per-lead owner column;
+  `feedback_shared_battlefield_not_crm.md`), so the initiator is the correct subject for
+  "lead do bạn phụ trách". When the executing account was unassigned (or assigned to
+  someone else), David's saved profile (keyed by his user_id) was never read → company
+  fallback won.
+- **Fix (Contract A precedence, first usable wins):** initiating sales agent
+  (`InitiatorUserID`) → executing account's assignee (`AssignedUserID`) → company default
+  (only if `companyContactFallbackAllowed`) → omit. A profile is "usable" only when
+  `Active && ContactLine() != ""`, so an empty/inactive profile falls through (this makes
+  initiator-first degrade safely to the assignee for a contactless admin). Added pure
+  helper `usableStaffContact`; reused the existing pure `models.ApplyStaffContact` for the
+  final staff-or-fallback/omit decision (never invents contact data).
+- **Changed files:** `cmd/scraper/outbound_contact_identity.go` (resolver, 68 lines),
+  `cmd/scraper/outbound_actions.go` (one-line call-site change passing
+  `actx.InitiatorUserID`), new `cmd/scraper/outbound_contact_identity_test.go` (8 tests),
+  + this note.
+- **Refactor-only or behavior-changing:** **behavior-changing** (contact selected
+  differently; tests added). Track: SaaS UX Hardening / staff-contact (PR-5 extension).
+- **Security / tenant:** reads stay org-scoped (`GetStaffContactProfile` is
+  `WHERE user_id=? AND org_id=?`; `GetAccountForOrg` rejects other orgs). `InitiatorUserID`
+  is server-derived (JWT → forcibly overwritten in `skills_register.go:243`), not
+  request-spoofable. No cross-tenant / cross-staff leak, no auth change, no contact PII
+  logged, no invented data.
+- **Excluded controlled zones (untouched):** Facebook write execution, queue/policy/
+  readiness gates, `action_ledger`/`execution_attempts`, connector claim/CAS/lease,
+  schema/migrations, frontend (the form was already correct). The outbound safety spine
+  is untouched — only the grounded contact string changes.
+- **Validation:** `go build ./...` ✓, `go vet ./...` ✓, `go test ./...` ✓ (8/8 new
+  precedence subtests pass; soak report reverted to keep tree clean); `gofmt` content
+  clean (repo CRLF checkout flags `gofmt -l` repo-wide — environment artifact);
+  `check_file_size.py` PASS (resolver 68 ≤ 200); `git diff --check` clean; `.mcp.json`
+  untracked, not staged.
+- **Manual E2E:** configure staff contact (Telegram @hairypotter98 · Zalo 0949716391,
+  empty phone/email, CTA) → generate a Comment-AI draft as that agent → draft cites the
+  staff Telegram/Zalo + staff CTA, not the company contact, with empty fields filtered;
+  an agent with no usable profile falls back to the account assignee, then company (if
+  policy allows); another staff's contact never leaks into this agent's draft.
+- **Remaining risk / deferred:** the `reasoning=live` path (`GenerateCommentV2`,
+  default-off) still re-derives company identity internally and drops the staff swap —
+  a separate, default-off latent bug **deferred** to a follow-up (track separation;
+  needs its own live-path test). This PR does not make that gap worse.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,
