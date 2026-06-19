@@ -66,7 +66,7 @@ function formatRelative(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export default function PromptRoutingRealityView(_: PromptRoutingRealityViewProps) {
+export default function PromptRoutingRealityView(_: Readonly<PromptRoutingRealityViewProps>) {
   const [hours, setHours] = useState<number>(24);
   const {
     distribution, recent, conflicts, missing,
@@ -300,7 +300,7 @@ export default function PromptRoutingRealityView(_: PromptRoutingRealityViewProp
   );
 }
 
-function ConflictPanel({ title, subtitle, tone, items }: { title: string; subtitle: string; tone: 'red' | 'yellow'; items: ConflictRow[] }) {
+function ConflictPanel({ title, subtitle, tone, items }: Readonly<{ title: string; subtitle: string; tone: 'red' | 'yellow'; items: ConflictRow[] }>) {
   const accent = tone === 'red' ? theme.red : theme.yellow;
   return (
     <div style={{ border: `1px solid ${theme.borderAlt}`, borderRadius: 8, padding: 10 }}>
@@ -331,7 +331,7 @@ function ConflictPanel({ title, subtitle, tone, items }: { title: string; subtit
   );
 }
 
-function RecentRow({ row }: { row: PromptRoutingRow }) {
+function RecentRow({ row }: Readonly<{ row: PromptRoutingRow }>) {
   const missing = (row.missing_signals ?? []).join(', ');
   return (
     <tr style={{ borderBottom: `1px solid ${theme.borderAlt}` }}>
