@@ -60,7 +60,7 @@ var THGApi = globalThis.THGApi || (() => {
       'X-Agent-OS': `${navigator.platform || 'unknown'} / Chrome`,
       'X-Agent-Version': chrome.runtime.getManifest().version
     };
-    return fetch(`${cfg.serverUrl}${path}`, { ...options, headers });
+    return THGShared.fetchWithTimeout(`${cfg.serverUrl}${path}`, { ...options, headers });
   }
 
   async function clearDeviceToken() {
@@ -70,14 +70,24 @@ var THGApi = globalThis.THGApi || (() => {
   async function pairConnector(serverUrl, code) {
     const normalized = THGShared.normalizeServerUrl(serverUrl);
     const state = await THGFacebookState.collectFacebookState();
-    const res = await fetch(`${normalized}/api/connectors/pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...stateBody(state),
-        code: THGShared.normalizePairingCode(code)
-      })
-    });
+    let res;
+    try {
+      res = await THGShared.fetchWithTimeout(`${normalized}/api/connectors/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...stateBody(state),
+          code: THGShared.normalizePairingCode(code)
+        })
+      });
+    } catch (err) {
+      // No retry on purpose: a consumed pairing code must never be replayed.
+      // Static messages — never interpolate the code/token into operator copy.
+      if (err && err.name === 'TimeoutError') {
+        throw new Error('Hết thời gian chờ khi kết nối THG server. Kiểm tra mạng, đảm bảo THG server trùng domain với dashboard, rồi tạo mã mới và thử lại.');
+      }
+      throw new Error('Không kết nối được tới THG server. Kiểm tra mạng, đảm bảo THG server trùng domain với dashboard, rồi tạo mã mới và thử lại.');
+    }
     if (!res.ok) {
       const text = await res.text();
       let message = text;
@@ -105,7 +115,11 @@ var THGApi = globalThis.THGApi || (() => {
       pairingSessionId: payload.pairing_session_id || 0,
       lastError: ''
     });
-    await THGHeartbeat.run();
+    // Fire-and-forget: pairing is COMPLETE once the device token is stored above.
+    // Liveness/online-status is driven by the 30s heartbeat alarm armed in
+    // background.js (THGHeartbeat.schedule()), NOT by this call. Awaiting a full
+    // heartbeat here was what left the popup stuck on "Verifying..." (Sprint 4).
+    THGHeartbeat.run().catch(() => {});
     return payload;
   }
 

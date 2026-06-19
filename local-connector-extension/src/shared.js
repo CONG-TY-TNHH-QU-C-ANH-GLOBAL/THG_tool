@@ -81,6 +81,30 @@ var THGShared = globalThis.THGShared || (() => {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // fetchWithTimeout wraps fetch with an AbortController deadline so a stalled or
+  // black-holed request can never leave an awaited promise unsettled — the root
+  // cause of the connector popup hanging forever on "Verifying..." (Sprint 4).
+  // On timeout it aborts and throws a tagged Error (name === 'TimeoutError') so
+  // callers map it to an operator-facing message. It performs NO retry: a
+  // consumed pairing code must never be replayed.
+  const DEFAULT_FETCH_TIMEOUT_MS = 20000;
+  async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        const timeoutErr = new Error('request timed out');
+        timeoutErr.name = 'TimeoutError';
+        throw timeoutErr;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function injectContentScripts(tabId) {
     if (!tabId) throw new Error('Facebook tab is not ready');
     await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
@@ -95,6 +119,7 @@ var THGShared = globalThis.THGShared || (() => {
     HEARTBEAT_ALARM,
     RELEASE_CHANNEL,
     delay,
+    fetchWithTimeout,
     injectContentScripts,
     isFacebookUrl,
     normalizePairingCode,

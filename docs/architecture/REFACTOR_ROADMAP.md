@@ -425,6 +425,65 @@ Lane D/E controlled zones).
   excluded here). Reliability (122) + Security (15) untouched — deferred to Lane R
   (test-first) / `security-review` (the `go:S2092` cookie proposal from D.4).
 
+### D.6 — Local connector pairing reliability, sprint 4 (behavior-changing)  ✅ DONE
+
+Not a Sonar sweep (D.0–D.5 were). This sprint fixed a **customer-blocking reliability
+bug**: the THG Chrome extension pairing got stuck on **"Verifying…" forever** after
+the operator entered a dashboard pairing code (e.g. `3CEK-7K8P`), never advancing to
+Facebook login / ready. Extension-only fix; backend pairing endpoints were inventoried
+and found correct + secure, so they were left untouched.
+
+- **Branch:** `fix/local-connector-pairing-sprint-4` (from `origin/main` @ `fd56e86a`).
+- **Lane / agents:** `senior-frontend` + `senior-backend` + `senior-fullstack`
+  (3-layer pairing-flow inventory), `sonar-triage` (focused connector scan),
+  `qa-test-engineer` (repro + tests), `senior-architect` (gate: **ALLOW WITH
+  CONDITIONS**), `security-review` (**CONFIRM**), `code-reviewer` (final gate: **APPROVE**).
+- **Root cause:** the extension pairing path left an awaited promise unsettled, so the
+  popup's button-reset `finally` (`popup.js:116-119`) never ran:
+  1. **No fetch timeout** — bare `fetch` at `src/api.js` pair POST + `agentFetch`. A
+     stalled/black-holed request never resolves or rejects.
+  2. **Pairing blocked on a full heartbeat** — `pairConnector` did `await
+     THGHeartbeat.run()` *after* the device token was already stored, so even a
+     server-side-successful pair stayed "Verifying…" until/unless an un-timed
+     heartbeat/stream fetch chain completed (it violated heartbeat.js's own documented
+     "liveness must not depend on heavy work" decoupling).
+- **Fix:** added generic `THGShared.fetchWithTimeout` (AbortController, 20s, **no
+  retry** — a consumed code must never be replayed); routed the pair POST + `agentFetch`
+  through it with a **static** Vietnamese timeout/network message (no code/token
+  interpolation); changed the post-pair heartbeat to fire-and-forget
+  `THGHeartbeat.run().catch(() => {})` so pairing returns the instant the token is
+  stored. Liveness is unaffected — it is driven by the 30s alarm armed in
+  `background.js` (`THGHeartbeat.schedule()`), not by this call.
+- **Changed files:** `local-connector-extension/src/shared.js` (+`fetchWithTimeout`,
+  131 lines), `src/api.js` (134 lines), `manifest.json` (version `0.5.56→0.5.57`), new
+  `src/pairing_reliability.test.mjs` (regression net incl. the fire-and-forget liveness
+  guard), + this note.
+- **Refactor-only or behavior-changing:** **behavior-changing** (reliability fix; tests
+  added).
+- **Security / tenant:** no Facebook password stored (only `deviceToken`/`connectorId`
+  session identity persisted); no auth/CORS/manifest-permission change; pairing code
+  stays one-time / org-scoped / expiring (server-side, untouched); no secrets logged.
+- **Excluded controlled zones (untouched):** backend pairing/claim/CAS/lease,
+  `action_ledger`/`execution_attempts`, outbound action execution, policy/readiness
+  gates, auth/admin, migrations, dashboard wizard. Dashboard auto-poll of
+  `facebook-status` (the wizard advances optimistically with no poll) was **deferred**
+  to a separate follow-up PR per architect (track separation; `FacebookConnectionWizard.tsx`
+  already 177 lines — the poll belongs in its own hook).
+- **Validation:** `node --test local-connector-extension/src/` → **29 pass / 0 fail**
+  (incl. 5 new pairing assertions); `python scripts/check_file_size.py` PASS (api.js/
+  shared.js ≤ 200); `git diff --check` clean; `.mcp.json` untracked, not staged; no
+  generated artifacts staged.
+- **Manual E2E (acceptance):** open dashboard ws_5 → generate code → paste into extension
+  → Verify completes within timeout and the popup leaves "Verifying…"; an invalid/expired
+  code or a stalled network shows a clear Vietnamese error within ~20s instead of hanging;
+  no Facebook password requested or stored.
+- **Customer impact:** operators can pair the local connector again; failures surface a
+  clear, code-safe error instead of an infinite spinner.
+- **Remaining risk:** dashboard still requires a manual "kiểm tra" click at step 3 (no
+  auto-poll yet — deferred follow-up). A wrong/stale Advanced "Server URL" pointing off
+  `*.thgfulfill.com` is an environment/config issue, now surfaced as a timeout error
+  rather than a hang.
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,
