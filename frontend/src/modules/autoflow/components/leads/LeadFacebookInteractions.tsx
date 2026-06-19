@@ -39,7 +39,7 @@ function timeAgoVi(iso: string): string {
   return `${Math.floor(hr / 24)} ngày trước`;
 }
 
-export function LeadFacebookInteractions({ entries, eligibility }: Props) {
+export function LeadFacebookInteractions({ entries, eligibility }: Readonly<Props>) {
   const seen = new Set<number>();
   const fb = (entries || [])
     .filter(e => e.account_id > 0 && (e.channel ?? 'facebook') === 'facebook')

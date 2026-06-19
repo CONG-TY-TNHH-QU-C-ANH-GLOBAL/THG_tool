@@ -128,7 +128,7 @@ function summariseAccounts(accounts: { risk_score: number; cooldown_until: strin
 }
 
 // Tiny inline progress bar for the success-rate visual on card 1.
-function MiniBar({ value, color }: { value: number; color: string }) {
+function MiniBar({ value, color }: Readonly<{ value: number; color: string }>) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
     <div style={{ height: 6, background: 'rgba(0,0,0,0.06)', borderRadius: 99, overflow: 'hidden', marginTop: 6 }}>
@@ -151,7 +151,7 @@ interface HealthCardProps {
   tone?: 'ok' | 'warn' | 'idle';
 }
 
-function HealthCard({ Icon, eyebrow, headline, body, tone = 'idle' }: HealthCardProps) {
+function HealthCard({ Icon, eyebrow, headline, body, tone = 'idle' }: Readonly<HealthCardProps>) {
   const toneColor = tone === 'ok' ? '#10B981' : tone === 'warn' ? '#F59E0B' : '#4F46E5';
   return (
     <div style={{
@@ -187,7 +187,7 @@ function HealthCard({ Icon, eyebrow, headline, body, tone = 'idle' }: HealthCard
   );
 }
 
-export default function ExecutionRealityView(_: ExecutionRealityViewProps) {
+export default function ExecutionRealityView(_: Readonly<ExecutionRealityViewProps>) {
   const [hours, setHours] = useState<number>(24);
   const [techOpen, setTechOpen] = useState(false);
   const { distribution, attempts, accounts, isLoading, error, refetch, setWindowHours } = useExecutionReality(hours);
@@ -701,7 +701,7 @@ function StuckOutboundPanel() {
 // LedgerReconcilePanel surfaces action_ledger rows marked 'succeeded' whose
 // latest execution_attempts.outcome is in a failure-class bucket — the
 // hallucinated-success rows that corrupt the badge/risk pipeline.
-function LedgerReconcilePanel({ hours }: { hours: number }) {
+function LedgerReconcilePanel({ hours }: Readonly<{ hours: number }>) {
   const [rows, setRows] = useState<ReconcileRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -766,7 +766,7 @@ function LedgerReconcilePanel({ hours }: { hours: number }) {
   );
 }
 
-function AttemptRow({ attempt }: { attempt: ExecutionAttemptRow }) {
+function AttemptRow({ attempt }: Readonly<{ attempt: ExecutionAttemptRow }>) {
   const ev = attempt.evidence ?? {};
   const permalink = typeof ev.comment_permalink === 'string' ? ev.comment_permalink : '';
   const bubbleID = typeof ev.message_bubble_id === 'string' ? ev.message_bubble_id : '';

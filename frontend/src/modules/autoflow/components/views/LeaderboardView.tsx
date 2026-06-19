@@ -17,7 +17,7 @@ const MODES: { id: LbMode; label: string; Icon: typeof Award }[] = [
   { id: 'contrib', label: 'Đóng góp thực thi', Icon: GitBranch },
 ];
 
-export default function LeaderboardView({ orgId, isAdmin }: LeaderboardViewProps) {
+export default function LeaderboardView({ orgId, isAdmin }: Readonly<LeaderboardViewProps>) {
   const { scored, config, updateConfig, isSaving } = useLeaderboard(orgId);
   const [draft, setDraft] = useState<KPIConfig>(config);
   const [editMode, setEditMode] = useState(false);
