@@ -48,7 +48,7 @@ func commentReasoningMode() string {
 // persisted for observation in BOTH modes. Best-effort: it can never break the
 // queue path — every failure returns `fallback`. See
 // specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2c).
-func applyCommentReasoning(ctx context.Context, db *store.Store, kb *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, mode string, profile *ai.BusinessProfile, orgID, accountID int64, leadContent, author, fallback string) string {
+func applyCommentReasoning(ctx context.Context, db *store.Store, kb *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, mode string, profile *ai.BusinessProfile, orgID, accountID, initiatorUserID int64, leadContent, author, fallback string) string {
 	rctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	candidates, retrievalID, err := kb.CandidatesForLead(rctx, orgID, leadContent)
@@ -75,7 +75,12 @@ func applyCommentReasoning(ctx context.Context, db *store.Store, kb *knowledgeRu
 			"agent comment decision ("+mode+")", "comment_decision_"+mode, string(payload), !decision.KnowledgeGap)
 	}
 	if mode == "live" && !decision.KnowledgeGap {
-		text, gerr := msgGen.GenerateCommentV2(rctx, leadContent, author, profile, decision)
+		// Same resolver/contract as the normal path: staff contact channels + CTA
+		// win, the company website is preserved, and the per-lead grounded CTA
+		// seeds the identity. The live prompt must NOT re-derive a company-only
+		// identity (that dropped the staff swap before this fix).
+		liveIdentity := resolveCommentIdentity(db, orgID, initiatorUserID, accountID, profile, decision.Selected.CTA)
+		text, gerr := msgGen.GenerateCommentV2(rctx, leadContent, author, profile, decision, liveIdentity)
 		if gerr != nil {
 			log.Printf("[reasoning:live] GenerateCommentV2 org=%d: %v — falling back", orgID, gerr)
 			return fallback
@@ -160,13 +165,14 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		if idProfile == nil {
 			idProfile = ai.LoadProfileForOrg(db, orgID)
 		}
-		commentIdentity = ai.ResolveCompanyIdentity(idProfile, nil)
-		// PR-5 staff contact (Sprint 5): the responsible salesperson's own
-		// contact line replaces the workspace default. Precedence: the
-		// initiating sales agent (actx.InitiatorUserID, the member handling this
-		// outreach) → the executing account's assignee → company default/omit
-		// per org policy.
-		commentIdentity = resolveStaffContactIdentity(db, orgID, actx.InitiatorUserID, accountID, commentIdentity)
+		// Contact identity (Sprint 5/6): ONE shared resolver builds the grounded
+		// identity — company website + service from the profile, then the
+		// responsible salesperson's contact channels + CTA swapped in. Precedence:
+		// initiating sales agent (actx.InitiatorUserID) → executing account
+		// assignee → company default/omit per org policy. The company website is
+		// preserved through the swap. The reasoning=live path below uses the SAME
+		// resolver so both paths cite the identical contact contract.
+		commentIdentity = resolveCommentIdentity(db, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
 	}
 	template := argString(args, "template")
 	queued, skipped := 0, 0
@@ -270,7 +276,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		// grounded decision drive the comment text (fallback to `content` on
 		// knowledge_gap or error). off → no-op. Comment-type only.
 		if reasoningMode != "off" && msgType == "comment" {
-			content = applyCommentReasoning(ctx, db, knowledgeBuilder, msgGen, reasoningMode, reasoningProfile, orgID, accountID, lead.Content, lead.Author, content)
+			content = applyCommentReasoning(ctx, db, knowledgeBuilder, msgGen, reasoningMode, reasoningProfile, orgID, accountID, actx.InitiatorUserID, lead.Content, lead.Author, content)
 		}
 
 		// PR-1 Comment Quality Hotfix: dedupe repeated sentences/paragraphs and

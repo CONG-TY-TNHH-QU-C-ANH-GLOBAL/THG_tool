@@ -543,6 +543,67 @@ hệ chung của công ty."* Backend-only fix; no migration, no schema, no front
   a separate, default-off latent bug **deferred** to a follow-up (track separation;
   needs its own live-path test). This PR does not make that gap worse.
 
+### D.8 — Comment AI contact identity parity fix (behavior-changing)  ✅ DONE
+
+Follow-up to D.7. Manual testing showed two remaining defects plus the D.7-deferred
+`reasoning=live` bug. Closes all three so the staff/company contact contract is
+consistent across BOTH comment generation paths.
+
+- **Branch:** `fix/comment-ai-contact-website-live-path` (from merged main @ `372a629c`).
+- **Lane / agents:** `senior-fullstack`/`senior-backend` (re-map), `sonar-triage`
+  (input), `senior-architect` (**ALLOW WITH CONDITIONS**), `security-review`
+  (**CONFIRM**, C1–C3), `qa-test-engineer` (contract tests), `code-reviewer` (**APPROVE**).
+- **Root causes (3):**
+  1. **`reasoning=live` bypass (data):** `buildGroundedCommentPrompt` re-derived a
+     company-only identity via `ResolveCompanyIdentity`, dropping the staff-contact
+     swap — so live mode cited the company contact even when a staff contact existed.
+  2. **Company website dropped when staff contact wins (prompt):** `CompanyIdentity`
+     already separates `Website` from `OfficialContact` and `ApplyStaffContact`
+     preserves `Website`, but `buildContactRule`/msggen rule 6 framed the website as
+     optional and lumped it with contacts ("at most one URL, no spam"), so a rich
+     staff contact crowded out the URL. The guard never re-adds it.
+  3. **Resolved CTA never rendered:** `id.PrimaryCTA` (staff or company) was resolved
+     but not rendered in either prompt, so the staff CTA never appeared.
+- **Contract:** Contact channels (phone/Telegram/Zalo/email/CTA) follow staff →
+  account assignee → company (if allowed) → omit. Company WEBSITE is always included
+  when configured, INDEPENDENT of the contact-channel precedence. Never invent; empty
+  fields omitted.
+- **Fix:** new shared `resolveCommentIdentity` (`cmd/scraper/outbound_contact_identity.go`)
+  = `ai.ResolveCompanyIdentity` + `resolveStaffContactIdentity`, used by BOTH paths
+  (normal with `groundedCTA=nil`, live with `decision.Selected.CTA`) — one precedence
+  path. `GenerateCommentV2`/`buildGroundedCommentPrompt` now take the resolved
+  identity (no internal re-derive). `buildContactRule` makes the website MUST-include
+  EXACTLY ONCE and independent of the contact line (only when `Website != ""`; empty
+  still says "do NOT include any URL"). CTA single-sourced via
+  `ctaSuffix(identity.PrimaryCTA)` in both paths (`buildCompanyBlock` stays facts-only
+  → no double-CTA). `applyCommentReasoning` threads `actx.InitiatorUserID`.
+- **Changed files:** `cmd/scraper/outbound_contact_identity.go` (+shared helper),
+  `cmd/scraper/outbound_actions.go` (call swap + live threading),
+  `internal/ai/comment_decision.go` (signatures + `buildContactRule` + `ctaLine`),
+  `internal/ai/msggen.go` (rule 6), 2 fixed + 2 new test files, this note.
+- **Refactor-only or behavior-changing:** **behavior-changing** (grounded prompt
+  content changes; tests added). Track: Comment Intelligence.
+- **Security / tenant:** reads org-scoped; `InitiatorUserID` server-derived (not
+  spoofable); resolved identity stays an in-memory prompt input — NOT added to
+  `CommentDecision`, logs, or `InsertSystemPromptLog`; website MUST-include is
+  conditional on a configured website (no invented URL).
+- **Excluded controlled zones (untouched):** Facebook write execution, queue/policy/
+  readiness gates (`EvaluateGate`/`ApplyGate`), `action_ledger`/`execution_attempts`,
+  connector claim/CAS/lease, migrations, frontend. The outbound safety spine is
+  untouched — only the grounded prompt identity content changes.
+- **Validation:** `go build ./...` ✓, `go vet ./...` ✓, `go test ./...` ✓ (new
+  resolver-parity + prompt-wording tests pass; soak report reverted); `check_file_size.py`
+  PASS (net-new logic in the 82-line resolver file); `git diff --check` clean;
+  `.mcp.json` untracked, not staged.
+- **Manual E2E:** with staff Telegram/Zalo + company website configured, a draft cites
+  the staff Telegram/Zalo + staff CTA AND the company website (no company hotline/email);
+  staff-phone case uses staff phone + website; empty staff contact falls back to company
+  + website; `reasoning=live` produces the same contact result as the normal path.
+- **Remaining risk:** website inclusion is now MANDATED in the prompt (deterministic
+  instruction) but final emission still depends on LLM compliance — the guard preserves
+  a present grounded website but cannot fabricate one. CPD watch: the two prompt
+  templates share more helper calls now (verify duplication stays ≤ 3%).
+
 ## Phase E — Transactional outbox foundation  ★ keystone
 
 - **Goal:** introduce `outbox_events` table + relay + consumed-events idempotency,

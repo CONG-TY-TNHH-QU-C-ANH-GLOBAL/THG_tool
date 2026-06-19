@@ -15,7 +15,7 @@ func TestBuildGroundedCommentPrompt_ProductSeekingCitesSKUAndPrice(t *testing.T)
 			Products: []models.GroundedItem{{Label: "Áo thun cotton", SKU: "TS-001", PriceText: "120k"}},
 		},
 	}
-	p := buildGroundedCommentPrompt("cần tìm xưởng áo thun", "An", nil, d)
+	p := buildGroundedCommentPrompt("cần tìm xưởng áo thun", "An", nil, d, ResolveCompanyIdentity(nil, d.Selected.CTA))
 	for _, want := range []string{"SKU TS-001", "giá 120k", "PRODUCT-SEEKING"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("product prompt missing %q:\n%s", want, p)
@@ -31,7 +31,7 @@ func TestBuildGroundedCommentPrompt_ServiceSeekingUsesCapabilityNotSKU(t *testin
 			CTA:          &models.GroundedItem{Label: "Inbox mình nhé"},
 		},
 	}
-	p := buildGroundedCommentPrompt("ai làm fulfill US không", "", nil, d)
+	p := buildGroundedCommentPrompt("ai làm fulfill US không", "", nil, d, ResolveCompanyIdentity(nil, d.Selected.CTA))
 	if !strings.Contains(p, "SERVICE-SEEKING") {
 		t.Fatalf("service prompt missing intent rule:\n%s", p)
 	}

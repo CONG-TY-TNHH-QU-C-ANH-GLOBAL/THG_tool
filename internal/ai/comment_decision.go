@@ -329,8 +329,8 @@ func truncateRunes(s string, n int) string {
 // pitch anything not backed by ingested knowledge. Caller must ensure the
 // decision is non-nil and not KnowledgeGap (otherwise fall back to the generic
 // generator — there is no grounded offer to write about).
-func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision) (string, error) {
-	return mg.callOpenAI(ctx, buildGroundedCommentPrompt(leadContent, authorName, profile, decision))
+func (mg *MessageGenerator) GenerateCommentV2(ctx context.Context, leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision, identity models.CompanyIdentity) (string, error) {
+	return mg.callOpenAI(ctx, buildGroundedCommentPrompt(leadContent, authorName, profile, decision, identity))
 }
 
 // ResolveCompanyIdentity projects the brand-trust identity (PR-3) from the org's
@@ -379,14 +379,18 @@ func buildCompanyBlock(id models.CompanyIdentity) string {
 
 // buildContactRule encodes the CTA/contact policy: brand trust WITHOUT contact spam.
 func buildContactRule(id models.CompanyIdentity) string {
-	rule := "8. CONTACT POLICY: ground every brand / website / contact claim ONLY in COMPANY IDENTITY — NEVER invent a website, email, or phone. INCLUDE the Official contact and the Website that ARE listed so the lead can reach you, but each AT MOST ONCE and with at most ONE URL total (no spam, no repetition)."
+	rule := "8. CONTACT POLICY: ground every brand / website / contact claim ONLY in COMPANY IDENTITY — NEVER invent a website, email, or phone."
 	if id.Website != "" {
-		rule += " The Website above is the ONLY URL you may write."
+		// The company website is INDEPENDENT of the contact channels: it must
+		// always appear when configured, even when a staff contact line is also
+		// present (the website is the brand's, the contact line is the
+		// salesperson's). It is also the only URL allowed.
+		rule += " You MUST include the Website EXACTLY ONCE so the lead can visit it — include it EVEN WHEN an Official contact is also present, and it is the ONLY URL you may write."
 	} else {
 		rule += " No website is configured — do NOT include any URL."
 	}
 	if id.OfficialContact != "" {
-		rule += " Write the Official contact as a plain handle/label (e.g. \"Telegram @handle\", \"Zalo 0987...\"), NOT as a link — the Website is the only URL allowed."
+		rule += " ALSO include the Official contact at most once, written as a plain handle/label (e.g. \"Telegram @handle\", \"Zalo 0987...\"), NOT as a link — the Website is the only URL allowed."
 	}
 	return rule
 }
@@ -395,7 +399,7 @@ func buildContactRule(id models.CompanyIdentity) string {
 // comment (PR-2 depth upgrade). It is INTENT-AWARE: a product-seeking lead leads
 // with the real SKU + price; a service-seeking lead leads with capability + proof +
 // CTA from service knowledge. It pitches ONLY grounded assets — no fabrication.
-func buildGroundedCommentPrompt(leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision) string {
+func buildGroundedCommentPrompt(leadContent, authorName string, profile *BusinessProfile, decision *models.CommentDecision, identity models.CompanyIdentity) string {
 	lang := detectLang(leadContent)
 	langRule := "Viết bằng tiếng Việt."
 	if lang == "en" {
@@ -424,10 +428,10 @@ func buildGroundedCommentPrompt(leadContent, authorName string, profile *Busines
 	if len(decision.Selected.Proofs) > 0 {
 		writeItem("Bằng chứng", false, decision.Selected.Proofs[0])
 	}
-	ctaLine := ""
-	if decision.Selected.CTA != nil {
-		ctaLine = strings.TrimSpace(decision.Selected.CTA.Label)
-	}
+	// CTA single-sourced from the resolved identity (staff CTA > grounded per-lead
+	// CTA > company CTA). The live identity was seeded with decision.Selected.CTA,
+	// so the grounded CTA still flows in when no staff CTA overrides it.
+	ctaLine := strings.TrimSpace(identity.PrimaryCTA)
 
 	// Intent-aware emphasis — bind the comment to what the lead actually wants.
 	intentRule := "4. Mention at most ONE capability/product and at most ONE proof point from the list above."
@@ -443,7 +447,9 @@ func buildGroundedCommentPrompt(leadContent, authorName string, profile *Busines
 		profileBlock = profile.ToPromptBlock()
 	}
 
-	identity := ResolveCompanyIdentity(profile, decision.Selected.CTA)
+	// identity is resolved ONCE by the caller (cmd/scraper resolveCommentIdentity)
+	// so the live path shares the staff-contact swap + company website with the
+	// normal path. Do NOT re-derive a company-only identity here.
 	companyBlock := buildCompanyBlock(identity)
 	contactRule := buildContactRule(identity)
 

@@ -25,14 +25,15 @@ func TestGenerateCommentPrompt_BrandTrust(t *testing.T) {
 	// Service lead: prompt carries brand + service + contact policy, no SKU push.
 	p := &BusinessProfile{Name: "THG Fulfill", Website: "https://thgfulfill.com", Services: "US fulfillment"}
 	d := &models.CommentDecision{Intent: models.IntentServiceSeeking, Selected: models.Selection{Capabilities: []models.GroundedItem{{Label: "US fulfillment cho TikTok Shop"}}}}
-	prompt := buildGroundedCommentPrompt("ai làm fulfill US", "An", p, d)
+	prompt := buildGroundedCommentPrompt("ai làm fulfill US", "An", p, d, ResolveCompanyIdentity(p, d.Selected.CTA))
 	for _, want := range []string{"THG Fulfill", "thgfulfill.com", "CONTACT POLICY", "SERVICE-SEEKING"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("brand prompt missing %q:\n%s", want, prompt)
 		}
 	}
 	// Website MISSING → the prompt must forbid any URL (no fabrication).
-	noWeb := buildGroundedCommentPrompt("ai làm fulfill US", "An", &BusinessProfile{Name: "THG Fulfill", Services: "US fulfillment"}, d)
+	noWebProfile := &BusinessProfile{Name: "THG Fulfill", Services: "US fulfillment"}
+	noWeb := buildGroundedCommentPrompt("ai làm fulfill US", "An", noWebProfile, d, ResolveCompanyIdentity(noWebProfile, d.Selected.CTA))
 	if !strings.Contains(noWeb, "do NOT include any URL") {
 		t.Fatalf("no-website prompt must forbid URLs:\n%s", noWeb)
 	}
