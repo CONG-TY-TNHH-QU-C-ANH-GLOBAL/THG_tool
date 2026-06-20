@@ -16,6 +16,7 @@
 const OUTBOUND = require.resolve('../content/outbound.js');
 const OUTBOUND_DOM = require.resolve('../content/outbound_dom.js');
 const POSTING = require.resolve('../content/posting_outbound.js');
+const INBOX = require.resolve('../content/inbox_outbound.js');
 
 function makeWindow() {
   const location = { href: 'https://www.facebook.com/' };
@@ -47,7 +48,7 @@ function makeDocument() {
 
 const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
   'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'innerWidth', 'innerHeight',
-  'getSelection', 'THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound'];
+  'getSelection', 'THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound', 'THGInboxOutbound'];
 
 // installGlobals installs the minimal fake browser globals + any requested singletons and
 // real sibling modules, and returns a restore() that reverses every mutation.
@@ -119,4 +120,17 @@ function loadPostingOutbound(overrides = {}) {
   return { POST, api: globalThis.THGPostingOutbound, restore };
 }
 
-module.exports = { loadOutboundWithGlobals, loadOutboundDom, loadPostingOutbound, makeWindow, makeDocument };
+// loadInboxOutbound installs fake globals then requires a FRESH inbox_outbound.js (which
+// re-requires a fresh outbound_dom.js via its guarded fallback). Returns { INBOX, api, restore }:
+// INBOX = module.exports (incl. _test); api = globalThis.THGInboxOutbound.
+function loadInboxOutbound(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  delete globalThis.THGInboxOutbound;
+  delete globalThis.THGOutboundDom;
+  delete require.cache[INBOX];
+  delete require.cache[OUTBOUND_DOM];
+  const INBOX_MOD = require(INBOX);
+  return { INBOX: INBOX_MOD, api: globalThis.THGInboxOutbound, restore };
+}
+
+module.exports = { loadOutboundWithGlobals, loadOutboundDom, loadPostingOutbound, loadInboxOutbound, makeWindow, makeDocument };

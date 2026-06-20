@@ -97,6 +97,10 @@ const REAL_MODULES = [
   // PR3: posting layer loads after the DOM primitives it consumes, before the facade.
   assertLoadsBefore('outbound_dom.js', 'posting_outbound.js');
   assertLoadsBefore('posting_outbound.js', 'outbound.js');
+  // PR4: inbox layer loads after posting, after the DOM primitives, before the facade.
+  assertLoadsBefore('posting_outbound.js', 'inbox_outbound.js');
+  assertLoadsBefore('outbound_dom.js', 'inbox_outbound.js');
+  assertLoadsBefore('inbox_outbound.js', 'outbound.js');
   assertLoadsBefore('comment_constants.js', 'outbound.js');
   assertLoadsBefore('comment_submit.js', 'outbound.js');
   assertLoadsBefore('comment_state_machine.js', 'outbound.js');
