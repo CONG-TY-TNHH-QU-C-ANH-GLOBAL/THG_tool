@@ -6,6 +6,9 @@
 # Environment (contains secrets!)
 .env
 
+# Local MCP server config — may carry API tokens (e.g. SonarCloud). Never commit.
+.mcp.json
+
 # Database
 data/*.db
 data/*.db-journal
