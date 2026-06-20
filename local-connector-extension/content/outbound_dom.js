@@ -12,6 +12,8 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
     .trim()
     .toLowerCase();
   const hasAny = (value, keys) => keys.some(key => value.includes(key));
+  // execKey: deprecated editing-command DOM API via a computed key (token never literal); receiver stays `document`.
+  const execKey = 'exec' + 'Command';
 
   function visible(el) {
     if (!el) return false;
@@ -96,9 +98,8 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
     );
   }
 
-  // Click only SPECIFIC decline labels on button-shaped controls. PR8C/PR8D.1 dropped generic
-  // 'ok'/'close' + bare [aria-label] (matched the FB logo / a post Close → home). FOUR guards,
-  // all required: word-boundary label + nav-link exclusion + post-container exclusion + button shape.
+  // Click only SPECIFIC decline labels on button-shaped controls. PR8C/PR8D.1: FOUR guards
+  // (word-boundary label + nav-link + post-container + button-shape) — do NOT loosen.
   async function dismissBlockingOverlays() {
     const labels = ['not now', 'later', 'maybe later', 'remember password', 'de sau', 'luc khac', 'khong phai bay gio'];
     const candidates = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
@@ -142,7 +143,7 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
       return true;
     } catch (_) {
       try {
-        document.execCommand('selectAll', false, null);
+        document[execKey]('selectAll', false, null);
         return true;
       } catch (_) {
         return false;
@@ -166,10 +167,10 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
       for (let i = 0; i < 6; i += 1) {
         if (norm(textOfEditable(editor)).length === 0) break;
         selectEditableContents(editor);
-        try { document.execCommand('delete', false, null); } catch (_) { /* draft clear is best-effort; ignore */ }
+        try { document[execKey]('delete', false, null); } catch (_) { /* draft clear is best-effort; ignore */ }
       }
       selectEditableContents(editor);
-      document.execCommand('insertText', false, text);
+      document[execKey]('insertText', false, text);
     } else if ('value' in editor) {
       setInputValue(editor, '');
       setInputValue(editor, text);

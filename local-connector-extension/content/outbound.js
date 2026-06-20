@@ -10,8 +10,14 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // global. Only the names this file still references are bound; the lower-level helpers
   // (eventInit/dispatch*/setInputValue/selectEditableContents/emitEditableInput/
   // labelMatchesDismiss/isInsidePostContainer) are used only inside the moved functions.
+  // Chrome relies on manifest load order (outbound_dom.js loads first); Node tests use the
+  // CommonJS fallback. Browser must NOT rely on a bare `require` symbol. If load order is
+  // broken, fail loudly rather than destructure undefined.
   const THGDom = globalThis.THGOutboundDom
-    || (typeof require === 'undefined' ? null : require('./outbound_dom.js'));
+    || (typeof require === 'function' ? require('./outbound_dom.js') : null);
+  if (!THGDom) {
+    throw new Error('THGOutboundDom is required before outbound.js');
+  }
   const { wait, norm, hasAny, visible, labelOf, clickLikeUser, enabledButton,
     textOfEditable, setEditableText, waitFor, dismissBlockingOverlays } = THGDom;
 
