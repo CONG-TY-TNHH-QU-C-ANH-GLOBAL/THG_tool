@@ -13,8 +13,8 @@
 # lines) — that is NOT move-only, so it is deferred to a follow-up behavior-PR with tests.
 # TEMPORARY relocation exception, not a licence to grow. Net allowlisted footprint SHRANK
 # (one ~1508-line entry removed; two smaller entries added).
-local-connector-extension/content/commenting_outbound.js  # 702 lines (relocated comment executors; split deferred to a tested behavior-PR)
-local-connector-extension/content/commenting_target.js  # 365 lines (relocated comment target/identity helpers; load-bearing forensic comments kept)
+local-connector-extension/content/commenting_outbound.js  # 657 lines (relocated comment executors; executeComment ~300 lines, full body-split deferred to a tested behavior-PR)
+local-connector-extension/content/commenting_target.js  # 372 lines (relocated comment target/identity helpers; load-bearing forensic comments kept)
 local-connector-extension/src/outbox.js  # 745 lines
 local-connector-extension/content/crawl.js  # 573 lines
 local-connector-extension/content/proof.js  # 545 lines

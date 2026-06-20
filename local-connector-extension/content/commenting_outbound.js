@@ -27,7 +27,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   if (!THGDiag) {
     throw new Error('THGCommentingDiag is required before commenting_outbound.js');
   }
-  const { acquireTargetComposer, articleIsReadyForComment, commentSurfaceDeps, discoverDeps,
+  const { acquireTargetComposer, commentSurfaceDeps, discoverDeps,
     extractArticleCanonicalEntityId, extractPostIdFromUrl, findCommentEditor, findComposerForTarget,
     findTargetArticle, isCreatePostComposer, onTargetPermalinkPage, waitUntilTargetArticleStable } = THGTarget;
   const { probeCommentGates, navDiagFor } = THGDiag;
@@ -48,201 +48,130 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   // list) — keeps those primitives DRY without polluting globals.
   const submitDeps = { labelOf, norm, hasAny, visible, enabledButton };
 
-  async function executeComment(content, targetUrl = '', executionId = '', opts = {}) {
-    // PR8C-Forensics: arm the interaction recorder BEFORE the first DOM op
-    // (dismissBlockingOverlays already scans + synthetic-clicks). Every
-    // querySelectorAll / click / focus / dispatchEvent / innerHTML read /
-    // MutationObserver attach our content script performs is now timestamped, so
-    // commentResult can name the last op before FB's home pushState. install()
-    // is a no-op-safe if the module is missing.
-    if (globalThis.THGForensics) THGForensics.install();
-    await dismissBlockingOverlays();
-
-    // LIFECYCLE INSTRUMENTATION — captured at every stage so the
-    // failure note + DevTools console reveal where the flow broke.
-    // Without this, `redirected_feed` masked the actual stage that
-    // failed (gate-1 fail on a feed page registered as "redirected"
-    // even though the real issue was "FB never loaded the post URL").
-    // See project_runtime_control_plane memory: this is a precursor
-    // to EXP-1 typed events; structured as proof.notes prefix for now.
-    const navAtEntry = location.href || '';
-    console.log('[THG outbound.executeComment] start',
-      { target_url: targetUrl, landed_at_entry: navAtEntry, execution_id: executionId });
-
-    // Pre-submit DOM snapshot (count + dup check) so the proof builder
-    // can compute count_increased and duplicate without relying on the
-    // executor's own beliefs.
-    const proof = THGContentProof || null;
-    const fbUID = proof?.currentFBUserID() || '';
-    const preCount = proof ? proof.snapshotCommentCount() : 0;
-    const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
-    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
-    // PR8A: immutable context the NavDiagnostic assembler reads at each gate.
-    const targetPostIdEarly = extractPostIdFromUrl(targetUrl);
-    const ctxInfo = {
-      targetUrl, targetPostId: targetPostIdEarly, fbUID,
-      accountId: Number(opts.accountId || 0) || 0,
-      navTrace: opts.navTrace || null,
+  // gate1Failure builds the PR8A landing-gate-1 failure diagnostic + commentResult. Pure
+  // diagnostic/abort (no DOM mutation): probes the post + composer and classifies the miss.
+  function gate1Failure(targetPostId, navAtEntry, targetUrl, ctx, ctxInfo) {
+    const landed = location.href || '';
+    const probe = probeCommentGates(targetPostId);
+    const art = findTargetArticle(targetPostId);
+    const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps(targetPostId)) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none', composer_candidates: [] };
+    const candReasons = (ent.composer_candidates || []).map((cand) => cand.reason + (cand.accepted ? '(ok)' : '')).join(',');
+    const gates = {
+      articleFound: probe.articleFound, permalinkFound: probe.permalinkFound,
+      commentButtonFound: ent.comment_button_found, composerEntryFound: ent.composer_entry_found,
     };
+    const reason = THGCommentButton.classifyGate1Failure(gates);
+    const navDiag = navDiagFor('gate1_' + reason, 'gate1', gates, ctxInfo);
+    const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
+    console.warn('[THG outbound.executeComment] gate1 FAIL ' + reason,
+      { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
+        nav_at_entry: navAtEntry, redirect_class: rc, gates,
+        gate1_passed_via: ent.gate1_passed_via,
+        composer_candidates: ent.composer_candidates,
+        textbox_candidates_count: ent.textbox_candidates_count,
+        contenteditable_candidates_count: ent.contenteditable_candidates_count,
+        entry: ent });
+    return commentResult(false, reason, null, ctx,
+      'identity_gate_1_' + reason + ': target id=' + abbreviate(targetPostId) +
+      ' redirect_class=' + rc +
+      ' article_found=' + gates.articleFound +
+      ' permalink_found=' + gates.permalinkFound +
+      ' comment_button_found=' + gates.commentButtonFound +
+      ' composer_entry_found=' + gates.composerEntryFound +
+      ' textbox_candidates=' + ent.textbox_candidates_count +
+      ' contenteditable_candidates=' + ent.contenteditable_candidates_count +
+      ' gate1_passed_via=' + ent.gate1_passed_via +
+      ' composer_candidate_reasons=[' + candReasons + ']' +
+      ' landed_at=' + landed + ' nav_at_entry=' + navAtEntry +
+      ' did not settle (article+permalink+comment-entry) within fallback window',
+      navDiag);
+  }
 
-    // ====================================================================
-    // P0 INVARIANT — NO TYPING UNTIL TARGET IDENTITY VERIFIED FIRST
-    // ====================================================================
-    //
-    // Three identity checkpoints fire BEFORE setEditableText is ever
-    // reached. Each one independently aborts (returns context_drift)
-    // rather than mutating any user-visible DOM. Goal: prevent wrong
-    // comments, not just detect them after the fact.
-    //
-    //   Checkpoint 1 — PRE-LOCATE: find an article whose CANONICAL
-    //   permalink (first post-shape anchor in DOM order, i.e. the
-    //   timestamp link) extracts to the target entity id. No article
-    //   found ⇒ abort. This is enforced by findTargetArticle's strict
-    //   matching (canonical-only; the loose innerHTML fallback was
-    //   removed because it was the root cause of the May-2026
-    //   route-mismatch incident).
-    //
-    //   Checkpoint 2 — POST-CLICK: after the "Comment" / "Bình luận"
-    //   button click, Facebook may open a modal dialog. RE-RUN the
-    //   canonical-id check on the resolved scope. Mismatch ⇒ abort.
-    //
-    //   Checkpoint 3 — PRE-TYPE: just before setEditableText runs,
-    //   verify the editor's closest enclosing article container STILL
-    //   resolves to the target identity. Defends against the edge case
-    //   where FB swaps article content between findCommentEditor and
-    //   the actual text insertion call.
-    //
-    // Backward compatibility: when target_url is empty or has no
-    // extractable post id, all three checkpoints become no-ops — the
-    // legacy document-wide search is preserved for profile_post /
-    // inbox / older callers. Comment flows ALWAYS provide a target_url
-    // in production (server-side outbox writers require it), so this
-    // backward-compat lane carries no live traffic.
-    const targetPostId = extractPostIdFromUrl(targetUrl);
-    let targetScope = null;
-    // permalinkPage: the executor navigated to the target post's OWN permalink, so
-    // a page-level composer (outside the post's [role=article]) is unambiguously
-    // the target's — see onTargetPermalinkPage. Used to accept the permalink
-    // layout where comments are pre-expanded and there is no in-article composer.
-    const permalinkPage = onTargetPermalinkPage(targetPostId);
-    if (targetPostId) {
-      // Checkpoint 1 — pre-locate WITH stability wait.
-      //
-      // Previously this was a single synchronous findTargetArticle
-      // call. That was correct for stable pages but flaked under FB's
-      // SPA mount-unmount churn during route transitions: the
-      // article would exist at the moment we checked, then unmount
-      // before we tried to type. waitUntilTargetArticleStable polls
-      // for the article + its permalink + comment button all
-      // continuously holding for stableMs — replacing
-      // waitForTabReady's "Chrome says load complete" with a
-      // DOM-truth check that survives the SPA's intermediate states.
-      targetScope = await waitUntilTargetArticleStable(targetPostId, {
-        timeoutMs: 8000,
-        stableMs: 500,
-        pollMs: 200,
-      });
-      if (!targetScope && permalinkPage && findComposerForTarget(targetPostId)) {
-        // PERMALINK LAYOUT: the post is present but its comments are already
-        // expanded (no in-article Comment button) and the composer lives at page
-        // level. waitUntilTargetArticleStable never sees an in-article composer
-        // and times out — yet the URL confirms we are on the target post's own
-        // page, so the page-level composer is the target's. Proceed: keep the
-        // article (if any) as scope for the button search; the editor search and
-        // Checkpoint-3 below fall back to the page-level composer for this case.
-        targetScope = findTargetArticle(targetPostId) || document;
-      }
-      if (!targetScope) {
-        // Gate1 fallback (PR-B): the stability poll never caught the comment surface, but
-        // the post may be present with a lazily-mounted action row. Scroll the article into
-        // view and retry the broadened discovery before giving up.
-        const art = findTargetArticle(targetPostId);
-        if (art) {
-          const disc = await THGCommentButton.discoverCommentSurface(art, discoverDeps(targetPostId));
-          if (disc.found) targetScope = art;
-        }
-      }
-      if (!targetScope) {
-        const landed = location.href || '';
-        // PR8A landing gate FAILED. Probe BUTTON + COMPOSER under the target article and
-        // classify: reached the post but neither a comment button NOR a visible composer →
-        // comment_button_not_found (a discovery miss — retryable, no risk; NOT "post can't be
-        // commented"). Otherwise the post was never reached → target_not_reached.
-        const probe = probeCommentGates(targetPostId);
-        const art = findTargetArticle(targetPostId);
-        const ent = art ? THGCommentButton.diagnostics(art, commentSurfaceDeps(targetPostId)) : { comment_button_found: false, composer_entry_found: false, textbox_candidates_count: 0, contenteditable_candidates_count: 0, gate1_passed_via: 'none', composer_candidates: [] };
-        const candReasons = (ent.composer_candidates || []).map((cand) => cand.reason + (cand.accepted ? '(ok)' : '')).join(',');
-        const gates = {
-          articleFound: probe.articleFound, permalinkFound: probe.permalinkFound,
-          commentButtonFound: ent.comment_button_found, composerEntryFound: ent.composer_entry_found,
-        };
-        const reason = THGCommentButton.classifyGate1Failure(gates);
-        const navDiag = navDiagFor('gate1_' + reason, 'gate1', gates, ctxInfo);
-        const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
-        console.warn('[THG outbound.executeComment] gate1 FAIL ' + reason,
-          { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
-            nav_at_entry: navAtEntry, redirect_class: rc, gates,
-            // P0 #7: per-candidate composer reasons + shape counts at top level so a future
-            // UI-drift can be diagnosed from the console object alone (no full-HTML dump).
-            gate1_passed_via: ent.gate1_passed_via,
-            composer_candidates: ent.composer_candidates,
-            textbox_candidates_count: ent.textbox_candidates_count,
-            contenteditable_candidates_count: ent.contenteditable_candidates_count,
-            entry: ent });
-        return commentResult(false, reason, null, ctx,
-          'identity_gate_1_' + reason + ': target id=' + abbreviate(targetPostId) +
-          ' redirect_class=' + rc +
-          ' article_found=' + gates.articleFound +
-          ' permalink_found=' + gates.permalinkFound +
-          ' comment_button_found=' + gates.commentButtonFound +
-          ' composer_entry_found=' + gates.composerEntryFound +
-          ' textbox_candidates=' + ent.textbox_candidates_count +
-          ' contenteditable_candidates=' + ent.contenteditable_candidates_count +
-          ' gate1_passed_via=' + ent.gate1_passed_via +
-          ' composer_candidate_reasons=[' + candReasons + ']' +
-          ' landed_at=' + landed + ' nav_at_entry=' + navAtEntry +
-          ' did not settle (article+permalink+comment-entry) within fallback window',
-          navDiag);
+  // locateTargetScope runs the gate-1 stability/fallback block (Checkpoint 1). Returns
+  // { scope } on success or { fail } with the gate-1 failure result. targetPostId empty
+  // (legacy callers) is a no-op returning { scope: null } so the document-wide search applies.
+  async function locateTargetScope(targetPostId, permalinkPage, navAtEntry, targetUrl, ctx, ctxInfo) {
+    if (!targetPostId) return { scope: null };
+    let targetScope = await waitUntilTargetArticleStable(targetPostId, { timeoutMs: 8000, stableMs: 500, pollMs: 200 });
+    if (!targetScope && permalinkPage && findComposerForTarget(targetPostId)) {
+      // PERMALINK LAYOUT: comments pre-expanded, composer at page level; URL pins identity.
+      targetScope = findTargetArticle(targetPostId) || document;
+    }
+    if (!targetScope) {
+      // Gate1 fallback (PR-B): scroll the article into view + retry broadened discovery.
+      const art = findTargetArticle(targetPostId);
+      if (art) {
+        const disc = await THGCommentButton.discoverCommentSurface(art, discoverDeps(targetPostId));
+        if (disc.found) targetScope = art;
       }
     }
-    const searchRoot = targetScope || document;
+    if (!targetScope) return { fail: gate1Failure(targetPostId, navAtEntry, targetUrl, ctx, ctxInfo) };
+    return { scope: targetScope };
+  }
 
+  // findCommentButtonIn returns the visible Comment/Bình luận button in scope, or undefined.
+  function findCommentButtonIn(searchRoot) {
     const commentKeys = K.COMMENT_KEYS;
     const buttons = Array.from(searchRoot.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
-    const commentButton = buttons.find(el => {
+    return buttons.find(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
     });
-    if (commentButton) {
-      clickLikeUser(commentButton);
-      await wait(900);
-    }
+  }
 
-    // Checkpoint 2 — post-click. The "Comment" click can:
-    //  (a) expand the inline comment section in-place (article unchanged),
-    //  (b) open a modal dialog anchored to the target post,
-    //  (c) open a modal dialog anchored to a DIFFERENT post (rare but
-    //      observed when Facebook lazy-resolves the click target).
-    // (a) and (b) are safe. (c) is exactly what this checkpoint catches.
-    let scope;
-    if (targetPostId) {
-      const refreshed = findTargetArticle(targetPostId);
-      scope = refreshed || targetScope;
-      if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
-        const landed = location.href || '';
-        console.warn('[THG outbound.executeComment] gate2 FAIL post-click swap',
-          { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
-        return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
-          navDiagFor('gate2_post_click_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
-      }
-    } else {
-      scope = commentButton?.closest('[role="article"], [role="dialog"]') || document;
+  // gate2ResolveScope — Checkpoint 2 post-click identity. Returns { scope } or { fail }.
+  function gate2ResolveScope(targetPostId, targetScope, commentButton, ctx, ctxInfo) {
+    if (!targetPostId) {
+      return { scope: commentButton?.closest('[role="article"], [role="dialog"]') || document };
     }
+    const refreshed = findTargetArticle(targetPostId);
+    const scope = refreshed || targetScope;
+    if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeComment] gate2 FAIL post-click swap',
+        { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
+      return { fail: commentResult(false, 'context_drift', null, ctx,
+        'identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
+        navDiagFor('gate2_post_click_swap', 'composer', probeCommentGates(targetPostId), ctxInfo)) };
+    }
+    return { scope };
+  }
 
-    // Editor acquisition uses acquireTargetComposer (the SAME classifier gate1 accepted with)
-    // as the source of truth; the legacy in-article / bounded-walk finders are only extra
-    // fallbacks. This unifies gate1 discovery and editor selection — the P0b handoff fix.
+  // commentBoxNotFound — P0b diagnostic + result when no editor materialised.
+  function commentBoxNotFound(targetPostId, acq, ctx, ctxInfo) {
+    const landed = location.href || '';
+    const artD = targetPostId ? findTargetArticle(targetPostId) : null;
+    const entD = artD ? THGCommentButton.diagnostics(artD, commentSurfaceDeps(targetPostId)) : null;
+    let cands = [];
+    if (acq?.candidates?.length) cands = acq.candidates;
+    else if (entD?.composer_candidates) cands = entD.composer_candidates;
+    const candReasons = cands.map((c) => c.reason + (c.accepted ? '(ok)' : '')).join(',');
+    const fcft = !!findComposerForTarget(targetPostId);
+    console.warn('[THG outbound.executeComment] comment_box_not_found',
+      { target_id: targetPostId, landed_at_fail: landed,
+        urlPinsIdentity: onTargetPermalinkPage(targetPostId),
+        gate1_passed_via: entD ? entD.gate1_passed_via : 'unknown',
+        findComposerForTarget_found: fcft,
+        editor_candidates_count: cands.length, editor_candidates: cands,
+        acquire_reason: acq ? acq.reason : 'none' });
+    return commentResult(false, 'comment_box_not_found', null, ctx,
+      'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') +
+      ' urlPinsIdentity=' + onTargetPermalinkPage(targetPostId) +
+      ' gate1_passed_via=' + (entD ? entD.gate1_passed_via : 'unknown') +
+      ' acquire_reason=' + (acq ? acq.reason : 'none') +
+      ' findComposerForTarget_found=' + fcft +
+      ' editor_candidates=' + cands.length +
+      ' editor_candidate_reasons=[' + candReasons + ']' +
+      ' landed_at=' + landed,
+      navDiagFor('comment_box_not_found', 'composer', probeCommentGates(targetPostId), ctxInfo));
+  }
+
+  // acquireCommentEditor — Checkpoint-2 scope + editor acquisition (with scroll retry / gate-2b
+  // re-verify). Returns { editor, scope } or { fail }.
+  async function acquireCommentEditor(targetPostId, permalinkPage, targetScope, commentButton, ctx, ctxInfo) {
+    const g2 = gate2ResolveScope(targetPostId, targetScope, commentButton, ctx, ctxInfo);
+    if (g2.fail) return { fail: g2.fail };
+    let scope = g2.scope;
     let acq = acquireTargetComposer(targetPostId, scope);
     let editor = acq.el || findCommentEditor(scope) || (permalinkPage ? findComposerForTarget(targetPostId) : null);
     if (!editor) {
@@ -251,17 +180,13 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
       if (targetPostId) {
         const refreshed = findTargetArticle(targetPostId);
         scope = refreshed || targetScope;
-        // Re-verify after the scroll — article references may have gone
-        // stale, and the React tree may have rotated. On the target's own
-        // permalink page the URL already pins identity, so the in-article
-        // re-check is skipped (the composer is legitimately page-level there).
         if (!permalinkPage && extractArticleCanonicalEntityId(scope) !== targetPostId) {
           const landed = location.href || '';
           console.warn('[THG outbound.executeComment] gate2b FAIL scroll swap',
             { target_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed_at_fail: landed });
-          return commentResult(false, 'context_drift', null, ctx,
+          return { fail: commentResult(false, 'context_drift', null, ctx,
             'identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
-            navDiagFor('gate2b_scroll_swap', 'composer', probeCommentGates(targetPostId), ctxInfo));
+            navDiagFor('gate2b_scroll_swap', 'composer', probeCommentGates(targetPostId), ctxInfo)) };
         }
         acq = acquireTargetComposer(targetPostId, scope);
         editor = acq.el || findCommentEditor(scope) || (permalinkPage ? findComposerForTarget(targetPostId) : null);
@@ -269,64 +194,30 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
         editor = findCommentEditor(scope) || findCommentEditor(document);
       }
     }
-    if (!editor) {
-      const landed = location.href || '';
-      // P0b diagnostics: prove EXACTLY why the visible composer was not used. Re-run the gate1
-      // classifier snapshot + surface every editor candidate with its accept/reject reason, so
-      // a comment_box_not_found is never opaque again.
-      const artD = targetPostId ? findTargetArticle(targetPostId) : null;
-      const entD = artD ? THGCommentButton.diagnostics(artD, commentSurfaceDeps(targetPostId)) : null;
-      const cands = (acq && acq.candidates && acq.candidates.length ? acq.candidates : (entD ? entD.composer_candidates : [])) || [];
-      const candReasons = cands.map((c) => c.reason + (c.accepted ? '(ok)' : '')).join(',');
-      const fcft = !!findComposerForTarget(targetPostId);
-      console.warn('[THG outbound.executeComment] comment_box_not_found',
-        { target_id: targetPostId, landed_at_fail: landed,
-          urlPinsIdentity: onTargetPermalinkPage(targetPostId),
-          gate1_passed_via: entD ? entD.gate1_passed_via : 'unknown',
-          findComposerForTarget_found: fcft,
-          editor_candidates_count: cands.length, editor_candidates: cands,
-          acquire_reason: acq ? acq.reason : 'none' });
-      return commentResult(false, 'comment_box_not_found', null, ctx,
-        'comment_box_not_found: target id=' + abbreviate(targetPostId || '<none>') +
-        ' urlPinsIdentity=' + onTargetPermalinkPage(targetPostId) +
-        ' gate1_passed_via=' + (entD ? entD.gate1_passed_via : 'unknown') +
-        ' acquire_reason=' + (acq ? acq.reason : 'none') +
-        ' findComposerForTarget_found=' + fcft +
-        ' editor_candidates=' + cands.length +
-        ' editor_candidate_reasons=[' + candReasons + ']' +
-        ' landed_at=' + landed,
-        navDiagFor('comment_box_not_found', 'composer', probeCommentGates(targetPostId), ctxInfo));
-    }
+    if (!editor) return { fail: commentBoxNotFound(targetPostId, acq, ctx, ctxInfo) };
+    return { editor, scope };
+  }
 
-    // Checkpoint 3 — pre-type. The editor we are about to type into
-    // must still belong to the target article. This is the LAST line
-    // of defence; once setEditableText runs, the comment composer
-    // carries our content and a stray submit click would commit it.
-    if (targetPostId) {
-      const editorArticle = editor.closest('[role="article"], [role="dialog"]');
-      const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '';
-      const inTargetArticle = editorScopeID === targetPostId;
-      // On the target post's OWN permalink page the URL pins identity: the page renders ONE
-      // top-level post, so an editor whose enclosing [role=article] extracts a DIFFERENT id
-      // is a nested comment/answer item (the live "Write an answer…" 204 case), NOT a wrong
-      // post. Accept it — the only box we must still positively reject there is the GLOBAL
-      // create-post composer. On FEED pages (multiple real posts) the strict in-target-article
-      // requirement remains the route-mismatch guard (May-2026 incident).
-      const ok = inTargetArticle || (permalinkPage && !isCreatePostComposer(editor));
-      if (!ok) {
-        const landed = location.href || '';
-        console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',
-          { target_id: targetPostId, editor_scope_id: editorScopeID || '<no-enclosing-article>', permalink_page: permalinkPage, landed_at_fail: landed });
-        return commentResult(false, 'context_drift', null, ctx,
-          'identity_gate_3_editor_drift: editor closest container canonical id=' + (editorScopeID || '<none>') + ' != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
-          navDiagFor('gate3_editor_drift', 'typing', probeCommentGates(targetPostId), ctxInfo));
-      }
-    }
+  // checkEditorGate3 — Checkpoint 3 pre-type editor-drift guard. Returns a fail result or null.
+  function checkEditorGate3(editor, targetPostId, permalinkPage, ctx, ctxInfo) {
+    if (!targetPostId) return null;
+    const editorArticle = editor.closest('[role="article"], [role="dialog"]');
+    const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '';
+    const inTargetArticle = editorScopeID === targetPostId;
+    // On the target's OWN permalink page the URL pins identity, so a foreign-id enclosing
+    // article is a nested comment/answer item — accept unless it is the create-post box.
+    const ok = inTargetArticle || (permalinkPage && !isCreatePostComposer(editor));
+    if (ok) return null;
+    const landed = location.href || '';
+    console.warn('[THG outbound.executeComment] gate3 FAIL editor drift',
+      { target_id: targetPostId, editor_scope_id: editorScopeID || '<no-enclosing-article>', permalink_page: permalinkPage, landed_at_fail: landed });
+    return commentResult(false, 'context_drift', null, ctx,
+      'identity_gate_3_editor_drift: editor closest container canonical id=' + (editorScopeID || '<none>') + ' != ' + abbreviate(targetPostId) + ' landed_at=' + landed,
+      navDiagFor('gate3_editor_drift', 'typing', probeCommentGates(targetPostId), ctxInfo));
+  }
 
-    // Identity locked. The composer→submit STATE MACHINE (THGCommentSM) owns the
-    // whole "clear → insert → assert exactly equals → submit (re-asserting before
-    // each click) → composer-cleared" path, shared with the group-feed executor, so
-    // no comment can submit a doubled/mismatched composer.
+  // submitCommentViaSM — runs the shared composer->submit state machine, then builds the result.
+  async function submitCommentViaSM(editor, content, commentButton, permalinkPage, opts, ctx, targetPostId, ctxInfo) {
     const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
       executorPath: permalinkPage ? 'permalink_page' : 'permalink_article',
       outboundId: opts.outboundId || 0,
@@ -341,6 +232,48 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     await wait(700);
     return commentResult(true, '', 'sent_comment', ctx, 'sm.sent: ' + JSON.stringify(sm.diagnostic),
       navDiagFor('post_submit', 'verify', probeCommentGates(targetPostId), ctxInfo));
+  }
+
+  // executeComment orchestrates the three identity checkpoints + submit. Each phase helper is
+  // behavior-preserving (verbatim logic) and aborts via commentResult; identity gates intact.
+  async function executeComment(content, targetUrl = '', executionId = '', opts = {}) {
+    if (globalThis.THGForensics) THGForensics.install();
+    await dismissBlockingOverlays();
+    const navAtEntry = location.href || '';
+    console.log('[THG outbound.executeComment] start',
+      { target_url: targetUrl, landed_at_entry: navAtEntry, execution_id: executionId });
+    const proof = THGContentProof || null;
+    const fbUID = proof?.currentFBUserID() || '';
+    const preCount = proof ? proof.snapshotCommentCount() : 0;
+    const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
+    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
+    const targetPostId = extractPostIdFromUrl(targetUrl);
+    const ctxInfo = {
+      targetUrl, targetPostId, fbUID,
+      accountId: Number(opts.accountId || 0) || 0,
+      navTrace: opts.navTrace || null,
+    };
+    const permalinkPage = onTargetPermalinkPage(targetPostId);
+
+    const located = await locateTargetScope(targetPostId, permalinkPage, navAtEntry, targetUrl, ctx, ctxInfo);
+    if (located.fail) return located.fail;
+    const targetScope = located.scope;
+
+    const searchRoot = targetScope || document;
+    const commentButton = findCommentButtonIn(searchRoot);
+    if (commentButton) {
+      clickLikeUser(commentButton);
+      await wait(900);
+    }
+
+    const acquired = await acquireCommentEditor(targetPostId, permalinkPage, targetScope, commentButton, ctx, ctxInfo);
+    if (acquired.fail) return acquired.fail;
+    const editor = acquired.editor;
+
+    const drift = checkEditorGate3(editor, targetPostId, permalinkPage, ctx, ctxInfo);
+    if (drift) return drift;
+
+    return submitCommentViaSM(editor, content, commentButton, permalinkPage, opts, ctx, targetPostId, ctxInfo);
   }
 
   // abbreviate keeps identity-gate failure notes short. pfbid tokens run
@@ -366,6 +299,27 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   // ordering. Used by the identity-gate aborts in executeComment to
   // distinguish "no article on page" from "post-click swap" from
   // "editor drift" in the dashboard.
+  // PR8C-Forensics: fold the content-script interaction timeline into the diagnostic, then
+  // disarm. Only when this executeComment call armed the recorder (feed/rung2 paths do not).
+  function foldForensicsInto(proof) {
+    if (!(proof && globalThis.THGForensics && THGForensics.isArmed())) return;
+    try {
+      const snap = THGForensics.snapshot();
+      proof.nav_diagnostic = proof.nav_diagnostic || {};
+      proof.nav_diagnostic.forensics = snap;
+    } catch (e) { ignoreErr(e, 'forensics'); } // forensics must never break delivery
+    THGForensics.uninstall();
+  }
+
+  // PR8A: the pre-type landing gate is AUTHORITATIVE over the proof builder's post-submit
+  // feedish heuristic — force target_not_reached UNLESS a real platform banner was detected
+  // (more specific; keeps precedence). redirected_feed is the heuristic we override.
+  function applyTargetNotReachedOverride(proof, errorCode) {
+    if (!(proof && errorCode === 'target_not_reached')) return;
+    const banner = proof.failure_reason && proof.failure_reason !== 'redirected_feed';
+    if (!banner) proof.failure_reason = 'target_not_reached';
+  }
+
   function commentResult(ok, errorCode, detail, ctx, notes, navDiag) {
     const proof = THGContentProof ? THGContentProof.buildCommentProof({
       ok, errorCode, content: ctx.content, userID: ctx.userID, preCount: ctx.preCount, duplicate: ctx.duplicate
@@ -373,40 +327,11 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     if (proof && notes) {
       proof.notes = proof.notes ? proof.notes + ' · ' + notes : notes;
     }
-    // PR8A: attach the structured landing telemetry (persists to evidence_json).
-    if (proof && navDiag) {
-      proof.nav_diagnostic = navDiag;
-    }
-    // PR8C-Forensics: fold the content-script interaction timeline (+ the
-    // MAIN-world pushState/stack correlation) into the diagnostic, then disarm.
-    // Only when this executeComment call armed the recorder (executeCommentInFeed
-    // / rung2 paths do not), so the snapshot belongs to this attempt.
-    if (proof && globalThis.THGForensics && THGForensics.isArmed()) {
-      try {
-        const snap = THGForensics.snapshot();
-        proof.nav_diagnostic = proof.nav_diagnostic || {};
-        proof.nav_diagnostic.forensics = snap;
-      } catch (e) { ignoreErr(e, 'forensics'); } // forensics must never break delivery
-      THGForensics.uninstall();
-    }
-    // PR8A: the pre-type landing gate is AUTHORITATIVE over the proof builder's
-    // post-submit feedish heuristic. When the executor explicitly reports
-    // target_not_reached, force that failure_reason — UNLESS the proof builder
-    // detected a real platform banner (checkpoint / blocked / rate_limited),
-    // which is more specific and keeps precedence. (redirected_feed is the
-    // heuristic we override: pre-type, "bounced to feed" IS target_not_reached.)
-    if (proof && errorCode === 'target_not_reached') {
-      const banner = proof.failure_reason && proof.failure_reason !== 'redirected_feed';
-      if (!banner) proof.failure_reason = 'target_not_reached';
-    }
-    // Echo the server-issued execution_id back so the backend's
-    // terminal-state CAS in store.FinalizeOutboundAttempt can gate on
-    // it. Without this, a callback from a re-claimed (lease-evicted)
-    // execution would silently finalize a row that no longer belongs
-    // to us, masking the SW-restart-then-re-execute duplicate bug.
-    if (proof && ctx && ctx.executionId) {
-      proof.execution_id = ctx.executionId;
-    }
+    if (proof && navDiag) proof.nav_diagnostic = navDiag; // PR8A landing telemetry → evidence_json
+    foldForensicsInto(proof);
+    applyTargetNotReachedOverride(proof, errorCode);
+    // Echo the server-issued execution_id back so the backend terminal-state CAS can gate on it.
+    if (proof && ctx?.executionId) proof.execution_id = ctx.executionId;
     const base = ok
       ? { ok: true, detail: detail || 'sent_comment' }
       : { ok: false, error: errorCode || 'comment_failed' };
@@ -442,6 +367,121 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   //   path2.article_found_but_comment_button_missing — gate-1 passed, no Comment btn in scope
   //   path2.article_found_comment_opened_submit_failed — typed OK, submit click did not clear editor
   //   path2.comment_success                       — terminal success
+  // buildPreCtx snapshots the pre-submit proof context (FB uid + comment count + dup match),
+  // shared by both comment executors. Reads THGContentProof at call time; '' / 0 / false when absent.
+  function buildPreCtx(content, executionId) {
+    const proof = THGContentProof || null;
+    const fbUID = proof?.currentFBUserID() || '';
+    const preCount = proof ? proof.snapshotCommentCount() : 0;
+    const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
+    return { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
+  }
+
+  const FEED_MAX_SCROLLS = 8;
+  const FEED_PER_ATTEMPT_TIMEOUT_MS = 2500;
+
+  // feedScrollLocate is the feed-aware GATE-1: alternate short stability attempts with scroll
+  // pulses until the target article materialises (or scrolls exhausted). Returns { targetScope, scrollsDone }.
+  async function feedScrollLocate(targetPostId) {
+    let targetScope = null;
+    let scrollsDone = 0;
+    for (let i = 0; i <= FEED_MAX_SCROLLS; i++) {
+      targetScope = await waitUntilTargetArticleStable(targetPostId, {
+        timeoutMs: FEED_PER_ATTEMPT_TIMEOUT_MS,
+        stableMs: 500,
+        pollMs: 200,
+      });
+      if (targetScope) break;
+      if (i === FEED_MAX_SCROLLS) break;
+      try {
+        globalThis.scrollBy({ top: 1800, behavior: 'instant' });
+      } catch {
+        globalThis.scrollTo(0, globalThis.scrollY + 1800);
+      }
+      scrollsDone++;
+      await wait(700);
+    }
+    return { targetScope, scrollsDone };
+  }
+
+  function feedArticleNotFound(targetPostId, scrollsDone, navAtEntry, ctx) {
+    const landed = location.href || '';
+    const articlesSeen = document.querySelectorAll('[role="article"]').length;
+    console.warn('[THG outbound.executeCommentInFeed] article_not_found_in_feed',
+      { target_post_id: targetPostId, scrolls: scrollsDone, articles_in_dom: articlesSeen, landed });
+    return commentResult(false, 'context_drift', null, ctx,
+      'path2.article_not_found_in_feed: target id=' + abbreviate(targetPostId) +
+      ' scrolls=' + scrollsDone +
+      ' articles_in_dom=' + articlesSeen +
+      ' nav_at_entry=' + navAtEntry +
+      ' landed_at=' + landed +
+      ' (article+permalink+comment-button stable 500ms never observed across ' +
+      (FEED_MAX_SCROLLS + 1) + ' attempts of ' + FEED_PER_ATTEMPT_TIMEOUT_MS + 'ms each)');
+  }
+
+  // feedGate2Scope — feed Checkpoint 2 post-click identity. Returns { scope } or { fail }.
+  function feedGate2Scope(targetPostId, targetScope, ctx) {
+    const refreshed = findTargetArticle(targetPostId);
+    const scope = refreshed || targetScope;
+    if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeCommentInFeed] gate2_swap',
+        { target_post_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed });
+      return { fail: commentResult(false, 'context_drift', null, ctx,
+        'path2.identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) +
+        ' landed_at=' + landed) };
+    }
+    return { scope };
+  }
+
+  // feedResolveEditor — feed editor acquisition (gate-2 + scroll retry / gate-2b). Returns
+  // { editor } or { fail }.
+  async function feedResolveEditor(targetPostId, targetScope, ctx) {
+    const g2 = feedGate2Scope(targetPostId, targetScope, ctx);
+    if (g2.fail) return { fail: g2.fail };
+    let scope = g2.scope;
+    let editor = findCommentEditor(scope);
+    if (!editor) {
+      // Scroll a touch + re-find. Same recovery executeComment uses.
+      globalThis.scrollBy({ top: 420, behavior: 'smooth' });
+      await wait(900);
+      const refreshed2 = findTargetArticle(targetPostId);
+      scope = refreshed2 || targetScope;
+      if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
+        const landed = location.href || '';
+        return { fail: commentResult(false, 'context_drift', null, ctx,
+          'path2.identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) +
+          ' landed_at=' + landed) };
+      }
+      editor = findCommentEditor(scope);
+    }
+    if (!editor) {
+      const landed = location.href || '';
+      console.warn('[THG outbound.executeCommentInFeed] comment_box_not_found_post_click',
+        { target_post_id: targetPostId, landed });
+      return { fail: commentResult(false, 'comment_box_not_found', null, ctx,
+        'path2.article_found_but_comment_button_missing: target id=' + abbreviate(targetPostId) +
+        ' landed_at=' + landed +
+        ' (Comment button clicked but no editable composer materialized in scope)') };
+    }
+    return { editor };
+  }
+
+  // feedCheckGate3 — feed Checkpoint 3 pre-type editor-drift guard. Returns a fail result or null.
+  function feedCheckGate3(editor, targetPostId, ctx) {
+    const editorArticle = editor.closest('[role="article"], [role="dialog"]');
+    if (!editorArticle || extractArticleCanonicalEntityId(editorArticle) !== targetPostId) {
+      const landed = location.href || '';
+      const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '<no-enclosing-article>';
+      console.warn('[THG outbound.executeCommentInFeed] gate3_editor_drift',
+        { target_post_id: targetPostId, editor_scope_id: editorScopeID, landed });
+      return commentResult(false, 'context_drift', null, ctx,
+        'path2.identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) +
+        ' landed_at=' + landed);
+    }
+    return null;
+  }
+
   async function executeCommentInFeed(message) {
     const content = String(message?.content || '').trim();
     if (!content) return { ok: false, error: 'outbox_content_empty' };
@@ -469,58 +509,18 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     console.log('[THG outbound.executeCommentInFeed] start',
       { target_url: targetUrl, target_post_id: targetPostId, landed_at_entry: navAtEntry, execution_id: executionId });
 
-    const proof = THGContentProof || null;
-    const fbUID = proof?.currentFBUserID() || '';
-    const preCount = proof ? proof.snapshotCommentCount() : 0;
-    const preMatched = proof ? !!proof.findCommentNode(content, fbUID) : false;
-    const ctx = { content, userID: fbUID, preCount, duplicate: preMatched, executionId };
+    const ctx = buildPreCtx(content, executionId);
 
-    // GATE-1 (feed-aware): scroll-then-wait until article materializes
-    // and is stable. Group home renders posts incrementally via virtual
-    // scroller; the lead's target post may be 5–30 posts deep. We
-    // alternate short waitUntilTargetArticleStable attempts with scroll
-    // pulses so FB's React mounts the article into DOM before we look.
-    const MAX_SCROLLS = 8;
-    const PER_ATTEMPT_TIMEOUT_MS = 2500;
-    let targetScope = null;
-    let scrollsDone = 0;
-    for (let i = 0; i <= MAX_SCROLLS; i++) {
-      targetScope = await waitUntilTargetArticleStable(targetPostId, {
-        timeoutMs: PER_ATTEMPT_TIMEOUT_MS,
-        stableMs: 500,
-        pollMs: 200,
-      });
-      if (targetScope) break;
-      if (i === MAX_SCROLLS) break;
-      try {
-        globalThis.scrollBy({ top: 1800, behavior: 'instant' });
-      } catch {
-        globalThis.scrollTo(0, globalThis.scrollY + 1800);
-      }
-      scrollsDone++;
-      await wait(700);
-    }
-    if (!targetScope) {
-      const landed = location.href || '';
-      const articlesSeen = document.querySelectorAll('[role="article"]').length;
-      console.warn('[THG outbound.executeCommentInFeed] article_not_found_in_feed',
-        { target_post_id: targetPostId, scrolls: scrollsDone, articles_in_dom: articlesSeen, landed });
-      return commentResult(false, 'context_drift', null, ctx,
-        'path2.article_not_found_in_feed: target id=' + abbreviate(targetPostId) +
-        ' scrolls=' + scrollsDone +
-        ' articles_in_dom=' + articlesSeen +
-        ' nav_at_entry=' + navAtEntry +
-        ' landed_at=' + landed +
-        ' (article+permalink+comment-button stable 500ms never observed across ' +
-        (MAX_SCROLLS + 1) + ' attempts of ' + PER_ATTEMPT_TIMEOUT_MS + 'ms each)');
-    }
+    // GATE-1 (feed-aware): scroll-then-wait until the article materialises and is stable.
+    const loc = await feedScrollLocate(targetPostId);
+    if (!loc.targetScope) return feedArticleNotFound(targetPostId, loc.scrollsDone, navAtEntry, ctx);
+    const targetScope = loc.targetScope;
 
     // Scroll target into view so FB doesn't unmount it as we click.
-    try { targetScope.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch { /* scroll is best-effort; ignore */ }
+    try { targetScope.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (e) { ignoreErr(e, 'feed-scroll'); }
     await wait(400);
 
-    // Find Comment button inside the article scope (NOT document-wide
-    // — feed has many articles, document-wide would click the wrong one).
+    // Find Comment button inside the article scope (NOT document-wide — feed has many articles).
     const commentKeys = K.COMMENT_KEYS;
     const buttons = Array.from(targetScope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
     const commentButton = buttons.find(el => {
@@ -540,59 +540,12 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     clickLikeUser(commentButton);
     await wait(900);
 
-    // GATE-2 (post-click identity): click may have opened a modal (often
-    // anchored to document.body) OR expanded inline. Either is fine, but
-    // we must re-verify the resolved scope still belongs to targetPostId.
-    let scope;
-    const refreshed = findTargetArticle(targetPostId);
-    scope = refreshed || targetScope;
-    if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
-      const landed = location.href || '';
-      console.warn('[THG outbound.executeCommentInFeed] gate2_swap',
-        { target_post_id: targetPostId, scope_id: extractArticleCanonicalEntityId(scope), landed });
-      return commentResult(false, 'context_drift', null, ctx,
-        'path2.identity_gate_2_post_click_swap: scope canonical id != ' + abbreviate(targetPostId) +
-        ' landed_at=' + landed);
-    }
+    const resolved = await feedResolveEditor(targetPostId, targetScope, ctx);
+    if (resolved.fail) return resolved.fail;
+    const editor = resolved.editor;
 
-    let editor = findCommentEditor(scope);
-    if (!editor) {
-      // Scroll a touch + re-find. Same recovery executeComment uses.
-      globalThis.scrollBy({ top: 420, behavior: 'smooth' });
-      await wait(900);
-      const refreshed2 = findTargetArticle(targetPostId);
-      scope = refreshed2 || targetScope;
-      if (extractArticleCanonicalEntityId(scope) !== targetPostId) {
-        const landed = location.href || '';
-        return commentResult(false, 'context_drift', null, ctx,
-          'path2.identity_gate_2b_scroll_swap: scope canonical id != ' + abbreviate(targetPostId) +
-          ' landed_at=' + landed);
-      }
-      editor = findCommentEditor(scope);
-    }
-    if (!editor) {
-      const landed = location.href || '';
-      console.warn('[THG outbound.executeCommentInFeed] comment_box_not_found_post_click',
-        { target_post_id: targetPostId, landed });
-      return commentResult(false, 'comment_box_not_found', null, ctx,
-        'path2.article_found_but_comment_button_missing: target id=' + abbreviate(targetPostId) +
-        ' landed_at=' + landed +
-        ' (Comment button clicked but no editable composer materialized in scope)');
-    }
-
-    // GATE-3 (pre-type editor scope): mirror executeComment's last-line-
-    // of-defence check. Without this, a stray modal from a different
-    // article could capture our text.
-    const editorArticle = editor.closest('[role="article"], [role="dialog"]');
-    if (!editorArticle || extractArticleCanonicalEntityId(editorArticle) !== targetPostId) {
-      const landed = location.href || '';
-      const editorScopeID = editorArticle ? extractArticleCanonicalEntityId(editorArticle) : '<no-enclosing-article>';
-      console.warn('[THG outbound.executeCommentInFeed] gate3_editor_drift',
-        { target_post_id: targetPostId, editor_scope_id: editorScopeID, landed });
-      return commentResult(false, 'context_drift', null, ctx,
-        'path2.identity_gate_3_editor_drift: editor closest container canonical id != ' + abbreviate(targetPostId) +
-        ' landed_at=' + landed);
-    }
+    const drift = feedCheckGate3(editor, targetPostId, ctx);
+    if (drift) return drift;
 
     // Same composer→submit STATE MACHINE as executeComment — one shared path, so the
     // group-feed executor can never diverge or submit a doubled/mismatched composer.
@@ -626,7 +579,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     let method = '';
     if (targetId) {
       anchor = Array.from(document.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="]'))
-        .find(el => String(el.getAttribute('href') || '').indexOf(targetId) !== -1) || null;
+        .find(el => String(el.getAttribute('href') || '').includes(targetId)) || null;
     }
     if (anchor) {
       method = 'existing_anchor';
@@ -667,7 +620,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     console.log('[THG rung2] clicked', click);
     // Wait until the in-SPA nav lands on the permalink (URL carries the post id).
     const landed = await waitFor(
-      () => !!targetId && (location.href || '').indexOf(targetId) !== -1,
+      () => !!targetId && (location.href || '').includes(targetId),
       7000, 200
     );
     console.log('[THG rung2] nav landed=', landed, 'url=', location.href);
@@ -692,7 +645,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     // identity checkpoints + proof unchanged).
     console.log('[THG rung2] handing off to executeComment on', location.href);
     const r = await executeComment(content, targetUrl, executionId);
-    console.log('[THG rung2] executeComment result', r && (r.ok ? 'OK' : (r.error || (r.proof && r.proof.failure_reason))), r && r.proof && r.proof.notes);
+    console.log('[THG rung2] executeComment result', r && (r.ok ? 'OK' : (r.error || r.proof?.failure_reason)), r?.proof?.notes);
     return r;
   }
 

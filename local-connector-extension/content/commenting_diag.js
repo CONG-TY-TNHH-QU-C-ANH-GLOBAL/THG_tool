@@ -81,15 +81,15 @@ globalThis.THGCommentingDiag = globalThis.THGCommentingDiag || (() => {
   function navDiagFor(stage, phase, gates, ctxInfo) {
     if (!THGNavReport) return null;
     const finalUrl = location.href || '';
-    const navLanded = (ctxInfo.navTrace && ctxInfo.navTrace.landed_url) || '';
+    const navLanded = ctxInfo.navTrace?.landed_url || '';
     const rc = THGNavReport.classifyLanding(finalUrl);
     let reachedPhase = phase || '';
     if (reachedPhase === 'gate1' && rc !== 'permalink') reachedPhase = 'navigation';
     return THGNavReport.buildNavDiagnostic({
-      navFromUrl: ctxInfo.navTrace && ctxInfo.navTrace.from_url,
-      navToUrl: (ctxInfo.navTrace && ctxInfo.navTrace.to_url) || ctxInfo.targetUrl,
-      navDurationMs: ctxInfo.navTrace && ctxInfo.navTrace.duration_ms,
-      navAttempts: ctxInfo.navTrace && ctxInfo.navTrace.attempts,
+      navFromUrl: ctxInfo.navTrace?.from_url,
+      navToUrl: ctxInfo.navTrace?.to_url || ctxInfo.targetUrl,
+      navDurationMs: ctxInfo.navTrace?.duration_ms,
+      navAttempts: ctxInfo.navTrace?.attempts,
       landedUrl: navLanded,
       finalUrl,
       docTitle: document.title || '',
@@ -103,7 +103,7 @@ globalThis.THGCommentingDiag = globalThis.THGCommentingDiag || (() => {
       fbUserId: ctxInfo.fbUID,
       redirectClass: rc,
       stage,
-      domSnapshot: gates.articleFound ? '' : ((document.body && document.body.innerText) || '').slice(0, 2048),
+      domSnapshot: gates.articleFound ? '' : (document.body?.innerText || '').slice(0, 2048),
     });
   }
 

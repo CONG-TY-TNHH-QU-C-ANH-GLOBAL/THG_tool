@@ -13,6 +13,8 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   const { visible, labelOf, hasAny, norm, wait } = THGDom;
   const K = globalThis.THGCommentConstants
     || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+  // Debug-gated swallow for best-effort browser calls (silent at normal runtime).
+  function ignoreErr(e, ctx) { if (globalThis.__THG_COMMENTING_DEBUG__) console.debug(`[THGCommentingTarget] ${ctx}`, e); }
 
   // extractPostIdFromUrl pulls the canonical Facebook post identifier
   // out of a target URL. Returns "" when the URL is missing or shaped
@@ -25,51 +27,48 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   //   /<page>/videos/<numeric>/   /<page>/reel/<numeric>/   /watch/<numeric>/
   //   ?story_fbid=<id>
   //   /photo.php?fbid=<id>
+  // postIdFromQuery resolves a FB post id from query params, in priority order: story_fbid,
+  // first multi_permalinks id, photo.php fbid, watch v. Returns '' when none apply.
+  function postIdFromQuery(url, path) {
+    const sf = url.searchParams.get('story_fbid');
+    if (sf) return sf;
+    // multi_permalinks may be a comma-list; the first id is the canonical target.
+    const mp = url.searchParams.get('multi_permalinks');
+    if (mp) {
+      const first = mp.split(',')[0].trim();
+      if (first) return first;
+    }
+    const lower = path.toLowerCase();
+    if (lower.endsWith('/photo.php')) {
+      const fbid = url.searchParams.get('fbid');
+      if (fbid) return fbid;
+    }
+    if (lower.includes('/watch')) { // /watch/?v=<id> — id lives in the query param.
+      const v = url.searchParams.get('v');
+      if (v) return v;
+    }
+    return '';
+  }
+
   function extractPostIdFromUrl(raw) {
     try {
-      // FB DOM anchors often store relative paths in their `href`
-      // attribute (e.g. "/groups/X/permalink/123/"). new URL() rejects
-      // those — prepend a base so the parser succeeds. The base only
-      // affects pathname / searchParams parsing, which is all we need.
+      // Relative hrefs (e.g. "/groups/X/permalink/123/") — prepend a base so new URL() parses.
       let s = String(raw || '');
       if (s.startsWith('/') && !s.startsWith('//')) s = 'https://www.facebook.com' + s;
       const url = new URL(s);
-      // Foreign-host guard. FB pages contain 3rd-party tracking anchors
-      // and external shortlinks; their paths can SHAPE-MATCH our regexes
-      // (e.g. https://shortener.evil/posts/123) but they obviously do
-      // not address a Facebook entity. Reject anything that isn't on a
-      // Facebook-controlled host so the identity gate cannot be tricked
-      // by hostile DOM content.
+      // Foreign-host guard: reject non-Facebook hosts so a hostile anchor can't spoof the
+      // identity gate (e.g. https://shortener.evil/posts/123 shape-matches but isn't FB).
       const host = url.hostname.toLowerCase();
       const isFB = host === 'facebook.com' || host.endsWith('.facebook.com') ||
                    host === 'fb.watch' || host.endsWith('.fb.watch');
       if (!isFB) return '';
       const path = url.pathname;
-      // Compact identifier ("pfbid..."): match BEFORE the numeric branch
-      // because pfbid tokens contain alphanumerics and are unique.
-      let m = path.match(/\/(?:posts|permalink|videos|reel|watch|share)\/(pfbid[A-Za-z0-9]+)/i);
-      if (m) return m[1];
-      // Numeric post id (group posts, legacy permalinks).
-      m = path.match(/\/(?:posts|permalink|videos|reel|watch|share)\/(\d{6,})/i);
-      if (m) return m[1];
-      const sf = url.searchParams.get('story_fbid');
-      if (sf) return sf;
-      // multi_permalinks may be a comma-list; the first id is the canonical target.
-      const mp = url.searchParams.get('multi_permalinks');
-      if (mp) {
-        const first = mp.split(',')[0].trim();
-        if (first) return first;
-      }
-      if (path.toLowerCase().endsWith('/photo.php')) {
-        const fbid = url.searchParams.get('fbid');
-        if (fbid) return fbid;
-      }
-      // /watch/?v=<id> — FB Watch page; id lives in the query param.
-      if (path.toLowerCase().includes('/watch')) {
-        const v = url.searchParams.get('v');
-        if (v) return v;
-      }
-      return '';
+      // pfbid (alphanumeric) matched BEFORE numeric. [a-z0-9] under /i already covers A-Z.
+      const pf = /\/(?:posts|permalink|videos|reel|watch|share)\/(pfbid[a-z0-9]+)/i.exec(path);
+      if (pf) return pf[1];
+      const num = /\/(?:posts|permalink|videos|reel|watch|share)\/(\d{6,})/i.exec(path);
+      if (num) return num[1];
+      return postIdFromQuery(url, path);
     } catch {
       return '';
     }
@@ -149,13 +148,13 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
     const C = globalThis.THGCommentComposer;
     if (!el || !el.getAttribute || !C || !C.CREATE_POST_KEYS) return false;
     const raw = [el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || '',
-      ((el.parentElement && el.parentElement.textContent) || '').slice(0, 80)].join(' ').toLowerCase();
+      (el.parentElement?.textContent || '').slice(0, 80)].join(' ').toLowerCase();
     return C.CREATE_POST_KEYS.some((k) => raw.includes(k));
   }
   function commentSurfaceDeps(targetPostId) {
     return {
       visible, labelOf, findCommentEditor,
-      closestArticle: (el) => (el && el.closest ? el.closest('[role="article"], [role="dialog"]') : null),
+      closestArticle: (el) => (el?.closest?.('[role="article"], [role="dialog"]') ?? null),
       docEditables: () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea')),
       classifyHost: classifyHostFor(targetPostId),
     };
@@ -166,11 +165,11 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   function discoverDeps(targetPostId) {
     return {
       visible, labelOf, findCommentEditor,
-      closestArticle: (el) => (el && el.closest ? el.closest('[role="article"], [role="dialog"]') : null),
+      closestArticle: (el) => (el?.closest?.('[role="article"], [role="dialog"]') ?? null),
       docEditables: () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea')),
       classifyHost: classifyHostFor(targetPostId),
       scrollIntoCenter: (el, towardBottom) => {
-        try { el.scrollIntoView({ block: towardBottom ? 'end' : 'center' }); } catch (e) { /* ignore */ }
+        try { el.scrollIntoView({ block: towardBottom ? 'end' : 'center' }); } catch (e) { ignoreErr(e, 'scroll'); }
       },
       wait, now: () => Date.now(), timeoutMs: 12000, pollMs: 400,
     };
@@ -313,6 +312,27 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   // editor Checkpoint-3 was correctly rejecting (gate3_editor_drift), the cause of
   // the observed context_drift on group permalink-feed pages. Returns null when
   // only foreign-post composers exist.
+  // composerInScope returns the first acceptable comment composer within one ancestor scope,
+  // or null. Skips search/message boxes + the create-post box; on FEED pages skips composers
+  // belonging to a DIFFERENT post; accepts the target's own / page-level (sibling) composer.
+  function composerInScope(scope, id, onPermalink) {
+    const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
+    const commentKeys = K.COMMENT_KEYS;
+    const editors = Array.from(scope.querySelectorAll('[contenteditable="true"], textarea, input[type="text"]'))
+      .filter(el => visible(el) && !hasAny(labelOf(el), badKeys) && !isCreatePostComposer(el));
+    for (const el of editors) {
+      const art = el.closest('[role="article"], [role="dialog"]');
+      const artId = art ? extractArticleCanonicalEntityId(art) : '';
+      // Different-post composer skipped on FEED; on the target's own permalink page the URL
+      // pins identity, so a foreign-id host is a nested comment/answer item near the target.
+      if (artId && artId !== id && !onPermalink) continue;
+      if (hasAny(labelOf(el), commentKeys) || norm(el.getAttribute('role')) === 'textbox' || !artId) {
+        return el; // target's own, or a page/sibling-level composer near the target
+      }
+    }
+    return null;
+  }
+
   function findComposerForTarget(targetPostId) {
     if (!targetPostId) return null;
     const id = String(targetPostId);
@@ -320,24 +340,11 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
     if (!targetArticle) return null;
     const inArticle = findCommentEditor(targetArticle);
     if (inArticle) return inArticle;
-    const badKeys = ['search', 'tim kiem', 'message', 'messenger', 'nhan tin'];
-    const commentKeys = K.COMMENT_KEYS;
     const onPermalink = onTargetPermalinkPage(id);
     let scope = targetArticle.parentElement;
     for (let depth = 0; scope && depth < 6; depth += 1, scope = scope.parentElement) {
-      const editors = Array.from(scope.querySelectorAll('[contenteditable="true"], textarea, input[type="text"]'))
-        .filter(el => visible(el) && !hasAny(labelOf(el), badKeys) && !isCreatePostComposer(el));
-      for (const el of editors) {
-        const art = el.closest('[role="article"], [role="dialog"]');
-        const artId = art ? extractArticleCanonicalEntityId(art) : '';
-        // A composer inside a DIFFERENT post's article is skipped on FEED pages. On the
-        // target's OWN permalink page the URL pins identity (single top-level post), so a
-        // foreign-id host is a nested comment/answer item near the target — not skipped.
-        if (artId && artId !== id && !onPermalink) continue;
-        if (hasAny(labelOf(el), commentKeys) || norm(el.getAttribute('role')) === 'textbox' || !artId) {
-          return el; // target's own, or a page/sibling-level composer near the target
-        }
-      }
+      const found = composerInScope(scope, id, onPermalink);
+      if (found) return found;
     }
     return null;
   }
