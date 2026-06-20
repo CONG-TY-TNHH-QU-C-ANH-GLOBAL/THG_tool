@@ -1460,6 +1460,25 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
 
-  return { executeOutbound, executeCommentInFeed, probeRung2Click, executeCommentViaRung2 };
+  // PR1 characterization-test seam (additive, behavior-neutral). `api` is the EXACT
+  // Chrome runtime surface — the same four public methods the connector has always
+  // exposed; comment_executor.js / bridge.js read only these. Test-only helpers are
+  // exposed SOLELY on module.exports._test under Node/CommonJS (dead under Chrome, which
+  // has no `module`), so the Chrome global `THGContentOutbound` is byte-for-byte
+  // unchanged — it never carries `_test` or any `_`-prefixed key. No function body,
+  // selector, timing, click/typing, proof shape, connector protocol, or backend is touched.
+  const api = { executeOutbound, executeCommentInFeed, probeRung2Click, executeCommentViaRung2 };
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      ...api,
+      _test: {
+        extractPostIdFromUrl, extractArticleCanonicalEntityId, labelMatchesDismiss,
+        isInsidePostContainer, onTargetPermalinkPage, abbreviate, norm, hasAny, visible,
+        labelOf, enabledButton, textOfEditable, editorContainsContent, clickLikeUser,
+        setEditableText, dismissBlockingOverlays,
+      },
+    };
+  }
+  return api;
 })();
 globalThis.THGContentOutbound = THGContentOutbound;
