@@ -20,6 +20,22 @@ const INBOX = require.resolve('../content/facebook/outbound/inbox/inbox_outbound
 const CMT_TARGET = require.resolve('../content/facebook/outbound/commenting/commenting_target.js');
 const CMT_DIAG = require.resolve('../content/facebook/outbound/commenting/commenting_diag.js');
 const CMT_OUTBOUND = require.resolve('../content/facebook/outbound/commenting/commenting_outbound.js');
+// PR7: commenting_target.js + commenting_outbound.js split into responsibility sub-modules
+// (target/* and execute/*). Each loadCommenting* must rebuild the WHOLE chain fresh, so these
+// sub-module globals + resolved caches join freshLayerChain (else a stale singleton short-
+// circuits the guarded IIFE and a test reuses another test's module instance).
+const PR7_SUBMODULES = [
+  ['THGCommentingTargetPostId', 'target/post_id'],
+  ['THGCommentingTargetSurface', 'target/surface'],
+  ['THGCommentingTargetArticle', 'target/article'],
+  ['THGCommentingTargetComposer', 'target/composer'],
+  ['THGCommentingResult', 'execute/result'],
+  ['THGCommentingDirectGates', 'execute/direct_gates'],
+  ['THGCommentingDirect', 'execute/direct'],
+  ['THGCommentingFeedGates', 'execute/feed_gates'],
+  ['THGCommentingFeed', 'execute/feed'],
+  ['THGCommentingRung2', 'execute/rung2'],
+].map(([g, rel]) => [g, require.resolve('../content/facebook/outbound/commenting/' + rel + '.js')]);
 
 function makeWindow() {
   const location = { href: 'https://www.facebook.com/' };
@@ -53,7 +69,8 @@ const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
   'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'innerWidth', 'innerHeight',
   'getSelection', 'scrollBy', 'scrollTo', 'scrollY',
   'THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound', 'THGInboxOutbound',
-  'THGCommentingTarget', 'THGCommentingDiag', 'THGCommentingOutbound'];
+  'THGCommentingTarget', 'THGCommentingDiag', 'THGCommentingOutbound',
+  ...PR7_SUBMODULES.map(([g]) => g)];
 
 // Clear all extracted-layer module globals + require caches so a fresh outbound.js (and its
 // require chain) rebuilds cleanly. Keeps each load behavior-identical to a first Chrome inject.
@@ -61,6 +78,8 @@ function freshLayerChain() {
   for (const g of ['THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound', 'THGInboxOutbound',
     'THGCommentingTarget', 'THGCommentingDiag', 'THGCommentingOutbound']) delete globalThis[g];
   for (const c of [OUTBOUND, OUTBOUND_DOM, POSTING, INBOX, CMT_TARGET, CMT_DIAG, CMT_OUTBOUND]) delete require.cache[c];
+  // PR7 commenting sub-modules — clear globals + caches so the split chain rebuilds fresh.
+  for (const [g, c] of PR7_SUBMODULES) { delete globalThis[g]; delete require.cache[c]; }
 }
 
 // installGlobals installs the minimal fake browser globals + any requested singletons and
