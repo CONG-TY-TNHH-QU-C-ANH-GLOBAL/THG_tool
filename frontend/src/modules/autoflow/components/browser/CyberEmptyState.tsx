@@ -1,6 +1,6 @@
 import { ArrowRight, MonitorPlay, Plus, RefreshCw } from 'lucide-react';
 
-export function CyberEmptyState({ onCreate, loading }: { onCreate: () => void; loading: boolean }) {
+export function CyberEmptyState({ onCreate, loading }: Readonly<{ onCreate: () => void; loading: boolean }>) {
   return (
     <div className="empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--s-3)' }}>
       <div

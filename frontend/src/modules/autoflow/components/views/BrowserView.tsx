@@ -19,7 +19,7 @@ function isErrorNotice(message: string): boolean {
   return /không|fail|error|lỗi/i.test(message);
 }
 
-export default function BrowserView({ orgId }: BrowserViewProps) {
+export default function BrowserView({ orgId }: Readonly<BrowserViewProps>) {
   const currentUser = useAuthStore(s => s.user);
   const { workspaces, actionLoading, refresh, start, startNew, stop } = useWorkspaces();
   const { connectors, creating: connectorCreating, refresh: refreshConnectors, createPairingCode } = useConnectors();
@@ -314,7 +314,7 @@ export default function BrowserView({ orgId }: BrowserViewProps) {
   );
 }
 
-function Notice({ tone, children }: { tone: 'ok' | 'hot' | 'warn'; children: React.ReactNode }) {
+function Notice({ tone, children }: Readonly<{ tone: 'ok' | 'hot' | 'warn'; children: React.ReactNode }>) {
   const iconMap = {
     ok: <CheckCircle2 size={16} color="var(--ok)" />,
     hot: <AlertTriangle size={16} color="var(--hot)" />,

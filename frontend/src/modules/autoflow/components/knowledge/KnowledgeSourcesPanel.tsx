@@ -51,7 +51,7 @@ interface ToastEntry {
  * mounted; SyncResult is only used for the toast right after manual
  * sync completes.
  */
-export default function KnowledgeSourcesPanel({ readonly }: KnowledgeSourcesPanelProps) {
+export default function KnowledgeSourcesPanel({ readonly }: Readonly<KnowledgeSourcesPanelProps>) {
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -244,13 +244,13 @@ export default function KnowledgeSourcesPanel({ readonly }: KnowledgeSourcesPane
 
 function SourceCard({
   source, busy, readonly, onSync, onDelete,
-}: {
+}: Readonly<{
   source: KnowledgeSource;
   busy: boolean;
   readonly?: boolean;
   onSync: () => void;
   onDelete: () => void;
-}) {
+}>) {
   const pill = healthPill(source.health_status);
   const baseUrl = readBaseURL(source.connection_config);
   return (
@@ -348,7 +348,7 @@ function SourceCard({
   );
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Stat({ icon, label, value }: Readonly<{ icon: React.ReactNode; label: string; value: string }>) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-faint)' }}>

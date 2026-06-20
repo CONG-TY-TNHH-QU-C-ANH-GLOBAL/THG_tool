@@ -20,7 +20,7 @@ interface JoinWorkspaceProps {
   goBack: () => void;
 }
 
-function Shell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' }) {
+function Shell({ children, lang }: Readonly<{ children: ReactNode; lang: 'vi' | 'en' }>) {
   return (
     <main className="auth-shell">
       <aside className="auth-side">
@@ -53,7 +53,7 @@ function Shell({ children, lang }: { children: ReactNode; lang: 'vi' | 'en' }) {
   );
 }
 
-export default function JoinWorkspace({ token, goBack }: JoinWorkspaceProps) {
+export default function JoinWorkspace({ token, goBack }: Readonly<JoinWorkspaceProps>) {
   const { user, login, isLoading } = useAuth();
   const { lang } = useLang();
   const inviteFlow = useAcceptInvite();

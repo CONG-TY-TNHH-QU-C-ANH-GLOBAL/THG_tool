@@ -7,7 +7,7 @@ interface FileUploadPanelProps {
   onUpload: (files: FileList | null) => void;
 }
 
-export default function FileUploadPanel({ isUploading, onUpload }: FileUploadPanelProps) {
+export default function FileUploadPanel({ isUploading, onUpload }: Readonly<FileUploadPanelProps>) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 

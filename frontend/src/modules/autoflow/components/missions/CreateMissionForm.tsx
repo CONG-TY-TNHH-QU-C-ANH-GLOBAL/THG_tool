@@ -17,7 +17,7 @@ const MIN_PROMPT = 20;
 const DEFAULT_INTERVAL = 60;
 const DEFAULT_MAX_ITEMS = 50;
 
-export default function CreateMissionForm({ onCreated, onCancel, compact }: CreateMissionFormProps) {
+export default function CreateMissionForm({ onCreated, onCancel, compact }: Readonly<CreateMissionFormProps>) {
   const { t } = useLang();
   const tm = t.missionsView;
   const { workspaces } = useWorkspaces();

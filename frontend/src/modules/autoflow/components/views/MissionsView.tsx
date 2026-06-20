@@ -22,7 +22,7 @@ interface MissionsViewProps {
 
 type Toast = { id: number; text: string; tone: 'ok' | 'warn' | 'error' };
 
-export default function MissionsView({ orgId, isAdmin }: MissionsViewProps) {
+export default function MissionsView({ orgId, isAdmin }: Readonly<MissionsViewProps>) {
   void orgId;
   const { t } = useLang();
   const tm = t.missionsView;
