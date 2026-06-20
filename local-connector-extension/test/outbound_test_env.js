@@ -15,6 +15,7 @@
 // { concurrency: true } and never wrap shared-globalThis mutation in parallel subtests.
 const OUTBOUND = require.resolve('../content/outbound.js');
 const OUTBOUND_DOM = require.resolve('../content/outbound_dom.js');
+const POSTING = require.resolve('../content/posting_outbound.js');
 
 function makeWindow() {
   const location = { href: 'https://www.facebook.com/' };
@@ -46,7 +47,7 @@ function makeDocument() {
 
 const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
   'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'innerWidth', 'innerHeight',
-  'getSelection', 'THGContentOutbound', 'THGOutboundDom'];
+  'getSelection', 'THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound'];
 
 // installGlobals installs the minimal fake browser globals + any requested singletons and
 // real sibling modules, and returns a restore() that reverses every mutation.
@@ -105,4 +106,17 @@ function loadOutboundDom(overrides = {}) {
   return { DOM, api: globalThis.THGOutboundDom, restore };
 }
 
-module.exports = { loadOutboundWithGlobals, loadOutboundDom, makeWindow, makeDocument };
+// loadPostingOutbound installs fake globals then requires a FRESH posting_outbound.js (which
+// re-requires a fresh outbound_dom.js via its guarded fallback). Returns { POST, api, restore }:
+// POST = module.exports (incl. _test); api = globalThis.THGPostingOutbound.
+function loadPostingOutbound(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  delete globalThis.THGPostingOutbound;
+  delete globalThis.THGOutboundDom;
+  delete require.cache[POSTING];
+  delete require.cache[OUTBOUND_DOM];
+  const POST = require(POSTING);
+  return { POST, api: globalThis.THGPostingOutbound, restore };
+}
+
+module.exports = { loadOutboundWithGlobals, loadOutboundDom, loadPostingOutbound, makeWindow, makeDocument };
