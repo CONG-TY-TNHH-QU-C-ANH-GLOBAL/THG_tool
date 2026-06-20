@@ -6,13 +6,13 @@
 // before commenting_diag.js); Node: module.exports.
 globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   const THGDom = globalThis.THGOutboundDom
-    || (typeof require === 'function' ? require('./outbound_dom.js') : null);
+    || (typeof require === 'function' ? require('../dom/outbound_dom.js') : null);
   if (!THGDom) {
     throw new Error('THGOutboundDom is required before commenting_target.js');
   }
   const { visible, labelOf, hasAny, norm, wait } = THGDom;
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../../../comment_constants.js'));
   // Debug-gated swallow for best-effort browser calls (silent at normal runtime).
   function ignoreErr(e, ctx) { if (globalThis.__THG_COMMENTING_DEBUG__) console.debug(`[THGCommentingTarget] ${ctx}`, e); }
 

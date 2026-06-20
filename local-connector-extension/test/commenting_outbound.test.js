@@ -189,7 +189,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
     }
 
     // ---- Diagnostics independence scans (trap 6/7) ----------------------------------
-    const diagSrc = fs.readFileSync(path.join(__dirname, '..', 'content', 'commenting_diag.js'), 'utf8');
+    const diagSrc = fs.readFileSync(path.join(__dirname, '..', 'content', 'facebook', 'outbound', 'commenting', 'commenting_diag.js'), 'utf8');
     assert.ok(!diagSrc.includes('THGCommentingOutbound'), 'commenting_diag.js must not reference THGCommentingOutbound');
     assert.ok(!diagSrc.includes("require('./commenting_outbound.js')"), 'commenting_diag.js must not require commenting_outbound.js');
     assert.ok(!diagSrc.includes('executeComment'), 'commenting_diag.js must not call the executor');

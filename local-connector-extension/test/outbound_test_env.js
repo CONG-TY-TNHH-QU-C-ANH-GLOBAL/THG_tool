@@ -13,13 +13,13 @@
 //
 // IMPORTANT: tests that mutate globalThis must run SEQUENTIALLY — never pass
 // { concurrency: true } and never wrap shared-globalThis mutation in parallel subtests.
-const OUTBOUND = require.resolve('../content/outbound.js');
-const OUTBOUND_DOM = require.resolve('../content/outbound_dom.js');
-const POSTING = require.resolve('../content/posting_outbound.js');
-const INBOX = require.resolve('../content/inbox_outbound.js');
-const CMT_TARGET = require.resolve('../content/commenting_target.js');
-const CMT_DIAG = require.resolve('../content/commenting_diag.js');
-const CMT_OUTBOUND = require.resolve('../content/commenting_outbound.js');
+const OUTBOUND = require.resolve('../content/facebook/outbound/outbound.js');
+const OUTBOUND_DOM = require.resolve('../content/facebook/outbound/dom/outbound_dom.js');
+const POSTING = require.resolve('../content/facebook/outbound/posting/posting_outbound.js');
+const INBOX = require.resolve('../content/facebook/outbound/inbox/inbox_outbound.js');
+const CMT_TARGET = require.resolve('../content/facebook/outbound/commenting/commenting_target.js');
+const CMT_DIAG = require.resolve('../content/facebook/outbound/commenting/commenting_diag.js');
+const CMT_OUTBOUND = require.resolve('../content/facebook/outbound/commenting/commenting_outbound.js');
 
 function makeWindow() {
   const location = { href: 'https://www.facebook.com/' };

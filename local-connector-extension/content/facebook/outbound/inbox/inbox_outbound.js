@@ -8,7 +8,7 @@ globalThis.THGInboxOutbound = globalThis.THGInboxOutbound || (() => {
   // Chrome relies on manifest load order (outbound_dom.js first); Node tests use the guarded
   // CommonJS fallback. Fail loudly if the primitives module is missing.
   const THGDom = globalThis.THGOutboundDom
-    || (typeof require === 'function' ? require('./outbound_dom.js') : null);
+    || (typeof require === 'function' ? require('../dom/outbound_dom.js') : null);
   if (!THGDom) {
     throw new Error('THGOutboundDom is required before inbox_outbound.js');
   }

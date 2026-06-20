@@ -19,7 +19,7 @@ const REAL_MODULES = [
 ];
 
 (async () => {
-  // SMOKE: require('../content/outbound.js') must succeed under the minimal fake browser
+  // SMOKE: require('../content/facebook/outbound/outbound.js') must succeed under the minimal fake browser
   // globalThis setup (no DOM library). If this throws, the stack names the offending globalThis.
   const { O, api, restore } = loadOutboundWithGlobals({ realModules: REAL_MODULES });
   try {

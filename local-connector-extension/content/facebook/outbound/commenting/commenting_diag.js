@@ -7,13 +7,13 @@
 // after commenting_target.js, before the executor module); Node: module.exports.
 globalThis.THGCommentingDiag = globalThis.THGCommentingDiag || (() => {
   const THGDom = globalThis.THGOutboundDom
-    || (typeof require === 'function' ? require('./outbound_dom.js') : null);
+    || (typeof require === 'function' ? require('../dom/outbound_dom.js') : null);
   if (!THGDom) {
     throw new Error('THGOutboundDom is required before commenting_diag.js');
   }
   const { visible, labelOf, hasAny } = THGDom;
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../../../comment_constants.js'));
   const THGTarget = globalThis.THGCommentingTarget
     || (typeof require === 'function' ? require('./commenting_target.js') : null);
   if (!THGTarget) {
