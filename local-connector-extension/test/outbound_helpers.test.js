@@ -1,22 +1,18 @@
-// PR1/PR2 characterization — IDENTITY/misc helpers that remain in content/outbound.js.
+// Characterization — comment IDENTITY/misc helpers. These were extracted to the commenting
+// layer in PR5: identity/target helpers now live on THGCommentingTarget, and abbreviate/
+// editorContainsContent on THGCommentingOutbound._test (Node-only). Assertions are unchanged
+// from when they lived in outbound.js — only the source module moved.
 //   Run: node local-connector-extension/test/outbound_helpers.test.js
 //   CI:  node --test (auto-discovered)
 //
-// After PR2 the generic DOM/editable/click/overlay primitives moved to THGOutboundDom
-// (covered by outbound_dom.test.js). This file pins the helpers that STAY in outbound.js —
-// post-identity parsing + small misc — read from module.exports._test (NOT from the Chrome
-// runtime global, which stays at the four public methods).
-//
 // Sequential by construction (single load, no concurrency).
 const assert = require('node:assert');
-const { loadOutboundWithGlobals } = require('./outbound_test_env');
+const { loadCommentingOutbound } = require('./outbound_test_env');
 
-const { O, api, restore } = loadOutboundWithGlobals();
+const { CMT, restore } = loadCommentingOutbound();
 try {
-  const T = O._test;
-
-  // Runtime-surface guard: the Chrome global must never carry test helpers.
-  assert.ok(!('_test' in api), 'runtime global must not expose _test');
+  const T = globalThis.THGCommentingTarget; // identity/target helpers (PR5)
+  const X = CMT._test;                       // abbreviate / editorContainsContent (Node-only)
 
   // ----- extractPostIdFromUrl — identity-gate URL parser + foreign-host guard ---------
   {
@@ -46,16 +42,15 @@ try {
     assert.strictEqual(f(null), '', 'null article → ""');
   }
 
-  // ----- abbreviate (no wrapping block — this group declares no locals) ----------------
-  assert.strictEqual(T.abbreviate(''), '<missing>');
-  assert.strictEqual(T.abbreviate(null), '<missing>');
-  assert.strictEqual(T.abbreviate('short'), 'short');
-  assert.strictEqual(T.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
+  // ----- abbreviate -------------------------------------------------------------------
+  assert.strictEqual(X.abbreviate(''), '<missing>');
+  assert.strictEqual(X.abbreviate(null), '<missing>');
+  assert.strictEqual(X.abbreviate('short'), 'short');
+  assert.strictEqual(X.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
 
   // ----- editorContainsContent — 60-char sample match, detached-editor guard ----------
-  // (Stays in outbound.js; internally uses THGOutboundDom.norm / .textOfEditable via alias.)
   {
-    const f = T.editorContainsContent;
+    const f = X.editorContainsContent;
     globalThis.document.contains = () => true;
     assert.strictEqual(f({ value: 'Hello there friend' }, 'Hello there'), true, 'sample prefix matches');
     assert.strictEqual(f({ value: 'Hello there friend' }, ''), false, 'empty expected → false');
@@ -76,7 +71,7 @@ try {
     globalThis.location.href = savedHref;
   }
 
-  console.log('outbound identity/misc helper characterization: PASS');
+  console.log('commenting identity/misc helper characterization: PASS');
 } finally {
   restore();
 }
