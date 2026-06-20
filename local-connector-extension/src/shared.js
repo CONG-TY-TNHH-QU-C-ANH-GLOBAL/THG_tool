@@ -31,6 +31,7 @@ var THGShared = globalThis.THGShared || (() => {
     'content/comment_state_machine.js',
     'content/comment_composer.js',
     'content/comment_button.js',
+    'content/outbound_dom.js',
     'content/outbound.js',
     'content/reverify.js',
     'content/comment_executor.js',

@@ -1,238 +1,19 @@
 var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   const K = globalThis.THGCommentConstants
     || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
-  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-  const norm = (value) => String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .trim()
-    .toLowerCase();
-  const hasAny = (value, keys) => keys.some(key => value.includes(key));
 
-  function visible(el) {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    const style = getComputedStyle(el);
-    return rect.width > 8 && rect.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
-  }
-
-  function labelOf(el) {
-    return norm(el?.innerText || el?.getAttribute?.('aria-label') || el?.getAttribute?.('placeholder') || el?.title);
-  }
-
-  function eventInit(x, y, extra = {}) {
-    return {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      clientX: x,
-      clientY: y,
-      ...extra
-    };
-  }
-
-  function dispatchMouseLike(el, type, x, y, extra = {}) {
-    try {
-      el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
-    } catch (_) { /* synthetic event dispatch is best-effort; ignore */ }
-  }
-
-  function dispatchPointerLike(el, type, x, y, extra = {}) {
-    try {
-      el.dispatchEvent(new PointerEvent(type, eventInit(x, y, {
-        pointerId: 1,
-        pointerType: 'mouse',
-        isPrimary: true,
-        button: 0,
-        buttons: type.endsWith('down') ? 1 : 0,
-        ...extra
-      })));
-    } catch (_) { /* synthetic event dispatch is best-effort; ignore */ }
-  }
-
-  // clickLikeUser fires a full pointer→mouse→click sequence at the element's centre.
-  // It RE-VALIDATES eligibility AT CLICK TIME and returns HONESTLY: false when the
-  // element is null, detached from the document, invisible, or disabled — so the
-  // submit state machine is never told a click "succeeded" against a ghost / stale /
-  // hidden node and stops retrying on a no-op. (Previously it returned true
-  // unconditionally; a synthetic click on a detached button registered as success.)
-  function clickLikeUser(el) {
-    if (!el) return false;
-    // The node may have detached / hidden / disabled between selection and here —
-    // FB re-mounts the send button on React flushes. Re-check before dispatching.
-    if (el.isConnected === false) return false;
-    if (!visible(el) || !enabledButton(el)) return false;
-    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) { /* scroll is best-effort */ }
-    const rect = el.getBoundingClientRect();
-    const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
-    const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
-    try {
-      dispatchPointerLike(el, 'pointerover', x, y);
-      dispatchPointerLike(el, 'pointermove', x, y);
-      dispatchPointerLike(el, 'pointerdown', x, y);
-      dispatchMouseLike(el, 'mousedown', x, y);
-      dispatchPointerLike(el, 'pointerup', x, y);
-      dispatchMouseLike(el, 'mouseup', x, y);
-      dispatchMouseLike(el, 'click', x, y);
-      el.click();
-      return true;
-    } catch (_) {
-      // Synthetic dispatch threw — fall back to a native click, reporting success
-      // only if that native click itself does not throw.
-      try { el.click(); return true; } catch (_) { return false; }
-    }
-  }
-
-  // labelMatchesDismiss tests whether a normalized label names a dismiss
-  // control, using WHOLE-WORD matching — never a raw substring.
-  //
-  // PR8C-Forensics root cause (2026-06-04): the old `label.includes(key)` with
-  // key='ok' matched "facebook" ("faceb-OO-K" contains "ok"), so the top-nav
-  // Facebook LOGO (aria-label="Facebook") was treated as an "OK" dismiss button.
-  // dismissBlockingOverlays then clicked the logo at t+7ms → FB's SPA router
-  // pushState'd the tab to the home feed at t+11ms → every comment failed
-  // target_not_reached/redirect_class=home. The forensic last_op_before_reset
-  // was literally `dispatchEvent click a[role=link][al=Facebook]`. Word-boundary
-  // matching makes "ok" require its own token, so "facebook" no longer matches.
-  function labelMatchesDismiss(label, keys) {
-    return keys.some((key) => {
-      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp('(^|\\W)' + escaped + '($|\\W)').test(label);
-    });
-  }
-
-  // isInsidePostContainer reports whether el lives inside the TARGET POST's own
-  // dialog/article — identified by a post-permalink anchor in the same container.
-  // PR8D.1: on a permalink the post often renders as a [role=dialog] MODAL over
-  // the feed; its "Close" (X) button dismisses the POST (→ FB pushState to home),
-  // not a blocking popup. dismissBlockingOverlays must never click a control that
-  // belongs to the post. A genuine blocking popup (save-password / notifications /
-  // cookie) is a dialog WITHOUT a permalink anchor, so it stays dismissable.
-  function isInsidePostContainer(el) {
-    const container = el.closest && el.closest('[role="dialog"], [role="article"]');
-    if (!container) return false;
-    return !!container.querySelector(
-      'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
-    );
-  }
-
-  async function dismissBlockingOverlays() {
-    // PR8D.1: dropped the generic 'ok' / 'close' keywords. They matched CONTENT
-    // controls, not blocking popups, and each caused a navigate-to-home incident:
-    //   - 'ok' matched the Facebook LOGO (faceb-OO-k) — clicking it went home.
-    //   - 'close' matched the POST DIALOG's Close (X) on a permalink modal —
-    //     clicking it shut the post and FB pushState'd to home (forensics:
-    //     last_op = click div[role=button][al=Close] → redirect_class=home,
-    //     article_found=false). Locale-independent (hit en_GB "Close").
-    // Real blocking popups all carry a SPECIFIC decline label below; we do not
-    // need the ambiguous generic words. An undismissed popup degrades to
-    // composer_not_found (retryable) — far safer than navigating off the post.
-    const labels = ['not now', 'later', 'maybe later', 'remember password', 'de sau', 'luc khac', 'khong phai bay gio'];
-    // Candidates are real button controls only. The old selector included a bare
-    // `[aria-label]`, which matched the top-nav `a[role="link"]` Facebook logo —
-    // a NAVIGATION link, never an overlay-dismiss control. Restricting to
-    // button-shaped elements (role="button" / <button>) excludes nav links and
-    // is the structural half of the PR8C fix (word-boundary matching is the
-    // other half). A real dismiss control is a button, not a link to home.
-    const candidates = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
-    for (const el of candidates) {
-      // Defense-in-depth: never click an element that navigates (an anchor with
-      // an href, or anything still carrying role="link"). Overlay dismiss never
-      // navigates; a stray match that does would re-introduce the logo bug.
-      const role = norm(el.getAttribute?.('role'));
-      const isNavLink = role === 'link' || (el.tagName === 'A' && !!el.getAttribute?.('href') && role !== 'button');
-      if (isNavLink) continue;
-      // PR8D.1: never click a control that belongs to the target post itself
-      // (its Close/X would dismiss the post → home). Blocking popups have no
-      // permalink anchor in their container, so they are unaffected.
-      if (isInsidePostContainer(el)) continue;
-      const label = labelOf(el);
-      if (!label) continue;
-      if (labelMatchesDismiss(label, labels)) {
-        if (clickLikeUser(el)) {
-          await wait(500);
-          return 'clicked';
-        }
-      }
-    }
-    return 'none';
-  }
-
-  function textOfEditable(editor) {
-    if (!editor) return '';
-    if ('value' in editor) return String(editor.value || '');
-    return String(editor.innerText || editor.textContent || '');
-  }
-
-  function setInputValue(editor, value) {
-    const proto = editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    if (setter) setter.call(editor, value);
-    else editor.value = value;
-  }
-
-  function selectEditableContents(editor) {
-    try {
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      return true;
-    } catch (_) {
-      try {
-        document.execCommand('selectAll', false, null);
-        return true;
-      } catch (_) {
-        return false;
-      }
-    }
-  }
-
-  function emitEditableInput(editor, text = '') {
-    try {
-      editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-    } catch (_) {
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    try { editor.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) { /* change event is best-effort; ignore */ }
-  }
-
-  function setEditableText(editor, text) {
-    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) { /* focus is best-effort; ignore */ } }
-    if (editor.isContentEditable) {
-      // PR8D + PR-DUP: clear any pre-existing / FB-restored draft BEFORE inserting.
-      // FB persists an unsent comment draft per post; on a retry it re-mounts the
-      // draft into the composer, and insertText then APPENDS to it → the duplicated
-      // comment ("…Inbox mình nhé.Bên mình là THG Fulfill…"). A SINGLE delete can
-      // miss a Lexical/Draft draft that re-materialises, so clear in a short loop
-      // until the editor is actually empty (capped) before inserting.
-      for (let i = 0; i < 6; i += 1) {
-        if (norm(textOfEditable(editor)).length === 0) break;
-        selectEditableContents(editor);
-        try { document.execCommand('delete', false, null); } catch (_) { /* draft clear is best-effort; ignore */ }
-      }
-      selectEditableContents(editor);
-      document.execCommand('insertText', false, text);
-    } else if ('value' in editor) {
-      setInputValue(editor, '');
-      setInputValue(editor, text);
-    } else {
-      return false;
-    }
-    emitEditableInput(editor, text);
-    return true;
-  }
-
-  async function waitFor(predicate, timeoutMs = 2500, stepMs = 150) {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      if (predicate()) return true;
-      await wait(stepMs);
-    }
-    return predicate();
-  }
+  // PR2 (Workstream A): generic DOM/editable/click/wait/overlay primitives were
+  // extracted verbatim to content/outbound_dom.js (THGOutboundDom), which the manifest
+  // loads before this file. They are re-bound here as local aliases — a DIRECT binding to
+  // the moved functions (not wrapper shims) — so every existing call-site stays
+  // byte-identical. Node tests fall back to require(); Chrome uses the manifest-loaded
+  // global. Only the names this file still references are bound; the lower-level helpers
+  // (eventInit/dispatch*/setInputValue/selectEditableContents/emitEditableInput/
+  // labelMatchesDismiss/isInsidePostContainer) are used only inside the moved functions.
+  const THGDom = globalThis.THGOutboundDom
+    || (typeof require === 'undefined' ? null : require('./outbound_dom.js'));
+  const { wait, norm, hasAny, visible, labelOf, clickLikeUser, enabledButton,
+    textOfEditable, setEditableText, waitFor, dismissBlockingOverlays } = THGDom;
 
   function editorContainsContent(editor, content) {
     if (!editor || !document.contains(editor)) return false;
@@ -252,10 +33,6 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
 
   // (pressEnter + the submit-button finder moved to content/comment_submit.js —
   // THGCommentSubmit. Shared DOM predicates are threaded in via submitDeps below.)
-
-  function enabledButton(el) {
-    return el && el.getAttribute?.('aria-disabled') !== 'true' && !el.disabled;
-  }
 
   // submitDeps threads outbound.js's shared DOM predicates into the extracted
   // THGCommentSubmit module (which owns findSubmitButtons / pressEnter / the reject
@@ -1471,11 +1248,13 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       ...api,
+      // PR2: the generic DOM/editable/click/overlay helpers moved to
+      // content/outbound_dom.js — they are now tested via THGOutboundDom (see
+      // outbound_dom.test.js), not here. This seam keeps only the identity/misc helpers
+      // that still live in this file.
       _test: {
-        extractPostIdFromUrl, extractArticleCanonicalEntityId, labelMatchesDismiss,
-        isInsidePostContainer, onTargetPermalinkPage, abbreviate, norm, hasAny, visible,
-        labelOf, enabledButton, textOfEditable, editorContainsContent, clickLikeUser,
-        setEditableText, dismissBlockingOverlays,
+        extractPostIdFromUrl, extractArticleCanonicalEntityId,
+        onTargetPermalinkPage, abbreviate, editorContainsContent,
       },
     };
   }

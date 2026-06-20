@@ -1,19 +1,20 @@
-// Shared loader for outbound.js characterization tests.
+// Shared loader for the outbound characterization tests.
 //
-// outbound.js is a Chrome content script: its helpers reference browser globals
-// (window/document/location/getComputedStyle/MouseEvent/...) when CALLED, and the module
-// is guarded by `globalThis.THGContentOutbound || (IIFE)` + only sets module.exports
-// INSIDE that IIFE. So to load a FRESH copy under Node we must, in order:
+// outbound.js / outbound_dom.js are Chrome content scripts: their helpers reference browser
+// globals (window/document/location/getComputedStyle/MouseEvent/...) when CALLED, and each
+// module is guarded by `globalThis.THG* || (IIFE)` + only sets module.exports INSIDE that
+// IIFE. So to load a FRESH copy under Node we must, in order:
 //   1. install the minimal fake browser globals BEFORE require,
-//   2. delete globalThis.THGContentOutbound (else the guard short-circuits the IIFE and
-//      module.exports — hence _test — is never (re)assigned),
-//   3. delete require.cache[outbound] so the file re-executes,
+//   2. delete the module's globalThis.THG* singleton (else the guard short-circuits the IIFE
+//      and module.exports — hence _test — is never (re)assigned),
+//   3. delete require.cache[module] so the file re-executes,
 //   4. require it.
 // restore() undoes the globalThis mutation to avoid cross-test pollution within a file.
 //
 // IMPORTANT: tests that mutate globalThis must run SEQUENTIALLY — never pass
 // { concurrency: true } and never wrap shared-globalThis mutation in parallel subtests.
 const OUTBOUND = require.resolve('../content/outbound.js');
+const OUTBOUND_DOM = require.resolve('../content/outbound_dom.js');
 
 function makeWindow() {
   const location = { href: 'https://www.facebook.com/' };
@@ -44,16 +45,11 @@ function makeDocument() {
 }
 
 const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
-  'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'THGContentOutbound'];
+  'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'THGContentOutbound', 'THGOutboundDom'];
 
-// loadOutboundWithGlobals installs fake globals then requires a FRESH outbound.js.
-//   overrides.window / .document / .location / .getComputedStyle — replace the defaults
-//   overrides.singletons  — { THGContentProof, THGNavReport, ... } set on globalThis
-//   overrides.realModules — sibling module paths (relative to test/) to require first;
-//                           each registers its own real globalThis.THG* singleton
-// Returns { O, api, restore }: O = module.exports (incl. _test); api = the Chrome
-// runtime object (globalThis.THGContentOutbound, exactly the 4 public methods).
-function loadOutboundWithGlobals(overrides = {}) {
+// installGlobals installs the minimal fake browser globals + any requested singletons and
+// real sibling modules, and returns a restore() that reverses every mutation.
+function installGlobals(overrides) {
   const singletonNames = Object.keys(overrides.singletons || {});
   const saved = {};
   for (const k of BROWSER_KEYS) saved[k] = { had: k in globalThis, val: globalThis[k] };
@@ -72,15 +68,35 @@ function loadOutboundWithGlobals(overrides = {}) {
 
   for (const m of (overrides.realModules || [])) require(m); // register real THG* globals
 
-  delete globalThis.THGContentOutbound;       // force the IIFE guard to re-run
-  delete require.cache[OUTBOUND];          // force the file to re-execute
-  const O = require(OUTBOUND);
-
   function restore() {
     for (const k of BROWSER_KEYS) { if (saved[k].had) globalThis[k] = saved[k].val; else delete globalThis[k]; }
     for (const k of singletonNames) { const s = saved['s:' + k]; if (s.had) globalThis[k] = s.val; else delete globalThis[k]; }
   }
+  return { restore };
+}
+
+// loadOutboundWithGlobals installs fake globals then requires a FRESH outbound.js (which in
+// turn re-requires a fresh outbound_dom.js via its globalThis.THGOutboundDom || require
+// fallback). Returns { O, api, restore }: O = module.exports (incl. _test); api = the Chrome
+// runtime object (globalThis.THGContentOutbound, exactly the 4 public methods).
+function loadOutboundWithGlobals(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  delete globalThis.THGContentOutbound;   // force outbound's IIFE guard to re-run
+  delete globalThis.THGOutboundDom;        // force a fresh DOM module bind
+  delete require.cache[OUTBOUND];
+  delete require.cache[OUTBOUND_DOM];
+  const O = require(OUTBOUND);
   return { O, api: globalThis.THGContentOutbound, restore };
 }
 
-module.exports = { loadOutboundWithGlobals, makeWindow, makeDocument };
+// loadOutboundDom installs fake globals then requires a FRESH outbound_dom.js directly.
+// Returns { DOM, api, restore }: DOM = module.exports; api = globalThis.THGOutboundDom.
+function loadOutboundDom(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  delete globalThis.THGOutboundDom;
+  delete require.cache[OUTBOUND_DOM];
+  const DOM = require(OUTBOUND_DOM);
+  return { DOM, api: globalThis.THGOutboundDom, restore };
+}
+
+module.exports = { loadOutboundWithGlobals, loadOutboundDom, makeWindow, makeDocument };
