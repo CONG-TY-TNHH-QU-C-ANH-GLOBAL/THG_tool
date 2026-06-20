@@ -31,7 +31,7 @@ function statusTag(status: string): string {
   }
 }
 
-export default function InboxView({ orgId }: InboxViewProps) {
+export default function InboxView({ orgId }: Readonly<InboxViewProps>) {
   const { t } = useLang();
   const tv = t.inboxView;
   const { threads, activeThread, setActiveId, messages, send, isSending, refetch } = useThreads(orgId);

@@ -97,7 +97,7 @@ function usagePercent(current: number, max: number) {
   return Math.min(Math.round((current / max) * 100), 100);
 }
 
-export default function SettingsPage({ org, orgId, isAdmin }: SettingsPageProps) {
+export default function SettingsPage({ org, orgId, isAdmin }: Readonly<SettingsPageProps>) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('brand');
   const { staff, invites, isLoading, invite, resendInvite, revokeInvite, toggleStatus, remove, changeRole } = useStaff(orgId);
   const currentUserId = useAuthStore(state => state.user?.id ?? null);

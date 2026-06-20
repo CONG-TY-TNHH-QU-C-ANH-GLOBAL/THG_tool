@@ -7,7 +7,7 @@ interface Props {
   onSubmit?: (res: SubmitTaskResponse) => void
 }
 
-export function SubmitTask({ onSubmit }: Props) {
+export function SubmitTask({ onSubmit }: Readonly<Props>) {
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<SubmitTaskResponse | null>(null)

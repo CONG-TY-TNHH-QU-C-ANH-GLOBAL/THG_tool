@@ -20,7 +20,7 @@ const ShellSpinner = () => (
   </div>
 );
 
-export default function PlatformShell({ children }: PlatformShellProps) {
+export default function PlatformShell({ children }: Readonly<PlatformShellProps>) {
   const router = useRouter();
   const { user, hydrated } = useAuth();
   const { role, setRole } = useRoleStore();

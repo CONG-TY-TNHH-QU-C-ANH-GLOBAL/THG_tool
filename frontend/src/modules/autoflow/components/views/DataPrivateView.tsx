@@ -20,7 +20,7 @@ import KnowledgeSourcesPanel from '../knowledge/KnowledgeSourcesPanel';
 
 interface DataPrivateViewProps { orgId: string; isAdmin: boolean; }
 
-export default function DataPrivateView({ orgId, isAdmin }: DataPrivateViewProps) {
+export default function DataPrivateView({ orgId, isAdmin }: Readonly<DataPrivateViewProps>) {
   const { files, isUploading, upload, remove } = useFiles(orgId);
   const { sources, isLoading, isSyncing, add, sync, remove: removeSource } = useDataSources(orgId);
   const [businessContext, setBusinessContext] = useState<BusinessContext>({
