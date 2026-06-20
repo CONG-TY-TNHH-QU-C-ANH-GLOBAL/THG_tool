@@ -21,6 +21,15 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   const { wait, norm, hasAny, visible, labelOf, clickLikeUser, enabledButton,
     textOfEditable, setEditableText, waitFor, dismissBlockingOverlays } = THGDom;
 
+  // PR3 (Workstream A): the Posting layer (executePost/postResult) moved to
+  // content/posting_outbound.js (THGPostingOutbound), manifest-loaded before this file. The
+  // facade's group_post/profile_post dispatch delegates to it. Same guarded-fallback shape.
+  const THGPosting = globalThis.THGPostingOutbound
+    || (typeof require === 'function' ? require('./posting_outbound.js') : null);
+  if (!THGPosting) {
+    throw new Error('THGPostingOutbound is required before outbound.js');
+  }
+
   function editorContainsContent(editor, content) {
     if (!editor || !document.contains(editor)) return false;
     const current = norm(textOfEditable(editor)).replace(/\s+/g, ' ');
@@ -889,47 +898,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       : { ok: false, error: errorCode || 'inbox_failed' };
     return proof ? { ...base, proof } : base;
   }
-
-  async function executePost(content, executionId = '') {
-    await dismissBlockingOverlays();
-    const composerKeys = ["what's on your mind", 'write something', 'create a public post', 'ban dang nghi gi', 'viet gi do'];
-    const postKeys = ['post', 'dang'];
-    const ctx = { content, executionId };
-    const composer = Array.from(document.querySelectorAll('div[role="button"], button, textarea, [contenteditable="true"], [aria-label]'))
-      .filter(el => visible(el))
-      .find(el => hasAny(labelOf(el), composerKeys));
-    if (!composer || !clickLikeUser(composer)) return postResult(false, 'post_composer_not_found', null, ctx);
-    await wait(1500);
-    const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
-    let editor = editors.find(el => norm(el.getAttribute('role')) === 'textbox') || editors[editors.length - 1];
-    if (!editor) return postResult(false, 'post_editor_not_found', null, ctx);
-    if (!setEditableText(editor, content)) return postResult(false, 'post_text_insert_failed', null, ctx);
-    await wait(900);
-    const scope = editor.closest('[role="dialog"], form') || document;
-    const postButton = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(el => visible(el)).reverse().find(el => {
-      const label = labelOf(el);
-      return hasAny(label, postKeys) && !label.includes('comment') && !label.includes('cancel') &&
-        el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
-    });
-    if (!postButton || !clickLikeUser(postButton)) return postResult(false, 'post_submit_not_found', null, ctx);
-    // Generous settle — posting closes the composer dialog and re-renders
-    // the feed; we need both to complete before walking the DOM for proof.
-    await wait(2500);
-    return postResult(true, '', 'sent_post_button', ctx);
-  }
-
-  function postResult(ok, errorCode, detail, ctx) {
-    const proof = THGContentProof ? THGContentProof.buildPostProof({
-      ok, errorCode, content: ctx.content
-    }) : null;
-    if (proof && ctx && ctx.executionId) {
-      proof.execution_id = ctx.executionId;
-    }
-    const base = ok
-      ? { ok: true, detail: detail || 'sent_post' }
-      : { ok: false, error: errorCode || 'post_failed' };
-    return proof ? { ...base, proof } : base;
-  }
+  // PR3: executePost + postResult moved to content/posting_outbound.js (THGPostingOutbound).
 
   // executeCommentInFeed is Path 2's content-script entry point. The
   // background-side outbox flow (src/outbox.js::executeInGroupFeed) has
@@ -1239,7 +1208,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     };
     if (type === 'comment') return executeComment(content, targetUrl, executionId, navOpts);
     if (type === 'inbox') return executeInbox(content, executionId);
-    if (type === 'group_post' || type === 'profile_post') return executePost(content, executionId);
+    if (type === 'group_post' || type === 'profile_post') return THGPosting.executePost(content, executionId);
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
 

@@ -80,7 +80,9 @@ const REAL_MODULES = [
   // so PR2 can extend it for outbound_dom.js / outbound_identity.js / outbound_diag.js.
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
   const js = manifest.content_scripts[0].js;
-  const idx = (needle) => js.findIndex((p) => p.includes(needle));
+  // Match the exact filename (endsWith '/<name>') — a bare includes() would let 'outbound.js'
+  // also match 'posting_outbound.js' / 'outbound_dom.js'.
+  const idx = (needle) => js.findIndex((p) => p.endsWith('/' + needle));
   function assertLoadsBefore(provider, consumer) {
     const p = idx(provider); const c = idx(consumer);
     assert.ok(p !== -1, 'manifest lists provider ' + provider);
@@ -92,6 +94,9 @@ const REAL_MODULES = [
   assertLoadsBefore('comment_button.js', 'outbound.js');
   // PR2: the shared DOM primitives module must load before its only consumer (outbound.js).
   assertLoadsBefore('outbound_dom.js', 'outbound.js');
+  // PR3: posting layer loads after the DOM primitives it consumes, before the facade.
+  assertLoadsBefore('outbound_dom.js', 'posting_outbound.js');
+  assertLoadsBefore('posting_outbound.js', 'outbound.js');
   assertLoadsBefore('comment_constants.js', 'outbound.js');
   assertLoadsBefore('comment_submit.js', 'outbound.js');
   assertLoadsBefore('comment_state_machine.js', 'outbound.js');
