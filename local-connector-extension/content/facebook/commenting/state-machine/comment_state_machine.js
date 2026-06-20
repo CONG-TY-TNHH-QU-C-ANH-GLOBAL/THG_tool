@@ -10,7 +10,7 @@
 // Shared DOM helpers + outboundId + executorPath are threaded in via `deps`.
 var THGCommentSM = globalThis.THGCommentSM || (() => {
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../constants/comment_constants.js'));
   const { TIMING } = K;
   const DEBUG_COMPOSER = true; // flip false to silence telemetry after the incident
   const EXT_VERSION = (() => { try { return chrome.runtime.getManifest().version; } catch (_) { return ''; } })();

@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const env = require('./outbound_test_env');
 
-const REAL = ['../content/comment_composer', '../content/comment_constants', '../content/proof', '../content/navreport'];
+const REAL = ['../content/facebook/commenting/composer/comment_composer', '../content/facebook/commenting/constants/comment_constants', '../content/proof', '../content/navreport'];
 
 // --- module-scope cooperative-DOM factory (no per-test mutable state) ----------------
 const ID = '123456';
@@ -143,7 +143,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
       {
         const dom = makeDom(ID);
         stubs.THGCommentComposer.findComposerEntry = () => ({ el: dom.editor, reason: 'ok', candidates: [] });
-        const { api: a2, restore: r2 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
+        const { api: a2, restore: r2 } = env.loadCommentingOutbound({ realModules: ['../content/facebook/commenting/constants/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
         try {
           const r = await a2.executeComment('hello world', 'https://www.facebook.com/groups/1/posts/' + ID + '/', 'exec-ok');
           assert.strictEqual(r.ok, true, 'success path: ok=true');
@@ -155,7 +155,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
       { // (b) gate-3 editor drift → context_drift (editor's article belongs to a DIFFERENT post)
         const dom = makeDom('999999');
         stubs.THGCommentComposer.findComposerEntry = () => ({ el: dom.editor, reason: 'ok', candidates: [] });
-        const { api: a3, restore: r3 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
+        const { api: a3, restore: r3 } = env.loadCommentingOutbound({ realModules: ['../content/facebook/commenting/constants/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
         try {
           const r = await a3.executeComment('hello world', 'https://www.facebook.com/groups/1/posts/' + ID + '/', 'exec-drift');
           assert.strictEqual(r.ok, false, 'gate-3: ok=false');
@@ -167,7 +167,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
       { // (c) executeCommentInFeed success path (findCommentEditor resolves the editor in feed)
         const dom = makeDom(ID);
         stubs.THGCommentComposer.findComposerEntry = () => ({ el: dom.editor, reason: 'ok', candidates: [] });
-        const { api: a4, restore: r4 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
+        const { api: a4, restore: r4 } = env.loadCommentingOutbound({ realModules: ['../content/facebook/commenting/constants/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
         try {
           const r = await a4.executeCommentInFeed({ content: 'hello world', post_id: ID, execution_id: 'exec-feed' });
           assert.strictEqual(r.ok, true, 'feed success: ok=true');
@@ -176,7 +176,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
       }
 
       { // (d) executeCommentInFeed with no post id → early comment_target_not_post_permalink
-        const { api: a5, restore: r5 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs });
+        const { api: a5, restore: r5 } = env.loadCommentingOutbound({ realModules: ['../content/facebook/commenting/constants/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs });
         try {
           const r = await a5.executeCommentInFeed({ content: 'hi', execution_id: 'e' });
           assert.strictEqual(r.ok, false, 'feed no-post-id: ok=false');
@@ -189,7 +189,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
     }
 
     // ---- Diagnostics independence scans (trap 6/7) ----------------------------------
-    const diagSrc = fs.readFileSync(path.join(__dirname, '..', 'content', 'commenting_diag.js'), 'utf8');
+    const diagSrc = fs.readFileSync(path.join(__dirname, '..', 'content', 'facebook', 'outbound', 'commenting', 'commenting_diag.js'), 'utf8');
     assert.ok(!diagSrc.includes('THGCommentingOutbound'), 'commenting_diag.js must not reference THGCommentingOutbound');
     assert.ok(!diagSrc.includes("require('./commenting_outbound.js')"), 'commenting_diag.js must not require commenting_outbound.js');
     assert.ok(!diagSrc.includes('executeComment'), 'commenting_diag.js must not call the executor');

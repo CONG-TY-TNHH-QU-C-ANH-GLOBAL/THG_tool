@@ -8,7 +8,7 @@
 // wrong_post on a positive 'foreign' id match.
 const assert = require('assert');
 const { makeEl, makeArticle, sizeVisible } = require('./fake_dom');
-const C = require('../content/comment_composer');
+const C = require('../content/facebook/commenting/composer/comment_composer');
 
 // The exact live shape from the operator's manual DOM probe.
 const liveAnswerBox = () => makeEl({

@@ -12,7 +12,7 @@
 // now) so it is unit-testable with plain fake nodes — no jsdom.
 var THGCommentButton = globalThis.THGCommentButton || (() => {
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../constants/comment_constants.js'));
   const COMMENT_KEYS = K.COMMENT_KEYS;
   const BUTTON_SEL = 'div[role="button"], button, a[role="button"], span[role="button"], [aria-label]';
 

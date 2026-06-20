@@ -14,12 +14,12 @@ const path = require('node:path');
 const { loadOutboundWithGlobals } = require('./outbound_test_env');
 
 const REAL_MODULES = [
-  '../content/comment_composer', '../content/comment_button', '../content/comment_constants',
+  '../content/facebook/commenting/composer/comment_composer', '../content/facebook/commenting/button/comment_button', '../content/facebook/commenting/constants/comment_constants',
   '../content/proof', '../content/navreport',
 ];
 
 (async () => {
-  // SMOKE: require('../content/outbound.js') must succeed under the minimal fake browser
+  // SMOKE: require('../content/facebook/outbound/outbound.js') must succeed under the minimal fake browser
   // globalThis setup (no DOM library). If this throws, the stack names the offending globalThis.
   const { O, api, restore } = loadOutboundWithGlobals({ realModules: REAL_MODULES });
   try {

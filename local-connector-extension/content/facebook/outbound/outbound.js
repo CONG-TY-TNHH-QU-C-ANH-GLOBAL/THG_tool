@@ -6,17 +6,17 @@
 globalThis.THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // Each layer is manifest-loaded before this file; guarded fallback for Node tests.
   const THGPosting = globalThis.THGPostingOutbound
-    || (typeof require === 'function' ? require('./posting_outbound.js') : null);
+    || (typeof require === 'function' ? require('./posting/posting_outbound.js') : null);
   if (!THGPosting) {
     throw new Error('THGPostingOutbound is required before outbound.js');
   }
   const THGInbox = globalThis.THGInboxOutbound
-    || (typeof require === 'function' ? require('./inbox_outbound.js') : null);
+    || (typeof require === 'function' ? require('./inbox/inbox_outbound.js') : null);
   if (!THGInbox) {
     throw new Error('THGInboxOutbound is required before outbound.js');
   }
   const THGCommenting = globalThis.THGCommentingOutbound
-    || (typeof require === 'function' ? require('./commenting_outbound.js') : null);
+    || (typeof require === 'function' ? require('./commenting/commenting_outbound.js') : null);
   if (!THGCommenting) {
     throw new Error('THGCommentingOutbound is required before outbound.js');
   }

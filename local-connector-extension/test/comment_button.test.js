@@ -7,9 +7,9 @@
 // aria="Write an answer…".
 const assert = require('assert');
 const { makeEl, makeArticle, sizeVisible } = require('./fake_dom');
-require('../content/comment_composer'); // sets globalThis.THGCommentComposer (button.js depends on it)
-const B = require('../content/comment_button');
-const K = require('../content/comment_constants');
+require('../content/facebook/commenting/composer/comment_composer'); // sets globalThis.THGCommentComposer (button.js depends on it)
+const B = require('../content/facebook/commenting/button/comment_button');
+const K = require('../content/facebook/commenting/constants/comment_constants');
 
 // S6 lock-in: the comment vocabulary is sourced from the ONE shared constants module
 // (no per-file re-declaration that can drift). comment_button.js must expose exactly it.

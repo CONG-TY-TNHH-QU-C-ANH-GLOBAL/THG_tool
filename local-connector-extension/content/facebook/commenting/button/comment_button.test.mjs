@@ -6,7 +6,7 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-require('./comment_composer.js'); // sets globalThis.THGCommentComposer (composer delegation)
+require('../composer/comment_composer.js'); // sets globalThis.THGCommentComposer (composer delegation)
 const CB = require('./comment_button.js');
 
 const visible = () => true;

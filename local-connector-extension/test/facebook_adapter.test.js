@@ -7,7 +7,7 @@ require('../automation/adapter_contract');
 const Registry = require('../automation/channel_registry');
 const Contract = require('../automation/adapter_contract');
 require('../automation/candidate_schema');
-require('../content/comment_composer');
+require('../content/facebook/commenting/composer/comment_composer');
 // FB adapter pieces (adapter.js self-registers into the registry on require).
 const targetLocator = require('../channels/facebook/target_locator');
 const failureReasons = require('../channels/facebook/failure_reasons');

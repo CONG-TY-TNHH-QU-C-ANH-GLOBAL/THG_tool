@@ -9,14 +9,14 @@
 // (loaded after commenting_diag.js, before outbound.js); Node: module.exports (+ _test).
 globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   const THGDom = globalThis.THGOutboundDom
-    || (typeof require === 'function' ? require('./outbound_dom.js') : null);
+    || (typeof require === 'function' ? require('../dom/outbound_dom.js') : null);
   if (!THGDom) {
     throw new Error('THGOutboundDom is required before commenting_outbound.js');
   }
   const { wait, norm, hasAny, visible, labelOf, clickLikeUser, enabledButton,
     textOfEditable, waitFor, dismissBlockingOverlays } = THGDom;
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../../commenting/constants/comment_constants.js'));
   const THGTarget = globalThis.THGCommentingTarget
     || (typeof require === 'function' ? require('./commenting_target.js') : null);
   if (!THGTarget) {

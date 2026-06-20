@@ -9,7 +9,7 @@
 // so nothing here is duplicated or a magic number.
 var THGCommentSubmit = globalThis.THGCommentSubmit || (() => {
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('./comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../constants/comment_constants.js'));
   const { SUBMIT_KEYS, REJECT_KEYS, SPATIAL, TIMING } = K;
 
   function rejectActionLabel(label, d) { return d.hasAny(label, REJECT_KEYS); }

@@ -10,7 +10,7 @@ globalThis.document = globalThis.document || { querySelectorAll: () => [] };
 
 const require = createRequire(import.meta.url);
 const S = require('./comment_submit.js');
-const K = require('./comment_constants.js');
+const K = require('../constants/comment_constants.js');
 // Mirrors outbound.js norm: lowercase + strip diacritics (so 'Bình luận' → 'binh luan').
 const norm = (v) => String(v == null ? '' : v)
   .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim();
