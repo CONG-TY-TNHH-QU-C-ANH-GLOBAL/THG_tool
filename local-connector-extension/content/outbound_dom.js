@@ -3,7 +3,8 @@
 // move-only). No identity/diagnostics/proof/executor logic. Chrome: globalThis.THGOutboundDom
 // (manifest-loaded before outbound.js); Node: module.exports. Guards below (PR8C/PR8D/PR-DUP) — do
 // NOT loosen; full forensic rationale is in git history.
-var THGOutboundDom = globalThis.THGOutboundDom || (() => {
+// Assign onto globalThis (no `var`) — `|| ` keeps re-injection idempotent, no lexical redeclare.
+globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const norm = (value) => String(value || '')
     .normalize('NFD')
@@ -14,6 +15,7 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
   const hasAny = (value, keys) => keys.some(key => value.includes(key));
   // execKey: deprecated editing-command DOM API via a computed key (token never literal); receiver stays `document`.
   const execKey = 'exec' + 'Command';
+  function ignoreErr(e, ctx) { if (globalThis.__THG_OUTBOUND_DOM_DEBUG__) console.debug(`[THGOutboundDom] ${ctx}`, e); }
 
   function visible(el) {
     if (!el) return false;
@@ -33,7 +35,7 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
   function dispatchMouseLike(el, type, x, y, extra = {}) {
     try {
       el.dispatchEvent(new MouseEvent(type, eventInit(x, y, extra)));
-    } catch (_) { /* synthetic event dispatch is best-effort; ignore */ }
+    } catch (e) { ignoreErr(e, 'mouse'); }
   }
 
   function dispatchPointerLike(el, type, x, y, extra = {}) {
@@ -46,21 +48,20 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
         buttons: type.endsWith('down') ? 1 : 0,
         ...extra
       })));
-    } catch (_) { /* synthetic event dispatch is best-effort; ignore */ }
+    } catch (e) { ignoreErr(e, 'pointer'); }
   }
 
   function enabledButton(el) {
     return el && el.getAttribute?.('aria-disabled') !== 'true' && !el.disabled;
   }
 
-  // clickLikeUser fires pointer→mouse→click at the element centre, RE-VALIDATING at click
-  // time and returning false (not true) on null/detached/invisible/disabled — so the submit
-  // SM never treats a no-op click on a ghost node as success. Do NOT revert to `return true`.
+  // clickLikeUser: pointer→mouse→click at centre; RE-VALIDATES at click time, returns false on
+  // null/detached/invisible/disabled (a no-op is never reported as success). Do NOT `return true`.
   function clickLikeUser(el) {
     if (!el) return false;
     if (el.isConnected === false) return false;
     if (!visible(el) || !enabledButton(el)) return false;
-    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) { /* scroll is best-effort */ }
+    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) { ignoreErr(e, 'click'); }
     const rect = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
     const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
@@ -84,14 +85,14 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
   // FB logo got clicked → home pushState → every comment failed target_not_reached.
   function labelMatchesDismiss(label, keys) {
     return keys.some((key) => {
-      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp('(^|\\W)' + escaped + '($|\\W)').test(label);
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+      return new RegExp(String.raw`(^|\W)` + escaped + String.raw`($|\W)`).test(label);
     });
   }
 
   // PR8D.1: true if el is inside a dialog/article with a post-permalink anchor — never dismiss a control of the target post (its Close/X → home).
   function isInsidePostContainer(el) {
-    const container = el.closest && el.closest('[role="dialog"], [role="article"]');
+    const container = el.closest?.('[role="dialog"], [role="article"]');
     if (!container) return false;
     return !!container.querySelector(
       'a[href*="/posts/"], a[href*="/permalink/"], a[href*="story_fbid="], a[href*="/videos/"], a[href*="/reel/"], a[href*="/share/"]'
@@ -102,7 +103,7 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
   // (word-boundary label + nav-link + post-container + button-shape) — do NOT loosen.
   async function dismissBlockingOverlays() {
     const labels = ['not now', 'later', 'maybe later', 'remember password', 'de sau', 'luc khac', 'khong phai bay gio'];
-    const candidates = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const candidates = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
     for (const el of candidates) {
       const role = norm(el.getAttribute?.('role'));
       const isNavLink = role === 'link' || (el.tagName === 'A' && !!el.getAttribute?.('href') && role !== 'button');
@@ -157,17 +158,17 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
     } catch (_) {
       editor.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    try { editor.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) { /* change event is best-effort; ignore */ }
+    try { editor.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) { ignoreErr(e, 'editable'); }
   }
 
   // PR8D + PR-DUP: clear any FB-restored draft (bounded 6× loop) BEFORE insertText, else it APPENDS → dup comment.
   function setEditableText(editor, text) {
-    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (_) { /* focus is best-effort; ignore */ } }
+    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (e) { ignoreErr(e, 'editable'); } }
     if (editor.isContentEditable) {
       for (let i = 0; i < 6; i += 1) {
         if (norm(textOfEditable(editor)).length === 0) break;
         selectEditableContents(editor);
-        try { document[execKey]('delete', false, null); } catch (_) { /* draft clear is best-effort; ignore */ }
+        try { document[execKey]('delete', false, null); } catch (e) { ignoreErr(e, 'editable'); }
       }
       selectEditableContents(editor);
       document[execKey]('insertText', false, text);
@@ -196,5 +197,4 @@ var THGOutboundDom = globalThis.THGOutboundDom || (() => {
     textOfEditable, setInputValue, selectEditableContents, emitEditableInput, setEditableText, waitFor,
   };
 })();
-globalThis.THGOutboundDom = THGOutboundDom;
-if (typeof module !== 'undefined' && module.exports) module.exports = THGOutboundDom;
+if (typeof module !== 'undefined' && module.exports) module.exports = globalThis.THGOutboundDom;
