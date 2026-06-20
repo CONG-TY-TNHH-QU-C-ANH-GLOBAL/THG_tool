@@ -198,7 +198,7 @@ function leadSearchValue(lead: Lead) {
     .toLowerCase();
 }
 
-export default function LeadsView({ orgId, isAdmin }: LeadsViewProps) {
+export default function LeadsView({ orgId, isAdmin }: Readonly<LeadsViewProps>) {
   const { lang, t } = useLang();
   const tv = t.leadsView;
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';

@@ -64,7 +64,7 @@ function postStatusTag(msg: Pick<OutboundMessage, 'execution_state' | 'verificat
   return 'tag tag-hot';
 }
 
-export default function PostingView({ orgId, isAdmin }: PostingViewProps) {
+export default function PostingView({ orgId, isAdmin }: Readonly<PostingViewProps>) {
   const [messages, setMessages] = useState<OutboundMessage[]>([]);
   const [filter, setFilter] = useState<PostFilter>('all');
   const [loading, setLoading] = useState(true);

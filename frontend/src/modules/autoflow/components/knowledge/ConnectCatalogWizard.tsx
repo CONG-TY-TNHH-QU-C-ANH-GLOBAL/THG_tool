@@ -34,7 +34,7 @@ interface ConnectCatalogWizardProps {
  * onConnected so the operator sees "X products synced" immediately
  * instead of waiting for the next scheduled tick.
  */
-export default function ConnectCatalogWizard({ onConnected, onCancel }: ConnectCatalogWizardProps) {
+export default function ConnectCatalogWizard({ onConnected, onCancel }: Readonly<ConnectCatalogWizardProps>) {
   const [presetId, setPresetId] = useState<string>(ADAPTER_PRESETS[0]?.id ?? '');
   const preset = useMemo<AdapterPreset | undefined>(() => findPreset(presetId), [presetId]);
   const [baseUrl, setBaseUrl] = useState<string>(preset?.baseUrl ?? '');

@@ -109,7 +109,7 @@ function workspaceIdentityLabel(workspace: {
     || workspace.accountName;
 }
 
-export default function WorkspaceChatView({ orgId }: WorkspaceChatViewProps) {
+export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewProps>) {
   void orgId;
   const { lang, t } = useLang();
   const tv = t.chatView;

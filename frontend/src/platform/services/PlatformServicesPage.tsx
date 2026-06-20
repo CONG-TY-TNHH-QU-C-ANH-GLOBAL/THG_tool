@@ -16,7 +16,7 @@ const TONE_BADGE: Record<PresentationTone, string> = {
   neutral: styles.badgeSoon,
 };
 
-function ServiceCard({ svc, lang, onNavigate }: { svc: PlatformService; lang: 'vi' | 'en'; onNavigate: (href: string) => void }) {
+function ServiceCard({ svc, lang, onNavigate }: Readonly<{ svc: PlatformService; lang: 'vi' | 'en'; onNavigate: (href: string) => void }>) {
   const ux = resolveWorkspacePresentation(svc, lang);
   const action = ux.primaryAction;
   const clickable = action !== null && action.enabled;

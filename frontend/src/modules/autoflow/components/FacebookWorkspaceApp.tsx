@@ -87,7 +87,7 @@ const Spinner = () => (
   </div>
 );
 
-export default function FacebookWorkspaceApp({ workspaceId }: FacebookWorkspaceAppProps) {
+export default function FacebookWorkspaceApp({ workspaceId }: Readonly<FacebookWorkspaceAppProps>) {
   const { t } = useLang();
   const { role } = useRoleStore();
   const isAdmin = role === 'admin' || isPlatformRole(role);

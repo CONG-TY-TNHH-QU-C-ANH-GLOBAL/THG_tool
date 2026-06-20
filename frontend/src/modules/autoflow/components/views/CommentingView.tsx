@@ -97,7 +97,7 @@ function statusLabel(msg: Pick<OutboundMessage, 'execution_state' | 'verificatio
   return String(state).toUpperCase();
 }
 
-export default function CommentingView({ orgId, isAdmin }: CommentingViewProps) {
+export default function CommentingView({ orgId, isAdmin }: Readonly<CommentingViewProps>) {
   void orgId;
   const { lang, t } = useLang();
   const tv = t.commentingView;
