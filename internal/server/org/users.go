@@ -11,10 +11,6 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// errUserNotFound is the byte-identical 404 message shared by the org user
-// handlers, factored out to avoid a duplicated string literal (go:S1192).
-const errUserNotFound = "user not found"
-
 func (h *Handler) adminUpdateUser(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
@@ -31,13 +27,13 @@ func (h *Handler) adminUpdateUser(c *fiber.Ctx) error {
 	}
 	user, err := h.deps.DB.GetUserByID(id)
 	if err != nil || user == nil {
-		return c.Status(404).JSON(fiber.Map{"error": errUserNotFound})
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
 	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
 	if !callerIsPlatform && user.OrgID != callerOrgID {
-		return c.Status(404).JSON(fiber.Map{"error": errUserNotFound})
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 	if !callerIsPlatform && models.IsPlatformRole(user.Role) {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
@@ -85,13 +81,13 @@ func (h *Handler) adminDeleteUser(c *fiber.Ctx) error {
 	}
 	user, err := h.deps.DB.GetUserByID(id)
 	if err != nil || user == nil {
-		return c.Status(404).JSON(fiber.Map{"error": errUserNotFound})
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
 	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
 	if !callerIsPlatform && user.OrgID != callerOrgID {
-		return c.Status(404).JSON(fiber.Map{"error": errUserNotFound})
+		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 	if models.IsPlatformRole(user.Role) {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
