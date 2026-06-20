@@ -146,7 +146,7 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   // the one thing the permalink-page identity relaxation must still positively exclude.
   function isCreatePostComposer(el) {
     const C = globalThis.THGCommentComposer;
-    if (!el || !el.getAttribute || !C || !C.CREATE_POST_KEYS) return false;
+    if (!el?.getAttribute || !C?.CREATE_POST_KEYS) return false;
     const raw = [el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || '',
       (el.parentElement?.textContent || '').slice(0, 80)].join(' ').toLowerCase();
     return C.CREATE_POST_KEYS.some((k) => raw.includes(k));

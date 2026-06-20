@@ -62,7 +62,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     };
     const reason = THGCommentButton.classifyGate1Failure(gates);
     const navDiag = navDiagFor('gate1_' + reason, 'gate1', gates, ctxInfo);
-    const rc = navDiag && navDiag.redirect_class ? navDiag.redirect_class : 'unknown';
+    const rc = navDiag?.redirect_class || 'unknown';
     console.warn('[THG outbound.executeComment] gate1 FAIL ' + reason,
       { target_url: targetUrl, target_id: targetPostId, landed_at_fail: landed,
         nav_at_entry: navAtEntry, redirect_class: rc, gates,
@@ -217,7 +217,8 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   }
 
   // submitCommentViaSM — runs the shared composer->submit state machine, then builds the result.
-  async function submitCommentViaSM(editor, content, commentButton, permalinkPage, opts, ctx, targetPostId, ctxInfo) {
+  async function submitCommentViaSM(args) {
+    const { editor, content, commentButton, permalinkPage, opts, ctx, targetPostId, ctxInfo } = args;
     const sm = await THGCommentSM.runComposerToSubmit(editor, content, commentButton, {
       executorPath: permalinkPage ? 'permalink_page' : 'permalink_article',
       outboundId: opts.outboundId || 0,
@@ -273,7 +274,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
     const drift = checkEditorGate3(editor, targetPostId, permalinkPage, ctx, ctxInfo);
     if (drift) return drift;
 
-    return submitCommentViaSM(editor, content, commentButton, permalinkPage, opts, ctx, targetPostId, ctxInfo);
+    return submitCommentViaSM({ editor, content, commentButton, permalinkPage, opts, ctx, targetPostId, ctxInfo });
   }
 
   // abbreviate keeps identity-gate failure notes short. pfbid tokens run

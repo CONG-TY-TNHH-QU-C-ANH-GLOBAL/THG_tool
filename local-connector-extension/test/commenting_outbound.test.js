@@ -1,14 +1,7 @@
 // PR5 characterization — Commenting layer (executeComment + result + nav_diagnostic).
-//   Run: node local-connector-extension/test/commenting_outbound.test.js
-//   CI:  node --test (auto-discovered)
-//
-// Locks the EXACT comment return/proof/nav_diagnostic contract BEFORE the extraction and
-// re-runs unchanged AFTER it. The facade section goes through THGContentOutbound.executeOutbound
-// so it is agnostic to whether executeComment lives in outbound.js (pre-PR5) or
-// commenting_outbound.js (post-PR5). The direct + diag-independence sections only run once the
-// PR5 modules/loaders exist.
-//
-// Sequential by construction (single load; no concurrency).
+//   Run: node local-connector-extension/test/commenting_outbound.test.js  |  CI: node --test
+// Locks the EXACT comment return/proof/nav_diagnostic contract; facade section is agnostic to
+// where executeComment lives. Sequential by construction (single load; no concurrency).
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -16,8 +9,49 @@ const env = require('./outbound_test_env');
 
 const REAL = ['../content/comment_composer', '../content/comment_constants', '../content/proof', '../content/navreport'];
 
-// Comment proof = buildCommentProof()'s emptyProof() fields + execution_id echo + the
-// comment-only nav_diagnostic. 13 keys, snake_case where multi-word.
+// --- module-scope cooperative-DOM factory (no per-test mutable state) ----------------
+const ID = '123456';
+const attrOf = (m) => (n) => (n in m ? m[n] : null);
+const mk = (p) => ({
+  getBoundingClientRect: () => ({ left: 10, top: 10, width: 50, height: 20 }),
+  getAttribute: () => null, closest: () => null, querySelector: () => null,
+  querySelectorAll: () => [], isConnected: true, disabled: false,
+  scrollIntoView() {}, dispatchEvent() {}, click() {}, focus() {},
+  ...p,
+});
+// makeDom: cooperative DOM where target article (id=ID) resolves immediately; editorArticleId
+// sets which post the editor belongs to (for the gate-3 drift case). Returns { doc, editor }.
+function makeDom(editorArticleId) {
+  const anchor = mk({ getAttribute: attrOf({ href: '/groups/1/posts/' + ID + '/' }) });
+  const editAnchor = mk({ getAttribute: attrOf({ href: '/groups/1/posts/' + editorArticleId + '/' }) });
+  const commentBtn = mk({ innerText: 'Comment', getAttribute: attrOf({ role: 'button', 'aria-label': 'Comment' }) });
+  const article = mk({ getAttribute: attrOf({ role: 'article' }) });
+  const editorArticle = (editorArticleId === ID) ? article : mk({ getAttribute: attrOf({ role: 'article' }), querySelectorAll: (s) => (s.includes('/posts/') ? [editAnchor] : []) });
+  const editor = mk({ isContentEditable: true, getAttribute: attrOf({ role: 'textbox', 'aria-label': 'Write a comment' }) });
+  article.querySelectorAll = (s) => {
+    if (s.includes('role="button"')) return [commentBtn];
+    if (s.includes('/posts/')) return [anchor];
+    if (s.includes('contenteditable')) return [editor];
+    return [];
+  };
+  article.querySelector = (s) => (s.includes('/posts/') ? anchor : null);
+  editor.closest = () => editorArticle;
+  commentBtn.closest = () => article;
+  const doc = {
+    cookie: '', title: '', documentElement: { innerHTML: '' }, body: { innerText: '' }, contains: () => true,
+    createRange: () => ({ selectNodeContents() {} }), createElement: () => mk({}),
+    querySelector: (s) => (s.includes('/posts/') ? anchor : null),
+    querySelectorAll: (s) => {
+      if (s.includes('role="article"')) return [article];
+      if (s.includes('role="button"')) return [commentBtn];
+      if (s.includes('/posts/')) return [anchor];
+      return [];
+    },
+  };
+  return { doc, editor };
+}
+
+// Comment proof = buildCommentProof()'s emptyProof() fields + execution_id + nav_diagnostic (13).
 const EXPECTED_COMMENT_PROOF_KEYS = [
   'bubble_fresh', 'comment_permalink', 'count_increased', 'dom_snippet', 'duplicate',
   'execution_id', 'failure_reason', 'message_bubble_id', 'nav_diagnostic', 'node_matched',
@@ -96,38 +130,9 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
       restore();
     }
 
-    // ---- Success path + gate-3 drift (cooperative DOM + stubbed comment siblings) ----
-    // Protects the executeComment phase-helper extraction: drives the whole happy path
-    // (gate-1 stable → button → gate-2 → editor acquire → gate-3 → SM submit) and the
-    // gate-3 editor-drift abort. Fast because findTargetArticle resolves immediately.
+    // ---- Success path + gate-3 drift (cooperative DOM + stubbed siblings) — protects the
+    //      executeComment phase-helper extraction (happy path + editor-drift abort). ----
     {
-      const ID = '123456';
-      const mk = (p) => Object.assign({
-        getBoundingClientRect: () => ({ left: 10, top: 10, width: 50, height: 20 }),
-        getAttribute: () => null, closest: () => null, querySelector: () => null,
-        querySelectorAll: () => [], isConnected: true, disabled: false,
-        scrollIntoView() {}, dispatchEvent() {}, click() {}, focus() {},
-      }, p);
-      function makeDom(editorArticleId) {
-        const anchor = mk({ getAttribute: (n) => (n === 'href' ? '/groups/1/posts/' + ID + '/' : null) });
-        const editAnchor = mk({ getAttribute: (n) => (n === 'href' ? '/groups/1/posts/' + editorArticleId + '/' : null) });
-        const commentBtn = mk({ innerText: 'Comment', getAttribute: (n) => (n === 'role' ? 'button' : (n === 'aria-label' ? 'Comment' : null)) });
-        const article = mk({ getAttribute: (n) => (n === 'role' ? 'article' : null) });
-        const editorArticle = (editorArticleId === ID) ? article : mk({ getAttribute: (n) => (n === 'role' ? 'article' : null), querySelectorAll: (s) => (s.includes('/posts/') ? [editAnchor] : []) });
-        const editor = mk({ isContentEditable: true, getAttribute: (n) => (n === 'role' ? 'textbox' : (n === 'aria-label' ? 'Write a comment' : null)) });
-        const artQSA = (s) => { if (s.includes('role="button"')) return [commentBtn]; if (s.includes('/posts/')) return [anchor]; if (s.includes('contenteditable')) return [editor]; return []; };
-        article.querySelectorAll = artQSA;
-        article.querySelector = (s) => (s.includes('/posts/') ? anchor : null);
-        editor.closest = () => editorArticle;
-        commentBtn.closest = () => article;
-        const doc = {
-          cookie: '', title: '', documentElement: { innerHTML: '' }, body: { innerText: '' }, contains: () => true,
-          createRange: () => ({ selectNodeContents() {} }), createElement: () => mk({}),
-          querySelector: (s) => (s.includes('/posts/') ? anchor : null),
-          querySelectorAll: (s) => { if (s.includes('role="article"')) return [article]; if (s.includes('role="button"')) return [commentBtn]; if (s.includes('/posts/')) return [anchor]; return []; },
-        };
-        return { doc, editor };
-      }
       const stubs = {
         THGCommentComposer: { hostVerdict: () => 'target', CREATE_POST_KEYS: ['create a public post'], findComposerEntry: null },
         THGCommentButton: { commentSurfaceState: () => ({ found: true }), discoverCommentSurface: async () => ({ found: true }), diagnostics: () => ({ comment_button_found: true, composer_entry_found: true, gate1_passed_via: 'x', composer_candidates: [], textbox_candidates_count: 0, contenteditable_candidates_count: 0 }), classifyGate1Failure: () => 'target_not_reached' },
@@ -143,13 +148,12 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
           const r = await a2.executeComment('hello world', 'https://www.facebook.com/groups/1/posts/' + ID + '/', 'exec-ok');
           assert.strictEqual(r.ok, true, 'success path: ok=true');
           assert.strictEqual(r.detail, 'sent_comment', 'success path: detail sent_comment');
-          assert.ok(r.proof && r.proof.execution_id === 'exec-ok', 'success path: proof + execution_id echoed');
+          assert.ok(r.proof?.execution_id === 'exec-ok', 'success path: proof + execution_id echoed');
         } finally { r2(); }
       }
 
-      // (b) gate-3 editor drift → context_drift (editor's article id != target, feed page)
-      {
-        const dom = makeDom('999999'); // editor belongs to a DIFFERENT post
+      { // (b) gate-3 editor drift → context_drift (editor's article belongs to a DIFFERENT post)
+        const dom = makeDom('999999');
         stubs.THGCommentComposer.findComposerEntry = () => ({ el: dom.editor, reason: 'ok', candidates: [] });
         const { api: a3, restore: r3 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
         try {
@@ -160,8 +164,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
       }
       console.log('comment success-path + gate-3 characterization: PASS');
 
-      // (c) executeCommentInFeed success path (findCommentEditor resolves the editor in feed)
-      {
+      { // (c) executeCommentInFeed success path (findCommentEditor resolves the editor in feed)
         const dom = makeDom(ID);
         stubs.THGCommentComposer.findComposerEntry = () => ({ el: dom.editor, reason: 'ok', candidates: [] });
         const { api: a4, restore: r4 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs, document: dom.doc });
@@ -172,8 +175,7 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
         } finally { r4(); }
       }
 
-      // (d) executeCommentInFeed with no post id → early comment_target_not_post_permalink
-      {
+      { // (d) executeCommentInFeed with no post id → early comment_target_not_post_permalink
         const { api: a5, restore: r5 } = env.loadCommentingOutbound({ realModules: ['../content/comment_constants', '../content/proof', '../content/navreport'], singletons: stubs });
         try {
           const r = await a5.executeCommentInFeed({ content: 'hi', execution_id: 'e' });
@@ -191,7 +193,6 @@ const EXPECTED_COMMENT_PROOF_KEYS = [
     assert.ok(!diagSrc.includes('THGCommentingOutbound'), 'commenting_diag.js must not reference THGCommentingOutbound');
     assert.ok(!diagSrc.includes("require('./commenting_outbound.js')"), 'commenting_diag.js must not require commenting_outbound.js');
     assert.ok(!diagSrc.includes('executeComment'), 'commenting_diag.js must not call the executor');
-    // navDiagFor receives only plain snapshot context (no DOM nodes / ctx / executorState).
     assert.ok(!/navDiagFor\([^)]*\b(executorState|executorContext|article|editor|button)\b/.test(diagSrc),
       'navDiagFor must not receive executor state / DOM nodes');
     console.log('comment diagnostics-independence scan: PASS');
