@@ -1,12 +1,11 @@
-// PR1 characterization — PURE helpers of content/outbound.js.
+// PR1/PR2 characterization — IDENTITY/misc helpers that remain in content/outbound.js.
 //   Run: node local-connector-extension/test/outbound_helpers.test.js
 //   CI:  node --test (auto-discovered)
 //
-// Loaded via loadOutboundWithGlobals (fake browser globals installed BEFORE require,
-// require cache cleared) so the module is exercised exactly as the extension would, and
-// helpers are read from module.exports._test — NOT from the Chrome runtime globalThis (which
-// must stay at the four public methods). These pin CURRENT behavior before the
-// Comment/Posting/Inbox extraction; they are the regression net for PR2.
+// After PR2 the generic DOM/editable/click/overlay primitives moved to THGOutboundDom
+// (covered by outbound_dom.test.js). This file pins the helpers that STAY in outbound.js —
+// post-identity parsing + small misc — read from module.exports._test (NOT from the Chrome
+// runtime global, which stays at the four public methods).
 //
 // Sequential by construction (single load, no concurrency).
 const assert = require('node:assert');
@@ -16,9 +15,8 @@ const { O, api, restore } = loadOutboundWithGlobals();
 try {
   const T = O._test;
 
-  // Runtime-surface guard belongs everywhere the module loads: the Chrome globalThis must
-  // never carry test helpers (see also outbound_facade.test.js for the full assertion).
-  assert.ok(!('_test' in api), 'runtime globalThis must not expose _test');
+  // Runtime-surface guard: the Chrome global must never carry test helpers.
+  assert.ok(!('_test' in api), 'runtime global must not expose _test');
 
   // ----- extractPostIdFromUrl — identity-gate URL parser + foreign-host guard ---------
   {
@@ -37,17 +35,6 @@ try {
     assert.strictEqual(f('https://www.facebook.com/groups/1/'), '', 'group home, no post id');
   }
 
-  // ----- labelMatchesDismiss — word-boundary matcher (PR8C logo-redirect root cause) --
-  {
-    const f = T.labelMatchesDismiss;
-    assert.strictEqual(f('facebook', ['ok']), false, 'PR8C: "facebook" must NOT match key "ok"');
-    assert.strictEqual(f('booklet', ['ok']), false, 'substring "ok" inside a word must not match');
-    assert.strictEqual(f('ok', ['ok']), true, 'standalone "ok" matches');
-    assert.strictEqual(f('not now', ['not now']), true, 'multi-word decline label');
-    assert.strictEqual(f('maybe later', ['later']), true, 'trailing word boundary');
-    assert.strictEqual(f('remember password', ['remember password']), true, 'remember-password decline');
-  }
-
   // ----- extractArticleCanonicalEntityId — first post-shape anchor in DOM order wins --
   {
     const f = T.extractArticleCanonicalEntityId;
@@ -59,38 +46,14 @@ try {
     assert.strictEqual(f(null), '', 'null article → ""');
   }
 
-  // ----- isInsidePostContainer — protects the target post's own Close/X from dismissal-
-  {
-    const f = T.isInsidePostContainer;
-    assert.strictEqual(f({ closest: () => ({ querySelector: () => ({ tagName: 'A' }) }) }), true, 'inside a post container → protected');
-    assert.strictEqual(f({ closest: () => ({ querySelector: () => null }) }), false, 'dialog without permalink → dismissable');
-    assert.strictEqual(f({ closest: () => null }), false, 'no enclosing container → false');
-  }
-
-  // ----- abbreviate / norm / hasAny / enabledButton / textOfEditable ------------------
-  // (No wrapping scope block — this group declares no locals, so the block was redundant.)
+  // ----- abbreviate (no wrapping block — this group declares no locals) ----------------
   assert.strictEqual(T.abbreviate(''), '<missing>');
   assert.strictEqual(T.abbreviate(null), '<missing>');
   assert.strictEqual(T.abbreviate('short'), 'short');
   assert.strictEqual(T.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
 
-  assert.strictEqual(T.norm('Bình Luận'), 'binh luan', 'diacritics stripped + lowercased');
-  assert.strictEqual(T.norm('  ĐÂY '), 'day', 'Đ -> d + trim');
-
-  assert.strictEqual(T.hasAny('hello world', ['xyz', 'wor']), true);
-  assert.strictEqual(T.hasAny('hello world', ['xyz']), false);
-
-  assert.strictEqual(T.enabledButton({ getAttribute: () => null, disabled: false }), true);
-  assert.strictEqual(T.enabledButton({ getAttribute: () => 'true', disabled: false }), false, 'aria-disabled');
-  assert.strictEqual(T.enabledButton({ getAttribute: () => null, disabled: true }), false, 'disabled');
-  assert.ok(!T.enabledButton(null), 'null button not enabled');
-
-  assert.strictEqual(T.textOfEditable({ value: 'hi' }), 'hi', 'value wins');
-  assert.strictEqual(T.textOfEditable({ innerText: 'yo' }), 'yo', 'innerText fallback');
-  assert.strictEqual(T.textOfEditable({ textContent: 'tc' }), 'tc', 'textContent fallback');
-  assert.strictEqual(T.textOfEditable(null), '', 'null → ""');
-
   // ----- editorContainsContent — 60-char sample match, detached-editor guard ----------
+  // (Stays in outbound.js; internally uses THGOutboundDom.norm / .textOfEditable via alias.)
   {
     const f = T.editorContainsContent;
     globalThis.document.contains = () => true;
@@ -113,7 +76,7 @@ try {
     globalThis.location.href = savedHref;
   }
 
-  console.log('outbound pure-helper characterization: PASS');
+  console.log('outbound identity/misc helper characterization: PASS');
 } finally {
   restore();
 }

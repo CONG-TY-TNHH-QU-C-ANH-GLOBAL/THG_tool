@@ -34,10 +34,16 @@ const REAL_MODULES = [
     assert.ok(Object.keys(api).every((k) => !k.startsWith('_')), 'runtime globalThis must NOT expose any _ helper key');
     assert.strictEqual(globalThis.THGContentOutbound, api, 'globalThis.THGContentOutbound IS the 4-key api object');
 
-    // ---- _test exists only on module.exports (Node), with the selected helpers --------
+    // ---- _test exists only on module.exports (Node), with the IDENTITY/misc helpers ---
     assert.ok(O._test && typeof O._test === 'object', 'module.exports._test exists in Node');
-    for (const h of ['extractPostIdFromUrl', 'labelMatchesDismiss', 'clickLikeUser', 'setEditableText', 'dismissBlockingOverlays']) {
+    for (const h of ['extractPostIdFromUrl', 'extractArticleCanonicalEntityId', 'onTargetPermalinkPage', 'abbreviate', 'editorContainsContent']) {
       assert.strictEqual(typeof O._test[h], 'function', 'module.exports._test.' + h + ' is a function');
+    }
+    // PR2: the generic DOM helpers moved to THGOutboundDom and must NO LONGER be exposed by
+    // outbound.js — proves the extraction (they are tested via outbound_dom.test.js instead).
+    for (const moved of ['norm', 'visible', 'labelOf', 'clickLikeUser', 'setEditableText', 'dismissBlockingOverlays', 'labelMatchesDismiss', 'isInsidePostContainer', 'enabledButton', 'textOfEditable', 'hasAny']) {
+      assert.ok(!(moved in O._test), 'outbound.js _test must NOT expose moved DOM helper ' + moved);
+      assert.strictEqual(typeof globalThis.THGOutboundDom[moved], 'function', 'THGOutboundDom owns ' + moved);
     }
 
     // ---- Content guards (return BEFORE any type dispatch / DOM work) -------------------
@@ -84,6 +90,8 @@ const REAL_MODULES = [
   assertLoadsBefore('comment_constants.js', 'comment_composer.js');
   assertLoadsBefore('comment_composer.js', 'comment_button.js');
   assertLoadsBefore('comment_button.js', 'outbound.js');
+  // PR2: the shared DOM primitives module must load before its only consumer (outbound.js).
+  assertLoadsBefore('outbound_dom.js', 'outbound.js');
   assertLoadsBefore('comment_constants.js', 'outbound.js');
   assertLoadsBefore('comment_submit.js', 'outbound.js');
   assertLoadsBefore('comment_state_machine.js', 'outbound.js');
