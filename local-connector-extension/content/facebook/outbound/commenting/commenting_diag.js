@@ -13,7 +13,7 @@ globalThis.THGCommentingDiag = globalThis.THGCommentingDiag || (() => {
   }
   const { visible, labelOf, hasAny } = THGDom;
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('../../commenting/comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../../commenting/constants/comment_constants.js'));
   const THGTarget = globalThis.THGCommentingTarget
     || (typeof require === 'function' ? require('./commenting_target.js') : null);
   if (!THGTarget) {

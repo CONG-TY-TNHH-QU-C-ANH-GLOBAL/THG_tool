@@ -12,7 +12,7 @@ globalThis.THGCommentingTarget = globalThis.THGCommentingTarget || (() => {
   }
   const { visible, labelOf, hasAny, norm, wait } = THGDom;
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('../../commenting/comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../../commenting/constants/comment_constants.js'));
   // Debug-gated swallow for best-effort browser calls (silent at normal runtime).
   function ignoreErr(e, ctx) { if (globalThis.__THG_COMMENTING_DEBUG__) console.debug(`[THGCommentingTarget] ${ctx}`, e); }
 

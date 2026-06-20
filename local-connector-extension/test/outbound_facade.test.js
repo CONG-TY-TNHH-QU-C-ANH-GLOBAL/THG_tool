@@ -14,7 +14,7 @@ const path = require('node:path');
 const { loadOutboundWithGlobals } = require('./outbound_test_env');
 
 const REAL_MODULES = [
-  '../content/facebook/commenting/comment_composer', '../content/facebook/commenting/comment_button', '../content/facebook/commenting/comment_constants',
+  '../content/facebook/commenting/composer/comment_composer', '../content/facebook/commenting/button/comment_button', '../content/facebook/commenting/constants/comment_constants',
   '../content/proof', '../content/navreport',
 ];
 

@@ -16,7 +16,7 @@ globalThis.THGCommentingOutbound = globalThis.THGCommentingOutbound || (() => {
   const { wait, norm, hasAny, visible, labelOf, clickLikeUser, enabledButton,
     textOfEditable, waitFor, dismissBlockingOverlays } = THGDom;
   const K = globalThis.THGCommentConstants
-    || (typeof require === 'undefined' ? null : require('../../commenting/comment_constants.js'));
+    || (typeof require === 'undefined' ? null : require('../../commenting/constants/comment_constants.js'));
   const THGTarget = globalThis.THGCommentingTarget
     || (typeof require === 'function' ? require('./commenting_target.js') : null);
   if (!THGTarget) {
