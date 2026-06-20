@@ -5,13 +5,11 @@
  */
 import { get, post } from './api';
 
-export type NotificationType = string;
-
 export interface AppNotification {
   id: number;
   org_id: number;
   user_id: number;
-  type: NotificationType;
+  type: string;
   title: string;
   body: string;
   payload_json: string;
