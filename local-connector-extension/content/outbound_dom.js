@@ -77,7 +77,7 @@ globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
       return true;
     } catch (e) {
       ignoreErr(e, 'click'); // synthetic dispatch threw — native click fallback below.
-      try { el.click(); return true; } catch (e2) { ignoreErr(e2, 'click'); return false; }
+      try { el.click(); return true; } catch (error_) { ignoreErr(error_, 'click'); return false; }
     }
   }
 
@@ -144,7 +144,7 @@ globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
       return true;
     } catch (e) {
       ignoreErr(e, 'select');
-      try { document[execKey]('selectAll', false, null); return true; } catch (e2) { ignoreErr(e2, 'select'); return false; }
+      try { document[execKey]('selectAll', false, null); return true; } catch (error_) { ignoreErr(error_, 'select'); return false; }
     }
   }
 
@@ -157,7 +157,7 @@ globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
 
   // PR8D + PR-DUP: clear any FB-restored draft (bounded 6× loop) BEFORE insertText, else it APPENDS → dup comment.
   function setEditableText(editor, text) {
-    try { editor.focus({ preventScroll: true }); } catch (e) { ignoreErr(e, 'editable'); try { editor.focus(); } catch (e2) { ignoreErr(e2, 'editable'); } }
+    try { editor.focus({ preventScroll: true }); } catch (e) { ignoreErr(e, 'editable'); try { editor.focus(); } catch (error_) { ignoreErr(error_, 'editable'); } }
     if (editor.isContentEditable) {
       for (let i = 0; i < 6; i += 1) {
         if (norm(textOfEditable(editor)).length === 0) break;
