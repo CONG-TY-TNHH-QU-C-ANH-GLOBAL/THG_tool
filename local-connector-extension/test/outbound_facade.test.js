@@ -34,16 +34,16 @@ const REAL_MODULES = [
     assert.ok(Object.keys(api).every((k) => !k.startsWith('_')), 'runtime globalThis must NOT expose any _ helper key');
     assert.strictEqual(globalThis.THGContentOutbound, api, 'globalThis.THGContentOutbound IS the 4-key api object');
 
-    // ---- _test exists only on module.exports (Node), with the IDENTITY/misc helpers ---
-    assert.ok(O._test && typeof O._test === 'object', 'module.exports._test exists in Node');
-    for (const h of ['extractPostIdFromUrl', 'extractArticleCanonicalEntityId', 'onTargetPermalinkPage', 'abbreviate', 'editorContainsContent']) {
-      assert.strictEqual(typeof O._test[h], 'function', 'module.exports._test.' + h + ' is a function');
-    }
-    // PR2: the generic DOM helpers moved to THGOutboundDom and must NO LONGER be exposed by
-    // outbound.js — proves the extraction (they are tested via outbound_dom.test.js instead).
-    for (const moved of ['norm', 'visible', 'labelOf', 'clickLikeUser', 'setEditableText', 'dismissBlockingOverlays', 'labelMatchesDismiss', 'isInsidePostContainer', 'enabledButton', 'textOfEditable', 'hasAny']) {
-      assert.ok(!(moved in O._test), 'outbound.js _test must NOT expose moved DOM helper ' + moved);
+    // ---- PR5: the facade is now a thin dispatcher — no _test seam; the identity/misc
+    //      helpers moved to the commenting layer (tested by commenting_outbound.test.js). --
+    assert.ok(!('_test' in O), 'facade module.exports must NOT carry a _test seam after PR5');
+    // Generic DOM helpers live on THGOutboundDom (PR2).
+    for (const moved of ['norm', 'visible', 'labelOf', 'clickLikeUser', 'setEditableText', 'dismissBlockingOverlays', 'enabledButton', 'textOfEditable', 'hasAny']) {
       assert.strictEqual(typeof globalThis.THGOutboundDom[moved], 'function', 'THGOutboundDom owns ' + moved);
+    }
+    // Comment identity/target helpers live on THGCommentingTarget (PR5).
+    for (const id of ['extractPostIdFromUrl', 'extractArticleCanonicalEntityId', 'onTargetPermalinkPage', 'findTargetArticle']) {
+      assert.strictEqual(typeof globalThis.THGCommentingTarget[id], 'function', 'THGCommentingTarget owns ' + id);
     }
 
     // ---- Content guards (return BEFORE any type dispatch / DOM work) -------------------
@@ -101,6 +101,12 @@ const REAL_MODULES = [
   assertLoadsBefore('posting_outbound.js', 'inbox_outbound.js');
   assertLoadsBefore('outbound_dom.js', 'inbox_outbound.js');
   assertLoadsBefore('inbox_outbound.js', 'outbound.js');
+  // PR5: commenting layer DAG — target → diag → outbound (executor) → facade; all after DOM.
+  assertLoadsBefore('inbox_outbound.js', 'commenting_target.js');
+  assertLoadsBefore('outbound_dom.js', 'commenting_target.js');
+  assertLoadsBefore('commenting_target.js', 'commenting_diag.js');
+  assertLoadsBefore('commenting_diag.js', 'commenting_outbound.js');
+  assertLoadsBefore('commenting_outbound.js', 'outbound.js');
   assertLoadsBefore('comment_constants.js', 'outbound.js');
   assertLoadsBefore('comment_submit.js', 'outbound.js');
   assertLoadsBefore('comment_state_machine.js', 'outbound.js');

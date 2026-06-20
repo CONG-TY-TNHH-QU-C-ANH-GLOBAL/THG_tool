@@ -17,6 +17,9 @@ const OUTBOUND = require.resolve('../content/outbound.js');
 const OUTBOUND_DOM = require.resolve('../content/outbound_dom.js');
 const POSTING = require.resolve('../content/posting_outbound.js');
 const INBOX = require.resolve('../content/inbox_outbound.js');
+const CMT_TARGET = require.resolve('../content/commenting_target.js');
+const CMT_DIAG = require.resolve('../content/commenting_diag.js');
+const CMT_OUTBOUND = require.resolve('../content/commenting_outbound.js');
 
 function makeWindow() {
   const location = { href: 'https://www.facebook.com/' };
@@ -48,7 +51,17 @@ function makeDocument() {
 
 const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
   'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'innerWidth', 'innerHeight',
-  'getSelection', 'THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound', 'THGInboxOutbound'];
+  'getSelection', 'scrollBy', 'scrollTo', 'scrollY',
+  'THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound', 'THGInboxOutbound',
+  'THGCommentingTarget', 'THGCommentingDiag', 'THGCommentingOutbound'];
+
+// Clear all extracted-layer module globals + require caches so a fresh outbound.js (and its
+// require chain) rebuilds cleanly. Keeps each load behavior-identical to a first Chrome inject.
+function freshLayerChain() {
+  for (const g of ['THGContentOutbound', 'THGOutboundDom', 'THGPostingOutbound', 'THGInboxOutbound',
+    'THGCommentingTarget', 'THGCommentingDiag', 'THGCommentingOutbound']) delete globalThis[g];
+  for (const c of [OUTBOUND, OUTBOUND_DOM, POSTING, INBOX, CMT_TARGET, CMT_DIAG, CMT_OUTBOUND]) delete require.cache[c];
+}
 
 // installGlobals installs the minimal fake browser globals + any requested singletons and
 // real sibling modules, and returns a restore() that reverses every mutation.
@@ -65,6 +78,9 @@ function installGlobals(overrides) {
   globalThis.innerWidth = win.innerWidth;
   globalThis.innerHeight = win.innerHeight;
   globalThis.getSelection = win.getSelection;
+  globalThis.scrollBy = win.scrollBy;
+  globalThis.scrollTo = win.scrollTo;
+  globalThis.scrollY = win.scrollY;
   globalThis.location = overrides.location || win.location;
   globalThis.document = overrides.document || makeDocument();
   globalThis.getComputedStyle = overrides.getComputedStyle || (() => ({ visibility: 'visible', display: 'block' }));
@@ -89,12 +105,32 @@ function installGlobals(overrides) {
 // runtime object (globalThis.THGContentOutbound, exactly the 4 public methods).
 function loadOutboundWithGlobals(overrides = {}) {
   const { restore } = installGlobals(overrides);
-  delete globalThis.THGContentOutbound;   // force outbound's IIFE guard to re-run
-  delete globalThis.THGOutboundDom;        // force a fresh DOM module bind
-  delete require.cache[OUTBOUND];
-  delete require.cache[OUTBOUND_DOM];
+  freshLayerChain(); // force outbound + every layer module to rebuild fresh
   const O = require(OUTBOUND);
   return { O, api: globalThis.THGContentOutbound, restore };
+}
+
+// loadCommentingTarget / loadCommentingDiag / loadCommentingOutbound require a FRESH comment
+// module (re-requiring its earlier-loaded providers via guarded fallback).
+function loadCommentingTarget(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  freshLayerChain();
+  const TARGET = require(CMT_TARGET);
+  return { TARGET, api: globalThis.THGCommentingTarget, restore };
+}
+
+function loadCommentingDiag(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  freshLayerChain();
+  const DIAG = require(CMT_DIAG);
+  return { DIAG, api: globalThis.THGCommentingDiag, restore };
+}
+
+function loadCommentingOutbound(overrides = {}) {
+  const { restore } = installGlobals(overrides);
+  freshLayerChain();
+  const CMT = require(CMT_OUTBOUND);
+  return { CMT, api: globalThis.THGCommentingOutbound, restore };
 }
 
 // loadOutboundDom installs fake globals then requires a FRESH outbound_dom.js directly.
@@ -133,4 +169,7 @@ function loadInboxOutbound(overrides = {}) {
   return { INBOX: INBOX_MOD, api: globalThis.THGInboxOutbound, restore };
 }
 
-module.exports = { loadOutboundWithGlobals, loadOutboundDom, loadPostingOutbound, loadInboxOutbound, makeWindow, makeDocument };
+module.exports = {
+  loadOutboundWithGlobals, loadOutboundDom, loadPostingOutbound, loadInboxOutbound,
+  loadCommentingTarget, loadCommentingDiag, loadCommentingOutbound, makeWindow, makeDocument,
+};

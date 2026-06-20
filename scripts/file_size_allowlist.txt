@@ -6,7 +6,15 @@
 # Engineering Guardrails). Remove a path from this list once the file is split <=200.
 
 # --- extension legacy (god files; see Browser Automation Kit Refactor track) ---
-local-connector-extension/content/outbound.js  # 1508 lines
+# outbound.js removed from the baseline in PR5: it is now a ~66-line dispatch facade (<200).
+# PR5 (founder-approved, one-time) relocated the legacy comment executors out of outbound.js,
+# move-only / behavior-preserving. The two files below hold pre-existing legacy comment code
+# that cannot be kept <=200 without splitting function bodies (executeComment alone is ~300
+# lines) — that is NOT move-only, so it is deferred to a follow-up behavior-PR with tests.
+# TEMPORARY relocation exception, not a licence to grow. Net allowlisted footprint SHRANK
+# (one ~1508-line entry removed; two smaller entries added).
+local-connector-extension/content/commenting_outbound.js  # 702 lines (relocated comment executors; split deferred to a tested behavior-PR)
+local-connector-extension/content/commenting_target.js  # 365 lines (relocated comment target/identity helpers; load-bearing forensic comments kept)
 local-connector-extension/src/outbox.js  # 745 lines
 local-connector-extension/content/crawl.js  # 573 lines
 local-connector-extension/content/proof.js  # 545 lines
