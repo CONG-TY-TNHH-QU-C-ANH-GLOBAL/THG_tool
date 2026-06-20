@@ -41,6 +41,8 @@ import (
 // freeform kinds.
 type FeedbackKind string
 
+const errOrgIDRequired = "knowledge: org_id required"
+
 const (
 	FeedbackThumbsUp   FeedbackKind = "thumbs_up"
 	FeedbackThumbsDown FeedbackKind = "thumbs_down"
@@ -88,7 +90,7 @@ type FeedbackEvent struct {
 // privilege-escalation problem, not a knowledge-injection problem.)
 func (s *Store) RecordFeedback(ctx context.Context, ev FeedbackEvent) error {
 	if ev.OrgID <= 0 {
-		return errors.New("knowledge: org_id required")
+		return errors.New(errOrgIDRequired)
 	}
 	if !ev.Kind.IsKnown() {
 		return fmt.Errorf("knowledge: unknown feedback kind %q", ev.Kind)
@@ -112,7 +114,7 @@ func (s *Store) RecordFeedback(ctx context.Context, ev FeedbackEvent) error {
 // the auto-training feedback loop G10 forbids.
 func (s *Store) ListFeedbackForOrg(ctx context.Context, orgID int64, limit int) ([]FeedbackEvent, error) {
 	if orgID <= 0 {
-		return nil, errors.New("knowledge: org_id required")
+		return nil, errors.New(errOrgIDRequired)
 	}
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -153,7 +155,7 @@ type FeedbackRollup struct {
 // GetFeedbackRollupForOrg aggregates feedback events over a window.
 func (s *Store) GetFeedbackRollupForOrg(ctx context.Context, orgID int64, days int) (*FeedbackRollup, error) {
 	if orgID <= 0 {
-		return nil, errors.New("knowledge: org_id required")
+		return nil, errors.New(errOrgIDRequired)
 	}
 	if days <= 0 {
 		days = 30

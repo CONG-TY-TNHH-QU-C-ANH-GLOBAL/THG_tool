@@ -51,50 +51,7 @@ func (s *Store) ListAssetsForOrg(ctx context.Context, orgID int64, filter assets
 	if orgID <= 0 {
 		return nil, fmt.Errorf("knowledge: org_id is required")
 	}
-	q := assetSelect + ` WHERE org_id = ?`
-	args := []any{orgID}
-
-	if len(filter.Types) > 0 {
-		q += ` AND type IN (` + placeholders(len(filter.Types)) + `)`
-		for _, t := range filter.Types {
-			args = append(args, string(t))
-		}
-	}
-	if len(filter.States) > 0 {
-		q += ` AND state IN (` + placeholders(len(filter.States)) + `)`
-		for _, s := range filter.States {
-			args = append(args, string(s))
-		}
-	}
-	if filter.SourceID > 0 {
-		q += ` AND source_id = ?`
-		args = append(args, filter.SourceID)
-	}
-	if filter.ExcludeUnhealthySources {
-		q += unhealthySourceExclusion
-		args = append(args, orgID)
-	}
-	if strings.TrimSpace(filter.SearchQ) != "" {
-		like := "%" + strings.ToLower(strings.TrimSpace(filter.SearchQ)) + "%"
-		q += ` AND (LOWER(title) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(description) LIKE ?)`
-		args = append(args, like, like, like)
-	}
-	switch filter.OrderBy {
-	case assets.OrderRecent:
-		q += ` ORDER BY updated_at DESC`
-	default:
-		// OrderDefault matches idx_knowledge_assets_org_pin_boost so
-		// the hot path is index-only on SQLite.
-		q += ` ORDER BY pinned DESC, boost DESC, retrieval_count_30d DESC`
-	}
-	if filter.Limit > 0 {
-		q += ` LIMIT ?`
-		args = append(args, filter.Limit)
-		if filter.Offset > 0 {
-			q += ` OFFSET ?`
-			args = append(args, filter.Offset)
-		}
-	}
+	q, args := buildListAssetsQuery(orgID, filter)
 
 	rows, err := s.queryContext(ctx, q, args...)
 	if err != nil {
@@ -306,6 +263,58 @@ const assetSelect = `
 const unhealthySourceExclusion = ` AND source_id NOT IN (
 		SELECT id FROM knowledge_sources
 		 WHERE org_id = ? AND health_status IN ('stale', 'error', 'needs_auth'))`
+
+// buildListAssetsQuery assembles the SELECT statement and bind args
+// for ListAssetsForOrg from the caller's filter. Pure assembly — it
+// applies exactly the same clauses, in the same order, as the inline
+// filter chain it was extracted from, with no behavioral change.
+func buildListAssetsQuery(orgID int64, filter assets.ListFilter) (string, []any) {
+	q := assetSelect + ` WHERE org_id = ?`
+	args := []any{orgID}
+
+	if len(filter.Types) > 0 {
+		q += ` AND type IN (` + placeholders(len(filter.Types)) + `)`
+		for _, t := range filter.Types {
+			args = append(args, string(t))
+		}
+	}
+	if len(filter.States) > 0 {
+		q += ` AND state IN (` + placeholders(len(filter.States)) + `)`
+		for _, s := range filter.States {
+			args = append(args, string(s))
+		}
+	}
+	if filter.SourceID > 0 {
+		q += ` AND source_id = ?`
+		args = append(args, filter.SourceID)
+	}
+	if filter.ExcludeUnhealthySources {
+		q += unhealthySourceExclusion
+		args = append(args, orgID)
+	}
+	if strings.TrimSpace(filter.SearchQ) != "" {
+		like := "%" + strings.ToLower(strings.TrimSpace(filter.SearchQ)) + "%"
+		q += ` AND (LOWER(title) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(description) LIKE ?)`
+		args = append(args, like, like, like)
+	}
+	switch filter.OrderBy {
+	case assets.OrderRecent:
+		q += ` ORDER BY updated_at DESC`
+	default:
+		// OrderDefault matches idx_knowledge_assets_org_pin_boost so
+		// the hot path is index-only on SQLite.
+		q += ` ORDER BY pinned DESC, boost DESC, retrieval_count_30d DESC`
+	}
+	if filter.Limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, filter.Limit)
+		if filter.Offset > 0 {
+			q += ` OFFSET ?`
+			args = append(args, filter.Offset)
+		}
+	}
+	return q, args
+}
 
 func (s *Store) updateAssetField(ctx context.Context, assetID, orgID int64, column string, value any) error {
 	if assetID <= 0 || orgID <= 0 {
