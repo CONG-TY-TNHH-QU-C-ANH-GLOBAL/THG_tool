@@ -4,21 +4,21 @@
 //
 // Loaded via loadOutboundWithGlobals (fake browser globals installed BEFORE require,
 // require cache cleared) so the module is exercised exactly as the extension would, and
-// helpers are read from module.exports._test — NOT from the Chrome runtime global (which
+// helpers are read from module.exports._test — NOT from the Chrome runtime globalThis (which
 // must stay at the four public methods). These pin CURRENT behavior before the
 // Comment/Posting/Inbox extraction; they are the regression net for PR2.
 //
 // Sequential by construction (single load, no concurrency).
-const assert = require('assert');
+const assert = require('node:assert');
 const { loadOutboundWithGlobals } = require('./outbound_test_env');
 
 const { O, api, restore } = loadOutboundWithGlobals();
 try {
   const T = O._test;
 
-  // Runtime-surface guard belongs everywhere the module loads: the Chrome global must
+  // Runtime-surface guard belongs everywhere the module loads: the Chrome globalThis must
   // never carry test helpers (see also outbound_facade.test.js for the full assertion).
-  assert.ok(!('_test' in api), 'runtime global must not expose _test');
+  assert.ok(!('_test' in api), 'runtime globalThis must not expose _test');
 
   // ----- extractPostIdFromUrl — identity-gate URL parser + foreign-host guard ---------
   {
@@ -94,24 +94,24 @@ try {
   // ----- editorContainsContent — 60-char sample match, detached-editor guard ----------
   {
     const f = T.editorContainsContent;
-    global.document.contains = () => true;
+    globalThis.document.contains = () => true;
     assert.strictEqual(f({ value: 'Hello there friend' }, 'Hello there'), true, 'sample prefix matches');
     assert.strictEqual(f({ value: 'Hello there friend' }, ''), false, 'empty expected → false');
-    global.document.contains = () => false;
+    globalThis.document.contains = () => false;
     assert.strictEqual(f({ value: 'Hello there friend' }, 'Hello there'), false, 'detached editor → false');
     assert.strictEqual(f(null, 'x'), false, 'null editor → false');
-    global.document.contains = () => true;
+    globalThis.document.contains = () => true;
   }
 
   // ----- onTargetPermalinkPage — URL pins identity on the post's own page -------------
   {
     const f = T.onTargetPermalinkPage;
-    const savedHref = global.location.href;
-    global.location.href = 'https://www.facebook.com/groups/1/posts/123456/';
+    const savedHref = globalThis.location.href;
+    globalThis.location.href = 'https://www.facebook.com/groups/1/posts/123456/';
     assert.strictEqual(f('123456'), true, 'URL post id === target → true');
     assert.strictEqual(f('999999'), false, 'different id → false');
     assert.strictEqual(f(''), false, 'empty target → false');
-    global.location.href = savedHref;
+    globalThis.location.href = savedHref;
   }
 
   console.log('outbound pure-helper characterization: PASS');

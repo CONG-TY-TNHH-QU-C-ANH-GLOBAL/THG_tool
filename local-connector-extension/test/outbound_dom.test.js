@@ -8,9 +8,9 @@
 // clears the require cache. Helpers come from module.exports._test. Pins the load-bearing
 // click/typing/overlay behavior before the Comment/Posting/Inbox extraction (PR2+).
 //
-// Sequential by construction (single load, blocks mutate global.document in order; no
+// Sequential by construction (single load, blocks mutate globalThis.document in order; no
 // concurrency).
-const assert = require('assert');
+const assert = require('node:assert');
 const { loadOutboundWithGlobals } = require('./outbound_test_env');
 
 const { O, restore } = loadOutboundWithGlobals();
@@ -22,10 +22,10 @@ try {
     const f = T.visible;
     assert.strictEqual(f({ getBoundingClientRect: () => ({ width: 100, height: 20 }) }), true);
     assert.strictEqual(f({ getBoundingClientRect: () => ({ width: 5, height: 20 }) }), false, 'too narrow');
-    const savedGCS = global.getComputedStyle;
-    global.getComputedStyle = () => ({ visibility: 'hidden', display: 'block' });
+    const savedGCS = globalThis.getComputedStyle;
+    globalThis.getComputedStyle = () => ({ visibility: 'hidden', display: 'block' });
     assert.strictEqual(f({ getBoundingClientRect: () => ({ width: 100, height: 20 }) }), false, 'visibility hidden');
-    global.getComputedStyle = savedGCS;
+    globalThis.getComputedStyle = savedGCS;
     assert.strictEqual(f(null), false, 'null → false');
   }
 
@@ -76,7 +76,7 @@ try {
         dispatchEvent() {}, click() { clicked = true; },
       };
     }
-    const setCandidates = (list) => { global.document.querySelectorAll = () => list; };
+    const setCandidates = (list) => { globalThis.document.querySelectorAll = () => list; };
 
     let btn = makeBtn({ aria: 'Not now' });
     setCandidates([btn]);
@@ -98,25 +98,24 @@ try {
     assert.strictEqual(await f(), 'none', 'PR8C: "Facebook" does not match a dismiss word');
     assert.ok(!btn.clicked, 'logo-labelled button not clicked');
 
-    global.document.querySelectorAll = () => [];
+    globalThis.document.querySelectorAll = () => [];
 
     // ----- setEditableText — bounded draft-clear loop then insertText (PR-DUP fix) -----
-    {
-      const g = T.setEditableText;
-      const calls = [];
-      const savedExec = global.document.execCommand;
-      global.document.execCommand = (cmd, _b, val) => { calls.push([cmd, val]); return true; };
-      try {
-        const editor = { isContentEditable: true, innerText: 'old draft', focus() {}, dispatchEvent() {} };
-        assert.strictEqual(g(editor, 'new comment'), true, 'contenteditable insert returns true');
-        assert.strictEqual(calls.filter((c) => c[0] === 'delete').length, 6, 'clear loop bounded to 6 on a stubborn draft');
-        const inserts = calls.filter((c) => c[0] === 'insertText');
-        assert.strictEqual(inserts.length, 1, 'exactly one insertText');
-        assert.strictEqual(inserts[0][1], 'new comment', 'inserts the requested text verbatim');
-        assert.strictEqual(g({ focus() {} }, 'x'), false, 'editor neither contenteditable nor value → false');
-      } finally {
-        global.document.execCommand = savedExec;
-      }
+    // (No wrapping scope block needed here — these names are unique within the IIFE.)
+    const g = T.setEditableText;
+    const calls = [];
+    const savedExec = globalThis.document.execCommand;
+    globalThis.document.execCommand = (cmd, _b, val) => { calls.push([cmd, val]); return true; };
+    try {
+      const editor = { isContentEditable: true, innerText: 'old draft', focus() {}, dispatchEvent() {} };
+      assert.strictEqual(g(editor, 'new comment'), true, 'contenteditable insert returns true');
+      assert.strictEqual(calls.filter((c) => c[0] === 'delete').length, 6, 'clear loop bounded to 6 on a stubborn draft');
+      const inserts = calls.filter((c) => c[0] === 'insertText');
+      assert.strictEqual(inserts.length, 1, 'exactly one insertText');
+      assert.strictEqual(inserts[0][1], 'new comment', 'inserts the requested text verbatim');
+      assert.strictEqual(g({ focus() {} }, 'x'), false, 'editor neither contenteditable nor value → false');
+    } finally {
+      globalThis.document.execCommand = savedExec;
     }
 
     console.log('outbound DOM-mock characterization: PASS');

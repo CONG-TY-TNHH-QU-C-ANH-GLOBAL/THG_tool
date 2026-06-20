@@ -5,12 +5,12 @@
 //
 // Loaded via loadOutboundWithGlobals with the real comment/proof/navreport modules so the
 // dispatch lands in each layer's REAL body. Pins the connector-protocol contract: the
-// Chrome runtime global exposes EXACTLY the four public methods and never the test seam.
+// Chrome runtime globalThis exposes EXACTLY the four public methods and never the test seam.
 //
 // Sequential by construction (no concurrency; shared globalThis mutation).
-const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const { loadOutboundWithGlobals } = require('./outbound_test_env');
 
 const REAL_MODULES = [
@@ -20,19 +20,19 @@ const REAL_MODULES = [
 
 (async () => {
   // SMOKE: require('../content/outbound.js') must succeed under the minimal fake browser
-  // global setup (no DOM library). If this throws, the stack names the offending global.
+  // globalThis setup (no DOM library). If this throws, the stack names the offending globalThis.
   const { O, api, restore } = loadOutboundWithGlobals({ realModules: REAL_MODULES });
   try {
     assert.ok(O && typeof O.executeOutbound === 'function', 'smoke: module requires + exposes executeOutbound');
 
-    // ---- RUNTIME-SURFACE guard: Chrome global = exactly the 4 public methods ----------
+    // ---- RUNTIME-SURFACE guard: Chrome globalThis = exactly the 4 public methods ----------
     assert.deepStrictEqual(
       Object.keys(api).sort((a, b) => a.localeCompare(b)),
       ['executeCommentInFeed', 'executeCommentViaRung2', 'executeOutbound', 'probeRung2Click'],
-      'Chrome runtime global must expose exactly the four public methods');
-    assert.ok(!('_test' in api), 'runtime global must NOT expose _test');
-    assert.ok(Object.keys(api).every((k) => !k.startsWith('_')), 'runtime global must NOT expose any _ helper key');
-    assert.strictEqual(global.THGContentOutbound, api, 'globalThis.THGContentOutbound IS the 4-key api object');
+      'Chrome runtime globalThis must expose exactly the four public methods');
+    assert.ok(!('_test' in api), 'runtime globalThis must NOT expose _test');
+    assert.ok(Object.keys(api).every((k) => !k.startsWith('_')), 'runtime globalThis must NOT expose any _ helper key');
+    assert.strictEqual(globalThis.THGContentOutbound, api, 'globalThis.THGContentOutbound IS the 4-key api object');
 
     // ---- _test exists only on module.exports (Node), with the selected helpers --------
     assert.ok(O._test && typeof O._test === 'object', 'module.exports._test exists in Node');
@@ -74,7 +74,7 @@ const REAL_MODULES = [
   // so PR2 can extend it for outbound_dom.js / outbound_identity.js / outbound_diag.js.
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
   const js = manifest.content_scripts[0].js;
-  const idx = (needle) => js.findIndex((p) => p.indexOf(needle) !== -1);
+  const idx = (needle) => js.findIndex((p) => p.includes(needle));
   function assertLoadsBefore(provider, consumer) {
     const p = idx(provider); const c = idx(consumer);
     assert.ok(p !== -1, 'manifest lists provider ' + provider);

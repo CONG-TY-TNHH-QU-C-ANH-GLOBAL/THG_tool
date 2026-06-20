@@ -9,10 +9,10 @@
 //      module.exports — hence _test — is never (re)assigned),
 //   3. delete require.cache[outbound] so the file re-executes,
 //   4. require it.
-// restore() undoes the global mutation to avoid cross-test pollution within a file.
+// restore() undoes the globalThis mutation to avoid cross-test pollution within a file.
 //
 // IMPORTANT: tests that mutate globalThis must run SEQUENTIALLY — never pass
-// { concurrency: true } and never wrap shared-global mutation in parallel subtests.
+// { concurrency: true } and never wrap shared-globalThis mutation in parallel subtests.
 const OUTBOUND = require.resolve('../content/outbound.js');
 
 function makeWindow() {
@@ -52,31 +52,31 @@ const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
 function loadOutboundWithGlobals(overrides = {}) {
   const singletonNames = Object.keys(overrides.singletons || {});
   const saved = {};
-  for (const k of BROWSER_KEYS) saved[k] = { had: k in global, val: global[k] };
-  for (const k of singletonNames) saved['s:' + k] = { had: k in global, val: global[k] };
+  for (const k of BROWSER_KEYS) saved[k] = { had: k in globalThis, val: globalThis[k] };
+  for (const k of singletonNames) saved['s:' + k] = { had: k in globalThis, val: globalThis[k] };
 
   const win = overrides.window || makeWindow();
-  global.window = win;
-  global.location = overrides.location || win.location;
-  global.document = overrides.document || makeDocument();
-  global.getComputedStyle = overrides.getComputedStyle || (() => ({ visibility: 'visible', display: 'block' }));
-  global.MouseEvent = function MouseEvent(type, init) { this.type = type; Object.assign(this, init || {}); };
-  global.PointerEvent = function PointerEvent(type, init) { this.type = type; Object.assign(this, init || {}); };
-  global.InputEvent = function InputEvent(type, init) { this.type = type; this.data = init && init.data; };
-  global.Event = function Event(type) { this.type = type; };
-  for (const [k, v] of Object.entries(overrides.singletons || {})) global[k] = v;
+  globalThis.window = win;
+  globalThis.location = overrides.location || win.location;
+  globalThis.document = overrides.document || makeDocument();
+  globalThis.getComputedStyle = overrides.getComputedStyle || (() => ({ visibility: 'visible', display: 'block' }));
+  globalThis.MouseEvent = function MouseEvent(type, init) { this.type = type; Object.assign(this, init || {}); };
+  globalThis.PointerEvent = function PointerEvent(type, init) { this.type = type; Object.assign(this, init || {}); };
+  globalThis.InputEvent = function InputEvent(type, init) { this.type = type; this.data = init?.data; };
+  globalThis.Event = function Event(type) { this.type = type; };
+  for (const [k, v] of Object.entries(overrides.singletons || {})) globalThis[k] = v;
 
   for (const m of (overrides.realModules || [])) require(m); // register real THG* globals
 
-  delete global.THGContentOutbound;       // force the IIFE guard to re-run
+  delete globalThis.THGContentOutbound;       // force the IIFE guard to re-run
   delete require.cache[OUTBOUND];          // force the file to re-execute
   const O = require(OUTBOUND);
 
   function restore() {
-    for (const k of BROWSER_KEYS) { if (saved[k].had) global[k] = saved[k].val; else delete global[k]; }
-    for (const k of singletonNames) { const s = saved['s:' + k]; if (s.had) global[k] = s.val; else delete global[k]; }
+    for (const k of BROWSER_KEYS) { if (saved[k].had) globalThis[k] = saved[k].val; else delete globalThis[k]; }
+    for (const k of singletonNames) { const s = saved['s:' + k]; if (s.had) globalThis[k] = s.val; else delete globalThis[k]; }
   }
-  return { O, api: global.THGContentOutbound, restore };
+  return { O, api: globalThis.THGContentOutbound, restore };
 }
 
 module.exports = { loadOutboundWithGlobals, makeWindow, makeDocument };
