@@ -45,7 +45,8 @@ function makeDocument() {
 }
 
 const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',
-  'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'THGContentOutbound', 'THGOutboundDom'];
+  'MouseEvent', 'PointerEvent', 'InputEvent', 'Event', 'innerWidth', 'innerHeight',
+  'getSelection', 'THGContentOutbound', 'THGOutboundDom'];
 
 // installGlobals installs the minimal fake browser globals + any requested singletons and
 // real sibling modules, and returns a restore() that reverses every mutation.
@@ -57,6 +58,11 @@ function installGlobals(overrides) {
 
   const win = overrides.window || makeWindow();
   globalThis.window = win;
+  // outbound_dom.js reads these via globalThis (S6643 — prefer globalThis over window), so the
+  // fake env must expose them on globalThis directly, mirroring the window object's values.
+  globalThis.innerWidth = win.innerWidth;
+  globalThis.innerHeight = win.innerHeight;
+  globalThis.getSelection = win.getSelection;
   globalThis.location = overrides.location || win.location;
   globalThis.document = overrides.document || makeDocument();
   globalThis.getComputedStyle = overrides.getComputedStyle || (() => ({ visibility: 'visible', display: 'block' }));

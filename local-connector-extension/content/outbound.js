@@ -303,7 +303,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   function findTargetArticle(postId) {
     if (!postId) return null;
     const id = String(postId);
-    const containers = Array.from(document.querySelectorAll('[role="article"], [role="dialog"]')).filter(visible);
+    const containers = Array.from(document.querySelectorAll('[role="article"], [role="dialog"]')).filter(el => visible(el));
     for (const container of containers) {
       if (extractArticleCanonicalEntityId(container) === id) return container;
     }
@@ -407,7 +407,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       );
     }
     const commentKeys = K.COMMENT_KEYS;
-    const buttons = Array.from(scope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const buttons = Array.from(scope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
     out.commentButtonFound = buttons.some(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
@@ -422,7 +422,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
   // Pure read, no mutation.
   function domCounts() {
     const commentKeys = K.COMMENT_KEYS;
-    const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const buttons = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
     const commentButtons = buttons.filter(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
@@ -636,7 +636,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const searchRoot = targetScope || document;
 
     const commentKeys = K.COMMENT_KEYS;
-    const buttons = Array.from(searchRoot.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const buttons = Array.from(searchRoot.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
     const commentButton = buttons.find(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');
@@ -852,13 +852,13 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
 
     const messageKeys = ['message', 'messenger', 'send message', 'nhan tin'];
     const sendKeys = ['send', 'press enter to send', 'gui'];
-    let editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
+    let editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
     if (!editors.length) {
-      const messageButton = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"]')).filter(visible)
+      const messageButton = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"]')).filter(el => visible(el))
         .find(el => hasAny(labelOf(el), messageKeys));
       if (!messageButton || !clickLikeUser(messageButton)) return inboxResult(false, 'message_button_not_found', null, ctx);
       await wait(1800);
-      editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
+      editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
     }
     let editor = editors.find(el => hasAny(labelOf(el), messageKeys) || norm(el.getAttribute('role')) === 'textbox');
     if (!editor) editor = editors[editors.length - 1];
@@ -866,7 +866,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     if (!setEditableText(editor, content)) return inboxResult(false, 'inbox_text_insert_failed', null, ctx);
     await wait(700);
     const scope = editor.closest('[role="dialog"], form, div[aria-label]') || document;
-    const send = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).find(el => {
+    const send = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(el => visible(el)).find(el => {
       const label = labelOf(el);
       return hasAny(label, sendKeys) && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
     });
@@ -896,17 +896,17 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     const postKeys = ['post', 'dang'];
     const ctx = { content, executionId };
     const composer = Array.from(document.querySelectorAll('div[role="button"], button, textarea, [contenteditable="true"], [aria-label]'))
-      .filter(visible)
+      .filter(el => visible(el))
       .find(el => hasAny(labelOf(el), composerKeys));
     if (!composer || !clickLikeUser(composer)) return postResult(false, 'post_composer_not_found', null, ctx);
     await wait(1500);
-    const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(visible);
+    const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
     let editor = editors.find(el => norm(el.getAttribute('role')) === 'textbox') || editors[editors.length - 1];
     if (!editor) return postResult(false, 'post_editor_not_found', null, ctx);
     if (!setEditableText(editor, content)) return postResult(false, 'post_text_insert_failed', null, ctx);
     await wait(900);
     const scope = editor.closest('[role="dialog"], form') || document;
-    const postButton = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(visible).reverse().find(el => {
+    const postButton = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(el => visible(el)).reverse().find(el => {
       const label = labelOf(el);
       return hasAny(label, postKeys) && !label.includes('comment') && !label.includes('cancel') &&
         el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
@@ -1037,7 +1037,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     // Find Comment button inside the article scope (NOT document-wide
     // — feed has many articles, document-wide would click the wrong one).
     const commentKeys = K.COMMENT_KEYS;
-    const buttons = Array.from(targetScope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(visible);
+    const buttons = Array.from(targetScope.querySelectorAll('div[role="button"], button, a[role="button"], span[role="button"]')).filter(el => visible(el));
     const commentButton = buttons.find(el => {
       const label = labelOf(el);
       return hasAny(label, commentKeys) && !label.includes('share') && !label.includes('like');

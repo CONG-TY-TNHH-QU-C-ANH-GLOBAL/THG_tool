@@ -46,13 +46,11 @@ try {
     assert.strictEqual(f(null), '', 'null article → ""');
   }
 
-  // ----- abbreviate -------------------------------------------------------------------
-  {
-    assert.strictEqual(T.abbreviate(''), '<missing>');
-    assert.strictEqual(T.abbreviate(null), '<missing>');
-    assert.strictEqual(T.abbreviate('short'), 'short');
-    assert.strictEqual(T.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
-  }
+  // ----- abbreviate (no wrapping block — this group declares no locals) ----------------
+  assert.strictEqual(T.abbreviate(''), '<missing>');
+  assert.strictEqual(T.abbreviate(null), '<missing>');
+  assert.strictEqual(T.abbreviate('short'), 'short');
+  assert.strictEqual(T.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
 
   // ----- editorContainsContent — 60-char sample match, detached-editor guard ----------
   // (Stays in outbound.js; internally uses THGOutboundDom.norm / .textOfEditable via alias.)

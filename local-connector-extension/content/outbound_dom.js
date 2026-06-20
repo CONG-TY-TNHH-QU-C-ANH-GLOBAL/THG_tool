@@ -3,7 +3,7 @@
 // move-only). No identity/diagnostics/proof/executor logic. Chrome: globalThis.THGOutboundDom
 // (manifest-loaded before outbound.js); Node: module.exports. Guards below (PR8C/PR8D/PR-DUP) — do
 // NOT loosen; full forensic rationale is in git history.
-// Assign onto globalThis (no `var`) — `|| ` keeps re-injection idempotent, no lexical redeclare.
+// Assign onto globalThis (no top-level binding) — `|| ` keeps re-injection idempotent, no redeclare.
 globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
   const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const norm = (value) => String(value || '')
@@ -63,8 +63,8 @@ globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
     if (!visible(el) || !enabledButton(el)) return false;
     try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) { ignoreErr(e, 'click'); }
     const rect = el.getBoundingClientRect();
-    const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
-    const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+    const x = Math.max(0, Math.min(globalThis.innerWidth - 1, rect.left + rect.width / 2));
+    const y = Math.max(0, Math.min(globalThis.innerHeight - 1, rect.top + rect.height / 2));
     try {
       dispatchPointerLike(el, 'pointerover', x, y);
       dispatchPointerLike(el, 'pointermove', x, y);
@@ -75,9 +75,9 @@ globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
       dispatchMouseLike(el, 'click', x, y);
       el.click();
       return true;
-    } catch (_) {
-      // Synthetic dispatch threw — native click fallback; success only if it doesn't throw.
-      try { el.click(); return true; } catch (_) { return false; }
+    } catch (e) {
+      ignoreErr(e, 'click'); // synthetic dispatch threw — native click fallback below.
+      try { el.click(); return true; } catch (e2) { ignoreErr(e2, 'click'); return false; }
     }
   }
 
@@ -138,32 +138,26 @@ globalThis.THGOutboundDom = globalThis.THGOutboundDom || (() => {
     try {
       const range = document.createRange();
       range.selectNodeContents(editor);
-      const selection = window.getSelection();
+      const selection = globalThis.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
       return true;
-    } catch (_) {
-      try {
-        document[execKey]('selectAll', false, null);
-        return true;
-      } catch (_) {
-        return false;
-      }
+    } catch (e) {
+      ignoreErr(e, 'select');
+      try { document[execKey]('selectAll', false, null); return true; } catch (e2) { ignoreErr(e2, 'select'); return false; }
     }
   }
 
   function emitEditableInput(editor, text = '') {
     try {
       editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-    } catch (_) {
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+    } catch (e) { ignoreErr(e, 'editable'); editor.dispatchEvent(new Event('input', { bubbles: true })); }
     try { editor.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) { ignoreErr(e, 'editable'); }
   }
 
   // PR8D + PR-DUP: clear any FB-restored draft (bounded 6× loop) BEFORE insertText, else it APPENDS → dup comment.
   function setEditableText(editor, text) {
-    try { editor.focus({ preventScroll: true }); } catch (_) { try { editor.focus(); } catch (e) { ignoreErr(e, 'editable'); } }
+    try { editor.focus({ preventScroll: true }); } catch (e) { ignoreErr(e, 'editable'); try { editor.focus(); } catch (e2) { ignoreErr(e2, 'editable'); } }
     if (editor.isContentEditable) {
       for (let i = 0; i < 6; i += 1) {
         if (norm(textOfEditable(editor)).length === 0) break;
