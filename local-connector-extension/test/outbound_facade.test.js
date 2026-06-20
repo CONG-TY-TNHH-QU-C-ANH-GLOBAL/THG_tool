@@ -27,7 +27,7 @@ const REAL_MODULES = [
 
     // ---- RUNTIME-SURFACE guard: Chrome global = exactly the 4 public methods ----------
     assert.deepStrictEqual(
-      Object.keys(api).sort(),
+      Object.keys(api).sort((a, b) => a.localeCompare(b)),
       ['executeCommentInFeed', 'executeCommentViaRung2', 'executeOutbound', 'probeRung2Click'],
       'Chrome runtime global must expose exactly the four public methods');
     assert.ok(!('_test' in api), 'runtime global must NOT expose _test');
