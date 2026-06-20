@@ -19,7 +19,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     throw new Error('THGOutboundDom is required before outbound.js');
   }
   const { wait, norm, hasAny, visible, labelOf, clickLikeUser, enabledButton,
-    textOfEditable, setEditableText, waitFor, dismissBlockingOverlays } = THGDom;
+    textOfEditable, waitFor, dismissBlockingOverlays } = THGDom;
 
   // PR3 (Workstream A): the Posting layer (executePost/postResult) moved to
   // content/posting_outbound.js (THGPostingOutbound), manifest-loaded before this file. The
@@ -28,6 +28,15 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     || (typeof require === 'function' ? require('./posting_outbound.js') : null);
   if (!THGPosting) {
     throw new Error('THGPostingOutbound is required before outbound.js');
+  }
+
+  // PR4 (Workstream A): the Inbox layer (executeInbox/inboxResult) moved to
+  // content/inbox_outbound.js (THGInboxOutbound), manifest-loaded before this file. The
+  // facade's inbox dispatch delegates to it. Same guarded-fallback shape.
+  const THGInbox = globalThis.THGInboxOutbound
+    || (typeof require === 'function' ? require('./inbox_outbound.js') : null);
+  if (!THGInbox) {
+    throw new Error('THGInboxOutbound is required before outbound.js');
   }
 
   function editorContainsContent(editor, content) {
@@ -850,54 +859,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
     return proof ? { ...base, proof } : base;
   }
 
-  async function executeInbox(content, executionId = '') {
-    await dismissBlockingOverlays();
-    const proof = THGContentProof || null;
-    // Snapshot the last bubble pre-submit so the proof builder can detect
-    // whether a NEW bubble appeared (vs. an existing one already matching
-    // our text — the duplicate / idempotent case).
-    const preBubbleHash = proof ? proof.snapshotLastBubble() : '';
-    const ctx = { content, preBubbleHash, executionId };
-
-    const messageKeys = ['message', 'messenger', 'send message', 'nhan tin'];
-    const sendKeys = ['send', 'press enter to send', 'gui'];
-    let editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
-    if (!editors.length) {
-      const messageButton = Array.from(document.querySelectorAll('div[role="button"], button, a[role="button"]')).filter(el => visible(el))
-        .find(el => hasAny(labelOf(el), messageKeys));
-      if (!messageButton || !clickLikeUser(messageButton)) return inboxResult(false, 'message_button_not_found', null, ctx);
-      await wait(1800);
-      editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
-    }
-    let editor = editors.find(el => hasAny(labelOf(el), messageKeys) || norm(el.getAttribute('role')) === 'textbox');
-    if (!editor) editor = editors[editors.length - 1];
-    if (!editor) return inboxResult(false, 'message_box_not_found', null, ctx);
-    if (!setEditableText(editor, content)) return inboxResult(false, 'inbox_text_insert_failed', null, ctx);
-    await wait(700);
-    const scope = editor.closest('[role="dialog"], form, div[aria-label]') || document;
-    const send = Array.from(scope.querySelectorAll('div[role="button"], button, [aria-label]')).filter(el => visible(el)).find(el => {
-      const label = labelOf(el);
-      return hasAny(label, sendKeys) && el.getAttribute('aria-disabled') !== 'true' && !el.disabled;
-    });
-    if (!send || !clickLikeUser(send)) return inboxResult(false, 'inbox_submit_not_found', null, ctx);
-    // Longer settle for bubble + timestamp to render — FB animates the
-    // bubble in, and "Just now" copy can lag the bubble itself.
-    await wait(1500);
-    return inboxResult(true, '', 'sent_inbox_button', ctx);
-  }
-
-  function inboxResult(ok, errorCode, detail, ctx) {
-    const proof = THGContentProof ? THGContentProof.buildInboxProof({
-      ok, errorCode, content: ctx.content, preBubbleHash: ctx.preBubbleHash
-    }) : null;
-    if (proof && ctx && ctx.executionId) {
-      proof.execution_id = ctx.executionId;
-    }
-    const base = ok
-      ? { ok: true, detail: detail || 'sent_inbox' }
-      : { ok: false, error: errorCode || 'inbox_failed' };
-    return proof ? { ...base, proof } : base;
-  }
+  // PR4: executeInbox + inboxResult moved to content/inbox_outbound.js (THGInboxOutbound).
   // PR3: executePost + postResult moved to content/posting_outbound.js (THGPostingOutbound).
 
   // executeCommentInFeed is Path 2's content-script entry point. The
@@ -1207,7 +1169,7 @@ var THGContentOutbound = globalThis.THGContentOutbound || (() => {
       outboundId: Number(message?.id || message?.outbound_id || 0) || 0,
     };
     if (type === 'comment') return executeComment(content, targetUrl, executionId, navOpts);
-    if (type === 'inbox') return executeInbox(content, executionId);
+    if (type === 'inbox') return THGInbox.executeInbox(content, executionId);
     if (type === 'group_post' || type === 'profile_post') return THGPosting.executePost(content, executionId);
     return { ok: false, error: `unsupported_outbox_type:${type}` };
   }
