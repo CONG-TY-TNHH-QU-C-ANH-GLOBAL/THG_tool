@@ -25,7 +25,7 @@ globalThis.THGPostingOutbound = globalThis.THGPostingOutbound || (() => {
     if (!composer || !clickLikeUser(composer)) return postResult(false, 'post_composer_not_found', null, ctx);
     await wait(1500);
     const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).filter(el => visible(el));
-    let editor = editors.find(el => norm(el.getAttribute('role')) === 'textbox') || editors[editors.length - 1];
+    let editor = editors.find(el => norm(el.getAttribute('role')) === 'textbox') || editors.at(-1);
     if (!editor) return postResult(false, 'post_editor_not_found', null, ctx);
     if (!setEditableText(editor, content)) return postResult(false, 'post_text_insert_failed', null, ctx);
     await wait(900);
@@ -46,11 +46,12 @@ globalThis.THGPostingOutbound = globalThis.THGPostingOutbound || (() => {
     // Read the proof builder from globalThis at call time (not captured at init), matching the
     // original bare-global reference; absent builder → no proof (same shape as before).
     const P = globalThis.THGContentProof;
-    const proof = P ? P.buildPostProof({
+    const proof = P?.buildPostProof({
       ok, errorCode, content: ctx.content
-    }) : null;
-    if (proof && ctx && ctx.executionId) {
-      proof.execution_id = ctx.executionId;
+    }) ?? null;
+    const executionId = ctx?.executionId;
+    if (proof && executionId) {
+      proof.execution_id = executionId;
     }
     const base = ok
       ? { ok: true, detail: detail || 'sent_post' }
