@@ -68,28 +68,27 @@ try {
   }
 
   // ----- abbreviate / norm / hasAny / enabledButton / textOfEditable ------------------
-  {
-    assert.strictEqual(T.abbreviate(''), '<missing>');
-    assert.strictEqual(T.abbreviate(null), '<missing>');
-    assert.strictEqual(T.abbreviate('short'), 'short');
-    assert.strictEqual(T.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
+  // (No wrapping scope block — this group declares no locals, so the block was redundant.)
+  assert.strictEqual(T.abbreviate(''), '<missing>');
+  assert.strictEqual(T.abbreviate(null), '<missing>');
+  assert.strictEqual(T.abbreviate('short'), 'short');
+  assert.strictEqual(T.abbreviate('a'.repeat(20)), 'a'.repeat(16) + '…', 'long id truncated to 16 + ellipsis');
 
-    assert.strictEqual(T.norm('Bình Luận'), 'binh luan', 'diacritics stripped + lowercased');
-    assert.strictEqual(T.norm('  ĐÂY '), 'day', 'Đ -> d + trim');
+  assert.strictEqual(T.norm('Bình Luận'), 'binh luan', 'diacritics stripped + lowercased');
+  assert.strictEqual(T.norm('  ĐÂY '), 'day', 'Đ -> d + trim');
 
-    assert.strictEqual(T.hasAny('hello world', ['xyz', 'wor']), true);
-    assert.strictEqual(T.hasAny('hello world', ['xyz']), false);
+  assert.strictEqual(T.hasAny('hello world', ['xyz', 'wor']), true);
+  assert.strictEqual(T.hasAny('hello world', ['xyz']), false);
 
-    assert.strictEqual(T.enabledButton({ getAttribute: () => null, disabled: false }), true);
-    assert.strictEqual(T.enabledButton({ getAttribute: () => 'true', disabled: false }), false, 'aria-disabled');
-    assert.strictEqual(T.enabledButton({ getAttribute: () => null, disabled: true }), false, 'disabled');
-    assert.ok(!T.enabledButton(null), 'null button not enabled');
+  assert.strictEqual(T.enabledButton({ getAttribute: () => null, disabled: false }), true);
+  assert.strictEqual(T.enabledButton({ getAttribute: () => 'true', disabled: false }), false, 'aria-disabled');
+  assert.strictEqual(T.enabledButton({ getAttribute: () => null, disabled: true }), false, 'disabled');
+  assert.ok(!T.enabledButton(null), 'null button not enabled');
 
-    assert.strictEqual(T.textOfEditable({ value: 'hi' }), 'hi', 'value wins');
-    assert.strictEqual(T.textOfEditable({ innerText: 'yo' }), 'yo', 'innerText fallback');
-    assert.strictEqual(T.textOfEditable({ textContent: 'tc' }), 'tc', 'textContent fallback');
-    assert.strictEqual(T.textOfEditable(null), '', 'null → ""');
-  }
+  assert.strictEqual(T.textOfEditable({ value: 'hi' }), 'hi', 'value wins');
+  assert.strictEqual(T.textOfEditable({ innerText: 'yo' }), 'yo', 'innerText fallback');
+  assert.strictEqual(T.textOfEditable({ textContent: 'tc' }), 'tc', 'textContent fallback');
+  assert.strictEqual(T.textOfEditable(null), '', 'null → ""');
 
   // ----- editorContainsContent — 60-char sample match, detached-editor guard ----------
   {

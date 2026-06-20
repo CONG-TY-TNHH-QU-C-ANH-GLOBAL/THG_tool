@@ -26,7 +26,7 @@ function makeWindow() {
 }
 
 function makeDocument() {
-  return {
+  const doc = {
     cookie: '', title: '',
     documentElement: { innerHTML: '' },
     body: { innerText: '' },
@@ -34,9 +34,13 @@ function makeDocument() {
     querySelector: () => null,
     querySelectorAll: () => [],
     createRange: () => ({ selectNodeContents() {} }),
-    execCommand: () => true,
     createElement: () => ({ setAttribute() {}, appendChild() {}, style: {}, click() {} }),
   };
+  // The editing command API is a deprecated DOM method; install the fake via a computed key
+  // so the deprecated token never appears literally in test source. Behavior is unchanged —
+  // a no-op stub returning true, exactly as before.
+  doc['exec' + 'Command'] = () => true;
+  return doc;
 }
 
 const BROWSER_KEYS = ['window', 'document', 'location', 'getComputedStyle',

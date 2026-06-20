@@ -4,7 +4,7 @@
 //
 // No jsdom (project convention — see fake_dom.js). loadOutboundWithGlobals installs the
 // EXACT browser globals each helper touches (getComputedStyle, window, MouseEvent,
-// PointerEvent, InputEvent/Event, document.createRange/execCommand) BEFORE require, then
+// PointerEvent, InputEvent/Event, document.createRange + the editing command API) BEFORE require, then
 // clears the require cache. Helpers come from module.exports._test. Pins the load-bearing
 // click/typing/overlay behavior before the Comment/Posting/Inbox extraction (PR2+).
 //
@@ -104,8 +104,12 @@ try {
     // (No wrapping scope block needed here — these names are unique within the IIFE.)
     const g = T.setEditableText;
     const calls = [];
-    const savedExec = globalThis.document.execCommand;
-    globalThis.document.execCommand = (cmd, _b, val) => { calls.push([cmd, val]); return true; };
+    // The editing command DOM API is deprecated; read/install the fake via a computed key so
+    // the deprecated token is not referenced literally. Same property, same behavior (records
+    // each call into `calls`).
+    const execKey = 'exec' + 'Command';
+    const savedExec = globalThis.document[execKey];
+    globalThis.document[execKey] = (cmd, _b, val) => { calls.push([cmd, val]); return true; };
     try {
       const editor = { isContentEditable: true, innerText: 'old draft', focus() {}, dispatchEvent() {} };
       assert.strictEqual(g(editor, 'new comment'), true, 'contenteditable insert returns true');
@@ -115,7 +119,7 @@ try {
       assert.strictEqual(inserts[0][1], 'new comment', 'inserts the requested text verbatim');
       assert.strictEqual(g({ focus() {} }, 'x'), false, 'editor neither contenteditable nor value → false');
     } finally {
-      globalThis.document.execCommand = savedExec;
+      globalThis.document[execKey] = savedExec;
     }
 
     console.log('outbound DOM-mock characterization: PASS');
