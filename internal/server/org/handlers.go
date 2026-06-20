@@ -21,6 +21,14 @@ const (
 	authPresentCookie = "autoflow_session"
 )
 
+// Transport-layer error messages, factored out to avoid duplicated string
+// literals (go:S1192). Values are byte-identical to the originals.
+const (
+	errInvalidRequest = "invalid request"
+	errOrgNotFound    = "organization not found"
+	errNotFound       = "not found"
+)
+
 // registerOrg handles POST /api/register (public â€” no auth required).
 // Creates a new organization and its first admin user in one atomic transaction.
 func (h *Handler) registerOrg(c *fiber.Ctx) error {
@@ -32,7 +40,7 @@ func (h *Handler) registerOrg(c *fiber.Ctx) error {
 		AdminPassword string `json:"admin_password"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	if req.OrgName == "" || req.AdminEmail == "" || req.AdminPassword == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "org_name, admin_email and admin_password required"})
@@ -126,7 +134,7 @@ func (h *Handler) getMyOrg(c *fiber.Ctx) error {
 	}
 	org, err := h.deps.DB.GetOrganization(orgID)
 	if err != nil || org == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "organization not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errOrgNotFound})
 	}
 	count, _ := h.deps.DB.CountAccountsByOrg(orgID)
 	return c.JSON(fiber.Map{
@@ -149,11 +157,11 @@ func (h *Handler) updateOrg(c *fiber.Ctx) error {
 		Color  string `json:"color"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	org, err := h.deps.DB.GetOrganization(orgID)
 	if err != nil || org == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "organization not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errOrgNotFound})
 	}
 	if req.Name != "" {
 		org.Name = req.Name
@@ -232,16 +240,16 @@ func (h *Handler) serveOrgAsset(c *fiber.Ctx) error {
 	}
 	kind := c.Params("kind")
 	if kind != "logo" && kind != "avatar" {
-		return c.Status(404).SendString("not found")
+		return c.Status(404).SendString(errNotFound)
 	}
 	org, err := h.deps.DB.GetOrganization(int64(orgID))
 	if err != nil || org == nil {
-		return c.Status(404).SendString("not found")
+		return c.Status(404).SendString(errNotFound)
 	}
 	dir := filepath.Join(orgAssetDir, fmt.Sprintf("%d", org.ID))
 	matches, _ := filepath.Glob(filepath.Join(dir, kind+".*"))
 	if len(matches) == 0 {
-		return c.Status(404).SendString("not found")
+		return c.Status(404).SendString(errNotFound)
 	}
 	return c.SendFile(matches[0])
 }
@@ -257,7 +265,7 @@ func (h *Handler) adminUpdateOrg(c *fiber.Ctx) error {
 		Active      *bool  `json:"active"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	org, err := h.deps.DB.GetOrganization(int64(id))
 	if err != nil || org == nil {
@@ -305,7 +313,7 @@ func (h *Handler) createOrgUser(c *fiber.Ctx) error {
 		OrgID    int64  `json:"org_id"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	if req.Email == "" || req.Password == "" || req.Name == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "email, name and password required"})
@@ -326,7 +334,7 @@ func (h *Handler) createOrgUser(c *fiber.Ctx) error {
 	}
 	org, err := h.deps.DB.GetOrganization(targetOrgID)
 	if err != nil || org == nil || !org.Active {
-		return c.Status(404).JSON(fiber.Map{"error": "organization not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errOrgNotFound})
 	}
 
 	// Limit role escalation: org admins can only create admin/sales

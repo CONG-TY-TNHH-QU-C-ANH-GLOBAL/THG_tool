@@ -15,6 +15,14 @@ import (
 	crawlstore "github.com/thg/scraper/internal/store/crawl"
 )
 
+// Transport-layer error messages, factored out to avoid duplicated string
+// literals (go:S1192). Values are byte-identical to the originals.
+const (
+	errInvalidIntentID = "invalid crawl intent id"
+	errInvalidRequest  = "invalid request"
+	errIntentNotFound  = "crawl intent not found"
+)
+
 // Deps holds dependencies needed by crawl intent handlers.
 type Deps struct {
 	DB *store.Store
@@ -49,17 +57,17 @@ func setIntentEnabled(deps Deps) fiber.Handler {
 		orgID, _ := c.Locals("org_id").(int64)
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidIntentID})
 		}
 		var body struct {
 			Enabled bool `json:"enabled"`
 		}
 		if err := c.BodyParser(&body); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		if err := deps.DB.Crawl().SetIntentEnabled(c.Context(), orgID, id, body.Enabled); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+				return c.Status(404).JSON(fiber.Map{"error": errIntentNotFound})
 			}
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -88,7 +96,7 @@ func createIntent(deps Deps) fiber.Handler {
 		}
 		var body createIntentBody
 		if err := c.BodyParser(&body); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		body.Prompt = strings.TrimSpace(body.Prompt)
 		body.SourceURL = strings.TrimSpace(body.SourceURL)
@@ -173,20 +181,20 @@ func setIntentInterval(deps Deps) fiber.Handler {
 		orgID, _ := c.Locals("org_id").(int64)
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidIntentID})
 		}
 		var body struct {
 			IntervalMinutes int `json:"interval_minutes"`
 		}
 		if err := c.BodyParser(&body); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		if body.IntervalMinutes <= 0 {
 			return c.Status(400).JSON(fiber.Map{"error": "interval_minutes phải > 0"})
 		}
 		if err := deps.DB.Crawl().SetIntentInterval(c.Context(), orgID, id, body.IntervalMinutes); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+				return c.Status(404).JSON(fiber.Map{"error": errIntentNotFound})
 			}
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -201,11 +209,11 @@ func deleteIntent(deps Deps) fiber.Handler {
 		orgID, _ := c.Locals("org_id").(int64)
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidIntentID})
 		}
 		if err := deps.DB.Crawl().DeleteIntent(c.Context(), orgID, id); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+				return c.Status(404).JSON(fiber.Map{"error": errIntentNotFound})
 			}
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -221,11 +229,11 @@ func transitionIntent(deps Deps, targetStatus string) fiber.Handler {
 		orgID, _ := c.Locals("org_id").(int64)
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil || id <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid crawl intent id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidIntentID})
 		}
 		if err := deps.DB.Crawl().SetIntentStatus(c.Context(), orgID, id, targetStatus); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return c.Status(404).JSON(fiber.Map{"error": "crawl intent not found"})
+				return c.Status(404).JSON(fiber.Map{"error": errIntentNotFound})
 			}
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

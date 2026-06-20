@@ -13,6 +13,13 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
 
+// Transport-layer error messages, factored out to avoid duplicated string
+// literals (go:S1192). Values are byte-identical to the originals.
+const (
+	errInvalidRequest  = "invalid request"
+	errInvalidSourceID = "invalid source id"
+)
+
 // listSources returns every knowledge source owned by the caller's
 // org. Org scoping is enforced by the store layer; this handler
 // never accepts an org_id query parameter.
@@ -65,7 +72,7 @@ func (h *handler) createSource(c *fiber.Ctx) error {
 	}
 	var body createSourceBody
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	srcType := sources.SourceType(strings.TrimSpace(body.Type))
 	if !srcType.IsKnown() {
@@ -114,7 +121,7 @@ func (h *handler) updateSource(c *fiber.Ctx) error {
 	}
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid source id"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": errInvalidSourceID})
 	}
 
 	existing, err := h.deps.DB.Knowledge().GetSource(c.Context(), id, orgID)
@@ -124,7 +131,7 @@ func (h *handler) updateSource(c *fiber.Ctx) error {
 
 	var body updateSourceBody
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	if body.Label != nil {
 		existing.Label = strings.TrimSpace(*body.Label)
@@ -189,7 +196,7 @@ func (h *handler) seedService(c *fiber.Ctx) error {
 
 	var body seedServiceBody
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 
 	// Knowledge types only — never the catalog (POD_product) or a banned claim,
@@ -299,7 +306,7 @@ func (h *handler) deleteSource(c *fiber.Ctx) error {
 	}
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid source id"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": errInvalidSourceID})
 	}
 	deleted, err := h.deps.DB.Knowledge().DeleteSourceForOrg(c.Context(), id, orgID)
 	if err != nil {
@@ -334,7 +341,7 @@ func (h *handler) syncSource(c *fiber.Ctx) error {
 	}
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid source id"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": errInvalidSourceID})
 	}
 	src, err := h.deps.DB.Knowledge().GetSource(c.Context(), id, orgID)
 	if err != nil {
