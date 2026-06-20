@@ -43,7 +43,7 @@ function statusPill(status: CrawlIntent['status'], tm: DashboardStrings['mission
   }
 }
 
-export default function MissionCard({ intent, variant = 'full', busy, onPause, onResume, onArchive, onEditInterval, onDelete }: MissionCardProps) {
+export default function MissionCard({ intent, variant = 'full', busy, onPause, onResume, onArchive, onEditInterval, onDelete }: Readonly<MissionCardProps>) {
   const { lang, t } = useLang();
   const locale = lang === 'vi' ? 'vi-VN' : 'en-US';
   const tm = t.missionsView;

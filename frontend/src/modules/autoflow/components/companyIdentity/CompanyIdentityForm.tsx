@@ -8,7 +8,7 @@ import { normalizeWebsite, validateContact, validateCta, validateWebsite } from 
 
 interface Props { isAdmin: boolean; }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: Readonly<{ label: string; hint?: string; children: React.ReactNode }>) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{label}</label>
@@ -18,7 +18,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-export function CompanyIdentityForm({ isAdmin }: Props) {
+export function CompanyIdentityForm({ isAdmin }: Readonly<Props>) {
   const [form, setForm] = useState<CompanyIdentity>(EMPTY_COMPANY_IDENTITY);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'hot'; text: string } | null>(null);

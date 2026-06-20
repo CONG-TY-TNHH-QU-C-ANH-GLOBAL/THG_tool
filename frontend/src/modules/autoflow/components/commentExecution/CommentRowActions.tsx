@@ -17,7 +17,7 @@ interface Props {
   onDone: () => void; // reload the list after a successful action
 }
 
-export function CommentRowActions({ message, correctionReason, onDone }: Props) {
+export function CommentRowActions({ message, correctionReason, onDone }: Readonly<Props>) {
   const [busy, setBusy] = useState(false);
   // Use the EFFECTIVE outcome so a corrected (manually/async verified) row reads as success
   // → the "Xác nhận đã đăng" button auto-hides once a correction exists.
