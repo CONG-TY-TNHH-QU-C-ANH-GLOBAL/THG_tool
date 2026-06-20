@@ -9,6 +9,11 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
+// errSkillRegistryUninit is the byte-identical 503 message shared by the
+// skills handlers, factored out to avoid a duplicated string literal
+// (go:S1192).
+const errSkillRegistryUninit = "skill registry not initialised"
+
 // Deps holds dependencies needed by the skills API handlers.
 type Deps struct {
 	DB    *store.Store
@@ -31,7 +36,7 @@ func list(deps Deps) fiber.Handler {
 		}
 		registry := deps.Agent.SkillRegistry()
 		if registry == nil {
-			return c.Status(503).JSON(fiber.Map{"error": "skill registry not initialised"})
+			return c.Status(503).JSON(fiber.Map{"error": errSkillRegistryUninit})
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		catalog := registry.Catalog(c.Context(), deps.DB, orgID)
@@ -55,7 +60,7 @@ func all(deps Deps) fiber.Handler {
 		}
 		registry := deps.Agent.SkillRegistry()
 		if registry == nil {
-			return c.Status(503).JSON(fiber.Map{"error": "skill registry not initialised"})
+			return c.Status(503).JSON(fiber.Map{"error": errSkillRegistryUninit})
 		}
 		registered := registry.All()
 		out := make([]fiber.Map, 0, len(registered))
@@ -84,7 +89,7 @@ func all(deps Deps) fiber.Handler {
 func setEnabled(deps Deps, enabled bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if deps.Agent == nil || deps.Agent.SkillRegistry() == nil {
-			return c.Status(503).JSON(fiber.Map{"error": "skill registry not initialised"})
+			return c.Status(503).JSON(fiber.Map{"error": errSkillRegistryUninit})
 		}
 		skillID := strings.TrimSpace(c.Params("id"))
 		if skillID == "" {

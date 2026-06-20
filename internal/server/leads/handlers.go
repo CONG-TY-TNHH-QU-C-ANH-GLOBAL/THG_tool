@@ -18,6 +18,13 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
+// Transport-layer error messages, factored out to avoid duplicated string
+// literals (go:S1192). Values are byte-identical to the originals.
+const (
+	errInvalidID      = "invalid id"
+	errInvalidRequest = "invalid request"
+)
+
 // nicheSlugRe constrains niche slugs to a URL/filter-safe shape. Slugs flow
 // into query params and lead-filter clauses, so reject anything outside
 // lowercase alphanumerics, hyphen, and underscore.
@@ -76,7 +83,7 @@ func deleteLead(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 		}
 		source := strings.ToLower(strings.TrimSpace(c.Query("source", "")))
 		orgID, _ := c.Locals("org_id").(int64)
@@ -135,7 +142,7 @@ func reclassifyLeads(deps Deps) fiber.Handler {
 			Limit           int      `json:"limit"`
 		}
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		onlyUnknown := true
 		if req.OnlyUnknown != nil {
@@ -327,7 +334,7 @@ func addNiche(deps Deps) fiber.Handler {
 			Emoji string `json:"emoji"`
 		}
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		req.Slug = strings.TrimSpace(req.Slug)
 		req.Name = strings.TrimSpace(req.Name)
@@ -382,7 +389,7 @@ func deletePost(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
@@ -439,7 +446,7 @@ func addGroup(deps Deps) fiber.Handler {
 			URL      string `json:"url"`
 		}
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		req.Name = strings.TrimSpace(req.Name)
 		req.URL = strings.TrimSpace(req.URL)
@@ -478,7 +485,7 @@ func toggleGroup(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
@@ -488,7 +495,7 @@ func toggleGroup(deps Deps) fiber.Handler {
 			Active bool `json:"active"`
 		}
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		if err := deps.DB.Crawl().ToggleGroup(orgID, id, req.Active); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -502,7 +509,7 @@ func deleteGroup(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
@@ -539,7 +546,7 @@ func createJob(deps Deps) fiber.Handler {
 			Text      string `json:"text"`
 		}
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+			return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 		}
 		if req.Intent == "" {
 			req.Intent = "facebook_crawl"
