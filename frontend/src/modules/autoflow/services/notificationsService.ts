@@ -5,12 +5,7 @@
  */
 import { get, post } from './api';
 
-export type NotificationType =
-  | 'workspace_invite_received'
-  | 'workspace_invite_accepted'
-  | 'workspace_joined'
-  | 'extension_update_required'
-  | string;
+export type NotificationType = string;
 
 export interface AppNotification {
   id: number;

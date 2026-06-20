@@ -163,7 +163,7 @@ export interface StaffInvite {
   createdBy: number;
   expiresAt: string;
   createdAt: string;
-  emailStatus?: 'sent' | 'failed' | 'not_configured' | 'pending' | string;
+  emailStatus?: string;
   emailError?: string;
   /** Lifecycle: pending | accepted | expired | revoked (backend-derived). */
   status?: string;
@@ -230,7 +230,7 @@ export interface Workspace {
   fbUsername?: string;
   fbProfileUrl?: string;
   running: boolean;
-  browserState?: 'initializing' | 'display_ready' | 'ready' | 'idle' | 'active' | 'checkpoint' | 'human_required' | 'error' | 'terminated' | string;
+  browserState?: string;
   errorMsg?: string;
   vncPort?: number;
   cdpPort?: number;

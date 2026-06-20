@@ -19,12 +19,12 @@ export interface ConnectorOverviewRow {
   connector_online: boolean;
   last_seen: string;
   extension_version: string;
-  extension_version_state: 'latest' | 'update_available' | 'update_required' | 'unsupported' | string;
+  extension_version_state: string;
   readiness: string;
   automation_eligible: boolean;
   assignment_paused: boolean;
   block_reasons: string[];
-  contact_profile_state: 'complete' | 'incomplete' | 'missing' | '' | string;
+  contact_profile_state: string;
 }
 
 export function contactStateLabel(state: string): { label: string; tone: 'ok' | 'warn' | 'blocked' } | null {
