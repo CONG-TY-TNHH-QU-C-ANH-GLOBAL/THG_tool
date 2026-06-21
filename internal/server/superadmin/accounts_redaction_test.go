@@ -1,4 +1,4 @@
-package org
+package superadmin
 
 import (
 	"io"
@@ -9,35 +9,15 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/store/storetest"
+	"github.com/thg/scraper/internal/server/testsupport"
 )
 
-func bootstrapStore(path string) error {
-	db, err := store.New(path)
-	if err != nil {
-		return err
-	}
-	return db.Close()
-}
-
-func newTestStore(t *testing.T, name string) *store.Store {
-	t.Helper()
-	dst := storetest.CopyTemplate(t, bootstrapStore, name)
-	db, err := store.New(dst)
-	if err != nil {
-		t.Fatalf("open from template: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-// GET /admin/accounts (founder-gated) previously serialized the raw
+// GET /superadmin/accounts (founder-gated) previously serialized the raw
 // models.Account slice from GetAllAccounts — which returns DECRYPTED
 // cookies plus proxy_url/user_agent. The AccountSafe projection must
 // strip every credential/infra field while keeping monitoring fields.
 func TestSuperAdminAccounts_RedactsSecrets(t *testing.T) {
-	db := newTestStore(t, "superadmin_redaction.db")
+	db := testsupport.NewTestStore(t, "superadmin_redaction.db")
 	if _, err := db.Identities().AddAccount(&models.Account{
 		OrgID:          1,
 		Platform:       models.PlatformFacebook,

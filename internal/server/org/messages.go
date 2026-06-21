@@ -10,5 +10,4 @@ const (
 	msgUserNotFound             = "user not found"
 	msgOrganizationNotFound     = "organization not found"
 	msgNotFound                 = "not found"
-	msgInvalidID                = "invalid id"
 )

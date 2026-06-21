@@ -28,6 +28,7 @@ import (
 	servernotifications "github.com/thg/scraper/internal/server/notifications"
 	serverobservability "github.com/thg/scraper/internal/server/observability"
 	serverorg "github.com/thg/scraper/internal/server/org"
+	serversuperadmin "github.com/thg/scraper/internal/server/superadmin"
 	serverplatform "github.com/thg/scraper/internal/server/platform"
 	serverskills "github.com/thg/scraper/internal/server/skills"
 	"github.com/thg/scraper/internal/server/system"
@@ -179,7 +180,12 @@ func (s *Server) registerRoutes() {
 
 	// Onboarding — new users with org_id=0 must complete this before accessing org features
 
-	serverorg.Routes(r, orgDeps, adminOnly, authpkg.RequireRole(string(models.RoleFounder)))
+	serverorg.Routes(r, orgDeps, adminOnly)
+	// Founder-only SaaS/platform control plane. Registered under the same
+	// protected /api group `r` with the same founder-role middleware, so the
+	// effective paths (/api/superadmin/...) and auth chain are unchanged by the
+	// extraction out of the org module.
+	serversuperadmin.RegisterRoutes(r, serversuperadmin.Deps{DB: s.db, Workspace: s.workspace}, authpkg.RequireRole(string(models.RoleFounder)))
 
 	// Telegram: ONE shared domain/control service (single source of truth) backs BOTH the REST
 	// settings API and the webhook runtime — neither re-implements binding/permission/policy
