@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -72,11 +73,11 @@ func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID str
 	}
 
 	// Best-effort projection for the telemetry event below (mirrors the
-	// SQLite claim path). Errors are ignored — the authoritative state
-	// change is the CAS above; telemetry must never fail the claim.
+	// SQLite claim path). The scan error is handled explicitly — never
+	// ignored — but it does not fail the already-successful CAS.
 	var actionType, targetURL string
 	var accountID int64
-	_ = tx.QueryRow(ctx,
+	projErr := tx.QueryRow(ctx,
 		`SELECT type, account_id, target_url FROM outbound_messages WHERE id = $1 AND org_id = $2`,
 		id, orgID,
 	).Scan(&actionType, &accountID, &targetURL)
@@ -87,16 +88,23 @@ func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID str
 
 	// Typed event: claim succeeded — parity with internal/store/outbound's
 	// OutboundClaimed emission (closes the "did the queued row reach the
-	// executor?" diagnostic gap). Telemetry only; no durable write.
-	events.Info(ctx, events.OutboundClaimed,
-		events.FieldOrgID, orgID,
-		events.FieldOutboundID, id,
-		events.FieldAccountID, accountID,
-		events.FieldActionType, actionType,
-		events.FieldTargetURL, targetURL,
-		"worker_id", workerID,
-		"execution_id", execID,
-	)
+	// executor?" diagnostic gap). Telemetry only; no durable write. Emitted
+	// only when the projection scanned cleanly; a projection failure is
+	// logged at warn and the (already committed) claim still returns success.
+	if projErr == nil {
+		events.Info(ctx, events.OutboundClaimed,
+			events.FieldOrgID, orgID,
+			events.FieldOutboundID, id,
+			events.FieldAccountID, accountID,
+			events.FieldActionType, actionType,
+			events.FieldTargetURL, targetURL,
+			"worker_id", workerID,
+			"execution_id", execID,
+		)
+	} else {
+		slog.WarnContext(ctx, "postgres.Claim: telemetry projection failed; skipping OutboundClaimed event",
+			"outbound_id", id, "org_id", orgID, "err", projErr)
+	}
 
 	return &outbound.ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
 }
