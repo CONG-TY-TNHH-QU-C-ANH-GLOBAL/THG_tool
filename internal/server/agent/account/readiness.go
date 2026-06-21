@@ -1,4 +1,4 @@
-package agent
+package account
 
 import (
 	"context"
@@ -46,10 +46,7 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		return nil, err
 	}
 	conns, _ := db.Connectors().ListLocalConnectors(orgID)
-	connByID := make(map[int64]connectors.AgentToken, len(conns))
-	for i := range conns {
-		connByID[conns[i].ID] = conns[i]
-	}
+	connByID := indexConnectorsByID(conns)
 	policy, _ := db.Connectors().GetExtensionPolicy()
 	actorStates, _ := db.Coordination().AccountActorStatesForOrg(ctx, orgID)
 
@@ -62,21 +59,7 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		if !models.CanViewAccountDevice(&acc, userID, role) {
 			continue // RBAC + privacy: not the caller's own (and not admin-visible unassigned)
 		}
-		connID, connReason := connectors.PickReadyConnector(conns, acc.ID, acc.FBUserID, policy)
-		extVer, machineLabel, profileID := "", "", ""
-		if c, ok := connByID[connID]; ok {
-			extVer, machineLabel, profileID = c.Version, c.MachineLabel, c.BrowserProfileID
-		} else {
-			// Blocked connector (e.g. update_required): still surface the
-			// assigned device's version/label so the staff panel can show
-			// WHICH build needs updating instead of a blank row.
-			for j := range conns {
-				if conns[j].AssignedAccountID == acc.ID {
-					extVer, machineLabel, profileID = conns[j].Version, conns[j].MachineLabel, conns[j].BrowserProfileID
-					break
-				}
-			}
-		}
+		connID, connReason, extVer, machineLabel, profileID := resolveConnectorMeta(conns, connByID, acc, policy)
 		ar := models.AccountReadiness{
 			AccountID:        acc.ID,
 			AccountName:      acc.Name,
@@ -92,7 +75,6 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 			ExtensionVersionState: connectors.EvaluateVersionState(extVer, policy),
 			RequiredAction:        readinessRequiredAction(connReason),
 		}
-		connReady := connReason == connectors.ConnReady
 		actorBlocked := actorStates[acc.ID].Blocked
 
 		// P1.3E requester-scoped executability: green "Sẵn sàng" must mean the REQUESTER can run
@@ -100,42 +82,79 @@ func BuildAccountReadinessMatrix(db *store.Store, orgID, userID int64, role stri
 		// additive; capabilities[].can below stays the org-wide projection other UIs consume.
 		ex := resolveAccountExecutable(acc, connectors.OwnedBy(conns, userID), policy,
 			actorBlocked, acc.Status == models.AccountActive, userID)
-		ar.Configured = ex.configured
-		ar.ControlAllowed = ex.controlAllowed
-		ar.Paired = ex.paired
-		ar.ConnectorOnline = ex.connectorOnline
-		ar.HeartbeatFresh = ex.connectorOnline
-		ar.LiveIdentityMatched = ex.liveIdentityMatched
-		ar.SessionUsable = ex.sessionUsable
-		ar.Executable = ex.executable
-		ar.ExecReasonCode = ex.reasonCode
-		ar.ExecReasonMessage = execReasonMessage(ex.reasonCode)
-		for _, capName := range readinessCapabilities {
-			// Non-nil so JSON is `[]`, never `null` — a nil slice would marshal to
-			// null and crash the FE (`cap.reasons[0]`). Contract: reasons is always
-			// an array.
-			reasons := []string{}
-			if !connReady {
-				reasons = append(reasons, connReason)
-			}
-			if capName == models.CapabilityCrawl {
-				// crawl is read-only: outbound pacing (cooldown/risk/daily) does NOT
-				// apply, but the hard Verified-Actor block (denies ALL execution) does.
-				if actorBlocked {
-					reasons = append(reasons, "actor_mismatch_blocked")
-				}
-			} else if dec, derr := db.Coordination().EvaluateCaps(ctx, acc.ID, capabilityMsgType[capName]); derr == nil && !dec.Allowed {
-				reasons = append(reasons, dec.Reason)
-			}
-			ar.Capabilities = append(ar.Capabilities, models.CapabilityReadiness{
-				Capability: capName,
-				Can:        len(reasons) == 0,
-				Reasons:    reasons,
-			})
-		}
+		applyExecStatus(&ar, ex)
+		ar.Capabilities = buildCapabilityReadiness(ctx, db, acc, connReason, actorBlocked)
 		out = append(out, ar)
 	}
 	return out, nil
+}
+
+// indexConnectorsByID maps connectors by their id for O(1) lookup.
+func indexConnectorsByID(conns []connectors.AgentToken) map[int64]connectors.AgentToken {
+	byID := make(map[int64]connectors.AgentToken, len(conns))
+	for i := range conns {
+		byID[conns[i].ID] = conns[i]
+	}
+	return byID
+}
+
+// resolveConnectorMeta resolves the readiness gate verdict for an account plus the
+// version/label of the picked connector — or, when the picked connector is blocked
+// (e.g. update_required), the first connector still assigned to the account so the
+// staff panel can show WHICH build needs updating instead of a blank row.
+func resolveConnectorMeta(conns []connectors.AgentToken, connByID map[int64]connectors.AgentToken, acc models.Account, policy connectors.VersionPolicy) (connID int64, connReason, extVer, machineLabel, profileID string) {
+	connID, connReason = connectors.PickReadyConnector(conns, acc.ID, acc.FBUserID, policy)
+	if c, ok := connByID[connID]; ok {
+		return connID, connReason, c.Version, c.MachineLabel, c.BrowserProfileID
+	}
+	for j := range conns {
+		if conns[j].AssignedAccountID == acc.ID {
+			return connID, connReason, conns[j].Version, conns[j].MachineLabel, conns[j].BrowserProfileID
+		}
+	}
+	return connID, connReason, "", "", ""
+}
+
+// applyExecStatus copies the decomposed executability verdict onto the readiness row.
+func applyExecStatus(ar *models.AccountReadiness, ex execStatus) {
+	ar.Configured = ex.configured
+	ar.ControlAllowed = ex.controlAllowed
+	ar.Paired = ex.paired
+	ar.ConnectorOnline = ex.connectorOnline
+	ar.HeartbeatFresh = ex.connectorOnline
+	ar.LiveIdentityMatched = ex.liveIdentityMatched
+	ar.SessionUsable = ex.sessionUsable
+	ar.Executable = ex.executable
+	ar.ExecReasonCode = ex.reasonCode
+	ar.ExecReasonMessage = execReasonMessage(ex.reasonCode)
+}
+
+// buildCapabilityReadiness builds the per-capability can/why-not list for one
+// account. crawl is read-only (outbound pacing does NOT apply, but the hard
+// Verified-Actor block does); comment/inbox/post consult the read-only behaviour
+// caps. reasons is always a non-nil slice so JSON is `[]`, never null.
+func buildCapabilityReadiness(ctx context.Context, db *store.Store, acc models.Account, connReason string, actorBlocked bool) []models.CapabilityReadiness {
+	connReady := connReason == connectors.ConnReady
+	caps := make([]models.CapabilityReadiness, 0, len(readinessCapabilities))
+	for _, capName := range readinessCapabilities {
+		reasons := []string{}
+		if !connReady {
+			reasons = append(reasons, connReason)
+		}
+		if capName == models.CapabilityCrawl {
+			if actorBlocked {
+				reasons = append(reasons, "actor_mismatch_blocked")
+			}
+		} else if dec, derr := db.Coordination().EvaluateCaps(ctx, acc.ID, capabilityMsgType[capName]); derr == nil && !dec.Allowed {
+			reasons = append(reasons, dec.Reason)
+		}
+		caps = append(caps, models.CapabilityReadiness{
+			Capability: capName,
+			Can:        len(reasons) == 0,
+			Reasons:    reasons,
+		})
+	}
+	return caps
 }
 
 // readinessRequiredAction turns the connector blocker into a one-line operator hint.

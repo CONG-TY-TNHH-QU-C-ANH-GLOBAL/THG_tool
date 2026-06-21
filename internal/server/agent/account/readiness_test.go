@@ -1,30 +1,16 @@
-package agent
+package account
 
 import (
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/store/storetest"
+	"github.com/thg/scraper/internal/server/testsupport"
 )
-
-func bootstrapReadinessMatrixStore(path string) error {
-	db, err := store.New(path)
-	if err != nil {
-		return err
-	}
-	return db.Close()
-}
 
 // PR-D: a seeded account with NO online connector is not ready for any capability,
 // and every capability reports the connector_offline reason.
 func TestBuildAccountReadinessMatrix_NoConnector(t *testing.T) {
-	dst := storetest.CopyTemplate(t, bootstrapReadinessMatrixStore, "readiness_matrix")
-	db, err := store.New(dst)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := testsupport.NewTestStore(t, "readiness_matrix")
 	const orgID = int64(5)
 
 	accID, err := db.Identities().AddAccount(&models.Account{

@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/server/agent/account"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/storetest"
 )
@@ -128,7 +129,7 @@ func TestHeartbeatBindsFacebookAccount(t *testing.T) {
 
 	// 5 + 6. Dashboard readiness matrix now returns the connected account (8: a
 	// 'detected' verification corresponds to a really-persisted account).
-	matrix, err := BuildAccountReadinessMatrix(db, orgID, ownerA, "sales")
+	matrix, err := account.BuildAccountReadinessMatrix(db, orgID, ownerA, "sales")
 	if err != nil || len(matrix) != 1 || matrix[0].FBUserID != fbUID {
 		t.Fatalf("readiness matrix = %v err=%v, want 1 account with fb %s", matrix, err, fbUID)
 	}

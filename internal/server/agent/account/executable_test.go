@@ -1,12 +1,11 @@
-package agent
+package account
 
 import (
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/server/testsupport"
 	"github.com/thg/scraper/internal/store/connectors"
-	"github.com/thg/scraper/internal/store/storetest"
 )
 
 // --- pure resolver tests (no DB): the 8 typed executability states ---
@@ -95,23 +94,10 @@ func TestConnectorsOwnedBy(t *testing.T) {
 
 // --- integration: admin inventory visibility must NOT imply executable control ---
 
-func bootstrapExecStore(path string) error {
-	db, err := store.New(path)
-	if err != nil {
-		return err
-	}
-	return db.Close()
-}
-
 // An admin can VIEW an unassigned org account (CanViewAccountDevice), but with no assignment
 // it is NOT controllable → executable=false, not_controllable. Visibility ≠ control.
 func TestBuildAccountReadinessMatrix_AdminVisibilityNotControl(t *testing.T) {
-	dst := storetest.CopyTemplate(t, bootstrapExecStore, "exec_matrix")
-	db, err := store.New(dst)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := testsupport.NewTestStore(t, "exec_matrix")
 	const orgID = int64(5)
 	accID, err := db.Identities().AddAccount(&models.Account{
 		OrgID: orgID, Platform: models.PlatformFacebook, Name: "unassigned", Status: models.AccountActive,
