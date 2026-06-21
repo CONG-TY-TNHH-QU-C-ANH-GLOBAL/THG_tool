@@ -109,15 +109,6 @@ func (h *Handler) registerOrg(c *fiber.Ctx) error {
 	})
 }
 
-// listOrgs handles GET /api/admin/orgs â€” superadmin only.
-func (h *Handler) listOrgs(c *fiber.Ctx) error {
-	orgs, err := h.deps.DB.ListOrganizations()
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"organizations": orgs, "count": len(orgs)})
-}
-
 // getMyOrg handles GET /api/org â€” returns the caller's organization details.
 func (h *Handler) getMyOrg(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
@@ -244,44 +235,6 @@ func (h *Handler) serveOrgAsset(c *fiber.Ctx) error {
 		return c.Status(404).SendString(msgNotFound)
 	}
 	return c.SendFile(matches[0])
-}
-
-// adminUpdateOrg handles PUT /api/admin/orgs/:id â€” superadmin changes plan/limits.
-func (h *Handler) adminUpdateOrg(c *fiber.Ctx) error {
-	id, _ := c.ParamsInt("id")
-	var req struct {
-		Name        string `json:"name"`
-		Domain      string `json:"domain"`
-		PlanTier    string `json:"plan_tier"`
-		MaxAccounts int    `json:"max_accounts"`
-		Active      *bool  `json:"active"`
-	}
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": msgInvalidRequest})
-	}
-	org, err := h.deps.DB.GetOrganization(int64(id))
-	if err != nil || org == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "org not found"})
-	}
-	if req.Name != "" {
-		org.Name = req.Name
-	}
-	if req.Domain != "" {
-		org.Domain = req.Domain
-	}
-	if req.PlanTier != "" {
-		org.PlanTier = models.PlanTier(req.PlanTier)
-	}
-	if req.MaxAccounts > 0 {
-		org.MaxAccounts = req.MaxAccounts
-	}
-	if req.Active != nil {
-		org.Active = *req.Active
-	}
-	if err := h.deps.DB.UpdateOrganization(org.ID, org.Name, org.Domain, org.PlanTier, org.MaxAccounts, org.Active); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(fiber.Map{"status": "updated", "org": org})
 }
 
 // createOrgUser handles POST /api/auth/users for platform-founder maintenance.

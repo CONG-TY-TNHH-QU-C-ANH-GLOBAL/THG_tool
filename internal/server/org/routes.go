@@ -5,8 +5,8 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// Shared org user route path segments (registered under both the auth-admin
-// and superadmin groups). Defined once so the literal has a single source.
+// Shared org user route path segments. Defined once so the literal has a
+// single source.
 const (
 	routeUsers    = "/users"
 	routeUserByID = "/users/:id"
@@ -44,8 +44,10 @@ func AuthAdminRoutes(group fiber.Router, deps Deps, tenantReady, adminOnly fiber
 	group.Get("/audit", tenantReady, adminOnly, h.getAuditLogs)
 }
 
-// Routes registers tenant and superadmin org endpoints.
-func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly fiber.Handler) {
+// Routes registers tenant-scoped org endpoints. Founder-only superadmin
+// endpoints live in the internal/server/superadmin module and are registered
+// separately at the composition root.
+func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	h := &Handler{deps: deps}
 
 	group.Get("/org", h.getMyOrg)
@@ -65,26 +67,4 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly 
 	group.Get("/org/knowledge/sources/:source_id/syncs", h.listSourceSyncs)
 	group.Get("/org/knowledge/stats", h.getKnowledgeStats)
 	group.Get("/org/knowledge/soak", h.getKnowledgeSoak)
-
-	superAdminGrp := group.Group("/superadmin", founderOnly)
-	superAdminGrp.Get("/orgs", h.listOrgs)
-	superAdminGrp.Put("/orgs/:id", h.adminUpdateOrg)
-	superAdminGrp.Delete("/orgs/:id", h.superAdminDeleteOrg)
-	superAdminGrp.Get("/accounts", h.superAdminAccounts)
-	superAdminGrp.Delete("/accounts/:id", h.superAdminDeleteAccount)
-	superAdminGrp.Get(routeUsers, h.superAdminUsers)
-	superAdminGrp.Delete(routeUserByID, h.superAdminDeleteUser)
-	superAdminGrp.Get("/sessions", h.superAdminSessions)
-	superAdminGrp.Delete("/sessions/:id", h.superAdminTerminateSession)
-	superAdminGrp.Post("/query", h.superAdminQuery)
-	// Single-purpose diagnostic surface for the redirected_feed
-	// investigation. NOT a tab in the CRUD sense — a focused operational
-	// action: "tell me why account X is failing" + "let me reset its
-	// risk after I fix the root cause". See
-	// project_runtime_control_plane memory for the broader EXP track.
-	superAdminGrp.Get("/accounts/:id/diagnostic", h.superAdminAccountDiagnostic)
-	superAdminGrp.Post("/accounts/:id/reset-risk", h.superAdminAccountResetRisk)
-	// Comment verification forensics: why did these target URLs verify / fail?
-	superAdminGrp.Get("/comment-forensics", h.superAdminCommentForensics)
-	superAdminGrp.Post("/comment-forensics", h.superAdminCommentForensics)
 }

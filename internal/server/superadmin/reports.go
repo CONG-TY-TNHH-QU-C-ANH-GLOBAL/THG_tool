@@ -1,9 +1,12 @@
-package org
+package superadmin
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // Superadmin diagnostic reports.
@@ -74,4 +77,35 @@ func scanSuperadminReportRows(rows *sql.Rows) ([]string, []map[string]any, error
 		}
 	}
 	return cols, result, nil
+}
+
+// superAdminQuery runs a fixed, allowlisted diagnostic report selected by the
+// request "report" key. Arbitrary request-provided SQL is NOT executed: the
+// legacy "sql" field is accepted only to reject it with a clear 400 so old
+// callers fail loudly instead of silently.
+func (h *Handler) superAdminQuery(c *fiber.Ctx) error {
+	var body struct {
+		Report string `json:"report"`
+		SQL    string `json:"sql,omitempty"` // accepted only to reject legacy raw-SQL usage
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if strings.TrimSpace(body.SQL) != "" {
+		return c.Status(400).JSON(fiber.Map{"error": "raw sql is no longer supported; pass a report key"})
+	}
+	rows, err := h.querySuperadminReport(c.Context(), body.Report)
+	if err != nil {
+		if errors.Is(err, errUnknownReport) {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid report"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	cols, result, err := scanSuperadminReportRows(rows)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"columns": cols, "rows": result, "count": len(result)})
 }
