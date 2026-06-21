@@ -1,0 +1,58 @@
+# THG AutoFlow — LOCAL DEVELOPMENT data platform (PostgreSQL + Redis).
+#
+# ⚠️  LOCAL DEVELOPMENT ONLY. This is NOT a production deployment.
+#     - Production deployment is the root ./docker-compose.yml (do not confuse).
+#     - Do NOT commit real production secrets here or in any .env file.
+#     - SQLite (DB_PATH=data/scraper.db) remains the app's runtime default;
+#       nothing in the app reads these services yet (see
+#       docs/architecture/ADR-PR9-DATA-PLATFORM.md — PR9 is dev infra only,
+#       no runtime DB switch).
+#
+# Usage:
+#   docker compose -f deploy/dev/docker-compose.yml up -d
+#   docker compose -f deploy/dev/docker-compose.yml down        # keep volume
+#   docker compose -f deploy/dev/docker-compose.yml down -v     # wipe volume
+#
+# Credentials default to safe local-only values; override via shell env or a
+# local (git-ignored) .env. See deploy/dev/.env.example.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: thg-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-thg_autoflow}
+      POSTGRES_USER: ${POSTGRES_USER:-thg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-thg_local_dev}
+    ports:
+      # Bind to localhost only — never expose the dev DB on a public interface.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - thg-dev-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-thg} -d ${POSTGRES_DB:-thg_autoflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7
+    container_name: thg-dev-redis
+    restart: unless-stopped
+    # Ephemeral by design: no appendonly, no volume. Redis is NOT a durable
+    # source of truth for task/queue/ledger/proof/policy data (see the ADR).
+    ports:
+      # Bind to localhost only.
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  thg-dev-pgdata:
+    driver: local
