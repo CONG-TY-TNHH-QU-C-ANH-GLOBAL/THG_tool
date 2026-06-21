@@ -1,4 +1,4 @@
-package postgres_test
+package outbound_test
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 // outboundLifecycle is the test-local view of the PR10 seam
 // (internal/server/agent.OutboundLifecycleRepository). Defined here so the
 // shared parity suite runs against both backends without importing the agent
-// package's heavy transitive deps — both *store.Store and
-// *postgres.OutboundStore already satisfy the real seam (asserted in
+// package's heavy transitive deps — both *store.Store and the postgres
+// *outbound.OutboundStore already satisfy the real seam (asserted in
 // outbound_test.go and internal/server/agent).
 type outboundLifecycle interface {
 	GetOutboundByExecutionStateForOrg(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error)

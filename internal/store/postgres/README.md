@@ -1,22 +1,24 @@
-# PostgreSQL outbound foundation (PR11)
+# PostgreSQL store (shared infra + per-domain adapters)
 
-PostgreSQL adapter for the outbound task lifecycle. **Foundation only — not
-wired into runtime.** SQLite (`internal/store`) remains the active database; see
-the PR9 data-platform ADR (`docs/architecture/ADR-PR9-DATA-PLATFORM.md`) and
+PostgreSQL foundation for the store layer. **Foundation only — not wired into
+runtime.** SQLite (`internal/store`) remains the active database; see the PR9
+data-platform ADR (`docs/architecture/ADR-PR9-DATA-PLATFORM.md`) and
 `specs/POSTGRES_COMPAT_PLAN.md`.
 
-## What's here
+## Structure
 
-- `migrations/001_outbound_core.sql` — PostgreSQL DDL for `outbound_messages`
-  (lifecycle core). Applied explicitly by tests / a future operator cutover,
-  **not** by the in-house runtime migrator (which embeds only
-  `internal/store/migrations`).
-- `outbound.go` / `outbound_lifecycle.go` — `OutboundStore`, a pgx/pgxpool
-  adapter implementing the PR10 seam
-  `internal/server/agent.OutboundLifecycleRepository`:
-  `GetOutboundByExecutionStateForOrg`, `ClaimPlannedOutboundForOrg`,
-  `FinalizeOutboundAttempt`, `ResetStaleExecutingForOrg`.
-- `pool.go` — `Open(ctx, dsn)` pool helper for tests / operator tooling.
+- `pool.go` — `Open(ctx, dsn)` shared pgx/pgxpool helper (package `postgres`),
+  for tests / operator tooling.
+- `migrations/` — the authoritative, ordered migration files (kept centralized
+  so apply order stays deterministic; not split per-module). Currently
+  `001_outbound_core.sql` — PostgreSQL DDL for `outbound_messages`. Applied
+  explicitly by tests / a future operator cutover, **not** by the in-house
+  runtime migrator (which embeds only `internal/store/migrations`).
+- `outbound/` — package `outbound`: `OutboundStore`, a pgx/pgxpool adapter
+  implementing the PR10 seam `internal/server/agent.OutboundLifecycleRepository`
+  (`GetOutboundByExecutionStateForOrg`, `ClaimPlannedOutboundForOrg`,
+  `FinalizeOutboundAttempt`, `ResetStaleExecutingForOrg`) plus the SQLite/Postgres
+  parity tests. Future domain adapters land as sibling subpackages.
 
 ## Running the integration tests locally
 

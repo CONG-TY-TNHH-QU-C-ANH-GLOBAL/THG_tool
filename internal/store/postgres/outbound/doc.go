@@ -1,0 +1,32 @@
+// Package outbound is the PostgreSQL adapter for the outbound task lifecycle.
+// It provides OutboundStore, a pgx/pgxpool-backed implementation of the SAME
+// outbound lifecycle method set as the active SQLite store — the PR10 seam
+// internal/server/agent.OutboundLifecycleRepository (list planned -> claim ->
+// finalize -> reset-stale). The shared pool helper (Open) lives in the parent
+// internal/store/postgres package; the schema lives in
+// internal/store/postgres/migrations/001_outbound_core.sql.
+//
+// Scope and non-goals:
+//
+//   - NOT wired into application startup. SQLite (internal/store) remains the
+//     active runtime implementation; there is no runtime DB selection here
+//     (see the PR9 data-platform ADR).
+//   - Reuses existing domain types (models.OutboundMessage,
+//     models.ExecutionState, models.VerificationOutcome, and the domain
+//     outbound.ClaimResult / outbound.DefaultLease imported as coreoutbound).
+//     It introduces NO new DTO/domain layer and NO mapper layer — only small
+//     private scan helpers that map PostgreSQL-strict values into those types.
+//   - The authoritative state machine (the row-level CAS on outbound_messages)
+//     is preserved exactly, and the OutboundClaimed telemetry event is emitted
+//     on claim (PR12 parity with the SQLite path).
+//   - The best-effort execution_attempts transition-audit append is
+//     deliberately NOT performed here. execution_attempts is owned exclusively
+//     by the coordination domain (enforced by scripts/check_topology.sh §5) and
+//     is wired into the SQLite path through a composition-root
+//     Hooks.RecordTransition closure — it is NOT owned by the outbound storage
+//     layer itself. A PostgreSQL coordination transition writer that shares the
+//     claim/finalize transaction is a dedicated follow-up that extends the
+//     append-only-ledger domain to pgx; it is out of this adapter's scope.
+//     action_ledger is likewise coordination-owned and is a Queue-path side
+//     effect, outside the outbound lifecycle seam entirely.
+package outbound
