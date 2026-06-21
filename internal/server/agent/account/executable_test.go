@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/server/testsupport"
 	"github.com/thg/scraper/internal/store/connectors"
 )
 
@@ -97,27 +96,7 @@ func TestConnectorsOwnedBy(t *testing.T) {
 // An admin can VIEW an unassigned org account (CanViewAccountDevice), but with no assignment
 // it is NOT controllable → executable=false, not_controllable. Visibility ≠ control.
 func TestBuildAccountReadinessMatrix_AdminVisibilityNotControl(t *testing.T) {
-	db := testsupport.NewTestStore(t, "exec_matrix")
-	const orgID = int64(5)
-	accID, err := db.Identities().AddAccount(&models.Account{
-		OrgID: orgID, Platform: models.PlatformFacebook, Name: "unassigned", Status: models.AccountActive,
-	}) // AssignedUserID = 0 (unassigned)
-	if err != nil {
-		t.Fatalf("AddAccount: %v", err)
-	}
-	matrix, err := BuildAccountReadinessMatrix(db, orgID, 1, "admin")
-	if err != nil {
-		t.Fatalf("matrix: %v", err)
-	}
-	var found *models.AccountReadiness
-	for i := range matrix {
-		if matrix[i].AccountID == accID {
-			found = &matrix[i]
-		}
-	}
-	if found == nil {
-		t.Fatalf("admin should VIEW the unassigned account, but it is missing")
-	}
+	found := seedUnassignedAccountReadiness(t, "exec_matrix")
 	if found.Executable || found.ControlAllowed {
 		t.Errorf("admin visibility must not imply control/executable, got %+v", found)
 	}

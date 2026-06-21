@@ -2,38 +2,12 @@ package account
 
 import (
 	"testing"
-
-	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/server/testsupport"
 )
 
 // PR-D: a seeded account with NO online connector is not ready for any capability,
 // and every capability reports the connector_offline reason.
 func TestBuildAccountReadinessMatrix_NoConnector(t *testing.T) {
-	db := testsupport.NewTestStore(t, "readiness_matrix")
-	const orgID = int64(5)
-
-	accID, err := db.Identities().AddAccount(&models.Account{
-		OrgID: orgID, Platform: models.PlatformFacebook, Name: "acc-a", Status: models.AccountActive,
-	})
-	if err != nil {
-		t.Fatalf("AddAccount: %v", err)
-	}
-
-	// admin sees unassigned org accounts (RBAC privacy rule).
-	matrix, err := BuildAccountReadinessMatrix(db, orgID, 1, "admin")
-	if err != nil {
-		t.Fatalf("BuildAccountReadinessMatrix: %v", err)
-	}
-	var found *models.AccountReadiness
-	for i := range matrix {
-		if matrix[i].AccountID == accID {
-			found = &matrix[i]
-		}
-	}
-	if found == nil {
-		t.Fatalf("account %d missing from matrix", accID)
-	}
+	found := seedUnassignedAccountReadiness(t, "readiness_matrix")
 	if len(found.Capabilities) != 4 {
 		t.Fatalf("want 4 capabilities, got %d", len(found.Capabilities))
 	}
