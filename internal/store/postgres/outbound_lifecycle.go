@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/outbound"
 )
 
@@ -33,9 +34,10 @@ func newExecutionID() string {
 // FOR UPDATE SKIP LOCKED is reserved for a future select-and-claim path and is
 // not needed for this exact-parity by-id claim.
 //
-// The best-effort execution_attempts 'claim' audit row and the OutboundClaimed
-// telemetry event the SQLite path also writes are intentionally deferred (see
-// package doc) — the authoritative state change is the CAS UPDATE here.
+// The OutboundClaimed telemetry event is emitted on success, matching the
+// SQLite path (PR12 parity). The best-effort execution_attempts 'claim' audit
+// row is NOT written here — that table is coordination-owned and hook-wired at
+// the composition root, not the outbound storage layer (see package doc).
 func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*outbound.ClaimResult, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
@@ -68,9 +70,34 @@ func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID str
 	if tag.RowsAffected() == 0 {
 		return nil, sql.ErrNoRows
 	}
+
+	// Best-effort projection for the telemetry event below (mirrors the
+	// SQLite claim path). Errors are ignored — the authoritative state
+	// change is the CAS above; telemetry must never fail the claim.
+	var actionType, targetURL string
+	var accountID int64
+	_ = tx.QueryRow(ctx,
+		`SELECT type, account_id, target_url FROM outbound_messages WHERE id = $1 AND org_id = $2`,
+		id, orgID,
+	).Scan(&actionType, &accountID, &targetURL)
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+
+	// Typed event: claim succeeded — parity with internal/store/outbound's
+	// OutboundClaimed emission (closes the "did the queued row reach the
+	// executor?" diagnostic gap). Telemetry only; no durable write.
+	events.Info(ctx, events.OutboundClaimed,
+		events.FieldOrgID, orgID,
+		events.FieldOutboundID, id,
+		events.FieldAccountID, accountID,
+		events.FieldActionType, actionType,
+		events.FieldTargetURL, targetURL,
+		"worker_id", workerID,
+		"execution_id", execID,
+	)
+
 	return &outbound.ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
 }
 
@@ -143,46 +170,4 @@ func (s *OutboundStore) FinalizeOutboundAttempt(
 		return false, "", "", "", commitErr
 	}
 	return false, models.ExecutionState(rowState), models.VerificationOutcome(rowOutcome), currentExecID, nil
-}
-
-// ResetStaleExecutingForOrg returns abandoned executing rows to planned and
-// clears their execution_id (so a stale in-flight report later fails its CAS).
-// Two paths, matching internal/store/outbound.Store.ResetStaleExecuting:
-// expired non-NULL lease, or legacy NULL-lease rows older than staleAfter.
-// The best-effort per-row execution_attempts 'reset' audit append is
-// intentionally deferred (see package doc); the UPDATE is the authoritative
-// state change.
-func (s *OutboundStore) ResetStaleExecutingForOrg(orgID int64, staleAfter time.Duration) error {
-	if orgID <= 0 {
-		return nil
-	}
-	if staleAfter <= 0 {
-		staleAfter = 10 * time.Minute
-	}
-
-	ctx := context.Background()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	_, err = tx.Exec(ctx,
-		`UPDATE outbound_messages
-		 SET execution_state = $1, verification_outcome = NULL,
-		     claimed_by = '', claimed_at = NULL,
-		     execution_id = '', lease_expiry = NULL
-		 WHERE org_id = $2 AND execution_state = $3
-		   AND (
-		     (lease_expiry IS NOT NULL AND lease_expiry <= NOW())
-		     OR (lease_expiry IS NULL AND claimed_at IS NOT NULL
-		         AND claimed_at <= NOW() - make_interval(secs => $4))
-		   )`,
-		string(models.ExecPlanned), orgID, string(models.ExecExecuting),
-		staleAfter.Seconds(),
-	)
-	if err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
 }
