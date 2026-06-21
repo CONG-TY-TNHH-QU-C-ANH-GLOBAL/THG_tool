@@ -47,41 +47,31 @@ func parityReadFilters(t *testing.T, h parityHarness) {
 	h.seedPlanned(t, org, 11, "comment", "https://fb.com/r2")
 	h.seedPlanned(t, org, 11, "inbox", "https://fb.com/r3")
 
-	planned, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecPlanned, "", 10)
-	if err != nil {
-		t.Fatalf("read planned: %v", err)
-	}
-	if len(planned) != 3 {
-		t.Fatalf("want 3 planned, got %d", len(planned))
-	}
+	planned := readExpect(t, h, org, models.ExecPlanned, "", 10, 3)
 	if !isCreatedAtDesc(planned) {
 		t.Fatalf("results must be ordered created_at DESC")
 	}
 
-	comments, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecPlanned, "comment", 10)
-	if err != nil {
-		t.Fatalf("read comment: %v", err)
-	}
-	if len(comments) != 2 {
-		t.Fatalf("want 2 comment, got %d", len(comments))
-	}
-	for _, m := range comments {
-		if m.Type != "comment" || m.OrgID != org {
-			t.Fatalf("type/org filter wrong: %+v", m)
-		}
-		if m.CreatedAt.IsZero() {
-			t.Fatalf("created_at must scan non-zero")
-		}
-		if !m.SentAt.IsZero() {
-			t.Fatalf("sent_at must be zero for an unsent row, got %v", m.SentAt)
-		}
+	for _, m := range readExpect(t, h, org, models.ExecPlanned, "comment", 10, 2) {
+		assertUnsentComment(t, m, org)
 	}
 
-	if ex, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecExecuting, "", 10); err != nil || len(ex) != 0 {
-		t.Fatalf("want 0 executing, got %d err=%v", len(ex), err)
+	readExpect(t, h, org, models.ExecExecuting, "", 10, 0) // state filter
+	readExpect(t, h, org, models.ExecPlanned, "", 2, 2)    // limit
+}
+
+// assertUnsentComment checks one freshly-read planned comment row scanned its
+// key fields correctly and carries no sent_at.
+func assertUnsentComment(t *testing.T, m models.OutboundMessage, org int64) {
+	t.Helper()
+	if m.Type != "comment" || m.OrgID != org {
+		t.Fatalf("type/org filter wrong: %+v", m)
 	}
-	if lim, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecPlanned, "", 2); err != nil || len(lim) != 2 {
-		t.Fatalf("limit 2 want 2, got %d err=%v", len(lim), err)
+	if m.CreatedAt.IsZero() {
+		t.Fatalf("created_at must scan non-zero")
+	}
+	if !m.SentAt.IsZero() {
+		t.Fatalf("sent_at must be zero for an unsent row, got %v", m.SentAt)
 	}
 }
 

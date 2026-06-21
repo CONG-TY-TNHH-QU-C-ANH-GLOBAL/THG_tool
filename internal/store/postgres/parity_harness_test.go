@@ -138,3 +138,18 @@ func isCreatedAtDesc(msgs []models.OutboundMessage) bool {
 	}
 	return true
 }
+
+// readExpect runs a list read and asserts the row count, returning the rows.
+// Centralizes the err + count checks so the shared parity assertions stay flat
+// (keeps caller cognitive complexity low without weakening any check).
+func readExpect(t *testing.T, h parityHarness, org int64, state models.ExecutionState, msgType string, limit, want int) []models.OutboundMessage {
+	t.Helper()
+	rows, err := h.repo.GetOutboundByExecutionStateForOrg(org, state, msgType, limit)
+	if err != nil {
+		t.Fatalf("read %s/%q: %v", state, msgType, err)
+	}
+	if len(rows) != want {
+		t.Fatalf("read %s/%q: want %d rows, got %d", state, msgType, want, len(rows))
+	}
+	return rows
+}

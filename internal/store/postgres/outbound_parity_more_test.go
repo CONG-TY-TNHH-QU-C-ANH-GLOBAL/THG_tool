@@ -16,7 +16,19 @@ func parityFinalize(t *testing.T, h parityHarness) {
 		t.Fatalf("claim: %v", err)
 	}
 
-	// Wrong execution_id must NOT mutate the row.
+	assertFinalizeRejectsWrongToken(t, h, org, id, claim.ExecutionID)
+
+	before := time.Now()
+	assertFinalizeSucceeds(t, h, org, id, claim.ExecutionID)
+	assertSentAtStamped(t, h, org, before, time.Now())
+
+	assertReplayIdempotent(t, h, org, id, claim.ExecutionID)
+}
+
+// assertFinalizeRejectsWrongToken finalizes with a bogus token and asserts the
+// row is untouched: finalized=false, the real execID is returned, still executing.
+func assertFinalizeRejectsWrongToken(t *testing.T, h parityHarness, org, id int64, realExecID string) {
+	t.Helper()
 	ok, _, _, curExec, err := h.repo.FinalizeOutboundAttempt(
 		context.Background(), org, id, "wrong-token", models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
@@ -25,43 +37,50 @@ func parityFinalize(t *testing.T, h parityHarness) {
 	if ok {
 		t.Fatalf("wrong execution_id must not finalize")
 	}
-	if curExec != claim.ExecutionID {
-		t.Fatalf("disambiguation must return current execID %q, got %q", claim.ExecutionID, curExec)
+	if curExec != realExecID {
+		t.Fatalf("disambiguation must return current execID %q, got %q", realExecID, curExec)
 	}
-	if ex, _ := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecExecuting, "", 10); len(ex) != 1 {
+	if ex := readExpect(t, h, org, models.ExecExecuting, "", 10, 1); ex[0].ID != id {
 		t.Fatalf("row must remain executing after wrong-token finalize")
 	}
+}
 
-	// Correct finalize → terminal state + outcome + sent_at stamp.
-	before := time.Now()
-	ok, state, outcome, execID, err := h.repo.FinalizeOutboundAttempt(
-		context.Background(), org, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
+// assertFinalizeSucceeds finalizes with the real token and asserts the terminal
+// tuple (finalized, finished, verified_success, same execID).
+func assertFinalizeSucceeds(t *testing.T, h parityHarness, org, id int64, execID string) {
+	t.Helper()
+	ok, state, outcome, gotExec, err := h.repo.FinalizeOutboundAttempt(
+		context.Background(), org, id, execID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
-	after := time.Now()
-	if !ok || state != models.ExecFinished || outcome != models.VerifVerifiedSuccess || execID != claim.ExecutionID {
-		t.Fatalf("finalize wrong: ok=%v state=%q outcome=%q exec=%q", ok, state, outcome, execID)
+	if !ok || state != models.ExecFinished || outcome != models.VerifVerifiedSuccess || gotExec != execID {
+		t.Fatalf("finalize wrong: ok=%v state=%q outcome=%q exec=%q", ok, state, outcome, gotExec)
 	}
+}
 
-	fin, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecFinished, "", 10)
-	if err != nil {
-		t.Fatalf("read finished: %v", err)
+// assertSentAtStamped reads the finished row and asserts the outcome round-trips
+// plus a precision-safe sent_at inside the finalize window.
+func assertSentAtStamped(t *testing.T, h parityHarness, org int64, before, after time.Time) {
+	t.Helper()
+	fin := readExpect(t, h, org, models.ExecFinished, "", 10, 1)
+	if fin[0].VerificationOutcome != models.VerifVerifiedSuccess {
+		t.Fatalf("outcome must round-trip: %+v", fin[0])
 	}
-	if len(fin) != 1 || fin[0].VerificationOutcome != models.VerifVerifiedSuccess {
-		t.Fatalf("outcome must round-trip: %+v", fin)
-	}
-	// Precision-safe: sent_at is non-zero and inside the finalize window.
 	if fin[0].SentAt.IsZero() {
 		t.Fatalf("verified_success must stamp a non-zero sent_at")
 	}
 	if fin[0].SentAt.Before(before.Add(-2*time.Second)) || fin[0].SentAt.After(after.Add(2*time.Second)) {
 		t.Fatalf("sent_at %v outside finalize window [%v, %v]", fin[0].SentAt, before, after)
 	}
+}
 
-	// Replay with the same token is idempotent: finalized=false, current state.
+// assertReplayIdempotent replays the same finalize and asserts it is a no-op
+// (finalized=false, state still finished).
+func assertReplayIdempotent(t *testing.T, h parityHarness, org, id int64, execID string) {
+	t.Helper()
 	ok, st, _, _, err := h.repo.FinalizeOutboundAttempt(
-		context.Background(), org, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
+		context.Background(), org, id, execID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
