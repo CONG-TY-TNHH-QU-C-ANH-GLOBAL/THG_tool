@@ -1,4 +1,4 @@
-package postgres_test
+package outbound_test
 
 import (
 	"context"
@@ -13,19 +13,20 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/server/agent"
 	"github.com/thg/scraper/internal/store/postgres"
+	pgoutbound "github.com/thg/scraper/internal/store/postgres/outbound"
 )
 
 // Compile-time proof the PostgreSQL adapter matches the PR10 outbound
 // lifecycle seam exactly (same method names + signatures the active SQLite
 // store exposes). Placed in the test package so production store code never
 // imports internal/server/agent (which would be a bad dependency direction).
-var _ agent.OutboundLifecycleRepository = (*postgres.OutboundStore)(nil)
+var _ agent.OutboundLifecycleRepository = (*pgoutbound.OutboundStore)(nil)
 
 // newTestStore applies a clean outbound schema to the POSTGRES_TEST_DSN
 // database and returns an adapter + pool. Skips (not fails) when no DSN is
 // configured — see internal/store/postgres/README.md for running it locally
 // against deploy/dev/docker-compose.yml.
-func newTestStore(t *testing.T) (*postgres.OutboundStore, *pgxpool.Pool) {
+func newTestStore(t *testing.T) (*pgoutbound.OutboundStore, *pgxpool.Pool) {
 	t.Helper()
 	dsn := os.Getenv("POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -36,7 +37,7 @@ func newTestStore(t *testing.T) (*postgres.OutboundStore, *pgxpool.Pool) {
 	if err != nil {
 		t.Fatalf("open pool: %v", err)
 	}
-	ddl, err := os.ReadFile("migrations/001_outbound_core.sql")
+	ddl, err := os.ReadFile("../migrations/001_outbound_core.sql")
 	if err != nil {
 		pool.Close()
 		t.Fatalf("read migration: %v", err)
@@ -53,7 +54,7 @@ func newTestStore(t *testing.T) (*postgres.OutboundStore, *pgxpool.Pool) {
 		_, _ = pool.Exec(context.Background(), "DROP TABLE IF EXISTS outbound_messages")
 		pool.Close()
 	})
-	return postgres.NewOutboundStore(pool), pool
+	return pgoutbound.NewOutboundStore(pool), pool
 }
 
 // insertPlanned inserts one planned outbound row and returns its id.

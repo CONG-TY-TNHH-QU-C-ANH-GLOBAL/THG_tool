@@ -1,4 +1,4 @@
-package postgres
+package outbound
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/runtime/events"
-	"github.com/thg/scraper/internal/store/outbound"
+	coreoutbound "github.com/thg/scraper/internal/store/outbound"
 )
 
 // newExecutionID generates the per-claim idempotency token. Mirrors the
@@ -39,13 +39,13 @@ func newExecutionID() string {
 // SQLite path (PR12 parity). The best-effort execution_attempts 'claim' audit
 // row is NOT written here — that table is coordination-owned and hook-wired at
 // the composition root, not the outbound storage layer (see package doc).
-func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*outbound.ClaimResult, error) {
+func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*coreoutbound.ClaimResult, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
 		workerID = "chrome-extension"
 	}
 	if leaseDuration <= 0 {
-		leaseDuration = outbound.DefaultLease
+		leaseDuration = coreoutbound.DefaultLease
 	}
 	execID := newExecutionID()
 	leaseExpiry := time.Now().UTC().Add(leaseDuration)
@@ -106,7 +106,7 @@ func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID str
 			"outbound_id", id, "org_id", orgID, "err", projErr)
 	}
 
-	return &outbound.ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
+	return &coreoutbound.ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
 }
 
 // FinalizeOutboundAttempt is the terminal-state CAS gated on the execution_id
