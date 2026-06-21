@@ -1,9 +1,10 @@
-package agent
+package presence
 
 import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store/connectors"
 )
@@ -45,13 +46,6 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 	if orgID <= 0 {
 		return c.Status(401).JSON(fiber.Map{"error": "org context required"})
 	}
-	// PR-M5 account privacy: a Facebook account/device is PRIVATE to the member
-	// who owns it. The presence board only ever shows the caller's OWN accounts —
-	// even an admin cannot see a staff member's accounts here (admin oversight of
-	// staff is the activity counts + online status on the Nhân viên tab, never the
-	// account itself). Admins additionally see UNASSIGNED accounts so they can
-	// still manage org-owned-but-unclaimed ones.
-	canSee := func(acc models.Account) bool { return models.CanViewAccountDevice(&acc, userID, role) }
 	accounts, err := h.db.Identities().GetAllAccounts(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -60,8 +54,43 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	// Index connectors by assigned account; prefer an ONLINE one when several
-	// are bound to the same account.
+	byAccount := indexOnlineConnectorsByAccount(conns)
+
+	// PR-M5 account privacy: a Facebook account/device is PRIVATE to the member
+	// who owns it. The presence board only ever shows the caller's OWN accounts —
+	// even an admin cannot see a staff member's accounts here. Admins additionally
+	// see UNASSIGNED accounts so they can still manage org-owned-but-unclaimed ones.
+	rows := make([]connectorAccountStatus, 0, len(accounts))
+	onlineCount, reachableCount := 0, 0
+	for _, acc := range accounts {
+		if acc.Platform != models.PlatformFacebook {
+			continue
+		}
+		if !models.CanViewAccountDevice(&acc, userID, role) {
+			continue // account privacy: not the caller's own (and not admin-visible unassigned)
+		}
+		row, online := buildAccountStatusRow(acc, byAccount)
+		if online {
+			onlineCount++
+		}
+		if row.Reachable {
+			reachableCount++
+		}
+		rows = append(rows, row)
+	}
+
+	return c.JSON(fiber.Map{
+		"accounts":        rows,
+		"unbound_online":  collectUnboundOnline(conns),
+		"accounts_total":  len(rows),
+		"online_total":    onlineCount,
+		"reachable_total": reachableCount,
+	})
+}
+
+// indexOnlineConnectorsByAccount maps each assigned account to its connector,
+// preferring an ONLINE one when several are bound to the same account.
+func indexOnlineConnectorsByAccount(conns []connectors.AgentToken) map[int64]connectors.AgentToken {
 	byAccount := make(map[int64]connectors.AgentToken, len(conns))
 	for _, conn := range conns {
 		if conn.AssignedAccountID <= 0 {
@@ -71,45 +100,38 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 			byAccount[conn.AssignedAccountID] = conn
 		}
 	}
+	return byAccount
+}
 
-	rows := make([]connectorAccountStatus, 0, len(accounts))
-	onlineCount, reachableCount := 0, 0
-	for _, acc := range accounts {
-		if acc.Platform != models.PlatformFacebook {
-			continue
-		}
-		if !canSee(acc) {
-			continue // account privacy: not the caller's own (and not admin-visible unassigned)
-		}
-		row := connectorAccountStatus{
-			AccountID:            acc.ID,
-			AccountName:          acc.Name,
-			AssignedUserID:       acc.AssignedUserID,
-			AssignedUserName:     acc.AssignedUserName,
-			AccountFBUserID:      strings.TrimSpace(acc.FBUserID),
-			AccountFBDisplayName: strings.TrimSpace(acc.FBDisplayName),
-			State:                "no_connector",
-		}
-		if conn, ok := byAccount[acc.ID]; ok {
-			row.ConnectorID = conn.ID
-			row.ConnectorName = conn.Name
-			row.ConnectorOnline = conn.Online
-			row.StreamStatus = conn.StreamStatus
-			row.ConnectorFBUserID = strings.TrimSpace(conn.FBUserID)
-			row.ConnectorFBDisplayName = strings.TrimSpace(conn.FBDisplayName)
-			row.State, row.Reachable = deriveConnectorState(acc, conn)
-			if conn.Online {
-				onlineCount++
-			}
-		}
-		if row.Reachable {
-			reachableCount++
-		}
-		rows = append(rows, row)
+// buildAccountStatusRow projects one account + its bound connector (if any) into
+// a presence row, returning the row and whether its connector is online.
+func buildAccountStatusRow(acc models.Account, byAccount map[int64]connectors.AgentToken) (connectorAccountStatus, bool) {
+	row := connectorAccountStatus{
+		AccountID:            acc.ID,
+		AccountName:          acc.Name,
+		AssignedUserID:       acc.AssignedUserID,
+		AssignedUserName:     acc.AssignedUserName,
+		AccountFBUserID:      strings.TrimSpace(acc.FBUserID),
+		AccountFBDisplayName: strings.TrimSpace(acc.FBDisplayName),
+		State:                "no_connector",
 	}
+	conn, ok := byAccount[acc.ID]
+	if !ok {
+		return row, false
+	}
+	row.ConnectorID = conn.ID
+	row.ConnectorName = conn.Name
+	row.ConnectorOnline = conn.Online
+	row.StreamStatus = conn.StreamStatus
+	row.ConnectorFBUserID = strings.TrimSpace(conn.FBUserID)
+	row.ConnectorFBDisplayName = strings.TrimSpace(conn.FBDisplayName)
+	row.State, row.Reachable = deriveConnectorState(acc, conn)
+	return row, conn.Online
+}
 
-	// Online connectors NOT bound to any account — otherwise a paired-but-
-	// mis-assigned extension would be invisible to the operator.
+// collectUnboundOnline lists online connectors NOT bound to any account —
+// otherwise a paired-but-mis-assigned extension would be invisible to the operator.
+func collectUnboundOnline(conns []connectors.AgentToken) []connectorAccountStatus {
 	unbound := make([]connectorAccountStatus, 0)
 	for _, conn := range conns {
 		if conn.AssignedAccountID == 0 && conn.Online {
@@ -123,14 +145,7 @@ func (h *Handler) connectorStatus(c *fiber.Ctx) error {
 			})
 		}
 	}
-
-	return c.JSON(fiber.Map{
-		"accounts":        rows,
-		"unbound_online":  unbound,
-		"accounts_total":  len(rows),
-		"online_total":    onlineCount,
-		"reachable_total": reachableCount,
-	})
+	return unbound
 }
 
 // deriveConnectorState classifies the account×connector pair into one operator-
