@@ -11,6 +11,25 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
+// loadOrgUserForAdmin fetches the target user for an admin user-management
+// action and enforces same-org access: a non-platform caller may only act on
+// a user inside their own org. On failure it writes the 404 response and
+// returns it for the caller to return verbatim (user is nil). On success it
+// returns the user plus whether the caller is a platform (founder) user.
+func (h *Handler) loadOrgUserForAdmin(c *fiber.Ctx, id int64) (*models.User, bool, error) {
+	user, err := h.deps.DB.GetUserByID(id)
+	if err != nil || user == nil {
+		return nil, false, c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
+	}
+	callerOrgID, _ := c.Locals("org_id").(int64)
+	callerRole, _ := c.Locals("user_role").(string)
+	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
+	if !callerIsPlatform && user.OrgID != callerOrgID {
+		return nil, false, c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
+	}
+	return user, callerIsPlatform, nil
+}
+
 func (h *Handler) adminUpdateUser(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
@@ -25,15 +44,9 @@ func (h *Handler) adminUpdateUser(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": msgInvalidRequest})
 	}
-	user, err := h.deps.DB.GetUserByID(id)
-	if err != nil || user == nil {
-		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
-	}
-	callerOrgID, _ := c.Locals("org_id").(int64)
-	callerRole, _ := c.Locals("user_role").(string)
-	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
-	if !callerIsPlatform && user.OrgID != callerOrgID {
-		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
+	user, callerIsPlatform, errResp := h.loadOrgUserForAdmin(c, id)
+	if user == nil {
+		return errResp
 	}
 	if !callerIsPlatform && models.IsPlatformRole(user.Role) {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
@@ -79,15 +92,9 @@ func (h *Handler) adminDeleteUser(c *fiber.Ctx) error {
 	if id == adminID {
 		return c.Status(400).JSON(fiber.Map{"error": "use the leave-workspace action for your own membership"})
 	}
-	user, err := h.deps.DB.GetUserByID(id)
-	if err != nil || user == nil {
-		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
-	}
-	callerOrgID, _ := c.Locals("org_id").(int64)
-	callerRole, _ := c.Locals("user_role").(string)
-	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
-	if !callerIsPlatform && user.OrgID != callerOrgID {
-		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
+	user, _, errResp := h.loadOrgUserForAdmin(c, id)
+	if user == nil {
+		return errResp
 	}
 	if models.IsPlatformRole(user.Role) {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
