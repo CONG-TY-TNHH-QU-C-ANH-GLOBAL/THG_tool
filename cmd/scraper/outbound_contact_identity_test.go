@@ -54,6 +54,29 @@ func disableCompanyFallback(t *testing.T, db *store.Store, orgID int64) {
 	}
 }
 
+// assertResolvedContact pins both the resolved OfficialContact and PrimaryCTA
+// carried into the prompt + contact guard for the given resolution inputs.
+func assertResolvedContact(t *testing.T, db *store.Store, orgID, initiator, accountID int64, base models.CompanyIdentity, wantContact, wantCTA string) {
+	t.Helper()
+	got := resolveStaffContactIdentity(db, orgID, initiator, accountID, base)
+	if got.OfficialContact != wantContact {
+		t.Fatalf("OfficialContact = %q, want %q", got.OfficialContact, wantContact)
+	}
+	if got.PrimaryCTA != wantCTA {
+		t.Fatalf("PrimaryCTA = %q, want %q", got.PrimaryCTA, wantCTA)
+	}
+}
+
+// assertResolvedOfficialContact pins only the resolved OfficialContact (used by
+// cases where the PrimaryCTA is intentionally left unconstrained).
+func assertResolvedOfficialContact(t *testing.T, db *store.Store, orgID, initiator, accountID int64, base models.CompanyIdentity, wantContact string) {
+	t.Helper()
+	got := resolveStaffContactIdentity(db, orgID, initiator, accountID, base)
+	if got.OfficialContact != wantContact {
+		t.Fatalf("OfficialContact = %q, want %q", got.OfficialContact, wantContact)
+	}
+}
+
 // TestResolveStaffContactIdentity_Precedence pins the Sprint 5 resolution chain:
 // initiator -> account assignee -> company default (if allowed) -> omit. Each
 // case asserts the OfficialContact / PrimaryCTA actually carried into the prompt
@@ -68,13 +91,7 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 	t.Run("initiator wins on unassigned account (reported bug)", func(t *testing.T) {
 		db := newContactDB(t)
 		seedStaff(t, db, orgA, 11, true, initiatorProfile)
-		got := resolveStaffContactIdentity(db, orgA, 11, 0, base)
-		if got.OfficialContact != "Telegram @hairypotter98 · Zalo 0949716391" {
-			t.Fatalf("OfficialContact = %q", got.OfficialContact)
-		}
-		if got.PrimaryCTA != "INBOX-ME" {
-			t.Fatalf("PrimaryCTA = %q, want INBOX-ME", got.PrimaryCTA)
-		}
+		assertResolvedContact(t, db, orgA, 11, 0, base, "Telegram @hairypotter98 · Zalo 0949716391", "INBOX-ME")
 	})
 
 	t.Run("initiator wins over a different assignee", func(t *testing.T) {
@@ -82,13 +99,7 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 		seedStaff(t, db, orgA, 11, true, initiatorProfile)
 		seedStaff(t, db, orgA, 22, true, assigneeProfile)
 		acc := seedAssignedAccount(t, db, orgA, 22)
-		got := resolveStaffContactIdentity(db, orgA, 11, acc, base)
-		if got.OfficialContact != "Telegram @hairypotter98 · Zalo 0949716391" {
-			t.Fatalf("expected initiator (user 11) contact, got %q", got.OfficialContact)
-		}
-		if got.PrimaryCTA != "INBOX-ME" {
-			t.Fatalf("PrimaryCTA = %q, want initiator INBOX-ME", got.PrimaryCTA)
-		}
+		assertResolvedContact(t, db, orgA, 11, acc, base, "Telegram @hairypotter98 · Zalo 0949716391", "INBOX-ME")
 	})
 
 	t.Run("falls back to account assignee when initiator unusable", func(t *testing.T) {
@@ -96,48 +107,29 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 		// initiator user 11 has no profile at all.
 		seedStaff(t, db, orgA, 22, true, assigneeProfile)
 		acc := seedAssignedAccount(t, db, orgA, 22)
-		got := resolveStaffContactIdentity(db, orgA, 11, acc, base)
-		if got.OfficialContact != "Telegram @othersale · Zalo 0900000000" {
-			t.Fatalf("expected assignee (user 22) contact, got %q", got.OfficialContact)
-		}
-		if got.PrimaryCTA != "ASSIGNEE-CTA" {
-			t.Fatalf("PrimaryCTA = %q, want ASSIGNEE-CTA", got.PrimaryCTA)
-		}
+		assertResolvedContact(t, db, orgA, 11, acc, base, "Telegram @othersale · Zalo 0900000000", "ASSIGNEE-CTA")
 	})
 
 	t.Run("company fallback when neither usable and fallback allowed (default)", func(t *testing.T) {
 		db := newContactDB(t)
 		acc := seedAssignedAccount(t, db, orgA, 22) // assignee 22 has no profile
-		got := resolveStaffContactIdentity(db, orgA, 11, acc, base)
-		if got.OfficialContact != "COMPANY-CONTACT" {
-			t.Fatalf("OfficialContact = %q, want COMPANY-CONTACT", got.OfficialContact)
-		}
-		if got.PrimaryCTA != "COMPANY-CTA" {
-			t.Fatalf("PrimaryCTA = %q, want COMPANY-CTA", got.PrimaryCTA)
-		}
+		assertResolvedContact(t, db, orgA, 11, acc, base, "COMPANY-CONTACT", "COMPANY-CTA")
 	})
 
 	t.Run("omit when neither usable and fallback disabled", func(t *testing.T) {
 		db := newContactDB(t)
 		disableCompanyFallback(t, db, orgA)
 		acc := seedAssignedAccount(t, db, orgA, 22)
-		got := resolveStaffContactIdentity(db, orgA, 11, acc, base)
-		if got.OfficialContact != "" {
-			t.Fatalf("OfficialContact = %q, want empty (fallback disabled)", got.OfficialContact)
-		}
+		// OfficialContact omitted entirely when fallback is disabled.
+		assertResolvedOfficialContact(t, db, orgA, 11, acc, base, "")
 	})
 
 	t.Run("empty fields filtered and empty PreferredCTA keeps company CTA", func(t *testing.T) {
 		db := newContactDB(t)
 		// Telegram+Zalo set, Phone/Email empty, no PreferredCTA.
 		seedStaff(t, db, orgA, 11, true, models.StaffContactProfile{Telegram: "hairypotter98", Zalo: "0949716391"})
-		got := resolveStaffContactIdentity(db, orgA, 11, 0, base)
-		if got.OfficialContact != "Telegram @hairypotter98 · Zalo 0949716391" {
-			t.Fatalf("OfficialContact = %q (should omit SĐT/Email)", got.OfficialContact)
-		}
-		if got.PrimaryCTA != "COMPANY-CTA" {
-			t.Fatalf("PrimaryCTA = %q, want company CTA preserved", got.PrimaryCTA)
-		}
+		// SĐT/Email omitted; empty PreferredCTA preserves the company CTA.
+		assertResolvedContact(t, db, orgA, 11, 0, base, "Telegram @hairypotter98 · Zalo 0949716391", "COMPANY-CTA")
 	})
 
 	t.Run("tenant isolation: profile under another org is not leaked", func(t *testing.T) {
@@ -145,10 +137,8 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 		const orgB int64 = 2
 		// The only profile row for user 11 lives under orgB; we resolve for orgA.
 		seedStaff(t, db, orgB, 11, true, initiatorProfile)
-		got := resolveStaffContactIdentity(db, orgA, 11, 0, base)
-		if got.OfficialContact != "COMPANY-CONTACT" {
-			t.Fatalf("cross-org leak: OfficialContact = %q, want COMPANY-CONTACT", got.OfficialContact)
-		}
+		// Cross-org leak guard: resolving for orgA must not surface the orgB profile.
+		assertResolvedOfficialContact(t, db, orgA, 11, 0, base, "COMPANY-CONTACT")
 	})
 
 	t.Run("inactive initiator profile falls through to assignee", func(t *testing.T) {
@@ -156,9 +146,7 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 		seedStaff(t, db, orgA, 11, false, initiatorProfile) // inactive => unusable
 		seedStaff(t, db, orgA, 22, true, assigneeProfile)
 		acc := seedAssignedAccount(t, db, orgA, 22)
-		got := resolveStaffContactIdentity(db, orgA, 11, acc, base)
-		if got.OfficialContact != "Telegram @othersale · Zalo 0900000000" {
-			t.Fatalf("inactive initiator should fall through; got %q", got.OfficialContact)
-		}
+		// Inactive initiator should fall through to the assignee profile.
+		assertResolvedOfficialContact(t, db, orgA, 11, acc, base, "Telegram @othersale · Zalo 0900000000")
 	})
 }

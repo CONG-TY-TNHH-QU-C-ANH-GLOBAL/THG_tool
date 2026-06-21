@@ -2,11 +2,56 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 )
+
+// requireResolvedAccount asserts resolveCallerAccountID succeeds and resolves to want.
+func requireResolvedAccount(t *testing.T, db *store.Store, orgID, userID int64, role string, accID, want int64) {
+	t.Helper()
+	got, err := resolveCallerAccountID(db, orgID, userID, role, accID, false)
+	if err != nil {
+		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
+	}
+	if got != want {
+		t.Errorf("resolveCallerAccountID(user=%d, role=%q, acc=%d) = %d, want %d", userID, role, accID, got, want)
+	}
+}
+
+// requireResolveRejected asserts resolveCallerAccountID denies the call.
+func requireResolveRejected(t *testing.T, db *store.Store, orgID, userID int64, role string, accID int64) {
+	t.Helper()
+	if _, err := resolveCallerAccountID(db, orgID, userID, role, accID, false); err == nil {
+		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): expected error, got nil", userID, role, accID)
+	}
+}
+
+// requireResolvedOneOf asserts the call succeeds and resolves to one of allowed.
+func requireResolvedOneOf(t *testing.T, db *store.Store, orgID, userID int64, role string, accID int64, allowed ...int64) {
+	t.Helper()
+	got, err := resolveCallerAccountID(db, orgID, userID, role, accID, false)
+	if err != nil {
+		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
+	}
+	if !slices.Contains(allowed, got) {
+		t.Errorf("resolveCallerAccountID(user=%d, role=%q, acc=%d) = %d, want one of %v", userID, role, accID, got, allowed)
+	}
+}
+
+// requireResolvedNonZero asserts the call succeeds and resolves to some account.
+func requireResolvedNonZero(t *testing.T, db *store.Store, orgID, userID int64, role string, accID int64) {
+	t.Helper()
+	got, err := resolveCallerAccountID(db, orgID, userID, role, accID, false)
+	if err != nil {
+		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
+	}
+	if got == 0 {
+		t.Errorf("resolveCallerAccountID(user=%d, role=%q, acc=%d) = 0, want some account", userID, role, accID)
+	}
+}
 
 // resolveCallerAccountID gates skill-path outbound by execution-layer ownership
 // (RBAC-1 skill-path enforcement). See feedback_shared_battlefield_not_crm.md.
@@ -44,75 +89,37 @@ func TestResolveCallerAccountID(t *testing.T) {
 	})
 
 	t.Run("sales explicit owned", func(t *testing.T) {
-		got, err := resolveCallerAccountID(db, 1, 7, "sales", aliceAccID, false)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if got != aliceAccID {
-			t.Errorf("got %d, want %d", got, aliceAccID)
-		}
+		requireResolvedAccount(t, db, 1, 7, "sales", aliceAccID, aliceAccID)
 	})
 
 	t.Run("sales explicit NOT owned", func(t *testing.T) {
-		_, err := resolveCallerAccountID(db, 1, 7, "sales", bobAccID, false)
-		if err == nil {
-			t.Fatal("expected error when sales targets another staff's account")
-		}
+		requireResolveRejected(t, db, 1, 7, "sales", bobAccID)
 	})
 
 	t.Run("sales no account, has assignment", func(t *testing.T) {
-		got, err := resolveCallerAccountID(db, 1, 7, "sales", 0, false)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if got != aliceAccID {
-			t.Errorf("got %d, want %d (alice's only assigned)", got, aliceAccID)
-		}
+		// Alice's only assigned account is resolved.
+		requireResolvedAccount(t, db, 1, 7, "sales", 0, aliceAccID)
 	})
 
 	t.Run("sales no account, no assignment", func(t *testing.T) {
-		_, err := resolveCallerAccountID(db, 1, 99, "sales", 0, false)
-		if err == nil {
-			t.Fatal("expected error when sales has no assigned account")
-		}
+		requireResolveRejected(t, db, 1, 99, "sales", 0)
 	})
 
 	t.Run("admin explicit on another's account", func(t *testing.T) {
 		// Admin user 5; should pass even though account_id is assigned to user 7.
-		got, err := resolveCallerAccountID(db, 1, 5, "admin", aliceAccID, false)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if got != aliceAccID {
-			t.Errorf("got %d, want %d (admin override)", got, aliceAccID)
-		}
+		requireResolvedAccount(t, db, 1, 5, "admin", aliceAccID, aliceAccID)
 	})
 
 	t.Run("admin no account, picks any", func(t *testing.T) {
-		got, err := resolveCallerAccountID(db, 1, 5, "admin", 0, false)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
 		// admin sees the whole org pool; we just verify some account is picked.
-		if got != aliceAccID && got != bobAccID && got != unassignedID {
-			t.Errorf("got %d, want one of org accounts", got)
-		}
+		requireResolvedOneOf(t, db, 1, 5, "admin", 0, aliceAccID, bobAccID, unassignedID)
 	})
 
 	t.Run("legacy unauthenticated picks any (telegram path)", func(t *testing.T) {
-		got, err := resolveCallerAccountID(db, 1, 0, "", 0, false)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if got == 0 {
-			t.Error("legacy path must resolve to some account")
-		}
+		requireResolvedNonZero(t, db, 1, 0, "", 0)
 	})
 
 	t.Run("sales targets unassigned account is rejected", func(t *testing.T) {
-		_, err := resolveCallerAccountID(db, 1, 7, "sales", unassignedID, false)
-		if err == nil {
-			t.Fatal("sales must NOT be able to use an unassigned account")
-		}
+		requireResolveRejected(t, db, 1, 7, "sales", unassignedID)
 	})
 }
