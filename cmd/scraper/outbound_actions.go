@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/ai"
-	"github.com/thg/scraper/internal/ai/comment"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/textutil"
@@ -125,20 +124,13 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	accountID := actx.AccountID
 
 	// §5 readiness preflight: block a comment run up-front when the resolved
-	// Facebook account cannot execute (no online connector / wrong identity /
-	// unsupported extension) instead of queueing comments that imply posting but
-	// can never run. Reuses the shared PR-A preflight. Comment-only here; inbox
-	// keeps its existing behavior.
+	// Facebook account cannot execute instead of queueing comments that imply
+	// posting but can never run. Comment-only here; inbox keeps its behavior.
 	if msgType == "comment" {
 		if blockMsg, blocked := commentReadinessGate(ctx, db, orgID, userID, role, accountID); blocked {
 			return blockMsg, nil
 		}
 	}
-
-	// requestedAuto carries the AI/agent's preference. The store layer
-	// (QueueOutboundForOrg -> IsAutoOutboundEnabledForOrg) is the final
-	// gatekeeper: it downgrades to draft if the org has not opted in.
-	requestedAuto := argBool(args, "auto")
 
 	leads, err := leadsFromActionArgs(ctx, db, orgID, msgType, args)
 	if err != nil {
@@ -148,300 +140,25 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		return "khong co lead phu hop de queue outbound", nil
 	}
 
-	businessContext := businessContextForOrg(db, orgID)
-	// Knowledge OS runtime builder. Per-lead retrieval augments the
-	// org-wide freeform business profile with top-K matched assets
-	// (PRODUCTS, POLICIES, CTAs). When the org has not configured a
-	// Knowledge OS source, BuildForLeadWithTrace returns businessContext
-	// unchanged — backward compatible by construction. See
-	// specs/WORKSPACE_KNOWLEDGE_OS.md §11 (Migration path).
-	//
-	// TraceRec wires the Operator Replay surface: each retrieval gets
-	// a full Trace + Budget recorded under a retrievalID we thread into
-	// the outcome event when the message is queued. Replay UI joins on
-	// retrievalID to show "this lead → these assets → this outcome".
-	knowledgeBuilder := knowledgeRuntime.NewBuilder(db.Knowledge())
-	knowledgeBuilder.Recorder = db.Knowledge()
-	knowledgeBuilder.TraceRec = db.Knowledge()
-	// P2c Knowledge Intelligence reasoning (off | dryrun | live). off is the
-	// default → comment generation unchanged. live lets a grounded decision drive
-	// the comment text, with a safe fallback to the existing generation on
-	// knowledge_gap. Hot env kill-switch — see commentReasoningMode.
-	reasoningMode := commentReasoningMode()
-	var reasoningProfile *ai.BusinessProfile
-	if reasoningMode != "off" {
-		reasoningProfile = ai.LoadProfileForOrg(db, orgID)
-	}
-	// PR-3 brand trust: resolve the org's grounded company identity once so the
-	// per-comment contact policy (ScreenCommentContacts) can reject any
-	// fabricated / non-grounded website / email / phone.
-	var commentIdentity models.CompanyIdentity
-	if msgType == "comment" {
-		idProfile := reasoningProfile
-		if idProfile == nil {
-			idProfile = ai.LoadProfileForOrg(db, orgID)
-		}
-		// Contact identity (Sprint 5/6): ONE shared resolver builds the grounded
-		// identity — company website + service from the profile, then the
-		// responsible salesperson's contact channels + CTA swapped in. Precedence:
-		// initiating sales agent (actx.InitiatorUserID) → executing account
-		// assignee → company default/omit per org policy. The company website is
-		// preserved through the swap. The reasoning=live path below uses the SAME
-		// resolver so both paths cite the identical contact contract.
-		commentIdentity = resolveCommentIdentity(db, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
-	}
-	template := argString(args, "template")
-	queued, skipped := 0, 0
-	approvedCount := 0
-	skipReasons := map[string]int{}
-	// Diagnosability (investigation ask §1): besides the aggregate count per
-	// reason, keep up to a handful of SAMPLE lead IDs per skip reason so a
-	// "scanned 110, queued 2" run is explainable down to concrete leads in the
-	// logs — not just an opaque histogram.
-	skipSamples := map[string][]int64{}
-	recordSkip := func(reason string, leadID int64) {
-		skipped++
-		skipReasons[reason]++
-		if leadID > 0 && len(skipSamples[reason]) < 5 {
-			skipSamples[reason] = append(skipSamples[reason], leadID)
-		}
-	}
-	var lastGenErr error
-	// riskBlockDetail captures the operator-actionable inputs of the
-	// LAST risk_ceiling_exceeded deny so the response/notification can
-	// surface "account=N risk=X ceiling=Y" inline. Without this the
-	// operator sees only the reason tag and must run the superadmin
-	// diagnostic separately to find out which account + how far over.
-	// All deny iterations in a single run share the resolved accountID
-	// (resolved once above), so capturing the latest value is sufficient.
-	var riskBlockSeen bool
-	var riskBlockRisk, riskBlockCeiling float64
-	// Eligible-fill (PR-2): "comment thử 5 lead" means QUEUE 5 eligible comments —
-	// keep scanning the candidate pool past skipped leads until `requested` are
-	// queued or the pool is exhausted, instead of inspecting exactly N raw leads.
+	// requestedAuto carries the AI/agent's preference. The store layer
+	// (QueueOutboundForOrg -> IsAutoOutboundEnabledForOrg) is the final
+	// gatekeeper: it downgrades to draft if the org has not opted in.
+	requestedAuto := argBool(args, "auto")
+	run := buildLeadOutreachContext(db, msgGen, msgType, args, orgID, accountID, actx)
+	st := newLeadOutreachState()
+	// Eligible-fill (PR-2): keep scanning the candidate pool past skipped leads
+	// until `requested` are queued or the pool is exhausted.
 	requested := requestedOutreachCount(args)
-	scanned := 0
-	// Coverage policy: brand-coverage-friendly default until a per-org settings
-	// surface exists (allow multi-actor, cap accounts/url/cta, gap, stop-on-reply).
-	coveragePolicy := models.DefaultCoveragePolicy()
 	for _, lead := range leads {
-		if queued >= requested {
+		if st.queued >= requested {
 			break
 		}
-		scanned++
-		targetURL, skipReason := resolveOutboundTargetURL(lead, msgType)
-		if skipReason != "" {
-			recordSkip(skipReason, lead.ID)
-			continue
-		}
-
-		// Multi-actor coverage gate (spec: MULTI_ACTOR_COVERAGE_POLICY). A SHARED lead
-		// may be covered by SEVERAL accounts — this is brand reach, not spam — but
-		// capped: skip (and keep scanning) when THIS actor already covered it, the lead
-		// replied, coverage is full, or it is too soon behind the previous actor.
-		var persona models.ActorPersona
-		if msgType == "comment" && lead.ID > 0 {
-			if cov, cerr := db.Leads().GetLeadCoverageState(ctx, orgID, lead.ID, commentIdentity.Website); cerr == nil {
-				if ok, reason := models.EvaluateCoverage(*cov, coveragePolicy, accountID, time.Now().UTC()); !ok {
-					recordSkip(reason, lead.ID)
-					continue
-				}
-				// Eligible: shape this actor's comment from the CONTENT-ACCURATE coverage
-				// state — no_link only if a prior comment actually cited the website,
-				// experience_share only if one actually used a hard CTA, and avoid the
-				// angles already present in earlier comments.
-				persona = models.DeriveActorPersona(*cov, coveragePolicy, "", "")
-			}
-		}
-
-		content := template
-		var retrievalID string
-		if msgGen != nil && msgGen.Available() {
-			genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-			// Per-lead Knowledge OS retrieval with full trace.
-			// 1.5s timeout because the LIKE-based naive searcher is fast;
-			// pgvector replacement should still fit comfortably.
-			retrievalCtx, retrievalCancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-			generatedAction := msgType + "_drafted"
-			var leadContext string
-			leadContext, retrievalID = knowledgeBuilder.BuildForLeadWithTrace(retrievalCtx, orgID, lead.Content, businessContext, generatedAction)
-			retrievalCancel()
-			var genErr error
-			if template != "" && msgType == "comment" {
-				content, genErr = msgGen.GenerateCommentFromTemplate(genCtx, template, lead.Content, lead.Author)
-			} else if msgType == "comment" {
-				content, genErr = msgGen.GenerateCommentWithService(genCtx, lead.Content, lead.Author, leadContext, lead.ServiceMatch, commentIdentity, persona)
-			} else {
-				content, genErr = msgGen.GenerateInboxMessage(genCtx, lead.Content, lead.Author, leadContext, "")
-			}
-			cancel()
-			if genErr != nil {
-				log.Printf("[queueLeadOutreach] AI generation failed for lead %s: %v", targetURL, genErr)
-				lastGenErr = genErr
-				recordSkip("generation_failed", lead.ID)
-				continue
-			}
-		}
-		content = strings.TrimSpace(content)
-		if content == "" {
-			recordSkip("empty_content", lead.ID)
-			continue
-		}
-
-		// P2c reasoning: in dryrun observe the grounded decision; in live let a
-		// grounded decision drive the comment text (fallback to `content` on
-		// knowledge_gap or error). off → no-op. Comment-type only.
-		if reasoningMode != "off" && msgType == "comment" {
-			content = applyCommentReasoning(ctx, commentReasoningInput{
-				db: db, kb: knowledgeBuilder, msgGen: msgGen, mode: reasoningMode,
-				profile: reasoningProfile, orgID: orgID, accountID: accountID,
-				initiatorUserID: actx.InitiatorUserID, leadContent: lead.Content,
-				author: lead.Author, fallback: content,
-			})
-		}
-
-		// PR-1 Comment Quality Hotfix: dedupe repeated sentences/paragraphs and
-		// validate quality at the queue boundary — a doubled "X.X" generation (from
-		// any source) must NEVER reach Facebook. Reject with a typed reason instead
-		// of posting garbage.
-		if msgType == "comment" {
-			cleaned, ok, qreason := comment.SanitizeComment(content)
-			if !ok {
-				recordSkip(qreason, lead.ID)
-				continue
-			}
-			content = cleaned
-			// Duplicate guard (incident PR-1): an A+A repeated block must never enter
-			// the outbox, even if it survived sentence-level dedup. Typed reason so the
-			// operator sees "Comment bị lặp" instead of garbage on Facebook.
-			if comment.DetectRepeatedText(content) {
-				recordSkip("comment_quality_duplicate_text", lead.ID)
-				continue
-			}
-			// Brand-trust contact policy: ≤1 URL, grounded website / official contact,
-			// no fabricated email/phone. On a violation, REPAIR toward the Company
-			// Identity (t.me link → @handle, drop non-grounded URLs) and re-screen;
-			// only drop the lead if the repaired comment still fails.
-			if cok, creason := comment.ScreenCommentContacts(content, commentIdentity); !cok {
-				repaired, changed := comment.RepairCommentContacts(content, commentIdentity)
-				rok, rreason := comment.ScreenCommentContacts(repaired, commentIdentity)
-				if changed && rok {
-					content = repaired
-				} else {
-					if changed {
-						recordSkip(rreason, lead.ID)
-					} else {
-						recordSkip(creason, lead.ID)
-					}
-					continue
-				}
-			}
-			// Deterministic website inclusion: a configured workspace website must
-			// appear in every comment even when the model omitted it (the prompt
-			// instruction alone is not enough). Grounded-only — never invents a URL,
-			// no-op when already present. Runs after the screen so it appends the
-			// single canonical website to an otherwise URL-free, screen-clean comment.
-			if web, added := comment.EnsureWebsite(content, commentIdentity); added {
-				content = web
-			}
-		}
-
-		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
-			OrgID:      orgID,
-			Type:       msgType,
-			Platform:   models.PlatformFacebook,
-			AccountID:  accountID,
-			TargetURL:  targetURL,
-			TargetName: lead.Author,
-			Content:    content,
-			Context:    lead.Content,
-			AIModel:    "agent",
-			CreatedBy:  actx.InitiatorUserID, // immutable execution ownership (from ActionContext)
-		}, 24*time.Hour)
-		if err != nil {
+		st.scanned++
+		if err := run.processOutreachLead(ctx, lead, st); err != nil {
 			return "", err
 		}
-		if !result.Decision.Allowed {
-			recordSkip(result.Decision.Reason, lead.ID)
-			if result.Decision.Reason == "risk_ceiling_exceeded" && result.Decision.RiskCeiling > 0 {
-				riskBlockSeen = true
-				riskBlockRisk = result.Decision.RiskScore
-				riskBlockCeiling = result.Decision.RiskCeiling
-			}
-			// Record the rejection outcome so the Operator Replay UI
-			// shows "retrieved → drafted → rejected (reason)" instead
-			// of leaving the retrieval event dangling.
-			if retrievalID != "" {
-				db.Knowledge().RecordOutcome(ctx, orgID, retrievalID, "rejected")
-			}
-			continue
-		}
-		queued++
-		if result.ExecutionState == models.ExecPlanned {
-			approvedCount++
-		}
-		// Stage outcome: queue success. The downstream browser-execution
-		// layer is responsible for the FINAL "sent" / "failed" outcome
-		// against the same retrievalID — that's where image attachments
-		// (Phase E) and DOM verification land.
-		if retrievalID != "" {
-			db.Knowledge().RecordOutcome(ctx, orgID, retrievalID, "queued")
-		}
 	}
-
-	mode := "draft"
-	switch {
-	case approvedCount > 0 && approvedCount == queued:
-		mode = "approved_auto"
-	case approvedCount > 0:
-		mode = "mixed"
-	case requestedAuto:
-		// Caller asked for auto but the org is not opted in; make this
-		// visible in the response so the operator knows why it queued as draft.
-		mode = "draft_org_not_auto"
-	}
-	if notify != nil && queued > 0 {
-		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
-	}
-
-	// Investigation ask §1: one structured, diagnosable line per run — scanned vs
-	// queued vs skipped, the reason histogram AND sample lead IDs per reason — so
-	// "scanned 110, queued 2" is traceable to concrete leads without re-running.
-	log.Printf("[queueLeadOutreach] org=%d type=%s scanned=%d queued=%d skipped=%d reasons=%v samples=%v",
-		orgID, msgType, scanned, queued, skipped, skipReasons, skipSamples)
-
-	errDetails := ""
-	if lastGenErr != nil {
-		errDetails = fmt.Sprintf(" | Last Error: %v", lastGenErr)
-	}
-	riskDetails := ""
-	if riskBlockSeen {
-		riskDetails = fmt.Sprintf(" risk_block=account=%d,risk_score=%.3f,effective_ceiling=%.3f", accountID, riskBlockRisk, riskBlockCeiling)
-	}
-
-	if msgType == "comment" {
-		// Business-friendly: queued ≠ posted. Make clear the system will run on
-		// ready Facebook accounts and report each result; surface a status summary.
-		// (Submit/verify happens per-account; success is reported only when verified.)
-		skipNote := ""
-		if skipped > 0 {
-			skipNote = fmt.Sprintf(" Bỏ qua %d lead (%s).", skipped, friendlySkipReasons(skipReasons))
-		}
-		// Eligible-fill semantics: report leads SCANNED vs comments QUEUED so the
-		// operator sees "queued 5 after scanning 32", not "checked exactly 5".
-		if queued == 0 {
-			// Lead Lifecycle PR-5: degrade honestly — report what the org DOES have
-			// (waiting/follow-up/archived) and a next step, not a dead-end "0 queued".
-			return noEligibleCommentMessage(ctx, db, orgID, scanned, skipNote) + errDetails, nil
-		}
-		// PR-5: name the source group ("Cần xử lý") so the operator knows selection came
-		// from the act-now work queue, not the raw lead list.
-		return fmt.Sprintf(
-			"Đã đưa %d comment vào hàng đợi từ nhóm Cần xử lý sau khi quét %d lead. Đây CHƯA phải là đã đăng lên Facebook — hệ thống sẽ chạy bằng các tài khoản Facebook sẵn sàng và báo lại từng kết quả. Tóm tắt: %d đang chờ · 0 đang chạy · 0 đã đăng · 0 thất bại.%s%s",
-			queued, scanned, queued, skipNote, errDetails,
-		), nil
-	}
-	return fmt.Sprintf("queued_%s=%d skipped=%d mode=%s reasons=%v%s%s", msgType, queued, skipped, mode, skipReasons, riskDetails, errDetails), nil
+	return run.formatOutreachResult(ctx, requestedAuto, notify, st), nil
 }
 
 // friendlySkipReasons summarizes skip reason codes for a customer-facing message.
@@ -733,18 +450,10 @@ func resolveProfilePostTarget(fetch accountFetcher, orgID, accountID int64, requ
 	return "", "no_profile_url_resolved"
 }
 
-func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, msgType string, targets []string, notify func(string)) (string, error) {
-	orgID := argInt64(args, "org_id")
-	if orgID <= 0 {
-		return "", fmt.Errorf("org_id is required for Facebook posting")
-	}
-	userID := argInt64(args, "user_id")
-	role := argString(args, "user_role")
-	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
-	if err != nil {
-		return "", err
-	}
-
+// resolveFacebookPostContent builds the post body: explicit content/description/title,
+// then an AI-generated job post when a title + available generator are present.
+// Returns an error when no content can be resolved (message preserved).
+func resolveFacebookPostContent(ctx context.Context, msgGen *ai.MessageGenerator, args map[string]any) (string, error) {
 	content := textutil.FirstNonEmpty(argString(args, "content"), argString(args, "description"), argString(args, "title"))
 	if msgGen != nil && msgGen.Available() && argString(args, "title") != "" {
 		genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
@@ -763,6 +472,25 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 	}
 	if strings.TrimSpace(content) == "" {
 		return "", fmt.Errorf("Facebook post content is required")
+	}
+	return content, nil
+}
+
+func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, msgType string, targets []string, notify func(string)) (string, error) {
+	orgID := argInt64(args, "org_id")
+	if orgID <= 0 {
+		return "", fmt.Errorf("org_id is required for Facebook posting")
+	}
+	userID := argInt64(args, "user_id")
+	role := argString(args, "user_role")
+	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
+	if err != nil {
+		return "", err
+	}
+
+	content, err := resolveFacebookPostContent(ctx, msgGen, args)
+	if err != nil {
+		return "", err
 	}
 
 	requestedAuto := argBool(args, "auto")
@@ -791,15 +519,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 			approvedCount++
 		}
 	}
-	mode := "draft"
-	switch {
-	case approvedCount > 0 && approvedCount == queued:
-		mode = "approved_auto"
-	case approvedCount > 0:
-		mode = "mixed"
-	case requestedAuto:
-		mode = "draft_org_not_auto"
-	}
+	mode := outreachMode(approvedCount, queued, requestedAuto)
 	if notify != nil && queued > 0 {
 		notify(formatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}
