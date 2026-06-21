@@ -34,7 +34,7 @@ type companyIdentityDTO struct {
 func (h *Handler) getCompanyIdentity(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	p := ai.LoadProfileForOrg(h.deps.DB, orgID)
 	return c.JSON(companyIdentityDTO{
@@ -51,11 +51,11 @@ func (h *Handler) getCompanyIdentity(c *fiber.Ctx) error {
 func (h *Handler) updateCompanyIdentity(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	var req companyIdentityDTO
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidRequest})
 	}
 	fields := map[string]string{
 		"business_name":    strings.TrimSpace(req.CompanyName),

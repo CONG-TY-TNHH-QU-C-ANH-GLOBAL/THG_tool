@@ -23,17 +23,17 @@ func (h *Handler) adminUpdateUser(c *fiber.Ctx) error {
 		NewPassword string `json:"new_password"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidRequest})
 	}
 	user, err := h.deps.DB.GetUserByID(id)
 	if err != nil || user == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
 	}
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
 	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
 	if !callerIsPlatform && user.OrgID != callerOrgID {
-		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
 	}
 	if !callerIsPlatform && models.IsPlatformRole(user.Role) {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})
@@ -81,13 +81,13 @@ func (h *Handler) adminDeleteUser(c *fiber.Ctx) error {
 	}
 	user, err := h.deps.DB.GetUserByID(id)
 	if err != nil || user == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
 	}
 	callerOrgID, _ := c.Locals("org_id").(int64)
 	callerRole, _ := c.Locals("user_role").(string)
 	callerIsPlatform := models.IsPlatformUser(callerOrgID, models.UserRole(callerRole))
 	if !callerIsPlatform && user.OrgID != callerOrgID {
-		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
+		return c.Status(404).JSON(fiber.Map{"error": msgUserNotFound})
 	}
 	if models.IsPlatformRole(user.Role) {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot modify founder users"})

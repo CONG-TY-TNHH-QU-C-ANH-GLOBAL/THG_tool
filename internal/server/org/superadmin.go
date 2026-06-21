@@ -86,7 +86,7 @@ func (h *Handler) superAdminSessions(c *fiber.Ctx) error {
 func (h *Handler) superAdminDeleteOrg(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	if id == 1 {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot delete platform org"})
@@ -100,7 +100,7 @@ func (h *Handler) superAdminDeleteOrg(c *fiber.Ctx) error {
 func (h *Handler) superAdminDeleteAccount(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	if h.deps.Workspace != nil {
 		h.deps.Workspace.Stop(id)
@@ -114,7 +114,7 @@ func (h *Handler) superAdminDeleteAccount(c *fiber.Ctx) error {
 func (h *Handler) superAdminDeleteUser(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	// Prevent self-delete
 	if selfID, _ := c.Locals("user_id").(int64); selfID == id {
@@ -129,7 +129,7 @@ func (h *Handler) superAdminDeleteUser(c *fiber.Ctx) error {
 func (h *Handler) superAdminTerminateSession(c *fiber.Ctx) error {
 	accountID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	if h.deps.Workspace != nil {
 		h.deps.Workspace.Stop(accountID)
