@@ -5,6 +5,13 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
+// Shared org user route path segments (registered under both the auth-admin
+// and superadmin groups). Defined once so the literal has a single source.
+const (
+	routeUsers    = "/users"
+	routeUserByID = "/users/:id"
+)
+
 type WorkspaceManager interface {
 	Stop(accountID int64)
 }
@@ -30,10 +37,10 @@ func PublicRoutes(api fiber.Router, deps Deps, regLimiter fiber.Handler) {
 // AuthAdminRoutes registers auth-scoped admin org user endpoints.
 func AuthAdminRoutes(group fiber.Router, deps Deps, tenantReady, adminOnly fiber.Handler) {
 	h := &Handler{deps: deps}
-	group.Post("/users", tenantReady, adminOnly, h.createOrgUser)
-	group.Get("/users", tenantReady, adminOnly, h.listUsers)
-	group.Put("/users/:id", tenantReady, adminOnly, h.adminUpdateUser)
-	group.Delete("/users/:id", tenantReady, adminOnly, h.adminDeleteUser)
+	group.Post(routeUsers, tenantReady, adminOnly, h.createOrgUser)
+	group.Get(routeUsers, tenantReady, adminOnly, h.listUsers)
+	group.Put(routeUserByID, tenantReady, adminOnly, h.adminUpdateUser)
+	group.Delete(routeUserByID, tenantReady, adminOnly, h.adminDeleteUser)
 	group.Get("/audit", tenantReady, adminOnly, h.getAuditLogs)
 }
 
@@ -65,8 +72,8 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler, founderOnly 
 	superAdminGrp.Delete("/orgs/:id", h.superAdminDeleteOrg)
 	superAdminGrp.Get("/accounts", h.superAdminAccounts)
 	superAdminGrp.Delete("/accounts/:id", h.superAdminDeleteAccount)
-	superAdminGrp.Get("/users", h.superAdminUsers)
-	superAdminGrp.Delete("/users/:id", h.superAdminDeleteUser)
+	superAdminGrp.Get(routeUsers, h.superAdminUsers)
+	superAdminGrp.Delete(routeUserByID, h.superAdminDeleteUser)
 	superAdminGrp.Get("/sessions", h.superAdminSessions)
 	superAdminGrp.Delete("/sessions/:id", h.superAdminTerminateSession)
 	superAdminGrp.Post("/query", h.superAdminQuery)

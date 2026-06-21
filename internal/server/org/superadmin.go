@@ -1,6 +1,7 @@
 package org
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -86,7 +87,7 @@ func (h *Handler) superAdminSessions(c *fiber.Ctx) error {
 func (h *Handler) superAdminDeleteOrg(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	if id == 1 {
 		return c.Status(403).JSON(fiber.Map{"error": "cannot delete platform org"})
@@ -100,7 +101,7 @@ func (h *Handler) superAdminDeleteOrg(c *fiber.Ctx) error {
 func (h *Handler) superAdminDeleteAccount(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	if h.deps.Workspace != nil {
 		h.deps.Workspace.Stop(id)
@@ -114,7 +115,7 @@ func (h *Handler) superAdminDeleteAccount(c *fiber.Ctx) error {
 func (h *Handler) superAdminDeleteUser(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	// Prevent self-delete
 	if selfID, _ := c.Locals("user_id").(int64); selfID == id {
@@ -129,7 +130,7 @@ func (h *Handler) superAdminDeleteUser(c *fiber.Ctx) error {
 func (h *Handler) superAdminTerminateSession(c *fiber.Ctx) error {
 	accountID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidID})
 	}
 	if h.deps.Workspace != nil {
 		h.deps.Workspace.Stop(accountID)
@@ -371,46 +372,33 @@ func extractEvidenceField(blob, field string) string {
 	return ""
 }
 
+// superAdminQuery runs a fixed, allowlisted diagnostic report selected by the
+// request "report" key. Arbitrary request-provided SQL is NOT executed: the
+// legacy "sql" field is accepted only to reject it with a clear 400 so old
+// callers fail loudly instead of silently. See superadmin_reports.go.
 func (h *Handler) superAdminQuery(c *fiber.Ctx) error {
 	var body struct {
-		SQL string `json:"sql"`
+		Report string `json:"report"`
+		SQL    string `json:"sql,omitempty"` // accepted only to reject legacy raw-SQL usage
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
-	query := strings.TrimSpace(body.SQL)
-	if query == "" || !strings.HasPrefix(strings.ToUpper(query), "SELECT") {
-		return c.Status(403).JSON(fiber.Map{"error": "only SELECT queries allowed"})
+	if strings.TrimSpace(body.SQL) != "" {
+		return c.Status(400).JSON(fiber.Map{"error": "raw sql is no longer supported; pass a report key"})
 	}
-	rows, err := h.deps.DB.DB().QueryContext(c.Context(), query)
+	rows, err := h.querySuperadminReport(c.Context(), body.Report)
 	if err != nil {
+		if errors.Is(err, errUnknownReport) {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid report"})
+		}
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	defer rows.Close()
 
-	cols, err := rows.Columns()
+	cols, result, err := scanSuperadminReportRows(rows)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	var result []map[string]any
-	for rows.Next() {
-		ptrs := make([]any, len(cols))
-		vals := make([]any, len(cols))
-		for i := range ptrs {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		row := make(map[string]any, len(cols))
-		for i, col := range cols {
-			row[col] = vals[i]
-		}
-		result = append(result, row)
-		if len(result) >= 500 {
-			break
-		}
 	}
 	return c.JSON(fiber.Map{"columns": cols, "rows": result, "count": len(result)})
 }

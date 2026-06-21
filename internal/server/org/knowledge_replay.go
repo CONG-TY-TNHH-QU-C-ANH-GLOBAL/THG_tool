@@ -29,7 +29,7 @@ import (
 func (h *Handler) listKnowledgeEvents(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 
 	limit, _ := strconv.Atoi(c.Query("limit", "25"))
@@ -60,7 +60,7 @@ func (h *Handler) listKnowledgeEvents(c *fiber.Ctx) error {
 func (h *Handler) getKnowledgeEvent(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	retrievalID := c.Params("retrieval_id")
 	if retrievalID == "" {
@@ -68,7 +68,7 @@ func (h *Handler) getKnowledgeEvent(c *fiber.Ctx) error {
 	}
 	ev, err := h.deps.DB.Knowledge().GetReplayEvent(c.Context(), orgID, retrievalID)
 	if err == sql.ErrNoRows {
-		return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		return c.Status(404).JSON(fiber.Map{"error": msgNotFound})
 	}
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -83,7 +83,7 @@ func (h *Handler) getKnowledgeEvent(c *fiber.Ctx) error {
 func (h *Handler) listSourceSyncs(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	// The source_id parameter is currently unused by the store query
 	// (ListRecentSyncsForOrg returns org-wide history). When per-
@@ -108,7 +108,7 @@ func (h *Handler) listSourceSyncs(c *fiber.Ctx) error {
 func (h *Handler) getKnowledgeStats(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	stats, err := h.deps.DB.Knowledge().GetStatsForOrg(c.Context(), orgID)
 	if err != nil {
@@ -129,7 +129,7 @@ func (h *Handler) getKnowledgeStats(c *fiber.Ctx) error {
 func (h *Handler) getKnowledgeSoak(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	windowHours := c.QueryInt("window_hours", 24)
 	if windowHours <= 0 || windowHours > 720 {

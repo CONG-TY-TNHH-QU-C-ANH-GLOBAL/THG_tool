@@ -18,7 +18,7 @@ import (
 func (h *Handler) getBusinessProfile(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	profile := ai.LoadProfileForOrg(h.deps.DB, orgID)
 	return c.JSON(fiber.Map{
@@ -35,11 +35,11 @@ func (h *Handler) getBusinessProfile(c *fiber.Ctx) error {
 func (h *Handler) updateBusinessProfile(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "workspace context required"})
+		return c.Status(400).JSON(fiber.Map{"error": msgWorkspaceContextRequired})
 	}
 	var req ai.BusinessProfile
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": msgInvalidRequest})
 	}
 	// Trim every string field so trailing whitespace from copy-paste does
 	// not silently invalidate the "skip empty" check downstream.
