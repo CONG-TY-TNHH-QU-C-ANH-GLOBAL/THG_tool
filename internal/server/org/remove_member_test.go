@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/server/testsupport"
 )
 
 // Admin staff removal (membership-vulnerability fix): DELETE
@@ -17,7 +18,7 @@ import (
 // user record + credentials survive, the leaver's accounts are
 // assignment-paused, and the last admin can never be removed.
 func TestAdminDeleteUser_DetachesWithoutDestroying(t *testing.T) {
-	db := newTestStore(t, "remove_member.db")
+	db := testsupport.NewTestStore(t, "remove_member.db")
 	adminID, _ := db.CreateUser(&models.User{OrgID: 3, Email: "boss@example.com", Name: "Boss", PasswordHash: "hash-boss", Role: models.RoleAdmin})
 	salesID, _ := db.CreateUser(&models.User{OrgID: 3, Email: "sale@example.com", Name: "Sale", PasswordHash: "hash-sale", Role: models.RoleSales})
 	accID, _ := db.Identities().AddAccount(&models.Account{

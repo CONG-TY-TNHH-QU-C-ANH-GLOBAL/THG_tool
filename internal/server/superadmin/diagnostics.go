@@ -1,6 +1,7 @@
 package superadmin
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -101,30 +102,53 @@ func (h *Handler) superAdminAccountDiagnostic(c *fiber.Ctx) error {
 	}
 
 	// 3. Recent execution_attempts with parsed notes (THE diagnostic gold)
-	type attempt struct {
-		StartedAt     string `json:"started_at"`
-		ActionType    string `json:"action_type"`
-		Outcome       string `json:"outcome"`
-		FailureReason string `json:"failure_reason"`
-		Notes         string `json:"notes"`
-		PageURLAfter  string `json:"page_url_after"`
-		DOMSnippet    string `json:"dom_snippet"`
-		EvidenceRaw   string `json:"evidence_raw"`
+	attempts, err := h.loadRecentAttempts(c.Context(), accountID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	attemptsRows, err := db.QueryContext(c.Context(),
+
+	// 4. Recent action_ledger entries (outbound history)
+	ledger, err := h.loadRecentLedger(c.Context(), accountID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"account":   acc,
+		"behaviour": b,
+		"attempts":  attempts,
+		"ledger":    ledger,
+	})
+}
+
+type accountAttempt struct {
+	StartedAt     string `json:"started_at"`
+	ActionType    string `json:"action_type"`
+	Outcome       string `json:"outcome"`
+	FailureReason string `json:"failure_reason"`
+	Notes         string `json:"notes"`
+	PageURLAfter  string `json:"page_url_after"`
+	DOMSnippet    string `json:"dom_snippet"`
+	EvidenceRaw   string `json:"evidence_raw"`
+}
+
+// loadRecentAttempts returns the most recent execution_attempts for an account,
+// with proof fields parsed out of each evidence_json blob.
+func (h *Handler) loadRecentAttempts(ctx context.Context, accountID int64) ([]accountAttempt, error) {
+	rows, err := h.deps.DB.DB().QueryContext(ctx,
 		`SELECT COALESCE(started_at,''), COALESCE(action_type,''),
 		        COALESCE(outcome,''), COALESCE(failure_reason,''),
 		        COALESCE(evidence_json,'')
 		   FROM execution_attempts WHERE account_id = ?
 		   ORDER BY started_at DESC LIMIT 20`, accountID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return nil, err
 	}
-	defer attemptsRows.Close()
-	var attempts []attempt
-	for attemptsRows.Next() {
-		var a attempt
-		if err := attemptsRows.Scan(&a.StartedAt, &a.ActionType, &a.Outcome, &a.FailureReason, &a.EvidenceRaw); err != nil {
+	defer rows.Close()
+	var attempts []accountAttempt
+	for rows.Next() {
+		var a accountAttempt
+		if err := rows.Scan(&a.StartedAt, &a.ActionType, &a.Outcome, &a.FailureReason, &a.EvidenceRaw); err != nil {
 			continue
 		}
 		a.Notes = extractEvidenceField(a.EvidenceRaw, "notes")
@@ -135,37 +159,35 @@ func (h *Handler) superAdminAccountDiagnostic(c *fiber.Ctx) error {
 		}
 		attempts = append(attempts, a)
 	}
+	return attempts, nil
+}
 
-	// 4. Recent action_ledger entries (outbound history)
-	type ledgerEntry struct {
-		PerformedAt string `json:"performed_at"`
-		ActionType  string `json:"action_type"`
-		TargetURL   string `json:"target_url"`
-		Outcome     string `json:"outcome"`
-		Reason      string `json:"reason"`
-	}
-	ledgerRows, err := db.QueryContext(c.Context(),
+type accountLedgerEntry struct {
+	PerformedAt string `json:"performed_at"`
+	ActionType  string `json:"action_type"`
+	TargetURL   string `json:"target_url"`
+	Outcome     string `json:"outcome"`
+	Reason      string `json:"reason"`
+}
+
+// loadRecentLedger returns the most recent action_ledger entries for an account.
+func (h *Handler) loadRecentLedger(ctx context.Context, accountID int64) ([]accountLedgerEntry, error) {
+	rows, err := h.deps.DB.DB().QueryContext(ctx,
 		`SELECT COALESCE(performed_at,''), COALESCE(action_type,''),
 		        COALESCE(target_url,''), COALESCE(outcome,''), COALESCE(reason,'')
 		   FROM action_ledger WHERE account_id = ?
 		   ORDER BY performed_at DESC LIMIT 20`, accountID)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return nil, err
 	}
-	defer ledgerRows.Close()
-	var ledger []ledgerEntry
-	for ledgerRows.Next() {
-		var le ledgerEntry
-		if err := ledgerRows.Scan(&le.PerformedAt, &le.ActionType, &le.TargetURL, &le.Outcome, &le.Reason); err != nil {
+	defer rows.Close()
+	var ledger []accountLedgerEntry
+	for rows.Next() {
+		var le accountLedgerEntry
+		if err := rows.Scan(&le.PerformedAt, &le.ActionType, &le.TargetURL, &le.Outcome, &le.Reason); err != nil {
 			continue
 		}
 		ledger = append(ledger, le)
 	}
-
-	return c.JSON(fiber.Map{
-		"account":   acc,
-		"behaviour": b,
-		"attempts":  attempts,
-		"ledger":    ledger,
-	})
+	return ledger, nil
 }

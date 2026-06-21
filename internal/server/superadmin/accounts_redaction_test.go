@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/server/testsupport"
 )
 
 // GET /superadmin/accounts (founder-gated) previously serialized the raw
@@ -16,7 +17,7 @@ import (
 // cookies plus proxy_url/user_agent. The AccountSafe projection must
 // strip every credential/infra field while keeping monitoring fields.
 func TestSuperAdminAccounts_RedactsSecrets(t *testing.T) {
-	db := newTestStore(t, "superadmin_redaction.db")
+	db := testsupport.NewTestStore(t, "superadmin_redaction.db")
 	if _, err := db.Identities().AddAccount(&models.Account{
 		OrgID:          1,
 		Platform:       models.PlatformFacebook,

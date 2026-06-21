@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/thg/scraper/internal/server/testsupport"
 )
 
 // TestRegisterRoutes_PrefixAndFounderGate proves the extraction preserved the
@@ -12,7 +14,7 @@ import (
 // prefix with the founder-only middleware ahead of each handler in the chain.
 // (In production the parent group adds the "/api" prefix, unchanged here.)
 func TestRegisterRoutes_PrefixAndFounderGate(t *testing.T) {
-	db := newTestStore(t, "superadmin_routes.db")
+	db := testsupport.NewTestStore(t, "superadmin_routes.db")
 
 	t.Run("paths mount under /superadmin and gate runs before handler", func(t *testing.T) {
 		gateCalls := 0

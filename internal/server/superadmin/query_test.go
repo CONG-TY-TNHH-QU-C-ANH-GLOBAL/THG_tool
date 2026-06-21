@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/server/testsupport"
 )
 
 // performSuperadminQueryRequest posts a JSON payload to the founder query
@@ -103,7 +104,7 @@ func reportColumnSet(body map[string]any) map[string]bool {
 // diagnostic endpoint: request-provided SQL is never executed; only fixed,
 // allowlisted report keys reach the database.
 func TestSuperAdminQuery_AllowlistOnly(t *testing.T) {
-	db := newTestStore(t, "superadmin_query.db")
+	db := testsupport.NewTestStore(t, "superadmin_query.db")
 	// Seed one user so the "users" report has a row to return.
 	if _, err := db.CreateUser(&models.User{
 		OrgID: 1, Email: "founder@example.com", Name: "Founder",

@@ -1,0 +1,33 @@
+// Package testsupport provides shared helpers for internal/server handler
+// tests — currently store bootstrap from the migration template. It is
+// test-only support (imported solely from _test.go files), not a production
+// utility package; keep helpers narrow and server-handler-specific.
+package testsupport
+
+import (
+	"testing"
+
+	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/storetest"
+)
+
+func bootstrapStore(path string) error {
+	db, err := store.New(path)
+	if err != nil {
+		return err
+	}
+	return db.Close()
+}
+
+// NewTestStore opens a fresh, isolated store seeded from the migration
+// template and registers cleanup to close it when the test ends.
+func NewTestStore(t *testing.T, name string) *store.Store {
+	t.Helper()
+	dst := storetest.CopyTemplate(t, bootstrapStore, name)
+	db, err := store.New(dst)
+	if err != nil {
+		t.Fatalf("open from template: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
