@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/drivers/copilot"
+	"github.com/thg/scraper/internal/server/agent/presence"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
 )
@@ -95,14 +96,13 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	h := NewHandler(deps)
 	group.Post("/ai/prompt", h.aiPrompt)
 	group.Get("/ai/history", h.aiHistory)
-	// PR-M2 presence board: per-account connector + member + online state, so the
-	// operator can see which of N accounts is actually reachable (tenant-auth).
-	group.Get("/connectors/status", h.connectorStatus)
+	// Connector presence board (tenant) + admin connector overview live in the
+	// presence subpackage — read-only connector/account operational views.
+	// Same effective paths (/connectors/status, /admin/connectors/overview) and
+	// the same adminOnly gate on the overview.
+	presence.RegisterRoutes(group, presence.Deps{DB: deps.DB}, adminOnly)
 	// PR-D readiness matrix: per-account, per-capability "can run + why not".
 	group.Get("/accounts/readiness", h.accountReadiness)
-	// PR-3 admin overview: workspace-level operational status (staff →
-	// account → connector/version/readiness). View-only; no device control.
-	group.Get("/admin/connectors/overview", adminOnly, h.connectorOverview)
 	group.Delete("/ai/history", h.aiDeleteHistory)
 	group.Delete("/ai/history/:id", h.aiDeleteHistoryItem)
 
