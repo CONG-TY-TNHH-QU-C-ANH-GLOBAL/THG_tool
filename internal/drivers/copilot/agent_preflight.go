@@ -10,6 +10,14 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
+// Folded Vietnamese role-inference keywords matched in more than one place below.
+// Extracted so each literal is defined once; values are unchanged.
+const (
+	roleKwUngVien  = "ung vien"  // candidate (recruitment)
+	roleKwKhachMua = "khach mua" // buyer (sales)
+	roleKwDoiTac   = "doi tac"   // partner
+)
+
 func orgContextKeysForPrompt() []string {
 	return []string{
 		"business_profile",
@@ -127,11 +135,11 @@ func inferCrawlTargetingFromPrompt(prompt string) map[string]string {
 
 	role := "customers"
 	switch {
-	case containsAnyFolded(folded, []string{"tuyen ", "tuyen dung", "nhan su", "ung vien", "tim viec", "can viec", "san sang lam"}):
+	case containsAnyFolded(folded, []string{"tuyen ", "tuyen dung", "nhan su", roleKwUngVien, "tim viec", "can viec", "san sang lam"}):
 		role = "candidates"
-	case containsAnyFolded(folded, []string{"supplier", "nha cung cap", "nguon hang", "factory"}) && !containsAnyFolded(folded, []string{"tim khach", "khach mua", "tim buyer"}):
+	case containsAnyFolded(folded, []string{"supplier", "nha cung cap", "nguon hang", "factory"}) && !containsAnyFolded(folded, []string{"tim khach", roleKwKhachMua, "tim buyer"}):
 		role = "suppliers"
-	case containsAnyFolded(folded, []string{"doi tac", "partner", "reseller", "agency hop tac"}):
+	case containsAnyFolded(folded, []string{roleKwDoiTac, "partner", "reseller", "agency hop tac"}):
 		role = "partners"
 	}
 	out["target_author_role"] = role
@@ -156,7 +164,7 @@ func extractCrawlPositiveSignals(folded, role string) []string {
 	switch role {
 	case "candidates":
 		pool = []string{
-			"tim viec", "can viec", "ung vien", "ho so", "cv",
+			"tim viec", "can viec", roleKwUngVien, "ho so", "cv",
 			"remote ok", "san sang lam", "co kinh nghiem", "freelance",
 		}
 	case "suppliers":
@@ -166,7 +174,7 @@ func extractCrawlPositiveSignals(folded, role string) []string {
 		}
 	case "partners":
 		pool = []string{
-			"hop tac", "doi tac", "reseller", "agency", "share doanh thu",
+			"hop tac", roleKwDoiTac, "reseller", "agency", "share doanh thu",
 		}
 	default:
 		pool = []string{
@@ -279,7 +287,7 @@ func inferBusinessCalibrationFromPrompt(prompt string) map[string]string {
 		if out["services"] == "" && (strings.Contains(folded, "dich vu") || strings.Contains(folded, "mang kinh doanh") || strings.Contains(folded, "chuyen ho tro") || strings.Contains(folded, "offer")) {
 			out["services"] = compactBusinessField(segmentAfterAny(line, []string{" chinh la ", " la ", ":"}))
 		}
-		if out["target_customers"] == "" && (strings.Contains(folded, "khach mua") || strings.Contains(folded, "can tim khach") || strings.Contains(folded, "seller") || strings.Contains(folded, "target")) {
+		if out["target_customers"] == "" && (strings.Contains(folded, roleKwKhachMua) || strings.Contains(folded, "can tim khach") || strings.Contains(folded, "seller") || strings.Contains(folded, "target")) {
 			out["target_customers"] = compactBusinessField(line)
 		}
 		if out["target_signals"] == "" && strings.Contains(folded, "giu lai") {
@@ -302,10 +310,10 @@ func inferBusinessCalibrationFromPrompt(prompt string) map[string]string {
 	if out["target_author_role"] == "" {
 		folded := foldVietnameseForMatch(clean)
 		switch {
-		case strings.Contains(folded, "ung vien") || strings.Contains(folded, "nhan su") || strings.Contains(folded, "tuyen"):
+		case strings.Contains(folded, roleKwUngVien) || strings.Contains(folded, "nhan su") || strings.Contains(folded, "tuyen"):
 			out["target_author_role"] = "candidates"
-		case strings.Contains(folded, "supplier") || strings.Contains(folded, "nha cung cap") || strings.Contains(folded, "doi tac"):
-			if strings.Contains(folded, "khach mua") || strings.Contains(folded, "tim khach") {
+		case strings.Contains(folded, "supplier") || strings.Contains(folded, "nha cung cap") || strings.Contains(folded, roleKwDoiTac):
+			if strings.Contains(folded, roleKwKhachMua) || strings.Contains(folded, "tim khach") {
 				out["target_author_role"] = "customers"
 			} else {
 				out["target_author_role"] = "suppliers"
