@@ -43,6 +43,13 @@ type Metrics interface {
 type NoOp struct{}
 
 func (NoOp) RecordSync(context.Context, int64, sources.SourceType, int, int, int, int, int64, int) {
+	// no-op: NoOp records no sync outcome (see type doc).
 }
-func (NoOp) RecordRetrieval(context.Context, int64, string, string, []retrieval.Hit, string) {}
-func (NoOp) RecordOutcome(context.Context, int64, string, string)                            {}
+
+func (NoOp) RecordRetrieval(context.Context, int64, string, string, []retrieval.Hit, string) {
+	// no-op: NoOp records no retrieval event (see type doc).
+}
+
+func (NoOp) RecordOutcome(context.Context, int64, string, string) {
+	// no-op: NoOp records no outcome (see type doc).
+}
