@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/thg/scraper/internal/server/agent/crawl"
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
@@ -75,7 +76,7 @@ func logDirectPostImportForensics(ctx context.Context, req connectorCrawlResultR
 	if wf == nil {
 		return
 	}
-	sd := normalizeConnectorScrollDiag(req.ScrollDiag)
+	sd := crawl.NormalizeConnectorScrollDiag(req.ScrollDiag)
 	attrs := []any{
 		"task_id", req.TaskID,
 		"workflow_id", wf.ID,

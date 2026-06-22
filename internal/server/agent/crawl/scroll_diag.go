@@ -1,4 +1,9 @@
-package agent
+// Package crawl owns read-only crawl diagnostics extracted from the agent
+// package — currently the typed, panic-safe view of the Chrome extension's
+// scroll_diag payload. It does NOT perform crawl ingestion, execution, or any
+// DB/connector mutation; those stay in the agent package. The package contains
+// no runtime/wiring and imports no agent internals.
+package crawl
 
 import (
 	"encoding/json"
@@ -6,12 +11,12 @@ import (
 	"strings"
 )
 
-// connectorScrollDiag is the typed, panic-safe view of the extension's scroll_diag payload.
+// ConnectorScrollDiag is the typed, panic-safe view of the extension's scroll_diag payload.
 // The wire form is map[string]any decoded from JSON, so a numeric field can arrive as float64
 // (the default), json.Number, int (in tests), or even a string from an old/buggy extension —
-// and any field can be missing or null. normalizeConnectorScrollDiag coerces all of that to
+// and any field can be missing or null. NormalizeConnectorScrollDiag coerces all of that to
 // stable Go types instead of blind type assertions that would panic in production.
-type connectorScrollDiag struct {
+type ConnectorScrollDiag struct {
 	Passes            int
 	MaxArticlesSeen   int
 	MaxScrollY        int
@@ -21,10 +26,10 @@ type connectorScrollDiag struct {
 	LandedURL         string
 }
 
-// normalizeConnectorScrollDiag converts the raw scroll_diag map into a connectorScrollDiag.
+// NormalizeConnectorScrollDiag converts the raw scroll_diag map into a ConnectorScrollDiag.
 // A nil/empty map yields the zero value (all zero/false/""), never a panic.
-func normalizeConnectorScrollDiag(diag map[string]any) connectorScrollDiag {
-	return connectorScrollDiag{
+func NormalizeConnectorScrollDiag(diag map[string]any) ConnectorScrollDiag {
+	return ConnectorScrollDiag{
 		Passes:            scrollDiagInt(diag, "passes"),
 		MaxArticlesSeen:   scrollDiagInt(diag, "max_articles_seen"),
 		MaxScrollY:        scrollDiagInt(diag, "max_scroll_y"),
