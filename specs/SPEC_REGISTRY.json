@@ -69,7 +69,8 @@
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "local-connector-extension/automation + channels/facebook modules exist",
-        "test/automation_core.test.js + test/facebook_adapter.test.js"
+        "test/automation_core.test.js + test/facebook_adapter.test.js",
+        "PR24C: JS tests executed and PASS \u2014 `node local-connector-extension/test/automation_core.test.js` + `facebook_adapter.test.js`"
       ],
       "related_code": [
         "local-connector-extension/automation",
@@ -139,7 +140,8 @@
         "PR24C specs audit (2026-06-23)",
         "internal/models/comment_forensics.go (ClassifyCommentForensics)",
         "internal/store/coordination/comment_forensics.go",
-        "internal/store/comment_forensics_test.go + comment_reverify_lease_test.go"
+        "internal/store/comment_forensics_test.go + comment_reverify_lease_test.go",
+        "PR24C: targeted tests executed and PASS \u2014 `go test ./internal/store/ -run 'CommentForensics|Reverify'` (9 tests incl. TestClassifyCommentForensics_Buckets)"
       ],
       "related_code": [
         "internal/models/comment_forensics.go",
@@ -307,7 +309,8 @@
         "directPostIntake in cmd/scraper/agent_actions.go",
         "GetPostLeadByRef in internal/store/leads/lookup.go",
         "migration 0022_direct_post_comment_workflows",
-        "direct_post_intake tests pass"
+        "direct_post_intake tests pass",
+        "PR24C: targeted tests executed and PASS \u2014 `go test ./cmd/scraper/ -run DirectPostIntake` (5) + `go test ./internal/store/leads/ -run 'PostLeadByRef'` (2)"
       ],
       "related_code": [
         "cmd/scraper/agent_actions.go",
