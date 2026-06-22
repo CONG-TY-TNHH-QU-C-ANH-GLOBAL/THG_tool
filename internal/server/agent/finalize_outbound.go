@@ -11,8 +11,8 @@ import (
 
 // Outbound finalization state machine: the orchestrator, its per-callback state
 // struct, and the terminal-decision steps (load → enforce identity → execution_id
-// CAS). The FIRST-WIN side effects live in outbox_finalize_side_effects.go; the
-// terminal response + notifications in outbox_finalize_notify.go.
+// CAS). The FIRST-WIN side effects live in finalize_side_effects.go; the terminal
+// response, notifications, and evidence/proof adapters in finalize_helpers.go.
 
 // finalizeOutbound is the single write-point for terminal outbound
 // callbacks. It encodes three invariants:

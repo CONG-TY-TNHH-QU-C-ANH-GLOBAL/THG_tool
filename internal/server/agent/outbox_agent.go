@@ -12,7 +12,7 @@ import (
 // Outbound HTTP handlers for the local-connector agent: claim approved outbound
 // for execution (GET /outbox) and record the terminal /sent and /failed
 // callbacks. The outbound finalization state machine these callbacks drive lives
-// in outbox_finalize*.go; the claim helper in outbox_claim.go.
+// in finalize_*.go; the claim helper in outbox_claim.go.
 
 // agentGetOutbox returns approved outbound messages for local execution.
 // GET /api/agent/outbox
