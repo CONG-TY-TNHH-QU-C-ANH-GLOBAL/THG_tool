@@ -28,15 +28,8 @@ import (
 // deterministic direct-post terminal-failure decision, the crawl summary, and forensics.
 // Synchronous — it completes before returning (no goroutines spawned on ctx).
 func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgID int64, req connectorCrawlResultRequest) (connectorCrawlProcessResult, error) {
-	if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
-		return connectorCrawlProcessResult{}, errCrawlForbiddenAccount
-	}
-	ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, req.AccountID)
-	if err != nil {
+	if err := h.resolveCrawlOwnership(orgID, agentID, req); err != nil {
 		return connectorCrawlProcessResult{}, err
-	}
-	if !ownsStream {
-		return connectorCrawlProcessResult{}, errCrawlForbiddenStream
 	}
 
 	appStore, err := store.NewAppStore(h.db)
@@ -51,85 +44,74 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 	_ = appStore.StartTask(ctx, req.TaskID)
 
 	if strings.EqualFold(req.Status, "failed") || strings.TrimSpace(req.Error) != "" {
-		errMsg := strings.TrimSpace(req.Error)
-		if errMsg == "" {
-			errMsg = "Chrome Extension crawl failed"
-		}
-		_ = appStore.FailTask(ctx, req.TaskID, errMsg)
-		// P1.3E: when a FAILED crawl is an explicit direct-post import (target not rendered /
-		// boilerplate / typed group/post mismatch reported by the extension), fail the workflow
-		// terminally with the typed code AND surface it to the requester — instead of only an
-		// admin crawl-failure notice + a poller timeout. No lead / no outbound / no comment.
-		if wf := h.resolveDirectPostIntake(ctx, orgID, req.TaskID); wf != nil {
-			code := directPostFailureCodeFromExtensionError(errMsg)
-			log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q extension_error=%q → terminal code=%s",
-				wf.ID, req.TaskID, errMsg, code)
-			h.failDirectPostImport(ctx, orgID, wf, code, "direct-post import failed in connector: "+errMsg)
-		} else {
-			system.NotifyCrawlFailure(h.db, h.notifier, orgID, req.AccountID, req.TaskID, errMsg)
-		}
-		return connectorCrawlProcessResult{Status: "failed", Error: errMsg}, nil
+		return h.handleFailedCrawl(ctx, orgID, req, appStore), nil
 	}
-
-	deps := h.buildConnectorCrawlIngestDeps(orgID, req, appStore)
 
 	// Explicit direct-post intake? (req.TaskID == workflow.import_task_id). When so, the
 	// chosen post must be force-created as a lead even if the market filter would reject it,
 	// and must keep the requested group-context URL — see crawl_direct_post.go.
-	directPost := h.resolveDirectPostIntake(ctx, orgID, req.TaskID)
-	primarySourceURL := ""
-	if directPost != nil && strings.TrimSpace(directPost.CanonicalPostURL) != "" {
-		primarySourceURL = strings.TrimSpace(directPost.CanonicalPostURL) // summary prefers requested URL
+	p := &crawlResultProcessor{
+		h:          h,
+		appStore:   appStore,
+		orgID:      orgID,
+		taskID:     req.TaskID,
+		deps:       h.buildConnectorCrawlIngestDeps(orgID, req, appStore),
+		directPost: h.resolveDirectPostIntake(ctx, orgID, req.TaskID),
+	}
+	if p.directPost != nil && strings.TrimSpace(p.directPost.CanonicalPostURL) != "" {
+		p.primarySourceURL = strings.TrimSpace(p.directPost.CanonicalPostURL) // summary prefers requested URL
 	}
 
-	// P1.3C import-result bubbling: track whether THIS finished import produced a valid
-	// requested-post lead (dpValidObserved) or already failed the workflow (dpFailed). If
-	// neither, the connector returned nothing usable for the requested post and the workflow
-	// is failed deterministically below (no silent retry-forever loop).
-	dpValidObserved, dpFailed := false, false
-	dpFailureCode := ""
-	inserted, fetched := 0, 0
-	for _, item := range req.Items {
-		o := h.processConnectorCrawlItem(ctx, orgID, req.TaskID, item, deps, appStore, directPost)
-		if o.fetched {
-			fetched++
-		}
-		if o.inserted {
-			inserted++
-		}
-		if primarySourceURL == "" && o.primaryURL != "" {
-			primarySourceURL = o.primaryURL
-		}
-		if o.dpValidObserved {
-			dpValidObserved = true
-		}
-		if o.dpFailed {
-			dpFailed = true
-			if o.dpFailureCode != "" {
-				dpFailureCode = o.dpFailureCode
-			}
-		}
-	}
+	p.ingestItems(ctx, req.Items)
+	p.finalizeDirectPost(ctx, orgID, req)
 
-	// P1.3C: the import task FINISHED. If this was an explicit direct-post intake and it
-	// produced no valid requested-post lead (and did not already fail on a poisoned item),
-	// fail the workflow deterministically with a typed reason instead of leaving the poller
-	// to retry until the generic lead_not_observed timeout. (CAS-guarded: stale/racing → no-op.)
-	// failDirectPostImport also surfaces the typed reason in the requester's Copilot history.
-	if code, fail := directPostImportFailureCode(dpValidObserved, dpFailed); fail && directPost != nil {
-		log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q expected_post_fbid=%q expected_group_ref=%q raw_items=%d — no valid observed item for requested post; failing workflow code=%s",
-			directPost.ID, req.TaskID, directPost.PostFBID, directPost.GroupRef, len(req.Items), code)
-		dpFailureCode = code
-		h.failDirectPostImport(ctx, orgID, directPost, code, "import finished but the requested post was not observed")
-	}
-	if directPost != nil {
-		logDirectPostImportForensics(ctx, req, directPost, dpValidObserved, dpFailed || dpFailureCode != "", dpFailureCode)
-	}
-
-	_ = appStore.CompleteTask(ctx, req.TaskID, fetched, inserted)
+	_ = appStore.CompleteTask(ctx, req.TaskID, p.fetched, p.inserted)
 	scrollNote := logConnectorCrawlForensics(ctx, orgID, req)
-	system.NotifyCrawlSummary(h.db, h.notifier, orgID, req.AccountID, req.TaskID, intent, len(req.Items), fetched, inserted, primarySourceURL, req.ExitReason, scrollNote)
-	return connectorCrawlProcessResult{Status: "stored", TaskID: req.TaskID, Fetched: fetched, Inserted: inserted}, nil
+	system.NotifyCrawlSummary(h.db, h.notifier, orgID, req.AccountID, req.TaskID, intent, len(req.Items), p.fetched, p.inserted, p.primarySourceURL, req.ExitReason, scrollNote)
+	return connectorCrawlProcessResult{Status: "stored", TaskID: req.TaskID, Fetched: p.fetched, Inserted: p.inserted}, nil
+}
+
+// resolveCrawlOwnership enforces the two ownership gates before any task/lead
+// mutation: the account must belong to the org, and the calling connector must
+// own that account's stream. Returns the typed forbidden sentinel on rejection.
+func (h *Handler) resolveCrawlOwnership(orgID, agentID int64, req connectorCrawlResultRequest) error {
+	if acc, err := h.db.Identities().GetAccountForOrg(req.AccountID, orgID); err != nil || acc == nil {
+		return errCrawlForbiddenAccount
+	}
+	ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, req.AccountID)
+	if err != nil {
+		return err
+	}
+	if !ownsStream {
+		return errCrawlForbiddenStream
+	}
+	return nil
+}
+
+// handleFailedCrawl records a connector-reported failed crawl: it fails the task,
+// then either fails an explicit direct-post import workflow terminally (with the
+// typed extension-error code, surfaced to the requester) or emits the admin
+// crawl-failure notice. No lead / no outbound / no comment. Behavior-identical to
+// the former inline failed-status branch.
+func (h *Handler) handleFailedCrawl(ctx context.Context, orgID int64, req connectorCrawlResultRequest, appStore *store.AppStore) connectorCrawlProcessResult {
+	errMsg := strings.TrimSpace(req.Error)
+	if errMsg == "" {
+		errMsg = "Chrome Extension crawl failed"
+	}
+	_ = appStore.FailTask(ctx, req.TaskID, errMsg)
+	// P1.3E: when a FAILED crawl is an explicit direct-post import (target not rendered /
+	// boilerplate / typed group/post mismatch reported by the extension), fail the workflow
+	// terminally with the typed code AND surface it to the requester — instead of only an
+	// admin crawl-failure notice + a poller timeout. No lead / no outbound / no comment.
+	if wf := h.resolveDirectPostIntake(ctx, orgID, req.TaskID); wf != nil {
+		code := directPostFailureCodeFromExtensionError(errMsg)
+		log.Printf("[ConnectorCrawl] direct_post_intake=true wf=%d import_task_id=%q extension_error=%q → terminal code=%s",
+			wf.ID, req.TaskID, errMsg, code)
+		h.failDirectPostImport(ctx, orgID, wf, code, "direct-post import failed in connector: "+errMsg)
+	} else {
+		system.NotifyCrawlFailure(h.db, h.notifier, orgID, req.AccountID, req.TaskID, errMsg)
+	}
+	return connectorCrawlProcessResult{Status: "failed", Error: errMsg}
 }
 
 // buildConnectorCrawlIngestDeps assembles the leadingest dependencies (scoring guidance,
