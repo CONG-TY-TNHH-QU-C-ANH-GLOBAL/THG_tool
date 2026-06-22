@@ -1,4 +1,4 @@
-package agent
+package account
 
 import (
 	"strings"
@@ -45,24 +45,7 @@ func resolveAccountExecutable(acc models.Account, ownedConns []connectors.AgentT
 	}
 	// Inspect the requester-owned connectors bound to / matching this account.
 	for i := range ownedConns {
-		c := ownedConns[i]
-		boundToAcc := c.AssignedAccountID == acc.ID ||
-			(acc.FBUserID != "" && strings.TrimSpace(c.FBUserID) == strings.TrimSpace(acc.FBUserID))
-		if !boundToAcc {
-			continue
-		}
-		st.paired = true
-		if c.Online {
-			st.connectorOnline = true
-			if strings.EqualFold(strings.TrimSpace(c.StreamStatus), agentStreamFacebookLoggedIn) {
-				st.sessionUsable = true
-				if acc.FBUserID != "" && strings.TrimSpace(c.FBUserID) == strings.TrimSpace(acc.FBUserID) {
-					st.liveIdentityMatched = true
-				}
-			} else if isSessionWall(c.StreamStatus, c.ChromeError) {
-				st.sessionWall = true
-			}
-		}
+		inspectOwnedConnector(&st, acc, ownedConns[i])
 	}
 
 	// Authoritative readiness gate over OWNED connectors (same evaluator as execution).
@@ -71,6 +54,30 @@ func resolveAccountExecutable(acc models.Account, ownedConns []connectors.AgentT
 	st.reasonCode = classifyExecReason(st, connReason, accountBlocked)
 	st.executable = st.reasonCode == models.ExecReasonReady
 	return st
+}
+
+// inspectOwnedConnector folds one requester-owned connector's liveness into the
+// running executability verdict: paired / online / session-usable / identity-
+// matched / session-wall. No-op when the connector is not bound to the account.
+func inspectOwnedConnector(st *execStatus, acc models.Account, c connectors.AgentToken) {
+	boundToAcc := c.AssignedAccountID == acc.ID ||
+		(acc.FBUserID != "" && strings.TrimSpace(c.FBUserID) == strings.TrimSpace(acc.FBUserID))
+	if !boundToAcc {
+		return
+	}
+	st.paired = true
+	if !c.Online {
+		return
+	}
+	st.connectorOnline = true
+	if strings.EqualFold(strings.TrimSpace(c.StreamStatus), agentStreamFacebookLoggedIn) {
+		st.sessionUsable = true
+		if acc.FBUserID != "" && strings.TrimSpace(c.FBUserID) == strings.TrimSpace(acc.FBUserID) {
+			st.liveIdentityMatched = true
+		}
+	} else if isSessionWall(c.StreamStatus, c.ChromeError) {
+		st.sessionWall = true
+	}
 }
 
 // classifyExecReason maps the decomposed signals + the connector gate reason to one typed

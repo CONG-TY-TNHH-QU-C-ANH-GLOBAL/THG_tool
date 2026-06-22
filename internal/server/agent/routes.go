@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/drivers/copilot"
+	"github.com/thg/scraper/internal/server/agent/account"
 	"github.com/thg/scraper/internal/server/agent/presence"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
@@ -101,8 +102,9 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	// Same effective paths (/connectors/status, /admin/connectors/overview) and
 	// the same adminOnly gate on the overview.
 	presence.RegisterRoutes(group, presence.Deps{DB: deps.DB}, adminOnly)
-	// PR-D readiness matrix: per-account, per-capability "can run + why not".
-	group.Get("/accounts/readiness", h.accountReadiness)
+	// PR-D readiness matrix (per-account, per-capability "can run + why not")
+	// lives in the account subpackage — same effective path /accounts/readiness.
+	account.RegisterRoutes(group, account.Deps{DB: deps.DB})
 	group.Delete("/ai/history", h.aiDeleteHistory)
 	group.Delete("/ai/history/:id", h.aiDeleteHistoryItem)
 
