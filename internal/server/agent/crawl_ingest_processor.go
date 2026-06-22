@@ -36,8 +36,8 @@ type crawlResultProcessor struct {
 // dpValidObserved / dpFailed track whether THIS finished import produced a valid
 // requested-post lead or already failed the workflow on a poisoned item.
 //
-// Items are passed BY VALUE (connectorCrawlItem) — no &item range-variable
-// pointer is taken and no goroutine captures the loop variable — so each item is
+// Items are passed BY VALUE (connectorCrawlItem); the loop never takes the
+// address of the range variable and no goroutine captures it — so each item is
 // ingested in isolation exactly as the former inline loop did.
 func (p *crawlResultProcessor) ingestItems(ctx context.Context, items []connectorCrawlItem) {
 	for _, item := range items {
