@@ -1,4 +1,4 @@
-package agent
+package crawl
 
 import (
 	"encoding/json"
@@ -71,11 +71,11 @@ func TestScrollDiagString_AllForms(t *testing.T) {
 	}
 }
 
-// normalizeConnectorScrollDiag must produce the zero value (never panic) for the phantom-DOM
+// NormalizeConnectorScrollDiag must produce the zero value (never panic) for the phantom-DOM
 // payload shape (max_articles_seen=0, max_doc_height=0, scroll_moved_ever=false) AND for a
 // completely nil map, and must coerce mixed JSON types.
 func TestNormalizeConnectorScrollDiag(t *testing.T) {
-	if got := normalizeConnectorScrollDiag(nil); got != (connectorScrollDiag{}) {
+	if got := NormalizeConnectorScrollDiag(nil); got != (ConnectorScrollDiag{}) {
 		t.Errorf("nil map must yield zero value, got %+v", got)
 	}
 	// Shape mirroring a real JSON decode (numbers as float64) — the phantom case.
@@ -83,7 +83,7 @@ func TestNormalizeConnectorScrollDiag(t *testing.T) {
 		"max_articles_seen": float64(0), "max_doc_height": float64(0),
 		"scroll_moved_ever": false, "passes": float64(8), "final_scroll_target": "document",
 	}
-	got := normalizeConnectorScrollDiag(phantom)
+	got := NormalizeConnectorScrollDiag(phantom)
 	if got.MaxArticlesSeen != 0 || got.MaxDocHeight != 0 || got.ScrollMovedEver {
 		t.Errorf("phantom diag mis-normalized: %+v", got)
 	}
