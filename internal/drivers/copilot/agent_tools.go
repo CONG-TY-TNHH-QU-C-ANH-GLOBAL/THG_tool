@@ -43,6 +43,11 @@ func productionAgentTools() []map[string]any {
 	return out
 }
 
+// descAccountID is the shared tool-schema description for the optional
+// Workspace Facebook account_id parameter. Value unchanged; defined once so the
+// literal is not repeated across the tool definitions below.
+const descAccountID = "Workspace Facebook account ID"
+
 var agentTools = []map[string]any{
 	{
 		"type": "function",
@@ -69,7 +74,7 @@ var agentTools = []map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"post_url":   map[string]string{"type": "string", "description": "Facebook post URL"},
-					"account_id": map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"account_id": map[string]string{"type": "integer", "description": descAccountID},
 					"max_items":  map[string]string{"type": "integer", "description": "Maximum comments/items to collect when the user gives a number."},
 				},
 				"required": []string{"post_url"},
@@ -101,7 +106,7 @@ var agentTools = []map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"post_url":    map[string]string{"type": "string", "description": "Target post URL"},
-					"account_id":  map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"account_id":  map[string]string{"type": "integer", "description": descAccountID},
 					"context":     map[string]string{"type": "string", "description": "Post context if available"},
 					"target_name": map[string]string{"type": "string", "description": "Author name if available"},
 				},
@@ -119,7 +124,7 @@ var agentTools = []map[string]any{
 				"properties": map[string]any{
 					"template":     map[string]string{"type": "string", "description": "Optional user-provided comment template"},
 					"score_filter": map[string]string{"type": "string", "description": "hot, warm, cold, or all"},
-					"account_id":   map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"account_id":   map[string]string{"type": "integer", "description": descAccountID},
 					"max_items":    map[string]string{"type": "integer", "description": "Maximum number of leads to comment when the user gives a number — e.g. set 1 to test a single comment. Omit for the default."},
 				},
 			},
@@ -134,7 +139,7 @@ var agentTools = []map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"target_url":  map[string]string{"type": "string", "description": "Profile or Messenger target URL"},
-					"account_id":  map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"account_id":  map[string]string{"type": "integer", "description": descAccountID},
 					"context":     map[string]string{"type": "string", "description": "Lead context"},
 					"target_name": map[string]string{"type": "string", "description": "Lead name if available"},
 				},
@@ -151,7 +156,7 @@ var agentTools = []map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"score_filter": map[string]string{"type": "string", "description": "hot, warm, cold, or all"},
-					"account_id":   map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"account_id":   map[string]string{"type": "integer", "description": descAccountID},
 				},
 			},
 		},
@@ -168,7 +173,7 @@ var agentTools = []map[string]any{
 					"description": map[string]string{"type": "string", "description": "Post brief"},
 					"content":     map[string]string{"type": "string", "description": "Full content if provided"},
 					"group_url":   map[string]string{"type": "string", "description": "Target group URL if specified"},
-					"account_id":  map[string]string{"type": "integer", "description": "Workspace Facebook account ID"},
+					"account_id":  map[string]string{"type": "integer", "description": descAccountID},
 				},
 			},
 		},
