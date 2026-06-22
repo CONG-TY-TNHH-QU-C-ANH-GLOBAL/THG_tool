@@ -186,19 +186,31 @@
       "id": "component-structure-rules",
       "path": "specs/COMPONENT_STRUCTURE_RULES.md",
       "title": "COMPONENT STRUCTURE RULES",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "platform",
+      "type": "policy",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "scripts/check_component_structure.py (warn-only enforcement)",
+        "specs/COMPONENT_HOTSPOTS.md"
+      ],
+      "related_code": [
+        "scripts/check_component_structure.py",
+        "internal/ai/comment"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "policy",
+        "architecture",
+        "binding",
+        "governance"
+      ],
+      "notes": "Reviewed in PR24B. Self-declared ACTIVE_BINDING; enforced warn-only by scripts/check_component_structure.py with companion COMPONENT_HOTSPOTS.md. Referenced intelligence-layer example internal/ai/comment exists."
     },
     {
       "id": "copilot-intent-routing-architecture",
@@ -349,18 +361,31 @@
       "path": "specs/LEAD_LIFECYCLE_WORK_QUEUE.md",
       "title": "LEAD LIFECYCLE WORK QUEUE",
       "domain": "lead",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "test_pinned",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
-      "related_tests": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/models/lead_lifecycle.go (DeriveLeadLifecycle)",
+        "internal/models/lead_lifecycle_test.go"
+      ],
+      "related_code": [
+        "internal/models/lead_lifecycle.go",
+        "internal/leadingest/ingest.go"
+      ],
+      "related_tests": [
+        "internal/models/lead_lifecycle_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "lead",
+        "projection",
+        "work-queue"
+      ],
+      "notes": "Reviewed in PR24B. Core freshness_state projection DeriveLeadLifecycle exists and is unit-tested; reads leads via internal/leadingest/ingest.go as the doc states. Later retention/compaction phases may be partial/deferred."
     },
     {
       "id": "llm-cost-controls-phase1",
@@ -384,19 +409,34 @@
       "id": "local-connector-production-workflow",
       "path": "specs/LOCAL_CONNECTOR_PRODUCTION_WORKFLOW.md",
       "title": "LOCAL CONNECTOR PRODUCTION WORKFLOW",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "browser",
+      "type": "runbook",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "local-connector-extension/ source tree",
+        "internal/server/agent connector handlers",
+        "scripts/build-chrome-extension.{ps1,sh}"
+      ],
+      "related_code": [
+        "local-connector-extension",
+        "internal/server/agent",
+        "scripts/build-chrome-extension.ps1",
+        "scripts/build-chrome-extension.sh"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "browser",
+        "connector",
+        "runbook",
+        "chrome-extension"
+      ],
+      "notes": "Reviewed in PR24B. Describes current Chrome Web Store connector install/pairing workflow; the extension source, connector API handlers (internal/server/agent) and both build scripts exist. Operational/ops doc rather than test-pinned."
     },
     {
       "id": "migration-to-monorepo-plan",
@@ -420,19 +460,34 @@
       "id": "multi-actor-coverage-policy",
       "path": "specs/MULTI_ACTOR_COVERAGE_POLICY.md",
       "title": "MULTI ACTOR COVERAGE POLICY",
-      "domain": "unknown",
+      "domain": "lead",
       "type": "policy",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "test_pinned",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
-      "related_tests": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/models/coverage.go (EvaluateCoverage/DeriveActorPersona)",
+        "internal/models/coverage_test.go"
+      ],
+      "related_code": [
+        "internal/models/coverage.go",
+        "internal/models/coverage_text.go"
+      ],
+      "related_tests": [
+        "internal/models/coverage_test.go",
+        "internal/models/coverage_text_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "lead",
+        "policy",
+        "coverage",
+        "projection"
+      ],
+      "notes": "Reviewed in PR24B. PR-0 contracts and pure rules (EvaluateCoverage, DeriveActorPersona) exist in internal/models/coverage.go and are unit-tested; coverage_text.go provides the PR-2 reason text. Later wiring phases not separately re-verified here."
     },
     {
       "id": "nl-direct-link-comment-smoke",
@@ -672,19 +727,33 @@
       "id": "runtime-topology",
       "path": "specs/RUNTIME_TOPOLOGY.md",
       "title": "RUNTIME TOPOLOGY",
-      "domain": "unknown",
+      "domain": "platform",
       "type": "architecture",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "scripts/check_topology.sh (CI grep gates enforce its invariants)",
+        "internal/store/DOMAINS.md"
+      ],
+      "related_code": [
+        "internal/store/leads",
+        "internal/store/threads",
+        "internal/store/outbound",
+        "internal/store/coordination",
+        "internal/server/observability"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "architecture",
+        "topology",
+        "living-doc"
+      ],
+      "notes": "Reviewed in PR24B. Living doc describing current runtime composition; its invariants are enforced by scripts/check_topology.sh and the referenced store subpackages all exist. (Doc also cites internal/server/org/superadmin.go which is not at that path; minor, not added.)"
     },
     {
       "id": "saas-ux-hardening-track",
@@ -726,19 +795,33 @@
       "id": "store-subpackage-refactor",
       "path": "specs/STORE_SUBPACKAGE_REFACTOR.md",
       "title": "STORE SUBPACKAGE REFACTOR",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "store",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/store/DOMAINS.md",
+        "store subpackages (dbutil/outbound/coordination/leads/crawl) exist"
+      ],
+      "related_code": [
+        "internal/store/dbutil",
+        "internal/store/outbound",
+        "internal/store/coordination",
+        "internal/store/leads",
+        "internal/store/crawl"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "architecture",
+        "store",
+        "refactor-history"
+      ],
+      "notes": "Reviewed in PR24B. Canonical store subpackage decomposition; the subpackages it specifies exist in the current tree and RUNTIME_TOPOLOGY references it as authoritative. Migration phases are largely shipped."
     },
     {
       "id": "structural-refactor-plan",
