@@ -61,6 +61,18 @@ func qualifyingDeps(db *store.Store, appStore *store.AppStore, onLead func(LeadE
 	}
 }
 
+// legacyLeadCount returns the number of non-archived legacy `leads` rows for orgID via the
+// existing public read API — one row per persisted lead (source_id=0 rows are kept by the
+// LEFT JOIN). Scoped to the test's unique org, so it never reads other tests' data.
+func legacyLeadCount(t *testing.T, db *store.Store, orgID int64) int {
+	t.Helper()
+	rows, err := db.Leads().GetLeadsFiltered("", "", 1000, 0, orgID)
+	if err != nil {
+		t.Fatalf("GetLeadsFiltered: %v", err)
+	}
+	return len(rows)
+}
+
 // §4/§7: a qualifying lead is persisted to task_leads exactly once and the OnLeadCreated
 // hook fires exactly once with the new lead's identity.
 func TestIngestPost_PersistsLeadAndNotifiesOnce(t *testing.T) {
@@ -140,6 +152,13 @@ func TestIngestPost_TaskLeadDedupByTaskAndURL(t *testing.T) {
 	if fired != 2 {
 		t.Fatalf("OnLeadCreated must fire per call (twice), fired %d", fired)
 	}
+	// Legacy `leads` mirror is NOT deduped: IngestPost writes SourceID=0, so the partial
+	// UNIQUE idx_leads_dedup(source_type, source_id) WHERE source_id > 0 never applies and
+	// each call inserts a new legacy row (spec §5 quirk). PR23C must preserve SourceID=0 and
+	// must NOT add a dedup pre-check or change this to silent-ignore.
+	if n := legacyLeadCount(t, db, first.OrgID); n != 2 {
+		t.Fatalf("legacy leads must grow per call (no dedup), got %d want 2", n)
+	}
 
 	// Different TaskID, same URL → a new row (dedup is task-scoped, not URL-global).
 	second := qualifyingInput("task-B", url)
@@ -155,5 +174,9 @@ func TestIngestPost_TaskLeadDedupByTaskAndURL(t *testing.T) {
 	}
 	if fired != 3 {
 		t.Fatalf("OnLeadCreated must have fired 3 times total, fired %d", fired)
+	}
+	// Third call adds a third un-deduped legacy row (still SourceID=0).
+	if n := legacyLeadCount(t, db, first.OrgID); n != 3 {
+		t.Fatalf("legacy leads must be 3 after the third ingest, got %d", n)
 	}
 }

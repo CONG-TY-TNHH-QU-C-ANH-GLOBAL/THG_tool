@@ -86,7 +86,7 @@ All DB work is gated on the corresponding non-nil `Deps` field. With `AppStore =
 
 * **`task_leads` dedup key:** `UNIQUE(task_id, source_url)`. A second ingest with the **same `TaskID` and same `PrimaryURL`** is silently ignored (no new row, **no error**) — the lead is *treated as success* (flow continues, `Inserted` still set). Dedup is scoped by **`task_id` + `source_url`**, **not** by `org_id`. **Quirk:** because the key is `(task_id, source_url)` and `task_id` is the crawl-run id, the same URL ingested under a *different* `TaskID` produces a **second** `task_leads` row.
 * **Legacy `leads` dedup:** the only unique index is partial: `idx_leads_dedup(source_type, source_id) WHERE source_id > 0`. **`IngestPost` always sets `SourceID: 0`** (ingest.go:467). Therefore the partial index **never applies to ingest-path leads**, and **every** `IngestPost` call that reaches the persist block inserts a **new** `leads` row — **the legacy mirror is not deduplicated for this path.** This is a current quirk, documented here so PR23C preserves it.
-* **Behavior on repeated ingestion (same TaskID+URL, both stores set):** `task_leads` → 1 row; `leads` → N rows (one per call); `OnLeadCreated` → fired once **per call** (see §7). No error returned.
+* **Behavior on repeated ingestion (same TaskID+URL, both stores set):** `task_leads` → 1 row; `leads` → N rows (one per call); `OnLeadCreated` → fired once **per call** (see §7). No error returned. **This legacy-mirror quirk is now directly test-pinned** by `TestIngestPost_TaskLeadDedupByTaskAndURL` via the existing public read `Store.GetLeadsFiltered(...)` (legacy count = 2 after a duplicate same-task ingest, then 3 after a same-URL/different-task ingest; `task_leads` stays 1 → 2). PR23C must therefore keep `SourceID=0` and must NOT add an application-level dedup pre-check or convert the legacy insert into a silent-ignore.
 * **Behavior on partial match / missing dedupe fields:** `Unclear from current code` beyond the two constraints above; `IngestPost` does not branch on partial matches.
 
 ---
@@ -208,7 +208,7 @@ Legend: **(existing)** already pinned by `ingest_test.go` / `force_lead_test.go`
 | **URL repair signal surfaces through `Outcome`** | Yes (new) | `TestIngestPost_URLRepairSignalSurfaces` | passthrough `url:<path>` and in-pipeline `url:repaired_in_pipeline` |
 | **`buildURLRepairSignal` precedence** | Yes (new) | `TestBuildURLRepairSignal` | pipeline-repaired wins over crawler path |
 | **Happy-path persistence + notify once** | Yes (new, DB) | `TestIngestPost_PersistsLeadAndNotifiesOnce` | fresh `store.New(t.TempDir())`; asserts `task_leads` count=1, persisted fields, 1 `LeadEvent` |
-| **`task_leads` idempotency by (task_id, source_url) + notify per call** | Yes (new, DB) | `TestIngestPost_TaskLeadDedupByTaskAndURL` | same input twice → 1 row, hook fires twice; different `TaskID` → 2 rows |
+| **`task_leads` idempotency by (task_id, source_url) + legacy no-dedup + notify per call** | Yes (new, DB) | `TestIngestPost_TaskLeadDedupByTaskAndURL` | same input twice → `task_leads` 1 row but legacy `leads` 2 rows (no dedup, `SourceID=0`), hook fires twice; different `TaskID` → `task_leads` 2 rows, legacy `leads` 3 rows. Legacy count read via `Store.GetLeadsFiltered`. |
 | AI classifier kept/rejected/override | **No** | — | Untestable Gap §11 |
 | `classification_log` rows | **No** | — | Untestable Gap §11 (AI-gated) |
 | Thread seed row contents | Not asserted | — | best-effort; row existence not pinned here |
