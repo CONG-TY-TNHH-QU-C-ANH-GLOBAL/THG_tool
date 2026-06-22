@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
-	"time"
 
 	fiberws "github.com/gofiber/websocket/v2"
 	"github.com/thg/scraper/internal/store"
@@ -73,31 +72,9 @@ func (h *WSHub) deregister(c *ExtClient) {
 // wsHandler returns a Fiber-compatible WebSocket handler authenticated via agent token.
 func (h *WSHub) WSHandler(db *store.Store) func(*fiberws.Conn) {
 	return func(c *fiberws.Conn) {
-		// Step 1: first message must be auth
-		var authMsg struct {
-			Type             string `json:"type"`
-			Token            string `json:"token"`
-			Hostname         string `json:"hostname"`
-			OS               string `json:"os"`
-			Version          string `json:"version"`
-			Kind             string `json:"kind"`
-			Transport        string `json:"transport"`
-			AccountID        int64  `json:"account_id"`
-			CapabilitiesJSON string `json:"capabilities_json"`
-			CurrentURL       string `json:"current_url"`
-			FBUserID         string `json:"fb_user_id"`
-			StreamStatus     string `json:"stream_status"`
-		}
-		_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
-		if err := c.ReadJSON(&authMsg); err != nil || authMsg.Type != "auth" || authMsg.Token == "" {
-			_ = c.WriteJSON(map[string]string{"type": "error", "message": "auth required"})
-			return
-		}
-		_ = c.SetReadDeadline(time.Time{})
-
-		tok, err := db.Connectors().ValidateAgentToken(authMsg.Token)
-		if err != nil || tok == nil {
-			_ = c.WriteJSON(map[string]string{"type": "error", "message": "invalid token"})
+		// Step 1: first message must be auth (writes its own error + bails on failure).
+		authMsg, tok, ok := authenticateWSClient(c, db)
+		if !ok {
 			return
 		}
 
@@ -132,58 +109,14 @@ func (h *WSHub) WSHandler(db *store.Store) func(*fiberws.Conn) {
 			"name":     tok.Name,
 		})
 
-		// Write pump: pushes queued messages to the WebSocket
+		// Write pump (own goroutine) pushes queued messages; read pump runs here
+		// until the connection errors. Ordering preserved: pump starts, read loop
+		// runs, we wait on done, then the deferred deregister fires.
 		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			ticker := time.NewTicker(30 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case data, ok := <-client.send:
-					if !ok {
-						return
-					}
-					if err := c.WriteMessage(1, data); err != nil {
-						return
-					}
-				case <-ticker.C:
-					ping, _ := json.Marshal(map[string]string{"type": "ping"})
-					if err := c.WriteMessage(1, ping); err != nil {
-						return
-					}
-				}
-			}
-		}()
-
-		// Read pump: handles pong/status messages from extension
-		for {
-			_, raw, err := c.ReadMessage()
-			if err != nil {
-				break
-			}
-			var m map[string]any
-			if json.Unmarshal(raw, &m) == nil {
-				switch t, _ := m["type"].(string); t {
-				case "pong":
-					_ = db.Connectors().UpdateAgentHeartbeat(tok.ID, "", "", "")
-				case "status":
-					p := connectors.AgentPresence{}
-					if v, ok := m["current_url"].(string); ok {
-						p.CurrentURL = v
-					}
-					if v, ok := m["fb_user_id"].(string); ok {
-						p.FBUserID = v
-					}
-					if v, ok := m["stream_status"].(string); ok {
-						p.StreamStatus = v
-					}
-					_ = db.Connectors().UpdateAgentPresence(tok.ID, p)
-				}
-			}
-		}
-
+		go runWSWritePump(c, client.send, done)
+		runWSReadLoop(c, db, tok.ID)
 		<-done
+
 		log.Printf("[WSHub] Extension %q disconnected, total=%d", client.name, h.ConnectedCount())
 	}
 }
