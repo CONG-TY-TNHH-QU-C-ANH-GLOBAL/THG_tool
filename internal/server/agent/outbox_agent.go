@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -268,300 +269,367 @@ func (h *Handler) finalizeOutbound(
 	outcome models.ExecutionOutcome,
 	proof runtime.VerifierProof,
 ) (*finalizeResolution, error) {
-	ctx := c.UserContext()
+	f := &outboundFinalizer{
+		h:       h,
+		ctx:     c.UserContext(),
+		orgID:   orgID,
+		id:      id,
+		report:  report,
+		outcome: outcome,
+		proof:   proof,
+	}
+	if res := f.loadOutbound(); res != nil {
+		return res, nil
+	}
+	f.enforceTargetIdentity()
+	if res, err := f.attemptFinalization(); res != nil || err != nil {
+		return res, err
+	}
+	// FIRST-WIN PATH — commit side effects exactly once (the !finalized
+	// replay/stale callbacks returned above, so none of the below can run twice).
+	f.applyFirstWinSideEffects()
+	f.refundQuotaForFailure()
+	f.upsertInboxThreadForSuccess()
+	f.notifyOutboundFinalized()
+	return f.buildResponse(), nil
+}
 
-	msg, msgErr := h.db.GetOutboundForOrg(orgID, id)
+// outboundFinalizer carries the per-callback state for one terminal /sent or
+// /failed finalization. It is created and used once per finalizeOutbound call and
+// never reused/stored; mutating methods use a pointer receiver (notably proof is
+// mutated by persistFailureEvidence before it rides into evidence/notification).
+// ctx is the per-request context, stored only for the lifetime of this one call.
+type outboundFinalizer struct {
+	h               *Handler
+	ctx             context.Context
+	orgID           int64
+	id              int64
+	report          runtime.ExtensionExecutionReport
+	outcome         models.ExecutionOutcome
+	proof           runtime.VerifierProof
+	msg             *models.OutboundMessage
+	terminalState   models.ExecutionState
+	terminalOutcome models.VerificationOutcome
+	attemptID       int64
+	failureReason   string
+}
+
+// loadOutbound fetches the outbound row. A missing row yields the 404 resolution
+// the caller returns verbatim; otherwise it caches the row and returns nil.
+func (f *outboundFinalizer) loadOutbound() *finalizeResolution {
+	msg, msgErr := f.h.db.GetOutboundForOrg(f.orgID, f.id)
 	if msgErr != nil {
 		return &finalizeResolution{
 			HTTPStatus: 404,
 			Body:       fiber.Map{"error": "outbound message not found"},
-		}, nil
-	}
-
-	// Defense-in-depth identity check. EnforceTargetIdentity downgrades
-	// success-class outcomes to ContextDrift if target_url/page_url_after
-	// entity ids mismatch.
-	outcome, proof = runtime.EnforceTargetIdentity(outcome, proof, msg.TargetURL, msg.Type)
-
-	// Diagnostic instrumentation: emit a structured log line for every
-	// non-success terminal so operators can see WHAT the extension did
-	// without having to query execution_attempts.evidence_json. Captures
-	// the proof.notes field which carries the landed_url + gate-fail
-	// detail from the extension's lifecycle gates (see outbound.js patch
-	// 3c17f1a). Precursor to EXP-1 typed events on the Runtime Control
-	// Plane (see project_runtime_control_plane memory).
-	if !models.IsSuccessOutcome(outcome) {
-		// PR8A: when the extension shipped a NavDiagnostic, surface the
-		// classified landing cause (redirect_class + stage + landed_url)
-		// directly in the log line — that is the precise root cause the
-		// investigation needs, not the generic outcome token.
-		redirectClass, navStage, landedURL := "", "", ""
-		if proof.NavDiagnostic != nil {
-			redirectClass = proof.NavDiagnostic.RedirectClass
-			navStage = proof.NavDiagnostic.Stage
-			landedURL = proof.NavDiagnostic.LandedURL
 		}
-		slog.WarnContext(ctx, "exec-verify: non-success outcome",
-			"org_id", orgID, "outbound_id", id,
-			"account_id", msg.AccountID,
-			"target_url", msg.TargetURL,
-			"outcome", string(outcome),
-			"failure_reason", report.FailureReason,
+	}
+	f.msg = msg
+	return nil
+}
+
+// enforceTargetIdentity applies the defense-in-depth identity downgrade
+// (success-class → ContextDrift on target_url/page_url_after entity mismatch) and
+// emits the non-success diagnostic log line (precise landing cause via NavDiagnostic).
+func (f *outboundFinalizer) enforceTargetIdentity() {
+	f.outcome, f.proof = runtime.EnforceTargetIdentity(f.outcome, f.proof, f.msg.TargetURL, f.msg.Type)
+	if !models.IsSuccessOutcome(f.outcome) {
+		redirectClass, navStage, landedURL := "", "", ""
+		if f.proof.NavDiagnostic != nil {
+			redirectClass = f.proof.NavDiagnostic.RedirectClass
+			navStage = f.proof.NavDiagnostic.Stage
+			landedURL = f.proof.NavDiagnostic.LandedURL
+		}
+		slog.WarnContext(f.ctx, "exec-verify: non-success outcome",
+			"org_id", f.orgID, "outbound_id", f.id,
+			"account_id", f.msg.AccountID,
+			"target_url", f.msg.TargetURL,
+			"outcome", string(f.outcome),
+			"failure_reason", f.report.FailureReason,
 			"redirect_class", redirectClass,
 			"nav_stage", navStage,
 			"landed_url", landedURL,
-			"page_url_after", proof.PageURLAfter,
-			"notes", proof.Notes,
-			"dom_snippet", proof.DOMSnippet,
+			"page_url_after", f.proof.PageURLAfter,
+			"notes", f.proof.Notes,
+			"dom_snippet", f.proof.DOMSnippet,
 		)
 	}
+}
 
-	// PR-1 dual-column terminal pair: (state, verification_outcome).
-	// TerminalFromOutcome is the single mapping from the rich
-	// execution_attempts taxonomy onto the outbound row's two new
-	// columns. ExecExpired only applies for ExecutionRetryExhausted
-	// — every other terminal carries some observation.
-	terminalState, terminalOutcome := models.TerminalFromOutcome(outcome)
+// attemptFinalization computes the terminal (state, verification_outcome) pair and
+// runs the execution_id-gated CAS. It returns a non-nil resolution for the two
+// non-first-win terminals (stale 409 / idempotent replay 200), a non-nil error for
+// a CAS failure, or (nil, nil) when THIS callback won the terminal transition.
+func (f *outboundFinalizer) attemptFinalization() (*finalizeResolution, error) {
+	f.terminalState, f.terminalOutcome = models.TerminalFromOutcome(f.outcome)
 
-	finalized, currentState, currentOutcome, currentExecID, err := h.db.FinalizeOutboundAttempt(ctx, orgID, id, report.ExecutionID, terminalState, terminalOutcome)
+	finalized, currentState, currentOutcome, currentExecID, err := f.h.db.FinalizeOutboundAttempt(f.ctx, f.orgID, f.id, f.report.ExecutionID, f.terminalState, f.terminalOutcome)
 	if err != nil {
 		return nil, err
 	}
-	if !finalized {
-		// Disambiguate: is this a replay (same token, already terminal)
-		// or a stale (token mismatch, row was re-claimed)?
-		if report.ExecutionID != "" && currentExecID != "" && report.ExecutionID != currentExecID {
-			// Stale: the row was lease-evicted and re-claimed; this
-			// callback belongs to an execution that no longer owns
-			// the row. Refuse loudly — 409 surfaces to the dashboard.
-			slog.WarnContext(ctx, "exec-verify: stale execution_id",
-				"org_id", orgID, "outbound_id", id,
-				"submitted_execution_id", report.ExecutionID,
-				"current_execution_id", currentExecID,
-				"current_state", currentState,
-				"current_outcome", currentOutcome,
-			)
-			return &finalizeResolution{
-				HTTPStatus: 409,
-				Body: fiber.Map{
-					"error":                "stale execution_id",
-					"current_state":        string(currentState),
-					"current_outcome":      string(currentOutcome),
-					"current_execution_id": currentExecID,
-				},
-			}, nil
-		}
-		// Idempotent replay: same execution_id, row already terminal.
-		// Return success-shaped response WITHOUT replaying side effects.
-		slog.InfoContext(ctx, "exec-verify: idempotent replay",
-			"org_id", orgID, "outbound_id", id,
-			"execution_id", report.ExecutionID,
-			"current_state", currentState, "current_outcome", currentOutcome,
+	if finalized {
+		return nil, nil
+	}
+	// Disambiguate: replay (same token, already terminal) vs stale (token
+	// mismatch, row was re-claimed).
+	if f.report.ExecutionID != "" && currentExecID != "" && f.report.ExecutionID != currentExecID {
+		// Stale: the row was lease-evicted and re-claimed; this callback belongs
+		// to an execution that no longer owns the row. Refuse loudly — 409.
+		slog.WarnContext(f.ctx, "exec-verify: stale execution_id",
+			"org_id", f.orgID, "outbound_id", f.id,
+			"submitted_execution_id", f.report.ExecutionID,
+			"current_execution_id", currentExecID,
+			"current_state", currentState,
+			"current_outcome", currentOutcome,
 		)
 		return &finalizeResolution{
-			HTTPStatus: 200,
+			HTTPStatus: 409,
 			Body: fiber.Map{
-				"execution_state":      string(currentState),
-				"verification_outcome": string(currentOutcome),
-				"outcome":              string(outcome),
-				"idempotent":           true,
+				"error":                "stale execution_id",
+				"current_state":        string(currentState),
+				"current_outcome":      string(currentOutcome),
+				"current_execution_id": currentExecID,
 			},
 		}, nil
 	}
+	// Idempotent replay: same execution_id, row already terminal. Return
+	// success-shaped response WITHOUT replaying side effects.
+	slog.InfoContext(f.ctx, "exec-verify: idempotent replay",
+		"org_id", f.orgID, "outbound_id", f.id,
+		"execution_id", f.report.ExecutionID,
+		"current_state", currentState, "current_outcome", currentOutcome,
+	)
+	return &finalizeResolution{
+		HTTPStatus: 200,
+		Body: fiber.Map{
+			"execution_state":      string(currentState),
+			"verification_outcome": string(currentOutcome),
+			"outcome":              string(f.outcome),
+			"idempotent":           true,
+		},
+	}, nil
+}
 
-	// FIRST-WIN PATH — commit side effects exactly once.
-	attemptID, err := h.db.Coordination().BeginExecutionAttempt(ctx, models.ExecutionAttempt{
-		OrgID:      orgID,
-		OutboundID: id,
-		AccountID:  msg.AccountID,
-		TargetURL:  msg.TargetURL,
-		ActionType: msg.Type,
+// applyFirstWinSideEffects commits the once-per-terminal attempt-scoped writes.
+// BeginExecutionAttempt failure is best-effort: it logs, leaves attemptID=0, and
+// skips the attempt-scoped writes (finish/verdict/ledger/risk/events) — quota,
+// inbox and notify still run afterwards, exactly as the former inline branch.
+func (f *outboundFinalizer) applyFirstWinSideEffects() {
+	attemptID, err := f.h.db.Coordination().BeginExecutionAttempt(f.ctx, models.ExecutionAttempt{
+		OrgID:      f.orgID,
+		OutboundID: f.id,
+		AccountID:  f.msg.AccountID,
+		TargetURL:  f.msg.TargetURL,
+		ActionType: f.msg.Type,
 		Attempt:    1,
 		Status:     models.AttemptVerifying,
 	})
 	if err != nil {
-		slog.WarnContext(ctx, "exec-verify: begin attempt failed",
-			"org_id", orgID, "outbound_id", id, "error", err)
-		attemptID = 0
-	} else {
-		failureReason := ""
-		if !models.IsSuccessOutcome(outcome) {
-			failureReason = report.FailureReason
-			if failureReason == "" {
-				failureReason = string(outcome)
-			}
-		}
-		// PR8A evidence pack: persist the failing-tab screenshot (out-of-band
-		// base64 → org-scoped disk path). Done in the FIRST-WIN branch only so a
-		// replay cannot rewrite the file, and BEFORE proofToEvidence so the path
-		// rides into evidence_json. Non-success only — a verified send needs no
-		// failure screenshot. Telemetry-only: failures are logged, not propagated.
-		if !models.IsSuccessOutcome(outcome) && report.EvidenceScreenshotB64 != "" {
-			if path, sErr := persistEvidenceScreenshot(orgID, id, attemptID, report.EvidenceScreenshotB64); sErr != nil {
-				slog.WarnContext(ctx, "exec-verify: evidence screenshot persist failed",
-					"org_id", orgID, "outbound_id", id, "attempt_id", attemptID, "error", sErr)
-			} else if path != "" {
-				if proof.NavDiagnostic == nil {
-					proof.NavDiagnostic = &models.NavDiagnostic{}
-				}
-				proof.NavDiagnostic.ScreenshotPath = path
-			}
-		}
-		if err := h.db.Coordination().FinishExecutionAttempt(ctx, attemptID, outcome, failureReason, proofToEvidence(proof)); err != nil {
-			slog.WarnContext(ctx, "exec-verify: finish attempt failed",
-				"attempt_id", attemptID, "outcome", outcome, "error", err)
-		}
-
-		// Verified Actor integrity gate (P1b — specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b).
-		// Compare the account's EXPECTED Facebook identity against the live c_user
-		// the executor observed. The verdict is stamped APPEND-ONLY on this attempt
-		// row + the account's runtime state; action_ledger is NOT mutated for it. A
-		// definite mismatch BLOCKS the account from further auto-execute (the claim
-		// cap-check denies it) until an operator clears the block. Best-effort —
-		// failures here are logged, never abort finalize.
-		//
-		// TODO(p1b-atomicity): the verdict stamp runs AFTER FinishExecutionAttempt,
-		// not in the same transaction. If the process crashes between the two, the
-		// attempt is finalized but carries no actor_verdict (and no block is set).
-		// Harden later by folding FinishExecutionAttempt + MarkAttemptActorVerification
-		// + RecordAccountActorVerdict into ONE coordination finalize transaction.
-		// Tracked in specs/COMMENT_INTELLIGENCE_PIPELINE.md §11.
-		if attemptID > 0 && msg.AccountID > 0 {
-			expectedFB := ""
-			if acc, aErr := h.db.Identities().GetAccountForOrg(msg.AccountID, orgID); aErr == nil && acc != nil {
-				expectedFB = acc.FBUserID
-			}
-			actualFB := ""
-			if proof.NavDiagnostic != nil {
-				actualFB = proof.NavDiagnostic.FBUserID
-			}
-			verdict := coordination.ClassifyActorVerdict(expectedFB, actualFB)
-			if err := h.db.Coordination().MarkAttemptActorVerification(ctx, attemptID, expectedFB, actualFB, verdict); err != nil {
-				slog.WarnContext(ctx, "exec-verify: actor verdict stamp failed",
-					"attempt_id", attemptID, "error", err)
-			}
-			block := verdict == models.ActorVerdictMismatch
-			blockReason := ""
-			if block {
-				blockReason = fmt.Sprintf("actor mismatch: expected fb_user_id %s, observed %s", expectedFB, actualFB)
-			}
-			if err := h.db.Coordination().RecordAccountActorVerdict(ctx, orgID, msg.AccountID, verdict, actualFB, blockReason, block); err != nil {
-				slog.WarnContext(ctx, "exec-verify: actor verdict record failed",
-					"org_id", orgID, "account_id", msg.AccountID, "error", err)
-			}
-			if block {
-				// Operator alert: high-signal structured log + a problem event in
-				// the account owner's chat. The block also surfaces as a chip in
-				// the dashboard and is cleared via the admin clear-actor-block route.
-				slog.ErrorContext(ctx, "exec-verify: ACTOR MISMATCH — account blocked from auto-execute",
-					"org_id", orgID, "account_id", msg.AccountID, "outbound_id", id,
-					"expected_fb_user_id", expectedFB, "actual_fb_user_id", actualFB)
-				system.NotifyActorMismatch(h.db, orgID, msg.AccountID, id, expectedFB, actualFB)
-			}
-		}
-
-		ledgerOutcome := models.LedgerOutcomeAlias(outcome)
-		ledgerReason := string(outcome)
-		if failureReason != "" && failureReason != string(outcome) {
-			ledgerReason = string(outcome) + ":" + failureReason
-		}
-		if _, err := h.db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, orgID, id, ledgerOutcome, ledgerReason); err != nil {
-			slog.WarnContext(ctx, "exec-verify: ledger outcome update failed",
-				"org_id", orgID, "outbound_id", id, "error", err)
-		}
-
-		if sig := models.RiskSignalForOutcome(outcome); sig != "" && msg.AccountID > 0 {
-			if err := h.db.Coordination().ApplyRiskSignal(ctx, orgID, msg.AccountID, sig, 0); err != nil {
-				events.Warn(ctx, events.ExecutionHookFailed,
-					events.FieldHook, "ApplyRiskSignal",
-					events.FieldOrgID, orgID,
-					events.FieldAccountID, msg.AccountID,
-					"signal", sig,
-					events.FieldErr, err,
-				)
-			}
-		}
-		events.Info(ctx, events.ExecutionVerified,
-			events.FieldOutboundID, id,
-			events.FieldAttemptID, attemptID,
-			events.FieldOutcome, outcome,
-			events.FieldAccountID, msg.AccountID,
-			events.FieldActionType, msg.Type,
-		)
+		slog.WarnContext(f.ctx, "exec-verify: begin attempt failed",
+			"org_id", f.orgID, "outbound_id", f.id, "error", err)
+		f.attemptID = 0
+		return
 	}
+	f.attemptID = attemptID
+	f.failureReason = f.computeFailureReason()
+	f.persistFailureEvidence()
+	if err := f.h.db.Coordination().FinishExecutionAttempt(f.ctx, f.attemptID, f.outcome, f.failureReason, proofToEvidence(f.proof)); err != nil {
+		slog.WarnContext(f.ctx, "exec-verify: finish attempt failed",
+			"attempt_id", f.attemptID, "outcome", f.outcome, "error", err)
+	}
+	f.recordActorVerdict()
+	f.recordActionLedger()
+	f.applyRiskSignal()
+	events.Info(f.ctx, events.ExecutionVerified,
+		events.FieldOutboundID, f.id,
+		events.FieldAttemptID, f.attemptID,
+		events.FieldOutcome, f.outcome,
+		events.FieldAccountID, f.msg.AccountID,
+		events.FieldActionType, f.msg.Type,
+	)
+}
 
-	// QUOTA REFUND (invariant 2026-06-01): the *_today counter reserved a slot
-	// at QUEUE time (IncrementCounterTx). A non-success terminal posted nothing,
-	// so refund the slot — failed execution must not consume the business quota
-	// (it stays retryable). FIRST-WIN ONLY: the !finalized replay/stale paths
-	// returned above, so this runs once per terminal and cannot double-refund
-	// (RefundCounterTx's >0 guard is the belt-and-suspenders). Pure quota
-	// accounting — risk/pacing already moved via ApplyRiskSignal and is
-	// untouched here (audit: comments_today is not coupled to risk_score).
-	if !models.IsSuccessOutcome(outcome) && msg.AccountID > 0 {
-		if err := h.db.Coordination().RefundDailyCounter(ctx, msg.AccountID, msg.Type); err != nil {
-			slog.WarnContext(ctx, "exec-verify: quota refund failed",
-				"org_id", orgID, "account_id", msg.AccountID, "action_type", msg.Type, "error", err)
+// computeFailureReason mirrors the inline reason derivation: empty on success,
+// else the reported reason, falling back to the outcome string.
+func (f *outboundFinalizer) computeFailureReason() string {
+	if models.IsSuccessOutcome(f.outcome) {
+		return ""
+	}
+	if f.report.FailureReason != "" {
+		return f.report.FailureReason
+	}
+	return string(f.outcome)
+}
+
+// persistFailureEvidence (PR8A) writes the failing-tab screenshot (non-success +
+// b64 present) to an org-scoped path and rides it into proof.NavDiagnostic.Screenshot
+// Path BEFORE FinishExecutionAttempt. FIRST-WIN only so a replay cannot rewrite it.
+// Best-effort: telemetry only, never propagated.
+func (f *outboundFinalizer) persistFailureEvidence() {
+	if !models.IsSuccessOutcome(f.outcome) && f.report.EvidenceScreenshotB64 != "" {
+		if path, sErr := persistEvidenceScreenshot(f.orgID, f.id, f.attemptID, f.report.EvidenceScreenshotB64); sErr != nil {
+			slog.WarnContext(f.ctx, "exec-verify: evidence screenshot persist failed",
+				"org_id", f.orgID, "outbound_id", f.id, "attempt_id", f.attemptID, "error", sErr)
+		} else if path != "" {
+			if f.proof.NavDiagnostic == nil {
+				f.proof.NavDiagnostic = &models.NavDiagnostic{}
+			}
+			f.proof.NavDiagnostic.ScreenshotPath = path
 		}
 	}
+}
 
-	// Inbox-specific thread bookkeeping — only on actual landing. Failures are
-	// logged (not swallowed): a dropped thread/message is silent inbox data
-	// loss the operator would otherwise never see explained.
-	if models.IsSuccessOutcome(outcome) && msg.Type == "inbox" && msg.TargetURL != "" {
-		threadID, threadErr := h.db.Threads().CreateThreadForOrg(orgID, 0, string(msg.Platform), msg.TargetURL, msg.TargetName, "")
+// recordActorVerdict is the Verified Actor integrity gate (P1b). Best-effort,
+// extracted verbatim: compares expected vs observed Facebook identity, stamps the
+// append-only verdict on the attempt + account runtime state, and BLOCKS the
+// account from auto-execute on a definite mismatch. Errors are logged, never fatal.
+func (f *outboundFinalizer) recordActorVerdict() {
+	if f.attemptID > 0 && f.msg.AccountID > 0 {
+		expectedFB, actualFB := f.resolveActorFBIdentities()
+		verdict := coordination.ClassifyActorVerdict(expectedFB, actualFB)
+		if err := f.h.db.Coordination().MarkAttemptActorVerification(f.ctx, f.attemptID, expectedFB, actualFB, verdict); err != nil {
+			slog.WarnContext(f.ctx, "exec-verify: actor verdict stamp failed",
+				"attempt_id", f.attemptID, "error", err)
+		}
+		block := verdict == models.ActorVerdictMismatch
+		blockReason := ""
+		if block {
+			blockReason = fmt.Sprintf("actor mismatch: expected fb_user_id %s, observed %s", expectedFB, actualFB)
+		}
+		if err := f.h.db.Coordination().RecordAccountActorVerdict(f.ctx, f.orgID, f.msg.AccountID, verdict, actualFB, blockReason, block); err != nil {
+			slog.WarnContext(f.ctx, "exec-verify: actor verdict record failed",
+				"org_id", f.orgID, "account_id", f.msg.AccountID, "error", err)
+		}
+		if block {
+			// Operator alert: high-signal structured log + a problem event in the
+			// account owner's chat. The block also surfaces as a dashboard chip and
+			// is cleared via the admin clear-actor-block route.
+			slog.ErrorContext(f.ctx, "exec-verify: ACTOR MISMATCH — account blocked from auto-execute",
+				"org_id", f.orgID, "account_id", f.msg.AccountID, "outbound_id", f.id,
+				"expected_fb_user_id", expectedFB, "actual_fb_user_id", actualFB)
+			system.NotifyActorMismatch(f.h.db, f.orgID, f.msg.AccountID, f.id, expectedFB, actualFB)
+		}
+	}
+}
+
+// resolveActorFBIdentities returns the account's EXPECTED fb_user_id (or "" if the
+// account is unreadable) and the OBSERVED fb_user_id from the proof's NavDiagnostic.
+func (f *outboundFinalizer) resolveActorFBIdentities() (string, string) {
+	expectedFB := ""
+	if acc, aErr := f.h.db.Identities().GetAccountForOrg(f.msg.AccountID, f.orgID); aErr == nil && acc != nil {
+		expectedFB = acc.FBUserID
+	}
+	actualFB := ""
+	if f.proof.NavDiagnostic != nil {
+		actualFB = f.proof.NavDiagnostic.FBUserID
+	}
+	return expectedFB, actualFB
+}
+
+// recordActionLedger updates the action_ledger row by outbound id with the
+// outcome alias + reason. Best-effort (telemetry); extracted verbatim.
+func (f *outboundFinalizer) recordActionLedger() {
+	ledgerOutcome := models.LedgerOutcomeAlias(f.outcome)
+	ledgerReason := string(f.outcome)
+	if f.failureReason != "" && f.failureReason != string(f.outcome) {
+		ledgerReason = string(f.outcome) + ":" + f.failureReason
+	}
+	if _, err := f.h.db.Coordination().MarkActionLedgerOutcomeByOutbound(f.ctx, f.orgID, f.id, ledgerOutcome, ledgerReason); err != nil {
+		slog.WarnContext(f.ctx, "exec-verify: ledger outcome update failed",
+			"org_id", f.orgID, "outbound_id", f.id, "error", err)
+	}
+}
+
+// applyRiskSignal applies the outcome's risk signal to the account. Best-effort;
+// extracted verbatim (same gate: a signal exists and the account is known).
+func (f *outboundFinalizer) applyRiskSignal() {
+	if sig := models.RiskSignalForOutcome(f.outcome); sig != "" && f.msg.AccountID > 0 {
+		if err := f.h.db.Coordination().ApplyRiskSignal(f.ctx, f.orgID, f.msg.AccountID, sig, 0); err != nil {
+			events.Warn(f.ctx, events.ExecutionHookFailed,
+				events.FieldHook, "ApplyRiskSignal",
+				events.FieldOrgID, f.orgID,
+				events.FieldAccountID, f.msg.AccountID,
+				"signal", sig,
+				events.FieldErr, err,
+			)
+		}
+	}
+}
+
+// refundQuotaForFailure (invariant 2026-06-01) refunds the daily counter slot a
+// non-success terminal reserved at queue time. FIRST-WIN only (replay/stale
+// returned earlier), so it runs once per terminal. Extracted verbatim.
+func (f *outboundFinalizer) refundQuotaForFailure() {
+	if !models.IsSuccessOutcome(f.outcome) && f.msg.AccountID > 0 {
+		if err := f.h.db.Coordination().RefundDailyCounter(f.ctx, f.msg.AccountID, f.msg.Type); err != nil {
+			slog.WarnContext(f.ctx, "exec-verify: quota refund failed",
+				"org_id", f.orgID, "account_id", f.msg.AccountID, "action_type", f.msg.Type, "error", err)
+		}
+	}
+}
+
+// upsertInboxThreadForSuccess records inbox thread bookkeeping on an actual
+// landing only. Failures are logged (not swallowed) — silent inbox data loss the
+// operator would never see explained. Extracted verbatim.
+func (f *outboundFinalizer) upsertInboxThreadForSuccess() {
+	if models.IsSuccessOutcome(f.outcome) && f.msg.Type == "inbox" && f.msg.TargetURL != "" {
+		threadID, threadErr := f.h.db.Threads().CreateThreadForOrg(f.orgID, 0, string(f.msg.Platform), f.msg.TargetURL, f.msg.TargetName, "")
 		if threadErr != nil {
-			slog.WarnContext(ctx, "exec-verify: inbox thread create failed",
-				"org_id", orgID, "outbound_id", id, "target", msg.TargetURL, "error", threadErr)
-		} else if err := h.db.Threads().AddThreadMessage(threadID, "outbound", msg.Content, true); err != nil {
-			slog.WarnContext(ctx, "exec-verify: inbox thread message store failed",
-				"org_id", orgID, "outbound_id", id, "thread_id", threadID, "error", err)
+			slog.WarnContext(f.ctx, "exec-verify: inbox thread create failed",
+				"org_id", f.orgID, "outbound_id", f.id, "target", f.msg.TargetURL, "error", threadErr)
+		} else if err := f.h.db.Threads().AddThreadMessage(threadID, "outbound", f.msg.Content, true); err != nil {
+			slog.WarnContext(f.ctx, "exec-verify: inbox thread message store failed",
+				"org_id", f.orgID, "outbound_id", f.id, "thread_id", threadID, "error", err)
 		}
 	}
+}
 
-	// PR-2 V2: notification now consumes the (state, outcome) pair
-	// directly — no legacy OutboundStatus translation. The single-source-
-	// of-truth predicate IsVerifiedSuccess gates the verified/failed event
-	// fork inside NotifyOutboundStatusDetail.
-	if models.IsVerifiedSuccess(terminalState, terminalOutcome) {
-		system.NotifyOutboundStatus(h.db, h.notifier, orgID, id, terminalState, terminalOutcome)
+// notifyOutboundFinalized emits the global-admin notifier event (verified vs
+// detailed-failure fork) and the per-org Telegram channel event (when tgEvents is
+// configured). Best-effort; extracted verbatim.
+func (f *outboundFinalizer) notifyOutboundFinalized() {
+	if models.IsVerifiedSuccess(f.terminalState, f.terminalOutcome) {
+		system.NotifyOutboundStatus(f.h.db, f.h.notifier, f.orgID, f.id, f.terminalState, f.terminalOutcome)
 	} else {
 		// Surface the extension's GRANULAR diagnostic note directly in the
-		// operator's chat (see notificationDetail for the overwrite-free
-		// data-path contract).
-		system.NotifyOutboundStatusDetail(h.db, h.notifier, orgID, id, terminalState, terminalOutcome, notificationDetail(proof, report, outcome))
+		// operator's chat (see notificationDetail for the overwrite-free contract).
+		system.NotifyOutboundStatusDetail(f.h.db, f.h.notifier, f.orgID, f.id, f.terminalState, f.terminalOutcome, notificationDetail(f.proof, f.report, f.outcome))
 	}
 
-	// Per-ORG Telegram CHANNEL notification (distinct from the global-admin h.notifier above): uses
-	// the org's own bot + channel destinations. Best-effort — never affects the response.
-	if h.tgEvents != nil {
-		verified := models.IsVerifiedSuccess(terminalState, terminalOutcome)
-		if ev := agentEventType(msg.Type, verified, models.IsSuccessOutcome(outcome)); ev != "" {
-			channel := strings.ToLower(string(msg.Platform))
+	// Per-ORG Telegram CHANNEL notification (distinct from the global-admin notifier
+	// above): uses the org's own bot + channel destinations. Best-effort.
+	if f.h.tgEvents != nil {
+		verified := models.IsVerifiedSuccess(f.terminalState, f.terminalOutcome)
+		if ev := agentEventType(f.msg.Type, verified, models.IsSuccessOutcome(f.outcome)); ev != "" {
+			channel := strings.ToLower(string(f.msg.Platform))
 			if channel == "" {
 				channel = "facebook"
 			}
-			h.tgEvents.NotifyAction(control.ActionNotice{
-				OrgID: orgID, OutboundID: id, EventType: ev, Channel: channel,
-				Workspace:   h.orgName(orgID),
-				Agent:       h.agentName(msg.AccountID),
-				Author:      msg.TargetName,
-				CommentText: msg.Content,
-				PostURL:     msg.TargetURL,
-				Reason:      failureReasonText(report, string(outcome)),
-				BaseURL:     h.baseURL,
+			f.h.tgEvents.NotifyAction(control.ActionNotice{
+				OrgID: f.orgID, OutboundID: f.id, EventType: ev, Channel: channel,
+				Workspace:   f.h.orgName(f.orgID),
+				Agent:       f.h.agentName(f.msg.AccountID),
+				Author:      f.msg.TargetName,
+				CommentText: f.msg.Content,
+				PostURL:     f.msg.TargetURL,
+				Reason:      failureReasonText(f.report, string(f.outcome)),
+				BaseURL:     f.h.baseURL,
 			})
 		}
 	}
+}
 
+// buildResponse is the FIRST-WIN terminal response: the (state, outcome) pair the
+// dashboard consumes, plus the attempt id (0 when BeginExecutionAttempt failed).
+func (f *outboundFinalizer) buildResponse() *finalizeResolution {
 	return &finalizeResolution{
 		HTTPStatus: 200,
 		Body: fiber.Map{
-			"execution_state":      string(terminalState),
-			"verification_outcome": string(outcome),
-			"attempt_id":           attemptID,
+			"execution_state":      string(f.terminalState),
+			"verification_outcome": string(f.outcome),
+			"attempt_id":           f.attemptID,
 		},
-	}, nil
+	}
 }
 
 // agentEventType maps an outbound action type + outcome to a Telegram destination event key.
