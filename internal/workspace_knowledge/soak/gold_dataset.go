@@ -6,6 +6,10 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 )
 
+// promptField is the shared diagnostic-string fragment used when building
+// blocking-incident messages below. Value unchanged; defined once.
+const promptField = " prompt="
+
 // Goal G1 (Evaluation): the GOLD DATASET is the immutable, curated
 // suite the CI gate runs every commit. Beyond RealisticLeads (which
 // is the soak's REGRESSION corpus), the gold dataset adds the FOUR
@@ -218,7 +222,7 @@ func EvaluateGoldDataset(
 			titles, hitAssets, err := runQuery(orgID, p)
 			if err != nil {
 				r.BlockingIncidents = append(r.BlockingIncidents,
-					"query error org="+strconv.FormatInt(orgID, 10)+" prompt="+p.Text+": "+err.Error())
+					"query error org="+strconv.FormatInt(orgID, 10)+promptField+p.Text+": "+err.Error())
 				continue
 			}
 
@@ -231,7 +235,7 @@ func EvaluateGoldDataset(
 					r.BannedRetrieved++
 					r.GovernanceLeaks++
 					r.BlockingIncidents = append(r.BlockingIncidents,
-						"BANNED CLAIM in retrieval: org="+strconv.FormatInt(orgID, 10)+" prompt="+p.Text+" title="+a.Title)
+						"BANNED CLAIM in retrieval: org="+strconv.FormatInt(orgID, 10)+promptField+p.Text+" title="+a.Title)
 				}
 				// HARD CHECK 2: tenant leak — asset belongs to wrong org.
 				if a.OrgID != orgID {
@@ -247,7 +251,7 @@ func EvaluateGoldDataset(
 					if title == forbidden {
 						r.GovernanceLeaks++
 						r.BlockingIncidents = append(r.BlockingIncidents,
-							"FORBIDDEN TITLE surfaced: org="+strconv.FormatInt(orgID, 10)+" prompt="+p.Text+" title="+title)
+							"FORBIDDEN TITLE surfaced: org="+strconv.FormatInt(orgID, 10)+promptField+p.Text+" title="+title)
 					}
 				}
 			}

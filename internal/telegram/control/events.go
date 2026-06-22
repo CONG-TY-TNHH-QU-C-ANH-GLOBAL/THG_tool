@@ -82,15 +82,19 @@ type actionView struct {
 	failure              bool
 }
 
+// statusFailedVN is the shared Vietnamese status label for failed action events
+// in the presentation table below. Value unchanged; defined once.
+const statusFailedVN = "Thất bại"
+
 var actionPresentation = map[string]actionView{
 	"comment_submitted":  {"✅ Agent đã gửi comment", "Đã gửi, đang chờ xác minh", "", false},
 	"comment_verified":   {"✅ Comment đã xuất hiện trên Facebook", "Đã xác minh", "", false},
 	"comment_unverified": {"ℹ️ Comment đã gửi nhưng chưa xác minh được", "Đã gửi, chưa xác minh", "Mở bài viết hoặc xác nhận thủ công nếu thấy comment.", false},
-	"comment_failed":     {"⚠️ Comment chưa được gửi", "Thất bại", "Mở dashboard để retry hoặc kiểm tra tab Facebook.", true},
+	"comment_failed":     {"⚠️ Comment chưa được gửi", statusFailedVN, "Mở dashboard để retry hoặc kiểm tra tab Facebook.", true},
 	"inbox_sent":         {"✅ Đã gửi inbox", "Đã gửi", "", false},
-	"inbox_failed":       {"⚠️ Gửi inbox thất bại", "Thất bại", "Mở dashboard để kiểm tra.", true},
+	"inbox_failed":       {"⚠️ Gửi inbox thất bại", statusFailedVN, "Mở dashboard để kiểm tra.", true},
 	"post_submitted":     {"✅ Đã đăng bài", "Đã đăng", "", false},
-	"post_failed":        {"⚠️ Đăng bài thất bại", "Thất bại", "Mở dashboard để kiểm tra.", true},
+	"post_failed":        {"⚠️ Đăng bài thất bại", statusFailedVN, "Mở dashboard để kiểm tra.", true},
 }
 
 // ActionNotice is the raw agent-action data a caller hands to NotifyAction.
