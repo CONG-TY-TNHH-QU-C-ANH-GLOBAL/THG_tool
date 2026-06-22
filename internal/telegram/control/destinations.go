@@ -17,7 +17,7 @@ func defaultEventTypesJSON() string { b, _ := json.Marshal(EventTypes); return s
 func normalizeChannelRef(ref string) string {
 	r := strings.TrimSpace(ref)
 	for _, p := range []string{"https://t.me/", "http://t.me/", "https://telegram.me/", "t.me/", "telegram.me/"} {
-		if i := strings.Index(strings.ToLower(r), p); i == 0 {
+		if strings.Index(strings.ToLower(r), p) == 0 {
 			r = r[len(p):]
 			break
 		}

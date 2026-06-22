@@ -25,7 +25,7 @@ func (s *Service) TestNotify(orgID, userID int64) (bool, string) {
 		if b.Status != "active" || b.ChatID == 0 {
 			continue
 		}
-		if e := gb.Send(b.ChatID, render.TestMessage()); e == nil {
+		if gb.Send(b.ChatID, render.TestMessage()) == nil {
 			sent++
 		}
 	}
@@ -67,7 +67,7 @@ func (s *Service) NotifyBoundUsers(orgID int64, alertType, channel, message stri
 		if b.ChatID == 0 {
 			continue
 		}
-		if e := gb.Send(b.ChatID, message); e == nil {
+		if gb.Send(b.ChatID, message) == nil {
 			sent++
 		}
 	}
