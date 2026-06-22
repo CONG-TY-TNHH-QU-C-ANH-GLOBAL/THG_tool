@@ -141,32 +141,14 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 		if len(msgs) >= limit {
 			break
 		}
-		if msg.AccountID <= 0 {
-			continue
-		}
-		if assignedAccountID > 0 && msg.AccountID != assignedAccountID {
-			continue
-		}
-		ownsStream, err := h.db.Connectors().ConnectorOwnsAccountStream(orgID, agentID, msg.AccountID)
+		claimed, ok, err := h.claimCandidate(orgID, agentID, assignedAccountID, workerID, msg)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		if !ownsStream {
+		if !ok {
 			continue
 		}
-		claim, err := h.db.ClaimPlannedOutboundForOrg(orgID, msg.ID, workerID, 0)
-		if err != nil || claim == nil {
-			continue
-		}
-		msg.ExecutionState = models.ExecExecuting
-		msg.ExecutionID = claim.ExecutionID
-		// Activity feed: execution_started — the autonomous-first
-		// vocabulary makes "extension claimed and is about to mutate
-		// the live DOM" a distinct event from "intent was queued"
-		// (execution_planned) and from terminal events
-		// (execution_verified / execution_failed).
-		system.NotifyExecutionStarted(h.db, orgID, msg.AccountID, msg.ID, claim.ExecutionID, msg.Type)
-		msgs = append(msgs, msg)
+		msgs = append(msgs, claimed)
 	}
 	return c.JSON(fiber.Map{"messages": msgs, "count": len(msgs)})
 }
