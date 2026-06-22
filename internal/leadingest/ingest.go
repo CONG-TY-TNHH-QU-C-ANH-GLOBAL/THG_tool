@@ -9,7 +9,6 @@ package leadingest
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -18,8 +17,6 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/store/leads"
-	"github.com/thg/scraper/internal/textutil"
 )
 
 // Deps captures the per-run dependencies that the ingest function needs.
@@ -220,324 +217,59 @@ func repairPrimaryURL(in *Input) bool {
 // it to both task_leads and the legacy leads table. Mirroring is unconditional
 // so dashboard stats (which read from `leads`) always reflect connector output
 // — the legacy table is the canonical view.
+// The flow is split into three behaviour-preserving phases (see
+// specs/lead_ingestion_behavior.md §9): early validation here, classification in
+// classifyLead (ingest_flow.go), and persistence in persistLead/advanceCrawlCursor
+// (ingest_persistence.go). The state machine and every observable Outcome.Skipped
+// value, signal string, and side effect are unchanged.
 func IngestPost(ctx context.Context, deps Deps, in Input) (Outcome, error) {
 	content := strings.TrimSpace(in.Content)
 	if content == "" {
 		return Outcome{Skipped: "filter"}, nil
 	}
 
-	// Server-side rescue: when the crawler emits a group/page shell URL
-	// but ALSO sends PostFBID, synthesise the canonical post permalink
-	// before validating. Common case: Facebook lazy-renders the post
-	// anchor, the JS falls back to expectedUrl (the group URL), but the
-	// post id was still extracted off the page. See project_lead_routing_gap.md.
+	// Server-side rescue: when the crawler emits a group/page shell URL but ALSO
+	// sends PostFBID, synthesise the canonical post permalink before validating.
+	// See project_lead_routing_gap.md. urlSignal carries the `url:<path>` telemetry.
 	pipelineRepaired := repairPrimaryURL(&in)
-
-	// URL repair telemetry — `url:<path>` rides into every Outcome.Signals
-	// so Phase 1 dashboards can count anchor_clean vs synth_from_fbid vs
-	// dropped_transient. `repaired_in_pipeline` flags the Chrome-extension
-	// path where the crawler emitted a shell but we synthesised here.
 	urlSignal := buildURLRepairSignal(in.URLRepairPath, pipelineRepaired)
 
-	// Routing contract — enforced before any scoring/classification work.
-	// A lead with no usable post link is dropped, not stored. The Skipped
-	// reason is surfaced so the crawler bug (not the data) gets fixed.
+	// Routing contract — a lead with no usable post link is dropped, not stored.
 	if err := ValidateRouting(in); err != nil {
-		signals := []string{"invalid_routing:" + err.Error()}
-		if urlSignal != "" {
-			signals = append(signals, urlSignal)
-		}
-		return Outcome{
-			Skipped: "invalid_routing",
-			Signals: signals,
-		}, nil
+		return invalidRoutingOutcome(err, urlSignal), nil
 	}
 	sourceType := normalizeSourceType(in.SourceType)
 
-	scorer := deps.Scorer
-	if scorer == nil {
-		scorer = scoring.New(scoring.DefaultConfig())
+	// Classification phase: deterministic score → market gate → AI override → cold
+	// gate. Any veto short-circuits with skip unless ForceLead downgrades it.
+	out, skip := classifyLead(ctx, deps, in, content, urlSignal)
+	if skip {
+		return out, nil
 	}
-	sr := scorer.ScoreWithGuidance(content, deps.Keywords, in.Reactions, in.Comments, in.AuthorProfileURL, deps.Guidance)
-	signals := append([]string{}, sr.Signals...)
+
+	// Phase B — thread role, derived deterministically from source_type, the
+	// classifier intent, and vendor-speak signals. See project_thread_role_architecture.md.
+	threadRole := string(models.InferThreadRole(sourceType, out.AIIntent, content))
+
+	// Persistence phase: task_leads insert (fatal), then best-effort legacy mirror +
+	// thread seed + notification, then best-effort cursor advance.
+	if err := persistLead(ctx, deps, in, content, sourceType, threadRole, &out); err != nil {
+		return out, err
+	}
+	out.Inserted = true
+	advanceCrawlCursor(ctx, deps, in)
+	return out, nil
+}
+
+// invalidRoutingOutcome builds the dropped-lead Outcome for a routing-contract
+// violation, preserving the exact `invalid_routing:<msg>` signal text and the url
+// telemetry signal when present.
+func invalidRoutingOutcome(err error, urlSignal string) Outcome {
+	signals := []string{"invalid_routing:" + err.Error()}
 	if urlSignal != "" {
 		signals = append(signals, urlSignal)
 	}
-	if len(deps.ExtraSignals) > 0 {
-		signals = append(signals, deps.ExtraSignals...)
-	}
-	out := Outcome{
-		Score:    sr.Score,
-		Category: sr.Category,
-		Signals:  signals,
-	}
-	if sr.Category == "rejected" {
-		out.Skipped = "rejected"
-		if !deps.overrideVeto(&out, "deterministic_rejected") {
-			return out, nil
-		}
-	}
-
-	// Brain-derived market_signal_gate: hard reject when any negative phrase
-	// matches; honor positive phrases as a confidence floor.
-	if hit := matchAny(content, deps.SignalGate.RejectRules); hit != "" {
-		out.Skipped = "gate_negative"
-		out.Category = "rejected"
-		out.Signals = append(out.Signals, "gate_reject:"+hit)
-		if !deps.overrideVeto(&out, "gate_reject:"+hit) {
-			return out, nil
-		}
-	}
-	if hit := matchAny(content, deps.SignalGate.NegativeSignals); hit != "" {
-		out.Skipped = "gate_negative"
-		out.Category = "rejected"
-		out.Signals = append(out.Signals, "gate_negative:"+hit)
-		if !deps.overrideVeto(&out, "gate_negative:"+hit) {
-			return out, nil
-		}
-	}
-
-	// AI classifier overrides deterministic when configured (or when an explicit prompt is provided).
-	// Failures fall back to deterministic so a flaky LLM never blocks lead capture.
-	hasAIContext := (deps.BusinessProfile != nil && deps.BusinessProfile.IsConfigured()) || strings.TrimSpace(deps.UserPrompt) != ""
-	if hasAIContext && deps.AIClass != nil && deps.AIClass.Available() {
-		timeout := deps.ClassifyTimeout
-		if timeout <= 0 {
-			timeout = 20 * time.Second
-		}
-		classifyCtx, cancel := context.WithTimeout(ctx, timeout)
-		intent := ai.ClassifyIntent{
-			UserPrompt:      deps.UserPrompt,
-			Keywords:        deps.Keywords,
-			TargetRole:      deps.SignalGate.TargetRole,
-			PositiveSignals: deps.SignalGate.PositiveSignals,
-		}
-		// Brain sidecar (Python) is responsible for filling SignalGate.TargetRole,
-		// but it can be offline or produce no inference. Fall back to a Go-side
-		// keyword inference so the classifier still gets a scope hint instead of
-		// treating every adjacent post as a generic match.
-		if intent.TargetRole == "" {
-			intent.TargetRole = ai.InferTargetRoleFromPrompt(deps.UserPrompt)
-		}
-		aiResult, err := deps.AIClass.UniversalClassify(classifyCtx, content, in.AuthorName, deps.BusinessProfile, intent)
-		cancel()
-
-		// Observability: build a classification_log row for EVERY outcome
-		// (kept, rejected, errored). Without this, rejected posts have no
-		// DB footprint and "why did all 50 posts reject?" is unanswerable.
-		logEntry := leads.ClassificationLogEntry{
-			OrgID:          in.OrgID,
-			TaskID:         in.TaskID,
-			SourceURL:      in.PrimaryURL,
-			AuthorName:     in.AuthorName,
-			ContentSnippet: content,
-			TargetRole:     intent.TargetRole,
-			UserPrompt:     deps.UserPrompt,
-		}
-
-		if err != nil {
-			slog.WarnContext(ctx, "universal classify failed; using deterministic score",
-				"task_id", in.TaskID, "org_id", in.OrgID, "error", err)
-			logEntry.Decision = leads.ClassificationError
-			logEntry.AIReason = err.Error()
-			if deps.LegacyDB != nil {
-				_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
-			}
-		} else if aiResult != nil {
-			// Hard-guard against LLM assigning hot/warm priority to off-target intents
-			if intent.TargetRole != "" && aiResult.Intent != "not_relevant" && aiResult.Intent != "spam" {
-				if intent.TargetRole == "potential_customer" && aiResult.Intent != "potential_customer" {
-					aiResult.Priority = "rejected"
-					aiResult.Reason = "Hard-rejected: target is customer but post is " + aiResult.Intent
-				} else if intent.TargetRole == "candidate" && aiResult.Intent != "candidate" {
-					aiResult.Priority = "rejected"
-					aiResult.Reason = "Hard-rejected: target is candidate but post is " + aiResult.Intent
-				} else if intent.TargetRole == "partner" && aiResult.Intent != "partner" {
-					aiResult.Priority = "rejected"
-					aiResult.Reason = "Hard-rejected: target is partner but post is " + aiResult.Intent
-				}
-			}
-
-			logEntry.AIIntent = aiResult.Intent
-			logEntry.AIPriority = aiResult.Priority
-			logEntry.AIReason = aiResult.Reason
-			logEntry.AIScore = aiResult.Score
-
-			if aiResult.Priority == "rejected" || aiResult.Intent == "not_relevant" || aiResult.Intent == "spam" || aiResult.Intent == "provider_ad" {
-				out.Skipped = "rejected"
-				out.Category = "rejected"
-				out.Signals = append(out.Signals, "ai_intent:"+aiResult.Intent, "ai_reason:"+aiResult.Reason)
-				logEntry.Decision = leads.ClassificationRejected
-				if deps.LegacyDB != nil {
-					_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
-				}
-				// Explicit direct-post intake: record the AI verdict above (observability)
-				// but still create the lead — the user chose this post. AIIntent/AIReason
-				// are preserved so the dashboard shows WHY the generic filter would reject.
-				if !deps.overrideVeto(&out, "ai_rejected:"+aiResult.Intent) {
-					return out, nil
-				}
-				out.AIIntent = aiResult.Intent
-				out.AIReason = aiResult.Reason
-			} else {
-				out.Score = aiResult.Score * 100
-				out.Category = aiResult.Priority
-				out.AIIntent = aiResult.Intent
-				out.AIReason = aiResult.Reason
-				out.Signals = append(out.Signals,
-					"ai_intent:"+aiResult.Intent,
-					"ai_reason:"+aiResult.Reason,
-				)
-				if out.Category == "" {
-					out.Category = "cold"
-				}
-				if out.Category == "cold" {
-					logEntry.Decision = leads.ClassificationCold
-				} else {
-					logEntry.Decision = leads.ClassificationKept
-				}
-				if deps.LegacyDB != nil {
-					_ = deps.LegacyDB.Leads().RecordClassification(ctx, logEntry)
-				}
-			}
-		}
-	}
-
-	if out.Category == "cold" {
-		out.Skipped = "cold"
-		if !deps.overrideVeto(&out, "cold") {
-			return out, nil
-		}
-	}
-
-	// Phase B — thread role. Derived deterministically from the crawler's
-	// source_type, the classifier's intent, and vendor-speak signals in the
-	// content. Orthogonal to score: a vendor comment that scored "warm" on
-	// buyer keywords still resolves to supplier_responder. See
-	// project_thread_role_architecture.md.
-	threadRole := string(models.InferThreadRole(sourceType, out.AIIntent, content))
-
-	if deps.AppStore != nil {
-		taskLead := store.TaskLead{
-			TaskID:           in.TaskID,
-			OrgID:            in.OrgID,
-			SourceURL:        in.PrimaryURL,
-			AuthorProfileURL: in.AuthorProfileURL,
-			AuthorName:       in.AuthorName,
-			Content:          content,
-			LeadScore:        out.Score,
-			Category:         out.Category,
-			ThreadRole:       threadRole,
-			Signals:          out.Signals,
-		}
-		if err := deps.AppStore.InsertLead(ctx, in.TaskID, in.OrgID, taskLead); err != nil {
-			return out, err
-		}
-	}
-	if deps.LegacyDB != nil {
-		// AuthorRole carries the AI classifier intent (candidate / potential_customer
-		// / partner / provider_ad / not_relevant / spam) so the dashboard can render
-		// a meaningful tag per lead instead of a generic "AI classifier" string.
-		authorRole := strings.TrimSpace(out.AIIntent)
-		if authorRole == "" {
-			authorRole = "unknown"
-		}
-		// Niche prefers a clean domain label (industry from profile) over the raw
-		// crawl keywords. Keywords are kept as fallback when no industry is set.
-		niche := ""
-		if deps.BusinessProfile != nil {
-			niche = strings.TrimSpace(deps.BusinessProfile.Industry)
-			if niche == "" {
-				niche = strings.TrimSpace(deps.BusinessProfile.Name)
-			}
-		}
-		if niche == "" {
-			niche = strings.Join(deps.Keywords, ", ")
-		}
-		// PainPoint is the human-readable AI reason ("Author is asking for a POD
-		// supplier from VN to ship to US"); fall back to signals only if reason
-		// is missing. The dashboard shows this as the agent note.
-		painPoint := strings.TrimSpace(out.AIReason)
-		if painPoint == "" {
-			painPoint = strings.Join(out.Signals, "; ")
-		}
-		legacy := &models.Lead{
-			OrgID:        in.OrgID,
-			SourceType:   sourceType,
-			SourceID:     0,
-			SourceURL:    in.PrimaryURL,
-			SecondaryURL: in.SecondaryURL,
-			PostFBID:     in.PostFBID,
-			CommentFBID:  in.CommentFBID,
-			GroupFBID:    in.GroupFBID,
-			Platform:     models.PlatformFacebook,
-			Author:       in.AuthorName,
-			AuthorURL:    in.AuthorProfileURL,
-			Content:      content,
-			Score:        models.LeadScore(out.Category),
-			ServiceMatch: out.Category,
-			AuthorRole:   authorRole,
-			PainPoint:    painPoint,
-			AIReasoning:  textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, "; ")),
-			Niche:        niche,
-			ThreadRole:   threadRole,
-			ClassifiedAt: time.Now().UTC(),
-		}
-		leadID, err := deps.LegacyDB.Leads().InsertLead(legacy)
-		if err != nil {
-			// Non-fatal: task_leads is the source of truth; legacy mirror is
-			// best-effort for the existing dashboard.
-			slog.WarnContext(ctx, "legacy lead mirror failed",
-				"task_id", in.TaskID, "org_id", in.OrgID, "error", err)
-		}
-
-		// Seed conversation_threads at ingest time so lead-engagement
-		// projection (badges, thread state) sees a row before the first
-		// outbound action. Idempotent (INSERT OR IGNORE on
-		// idx_thread_org_profile), best-effort — seed failure must not
-		// fail the lead pipeline. See SeedThreadForOrg doc + PR-B in
-		// stabilization plan for the cross-account concurrent-first-send
-		// gate-rule follow-up that completes outbound audit #3.
-		if profile := strings.TrimSpace(in.AuthorProfileURL); profile != "" {
-			if _, sErr := deps.LegacyDB.Threads().SeedThreadForOrg(in.OrgID, leadID, string(models.PlatformFacebook), profile, strings.TrimSpace(in.AuthorName), ""); sErr != nil {
-				slog.WarnContext(ctx, "thread seed failed",
-					"task_id", in.TaskID, "org_id", in.OrgID, "profile_url", profile, "error", sErr)
-			}
-		}
-		// Best-effort notification hook (Telegram channel etc.). Raw content is passed; the consumer
-		// sanitizes + caps it. Never affects the ingest result.
-		if deps.OnLeadCreated != nil {
-			deps.OnLeadCreated(LeadEvent{
-				OrgID: in.OrgID, LeadID: leadID,
-				AuthorName: strings.TrimSpace(in.AuthorName),
-				PostURL:    in.PrimaryURL,
-				Excerpt:    content,
-				Reason:     textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, " / ")),
-				SourceType: sourceType,
-				GroupFBID:  in.GroupFBID,
-			})
-		}
-	}
-	out.Inserted = true
-
-	// Advance the per-intent crawl cursor for recurring runs. Best-effort —
-	// a cursor write failure must not fail the lead insert. The store-side
-	// AdvanceCrawlIntentCursor only moves the cursor forward (or sets it
-	// unconditionally when PostedAt is zero — last-call-wins fallback).
-	if deps.IntentID > 0 && deps.LegacyDB != nil {
-		postID := strings.TrimSpace(in.PostFBID)
-		if postID == "" {
-			postID = ExtractFacebookPostID(in.PrimaryURL)
-		}
-		if postID != "" {
-			if cErr := deps.LegacyDB.Crawl().AdvanceIntentCursor(ctx, deps.IntentID, postID, in.PostedAt); cErr != nil {
-				slog.WarnContext(ctx, "advance crawl intent cursor failed",
-					"intent_id", deps.IntentID, "post_id", postID, "error", cErr)
-			}
-		}
-	}
-
-	return out, nil
+	return Outcome{Skipped: "invalid_routing", Signals: signals}
 }
 
 // buildURLRepairSignal turns the crawler-emitted URLRepairPath into the

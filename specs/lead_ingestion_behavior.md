@@ -253,3 +253,26 @@ PR23C (complexity reduction of `IngestPost`) **must**:
 * **Not** introduce: shared/common util packages, helper soup, new production DI/interfaces,
   or new goroutines/channels/timers.
 * Stay refactor-only (move/extract/rename) — behavior byte-for-byte unchanged.
+
+---
+
+## 13. PR23C Status (refactor completed)
+
+PR23C reduced `IngestPost` cognitive complexity (`go:S3776`, **105 → orchestration-only**,
+well under the 15 threshold) by extracting behaviour-preserving private helpers into two
+same-package files. **No behaviour change**; the PR23B characterization tests in §10 pass
+**unchanged**.
+
+* **`internal/leadingest/ingest.go`** — slim 3-phase orchestration: validate → `classifyLead`
+  → `persistLead`/`advanceCrawlCursor`; plus `invalidRoutingOutcome`. (~631 → ~363 lines.)
+* **`internal/leadingest/ingest_flow.go`** (new) — classification phase: `classifyLead`,
+  `scoreLead`, `applyMarketGate`, `runAIClassifier`, `applyTargetRoleGuard`, `applyAIVerdict`,
+  `recordClassification`.
+* **`internal/leadingest/ingest_persistence.go`** (new) — persistence phase: `persistLead`,
+  `mirrorLegacyLead`, `legacyNiche`, `advanceCrawlCursor`.
+
+**Preserved (verified by §10 tests + code review):** the §9 state machine and ordering; all
+`Outcome.Skipped` values and signal strings; the `task_leads` `UNIQUE(task_id, source_url)`
+dedup; the legacy `SourceID=0` no-dedup quirk (§5); `task_leads` insert fatal vs all other
+side effects best-effort; `OnLeadCreated` firing once per non-skipped call. **Untestable gaps
+(§11) unchanged** — no AI/Telegram seam was added.
