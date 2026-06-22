@@ -79,30 +79,38 @@ def check_entry(entry, idx: int, errors: list[str]) -> None:
         errors.append(f"{label}: path does not exist: {path}")
 
 
-def check_cross_entry(entries, errors: list[str]) -> None:
-    ids: dict[str, int] = {}
-    paths: dict[str, int] = {}
+def _index_unique(entries, key: str, kind: str, errors: list[str]) -> dict[str, int]:
+    """Map each string value of `key` to its first index, flagging duplicates."""
+    seen: dict[str, int] = {}
     for idx, entry in enumerate(entries):
-        if not isinstance(entry, dict):
+        value = entry.get(key) if isinstance(entry, dict) else None
+        if not isinstance(value, str):
             continue
-        eid = entry.get("id")
-        if isinstance(eid, str):
-            if eid in ids:
-                errors.append(f"duplicate id '{eid}' (entries {ids[eid]} and {idx})")
-            else:
-                ids[eid] = idx
-        path = entry.get("path")
-        if isinstance(path, str):
-            if path in paths:
-                errors.append(f"duplicate path '{path}' (entries {paths[path]} and {idx})")
-            else:
-                paths[path] = idx
+        if value in seen:
+            errors.append(f"duplicate {kind} '{value}' (entries {seen[value]} and {idx})")
+        else:
+            seen[value] = idx
+    return seen
+
+
+def validate_unique_ids_and_paths(entries, errors: list[str]):
+    ids = _index_unique(entries, "id", "id", errors)
+    paths = _index_unique(entries, "path", "path", errors)
+    return ids, paths
+
+
+def validate_superseded_refs(entries, known, errors: list[str]) -> None:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         sb = entry.get("superseded_by")
-        if sb and sb not in ids and sb not in paths:
+        if sb and sb not in known:
             errors.append(f"{entry.get('id')}: superseded_by '{sb}' is not a known id or path")
+
+
+def check_cross_entry(entries, errors: list[str]) -> None:
+    ids, paths = validate_unique_ids_and_paths(entries, errors)
+    validate_superseded_refs(entries, set(ids) | set(paths), errors)
 
 
 def check_coverage(entries, errors: list[str]) -> None:
