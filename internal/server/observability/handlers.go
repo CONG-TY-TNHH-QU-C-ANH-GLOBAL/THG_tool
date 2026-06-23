@@ -11,6 +11,10 @@ import (
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
+// Transport-layer error message, factored out to avoid a duplicated string
+// literal (go:S1192) across this package's handlers. Value is byte-identical.
+const errTenantNotScoped = "tenant not scoped"
+
 // executionDistribution serves GET /api/observability/execution/distribution.
 // Returns counts of execution_attempts grouped by (outcome, action_type)
 // for the requesting org over the last N hours. The dashboard renders
@@ -22,7 +26,7 @@ func executionDistribution(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+			return c.Status(403).JSON(fiber.Map{"error": errTenantNotScoped})
 		}
 		hours, _ := strconv.Atoi(c.Query("hours", "24"))
 		if hours <= 0 {
@@ -118,7 +122,7 @@ func executionRecent(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+			return c.Status(403).JSON(fiber.Map{"error": errTenantNotScoped})
 		}
 		hours, _ := strconv.Atoi(c.Query("hours", "24"))
 		if hours <= 0 {
@@ -162,7 +166,7 @@ func executionGapDetection(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+			return c.Status(403).JSON(fiber.Map{"error": errTenantNotScoped})
 		}
 		minutes, _ := strconv.Atoi(c.Query("older_than_minutes", "10"))
 		if minutes < 1 {
@@ -199,7 +203,7 @@ func executionAccountTimeseries(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+			return c.Status(403).JSON(fiber.Map{"error": errTenantNotScoped})
 		}
 		accountID, _ := strconv.ParseInt(c.Query("account_id", "0"), 10, 64)
 		if accountID <= 0 {
@@ -241,7 +245,7 @@ func executionLedgerReconcile(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+			return c.Status(403).JSON(fiber.Map{"error": errTenantNotScoped})
 		}
 		hours, _ := strconv.Atoi(c.Query("hours", "24"))
 		if hours <= 0 {
@@ -282,7 +286,7 @@ func executionAccountHealth(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(403).JSON(fiber.Map{"error": "tenant not scoped"})
+			return c.Status(403).JSON(fiber.Map{"error": errTenantNotScoped})
 		}
 		accountID, _ := strconv.ParseInt(c.Query("account_id", "0"), 10, 64)
 

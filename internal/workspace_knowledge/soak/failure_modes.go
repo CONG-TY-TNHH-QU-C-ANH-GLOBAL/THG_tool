@@ -23,19 +23,19 @@ import (
 // to wrong tenant, or otherwise violated an invariant.
 func (h *Harness) runFailureModes(ctx context.Context, sourceID int64) []FailureModeOutcome {
 	return []FailureModeOutcome{
-		h.failureModeA_EmbedderDown(ctx),
-		h.failureModeB_PgvectorUnavailable(ctx),
-		h.failureModeC_PartialEmbeddings(ctx, sourceID),
-		h.failureModeD_SlowQuery(ctx),
-		h.failureModeE_ZeroAssets(ctx),
-		h.failureModeF_StaleOnly(ctx),
+		h.failureModeAEmbedderDown(ctx),
+		h.failureModeBPgvectorUnavailable(ctx),
+		h.failureModeCPartialEmbeddings(ctx, sourceID),
+		h.failureModeDSlowQuery(ctx),
+		h.failureModeEZeroAssets(ctx),
+		h.failureModeFStaleOnly(ctx),
 	}
 }
 
 // A: Embedding API down. The semantic searcher embeds the query at
 // query time — if the Embedder fails, the searcher must return an
 // error which the fallback wrapper translates to "use hybrid".
-func (h *Harness) failureModeA_EmbedderDown(ctx context.Context) FailureModeOutcome {
+func (h *Harness) failureModeAEmbedderDown(ctx context.Context) FailureModeOutcome {
 	out := FailureModeOutcome{
 		ID:          "A",
 		Name:        "Embedder API down",
@@ -62,7 +62,7 @@ func (h *Harness) failureModeA_EmbedderDown(ctx context.Context) FailureModeOutc
 // NewBuilderWithVector inspects HasPGVector at boot — if false, it
 // builds the hybrid-only path. Equivalent in the harness is "primary
 // searcher is nil" → fallback delegates to secondary.
-func (h *Harness) failureModeB_PgvectorUnavailable(ctx context.Context) FailureModeOutcome {
+func (h *Harness) failureModeBPgvectorUnavailable(ctx context.Context) FailureModeOutcome {
 	out := FailureModeOutcome{
 		ID:          "B",
 		Name:        "pgvector extension unavailable",
@@ -89,7 +89,7 @@ func (h *Harness) failureModeB_PgvectorUnavailable(ctx context.Context) FailureM
 // C: Partial embeddings (only some assets generated). The runtime
 // must tolerate — semantic searcher operates on whatever IS embedded,
 // hybrid covers the rest via RRF fusion.
-func (h *Harness) failureModeC_PartialEmbeddings(ctx context.Context, sourceID int64) FailureModeOutcome {
+func (h *Harness) failureModeCPartialEmbeddings(ctx context.Context, sourceID int64) FailureModeOutcome {
 	out := FailureModeOutcome{
 		ID:          "C",
 		Name:        "Partial embedding backfill",
@@ -115,7 +115,7 @@ func (h *Harness) failureModeC_PartialEmbeddings(ctx context.Context, sourceID i
 // D: Slow vector query. The pgvector Searcher's 1.5s timeout MUST
 // fire — fallback wrapper observes context.DeadlineExceeded and
 // reroutes to hybrid.
-func (h *Harness) failureModeD_SlowQuery(ctx context.Context) FailureModeOutcome {
+func (h *Harness) failureModeDSlowQuery(ctx context.Context) FailureModeOutcome {
 	out := FailureModeOutcome{
 		ID:          "D",
 		Name:        "Slow semantic query",
@@ -154,7 +154,7 @@ func (h *Harness) failureModeD_SlowQuery(ctx context.Context) FailureModeOutcome
 
 // E: Tenant with zero assets. No catalog → retrieval returns empty
 // cleanly; no panic, no leak.
-func (h *Harness) failureModeE_ZeroAssets(ctx context.Context) FailureModeOutcome {
+func (h *Harness) failureModeEZeroAssets(ctx context.Context) FailureModeOutcome {
 	out := FailureModeOutcome{
 		ID:          "E",
 		Name:        "Tenant with zero assets",
@@ -183,7 +183,7 @@ func (h *Harness) failureModeE_ZeroAssets(ctx context.Context) FailureModeOutcom
 // per the CountStaleKnowledgeAssetsForOrg query. Behaviour: assets
 // still retrievable but stale_count reflects the state — operator
 // can observe.
-func (h *Harness) failureModeF_StaleOnly(ctx context.Context) FailureModeOutcome {
+func (h *Harness) failureModeFStaleOnly(ctx context.Context) FailureModeOutcome {
 	out := FailureModeOutcome{
 		ID:          "F",
 		Name:        "Stale-only catalog",
