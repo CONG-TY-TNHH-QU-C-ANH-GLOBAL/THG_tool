@@ -73,8 +73,13 @@ Legend for "current code": ✅ exists and matches · ◐ exists, partial · ○ 
   `services/facebook`, `services/1688`/`services/taobao` (siblings), `drivers/*`.
 - **Belongs here:** Taobao/1688 product sourcing, price extraction workflows.
 - **Must NOT belong here:** Facebook selectors, FB URL trust, anything FB-specific.
-- **Today:** only resolver stubs in `internal/platform/services/resolver`. The rule
-  is reserved; nothing to enforce until the module is extracted.
+- **Today:** resolver stubs in `internal/platform/services/resolver` + boundary
+  markers at `internal/services/taobao` and `internal/services/supplier1688` (PR26C).
+  The rule is reserved; nothing to enforce until the module is extracted.
+- **1688 naming:** the canonical Go path is `internal/services/supplier1688` (a Go
+  package name cannot start with a digit, so `internal/services/1688` is invalid); the
+  logical/product label stays "1688". The resolver stub
+  `internal/platform/services/resolver/alibaba1688.go` is not renamed.
 
 ## ai  ✅
 

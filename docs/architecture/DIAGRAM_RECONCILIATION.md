@@ -351,7 +351,7 @@ required" = what must be green/added **before** touching.
 | Store / database | Infra | SQLite now; PG dialect | `internal/store` (+ `postgres`, `dialect.go`) | same | High | migrator hardening, dialect tests; ETL per ADR-PR9 |
 | Action ledger | Domain | append-only truth | `internal/store/coordination` | same | Critical | append-only invariant guard; never refactor casually |
 | Observability | Infra | runtime feed, audit, logs | `internal/observability`, `internal/logstream`, `internal/server/observability` | same | Low | read-only projection tests |
-| Future Taobao/1688 adapters | Application | sourcing verticals | `internal/platform/services/resolver/*` stubs | `internal/services/{taobao,1688}` + `services/supplier-analyzer` (Py) | Low (new) | new-vertical contract tests; must not import `services/facebook` |
+| Future Taobao/1688 adapters | Application | sourcing verticals | `internal/platform/services/resolver/*` stubs | `internal/services/{taobao,supplier1688}` + `services/supplier-analyzer` (Py) | Low (new) | new-vertical contract tests; must not import `services/facebook` |
 
 ---
 
