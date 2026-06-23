@@ -37,7 +37,6 @@ import {
 import {
   Activity,
   AlertTriangle,
-  Check,
   Copy,
   CreditCard,
   Database,

@@ -5,7 +5,6 @@ import {
   cardStyle,
   primaryBtn,
   secondaryBtn,
-  statusColor,
 } from '../../autoflow/constants/styles';
 import { useKnowledgeStrings } from '../i18n/useKnowledgeStrings';
 import { MOCK_SOURCES } from '../mock/fixtures';

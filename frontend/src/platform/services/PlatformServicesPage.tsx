@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Sparkles, Globe, Cpu, Layers, Check } from 'lucide-react';
+import { ArrowRight, Sparkles, Globe, Cpu, Layers } from 'lucide-react';
 import { useLang } from '../../modules/autoflow/i18n/useLang';
 import { useAuthStore } from '../../modules/autoflow/stores/authStore';
 import { usePlatformServices } from './usePlatformServices';

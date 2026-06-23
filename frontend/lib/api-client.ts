@@ -1,7 +1,6 @@
 import type {
   DashboardStats,
   Job,
-  Lead,
   LearningResponse,
   ListIdentitiesResponse,
   ListJobsResponse,
