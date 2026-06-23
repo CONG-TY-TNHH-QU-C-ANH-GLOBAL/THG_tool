@@ -6,19 +6,29 @@
       "id": "api-spec",
       "path": "specs/API_SPEC.md",
       "title": "API SPEC",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "frontend",
+      "type": "contract",
+      "status": "stale",
+      "maturity": "snapshot",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "no /api/v1 routes exist in internal/server or cmd",
+        "types derived from autoflow_platform.experimental.tsx mock (e.g. Lead.last='2g', agent='Agent_01')"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "frontend",
+        "api",
+        "contract",
+        "mock-derived",
+        "stale"
+      ],
+      "notes": "Reviewed in PR24F. Self-describes as derived from an experimental TSX mock. The documented base URL /api/v1 is NOT implemented in the current backend (no /api/v1 routes) and the mock-shaped types do not match the real API. Stale early contract; do not use as source of truth without rewrite."
     },
     {
       "id": "append-only-ledger-migration",
@@ -437,17 +447,27 @@
       "title": "FRONTEND CONTRACT",
       "domain": "frontend",
       "type": "contract",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "frontend/src/modules/autoflow/components/ui exists"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/ui"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "frontend",
+        "contract",
+        "components",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24F. Post-refactor component prop contracts for the autoflow UI primitives; the components/ui module exists, but the doc derives from the same experimental mock as api-spec and is not test-pinned or verified binding against current props. Kept draft as component-contract guidance."
     },
     {
       "id": "known-issues",
@@ -472,18 +492,29 @@
       "path": "specs/LEADSVIEW_DECOMPOSITION.md",
       "title": "LEADSVIEW DECOMPOSITION",
       "domain": "frontend",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "frontend/src/modules/autoflow/components/views/LeadsView.tsx still ~999 lines on scripts/file_size_allowlist.txt"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/views/LeadsView.tsx"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "frontend",
+        "refactor",
+        "decomposition",
+        "plan",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24F. Self-labelled 'PLAN (not yet implemented)' refactor-only split of the LeadsView god view, which is still ~999 lines and on the file-size allowlist. Future-facing -> draft. Tied to active lead-lifecycle-work-queue (PR-4 LifecycleTabs already extracted)."
     },
     {
       "id": "lead-lifecycle-work-queue",
@@ -795,19 +826,28 @@
       "id": "production-flow",
       "path": "specs/PRODUCTION_FLOW.md",
       "title": "PRODUCTION FLOW",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "stale",
+      "maturity": "snapshot",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "cites internal/ai/agent.go (function-calling agent) which moved to internal/drivers/copilot/agent.go",
+        "last refresh 2026-05-03 predates telegram bounded-context, copilot relocation, postgres dual-target"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "platform",
+        "production-flow",
+        "living-doc",
+        "stale"
+      ],
+      "notes": "Reviewed in PR24F. Living production-pipe reference last refreshed 2026-05-03. The north star and approval-required defaults are still accurate, but load-bearing references have drifted (e.g. internal/ai/agent.go moved to internal/drivers/copilot; telegram bounded-context + postgres dual-target shipped after this refresh). Stale until refreshed; active runtime-topology is the newer authoritative runtime doc."
     },
     {
       "id": "production-hardening-goals",
@@ -1058,18 +1098,34 @@
       "path": "specs/TELEGRAM_BOT_RUNTIME.md",
       "title": "TELEGRAM BOT RUNTIME",
       "domain": "copilot",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "bounded-context packages exist (store/telegram, telegram/control, server/telegram, telegram/client, telegram/render, server/integrations)",
+        "legacy internal/telegram/bot.go retired (absent)"
+      ],
+      "related_code": [
+        "internal/telegram/control",
+        "internal/server/telegram",
+        "internal/store/telegram",
+        "internal/telegram/client",
+        "internal/telegram/render"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "telegram",
+        "runtime",
+        "webhook",
+        "architecture"
+      ],
+      "notes": "Reviewed in PR24F. Bounded-context Telegram runtime is implemented: store -> control -> {integrations, server/telegram}; webhook runtime present; the legacy long-poll bot.go is deleted as the doc states. Active and implementation-backed."
     },
     {
       "id": "telegram-channel-destinations",
@@ -1094,18 +1150,32 @@
       "path": "specs/TELEGRAM_EVENT_WIRING.md",
       "title": "TELEGRAM EVENT WIRING",
       "domain": "copilot",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "OnLeadCreated/SetLeadNotifier hook in internal/leadingest/ingest.go",
+        "wired in cmd/worker/main.go + internal/server/agent + internal/server/router.go"
+      ],
+      "related_code": [
+        "internal/leadingest/ingest.go",
+        "internal/server/agent/outbox_agent.go",
+        "internal/server/router.go",
+        "cmd/worker/main.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "telegram",
+        "event-wiring",
+        "notifications"
+      ],
+      "notes": "Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go \u2014 minor path drift.) Active and implementation-backed."
     },
     {
       "id": "telegram-integration-ui",
