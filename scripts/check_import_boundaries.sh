@@ -94,14 +94,14 @@ scan_glob() {
 # (cmd/*) is intentionally NOT scanned — wiring services together at main is allowed.
 scan_each_service() {
   local rule="$1" svc_dir svc_name out
-  [ -d internal/services ] || return 0
+  [[ -d internal/services ]] || return 0
   for svc_dir in internal/services/*/; do
-    [ -d "$svc_dir" ] || continue
+    [[ -d "$svc_dir" ]] || continue
     svc_name="$(basename "$svc_dir")"
     out="$(grep -rnE "\"github\.com/thg/scraper/internal/services/" "$svc_dir" --include='*.go' 2>/dev/null \
       | grep -v '_test\.go:' \
       | grep -vE "\"github\.com/thg/scraper/internal/services/${svc_name}(\"|/)")"
-    [ -n "$out" ] && emit "$rule" <<< "$out"
+    [[ -n "$out" ]] && emit "$rule" <<< "$out"
   done
   return 0
 }
@@ -112,13 +112,13 @@ scan_each_service() {
 # adds direct DB access. Not a Go import path, so it does not use emit().
 scan_sidecar_db() {
   local rule="$1" phase out file line
-  [ -d services ] || return 0
+  [[ -d services ]] || return 0
   phase="$(next_phase "$rule")"
   out="$(grep -rniE 'DATABASE_URL|DB_PATH|POSTGRES_URL|POSTGRES_DSN|sqlite3|psycopg2?|asyncpg|sqlalchemy|gorm|database/sql' services 2>/dev/null \
     | grep -v '__pycache__' | grep -v '\.pyc:')"
-  [ -z "$out" ] && return 0
+  [[ -z "$out" ]] && return 0
   while IFS= read -r line; do
-    [ -z "$line" ] && continue
+    [[ -z "$line" ]] && continue
     file="${line%%:*}"
     printf 'WARN [%s] %s shows direct-DB coupling — sidecars must call a Go-owned port  -> fix in phase: %s\n' "$rule" "$file" "$phase"
     WARN=$((WARN + 1))
