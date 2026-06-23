@@ -61,73 +61,14 @@ func mustValidSoakSource(orgID int64, cfg json.RawMessage) *sources.Source {
 // Compliance leaks, hidden-state leaks, and replay-completeness
 // failures are blocking.
 func computeTrustVerdict(r *Report) TrustVerdict {
-	v := TrustVerdict{}
-
-	// --- Component 1: retrieval quality (40 pts) ---
-	// MeanPrecisionAtK is in [0, 1]. Map to [0, 40] linearly.
-	v.Score += int(r.Quality.MeanPrecisionAtK * 40)
-	if r.Quality.MeanPrecisionAtK < 0.30 {
-		v.WarningIssues = append(v.WarningIssues,
-			"Low mean Precision@K ("+formatPct(r.Quality.MeanPrecisionAtK)+") — review prompt fixtures or tune retrieval thresholds.")
-	}
-
-	// --- Component 2: fallback rate (20 pts) ---
-	// Healthy = low fallback. 0% fallback = 20 pts. 50% fallback = 0 pts.
-	// Beyond 50% we cap at 0 — system is essentially running on the
-	// secondary path; the primary isn't earning its keep.
-	fbScore := 20.0 - 40.0*r.FallbackBehaviour.FallbackRate
-	if fbScore < 0 {
-		fbScore = 0
-	}
-	v.Score += int(fbScore)
-	if r.FallbackBehaviour.FallbackRate > 0.25 {
-		v.WarningIssues = append(v.WarningIssues,
-			"Elevated fallback rate ("+formatPct(r.FallbackBehaviour.FallbackRate)+") — primary searcher unreliable.")
-	}
-
-	// --- Component 3: replay completeness (20 pts) ---
-	completenessScore := r.ReplayHealth.CompletenessRate * 20
-	v.Score += int(completenessScore)
-	if r.ReplayHealth.TracesProduced > 0 && r.ReplayHealth.CompletenessRate < 0.95 {
-		v.BlockingIssues = append(v.BlockingIssues,
-			"Replay traces incomplete ("+formatPct(r.ReplayHealth.CompletenessRate)+") — observability substrate broken.")
-	}
-
-	// --- Component 4: failure modes (10 pts) ---
-	if len(r.FailureModes) > 0 {
-		passed := 0
-		for _, fm := range r.FailureModes {
-			if fm.Verdict == "PASS" {
-				passed++
-			}
-		}
-		fmScore := float64(passed) / float64(len(r.FailureModes)) * 10
-		v.Score += int(fmScore)
-		failedScenarios := []string{}
-		for _, fm := range r.FailureModes {
-			if fm.Verdict != "PASS" {
-				failedScenarios = append(failedScenarios, fm.ID+": "+fm.Name)
-			}
-		}
-		if len(failedScenarios) > 0 {
-			v.BlockingIssues = append(v.BlockingIssues,
-				"Failure-mode scenarios failed: "+joinComma(failedScenarios))
-		}
-	}
-
-	// --- Component 5: zero compliance / hidden leaks (10 pts) ---
-	complianceLeaks := 0
-	hiddenLeaks := 0
-	for _, p := range r.PromptOutcomes {
-		complianceLeaks += len(p.ComplianceLeaks)
-		hiddenLeaks += len(p.HiddenLeaks)
-	}
-	if complianceLeaks == 0 && hiddenLeaks == 0 {
-		v.Score += 10
-	} else {
-		v.BlockingIssues = append(v.BlockingIssues,
-			"Compliance/hidden leaks detected — banned or hidden assets surfaced in retrieval results.")
-	}
+	// Each component contributes to the same accumulator in a fixed order;
+	// the per-component scoring rules live in trust_verdict.go.
+	v := &TrustVerdict{}
+	scoreRetrievalQuality(v, r)
+	scoreFallbackRate(v, r)
+	scoreReplayCompleteness(v, r)
+	scoreFailureModes(v, r)
+	scoreComplianceLeaks(v, r)
 
 	// --- Final verdict ---
 	switch {
@@ -148,7 +89,7 @@ func computeTrustVerdict(r *Report) TrustVerdict {
 	if v.Score < 0 {
 		v.Score = 0
 	}
-	return v
+	return *v
 }
 
 func formatPct(f float64) string {
