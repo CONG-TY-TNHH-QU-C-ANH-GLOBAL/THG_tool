@@ -1,10 +1,13 @@
-package main
+package facebook
 
 import (
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
 )
+
+// Moved verbatim from cmd/scraper/outbound_actions_test.go (Phase C/I) alongside the
+// target-URL resolution it pins; assertions are unchanged.
 
 func TestIsCommentableFacebookPostURL(t *testing.T) {
 	tests := []struct {
@@ -27,8 +30,8 @@ func TestIsCommentableFacebookPostURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isCommentableFacebookPostURL(tt.url); got != tt.want {
-				t.Fatalf("isCommentableFacebookPostURL(%q) = %v, want %v", tt.url, got, tt.want)
+			if got := IsCommentableFacebookPostURL(tt.url); got != tt.want {
+				t.Fatalf("IsCommentableFacebookPostURL(%q) = %v, want %v", tt.url, got, tt.want)
 			}
 		})
 	}
@@ -135,7 +138,7 @@ func TestResolveOutboundTargetURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotURL, gotReason := resolveOutboundTargetURL(tt.lead, tt.msgType)
+			gotURL, gotReason := ResolveOutboundTargetURL(tt.lead, tt.msgType)
 			if gotURL != tt.wantURL {
 				t.Errorf("url = %q, want %q", gotURL, tt.wantURL)
 			}
@@ -162,7 +165,7 @@ func TestCanonicalGroupPostURLFromFBIDs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := canonicalGroupPostURLFromFBIDs(tt.groupFBID, tt.postFBID); got != tt.want {
+			if got := CanonicalGroupPostURLFromFBIDs(tt.groupFBID, tt.postFBID); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})

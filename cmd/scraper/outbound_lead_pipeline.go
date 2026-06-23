@@ -8,6 +8,7 @@ import (
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/store"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
@@ -43,8 +44,7 @@ func (s *leadOutreachState) recordSkip(reason string, leadID int64) {
 	}
 }
 
-// leadOutreachContext is the resolved per-run config shared by the per-lead
-// pipeline (S107: avoids a flat many-arg helper signature) — no new behavior.
+// leadOutreachContext is the resolved per-run config for the per-lead pipeline (S107).
 type leadOutreachContext struct {
 	db               *store.Store
 	msgGen           *ai.MessageGenerator
@@ -106,7 +106,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 // for a hard store failure that aborts the run (original `return "", err`); soft
 // outcomes are recorded as skips.
 func (c *leadOutreachContext) processOutreachLead(ctx context.Context, lead models.Lead, st *leadOutreachState) error {
-	targetURL, skipReason := resolveOutboundTargetURL(lead, c.msgType)
+	targetURL, skipReason := facebook.ResolveOutboundTargetURL(lead, c.msgType)
 	if skipReason != "" {
 		st.recordSkip(skipReason, lead.ID)
 		return nil
