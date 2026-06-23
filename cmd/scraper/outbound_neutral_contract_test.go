@@ -20,7 +20,7 @@ func TestQueueLeadOutreach_RequiresOrgID(t *testing.T) {
 		{"org_id": int64(0)},  // zero
 		{"org_id": int64(-3)}, // negative
 	} {
-		_, err := queueLeadOutreach(ctx, nil, nil, "comment", args, nil)
+		_, _, err := queueLeadOutreach(ctx, nil, nil, "comment", args, nil)
 		if err == nil || err.Error() != "org_id is required for outbound automation" {
 			t.Errorf("args %v: got err=%v, want \"org_id is required for outbound automation\"", args, err)
 		}
