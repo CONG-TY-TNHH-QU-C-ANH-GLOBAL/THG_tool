@@ -20,7 +20,7 @@ interface Props {
 // Primary card: connected channel destinations. Shows title (+ @username for public, title only for
 // private), type, status, filter, subscribed-event count, last delivery + error, and admin actions.
 // NEVER renders chat_id.
-export function TelegramChannelDestinationsTable({ lang, destinations, isAdmin, availableEventTypes, availableFilters, onSave, onDisconnect, onReload }: Props) {
+export function TelegramChannelDestinationsTable({ lang, destinations, isAdmin, availableEventTypes, availableFilters, onSave, onDisconnect, onReload }: Readonly<Props>) {
   const { t } = strings(lang);
   const [editId, setEditId] = useState<number | null>(null);
 

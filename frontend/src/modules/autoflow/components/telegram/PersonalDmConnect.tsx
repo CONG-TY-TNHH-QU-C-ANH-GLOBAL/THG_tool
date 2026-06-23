@@ -6,7 +6,7 @@ import * as tg from '../../services/telegramIntegrationApi';
 
 // Optional, SECONDARY: lets a user link their personal Telegram DM (for personal notifications /
 // /status commands). Not required for channel delivery.
-export function PersonalDmConnect({ lang }: { lang: Lang }) {
+export function PersonalDmConnect({ lang }: Readonly<{ lang: Lang }>) {
   const { t } = strings(lang);
   const [code, setCode] = useState<tg.BindCodeResponse | null>(null);
   const [busy, setBusy] = useState(false);

@@ -5,7 +5,7 @@ import type { TelegramAuditEvent } from '../../services/telegramIntegrationApi';
 
 // Admin-only audit trail of control-plane events. Render-only. Non-admins never receive the data
 // (backend 403s) and the panel is not rendered for them by the page.
-export function TelegramAuditPanel({ lang, events, isAdmin }: { lang: Lang; events: TelegramAuditEvent[]; isAdmin: boolean }) {
+export function TelegramAuditPanel({ lang, events, isAdmin }: Readonly<{ lang: Lang; events: TelegramAuditEvent[]; isAdmin: boolean }>) {
   if (!isAdmin) return null;
   const { t } = strings(lang);
   return (

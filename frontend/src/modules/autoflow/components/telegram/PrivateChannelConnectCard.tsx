@@ -8,7 +8,7 @@ import * as tg from '../../services/telegramIntegrationApi';
 // Private-channel connect: generate a one-time code, the admin posts `/connect <code>` in the
 // channel; the bot captures it via channel_post. UI shows the code, a live countdown, and a
 // "check again" refetch (the page reloads destinations to detect the new channel).
-export function PrivateChannelConnectCard({ lang, onCheck }: { lang: Lang; onCheck: () => void }) {
+export function PrivateChannelConnectCard({ lang, onCheck }: Readonly<{ lang: Lang; onCheck: () => void }>) {
   const { t } = strings(lang);
   const [code, setCode] = useState<tg.ConnectCodeResponse | null>(null);
   const [expiresAt, setExpiresAt] = useState('');

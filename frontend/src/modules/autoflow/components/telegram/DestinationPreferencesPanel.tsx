@@ -12,7 +12,7 @@ interface Props {
 
 // Per-destination event subscriptions + channel filter + (future) delivery mode. Admin edits which
 // events this channel receives. Channel-neutral (filters come from the backend).
-export function DestinationPreferencesPanel({ lang, destination, availableFilters, onSave, onClose }: Props) {
+export function DestinationPreferencesPanel({ lang, destination, availableFilters, onSave, onClose }: Readonly<Props>) {
   const { t } = strings(lang);
   const [types, setTypes] = useState<string[]>(destination.event_types || []);
   const [filter, setFilter] = useState(destination.channel_filter || 'all');

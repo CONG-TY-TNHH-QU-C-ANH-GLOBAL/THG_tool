@@ -6,7 +6,7 @@ import type { TelegramStatus, TelegramDestination, TelegramBotStatus } from '../
 
 const TONE_COLOR: Record<Tone, string> = { ok: theme.green, warn: theme.yellow, off: theme.textFaint };
 
-function Pill({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+function Pill({ label, value, ok }: Readonly<{ label: string; value: string; ok: boolean }>) {
   const c = ok ? theme.green : theme.textFaint;
   return (
     <span style={{ fontSize: 11.5, color: theme.textMuted }}>
@@ -15,7 +15,7 @@ function Pill({ label, value, ok }: { label: string; value: string; ok: boolean 
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
+function Stat({ label, value, tone }: Readonly<{ label: string; value: React.ReactNode; tone?: string }>) {
   return (
     <div>
       <p style={{ color: theme.textFaint, fontSize: 11, margin: '0 0 3px' }}>{label}</p>

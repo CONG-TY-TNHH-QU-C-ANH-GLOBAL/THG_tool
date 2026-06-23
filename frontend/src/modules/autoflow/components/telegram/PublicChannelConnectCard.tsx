@@ -3,7 +3,7 @@ import { theme, inputStyle, primaryBtn, alpha } from '../../constants/styles';
 import { strings, type Lang } from './telegramCopy';
 import * as tg from '../../services/telegramIntegrationApi';
 
-function Step({ n, text }: { n: number; text: string }) {
+function Step({ n, text }: Readonly<{ n: number; text: string }>) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
       <span style={{ width: 18, height: 18, borderRadius: 99, background: alpha(theme.primary, 16), color: theme.primary, fontSize: 10, fontWeight: 700, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{n}</span>
@@ -14,7 +14,7 @@ function Step({ n, text }: { n: number; text: string }) {
 
 // Public-channel connect: instructions + @username field → backend sends a test message and stores
 // the chat id/title Telegram returns (never shown). Surfaces verifying / connected / error states.
-export function PublicChannelConnectCard({ lang, onConnected }: { lang: Lang; onConnected: () => void }) {
+export function PublicChannelConnectCard({ lang, onConnected }: Readonly<{ lang: Lang; onConnected: () => void }>) {
   const { t } = strings(lang);
   const [username, setUsername] = useState('');
   const [state, setState] = useState<'idle' | 'verifying' | 'connected'>('idle');

@@ -12,7 +12,7 @@ interface Props {
 
 // SECONDARY section: optional personal DM bindings (personal notifications / commands). Visually
 // quieter than the channels card. Shows last_command_at. Role/ownership-aware revoke.
-export function PersonalBindingsTable({ lang, bindings, isAdmin, currentUserId, onRevoke }: Props) {
+export function PersonalBindingsTable({ lang, bindings, isAdmin, currentUserId, onRevoke }: Readonly<Props>) {
   const { t } = strings(lang);
   const [busyId, setBusyId] = useState<number | null>(null);
   const revoke = async (id: number) => {
