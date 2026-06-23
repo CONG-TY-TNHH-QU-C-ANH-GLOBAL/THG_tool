@@ -6,9 +6,9 @@ import * as tg from '../../services/telegramIntegrationApi';
 
 // Sends a test notification to one destination and shows the delivered/failed result inline.
 // On failure the parent destination flips to needs_attention (server-side) and the table reloads.
-export function TestNotificationButton({ lang, destinationId, onResult }: {
+export function TestNotificationButton({ lang, destinationId, onResult }: Readonly<{
   lang: Lang; destinationId: number; onResult?: () => void;
-}) {
+}>) {
   const { t } = strings(lang);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);

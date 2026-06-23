@@ -7,9 +7,9 @@ import { PublicChannelConnectCard } from './PublicChannelConnectCard';
 
 type Mode = 'choose' | 'public';
 
-function TypeCard({ icon, label, sub, disabled, onClick }: {
+function TypeCard({ icon, label, sub, disabled, onClick }: Readonly<{
   icon: React.ReactNode; label: string; sub?: string; disabled?: boolean; onClick?: () => void;
-}) {
+}>) {
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
       display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -27,7 +27,7 @@ function TypeCard({ icon, label, sub, disabled, onClick }: {
 
 // Guided "Connect a Telegram channel" wizard. Public (@username) works with the org bot now.
 // Private (/connect code) requires the per-workspace webhook, which is PENDING — shown disabled.
-export function TelegramChannelSetupWizard({ lang, onConnected }: { lang: Lang; onConnected: () => void }) {
+export function TelegramChannelSetupWizard({ lang, onConnected }: Readonly<{ lang: Lang; onConnected: () => void }>) {
   const { t } = strings(lang);
   const [mode, setMode] = useState<Mode>('choose');
 

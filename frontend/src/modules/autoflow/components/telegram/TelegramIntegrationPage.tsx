@@ -21,7 +21,7 @@ import { TelegramEmptyState } from './TelegramEmptyState';
 
 // Settings → Integrations → Telegram (channel-first). Step 1 = connect the workspace's OWN bot;
 // channel connect is gated until the org bot is configured. DM bindings are secondary.
-export default function TelegramIntegrationPage({ isAdmin }: { orgId: string; isAdmin: boolean }) {
+export default function TelegramIntegrationPage({ isAdmin }: Readonly<{ orgId: string; isAdmin: boolean }>) {
   const { lang } = useLang();
   const { t } = strings(lang);
   const currentUserId = useAuthStore((s) => s.user?.id ?? 0);

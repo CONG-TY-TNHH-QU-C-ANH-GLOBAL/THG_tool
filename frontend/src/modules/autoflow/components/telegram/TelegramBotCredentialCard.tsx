@@ -12,7 +12,7 @@ interface Props {
 
 // Step 1: connect the workspace's OWN Telegram bot. The token is entered once and NEVER shown
 // again (only @username + last4 + status). Channel connect/delivery uses this org-scoped bot.
-export function TelegramBotCredentialCard({ lang, bot, isAdmin, onSave, onRemove }: Props) {
+export function TelegramBotCredentialCard({ lang, bot, isAdmin, onSave, onRemove }: Readonly<Props>) {
   const { t } = strings(lang);
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
