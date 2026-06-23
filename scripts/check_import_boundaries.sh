@@ -24,7 +24,7 @@ cd "$ROOT" || exit 0
 RULE_NAMES="AI_PURE AI_NO_EXECUTION AI_STORE_COUPLED COPILOT_NO_DIRECT_REPO \
 OUTBOUND_NO_FACEBOOK OUTBOUND_NO_COPILOT OUTBOUND_APP_FACEBOOK PLATFORM_NO_SERVICES \
 SERVICES_NO_SIBLINGS SERVICES_FB_NO_COPILOT STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC \
-NO_CONTRACTS_GODPKG"
+NO_CONTRACTS_GODPKG SERVICE_NO_SIBLING WORKER_NO_TRANSPORT SIDECAR_NO_DIRECT_DB"
 RULES=$(echo "$RULE_NAMES" | wc -w | tr -d ' ')
 WARN=0
 KNOWN=0
@@ -43,6 +43,9 @@ next_phase() {
     STORE_NO_SERVER)                echo "invariant (must stay clean)";;
     NOTIFICATIONS_NO_FB_LOGIC)      echo "E (subscribe to outbox events)";;
     NO_CONTRACTS_GODPKG)            echo "design rule (never create it)";;
+    SERVICE_NO_SIBLING)             echo "5/post-E (verticals share primitives via ports, never each other)";;
+    WORKER_NO_TRANSPORT)            echo "invariant (worker depends on app/domain, not transport)";;
+    SIDECAR_NO_DIRECT_DB)           echo "5 (sidecars call a Go-owned versioned port, never the DB)";;
     *)                              echo "?";;
   esac
 }
@@ -82,6 +85,44 @@ scan_glob() {
   out="$(grep -nE "\"github\.com/thg/scraper/internal/(${forbidden})" "$@" 2>/dev/null \
     | grep -v '_test\.go:')"
   [ -n "$out" ] && emit "$rule" <<< "$out"
+  return 0
+}
+
+# scan_each_service RULE  — generic sibling-import guard for internal/services/<svc>.
+# Any service package importing ANOTHER internal/services/* sibling warns (self-imports
+# excluded). Preventive: finds nothing until verticals are extracted. Composition root
+# (cmd/*) is intentionally NOT scanned — wiring services together at main is allowed.
+scan_each_service() {
+  local rule="$1" svc_dir svc_name out
+  [[ -d internal/services ]] || return 0
+  for svc_dir in internal/services/*/; do
+    [[ -d "$svc_dir" ]] || continue
+    svc_name="$(basename "$svc_dir")"
+    out="$(grep -rnE "\"github\.com/thg/scraper/internal/services/" "$svc_dir" --include='*.go' 2>/dev/null \
+      | grep -v '_test\.go:' \
+      | grep -vE "\"github\.com/thg/scraper/internal/services/${svc_name}(\"|/)")"
+    [[ -n "$out" ]] && emit "$rule" <<< "$out"
+  done
+  return 0
+}
+
+# scan_sidecar_db RULE  — preventive guard: top-level services/* sidecars (Python, etc.)
+# must reach data through a Go-owned versioned port, NEVER the multi-tenant DB directly.
+# Matches DB-coupling tokens in sidecar source; warn-only. Finds nothing until a sidecar
+# adds direct DB access. Not a Go import path, so it does not use emit().
+scan_sidecar_db() {
+  local rule="$1" phase out file line
+  [[ -d services ]] || return 0
+  phase="$(next_phase "$rule")"
+  out="$(grep -rniE 'DATABASE_URL|DB_PATH|POSTGRES_URL|POSTGRES_DSN|sqlite3|psycopg2?|asyncpg|sqlalchemy|gorm|database/sql' services 2>/dev/null \
+    | grep -v '__pycache__' | grep -v '\.pyc:')"
+  [[ -z "$out" ]] && return 0
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    file="${line%%:*}"
+    printf 'WARN [%s] %s shows direct-DB coupling — sidecars must call a Go-owned port  -> fix in phase: %s\n' "$rule" "$file" "$phase"
+    WARN=$((WARN + 1))
+  done <<< "$out"
   return 0
 }
 
@@ -133,6 +174,17 @@ if [ -d internal/contracts ]; then
   printf 'WARN [NO_CONTRACTS_GODPKG] internal/contracts exists — interfaces belong with their consumer (PORTS_AND_ADAPTERS.md)  -> fix in phase: design rule\n'
   WARN=$((WARN + 1))
 fi
+
+# 11. SERVICE_NO_SIBLING — no service vertical imports another (generic; preventive).
+#     Broader than SERVICES_NO_SIBLINGS (rule 7, facebook-specific): covers every
+#     internal/services/<svc> in both directions as verticals are added.
+scan_each_service SERVICE_NO_SIBLING
+
+# 12. WORKER_NO_TRANSPORT — the crawler/worker role must not import HTTP/server transport.
+scan_dir WORKER_NO_TRANSPORT 'server($|/)|drivers/http|drivers/telegram|drivers/connector' cmd/worker
+
+# 13. SIDECAR_NO_DIRECT_DB — top-level services/* sidecars must not touch the DB directly.
+scan_sidecar_db SIDECAR_NO_DIRECT_DB
 
 echo "== summary =="
 echo "rules checked:        ${RULES}"
