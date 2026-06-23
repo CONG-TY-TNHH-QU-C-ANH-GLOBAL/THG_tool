@@ -158,7 +158,7 @@ export default function ContributionLeaderboardView() {
         </div>
       )}
 
-      {!loading && data && data.champion && (
+      {!loading && data?.champion && (
         <Row style={{ gap: 6, justifyContent: 'center' }}>
           <Badge label={`Champion: ${data.champion}`} />
         </Row>
