@@ -684,35 +684,61 @@
       "title": "OMNICHANNEL SALES COPILOT TELEGRAM TRACK",
       "domain": "copilot",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "PR-1/PR-3 comment-quality shipped (SanitizeComment in internal/ai/comment/quality.go)",
+        "telegram interface backed by active telegram-bot-runtime + control packages"
+      ],
+      "related_code": [
+        "internal/ai/comment/quality.go",
+        "internal/telegram/control"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "telegram",
+        "omnichannel",
+        "roadmap",
+        "track"
+      ],
+      "notes": "Reviewed in PR24G. Active founder-directed track; comment-quality prerequisites PR-1/PR-3 shipped (SanitizeComment moved to internal/ai/comment/quality.go since the doc cited internal/ai) and the Telegram peer-interface builds on the shipped telegram control/runtime. Roadmap doc, partial implementation -> active/reviewed."
     },
     {
       "id": "open-prompt-agent-design",
       "path": "specs/OPEN_PROMPT_AGENT_DESIGN.md",
       "title": "OPEN PROMPT AGENT DESIGN",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "Agent.ProcessPromptForOrg in internal/drivers/copilot/agent.go",
+        "open-prompt handler internal/server/agent/ai_prompt.go",
+        "realized routing covered by active copilot-intent-routing-architecture"
+      ],
+      "related_code": [
+        "internal/drivers/copilot/agent.go",
+        "internal/server/agent/ai_prompt.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "open-prompt",
+        "agent",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24G. Self-labelled 'DRAFT - awaiting user approval' Phase 6 design proposal (2026-05-04). The open-prompt agent is partly realized (Agent.ProcessPromptForOrg, /api/agent prompt handler exist) and the deterministic routing it envisioned is now the active copilot-intent-routing-architecture, but this doc remains a forward proposal -> draft."
     },
     {
       "id": "organic-sales-network",
@@ -1132,18 +1158,35 @@
       "path": "specs/TELEGRAM_CHANNEL_DESTINATIONS.md",
       "title": "TELEGRAM CHANNEL DESTINATIONS",
       "domain": "copilot",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
-      "related_tests": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "internal/store/telegram/destinations.go + migration 0015_telegram_destinations",
+        "control.NotifyEvent in internal/telegram/control/notify_event.go",
+        "destinations_test.go present"
+      ],
+      "related_code": [
+        "internal/store/telegram/destinations.go",
+        "internal/telegram/control/notify_event.go",
+        "internal/store/migrations/0015_telegram_destinations__sqlite.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/telegram/destinations_test.go",
+        "internal/telegram/control/destinations_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "telegram",
+        "destinations",
+        "notifications"
+      ],
+      "notes": "Reviewed in PR24G. Channel-first destinations backend shipped: telegram_destinations (migration 0015), store CRUD, and control.NotifyEvent resolve/filter/deliver path all exist with tests. Active/implementation-backed; builds on active telegram-bot-runtime."
     },
     {
       "id": "telegram-event-wiring",
@@ -1182,54 +1225,97 @@
       "path": "specs/TELEGRAM_INTEGRATION_UI.md",
       "title": "TELEGRAM INTEGRATION UI",
       "domain": "copilot",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "migration 0013_telegram_integration + internal/store/telegram (settings/bindings/audit)",
+        "control-plane endpoints in internal/server/integrations/routes.go",
+        "telegram flags in internal/config/config.go"
+      ],
+      "related_code": [
+        "internal/store/telegram/settings.go",
+        "internal/server/integrations/routes.go",
+        "internal/config/config.go",
+        "internal/store/migrations/0013_telegram_integration__sqlite.up.sql"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "telegram",
+        "integration",
+        "control-plane"
+      ],
+      "notes": "Reviewed in PR24G. PR-1 BACKEND (telegram_settings/bind_codes/bindings/alert_prefs/audit via migration 0013, tenant-scoped /api/settings/integrations/telegram handlers, default-safe flags) is shipped. The PR-2 Next.js UI is future. Active/implementation-backed for the backend contract."
     },
     {
       "id": "telegram-per-org-bot",
       "path": "specs/TELEGRAM_PER_ORG_BOT.md",
       "title": "TELEGRAM PER ORG BOT",
       "domain": "copilot",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
-      "related_tests": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "internal/store/telegram/bot_credentials.go + migration 0016_telegram_bot_credentials",
+        "control resolveBot/GetDecryptedBotToken path",
+        "bot_credentials_test.go present"
+      ],
+      "related_code": [
+        "internal/store/telegram/bot_credentials.go",
+        "internal/store/migrations/0016_telegram_bot_credentials__sqlite.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/telegram/bot_credentials_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "telegram",
+        "per-org-bot",
+        "secrets",
+        "multi-tenant"
+      ],
+      "notes": "Reviewed in PR24G. Per-org encrypted bot credentials backend shipped: telegram_bot_credentials (migration 0016, doc said 0015 - actual is 0016), AES-GCM encrypt, GetDecryptedBotToken internal-only, per-org resolveBot for connect/delivery. Active/implementation-backed."
     },
     {
       "id": "template-telegram-copilot-plan",
       "path": "specs/TEMPLATE_TELEGRAM_COPILOT_PLAN.md",
       "title": "TEMPLATE TELEGRAM COPILOT PLAN",
-      "domain": "copilot",
-      "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "core verified-state-centric invariants now codified in active runtime-topology + v2-outbound-refactor-design + append-only-ledger-migration",
+        "ledger internal/store/coordination/action_ledger.go exists"
+      ],
+      "related_code": [
+        "internal/store/coordination/action_ledger.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "platform",
+        "architecture",
+        "verified-state-centric",
+        "umbrella",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24G. Broad v2.5 umbrella architecture plan (Outbound Invariant -> Engagement Ledger -> Templates -> Telegram -> Copilot). Its core verified-state-centric / append-only invariants have since been decomposed into and shipped via the now-authoritative active specs (runtime-topology, v2-outbound-refactor-design, append-only-ledger-migration); the Templates/Copilot portions remain forward-looking. Kept draft as ancestor architecture reference, not active, to avoid duplicating the authoritative specs."
     },
     {
       "id": "v2-outbound-refactor-design",
