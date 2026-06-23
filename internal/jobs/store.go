@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	// Pure-Go SQLite driver; registers itself with database/sql via its init().
 	_ "modernc.org/sqlite"
 )
 

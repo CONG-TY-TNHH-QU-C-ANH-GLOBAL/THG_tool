@@ -24,6 +24,7 @@ import (
 	"github.com/thg/scraper/internal/store/telegram"
 	"github.com/thg/scraper/internal/store/threads"
 
+	// Pure-Go SQLite driver; registers itself with database/sql via its init().
 	_ "modernc.org/sqlite"
 )
 

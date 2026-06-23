@@ -254,7 +254,7 @@ func (h *handler) seedService(c *fiber.Ctx) error {
 			States:   []assets.AssetState{assets.StatePending},
 		})
 		for _, a := range pending {
-			if serr := h.deps.DB.Knowledge().SetAssetState(c.Context(), a.ID, orgID, assets.StateApproved); serr == nil {
+			if h.deps.DB.Knowledge().SetAssetState(c.Context(), a.ID, orgID, assets.StateApproved) == nil {
 				approved++
 			}
 		}

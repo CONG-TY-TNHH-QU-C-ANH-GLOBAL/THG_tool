@@ -171,7 +171,7 @@ func TestRegistry_DuplicateRegistrationPanics(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(&stubIngestor{typ: sources.SourceCSV})
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Error("duplicate Register should panic")
 		}
 	}()

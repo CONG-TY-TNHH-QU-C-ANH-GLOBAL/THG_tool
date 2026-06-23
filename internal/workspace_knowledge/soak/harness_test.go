@@ -26,7 +26,7 @@ import (
 //     in production by swapping ClusteredEmbedder → OpenAIEmbedder
 //     and pointing at a real PG.
 //
-// The test ALWAYS writes the report to specs/RETRIEVAL_SOAK_REPORT.md
+// The test ALWAYS writes the report to specs/knowledge/RETRIEVAL_SOAK_REPORT.md
 // so the latest run's results are committable artefact. CI can diff
 // this file across PRs to spot quality regressions before merge.
 func TestSoak_RealisticCatalog_RRF(t *testing.T) {
@@ -159,9 +159,9 @@ func writeSoakArtefact(r *Report) error {
 	// Best-guess specs dir relative to this package's runtime location.
 	// We're in internal/workspace_knowledge/soak; specs/ is 3 levels up.
 	candidates := []string{
-		"../../../specs/RETRIEVAL_SOAK_REPORT.md",
-		"../../specs/RETRIEVAL_SOAK_REPORT.md",
-		"specs/RETRIEVAL_SOAK_REPORT.md",
+		"../../../specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
+		"../../specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
+		"specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
 	}
 	body := []byte(r.ToMarkdown())
 	for _, p := range candidates {
