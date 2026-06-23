@@ -11,10 +11,10 @@ const DefaultFallback = () => (
 export function ServiceBoundary({
   children,
   fallback,
-}: {
+}: Readonly<{
   children: ReactNode;
   fallback?: ReactNode;
-}) {
+}>) {
   return (
     <PlatformErrorBoundary>
       <Suspense fallback={fallback ?? <DefaultFallback />}>{children}</Suspense>

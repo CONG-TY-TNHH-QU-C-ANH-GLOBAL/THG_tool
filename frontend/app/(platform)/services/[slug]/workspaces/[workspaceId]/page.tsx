@@ -21,7 +21,7 @@ const TONE_COLORS: Record<PresentationTone, string> = {
   neutral: 'var(--text-faint)',
 };
 
-function NonReadyCard({ svc, lang, onAction }: { svc: PlatformService; lang: 'vi' | 'en'; onAction: (href: string) => void }) {
+function NonReadyCard({ svc, lang, onAction }: Readonly<{ svc: PlatformService; lang: 'vi' | 'en'; onAction: (href: string) => void }>) {
   const ux = resolveWorkspacePresentation(svc, lang);
   return (
     <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 24 }}>
