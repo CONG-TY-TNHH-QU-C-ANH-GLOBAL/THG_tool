@@ -14,6 +14,24 @@ memory — they must stay trustworthy, not rot into stale Markdown.
   how much do we trust them" — the registry lists the specs, so this README does
   not duplicate that list.
 
+## Folder layout
+
+Specs are organized **by domain/module**, like code — each domain owns its
+specs under `specs/<domain>/` (e.g. `specs/telegram/`, `specs/facebook/`,
+`specs/knowledge/`). Only the governance files live at the root:
+
+```
+specs/README.md
+specs/SPEC_GOVERNANCE.md
+specs/SPEC_REGISTRY.json
+specs/<domain>/<SPEC>.md
+```
+
+Folders are **domain-first, never status-first** — do not create `active/`,
+`draft/`, `stale/`, or `archived/` folders. A spec's status lives in
+`SPEC_REGISTRY.json` (it changes over time); its domain folder is stable.
+The registry remains the single source of truth for what specs exist.
+
 ## Status meanings (summary)
 
 | status | meaning |
@@ -26,15 +44,13 @@ memory — they must stay trustworthy, not rot into stale Markdown.
 | `superseded` | replaced by another spec (`superseded_by`) |
 | `archived` | historical/report-only |
 
-Most existing specs are currently `unreviewed`; they will be classified in small
-batches by later PRs (PR24B+).
-
 ## Adding a new spec
 
-1. Add the Markdown file under `specs/`.
+1. Add the Markdown file under the correct domain folder, `specs/<domain>/`.
 2. Add a matching entry to `SPEC_REGISTRY.json` (all required fields — see
-   `SPEC_GOVERNANCE.md` §5). New documents default to `status: "unreviewed"`,
-   `maturity: "unknown"`.
+   `SPEC_GOVERNANCE.md` §5), with `path` set to `specs/<domain>/<file>.md` and a
+   `domain` that matches the folder. New documents default to
+   `status: "unreviewed"`, `maturity: "unknown"`.
 3. Run the checker (below) and commit both files together.
 
 ## Updating an existing spec
@@ -50,5 +66,6 @@ python scripts/check_spec_registry.py
 ```
 
 It validates that the registry parses, every entry is well-formed, enum values
-are valid, all registered paths exist, and every `specs/*.md` file is registered
-(except `README.md` and `SPEC_GOVERNANCE.md`). Exit code is non-zero on failure.
+are valid, all registered paths exist, and every `specs/**/*.md` file (scanned
+recursively across domain folders) is registered, except the root `README.md`
+and `SPEC_GOVERNANCE.md`. Exit code is non-zero on failure.

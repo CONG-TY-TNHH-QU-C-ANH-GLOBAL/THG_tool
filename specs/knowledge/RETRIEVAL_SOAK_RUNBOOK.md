@@ -8,7 +8,7 @@ and interpreting the result.
 enough to build orchestration on top? READY = yes. DEGRADED = with
 caveats. NOT_READY = block.
 
-**Output:** the soak emits a [Report](../internal/workspace_knowledge/soak/report.go)
+**Output:** the soak emits a [Report](../../internal/workspace_knowledge/soak/report.go)
 with seven measurement groups, an operator-trust score, and the
 auto-generated [RETRIEVAL_SOAK_REPORT.md](./RETRIEVAL_SOAK_REPORT.md)
 committed alongside this runbook. Re-run on every release.

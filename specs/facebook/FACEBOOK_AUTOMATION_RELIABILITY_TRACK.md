@@ -25,7 +25,7 @@ choosing an account) → backend fell back to `pickReadyFacebookAccountIDForCraw
 (allowing account-less missions + silent fallback), not a dispatch race. The
 earlier "missing account_id filter on the command claim" diagnosis was WRONG —
 `enqueueConnectorCrawlCommand` already targets a specific per-account `agent_id`
-([crawl_runtime.go:290](../cmd/scraper/crawl_runtime.go#L290)); `agent_id` is the
+([crawl_runtime.go:290](../../cmd/scraper/crawl_runtime.go#L290)); `agent_id` is the
 partition key.
 
 ---

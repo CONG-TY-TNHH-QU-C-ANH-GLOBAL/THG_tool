@@ -1,6 +1,6 @@
 # THG Runtime Topology
 
-**Status**: living doc — describes runtime composition of the system as it actually runs in production. Pairs with the spatial decomposition in [internal/store/DOMAINS.md](../internal/store/DOMAINS.md) and the migration history in [STORE_SUBPACKAGE_REFACTOR.md](STORE_SUBPACKAGE_REFACTOR.md).
+**Status**: living doc — describes runtime composition of the system as it actually runs in production. Pairs with the spatial decomposition in [internal/store/DOMAINS.md](../../internal/store/DOMAINS.md) and the migration history in [STORE_SUBPACKAGE_REFACTOR.md](../store/STORE_SUBPACKAGE_REFACTOR.md).
 
 **Last verified**: 2026-05-22 (post-Phase 8b — store subpackage wave complete).
 
@@ -27,7 +27,7 @@ This doc describes the **runtime topology** of THG: which layers own which truth
 
 ## 1. Layer map
 
-Same packages as [DOMAINS.md §1](../internal/store/DOMAINS.md#1-quick-navigation), grouped by runtime role. Arrows = "reads from / depends on". Lower layers must not import upper layers (L1 invariant; enforced by `scripts/check_topology.sh` §6.1).
+Same packages as [DOMAINS.md §1](../../internal/store/DOMAINS.md#1-quick-navigation), grouped by runtime role. Arrows = "reads from / depends on". Lower layers must not import upper layers (L1 invariant; enforced by `scripts/check_topology.sh` §6.1).
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -269,7 +269,7 @@ Add as the topology stabilises. Each new flow that doesn't map onto an existing 
 
 ## 3. Truth ownership
 
-Authoritative table lives in [DOMAINS.md §2.4](../internal/store/DOMAINS.md#24-truth-ownership-matrix-locked-2026-05-21). That table is the SOURCE; this section is the POINTER plus completions discovered during Phase 5B–8b extractions.
+Authoritative table lives in [DOMAINS.md §2.4](../../internal/store/DOMAINS.md#24-truth-ownership-matrix-locked-2026-05-21). That table is the SOURCE; this section is the POINTER plus completions discovered during Phase 5B–8b extractions.
 
 ### Completions noticed during the wave
 
@@ -309,7 +309,7 @@ The system depends on certain tables being append-only so projections can re-der
 |-------|-----------------|---------------------|
 | `action_ledger` | coordination only, INSERT-only | 3 UPDATE statements: `MarkActionLedgerOutcome`, `MarkActionLedgerOutcomeByOutbound`, `ReconcileEngagement`. The first two are part of the queue→execute lifecycle (outcome flips from 'queued' to 'succeeded'/'failed' on finalize). The third is reconciliation — explicitly should emit `engagement_revoked` events instead. |
 
-**Why we ship the wave with these violations carried forward**: Phase 5B mandate from the user was "preserve byte-for-byte". Fixing the append-only invariant is a semantic change (flip from row-mutation to event-emission). The migration design landed as [specs/APPEND_ONLY_LEDGER_MIGRATION.md](APPEND_ONLY_LEDGER_MIGRATION.md) — 3-PR staged plan (additive schema → reader migration → writer cutover). Implementation is queued; the design itself unblocks Stage 3 §5 because the path forward is documented + reviewable.
+**Why we ship the wave with these violations carried forward**: Phase 5B mandate from the user was "preserve byte-for-byte". Fixing the append-only invariant is a semantic change (flip from row-mutation to event-emission). The migration design landed as [specs/APPEND_ONLY_LEDGER_MIGRATION.md](../store/APPEND_ONLY_LEDGER_MIGRATION.md) — 3-PR staged plan (additive schema → reader migration → writer cutover). Implementation is queued; the design itself unblocks Stage 3 §5 because the path forward is documented + reviewable.
 
 **Detection**: §6.4 grep gate tracks `UPDATE action_ledger | DELETE FROM action_ledger` count against a baseline of 3. Any new violation fails CI; lowering the count requires manually dropping the baseline.
 
@@ -390,4 +390,4 @@ Stage 4 will be earned, not designed in advance.
 - **Onboarding a new engineer**: read §1 (5 min) + §2 flow 2.2 (10 min) to understand the load-bearing path. Everything else is reference.
 - **Reviewing a PR that touches multiple domains**: run `scripts/check_topology.sh` locally; surface §6 results in the PR description.
 
-Pointer hubs: [DOMAINS.md](../internal/store/DOMAINS.md), [STORE_SUBPACKAGE_REFACTOR.md](STORE_SUBPACKAGE_REFACTOR.md), [project_runtime_control_plane](../) memory.
+Pointer hubs: [DOMAINS.md](../../internal/store/DOMAINS.md), [STORE_SUBPACKAGE_REFACTOR.md](../store/STORE_SUBPACKAGE_REFACTOR.md), [project_runtime_control_plane](../) memory.

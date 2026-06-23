@@ -22,8 +22,8 @@ This file lists each open item with: **state today → why it matters → option
 
 | Package | Owns | Imports |
 |---|---|---|
-| [internal/auth/](../internal/auth/) | JWT sign/validate, AES-256-GCM encrypt, bcrypt password hashing, refresh token issuance, `RequireAuth` Fiber middleware | stdlib + jwt + bcrypt only |
-| [internal/server/auth/](../internal/server/auth/) | HTTP routes: login, signup, refresh, logout, Google SSO, invite accept, password reset | internal/auth (aliased `authpkg`), internal/mailer, internal/store |
+| [internal/auth/](../../internal/auth/) | JWT sign/validate, AES-256-GCM encrypt, bcrypt password hashing, refresh token issuance, `RequireAuth` Fiber middleware | stdlib + jwt + bcrypt only |
+| [internal/server/auth/](../../internal/server/auth/) | HTTP routes: login, signup, refresh, logout, Google SSO, invite accept, password reset | internal/auth (aliased `authpkg`), internal/mailer, internal/store |
 
 The two packages share the literal name `auth`. Callers that need both today write:
 
@@ -34,7 +34,7 @@ import (
 )
 ```
 
-Workaround docstrings landed in [internal/auth/doc.go](../internal/auth/doc.go) and [internal/server/auth/doc.go](../internal/server/auth/doc.go) on 2026-05-07.
+Workaround docstrings landed in [internal/auth/doc.go](../../internal/auth/doc.go) and [internal/server/auth/doc.go](../../internal/server/auth/doc.go) on 2026-05-07.
 
 ### Why it matters
 
@@ -78,9 +78,9 @@ Pick whichever comes first:
 2. Search-replace `"github.com/thg/scraper/internal/auth"` → `"github.com/thg/scraper/internal/security"` in all .go files.
 3. Search-replace `authpkg` alias → `security` (or leave the alias, the rename is the point).
 4. Update `internal/server/auth/routes.go` import.
-5. Update [AGENTS.md](../AGENTS.md), [CLAUDE.md](../CLAUDE.md), [specs/PRODUCTION_FLOW.md](PRODUCTION_FLOW.md) references.
+5. Update [AGENTS.md](../../AGENTS.md), [CLAUDE.md](../../CLAUDE.md), [specs/PRODUCTION_FLOW.md](PRODUCTION_FLOW.md) references.
 6. `go build ./... && go vet ./... && go test ./...`
-7. Update [internal/auth/doc.go](../internal/auth/doc.go) → `internal/security/doc.go` content reflects new name.
+7. Update [internal/auth/doc.go](../../internal/auth/doc.go) → `internal/security/doc.go` content reflects new name.
 
 ### Rollback
 
@@ -102,8 +102,8 @@ There are **two crawl execution paths** in the codebase:
 
 | Path | Files | Trigger | Status |
 |---|---|---|---|
-| **A — Chrome Extension** (production) | [internal/server/agent/crawl.go](../internal/server/agent/crawl.go), [local-connector-extension/](../local-connector-extension/) | `cmd/scraper/crawl_runtime.go:submitConnectorCrawl` routes here when a connector is online | Live, used today |
-| **B — Worker CDP** (legacy fallback) | [cmd/worker/main.go](../cmd/worker/main.go), [internal/jobhandlers/facebook_crawl/handler.go](../internal/jobhandlers/facebook_crawl/handler.go), [internal/runtime/cdp_runtime.go](../internal/runtime/cdp_runtime.go), [internal/runtime/mock.go](../internal/runtime/mock.go) | `submitConnectorCrawl` falls back to `jobStore.Submit` when no extension is online; cmd/worker polls and dispatches | Wired, but CDPRuntime is "stateless single-batch mode" — not production-grade scrape |
+| **A — Chrome Extension** (production) | [internal/server/agent/crawl.go](../../internal/server/agent/crawl.go), [local-connector-extension/](../../local-connector-extension/) | `cmd/scraper/crawl_runtime.go:submitConnectorCrawl` routes here when a connector is online | Live, used today |
+| **B — Worker CDP** (legacy fallback) | [cmd/worker/main.go](../../cmd/worker/main.go), [internal/jobhandlers/facebook_crawl/handler.go](../../internal/jobhandlers/facebook_crawl/handler.go), [internal/runtime/cdp_runtime.go](../../internal/runtime/cdp_runtime.go), [internal/runtime/mock.go](../../internal/runtime/mock.go) | `submitConnectorCrawl` falls back to `jobStore.Submit` when no extension is online; cmd/worker polls and dispatches | Wired, but CDPRuntime is "stateless single-batch mode" — not production-grade scrape |
 
 Both paths converge on `leadingest.IngestPost` (post-crawl classify+persist consolidated 2026-05-04).
 
@@ -118,8 +118,8 @@ Both paths converge on `leadingest.IngestPost` (post-crawl classify+persist cons
 ### Options
 
 **A. (recommended once Chrome Extension proven stable) Drop path B entirely**
-- Delete: [cmd/worker/](../cmd/worker/), [internal/jobhandlers/facebook_crawl/](../internal/jobhandlers/facebook_crawl/), [internal/runtime/cdp_runtime.go](../internal/runtime/cdp_runtime.go), [internal/runtime/mock.go](../internal/runtime/mock.go), [internal/runtime/runtime.go](../internal/runtime/runtime.go) (Runtime interface), [internal/runtime/budget.go](../internal/runtime/budget.go) (only used by handler), [internal/runtime/factory.go](../internal/runtime/factory.go).
-- Modify: [cmd/scraper/crawl_runtime.go](../cmd/scraper/crawl_runtime.go) — when no connector online, return clear error `"Chrome Extension not online; pair extension and retry"` instead of falling through to `jobStore.Submit`.
+- Delete: [cmd/worker/](../../cmd/worker/), [internal/jobhandlers/facebook_crawl/](../../internal/jobhandlers/facebook_crawl/), [internal/runtime/cdp_runtime.go](../../internal/runtime/cdp_runtime.go), [internal/runtime/mock.go](../../internal/runtime/mock.go), [internal/runtime/runtime.go](../../internal/runtime/runtime.go) (Runtime interface), [internal/runtime/budget.go](../../internal/runtime/budget.go) (only used by handler), [internal/runtime/factory.go](../../internal/runtime/factory.go).
+- Modify: [cmd/scraper/crawl_runtime.go](../../cmd/scraper/crawl_runtime.go) — when no connector online, return clear error `"Chrome Extension not online; pair extension and retry"` instead of falling through to `jobStore.Submit`.
 - Verify before delete: confirm `internal/livesession/` has no callers outside path B. If yes, also delete it.
 - Verify: `internal/jobs/` is still needed for recurring scheduler (`rememberRecurringCrawlIntents`) and skill_executions audit — keep it.
 - Risk if Chrome Extension fails: no server-side fallback. Crawl returns explicit error to user, who pairs extension and retries. Acceptable trade-off because:
@@ -162,11 +162,11 @@ Why two-step: deleting working fallback code should be irreversible only when yo
 1. Verify zero traffic to path B for 14 days (check `scheduler_jobs` table — no rows with `intent='facebook_crawl'` claimed by worker in that window).
 2. `git rm -r cmd/worker internal/jobhandlers/facebook_crawl`
 3. `git rm internal/runtime/cdp_runtime.go internal/runtime/mock.go internal/runtime/factory.go internal/runtime/budget.go`
-4. Inspect [internal/runtime/runtime.go](../internal/runtime/runtime.go) — if Runtime interface only used by deleted files, delete; else trim.
-5. Inspect [internal/livesession/](../internal/livesession/) — if no callers remain, delete.
-6. Modify [cmd/scraper/crawl_runtime.go:121-148](../cmd/scraper/crawl_runtime.go) `submitConnectorCrawl`: when no online connector, return explicit error instead of `jobStore.Submit` fallback.
-7. Update [cmd/scraper/main.go](../cmd/scraper/main.go): remove worker-related setup if any.
-8. Update [AGENTS.md](../AGENTS.md), [CLAUDE.md](../CLAUDE.md), [PRODUCTION_FLOW.md](PRODUCTION_FLOW.md) — drop "worker fallback" mentions.
+4. Inspect [internal/runtime/runtime.go](../../internal/runtime/runtime.go) — if Runtime interface only used by deleted files, delete; else trim.
+5. Inspect [internal/livesession/](../../internal/livesession/) — if no callers remain, delete.
+6. Modify [cmd/scraper/crawl_runtime.go:121-148](../../cmd/scraper/crawl_runtime.go) `submitConnectorCrawl`: when no online connector, return explicit error instead of `jobStore.Submit` fallback.
+7. Update [cmd/scraper/main.go](../../cmd/scraper/main.go): remove worker-related setup if any.
+8. Update [AGENTS.md](../../AGENTS.md), [CLAUDE.md](../../CLAUDE.md), [PRODUCTION_FLOW.md](PRODUCTION_FLOW.md) — drop "worker fallback" mentions.
 9. `go build ./... && go vet ./... && go test ./...`
 10. Manual smoke: paus Chrome Extension, send crawl prompt → expect clear error, no job stuck in scheduler.
 
@@ -238,7 +238,7 @@ The 2026-05-07 audit also flagged these. They aren't urgent but should not be fo
 
 ### Concern A — Three-layer browser stack
 
-[internal/browser/](../internal/browser/) (interface) + [internal/browsergateway/](../internal/browsergateway/) (provider enum) + [internal/cdpclient/](../internal/cdpclient/) (CDP endpoint discovery).
+[internal/browser/](../../internal/browser/) (interface) + [internal/browsergateway/](../../internal/browsergateway/) (provider enum) + [internal/cdpclient/](../../internal/cdpclient/) (CDP endpoint discovery).
 
 The boundary is unclear. Cause: incremental growth as features landed.
 
@@ -246,7 +246,7 @@ The boundary is unclear. Cause: incremental growth as features landed.
 
 ### Concern B — Three-layer session lifecycle
 
-[internal/session/](../internal/session/) (state machine) + [internal/livesession/](../internal/livesession/) (running binding) + [internal/workspace/](../internal/workspace/) (Docker container manager).
+[internal/session/](../../internal/session/) (state machine) + [internal/livesession/](../../internal/livesession/) (running binding) + [internal/workspace/](../../internal/workspace/) (Docker container manager).
 
 Layers ARE distinct, but a new dev needs 30 minutes to map them.
 
@@ -254,9 +254,9 @@ Layers ARE distinct, but a new dev needs 30 minutes to map them.
 
 ### Concern C — `agentloop` orchestration scope
 
-[internal/agentloop/](../internal/agentloop/) docs reference "Phase 2" and an `engine` package that no longer exists (deleted 2026-05-07).
+[internal/agentloop/](../../internal/agentloop/) docs reference "Phase 2" and an `engine` package that no longer exists (deleted 2026-05-07).
 
-**Action:** update [internal/agentloop/](../internal/agentloop/) doc comments to reflect post-engine reality. Trigger: next time anyone touches that package.
+**Action:** update [internal/agentloop/](../../internal/agentloop/) doc comments to reflect post-engine reality. Trigger: next time anyone touches that package.
 
 ---
 

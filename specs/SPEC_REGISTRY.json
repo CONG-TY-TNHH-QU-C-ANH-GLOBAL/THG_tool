@@ -4,7 +4,7 @@
   "entries": [
     {
       "id": "api-spec",
-      "path": "specs/API_SPEC.md",
+      "path": "specs/frontend/API_SPEC.md",
       "title": "API SPEC",
       "domain": "frontend",
       "type": "contract",
@@ -32,7 +32,7 @@
     },
     {
       "id": "append-only-ledger-migration",
-      "path": "specs/APPEND_ONLY_LEDGER_MIGRATION.md",
+      "path": "specs/store/APPEND_ONLY_LEDGER_MIGRATION.md",
       "title": "APPEND ONLY LEDGER MIGRATION",
       "domain": "store",
       "type": "migration",
@@ -62,7 +62,7 @@
     },
     {
       "id": "autocomment-redirect-investigation",
-      "path": "specs/AUTOCOMMENT_REDIRECT_INVESTIGATION.md",
+      "path": "specs/facebook/AUTOCOMMENT_REDIRECT_INVESTIGATION.md",
       "title": "AUTOCOMMENT REDIRECT INVESTIGATION",
       "domain": "facebook",
       "type": "investigation",
@@ -92,7 +92,7 @@
     },
     {
       "id": "automation-platform-core",
-      "path": "specs/AUTOMATION_PLATFORM_CORE.md",
+      "path": "specs/browser/AUTOMATION_PLATFORM_CORE.md",
       "title": "AUTOMATION PLATFORM CORE",
       "domain": "browser",
       "type": "architecture",
@@ -126,7 +126,7 @@
     },
     {
       "id": "browser-automation-kit-refactor",
-      "path": "specs/BROWSER_AUTOMATION_KIT_REFACTOR.md",
+      "path": "specs/browser/BROWSER_AUTOMATION_KIT_REFACTOR.md",
       "title": "BROWSER AUTOMATION KIT REFACTOR",
       "domain": "browser",
       "type": "architecture",
@@ -156,7 +156,7 @@
     },
     {
       "id": "browser-gateway-and-facebook-automation-vision",
-      "path": "specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md",
+      "path": "specs/browser/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md",
       "title": "BROWSER GATEWAY AND FACEBOOK AUTOMATION VISION",
       "domain": "browser",
       "type": "roadmap",
@@ -185,7 +185,7 @@
     },
     {
       "id": "comment-async-reverify",
-      "path": "specs/COMMENT_ASYNC_REVERIFY.md",
+      "path": "specs/facebook/COMMENT_ASYNC_REVERIFY.md",
       "title": "COMMENT ASYNC REVERIFY",
       "domain": "facebook",
       "type": "behavior",
@@ -220,7 +220,7 @@
     },
     {
       "id": "comment-decision-dryrun-report",
-      "path": "specs/COMMENT_DECISION_DRYRUN_REPORT.md",
+      "path": "specs/comment/COMMENT_DECISION_DRYRUN_REPORT.md",
       "title": "COMMENT DECISION DRYRUN REPORT",
       "domain": "comment",
       "type": "report",
@@ -248,7 +248,7 @@
     },
     {
       "id": "comment-intelligence-pipeline",
-      "path": "specs/COMMENT_INTELLIGENCE_PIPELINE.md",
+      "path": "specs/comment/COMMENT_INTELLIGENCE_PIPELINE.md",
       "title": "COMMENT INTELLIGENCE PIPELINE",
       "domain": "comment",
       "type": "architecture",
@@ -277,7 +277,7 @@
     },
     {
       "id": "component-hotspots",
-      "path": "specs/COMPONENT_HOTSPOTS.md",
+      "path": "specs/platform/COMPONENT_HOTSPOTS.md",
       "title": "COMPONENT HOTSPOTS",
       "domain": "platform",
       "type": "investigation",
@@ -307,7 +307,7 @@
     },
     {
       "id": "component-structure-rules",
-      "path": "specs/COMPONENT_STRUCTURE_RULES.md",
+      "path": "specs/platform/COMPONENT_STRUCTURE_RULES.md",
       "title": "COMPONENT STRUCTURE RULES",
       "domain": "platform",
       "type": "policy",
@@ -337,7 +337,7 @@
     },
     {
       "id": "copilot-intent-routing-architecture",
-      "path": "specs/COPILOT_INTENT_ROUTING_ARCHITECTURE.md",
+      "path": "specs/copilot/COPILOT_INTENT_ROUTING_ARCHITECTURE.md",
       "title": "COPILOT INTENT ROUTING ARCHITECTURE",
       "domain": "copilot",
       "type": "architecture",
@@ -375,7 +375,7 @@
     },
     {
       "id": "direct-post-intake-workflow",
-      "path": "specs/DIRECT_POST_INTAKE_WORKFLOW.md",
+      "path": "specs/facebook/DIRECT_POST_INTAKE_WORKFLOW.md",
       "title": "DIRECT POST INTAKE WORKFLOW",
       "domain": "facebook",
       "type": "architecture",
@@ -413,7 +413,7 @@
     },
     {
       "id": "domain-model",
-      "path": "specs/DOMAIN_MODEL.md",
+      "path": "specs/platform/DOMAIN_MODEL.md",
       "title": "DOMAIN MODEL",
       "domain": "platform",
       "type": "architecture",
@@ -443,7 +443,7 @@
     },
     {
       "id": "facebook-automation-reliability-track",
-      "path": "specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md",
+      "path": "specs/facebook/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md",
       "title": "FACEBOOK AUTOMATION RELIABILITY TRACK",
       "domain": "facebook",
       "type": "roadmap",
@@ -472,7 +472,7 @@
     },
     {
       "id": "facebook-business-analysis-automation-plan",
-      "path": "specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md",
+      "path": "specs/facebook/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md",
       "title": "FACEBOOK BUSINESS ANALYSIS AUTOMATION PLAN",
       "domain": "facebook",
       "type": "roadmap",
@@ -505,7 +505,7 @@
     },
     {
       "id": "frontend-contract",
-      "path": "specs/FRONTEND_CONTRACT.md",
+      "path": "specs/frontend/FRONTEND_CONTRACT.md",
       "title": "FRONTEND CONTRACT",
       "domain": "frontend",
       "type": "contract",
@@ -533,7 +533,7 @@
     },
     {
       "id": "known-issues",
-      "path": "specs/KNOWN_ISSUES.md",
+      "path": "specs/frontend/KNOWN_ISSUES.md",
       "title": "KNOWN ISSUES",
       "domain": "frontend",
       "type": "report",
@@ -560,7 +560,7 @@
     },
     {
       "id": "leadsview-decomposition",
-      "path": "specs/LEADSVIEW_DECOMPOSITION.md",
+      "path": "specs/frontend/LEADSVIEW_DECOMPOSITION.md",
       "title": "LEADSVIEW DECOMPOSITION",
       "domain": "frontend",
       "type": "architecture",
@@ -589,7 +589,7 @@
     },
     {
       "id": "lead-lifecycle-work-queue",
-      "path": "specs/LEAD_LIFECYCLE_WORK_QUEUE.md",
+      "path": "specs/lead/LEAD_LIFECYCLE_WORK_QUEUE.md",
       "title": "LEAD LIFECYCLE WORK QUEUE",
       "domain": "lead",
       "type": "architecture",
@@ -620,7 +620,7 @@
     },
     {
       "id": "llm-cost-controls-phase1",
-      "path": "specs/LLM_COST_CONTROLS_PHASE1.md",
+      "path": "specs/ai/LLM_COST_CONTROLS_PHASE1.md",
       "title": "LLM COST CONTROLS PHASE1",
       "domain": "ai",
       "type": "architecture",
@@ -652,7 +652,7 @@
     },
     {
       "id": "local-connector-production-workflow",
-      "path": "specs/LOCAL_CONNECTOR_PRODUCTION_WORKFLOW.md",
+      "path": "specs/browser/LOCAL_CONNECTOR_PRODUCTION_WORKFLOW.md",
       "title": "LOCAL CONNECTOR PRODUCTION WORKFLOW",
       "domain": "browser",
       "type": "runbook",
@@ -685,7 +685,7 @@
     },
     {
       "id": "migration-to-monorepo-plan",
-      "path": "specs/MIGRATION_TO_MONOREPO_PLAN.md",
+      "path": "specs/platform/MIGRATION_TO_MONOREPO_PLAN.md",
       "title": "MIGRATION TO MONOREPO PLAN",
       "domain": "platform",
       "type": "migration",
@@ -714,7 +714,7 @@
     },
     {
       "id": "multi-actor-coverage-policy",
-      "path": "specs/MULTI_ACTOR_COVERAGE_POLICY.md",
+      "path": "specs/lead/MULTI_ACTOR_COVERAGE_POLICY.md",
       "title": "MULTI ACTOR COVERAGE POLICY",
       "domain": "lead",
       "type": "policy",
@@ -747,7 +747,7 @@
     },
     {
       "id": "nl-direct-link-comment-smoke",
-      "path": "specs/NL_DIRECT_LINK_COMMENT_SMOKE.md",
+      "path": "specs/facebook/NL_DIRECT_LINK_COMMENT_SMOKE.md",
       "title": "NL DIRECT LINK COMMENT SMOKE",
       "domain": "facebook",
       "type": "runbook",
@@ -776,7 +776,7 @@
     },
     {
       "id": "omnichannel-sales-copilot-telegram-track",
-      "path": "specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md",
+      "path": "specs/copilot/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md",
       "title": "OMNICHANNEL SALES COPILOT TELEGRAM TRACK",
       "domain": "copilot",
       "type": "roadmap",
@@ -807,7 +807,7 @@
     },
     {
       "id": "open-prompt-agent-design",
-      "path": "specs/OPEN_PROMPT_AGENT_DESIGN.md",
+      "path": "specs/copilot/OPEN_PROMPT_AGENT_DESIGN.md",
       "title": "OPEN PROMPT AGENT DESIGN",
       "domain": "copilot",
       "type": "architecture",
@@ -838,7 +838,7 @@
     },
     {
       "id": "organic-sales-network",
-      "path": "specs/ORGANIC_SALES_NETWORK.md",
+      "path": "specs/lead/ORGANIC_SALES_NETWORK.md",
       "title": "ORGANIC SALES NETWORK",
       "domain": "lead",
       "type": "architecture",
@@ -868,7 +868,7 @@
     },
     {
       "id": "phase-5a-coordination-audit",
-      "path": "specs/PHASE_5A_COORDINATION_AUDIT.md",
+      "path": "specs/store/PHASE_5A_COORDINATION_AUDIT.md",
       "title": "PHASE 5A COORDINATION AUDIT",
       "domain": "store",
       "type": "investigation",
@@ -897,7 +897,7 @@
     },
     {
       "id": "postgres-compat-plan",
-      "path": "specs/POSTGRES_COMPAT_PLAN.md",
+      "path": "specs/knowledge/POSTGRES_COMPAT_PLAN.md",
       "title": "POSTGRES COMPAT PLAN",
       "domain": "knowledge",
       "type": "migration",
@@ -928,7 +928,7 @@
     },
     {
       "id": "production-database-migration-plan",
-      "path": "specs/PRODUCTION_DATABASE_MIGRATION_PLAN.md",
+      "path": "specs/migration/PRODUCTION_DATABASE_MIGRATION_PLAN.md",
       "title": "PRODUCTION DATABASE MIGRATION PLAN",
       "domain": "migration",
       "type": "migration",
@@ -954,7 +954,7 @@
     },
     {
       "id": "production-flow",
-      "path": "specs/PRODUCTION_FLOW.md",
+      "path": "specs/platform/PRODUCTION_FLOW.md",
       "title": "PRODUCTION FLOW",
       "domain": "platform",
       "type": "architecture",
@@ -981,7 +981,7 @@
     },
     {
       "id": "production-hardening-goals",
-      "path": "specs/PRODUCTION_HARDENING_GOALS.md",
+      "path": "specs/knowledge/PRODUCTION_HARDENING_GOALS.md",
       "title": "PRODUCTION HARDENING GOALS",
       "domain": "knowledge",
       "type": "roadmap",
@@ -1011,7 +1011,7 @@
     },
     {
       "id": "retrieval-soak-report",
-      "path": "specs/RETRIEVAL_SOAK_REPORT.md",
+      "path": "specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
       "title": "RETRIEVAL SOAK REPORT",
       "domain": "knowledge",
       "type": "report",
@@ -1040,7 +1040,7 @@
     },
     {
       "id": "retrieval-soak-runbook",
-      "path": "specs/RETRIEVAL_SOAK_RUNBOOK.md",
+      "path": "specs/knowledge/RETRIEVAL_SOAK_RUNBOOK.md",
       "title": "RETRIEVAL SOAK RUNBOOK",
       "domain": "knowledge",
       "type": "runbook",
@@ -1070,7 +1070,7 @@
     },
     {
       "id": "root-architecture",
-      "path": "specs/ROOT_ARCHITECTURE.md",
+      "path": "specs/frontend/ROOT_ARCHITECTURE.md",
       "title": "ROOT ARCHITECTURE",
       "domain": "frontend",
       "type": "architecture",
@@ -1099,7 +1099,7 @@
     },
     {
       "id": "root-cause-report",
-      "path": "specs/ROOT_CAUSE_REPORT.md",
+      "path": "specs/facebook/ROOT_CAUSE_REPORT.md",
       "title": "ROOT CAUSE REPORT",
       "domain": "facebook",
       "type": "report",
@@ -1130,7 +1130,7 @@
     },
     {
       "id": "runtime-topology",
-      "path": "specs/RUNTIME_TOPOLOGY.md",
+      "path": "specs/platform/RUNTIME_TOPOLOGY.md",
       "title": "RUNTIME TOPOLOGY",
       "domain": "platform",
       "type": "architecture",
@@ -1162,7 +1162,7 @@
     },
     {
       "id": "saas-ux-hardening-track",
-      "path": "specs/SAAS_UX_HARDENING_TRACK.md",
+      "path": "specs/frontend/SAAS_UX_HARDENING_TRACK.md",
       "title": "SAAS UX HARDENING TRACK",
       "domain": "frontend",
       "type": "roadmap",
@@ -1189,7 +1189,7 @@
     },
     {
       "id": "sales-voice-automation-and-data-private-enterprise-plan",
-      "path": "specs/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md",
+      "path": "specs/copilot/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md",
       "title": "SALES VOICE AUTOMATION AND DATA PRIVATE ENTERPRISE PLAN",
       "domain": "copilot",
       "type": "roadmap",
@@ -1215,7 +1215,7 @@
     },
     {
       "id": "store-subpackage-refactor",
-      "path": "specs/STORE_SUBPACKAGE_REFACTOR.md",
+      "path": "specs/store/STORE_SUBPACKAGE_REFACTOR.md",
       "title": "STORE SUBPACKAGE REFACTOR",
       "domain": "store",
       "type": "architecture",
@@ -1247,7 +1247,7 @@
     },
     {
       "id": "structural-refactor-plan",
-      "path": "specs/STRUCTURAL_REFACTOR_PLAN.md",
+      "path": "specs/platform/STRUCTURAL_REFACTOR_PLAN.md",
       "title": "STRUCTURAL REFACTOR PLAN",
       "domain": "platform",
       "type": "roadmap",
@@ -1276,7 +1276,7 @@
     },
     {
       "id": "telegram-bot-runtime",
-      "path": "specs/TELEGRAM_BOT_RUNTIME.md",
+      "path": "specs/copilot/TELEGRAM_BOT_RUNTIME.md",
       "title": "TELEGRAM BOT RUNTIME",
       "domain": "copilot",
       "type": "architecture",
@@ -1310,7 +1310,7 @@
     },
     {
       "id": "telegram-channel-destinations",
-      "path": "specs/TELEGRAM_CHANNEL_DESTINATIONS.md",
+      "path": "specs/copilot/TELEGRAM_CHANNEL_DESTINATIONS.md",
       "title": "TELEGRAM CHANNEL DESTINATIONS",
       "domain": "copilot",
       "type": "architecture",
@@ -1345,7 +1345,7 @@
     },
     {
       "id": "telegram-event-wiring",
-      "path": "specs/TELEGRAM_EVENT_WIRING.md",
+      "path": "specs/copilot/TELEGRAM_EVENT_WIRING.md",
       "title": "TELEGRAM EVENT WIRING",
       "domain": "copilot",
       "type": "architecture",
@@ -1377,7 +1377,7 @@
     },
     {
       "id": "telegram-integration-ui",
-      "path": "specs/TELEGRAM_INTEGRATION_UI.md",
+      "path": "specs/copilot/TELEGRAM_INTEGRATION_UI.md",
       "title": "TELEGRAM INTEGRATION UI",
       "domain": "copilot",
       "type": "architecture",
@@ -1410,7 +1410,7 @@
     },
     {
       "id": "telegram-per-org-bot",
-      "path": "specs/TELEGRAM_PER_ORG_BOT.md",
+      "path": "specs/copilot/TELEGRAM_PER_ORG_BOT.md",
       "title": "TELEGRAM PER ORG BOT",
       "domain": "copilot",
       "type": "architecture",
@@ -1444,7 +1444,7 @@
     },
     {
       "id": "template-telegram-copilot-plan",
-      "path": "specs/TEMPLATE_TELEGRAM_COPILOT_PLAN.md",
+      "path": "specs/platform/TEMPLATE_TELEGRAM_COPILOT_PLAN.md",
       "title": "TEMPLATE TELEGRAM COPILOT PLAN",
       "domain": "platform",
       "type": "architecture",
@@ -1474,7 +1474,7 @@
     },
     {
       "id": "v2-outbound-refactor-design",
-      "path": "specs/V2_OUTBOUND_REFACTOR_DESIGN.md",
+      "path": "specs/outbound/V2_OUTBOUND_REFACTOR_DESIGN.md",
       "title": "V2 OUTBOUND REFACTOR DESIGN",
       "domain": "outbound",
       "type": "architecture",
@@ -1504,7 +1504,7 @@
     },
     {
       "id": "workspace-knowledge-os",
-      "path": "specs/WORKSPACE_KNOWLEDGE_OS.md",
+      "path": "specs/knowledge/WORKSPACE_KNOWLEDGE_OS.md",
       "title": "WORKSPACE KNOWLEDGE OS",
       "domain": "knowledge",
       "type": "architecture",
@@ -1533,7 +1533,7 @@
     },
     {
       "id": "lead-ingestion-behavior",
-      "path": "specs/lead_ingestion_behavior.md",
+      "path": "specs/leadingest/lead_ingestion_behavior.md",
       "title": "Lead Ingestion Behavior Specification",
       "domain": "leadingest",
       "type": "behavior",
@@ -1562,7 +1562,7 @@
     },
     {
       "id": "saas-automation-spec",
-      "path": "specs/saas-automation-spec.md",
+      "path": "specs/platform/saas-automation-spec.md",
       "title": "saas automation spec",
       "domain": "platform",
       "type": "architecture",

@@ -173,17 +173,17 @@ Three PRs, each independently shippable.
 
 | Component | Status | File |
 |---|---|---|
-| `Dialect` interface | ✅ | [internal/store/dialect.go](../internal/store/dialect.go) |
+| `Dialect` interface | ✅ | [internal/store/dialect.go](../../internal/store/dialect.go) |
 | SQLite dialect impl | ✅ | [internal/store/dialect_sqlite.go](../internal/store/dialect_sqlite.go) |
 | Postgres dialect impl | ✅ | [internal/store/dialect_postgres.go](../internal/store/dialect_postgres.go) |
-| `*Store` auto-rebind wrappers (`Query/Exec/QueryRowContext`, `InsertReturningID`) | ✅ | [internal/store/dialect.go](../internal/store/dialect.go) |
-| Boot-time driver detection (`DATABASE_URL` or `postgres://` DSN) | ✅ | [internal/store/store.go](../internal/store/store.go) |
-| PG connection pool tuning (25/5/5m) | ✅ | [internal/store/store.go](../internal/store/store.go) |
-| In-house migration runner with `schema_migrations` registry | ✅ | [internal/store/migrator.go](../internal/store/migrator.go) |
-| Baseline-marker detection for existing SQLite installs | ✅ | [internal/store/migrator.go](../internal/store/migrator.go) `recordBaselineIfNeeded` |
-| PG-flavour baseline migration (Knowledge OS tables) | ✅ | [internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql](../internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql) |
+| `*Store` auto-rebind wrappers (`Query/Exec/QueryRowContext`, `InsertReturningID`) | ✅ | [internal/store/dialect.go](../../internal/store/dialect.go) |
+| Boot-time driver detection (`DATABASE_URL` or `postgres://` DSN) | ✅ | [internal/store/store.go](../../internal/store/store.go) |
+| PG connection pool tuning (25/5/5m) | ✅ | [internal/store/store.go](../../internal/store/store.go) |
+| In-house migration runner with `schema_migrations` registry | ✅ | [internal/store/migrator.go](../../internal/store/migrator.go) |
+| Baseline-marker detection for existing SQLite installs | ✅ | [internal/store/migrator.go](../../internal/store/migrator.go) `recordBaselineIfNeeded` |
+| PG-flavour baseline migration (Knowledge OS tables) | ✅ | [internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql](../../internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql) |
 | Knowledge OS repository converted to dialect-aware (Rebind + RETURNING) | ✅ | knowledge_sources.go, knowledge_assets.go, knowledge_events.go, knowledge_replay.go |
-| Dialect unit tests | ✅ | [internal/store/dialect_test.go](../internal/store/dialect_test.go) |
+| Dialect unit tests | ✅ | [internal/store/dialect_test.go](../../internal/store/dialect_test.go) |
 
 ### Deferred (per directive — separate work)
 

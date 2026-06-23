@@ -10,7 +10,7 @@ Checks:
   - every entry has the required fields
   - status / type / maturity use allowed enum values
   - every entry path exists on disk
-  - every specs/*.md file is registered (except the two governance docs)
+  - every specs/**/*.md file is registered (except the two governance docs)
   - no duplicate id; no duplicate path
   - superseded_by, when set, points at a known id or registered path
 
@@ -114,8 +114,10 @@ def check_cross_entry(entries, errors: list[str]) -> None:
 
 
 def check_coverage(entries, errors: list[str]) -> None:
+    # Specs live in per-domain subfolders (specs/<domain>/<file>.md), so scan
+    # recursively. The two governance docs at the root are not registered.
     registered = {e.get("path") for e in entries if isinstance(e, dict)}
-    for md in sorted(SPECS_DIR.glob("*.md")):
+    for md in sorted(SPECS_DIR.rglob("*.md")):
         if md.name in NOT_REGISTERED:
             continue
         rel = md.relative_to(ROOT).as_posix()
