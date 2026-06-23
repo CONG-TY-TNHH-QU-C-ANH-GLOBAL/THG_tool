@@ -102,14 +102,14 @@ func (f *FakeOpenAI) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	// Decide failure mode for THIS request. Failure rates are
 	// independent; if both fire, 429 wins (rate limit is the more
 	// realistic primary failure mode at scale).
-	if r := pseudoRandUnit(f.requestCount.Load()); r < f.FailureRate429 {
+	if pseudoRandUnit(f.requestCount.Load()) < f.FailureRate429 {
 		f.failures429.Add(1)
 		w.Header().Set("Retry-After", "1")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(`{"error":{"type":"rate_limit_exceeded","message":"rate limit"}}`))
 		return
 	}
-	if r := pseudoRandUnit(f.requestCount.Load() + 1_000_000); r < f.FailureRate5xx {
+	if pseudoRandUnit(f.requestCount.Load()+1_000_000) < f.FailureRate5xx {
 		f.failures5xx.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":{"type":"server_error"}}`))
