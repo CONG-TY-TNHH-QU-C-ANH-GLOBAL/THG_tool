@@ -162,4 +162,5 @@ intelligence core stays pure.
 | `CONNECTOR_STATE_MACHINE.md` | connector states, action lifecycle, pull/claim |
 | `REFACTOR_ROADMAP.md` | staged path from current code to this standard |
 | `CURRENT_CODE_AUDIT.md` | honest gap audit of the code as-of-now |
+| `DIAGRAM_RECONCILIATION.md` | reconciles `.claude/detailed_architecture_v2.png` (north-star) with this standard; standard wins on conflict |
 | `scripts/check_import_boundaries.sh` | warn-only static boundary guard |
