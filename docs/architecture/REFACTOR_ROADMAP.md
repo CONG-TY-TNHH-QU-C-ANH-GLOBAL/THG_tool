@@ -57,6 +57,31 @@ inventory/move-only** (give FB workflows a `services/facebook` home). Do NOT sch
 product features (P1/P2 re-implementation, Phase H) until the boundaries + outbox
 (Phase E) are in place.
 
+### PR26B — Warn-only service-isolation boundary guards (`chore/pr26b-import-guard-service-isolation`)
+
+Tooling-only extension of `scripts/check_import_boundaries.sh` (no script rewrite,
+existing rules/output/known-gap behavior unchanged). Companion of
+[`DIAGRAM_RECONCILIATION.md`](./DIAGRAM_RECONCILIATION.md) (PR26A) §11 / §6.
+
+- **Scope:** `scripts/check_import_boundaries.sh` + this note only. CI untouched
+  (already runs the script `|| true`, warn-only).
+- **Rules added (3, all preventive, 0 warnings today):**
+  - `SERVICE_NO_SIBLING` — generic guard: no `internal/services/<svc>` imports another
+    sibling service (both directions; self-imports excluded). Broader than the
+    facebook-specific `SERVICES_NO_SIBLINGS` (rule 7). Composition root (`cmd/*`) is not
+    scanned — wiring services at `main` is allowed.
+  - `WORKER_NO_TRANSPORT` — `cmd/worker` must not import HTTP/server transport
+    (`internal/server*`, `internal/drivers/{http,telegram,connector}`).
+  - `SIDECAR_NO_DIRECT_DB` — top-level `services/*` sidecars must not couple directly to
+    the DB (`DATABASE_URL`/`DB_PATH`/`POSTGRES_*`/`sqlite3`/`psycopg`/`asyncpg`/
+    `sqlalchemy`/`gorm`/`database/sql`); they must call a Go-owned versioned port.
+- **Risk:** very low (tooling, warn-only; exit 0 preserved).
+- **Behavior changed:** none (no runtime code/schema/migration/CI/package move).
+- **Validation:** `bash scripts/check_import_boundaries.sh` → rules checked 13→16,
+  warnings 4 (4 known, 0 other) unchanged, exit 0; `git diff --check`;
+  `python scripts/check_file_size.py`; `go build ./...`; `go vet ./...`.
+- **Rollback:** revert the script changes + this note.
+
 ## Architecture Foundation Sprint log (`refactor/architecture-foundation-sprint`)
 
 One sprint, multiple independently-revertible commits. SAFE moves + additive scaffolds
