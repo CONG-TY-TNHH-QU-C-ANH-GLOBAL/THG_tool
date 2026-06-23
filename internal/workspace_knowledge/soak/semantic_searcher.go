@@ -78,17 +78,33 @@ func (m *mockSemanticSearcher) TopKWithTrace(ctx context.Context, orgID int64, q
 	}
 	trace.CandidatesConsidered = len(candidates)
 
-	type scored struct {
-		asset *assets.Asset
-		sim   float64
-	}
-	scoredList := make([]scored, 0, len(candidates))
+	scoredList := m.scoreCandidates(ctx, queryVec, candidates, &trace)
+	sort.SliceStable(scoredList, func(i, j int) bool {
+		return scoredList[i].sim > scoredList[j].sim
+	})
+	keep := capSemanticTopK(scoredList, k, &trace)
+	hits, selected := buildSemanticHits(keep)
+	trace.Selected = selected
+	return hits, trace, nil
+}
+
+// scoredAsset pairs a candidate asset with its cosine similarity to the query.
+type scoredAsset struct {
+	asset *assets.Asset
+	sim   float64
+}
+
+// scoreCandidates embeds each candidate, drops banned claims (governance) and
+// below-threshold matches (recording the rejection reason in trace), and returns the
+// survivors. Verbatim extraction of the former inline scoring loop.
+func (m *mockSemanticSearcher) scoreCandidates(ctx context.Context, queryVec []float32, candidates []*assets.Asset, trace *retrieval.Trace) []scoredAsset {
+	scoredList := make([]scoredAsset, 0, len(candidates))
 	for _, a := range candidates {
 		// Skip banned claims — governance applies here too. Real
 		// pgvector path skips at the SQL filter level; we do the
 		// same in-memory.
 		if a.Type == assets.AssetBannedClaim {
-			retrieval.RecordRejection(&trace, a, retrieval.RejectGovernance, 0)
+			retrieval.RecordRejection(trace, a, retrieval.RejectGovernance, 0)
 			continue
 		}
 		// Compute the candidate's embedding on the fly. Real pgvector
@@ -101,25 +117,31 @@ func (m *mockSemanticSearcher) TopKWithTrace(ctx context.Context, orgID int64, q
 		}
 		sim := cosineSimilarity(queryVec, assetVecs[0])
 		if sim < m.minSim {
-			retrieval.RecordRejection(&trace, a, retrieval.RejectSemanticThreshold, sim)
+			retrieval.RecordRejection(trace, a, retrieval.RejectSemanticThreshold, sim)
 			continue
 		}
-		scoredList = append(scoredList, scored{a, sim})
+		scoredList = append(scoredList, scoredAsset{a, sim})
 	}
-	sort.SliceStable(scoredList, func(i, j int) bool {
-		return scoredList[i].sim > scoredList[j].sim
-	})
+	return scoredList
+}
 
-	keep := scoredList
-	if len(keep) > k {
-		for _, s := range scoredList[k:] {
-			retrieval.RecordRejection(&trace, s.asset, retrieval.RejectTopKCap, s.sim)
-		}
-		keep = scoredList[:k]
+// capSemanticTopK keeps the top-k scored assets, recording the dropped tail's rejection
+// reason in trace. Verbatim extraction of the former inline top-k cap.
+func capSemanticTopK(scoredList []scoredAsset, k int, trace *retrieval.Trace) []scoredAsset {
+	if len(scoredList) <= k {
+		return scoredList
 	}
+	for _, s := range scoredList[k:] {
+		retrieval.RecordRejection(trace, s.asset, retrieval.RejectTopKCap, s.sim)
+	}
+	return scoredList[:k]
+}
 
+// buildSemanticHits turns the kept scored assets into hits + trace-selected rows.
+// Verbatim extraction of the former inline hit-building loop (same score breakdown).
+func buildSemanticHits(keep []scoredAsset) ([]retrieval.Hit, []retrieval.ScoredHit) {
 	hits := make([]retrieval.Hit, 0, len(keep))
-	trace.Selected = make([]retrieval.ScoredHit, 0, len(keep))
+	selected := make([]retrieval.ScoredHit, 0, len(keep))
 	for _, s := range keep {
 		bd := retrieval.ScoreBreakdown{
 			Semantic: 0.70 * s.sim,
@@ -131,7 +153,7 @@ func (m *mockSemanticSearcher) TopKWithTrace(ctx context.Context, orgID int64, q
 		score := retrieval.Clamp01(bd.TextMatch + bd.Boost + bd.Pin + bd.Semantic + bd.Recency)
 		reason := retrieval.BuildReason(s.sim, s.asset.Pinned, s.asset.Boost)
 		hits = append(hits, retrieval.Hit{Asset: s.asset, Score: score, Reason: reason})
-		trace.Selected = append(trace.Selected, retrieval.ScoredHit{
+		selected = append(selected, retrieval.ScoredHit{
 			AssetID:   s.asset.ID,
 			Title:     s.asset.Title,
 			Type:      s.asset.Type,
@@ -140,7 +162,7 @@ func (m *mockSemanticSearcher) TopKWithTrace(ctx context.Context, orgID int64, q
 			Reason:    reason,
 		})
 	}
-	return hits, trace, nil
+	return hits, selected
 }
 
 func cosineSimilarity(a, b []float32) float64 {
