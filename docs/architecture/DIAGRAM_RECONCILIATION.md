@@ -114,8 +114,9 @@ Supported by [`ARCHITECTURE_STANDARD.md`](./ARCHITECTURE_STANDARD.md),
 [`CURRENT_CODE_AUDIT.md`](./CURRENT_CODE_AUDIT.md), and the package tree:
 
 - **Go modular monolith with role split** — `cmd/scraper` (API), `cmd/worker`
-  (crawler), `cmd/agent` (connector/agent). Matches "Core Services (Go)" +
-  "Crawler Cluster" separation.
+  (crawler). A `cmd/agent` (connector/agent) role is *planned/aspirational only* —
+  it has no tracked Go package today (no committed history). Matches "Core Services
+  (Go)" + "Crawler Cluster" separation.
 - **`org_id`-scoped multi-tenant direction** — tenant isolation is a binding rule
   and a green guard; matches the *property* behind "PostgreSQL (Multi-tenant DB)".
 - **Platform service resolver/adapters direction** — `internal/platform/services/resolver/`
@@ -278,7 +279,7 @@ Practical target tree (grounded in the actual repo; status marked per folder):
 cmd/
   scraper/                # API role (composition root)          — existing
   worker/                 # crawler role (composition root)      — existing
-  agent/                  # connector/agent role                 — existing
+  agent/                  # connector/agent role                 — planned (no tracked package today)
 
 internal/
   platform/               # service registry, tenancy root       — existing

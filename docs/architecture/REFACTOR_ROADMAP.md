@@ -130,9 +130,19 @@ packages; no schema rewrite, no guard changes, no Go files touched.
   `internal/services/{taobao,1688}` path ref.
 - **Behavior changed:** none (docs/metadata only; existing YAML schema/style preserved;
   known-gap entries kept; no guard made stricter).
+- **Fix-up:** corrected a `cmd/agent` documentation overclaim in `DIAGRAM_RECONCILIATION.md`
+  (§2 + §6 target tree). `cmd/agent` is **planned/aspirational only** — it has **no tracked
+  Go package and no committed history** (`git ls-files cmd/agent` empty; `git log --all --
+  cmd/agent` empty; `go build ./...` green without it). Do not document it as existing
+  runtime code.
+- **Workspace-cleanup caution (future prompts):** before any `git clean -fd`, run
+  `git clean -nd` first (dry-run) and **stop** if source-like untracked dirs appear —
+  e.g. `cmd/*`, `internal/*`, `services/*`, `openspec/*`, `specs/*`, `docs/*`,
+  `frontend/src/*`, or `local-connector-extension/*`. An untracked `cmd/agent/` was lost
+  this way; untracked source dirs are not git-recoverable.
 - **Validation:** `git diff --check`; `check_file_size.py`; `check_import_boundaries.sh`
   (16 rules, 4 known / 0 other, exit 0 — unchanged); `go list/build/vet ./...`.
-- **Rollback:** revert the 4 docs edits + this note.
+- **Rollback:** revert the docs edits + this note.
 
 ## Architecture Foundation Sprint log (`refactor/architecture-foundation-sprint`)
 
