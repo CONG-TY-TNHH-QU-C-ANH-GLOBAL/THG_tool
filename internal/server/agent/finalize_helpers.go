@@ -114,7 +114,10 @@ func agentEventType(actionType string, verified, success bool) string {
 			return "inbox_sent"
 		}
 		return "inbox_failed"
-	case "group_post", "post":
+	case "group_post", "profile_post", "post":
+		// profile_post is the same "post" action class as group_post (queueProfilePost
+		// stores Type="profile_post"); it must surface the same operator channel events.
+		// Omitting it silently dropped all profile-post success/failure notifications.
 		if success {
 			return "post_submitted"
 		}
