@@ -12,6 +12,7 @@ import (
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/textutil"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
@@ -228,29 +229,16 @@ func leadsFromActionArgs(ctx context.Context, db *store.Store, orgID int64, msgT
 		}
 		return []models.Lead{*lead}, nil
 	}
-	if msgType == "comment" {
-		if target := textutil.FirstNonEmpty(argString(args, "post_url"), argString(args, "target_url")); target != "" {
-			return []models.Lead{{
-				OrgID:      orgID,
-				SourceURL:  target,
-				Author:     argString(args, "target_name"),
-				AuthorURL:  argString(args, "author_url"),
-				Content:    argString(args, "context"),
-				Score:      models.LeadHot,
-				Platform:   models.PlatformFacebook,
-				SourceType: "prompt_target",
-			}}, nil
-		}
-	} else if target := argString(args, "target_url"); target != "" {
-		return []models.Lead{{
-			OrgID:      orgID,
-			AuthorURL:  target,
-			Author:     argString(args, "target_name"),
-			Content:    argString(args, "context"),
-			Score:      models.LeadHot,
-			Platform:   models.PlatformFacebook,
-			SourceType: "prompt_target",
-		}}, nil
+	// Facebook-specific synthetic-lead shaping (prompt_target conventions) is owned by
+	// internal/services/facebook; the composition root delegates to it. Empty result =
+	// no prompt target → fall through to the work-queue selection below.
+	if lead, ok := facebook.SyntheticLeadFromActionArgs(
+		orgID, msgType,
+		argString(args, "post_url"), argString(args, "target_url"),
+		argString(args, "target_name"), argString(args, "author_url"),
+		argString(args, "context"),
+	); ok {
+		return []models.Lead{lead}, nil
 	}
 	score := argString(args, "score_filter")
 	if score == "" && msgType == "inbox" {

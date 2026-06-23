@@ -144,6 +144,31 @@ packages; no schema rewrite, no guard changes, no Go files touched.
   (16 rules, 4 known / 0 other, exit 0 — unchanged); `go list/build/vet ./...`.
 - **Rollback:** revert the docs edits + this note.
 
+### PR26H — Phase C move gate: isolate the Facebook lead action seam (`refactor/pr26h-phase-c-facebook-lead-seam`)
+
+First Phase C **production-code** step after the PR26E characterization tests. Outcome **A**
+(safe direct extraction) — no port needed because the only caller is `cmd/scraper`
+(`package main`, the composition root), which may import a service package.
+
+- **Seam isolated:** the pure Facebook-specific synthetic-lead shaping (the `prompt_target`
+  convention: `Platform=Facebook`, `SourceType="prompt_target"`, comment `post_url`→`SourceURL`
+  / other `target_url`→`AuthorURL` field mapping) moved out of
+  `cmd/scraper/outbound_actions.go` (`leadsFromActionArgs`) into
+  `internal/services/facebook.SyntheticLeadFromActionArgs` (pure, imports only `models`).
+- **Stayed neutral in `main`:** the store-dependent orchestration (`lead_id` lookup,
+  `WorkQueueLeads` fallback) — not FB-specific — remains in `leadsFromActionArgs`, now
+  delegating the FB shaping.
+- **Import direction:** `cmd/scraper (main / composition root) → internal/services/facebook
+  → internal/models`. Preferred direction; no neutral package imports the FB service; no cycle.
+- **Behavior:** identical (pinned by `cmd/scraper/leads_from_action_args_test.go` +
+  `internal/services/facebook/lead_action_args_test.go`). No port, no CommandBus, no registry,
+  no DI singleton; `queueLeadOutreach`/`commentSinglePost`/approval-default/copy unchanged.
+- **Validation:** `go test/build/vet ./...` pass; `check_import_boundaries.sh` 16 rules,
+  4 known / 0 other, exit 0 (unchanged); `check_file_size.py` PASS; `git diff --check` clean.
+- **Rollback:** inline the FB function back into `leadsFromActionArgs`, delete the new files.
+- **Next:** further FB workflow surface (crawl handler / `queueLeadOutreach` FB target-URL
+  resolution) is a larger Phase C move, still gated on tests + review.
+
 ## Architecture Foundation Sprint log (`refactor/architecture-foundation-sprint`)
 
 One sprint, multiple independently-revertible commits. SAFE moves + additive scaffolds
