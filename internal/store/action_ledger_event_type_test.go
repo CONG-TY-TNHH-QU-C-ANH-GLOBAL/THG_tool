@@ -26,7 +26,7 @@ func TestActionLedgerEventType_FreshMigrationAndWriterUnchanged(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	if !ledgerColumnExists(t, db.db, "action_ledger", "event_type") {
+	if !actionLedgerColumnExists(t, db.db, "event_type") {
 		t.Fatal("0023 did not add action_ledger.event_type on a fresh DB")
 	}
 
@@ -108,13 +108,15 @@ func TestActionLedgerEventType_BackfillsExistingRows(t *testing.T) {
 	}
 }
 
-func ledgerColumnExists(t *testing.T, db *sql.DB, table, col string) bool {
+func actionLedgerColumnExists(t *testing.T, db *sql.DB, col string) bool {
 	t.Helper()
-	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+
+	rows, err := db.Query("PRAGMA table_info(action_ledger)")
 	if err != nil {
-		t.Fatalf("pragma table_info: %v", err)
+		t.Fatalf("pragma table_info(action_ledger): %v", err)
 	}
 	defer rows.Close()
+
 	for rows.Next() {
 		var cid, notnull, pk int
 		var name, ctype string
@@ -125,6 +127,9 @@ func ledgerColumnExists(t *testing.T, db *sql.DB, table, col string) bool {
 		if name == col {
 			return true
 		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate pragma table_info(action_ledger): %v", err)
 	}
 	return false
 }
