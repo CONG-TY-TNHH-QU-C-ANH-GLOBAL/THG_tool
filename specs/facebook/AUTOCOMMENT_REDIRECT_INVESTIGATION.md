@@ -184,9 +184,9 @@ Operator confirmed account #49 has NO Facebook-side restriction (manual commenti
 **Shipped (commit pending)**:
 
 - [local-connector-extension/content/outbound.js](../local-connector-extension/content/outbound.js) — added `executeCommentInFeed(message)` as sibling to existing `executeComment`. Reuses ALL existing utilities (`waitUntilTargetArticleStable`, `findTargetArticle`, `extractArticleCanonicalEntityId`, comment-button finder, `findCommentEditor`, gate-2 + gate-3 identity checks, `setEditableText`, `findSubmitButtons`, `commentResult`). Only new behaviour: scroll-then-search loop (up to 8 scrolls × 2.5s waitUntilTargetArticleStable each = ~25s max) to handle articles below the initial fold.
-- [local-connector-extension/content/bridge.js](../local-connector-extension/content/bridge.js) — added `thg_comment_in_group_feed` to MUTATING_COMMAND_TYPES + onMessage routing.
-- [local-connector-extension/src/outbox.js](../local-connector-extension/src/outbox.js) — added `extractGroupHomeFromPostUrl`, `extractPostIdFromTargetUrl`, `executeInGroupFeed(message, targetUrl, groupHome)`. Branch in `executeInFacebookTab`: comments to `/groups/<g>/posts/<p>/` route through Path 2; non-group surfaces (/watch, /reel, profile posts, fb.watch, photo permalinks) keep the direct-nav crawler pattern.
-- [local-connector-extension/manifest.json](../local-connector-extension/manifest.json) — 0.5.7 → 0.5.8.
+- [local-connector-extension/content/bridge.js](../../local-connector-extension/content/bridge.js) — added `thg_comment_in_group_feed` to MUTATING_COMMAND_TYPES + onMessage routing.
+- [local-connector-extension/src/outbox.js](../../local-connector-extension/src/outbox.js) — added `extractGroupHomeFromPostUrl`, `extractPostIdFromTargetUrl`, `executeInGroupFeed(message, targetUrl, groupHome)`. Branch in `executeInFacebookTab`: comments to `/groups/<g>/posts/<p>/` route through Path 2; non-group surfaces (/watch, /reel, profile posts, fb.watch, photo permalinks) keep the direct-nav crawler pattern.
+- [local-connector-extension/manifest.json](../../local-connector-extension/manifest.json) — 0.5.7 → 0.5.8.
 
 Diagnostic taxonomy (operator-facing notes prefix):
 
@@ -226,10 +226,10 @@ Hypothesis: FB's anti-bot heuristic fingerprints `chrome.tabs.update` of an exis
 
 **Shipped fix (commit pending)**:
 
-- [local-connector-extension/src/commands.js](../local-connector-extension/src/commands.js) — export `navigateAndVerify` from the THGCommands closure (1 line in the return statement).
-- [local-connector-extension/src/outbox.js](../local-connector-extension/src/outbox.js) — delete the entire group-click implementation (`extractGroupHomeFromPostUrl`, `findAndClickPostAnchorInPage`, `navigateToPostViaGroupClick`, `urlsMatchSameDestination`) and replace `executeInFacebookTab` with a thin wrapper around `THGCommands.navigateAndVerify`. Mirror crawler's cleanup: close the temp tab after the command finishes. Net −240 LOC.
-- [local-connector-extension/manifest.json](../local-connector-extension/manifest.json) — 0.5.6 → 0.5.7 so operator knows when reload is required.
-- [cmd/scraper/outbound_actions.go](../cmd/scraper/outbound_actions.go) — orthogonal max_items wire so `/comment_all_leads với chỉ 1 lead` honours the count the LLM already extracts.
+- [local-connector-extension/src/commands.js](../../local-connector-extension/src/commands.js) — export `navigateAndVerify` from the THGCommands closure (1 line in the return statement).
+- [local-connector-extension/src/outbox.js](../../local-connector-extension/src/outbox.js) — delete the entire group-click implementation (`extractGroupHomeFromPostUrl`, `findAndClickPostAnchorInPage`, `navigateToPostViaGroupClick`, `urlsMatchSameDestination`) and replace `executeInFacebookTab` with a thin wrapper around `THGCommands.navigateAndVerify`. Mirror crawler's cleanup: close the temp tab after the command finishes. Net −240 LOC.
+- [local-connector-extension/manifest.json](../../local-connector-extension/manifest.json) — 0.5.6 → 0.5.7 so operator knows when reload is required.
+- [cmd/scraper/outbound_actions.go](../../cmd/scraper/outbound_actions.go) — orthogonal max_items wire so `/comment_all_leads với chỉ 1 lead` honours the count the LLM already extracts.
 
 Verification path: operator reloads extension to 0.5.7, runs `/comment_all_leads với chỉ 1 lead`, observes a NEW tab opening with the post URL (not the existing FB tab navigating). Three outcomes:
 

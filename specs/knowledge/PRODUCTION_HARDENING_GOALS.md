@@ -12,14 +12,14 @@ This document is the operator-facing dashboard for the 10 production-hardening g
 
 | # | Goal | Verdict | Load-bearing artefact |
 |---|---|---|---|
-| **G1** | Evaluation gold dataset + CI gate | ✅ READY | [internal/workspace_knowledge/soak/gold_dataset.go](../internal/workspace_knowledge/soak/gold_dataset.go) · [gold_dataset_test.go](../internal/workspace_knowledge/soak/gold_dataset_test.go) |
+| **G1** | Evaluation gold dataset + CI gate | ✅ READY | [internal/workspace_knowledge/soak/gold_dataset.go](../../internal/workspace_knowledge/soak/gold_dataset.go) · [gold_dataset_test.go](../../internal/workspace_knowledge/soak/gold_dataset_test.go) |
 | **G2** | Snapshots — deterministic historical replay | 📐 DESIGNED (§G2 below) | scaffold in this doc; PR work in 3 incremental commits |
-| **G3** | Bounded jobs runtime | ✅ READY | [internal/workspace_knowledge/embedding/supervised.go](../internal/workspace_knowledge/embedding/supervised.go) · 5 leak-detection tests |
-| **G4** | 3-layer governance (Retrieval / Prompt / Output) | ✅ READY | L1 in hybrid+pgvector+rrf · L2 in assembly · L3 in [internal/workspace_knowledge/governance/output_validator.go](../internal/workspace_knowledge/governance/output_validator.go) |
+| **G3** | Bounded jobs runtime | ✅ READY | [internal/workspace_knowledge/embedding/supervised.go](../../internal/workspace_knowledge/embedding/supervised.go) · 5 leak-detection tests |
+| **G4** | 3-layer governance (Retrieval / Prompt / Output) | ✅ READY | L1 in hybrid+pgvector+rrf · L2 in assembly · L3 in [internal/workspace_knowledge/governance/output_validator.go](../../internal/workspace_knowledge/governance/output_validator.go) |
 | **G5** | Query rewrite policy — deterministic + traced | 📐 DESIGNED (§G5 below) | trace shape ready (`ScoredHit` extensible); no hidden LLM rewrite path exists today (verified by audit) |
-| **G6** | RRF authority — semantic never overrides governance/pin | ✅ READY | [retrieval/rrf/rrf_searcher.go](../internal/workspace_knowledge/retrieval/rrf/rrf_searcher.go) defence-in-depth gate · [rrf_authority_test.go](../internal/workspace_knowledge/retrieval/rrf/rrf_authority_test.go) |
+| **G6** | RRF authority — semantic never overrides governance/pin | ✅ READY | [retrieval/rrf/rrf_searcher.go](../../internal/workspace_knowledge/retrieval/rrf/rrf_searcher.go) defence-in-depth gate · [rrf_authority_test.go](../../internal/workspace_knowledge/retrieval/rrf/rrf_authority_test.go) |
 | **G7** | Resource isolation — no cross-tenant starvation | 📐 DESIGNED (§G7 below) | tenant isolation under read-load proven; per-org write quota is the open PR |
-| **G8** | Security — sanitize hostile content, redact secrets | ✅ READY | [internal/workspace_knowledge/security/sanitizer.go](../internal/workspace_knowledge/security/sanitizer.go) + [redact.go](../internal/workspace_knowledge/security/redact.go) · hooked at `UpsertKnowledgeAsset` |
+| **G8** | Security — sanitize hostile content, redact secrets | ✅ READY | [internal/workspace_knowledge/security/sanitizer.go](../../internal/workspace_knowledge/security/sanitizer.go) + [redact.go](../../internal/workspace_knowledge/security/redact.go) · hooked at `UpsertKnowledgeAsset` |
 | **G9** | Cost accounting per-org / per-source / 30d rolling | ✅ READY | [internal/store/knowledge_cost.go](../internal/store/knowledge_cost.go) |
 | **G10** | Human feedback — immutable, no auto-train | ✅ READY | [internal/store/knowledge_feedback.go](../internal/store/knowledge_feedback.go) · schema in `schema.go` |
 
@@ -133,7 +133,7 @@ One organization must NEVER:
 
 ### Current state
 
-- **Read path (retrieval)**: SQLite holds a single connection pool; concurrent reads share it via `database/sql`. Tenant-isolation under load is PROVEN ([real_soak_test.go `TestRealSoak_TenantIsolationUnderLoad`](../internal/workspace_knowledge/soak/real_soak_test.go) — 4 orgs × 10 queries, 0 leaks). Read-path starvation is theoretically possible but unobserved at MVP scale.
+- **Read path (retrieval)**: SQLite holds a single connection pool; concurrent reads share it via `database/sql`. Tenant-isolation under load is PROVEN ([real_soak_test.go `TestRealSoak_TenantIsolationUnderLoad`](../../internal/workspace_knowledge/soak/real_soak_test.go) — 4 orgs × 10 queries, 0 leaks). Read-path starvation is theoretically possible but unobserved at MVP scale.
 - **Write path (embedding worker)**: `Worker.Tick` polls `ListPendingEmbeddings` org-agnostically. A single org with 100k pending assets WOULD monopolise the worker until drained. **THIS IS THE OPEN GAP.**
 
 ### Design — per-org fair scheduling

@@ -8,12 +8,12 @@
 
 This file complements (does not replace):
 
-- [`AGENTS.md`](../AGENTS.md) — short operating instructions per topic.
-- [`specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`](BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md)
+- [`AGENTS.md`](../../AGENTS.md) — short operating instructions per topic.
+- [`specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`](../browser/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md)
   — browser provider direction and Chrome Extension production path.
-- [`specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`](FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md)
+- [`specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`](../facebook/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md)
   — long-form product / feature direction.
-- [`openspec/root-architecture.md`](../openspec/root-architecture.md)
+- [`openspec/root-architecture.md`](../../openspec/root-architecture.md)
   — system boundaries.
 
 ## 1. North star (read first)
@@ -150,7 +150,7 @@ Before calling the helper, the handler must:
 
 ## 6. Session lifecycle (typed enum)
 
-Single source of truth: [`internal/store/session_status.go`](../internal/store/session_status.go).
+Single source of truth: [`internal/store/session_status.go`](../../internal/store/session_status.go).
 
 ```
 local_starting   ──► local_active ──► local_ready
