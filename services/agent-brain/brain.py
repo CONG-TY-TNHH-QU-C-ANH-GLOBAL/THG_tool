@@ -173,7 +173,10 @@ def build_market_signal_gate(
 
     positives = merge_unique(profile_positives, plan_positives)
     negatives = merge_unique(profile_negatives, plan_negatives)
-    target_role = plan_role or profile_role
+    # The LLM plan_role is already canonical; profile_role uses the plural
+    # business-profile vocabulary (customers/suppliers/providers/...). Normalize
+    # the chosen value so the Go classifier only ever sees the canonical enum.
+    target_role = planner_llm.normalize_target_role(plan_role or profile_role)
 
     return {
         "target_role": target_role,

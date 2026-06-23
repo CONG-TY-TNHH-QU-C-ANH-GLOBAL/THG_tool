@@ -77,8 +77,11 @@ class BrainPlannerTest(unittest.TestCase):
         self.assertIn("chuyên cung cấp", gate["negative_signals"])  # from LLM plan
 
     def test_gate_falls_back_to_profile_when_plan_role_empty(self):
+        # When the LLM gives no role, the gate falls back to the org profile's
+        # target_author_role ("customers") — but that plural business-profile
+        # value MUST be normalized to the canonical Go enum, never emitted raw.
         gate = build_market_signal_gate(PROFILE, {"target_role": "", "include_signals": [], "exclude_signals": []})
-        self.assertEqual(gate["target_role"], "customers")  # profile default
+        self.assertEqual(gate["target_role"], "potential_customer")  # normalized profile default
 
     def test_combine_keywords_merges_unique(self):
         merged = combine_keywords("kho, xuong", ["tìm kho", "cần warehouse", "xuong"])
