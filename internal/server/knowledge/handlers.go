@@ -16,8 +16,9 @@ import (
 // Transport-layer error messages, factored out to avoid duplicated string
 // literals (go:S1192). Values are byte-identical to the originals.
 const (
-	errInvalidRequest  = "invalid request"
-	errInvalidSourceID = "invalid source id"
+	errInvalidRequest     = "invalid request"
+	errInvalidSourceID    = "invalid source id"
+	errOrgContextRequired = "org context required"
 )
 
 // listSources returns every knowledge source owned by the caller's
@@ -30,7 +31,7 @@ const (
 func (h *handler) listSources(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errOrgContextRequired})
 	}
 
 	filter := sources.ListFilter{}
@@ -68,7 +69,7 @@ type createSourceBody struct {
 func (h *handler) createSource(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errOrgContextRequired})
 	}
 	var body createSourceBody
 	if err := c.BodyParser(&body); err != nil {
@@ -117,7 +118,7 @@ type updateSourceBody struct {
 func (h *handler) updateSource(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errOrgContextRequired})
 	}
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -181,7 +182,7 @@ type seedRow struct {
 func (h *handler) seedService(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errOrgContextRequired})
 	}
 	if h.deps.Dispatcher == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "ingest_dispatcher_unavailable"})
@@ -302,7 +303,7 @@ func buildSeedCSV(b seedServiceBody) (string, error) {
 func (h *handler) deleteSource(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errOrgContextRequired})
 	}
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -332,7 +333,7 @@ func (h *handler) deleteSource(c *fiber.Ctx) error {
 func (h *handler) syncSource(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "org context required"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": errOrgContextRequired})
 	}
 	if h.deps.Dispatcher == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{

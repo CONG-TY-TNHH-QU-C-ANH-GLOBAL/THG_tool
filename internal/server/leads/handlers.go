@@ -21,8 +21,9 @@ import (
 // Transport-layer error messages, factored out to avoid duplicated string
 // literals (go:S1192). Values are byte-identical to the originals.
 const (
-	errInvalidID      = "invalid id"
-	errInvalidRequest = "invalid request"
+	errInvalidID         = "invalid id"
+	errInvalidRequest    = "invalid request"
+	errMissingOrgContext = "missing org context"
 )
 
 // nicheSlugRe constrains niche slugs to a URL/filter-safe shape. Slugs flow
@@ -88,7 +89,7 @@ func deleteLead(deps Deps) fiber.Handler {
 		source := strings.ToLower(strings.TrimSpace(c.Query("source", "")))
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		if source == "task_lead" {
 			if err := deps.DB.Leads().DeleteTaskLead(orgID, id); err != nil {
@@ -265,7 +266,7 @@ func deleteAllLeads(deps Deps) fiber.Handler {
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		count, err := deps.DB.Leads().DeleteAllLeadsForOrg(orgID, niche)
 		if err != nil {
@@ -290,7 +291,7 @@ func getClassificationsRecent(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		taskID := strings.TrimSpace(c.Query("task_id", ""))
 		decision := strings.TrimSpace(c.Query("decision", ""))
@@ -393,7 +394,7 @@ func deletePost(deps Deps) fiber.Handler {
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		if err := deps.DB.Crawl().DeletePost(orgID, id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -412,7 +413,7 @@ func deleteAllPosts(deps Deps) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		count, err := deps.DB.Crawl().DeleteAllPostsForOrg(orgID)
 		if err != nil {
@@ -462,7 +463,7 @@ func addGroup(deps Deps) fiber.Handler {
 		}
 		groupOrgID, _ := c.Locals("org_id").(int64)
 		if groupOrgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		group := &models.Group{
 			OrgID:     groupOrgID,
@@ -489,7 +490,7 @@ func toggleGroup(deps Deps) fiber.Handler {
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		var req struct {
 			Active bool `json:"active"`
@@ -513,7 +514,7 @@ func deleteGroup(deps Deps) fiber.Handler {
 		}
 		orgID, _ := c.Locals("org_id").(int64)
 		if orgID <= 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "missing org context"})
+			return c.Status(400).JSON(fiber.Map{"error": errMissingOrgContext})
 		}
 		if err := deps.DB.Crawl().DeleteGroup(orgID, id); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})

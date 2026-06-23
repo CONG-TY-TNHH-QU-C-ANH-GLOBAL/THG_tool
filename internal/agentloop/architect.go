@@ -168,7 +168,7 @@ func rankFiles(files []string, domain Domain, intent string) []string {
 		file  string
 		score int
 	}
-	var scored_ []scored
+	var ranked []scored
 	for _, f := range files {
 		fl := strings.ToLower(f)
 		s := 0
@@ -177,18 +177,18 @@ func rankFiles(files []string, domain Domain, intent string) []string {
 				s++
 			}
 		}
-		scored_ = append(scored_, scored{f, s})
+		ranked = append(ranked, scored{f, s})
 	}
 
 	// Simple insertion sort by descending score.
-	for i := 1; i < len(scored_); i++ {
-		for j := i; j > 0 && scored_[j].score > scored_[j-1].score; j-- {
-			scored_[j], scored_[j-1] = scored_[j-1], scored_[j]
+	for i := 1; i < len(ranked); i++ {
+		for j := i; j > 0 && ranked[j].score > ranked[j-1].score; j-- {
+			ranked[j], ranked[j-1] = ranked[j-1], ranked[j]
 		}
 	}
 
-	out := make([]string, len(scored_))
-	for i, s := range scored_ {
+	out := make([]string, len(ranked))
+	for i, s := range ranked {
 		out[i] = s.file
 	}
 	return out

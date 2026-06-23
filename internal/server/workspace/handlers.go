@@ -18,6 +18,15 @@ import (
 	"github.com/thg/scraper/internal/store/connectors"
 )
 
+// Transport-layer error messages, factored out to avoid duplicated string
+// literals (go:S1192). Values are byte-identical to the originals.
+const (
+	errWorkspaceMgrNotInit = "workspace manager not initialized"
+	errAccountNotFound     = "account not found"
+	errInvalidRequest      = "invalid request"
+	errInvalidID           = "invalid id"
+)
+
 // workspaceList returns all Facebook accounts with their live browser status.
 // GET /api/browser/workspaces
 //
@@ -152,7 +161,7 @@ func (h *Handler) workspaceStart(c *fiber.Ctx) error {
 		})
 	}
 	if h.workspace == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+		return c.Status(503).JSON(fiber.Map{"error": errWorkspaceMgrNotInit})
 	}
 
 	inst, err := h.workspace.Start(id, acc.Name)
@@ -310,7 +319,7 @@ func (h *Handler) workspaceNew(c *fiber.Ctx) error {
 	}
 	if h.workspace == nil {
 		_ = h.db.Identities().DeleteAccount(id)
-		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+		return c.Status(503).JSON(fiber.Map{"error": errWorkspaceMgrNotInit})
 	}
 
 	inst, err := h.workspace.Start(id, name)
@@ -355,10 +364,10 @@ func (h *Handler) workspaceSyncSession(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	acc, err := h.db.Identities().GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errAccountNotFound})
 	}
 	if h.workspace == nil {
-		return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+		return c.Status(503).JSON(fiber.Map{"error": errWorkspaceMgrNotInit})
 	}
 	inst := h.workspaceInstanceForAccount(id, acc.Name)
 	if inst == nil || inst.CDPPort == 0 {
@@ -399,7 +408,7 @@ func (h *Handler) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	acc, err := h.db.Identities().GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errAccountNotFound})
 	}
 	var body struct {
 		LoggedIn bool `json:"logged_in"`
@@ -412,7 +421,7 @@ func (h *Handler) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	var cookiesJSON string
 	if body.LoggedIn {
 		if h.workspace == nil {
-			return c.Status(503).JSON(fiber.Map{"error": "workspace manager not initialized"})
+			return c.Status(503).JSON(fiber.Map{"error": errWorkspaceMgrNotInit})
 		}
 		inst := h.workspaceInstanceForAccount(id, acc.Name)
 		if inst == nil || inst.CDPPort == 0 {
@@ -456,7 +465,7 @@ func (h *Handler) resolveCheckpoint(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	if orgID != 0 {
 		if acc, err := h.db.Identities().GetAccountForOrg(id, orgID); err != nil || acc == nil {
-			return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+			return c.Status(404).JSON(fiber.Map{"error": errAccountNotFound})
 		}
 	}
 	sm := session.NewStateMachine(h.db.DB())
@@ -528,7 +537,7 @@ func (h *Handler) addAccount(c *fiber.Ctx) error {
 		Notes       string `json:"notes"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 	if req.Name == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "name required"})
@@ -568,20 +577,20 @@ func (h *Handler) addAccount(c *fiber.Ctx) error {
 func (h *Handler) updateAccountStatus(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 	}
 
 	var req struct {
 		Status string `json:"status"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 
 	orgID, _ := c.Locals("org_id").(int64)
 	acc, err := h.db.Identities().GetAccountForOrg(id, orgID)
 	if err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errAccountNotFound})
 	}
 
 	if err := h.db.Identities().UpdateAccountStatus(id, models.AccountStatus(req.Status)); err != nil {
@@ -594,19 +603,19 @@ func (h *Handler) updateAccountStatus(c *fiber.Ctx) error {
 func (h *Handler) updateAccountCookies(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 	}
 
 	var req struct {
 		CookiesJSON string `json:"cookies_json"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidRequest})
 	}
 
 	orgID, _ := c.Locals("org_id").(int64)
 	if acc, err := h.db.Identities().GetAccountForOrg(id, orgID); err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errAccountNotFound})
 	}
 
 	if err := h.db.Identities().UpdateAccountCookies(id, req.CookiesJSON); err != nil {
@@ -619,12 +628,12 @@ func (h *Handler) updateAccountCookies(c *fiber.Ctx) error {
 func (h *Handler) deleteAccount(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 	}
 
 	orgID, _ := c.Locals("org_id").(int64)
 	if acc, err := h.db.Identities().GetAccountForOrg(id, orgID); err != nil || acc == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "account not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errAccountNotFound})
 	}
 
 	if err := h.db.Identities().DeleteAccount(id); err != nil {
