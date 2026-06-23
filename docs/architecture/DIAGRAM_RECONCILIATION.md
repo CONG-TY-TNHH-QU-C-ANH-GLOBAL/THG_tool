@@ -114,8 +114,9 @@ Supported by [`ARCHITECTURE_STANDARD.md`](./ARCHITECTURE_STANDARD.md),
 [`CURRENT_CODE_AUDIT.md`](./CURRENT_CODE_AUDIT.md), and the package tree:
 
 - **Go modular monolith with role split** — `cmd/scraper` (API), `cmd/worker`
-  (crawler), `cmd/agent` (connector/agent). Matches "Core Services (Go)" +
-  "Crawler Cluster" separation.
+  (crawler). A `cmd/agent` (connector/agent) role is *planned/aspirational only* —
+  it has no tracked Go package today (no committed history). Matches "Core Services
+  (Go)" + "Crawler Cluster" separation.
 - **`org_id`-scoped multi-tenant direction** — tenant isolation is a binding rule
   and a green guard; matches the *property* behind "PostgreSQL (Multi-tenant DB)".
 - **Platform service resolver/adapters direction** — `internal/platform/services/resolver/`
@@ -278,7 +279,7 @@ Practical target tree (grounded in the actual repo; status marked per folder):
 cmd/
   scraper/                # API role (composition root)          — existing
   worker/                 # crawler role (composition root)      — existing
-  agent/                  # connector/agent role                 — existing
+  agent/                  # connector/agent role                 — planned (no tracked package today)
 
 internal/
   platform/               # service registry, tenancy root       — existing
@@ -351,7 +352,7 @@ required" = what must be green/added **before** touching.
 | Store / database | Infra | SQLite now; PG dialect | `internal/store` (+ `postgres`, `dialect.go`) | same | High | migrator hardening, dialect tests; ETL per ADR-PR9 |
 | Action ledger | Domain | append-only truth | `internal/store/coordination` | same | Critical | append-only invariant guard; never refactor casually |
 | Observability | Infra | runtime feed, audit, logs | `internal/observability`, `internal/logstream`, `internal/server/observability` | same | Low | read-only projection tests |
-| Future Taobao/1688 adapters | Application | sourcing verticals | `internal/platform/services/resolver/*` stubs | `internal/services/{taobao,1688}` + `services/supplier-analyzer` (Py) | Low (new) | new-vertical contract tests; must not import `services/facebook` |
+| Future Taobao/1688 adapters | Application | sourcing verticals | `internal/platform/services/resolver/*` stubs | `internal/services/{taobao,supplier1688}` + `services/supplier-analyzer` (Py) | Low (new) | new-vertical contract tests; must not import `services/facebook` |
 
 ---
 

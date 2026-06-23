@@ -44,32 +44,64 @@ modules:
     next_phase: "G (drop store dependency via typed CommandBus / injected inputs)"
     known_gap: "internal/drivers/copilot/agent.go imports internal/store (COPILOT_NO_DIRECT_REPO). NOTE: the earlier B.2 'cycle' blocker was a FALSE POSITIVE (classifier.go's own same-named method); the move was clean and cycle-free."
 
+  - name: drivers/http
+    current_paths: [internal/server]   # REST/SSE handlers (runtime still here)
+    target_paths: [internal/drivers/http]
+    responsibility: "Inbound REST/SSE transport: translate HTTP requests/streams into application commands/queries."
+    allowed_dependency_direction: "drivers/http -> {application command/query ports, models}"
+    forbidden_imports: [store/outbound, connectors, services/*]   # plus no direct store/<domain> except documented legacy
+    status: scaffolded   # doc.go marker only (PR26C); runtime still under internal/server/*
+    next_phase: "post-D (move handlers behind typed ports; legacy store access tolerated until then)"
+
+  - name: drivers/telegram
+    current_paths: [internal/telegram, internal/server/telegram]
+    target_paths: [internal/drivers/telegram]
+    responsibility: "Inbound Telegram/webhook transport: translate Telegram input into typed application commands."
+    allowed_dependency_direction: "drivers/telegram -> {application command ports, models}"
+    forbidden_imports: [store/outbound, connectors, services/*]   # Telegram is an interface, not a separate logic path
+    status: scaffolded   # doc.go marker only (PR26C); runtime still under internal/telegram + internal/server/telegram
+    next_phase: "post-D (routed through shared ActionContext->PolicyGate->Execution spine)"
+
+  - name: drivers/connector
+    current_paths: [internal/server/agent]
+    target_paths: [internal/drivers/connector]
+    responsibility: "Inbound Chrome-extension connector driver: heartbeat, outbox PULL, crawl/action result endpoints."
+    allowed_dependency_direction: "drivers/connector -> {application command ports, models}"
+    forbidden_imports: [store/outbound, services/*]
+    status: scaffolded   # doc.go marker only (PR26C); runtime still under internal/server/agent
+    # CONTROLLED ZONE: pull-based outbox + CAS/lease (CONNECTOR_STATE_MACHINE.md). MUST NOT become server-push. Gated, test-first.
+    next_phase: "F (connector hardening; preserve pull/CAS/lease/human_required)"
+
   - name: services/facebook
     current_paths: [cmd/scraper, internal/jobhandlers/facebook_crawl, internal/leadingest, internal/fburl]
     target_paths: [internal/services/facebook]
     responsibility: "Facebook workflows: crawl, import post, plan comment/inbox, post. Owns FB sequencing + gates."
     allowed_dependency_direction: "facebook -> {ai, fburl, outbound(port), connectors(port), leads, crawl, events, models}"
-    forbidden_imports: [drivers/copilot, services/taobao, services/1688, internal/server]
+    forbidden_imports: [drivers/copilot, services/taobao, services/supplier1688, internal/server]
     status: scaffolded   # doc.go + ports.OutboundPlanner scaffolded (Phase D); runtime moves DEFERRED
     next_phase: "C (boundary, move-only) then H (features on the outbox). DEFERRED blockers: fburl has 8 importers incl. internal/ai (moving it under services/facebook would create ai->services); leadingest ripples to server+worker and is the Phase-E callback target"
     owns_port: internal/services/facebook/ports.OutboundPlanner   # scaffolded Phase D (additive, not wired)
 
   - name: services/taobao
-    current_paths: [internal/platform/services/resolver]   # stub only
+    current_paths: [internal/platform/services/resolver]   # stub only (resolver/taobao.go)
     target_paths: [internal/services/taobao]
     responsibility: "Future Taobao sourcing workflows on shared primitives."
     allowed_dependency_direction: "taobao -> {shared primitives via ports, models}"
-    forbidden_imports: [services/facebook, services/1688, drivers/*]
-    status: documented
+    forbidden_imports: [services/facebook, services/supplier1688, drivers/*]
+    status: scaffolded   # doc.go marker at internal/services/taobao (PR26C); no runtime code yet
     next_phase: "post-E (after outbox + ports stable)"
 
   - name: services/1688
-    current_paths: [internal/platform/services/resolver]   # stub only
-    target_paths: [internal/services/alibaba1688]
-    responsibility: "Future 1688 sourcing workflows on shared primitives."
-    allowed_dependency_direction: "1688 -> {shared primitives via ports, models}"
+    # Logical/product label is "1688". Canonical Go module PATH is internal/services/supplier1688
+    # because a Go package identifier cannot begin with a digit (internal/services/1688 is invalid).
+    # The existing platform resolver stub file internal/platform/services/resolver/alibaba1688.go is
+    # NOT renamed by this sync; "supplier1688" is the future service-module path unless a later ADR changes it.
+    current_paths: [internal/platform/services/resolver]   # stub only (resolver/alibaba1688.go)
+    target_paths: [internal/services/supplier1688]
+    responsibility: "Future 1688 sourcing workflows on shared primitives (Go package: supplier1688)."
+    allowed_dependency_direction: "supplier1688 -> {shared primitives via ports, models}"
     forbidden_imports: [services/facebook, services/taobao, drivers/*]
-    status: documented
+    status: scaffolded   # doc.go marker at internal/services/supplier1688 (PR26C); no runtime code yet
     next_phase: "post-E"
 
   - name: ai
@@ -126,3 +158,33 @@ modules:
     forbidden_imports: [services/facebook(lead/comment logic), outbound internals, connectors]
     status: scaffolded   # fed by direct calls today, not event subscription
     next_phase: "E (subscribe to outbox events)"
+
+  - name: connectors
+    current_paths: [internal/store/connectors, internal/browsergateway, internal/cdpclient, local-connector-extension]
+    target_paths: [internal/connectors]
+    responsibility: "Connector domain/infra: extension bridge, pairing, commands, screenshots, readiness."
+    allowed_dependency_direction: "connectors -> {models, store(connectors), ports}"
+    forbidden_imports: [services/*, drivers/*, internal/server]
+    status: scaffolded   # doc.go marker only (PR26C); runtime still under the current_paths above
+    # CONTROLLED ZONE: MUST preserve pull/CAS/lease/human_required (CONNECTOR_STATE_MACHINE.md). Gated, test-first.
+    next_phase: "F"
+
+  - name: crawler
+    current_paths: [internal/jobs, internal/jobhandlers, internal/store/crawl, cmd/worker]
+    target_paths: [internal/crawler]
+    responsibility: "Crawler/crawl-execution: crawl jobs, scheduling, posts/groups/comments ingestion."
+    allowed_dependency_direction: "crawler -> {domain/app packages, store/crawl, jobs, ports, models}"
+    forbidden_imports: [internal/server, drivers/*]   # WORKER_NO_TRANSPORT (warn-only guard)
+    status: scaffolded   # doc.go marker only (PR26C); runtime still under the current_paths above
+    next_phase: "C (crawl handler -> services/facebook) / F"
+
+  - name: automation
+    current_paths: []   # none yet
+    target_paths: [internal/automation]
+    responsibility: >-
+      Cross-vertical automation coordination glue (vertical-neutral). MUST NOT become a
+      common/utils dumping ground; platform-specific workflows belong under services/<service>.
+    allowed_dependency_direction: "automation -> {shared primitives via ports, models}"
+    forbidden_imports: [drivers/*, internal/server]   # no platform-specific vertical logic
+    status: scaffolded   # doc.go marker only (PR26C); no runtime code
+    next_phase: "deferred (create only when a real cross-vertical need exists)"

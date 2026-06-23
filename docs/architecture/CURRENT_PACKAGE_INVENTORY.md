@@ -99,6 +99,29 @@ crawl/outbox handlers, not by subscribing to durable events — the Phase E chan
 clean and contain NO runtime code — they mark target boundaries so future move-only
 PRs have a destination and the import guard has paths to check.
 
+## PR26C marker packages (target boundary markers, no runtime code)
+
+These `doc.go`-only packages mark target boundaries from `DIAGRAM_RECONCILIATION.md`
+§6. They build clean and contain **no runtime code**; the runtime still lives at the
+listed current paths until a reviewed move-only PR migrates it.
+
+| Marker package | Status | Current code still lives in |
+|---|---|---|
+| `internal/drivers/http` | marker only | `internal/server/*` (REST/SSE handlers) |
+| `internal/drivers/telegram` | marker only | `internal/telegram`, `internal/server/telegram` |
+| `internal/drivers/connector` | marker only | `internal/server/agent/*` (pull-based outbox; **controlled zone**) |
+| `internal/connectors` | marker only | `internal/store/connectors`, `internal/browsergateway`, `internal/cdpclient`, `local-connector-extension/` |
+| `internal/crawler` | marker only | `internal/jobs`, `internal/jobhandlers`, `internal/store/crawl`, `cmd/worker` |
+| `internal/services/taobao` | future marker | `internal/platform/services/resolver` (stub only) |
+| `internal/services/supplier1688` | future marker | `internal/platform/services/resolver` (stub `alibaba1688.go`) |
+| `internal/automation` | marker only | none yet — cross-vertical glue; **must not become `common`/`utils`** |
+
+**1688 naming (canonical):** the Go module path is **`internal/services/supplier1688`**
+(a Go package name cannot start with a digit, so `internal/services/1688` is invalid);
+the product/platform label remains **"1688"**. The existing resolver stub
+`internal/platform/services/resolver/alibaba1688.go` is **not** renamed — `supplier1688`
+is the future *service-module* path unless a later ADR changes it.
+
 ## Foundation sprint deltas (since Phase A)
 
 - **Moved:** `internal/ai/comment_persona.go` → `internal/ai/comment/persona.go`
