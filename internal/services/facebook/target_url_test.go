@@ -9,6 +9,20 @@ import (
 // Moved verbatim from cmd/scraper/outbound_actions_test.go (Phase C/I) alongside the
 // target-URL resolution it pins; assertions are unchanged.
 
+// assertURLReason runs one (wantURL, wantReason) subtest. Shared by the resolver table
+// tests so the identical assertion block isn't repeated per case (de-duplication).
+func assertURLReason(t *testing.T, name, gotURL, gotReason, wantURL, wantReason string) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		if gotURL != wantURL {
+			t.Errorf("url = %q, want %q", gotURL, wantURL)
+		}
+		if gotReason != wantReason {
+			t.Errorf("reason = %q, want %q", gotReason, wantReason)
+		}
+	})
+}
+
 func TestIsCommentableFacebookPostURL(t *testing.T) {
 	tests := []struct {
 		name string
@@ -137,15 +151,8 @@ func TestResolveOutboundTargetURL(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotURL, gotReason := ResolveOutboundTargetURL(tt.lead, tt.msgType)
-			if gotURL != tt.wantURL {
-				t.Errorf("url = %q, want %q", gotURL, tt.wantURL)
-			}
-			if gotReason != tt.wantReason {
-				t.Errorf("reason = %q, want %q", gotReason, tt.wantReason)
-			}
-		})
+		gotURL, gotReason := ResolveOutboundTargetURL(tt.lead, tt.msgType)
+		assertURLReason(t, tt.name, gotURL, gotReason, tt.wantURL, tt.wantReason)
 	}
 }
 
