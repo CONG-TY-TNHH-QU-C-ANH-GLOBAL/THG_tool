@@ -46,12 +46,12 @@ type Harness struct {
 
 // Run executes the full soak flow:
 //
-//   1. Build the test catalog (ingest into store, mark all pending).
-//   2. Run embedding worker to generate vectors for the catalog.
-//   3. Build the searcher (per SearcherVariant).
-//   4. For each prompt: retrieve, measure outcome.
-//   5. Inject failure modes A-F and validate graceful behaviour.
-//   6. Compute verdict + return Report.
+//  1. Build the test catalog (ingest into store, mark all pending).
+//  2. Run embedding worker to generate vectors for the catalog.
+//  3. Build the searcher (per SearcherVariant).
+//  4. For each prompt: retrieve, measure outcome.
+//  5. Inject failure modes A-F and validate graceful behaviour.
+//  6. Compute verdict + return Report.
 //
 // Returns the Report alongside an error if the SOAK ITSELF failed
 // (couldn't ingest, couldn't generate embeddings, etc.). A normal
@@ -97,77 +97,16 @@ func (h *Harness) Run(ctx context.Context) (*Report, error) {
 	if err != nil {
 		return report, fmt.Errorf("setup source: %w", err)
 	}
-	for _, fx := range h.Catalog {
-		a := &assets.Asset{
-			OrgID:       h.OrgID,
-			SourceID:    sourceID,
-			ExternalID:  fx.ExternalID,
-			Type:        fx.Type,
-			Title:       fx.Title,
-			Description: fx.Description,
-			Tags:        fx.Tags,
-			Payload:     fx.PayloadJSON(),
-			State:       fx.State,
-			Pinned:      fx.Pinned,
-			Boost:       fx.Boost,
-		}
-		if a.State == "" {
-			a.State = assets.StateApproved
-		}
-		saved, err := h.Store.Knowledge().UpsertAsset(ctx, a)
-		if err != nil {
-			report.Notes = append(report.Notes, fmt.Sprintf("ingest %s: %v", fx.ExternalID, err))
-			continue
-		}
-		// Operator-state setters bypass the embedding hook — but
-		// UpsertKnowledgeAsset DID mark embedding_status='pending'
-		// because the asset is fresh. Confirm via the typed asset.
-		_ = saved
-		report.CatalogSize++
-		report.AssetsByType[string(fx.Type)]++
-	}
+	h.ingestCatalog(ctx, report, sourceID)
 
 	// --- Step 2: Run embedding pipeline ---
-	worker := embedding.NewWorker(h.Store.Knowledge(), h.Embedder)
-	worker.BatchSize = 32
-	// Drain the pending queue. Loop until idle (or safety cap).
-	for range 50 {
-		n, err := worker.Tick(ctx)
-		if err != nil {
-			report.Notes = append(report.Notes, fmt.Sprintf("embed tick: %v", err))
-			break
-		}
-		if n == 0 {
-			break
-		}
-	}
-	stats, err := h.Store.Knowledge().GetEmbeddingStatsForOrg(ctx, h.OrgID)
-	if err == nil {
-		report.EmbeddingsGenerated = stats.Generated
-		report.EmbeddingsPending = stats.Pending
-		report.EmbeddingsFailed = stats.Failed
-	}
+	h.runEmbeddingPipeline(ctx, report)
 
 	// --- Step 3: Build the searcher ---
-	// Real pgvector is unavailable in SQLite; the harness simulates the
-	// pgvector pathway using a deterministic semantic searcher that
-	// queries the same ClusteredEmbedder. This is the realistic-soak
-	// compromise: full pipeline behaviour, no external dependency.
-	hybridSearcher := hybrid.New(h.Store.Knowledge())
-	var primarySearcher retrieval.Searcher
-	switch h.SearcherVariant {
-	case "hybrid":
-		primarySearcher = hybridSearcher
-	case "rrf":
-		// Compose RRF over hybrid + the mock semantic searcher.
-		semantic := newMockSemanticSearcher(h.Store.Knowledge(), h.Embedder)
-		primarySearcher = rrf.New(hybridSearcher, semantic)
-	default:
-		return report, fmt.Errorf("soak: unknown SearcherVariant %q", h.SearcherVariant)
+	wrap, err := h.buildSearcher()
+	if err != nil {
+		return report, err
 	}
-	// Wrap in fallback so we can observe whether it ever fires under
-	// healthy conditions (it shouldn't).
-	wrap := fallback.New(primarySearcher, hybridSearcher)
 
 	// --- Step 4: Run prompts, collect outcomes ---
 	for _, prompt := range h.Prompts {
@@ -200,6 +139,86 @@ func (h *Harness) Run(ctx context.Context) (*Report, error) {
 	report.OperatorTrust = computeTrustVerdict(report)
 
 	return report, nil
+}
+
+// ingestCatalog upserts the fixture catalog into the soak source and tallies catalog
+// stats on the report. Verbatim extraction of Run's former Step-1 loop.
+func (h *Harness) ingestCatalog(ctx context.Context, report *Report, sourceID int64) {
+	for _, fx := range h.Catalog {
+		a := &assets.Asset{
+			OrgID:       h.OrgID,
+			SourceID:    sourceID,
+			ExternalID:  fx.ExternalID,
+			Type:        fx.Type,
+			Title:       fx.Title,
+			Description: fx.Description,
+			Tags:        fx.Tags,
+			Payload:     fx.PayloadJSON(),
+			State:       fx.State,
+			Pinned:      fx.Pinned,
+			Boost:       fx.Boost,
+		}
+		if a.State == "" {
+			a.State = assets.StateApproved
+		}
+		saved, err := h.Store.Knowledge().UpsertAsset(ctx, a)
+		if err != nil {
+			report.Notes = append(report.Notes, fmt.Sprintf("ingest %s: %v", fx.ExternalID, err))
+			continue
+		}
+		// Operator-state setters bypass the embedding hook — but
+		// UpsertKnowledgeAsset DID mark embedding_status='pending'
+		// because the asset is fresh. Confirm via the typed asset.
+		_ = saved
+		report.CatalogSize++
+		report.AssetsByType[string(fx.Type)]++
+	}
+}
+
+// runEmbeddingPipeline drains the pending embedding queue (bounded) and records the
+// resulting embedding stats on the report. Verbatim extraction of Run's former Step 2.
+func (h *Harness) runEmbeddingPipeline(ctx context.Context, report *Report) {
+	worker := embedding.NewWorker(h.Store.Knowledge(), h.Embedder)
+	worker.BatchSize = 32
+	// Drain the pending queue. Loop until idle (or safety cap).
+	for range 50 {
+		n, err := worker.Tick(ctx)
+		if err != nil {
+			report.Notes = append(report.Notes, fmt.Sprintf("embed tick: %v", err))
+			break
+		}
+		if n == 0 {
+			break
+		}
+	}
+	stats, err := h.Store.Knowledge().GetEmbeddingStatsForOrg(ctx, h.OrgID)
+	if err == nil {
+		report.EmbeddingsGenerated = stats.Generated
+		report.EmbeddingsPending = stats.Pending
+		report.EmbeddingsFailed = stats.Failed
+	}
+}
+
+// buildSearcher composes the soak searcher for the configured variant and wraps it in the
+// fallback observer. Real pgvector is unavailable in SQLite; the rrf variant simulates the
+// pgvector pathway via the deterministic mock semantic searcher (full pipeline behaviour,
+// no external dependency). Verbatim extraction of Run's former Step 3.
+func (h *Harness) buildSearcher() (retrieval.Searcher, error) {
+	hybridSearcher := hybrid.New(h.Store.Knowledge())
+	var primarySearcher retrieval.Searcher
+	switch h.SearcherVariant {
+	case "hybrid":
+		primarySearcher = hybridSearcher
+	case "rrf":
+		// Compose RRF over hybrid + the mock semantic searcher.
+		semantic := newMockSemanticSearcher(h.Store.Knowledge(), h.Embedder)
+		primarySearcher = rrf.New(hybridSearcher, semantic)
+	default:
+		return nil, fmt.Errorf("soak: unknown SearcherVariant %q", h.SearcherVariant)
+	}
+	// Wrap in fallback so we can observe whether it ever fires under
+	// healthy conditions (it shouldn't).
+	return fallback.New(primarySearcher, hybridSearcher), nil
 }
 
 // setupSource creates the soak source row that owns the fixture assets.
