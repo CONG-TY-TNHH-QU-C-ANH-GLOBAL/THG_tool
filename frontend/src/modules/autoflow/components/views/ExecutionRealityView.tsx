@@ -221,7 +221,7 @@ export default function ExecutionRealityView(_: Readonly<ExecutionRealityViewPro
   // ── derive headline sentences ────────────────────────────────────────
   const windowLabel = hours < 24 ? `${hours} giờ qua` : `${hours / 24} ngày qua`;
 
-  let systemTone: HealthCardProps['tone'] = 'idle';
+  let systemTone: HealthCardProps['tone'];
   let systemHeadline = '';
   let systemBody: React.ReactNode;
   if (summary.total === 0) {

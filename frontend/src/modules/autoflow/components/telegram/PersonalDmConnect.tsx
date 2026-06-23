@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { theme, secondaryBtn } from '../../constants/styles';
+import { secondaryBtn } from '../../constants/styles';
 import { strings, type Lang } from './telegramCopy';
 import { TelegramBindCodeCard } from './TelegramBindCodeCard';
 import * as tg from '../../services/telegramIntegrationApi';

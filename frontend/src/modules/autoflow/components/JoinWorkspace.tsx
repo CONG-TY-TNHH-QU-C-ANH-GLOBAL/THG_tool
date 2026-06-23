@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, UserPlus } from 'lucide-react';
-import { type AuthUser } from '../services/authService';
 import { useAuth } from '../hooks/useAuth';
 import { useAuthStore } from '../stores/authStore';
 import { useAcceptInvite } from './notifications/useAcceptInvite';

@@ -5,7 +5,6 @@ import {
   Check,
   Database,
   MessagesSquare,
-  ShieldCheck,
   Target,
   Workflow,
 } from 'lucide-react';
