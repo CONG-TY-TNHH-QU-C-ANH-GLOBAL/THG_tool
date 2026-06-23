@@ -52,6 +52,24 @@ func TestIsCommentableFacebookPostURL(t *testing.T) {
 }
 
 func TestResolveOutboundTargetURL(t *testing.T) {
+	const groupPost = "https://www.facebook.com/groups/123/posts/456/"
+
+	// Commentable SourceURL passes through unchanged for comment across accepted source
+	// types. Looped (not 5 identical struct rows) so the homogeneous shape is not a
+	// duplicated block; behavior/coverage is identical.
+	passThrough := []struct{ name, sourceType, url string }{
+		{"post source comment msg uses SourceURL", "post", groupPost},
+		{"comment source comment msg uses SourceURL (parent post)", "comment", groupPost},
+		{"prompt_target source comment msg uses SourceURL", "prompt_target", "https://www.facebook.com/user/posts/789"},
+		{"empty source type defaults to SourceURL path", "", groupPost},
+		{"uppercased source type normalises", "POST", groupPost},
+	}
+	for _, tt := range passThrough {
+		gotURL, gotReason := ResolveOutboundTargetURL(models.Lead{SourceType: tt.sourceType, SourceURL: tt.url}, "comment")
+		assertURLReason(t, tt.name, gotURL, gotReason, tt.url, "")
+	}
+
+	// Heterogeneous cases (skips, FBID reconstruction, inbox, non-comment), one row per line.
 	tests := []struct {
 		name       string
 		lead       models.Lead
@@ -59,96 +77,16 @@ func TestResolveOutboundTargetURL(t *testing.T) {
 		wantURL    string
 		wantReason string
 	}{
-		{
-			name:    "post source comment msg uses SourceURL",
-			lead:    models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/groups/123/posts/456/"},
-			msgType: "comment",
-			wantURL: "https://www.facebook.com/groups/123/posts/456/",
-		},
-		{
-			name:    "comment source comment msg uses SourceURL (parent post)",
-			lead:    models.Lead{SourceType: "comment", SourceURL: "https://www.facebook.com/groups/123/posts/456/"},
-			msgType: "comment",
-			wantURL: "https://www.facebook.com/groups/123/posts/456/",
-		},
-		{
-			name:    "prompt_target source comment msg uses SourceURL",
-			lead:    models.Lead{SourceType: "prompt_target", SourceURL: "https://www.facebook.com/user/posts/789"},
-			msgType: "comment",
-			wantURL: "https://www.facebook.com/user/posts/789",
-		},
-		{
-			name:    "empty source type defaults to SourceURL path",
-			lead:    models.Lead{SourceType: "", SourceURL: "https://www.facebook.com/groups/123/posts/456/"},
-			msgType: "comment",
-			wantURL: "https://www.facebook.com/groups/123/posts/456/",
-		},
-		{
-			name:    "uppercased source type normalises",
-			lead:    models.Lead{SourceType: "POST", SourceURL: "https://www.facebook.com/groups/123/posts/456/"},
-			msgType: "comment",
-			wantURL: "https://www.facebook.com/groups/123/posts/456/",
-		},
-		{
-			name:       "inbox source type rejected for comment",
-			lead:       models.Lead{SourceType: "inbox", SourceURL: "https://www.facebook.com/groups/123/posts/456/"},
-			msgType:    "comment",
-			wantReason: "unrouted_source_type",
-		},
-		{
-			name:       "unknown source type rejected",
-			lead:       models.Lead{SourceType: "weird_new_type", SourceURL: "https://www.facebook.com/groups/123/posts/456/"},
-			msgType:    "comment",
-			wantReason: "unrouted_source_type",
-		},
-		{
-			name:    "photo SourceURL with group+post FBID reconstructs canonical",
-			lead:    models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/photo/?fbid=111&set=gm.222", GroupFBID: "123", PostFBID: "456"},
-			msgType: "comment",
-			wantURL: "https://www.facebook.com/groups/123/posts/456/",
-		},
-		{
-			name:       "photo SourceURL without group_fbid still skipped",
-			lead:       models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/photo/?fbid=111", PostFBID: "456"},
-			msgType:    "comment",
-			wantReason: "missing_post_permalink",
-		},
-		{
-			name:       "photo SourceURL without post_fbid still skipped",
-			lead:       models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/photo/?fbid=111", GroupFBID: "123"},
-			msgType:    "comment",
-			wantReason: "missing_post_permalink",
-		},
-		{
-			name:       "non-commentable URL no FBIDs skipped",
-			lead:       models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/groups/123"},
-			msgType:    "comment",
-			wantReason: "missing_post_permalink",
-		},
-		{
-			name:    "inbox msg uses AuthorURL ignoring SourceURL",
-			lead:    models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/groups/123/posts/456/", AuthorURL: "https://www.facebook.com/user.42"},
-			msgType: "inbox",
-			wantURL: "https://www.facebook.com/user.42",
-		},
-		{
-			name:       "inbox msg missing AuthorURL",
-			lead:       models.Lead{SourceType: "inbox"},
-			msgType:    "inbox",
-			wantReason: "missing_target",
-		},
-		{
-			name:       "non-comment msg with empty SourceURL",
-			lead:       models.Lead{SourceType: "post", SourceURL: ""},
-			msgType:    "group_post",
-			wantReason: "missing_target",
-		},
-		{
-			name:    "non-comment msg passes through without commentable check",
-			lead:    models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/groups/123"},
-			msgType: "group_post",
-			wantURL: "https://www.facebook.com/groups/123",
-		},
+		{name: "inbox source type rejected for comment", lead: models.Lead{SourceType: "inbox", SourceURL: groupPost}, msgType: "comment", wantReason: "unrouted_source_type"},
+		{name: "unknown source type rejected", lead: models.Lead{SourceType: "weird_new_type", SourceURL: groupPost}, msgType: "comment", wantReason: "unrouted_source_type"},
+		{name: "photo SourceURL with group+post FBID reconstructs canonical", lead: models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/photo/?fbid=111&set=gm.222", GroupFBID: "123", PostFBID: "456"}, msgType: "comment", wantURL: groupPost},
+		{name: "photo SourceURL without group_fbid still skipped", lead: models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/photo/?fbid=111", PostFBID: "456"}, msgType: "comment", wantReason: "missing_post_permalink"},
+		{name: "photo SourceURL without post_fbid still skipped", lead: models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/photo/?fbid=111", GroupFBID: "123"}, msgType: "comment", wantReason: "missing_post_permalink"},
+		{name: "non-commentable URL no FBIDs skipped", lead: models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/groups/123"}, msgType: "comment", wantReason: "missing_post_permalink"},
+		{name: "inbox msg uses AuthorURL ignoring SourceURL", lead: models.Lead{SourceType: "post", SourceURL: groupPost, AuthorURL: "https://www.facebook.com/user.42"}, msgType: "inbox", wantURL: "https://www.facebook.com/user.42"},
+		{name: "inbox msg missing AuthorURL", lead: models.Lead{SourceType: "inbox"}, msgType: "inbox", wantReason: "missing_target"},
+		{name: "non-comment msg with empty SourceURL", lead: models.Lead{SourceType: "post", SourceURL: ""}, msgType: "group_post", wantReason: "missing_target"},
+		{name: "non-comment msg passes through without commentable check", lead: models.Lead{SourceType: "post", SourceURL: "https://www.facebook.com/groups/123"}, msgType: "group_post", wantURL: "https://www.facebook.com/groups/123"},
 	}
 	for _, tt := range tests {
 		gotURL, gotReason := ResolveOutboundTargetURL(tt.lead, tt.msgType)
