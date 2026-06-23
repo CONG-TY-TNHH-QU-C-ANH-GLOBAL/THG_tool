@@ -64,19 +64,31 @@
       "id": "autocomment-redirect-investigation",
       "path": "specs/AUTOCOMMENT_REDIRECT_INVESTIGATION.md",
       "title": "AUTOCOMMENT REDIRECT INVESTIGATION",
-      "domain": "unknown",
+      "domain": "facebook",
       "type": "investigation",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "archived",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "PR8A evidence pack + proof-integrity fix shipped (manifest 0.5.19)",
+        "companion to archived root-cause-report",
+        "content/proof.js exists"
+      ],
+      "related_code": [
+        "local-connector-extension/content/proof.js"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "facebook",
+        "investigation",
+        "redirect",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24H. Historical PR8 auto-comment redirect investigation; the PR8A Evidence Pack + proof-integrity fix (buildCommentProof reorder) shipped (manifest 0.5.19). Companion to the archived root-cause-report; the remaining PR8B step is operator-owned. Historical investigation -> archived."
     },
     {
       "id": "automation-platform-core",
@@ -117,36 +129,59 @@
       "path": "specs/BROWSER_AUTOMATION_KIT_REFACTOR.md",
       "title": "BROWSER AUTOMATION KIT REFACTOR",
       "domain": "browser",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-labelled BACKLOG/DESIGN, not started",
+        "targets local-connector-extension/content/facebook/outbound/outbound.js"
+      ],
+      "related_code": [
+        "local-connector-extension/content/facebook/outbound/outbound.js"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "browser",
+        "refactor",
+        "kit",
+        "backlog",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24H. Self-labelled BACKLOG/DESIGN (not started) plan to refactor the ~1400-line outbound.js into a layered multi-platform kit. Complements the active automation-platform-core scaffolding. Future-facing -> draft."
     },
     {
       "id": "browser-gateway-and-facebook-automation-vision",
       "path": "specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md",
       "title": "BROWSER GATEWAY AND FACEBOOK AUTOMATION VISION",
-      "domain": "facebook",
+      "domain": "browser",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "realized browser path is the Chrome connector (active local-connector-production-workflow) + automation-platform-core",
+        "gateway abstraction not implemented (abstraction frozen)"
+      ],
+      "related_code": [
+        "local-connector-extension"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "browser",
+        "vision",
+        "gateway",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24H. Browser-Gateway architectural direction. The realized browser path is the Chrome extension connector (active local-connector-production-workflow) and automation-platform-core scaffolding; the stable-gateway abstraction itself remains aspirational (platform abstraction frozen). Useful direction -> draft."
     },
     {
       "id": "comment-async-reverify",
@@ -380,19 +415,31 @@
       "id": "domain-model",
       "path": "specs/DOMAIN_MODEL.md",
       "title": "DOMAIN MODEL",
-      "domain": "unknown",
+      "domain": "platform",
       "type": "architecture",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "owner packages internal/auth, internal/platform, frontend/src/platform exist"
+      ],
+      "related_code": [
+        "internal/auth",
+        "internal/platform",
+        "frontend/src/platform"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "platform",
+        "vocabulary",
+        "glossary",
+        "living-doc"
+      ],
+      "notes": "Reviewed in PR24H. Living canonical vocabulary (mandatory reading); the owner packages it names (internal/auth, internal/platform, frontend/src/platform) exist. Active/reviewed glossary, not test-pinned."
     },
     {
       "id": "facebook-automation-reliability-track",
@@ -429,17 +476,32 @@
       "title": "FACEBOOK BUSINESS ANALYSIS AUTOMATION PLAN",
       "domain": "facebook",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "CLAUDE.md read-first product plan",
+        "core pointers exist: internal/ai/business.go, internal/ai/universal.go, internal/jobs/model.go, internal/store/app_store.go, internal/jobhandlers/facebook_crawl/handler.go"
+      ],
+      "related_code": [
+        "internal/ai/business.go",
+        "internal/ai/universal.go",
+        "internal/jobs/model.go",
+        "internal/store/app_store.go",
+        "internal/jobhandlers/facebook_crawl/handler.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "facebook",
+        "product-plan",
+        "roadmap",
+        "north-star"
+      ],
+      "notes": "Reviewed in PR24H. Canonical product/implementation plan (CLAUDE.md read-first). Its core implementation pointers exist; the crawl handler moved internal/handlers -> internal/jobhandlers/facebook_crawl. Broad north-star roadmap -> active/reviewed."
     },
     {
       "id": "frontend-contract",
@@ -473,19 +535,28 @@
       "id": "known-issues",
       "path": "specs/KNOWN_ISSUES.md",
       "title": "KNOWN ISSUES",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "frontend",
+      "type": "report",
+      "status": "archived",
+      "maturity": "snapshot",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "all KI-* target autoflow_platform.experimental.tsx (2026-04-27) which is ABSENT from the repo",
+        "production FE moved to frontend/src/modules/autoflow"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "frontend",
+        "known-issues",
+        "mock-derived",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24H. Bug/tech-debt list (KI-001..) audited against autoflow_platform.experimental.tsx (2026-04-27), a mock file no longer present in the repo; the production frontend has moved to frontend/src/modules/autoflow. Targets are obsolete -> archived."
     },
     {
       "id": "leadsview-decomposition",
@@ -551,19 +622,33 @@
       "id": "llm-cost-controls-phase1",
       "path": "specs/LLM_COST_CONTROLS_PHASE1.md",
       "title": "LLM COST CONTROLS PHASE1",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "ai",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
-      "related_tests": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "logClassifierUsage in internal/ai/classifier_cache.go",
+        "classifier cache + usage log + tests present on main (classifier_cache.go, classifier_usage_log.go, classifier_cache_test.go)"
+      ],
+      "related_code": [
+        "internal/ai/classifier_cache.go",
+        "internal/ai/classifier_usage_log.go"
+      ],
+      "related_tests": [
+        "internal/ai/classifier_cache_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "ai",
+        "cost-controls",
+        "classifier",
+        "caching"
+      ],
+      "notes": "Reviewed in PR24H. Phase-1 classifier cost controls (structured JSON usage logs, bounded TTL exact-result cache, real token capture) are present on main in classifier_cache.go + classifier_usage_log.go with tests; the doc's 'not merged' header is now outdated. Implementation-backed."
     },
     {
       "id": "local-connector-production-workflow",
@@ -664,19 +749,30 @@
       "id": "nl-direct-link-comment-smoke",
       "path": "specs/NL_DIRECT_LINK_COMMENT_SMOKE.md",
       "title": "NL DIRECT LINK COMMENT SMOKE",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "facebook",
+      "type": "runbook",
+      "status": "active",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "current operator smoke runbook for live comment_single_post / GetLeadByPostRef behavior",
+        "internal/store/leads/lookup.go (GetLeadByPostRef) exists"
+      ],
+      "related_code": [
+        "internal/store/leads/lookup.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "facebook",
+        "runbook",
+        "smoke",
+        "comment"
+      ],
+      "notes": "Reviewed in PR24H. Current operator smoke runbook for the NL direct-link comment behavior (comment_single_post queues only when the lead pre-exists via GetLeadByPostRef). Maps to verified current code and validates active direct-post-intake-workflow. Active/reviewed runbook."
     },
     {
       "id": "omnichannel-sales-copilot-telegram-track",
@@ -836,17 +932,25 @@
       "title": "PRODUCTION DATABASE MIGRATION PLAN",
       "domain": "migration",
       "type": "migration",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "only the KnowledgeOS slice is dual-target (active postgres-compat-plan); legacy domains remain SQLite"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "migration",
+        "postgres",
+        "deferred",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24H. Aspirational all-domains SQLite to Postgres production migration plan. Only the KnowledgeOS slice is realized (active postgres-compat-plan); legacy domains still run SQLite. Future-facing -> draft."
     },
     {
       "id": "production-flow",
@@ -879,19 +983,31 @@
       "id": "production-hardening-goals",
       "path": "specs/PRODUCTION_HARDENING_GOALS.md",
       "title": "PRODUCTION HARDENING GOALS",
-      "domain": "unknown",
+      "domain": "knowledge",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "G1/G4 load-bearing code exists (soak/gold_dataset.go, governance/output_validator.go)",
+        "7/10 goals shipped with code+tests per doc"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge/soak/gold_dataset.go",
+        "internal/workspace_knowledge/governance/output_validator.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "knowledge",
+        "hardening",
+        "roadmap",
+        "operator-dashboard"
+      ],
+      "notes": "Reviewed in PR24H. Operator dashboard for 10 production-hardening goals; 7 shipped end-to-end with code+tests (verified artifacts exist), 3 designed/deferred. Implementation-backed. (Some cited artifacts e.g. knowledge_cost.go have moved out of the internal/store root.)"
     },
     {
       "id": "retrieval-soak-report",
@@ -956,19 +1072,30 @@
       "id": "root-architecture",
       "path": "specs/ROOT_ARCHITECTURE.md",
       "title": "ROOT ARCHITECTURE",
-      "domain": "unknown",
+      "domain": "frontend",
       "type": "architecture",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "stale",
+      "maturity": "snapshot",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-derived from autoflow_platform.experimental.tsx mock (2026-04-27), same lineage as stale api-spec",
+        "production FE moved to frontend/src/modules/autoflow"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "frontend",
+        "architecture",
+        "mock-derived",
+        "stale"
+      ],
+      "notes": "Reviewed in PR24H. Early frontend architecture spec derived from the autoflow_platform.experimental.tsx mock (2026-04-27); the production frontend has since moved to frontend/src/modules/autoflow. Still cited by CLAUDE.md read-first, so refresh rather than drop. Stale snapshot."
     },
     {
       "id": "root-cause-report",
@@ -1037,37 +1164,54 @@
       "id": "saas-ux-hardening-track",
       "path": "specs/SAAS_UX_HARDENING_TRACK.md",
       "title": "SAAS UX HARDENING TRACK",
-      "domain": "unknown",
+      "domain": "frontend",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-labelled DESIGN APPROVED (2026-06-12); PRs not yet shipped per project tracking"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "frontend",
+        "ux",
+        "rbac",
+        "roadmap",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24H. Design-approved authoritative UX/RBAC/extension-version-gating plan; the PRs (incl. the cookie-leak fix) are not yet shipped. Future-facing approved plan -> draft."
     },
     {
       "id": "sales-voice-automation-and-data-private-enterprise-plan",
       "path": "specs/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md",
       "title": "SALES VOICE AUTOMATION AND DATA PRIVATE ENTERPRISE PLAN",
-      "domain": "unknown",
+      "domain": "copilot",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "forward product vision after Phase 6 Open-Prompt Agent; no specific implementation contract verified"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "copilot",
+        "vision",
+        "sales-voice",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24H. Forward product vision (AI Facebook Sales Employee trained on private business data) following the open-prompt agent. Aspirational direction, not an implementation contract -> draft."
     },
     {
       "id": "store-subpackage-refactor",
@@ -1105,19 +1249,30 @@
       "id": "structural-refactor-plan",
       "path": "specs/STRUCTURAL_REFACTOR_PLAN.md",
       "title": "STRUCTURAL REFACTOR PLAN",
-      "domain": "unknown",
+      "domain": "platform",
       "type": "roadmap",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "tracks open boundary decisions (internal/auth vs internal/server/auth, both exist); quick wins shipped"
+      ],
+      "related_code": [
+        "internal/auth",
+        "internal/server/auth"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "platform",
+        "refactor",
+        "living-plan",
+        "deferred"
+      ],
+      "notes": "Reviewed in PR24H. Living plan tracking structural decisions deferred at the 2026-05-07 cleanup; quick wins shipped, several boundary decisions still open. Future-facing guidance -> draft. Complements active store-subpackage-refactor + component-structure-rules."
     },
     {
       "id": "telegram-bot-runtime",
@@ -1409,19 +1564,27 @@
       "id": "saas-automation-spec",
       "path": "specs/saas-automation-spec.md",
       "title": "saas automation spec",
-      "domain": "unknown",
-      "type": "unknown",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "high-level retrieval/reasoning/memory + no-blind-crawling + planner-first principles; aligns with current direction but vision-level"
+      ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "platform",
+        "principles",
+        "planner",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24H. High-level system-principles spec (Retrieval+Reasoning+Memory, No-Blind-Crawling, Planner-first, cross-domain generalization). Aligns with the current product direction but is vision-level, not an implementation contract -> draft."
     }
   ]
 }
