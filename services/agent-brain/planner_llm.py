@@ -44,7 +44,42 @@ MAX_SIGNALS = 25
 MAX_QUERIES = 10
 MAX_SIGNAL_LEN = 80
 MAX_QUERY_LEN = 120
-ALLOWED_ROLES = {"potential_customer", "candidate", "partner", ""}
+
+# Canonical target_role enum emitted to the Go classifier. The LLM, the org
+# business-profile (target_author_role) and older specs use various synonyms
+# (buyer, customers, suppliers, providers, seller, ...); they are all normalized
+# to one of these canonical values at the sidecar boundary so Go never receives
+# a non-canonical role. See specs/platform/saas-automation-spec.md.
+_ROLE_SYNONYMS = {
+    "potential_customer": "potential_customer",
+    "customer": "potential_customer",
+    "customers": "potential_customer",
+    "buyer": "potential_customer",
+    "buyers": "potential_customer",
+    "candidate": "candidate",
+    "candidates": "candidate",
+    "partner": "partner",
+    "partners": "partner",
+    "supplier": "partner",
+    "suppliers": "partner",
+    "provider": "partner",
+    "providers": "partner",
+    "seller": "partner",
+    "sellers": "partner",
+    "unknown": "",
+    "": "",
+}
+
+
+def normalize_target_role(raw: Any) -> str:
+    """Map any LLM/profile role synonym to the canonical target_role enum.
+
+    Canonical values: ``potential_customer`` | ``candidate`` | ``partner`` | ``""``.
+    Unknown / unsupported inputs normalize to ``""`` (empty = no role filter).
+    """
+    if not isinstance(raw, str):
+        return ""
+    return _ROLE_SYNONYMS.get(raw.strip().lower(), "")
 
 _SYSTEM_PROMPT = (
     "You are the Planner Agent for a Facebook Sales Intelligence platform. "
@@ -184,9 +219,7 @@ def _coerce_list(raw: Any, max_items: int, max_len: int) -> list[str]:
 def _shape_check(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return empty_plan()
-    role = raw.get("target_role")
-    if not isinstance(role, str) or role not in ALLOWED_ROLES:
-        role = ""
+    role = normalize_target_role(raw.get("target_role"))
     domain = raw.get("domain")
     if not isinstance(domain, str):
         domain = ""
