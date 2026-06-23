@@ -216,7 +216,7 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
   useEffect(() => {
     if (accountId === '') return;
     const sel = statusByAccount.get(Number(accountId));
-    if (sel && sel.state === 'online') return; // already the live one
+    if (sel?.state === 'online') return; // already the live one
     if (liveMatches.length === 1 && liveMatches[0].account_id !== accountId) {
       const live = liveMatches[0];
       setAccountId(live.account_id);

@@ -144,7 +144,7 @@ function relativeTime(iso: string): string {
 // like a battlefield occupancy map ("Alice inbox 4m") instead of an
 // abstract status pill.
 function engagementContext(state: LeadEngagementState | undefined): string {
-  if (!state || !state.last_engaged_at) return 'chưa ai chạm — ưu tiên';
+  if (!state?.last_engaged_at) return 'chưa ai chạm — ưu tiên';
   // Prefer the Facebook ACCOUNT attribution (execution is owned per account) over a
   // mutable assigned-user name, and surface amplification ("N account"). This is
   // observability — the lead stays shared.

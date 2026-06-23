@@ -121,7 +121,7 @@ export default function DataPrivateView({ orgId, isAdmin }: Readonly<DataPrivate
     const nextConfidences: BusinessConfidences = { ...confidences };
     INFERRED_FIELD_KEYS.forEach((key) => {
       const field = result[key];
-      if (field && field.value) {
+      if (field?.value) {
         (patch as Record<string, string>)[key] = field.value;
         nextConfidences[key] = field.confidence;
       }
