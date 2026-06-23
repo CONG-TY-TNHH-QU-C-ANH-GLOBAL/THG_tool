@@ -82,6 +82,35 @@ existing rules/output/known-gap behavior unchanged). Companion of
   `python scripts/check_file_size.py`; `go build ./...`; `go vet ./...`.
 - **Rollback:** revert the script changes + this note.
 
+### PR26C — Target boundary marker packages (`refactor/pr26c-arch-doc-markers`)
+
+Move-only architecture scaffold: empty `doc.go` marker packages that make the
+staged target structure physically visible. No runtime logic, no package moves, no
+imports. Companion of [`DIAGRAM_RECONCILIATION.md`](./DIAGRAM_RECONCILIATION.md) §6.
+
+- **Scope:** 8 new `doc.go` files + this note only.
+- **Marker packages added (each: doc comment + `package` decl, nothing else):**
+  - `internal/drivers/http` — inbound REST/SSE driver (today `internal/server/*`).
+  - `internal/drivers/telegram` — inbound Telegram/webhook driver (today
+    `internal/server/telegram` + `internal/telegram`).
+  - `internal/drivers/connector` — inbound extension connector driver (today
+    `internal/server/agent`); preserves pull-based outbox, no server-push.
+  - `internal/services/taobao` — future Taobao vertical (resolver stub only today).
+  - `internal/services/supplier1688` — future 1688 vertical; named `supplier1688`
+    because a Go package identifier cannot begin with a digit (resolver stub
+    `alibaba1688.go` today).
+  - `internal/automation` — cross-vertical automation glue (must not become utils).
+  - `internal/connectors` — connector domain/infra (today `store/connectors`,
+    `browsergateway`, `cdpclient`, `local-connector-extension`).
+  - `internal/crawler` — crawl execution (today `jobs`, `jobhandlers`, `store/crawl`,
+    `cmd/worker`); must not import transport (`WORKER_NO_TRANSPORT`).
+- **Behavior changed:** none (empty packages compile; nothing imports them).
+- **Validation:** `gofmt -l` clean; `go list`/`build`/`vet`/`test ./...` pass;
+  `bash scripts/check_import_boundaries.sh` unchanged (16 rules, 4 known / 0 other,
+  exit 0); `python scripts/check_file_size.py` PASS; `git diff --check` clean.
+- **Risk:** low (no-behavior scaffold).
+- **Rollback:** delete the marker files + this note.
+
 ## Architecture Foundation Sprint log (`refactor/architecture-foundation-sprint`)
 
 One sprint, multiple independently-revertible commits. SAFE moves + additive scaffolds
