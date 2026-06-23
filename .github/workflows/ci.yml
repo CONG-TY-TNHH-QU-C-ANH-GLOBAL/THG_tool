@@ -216,6 +216,9 @@ jobs:
       - name: File-size guardrail (200-line rule, baseline-aware)
         run: python3 scripts/check_file_size.py
 
+      - name: Validate spec registry
+        run: python3 scripts/check_spec_registry.py
+
       - name: Runtime topology contract (fast, fail-hard)
         run: bash scripts/check_topology.sh
 
