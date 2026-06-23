@@ -202,80 +202,102 @@ type TrustVerdict struct {
 // thread when the operator runs the harness against production.
 func (r *Report) ToMarkdown() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Retrieval Substrate Soak Report\n\n")
-	fmt.Fprintf(&b, "**Generated:** %s\n", r.GeneratedAt.Format(time.RFC3339))
-	fmt.Fprintf(&b, "**Searcher:** %s · **Embedder:** %s (%d dims) · **k=%d**\n\n",
+	r.writeHeader(&b)
+	r.writeTrust(&b)
+	r.writeCatalog(&b)
+	r.writeQuality(&b)
+	r.writeFallback(&b)
+	r.writeReplayHealth(&b)
+	r.writePromptOutcomes(&b)
+	r.writeCompliance(&b)
+	r.writeFailureModes(&b)
+	r.writeRealSoakSections(&b)
+	r.writeNotes(&b)
+	return b.String()
+}
+
+func (r *Report) writeHeader(b *strings.Builder) {
+	fmt.Fprintf(b, "# Retrieval Substrate Soak Report\n\n")
+	fmt.Fprintf(b, "**Generated:** %s\n", r.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(b, "**Searcher:** %s · **Embedder:** %s (%d dims) · **k=%d**\n\n",
 		r.HarnessConfig.SearcherDescription, r.HarnessConfig.EmbedderModel,
 		r.HarnessConfig.EmbeddingDimensions, r.HarnessConfig.TopK)
+}
 
-	// Headline verdict first.
-	fmt.Fprintf(&b, "## Operator Trust: **%s** (score: %d/100)\n\n", r.OperatorTrust.Verdict, r.OperatorTrust.Score)
+// writeTrust renders the headline operator-trust verdict first.
+func (r *Report) writeTrust(b *strings.Builder) {
+	fmt.Fprintf(b, "## Operator Trust: **%s** (score: %d/100)\n\n", r.OperatorTrust.Verdict, r.OperatorTrust.Score)
 	if len(r.OperatorTrust.BlockingIssues) > 0 {
-		fmt.Fprintf(&b, "### Blocking issues\n")
+		fmt.Fprintf(b, "### Blocking issues\n")
 		for _, issue := range r.OperatorTrust.BlockingIssues {
-			fmt.Fprintf(&b, "- 🛑 %s\n", issue)
+			fmt.Fprintf(b, "- 🛑 %s\n", issue)
 		}
-		fmt.Fprintln(&b)
+		fmt.Fprintln(b)
 	}
 	if len(r.OperatorTrust.WarningIssues) > 0 {
-		fmt.Fprintf(&b, "### Warnings\n")
+		fmt.Fprintf(b, "### Warnings\n")
 		for _, w := range r.OperatorTrust.WarningIssues {
-			fmt.Fprintf(&b, "- ⚠️ %s\n", w)
+			fmt.Fprintf(b, "- ⚠️ %s\n", w)
 		}
-		fmt.Fprintln(&b)
+		fmt.Fprintln(b)
 	}
+}
 
-	// Catalog
-	fmt.Fprintf(&b, "## Catalog\n")
-	fmt.Fprintf(&b, "- Total assets: %d\n", r.CatalogSize)
-	fmt.Fprintf(&b, "- Embeddings generated: %d / pending: %d / failed: %d\n",
+func (r *Report) writeCatalog(b *strings.Builder) {
+	fmt.Fprintf(b, "## Catalog\n")
+	fmt.Fprintf(b, "- Total assets: %d\n", r.CatalogSize)
+	fmt.Fprintf(b, "- Embeddings generated: %d / pending: %d / failed: %d\n",
 		r.EmbeddingsGenerated, r.EmbeddingsPending, r.EmbeddingsFailed)
-	fmt.Fprintf(&b, "- By type:\n")
+	fmt.Fprintf(b, "- By type:\n")
 	for k, v := range r.AssetsByType {
-		fmt.Fprintf(&b, "  - %s: %d\n", k, v)
+		fmt.Fprintf(b, "  - %s: %d\n", k, v)
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(b)
+}
 
-	// Quality
-	fmt.Fprintf(&b, "## Retrieval Quality\n")
-	fmt.Fprintf(&b, "- Mean Precision@K: %.2f · Median: %.2f · P10: %.2f\n",
+func (r *Report) writeQuality(b *strings.Builder) {
+	fmt.Fprintf(b, "## Retrieval Quality\n")
+	fmt.Fprintf(b, "- Mean Precision@K: %.2f · Median: %.2f · P10: %.2f\n",
 		r.Quality.MeanPrecisionAtK, r.Quality.MedianPrecisionAtK, r.Quality.P10PrecisionAtK)
-	fmt.Fprintf(&b, "- Prompts PASS: %d · FAIL: %d · DEGRADED: %d\n",
+	fmt.Fprintf(b, "- Prompts PASS: %d · FAIL: %d · DEGRADED: %d\n",
 		r.Quality.PassedPrompts, r.Quality.FailedPrompts, r.Quality.DegradedPrompts)
-	fmt.Fprintf(&b, "- Avg retrieved per prompt: %.1f\n", r.Quality.AvgRetrievedCount)
-	fmt.Fprintf(&b, "- Latency avg: %.1fms · p95: %dms\n\n",
+	fmt.Fprintf(b, "- Avg retrieved per prompt: %.1f\n", r.Quality.AvgRetrievedCount)
+	fmt.Fprintf(b, "- Latency avg: %.1fms · p95: %dms\n\n",
 		r.Quality.AvgLatencyMs, r.Quality.P95LatencyMs)
+}
 
-	// Fallback
-	fmt.Fprintf(&b, "## Fallback Behaviour\n")
-	fmt.Fprintf(&b, "- Fallback rate: %.1f%% (%d / %d)\n",
+func (r *Report) writeFallback(b *strings.Builder) {
+	fmt.Fprintf(b, "## Fallback Behaviour\n")
+	fmt.Fprintf(b, "- Fallback rate: %.1f%% (%d / %d)\n",
 		r.FallbackBehaviour.FallbackRate*100,
 		r.FallbackBehaviour.FallbackInvocations, r.FallbackBehaviour.TotalQueries)
 	if len(r.FallbackBehaviour.ByReason) > 0 {
-		fmt.Fprintf(&b, "- By reason:\n")
+		fmt.Fprintf(b, "- By reason:\n")
 		for reason, count := range r.FallbackBehaviour.ByReason {
-			fmt.Fprintf(&b, "  - %s: %d\n", reason, count)
+			fmt.Fprintf(b, "  - %s: %d\n", reason, count)
 		}
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(b)
+}
 
-	// Replay health
-	fmt.Fprintf(&b, "## Replay Health\n")
-	fmt.Fprintf(&b, "- Traces complete: %d / %d (%.1f%%)\n",
+func (r *Report) writeReplayHealth(b *strings.Builder) {
+	fmt.Fprintf(b, "## Replay Health\n")
+	fmt.Fprintf(b, "- Traces complete: %d / %d (%.1f%%)\n",
 		r.ReplayHealth.TracesComplete, r.ReplayHealth.TracesProduced,
 		r.ReplayHealth.CompletenessRate*100)
 	if r.ReplayHealth.MissingSearcherImpl > 0 {
-		fmt.Fprintf(&b, "- ⚠️ Missing SearcherImpl: %d\n", r.ReplayHealth.MissingSearcherImpl)
+		fmt.Fprintf(b, "- ⚠️ Missing SearcherImpl: %d\n", r.ReplayHealth.MissingSearcherImpl)
 	}
 	if r.ReplayHealth.MissingSelected > 0 {
-		fmt.Fprintf(&b, "- ⚠️ Missing Selected: %d\n", r.ReplayHealth.MissingSelected)
+		fmt.Fprintf(b, "- ⚠️ Missing Selected: %d\n", r.ReplayHealth.MissingSelected)
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(b)
+}
 
-	// Per-prompt outcomes table
-	fmt.Fprintf(&b, "## Per-Prompt Outcomes\n\n")
-	fmt.Fprintf(&b, "| Lang | Verdict | Score | P@K | Lat ms | Prompt |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|\n")
+func (r *Report) writePromptOutcomes(b *strings.Builder) {
+	fmt.Fprintf(b, "## Per-Prompt Outcomes\n\n")
+	fmt.Fprintf(b, "| Lang | Verdict | Score | P@K | Lat ms | Prompt |\n")
+	fmt.Fprintf(b, "|---|---|---|---|---|---|\n")
 	for _, p := range r.PromptOutcomes {
 		emoji := "✅"
 		switch p.Verdict {
@@ -289,69 +311,74 @@ func (r *Report) ToMarkdown() string {
 		if len(shown) > 60 {
 			shown = shown[:60] + "…"
 		}
-		fmt.Fprintf(&b, "| %s | %s %s | %.2f | %.2f | %d | %s |\n",
+		fmt.Fprintf(b, "| %s | %s %s | %.2f | %.2f | %d | %s |\n",
 			p.Language, emoji, p.Verdict, p.TopScore, p.PrecisionAtK, p.LatencyMs, shown)
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(b)
+}
 
-	// Compliance/governance check (called out separately because it's
-	// the highest-severity safety signal).
+// writeCompliance is called out separately because it's the
+// highest-severity safety signal.
+func (r *Report) writeCompliance(b *strings.Builder) {
 	complianceClean := true
 	for _, p := range r.PromptOutcomes {
 		if len(p.ComplianceLeaks) > 0 || len(p.HiddenLeaks) > 0 {
 			complianceClean = false
 		}
 	}
-	fmt.Fprintf(&b, "## Compliance / Governance\n")
+	fmt.Fprintf(b, "## Compliance / Governance\n")
 	if complianceClean {
-		fmt.Fprintf(&b, "✅ No banned claims surfaced. No hidden-state assets surfaced.\n\n")
+		fmt.Fprintf(b, "✅ No banned claims surfaced. No hidden-state assets surfaced.\n\n")
 	} else {
-		fmt.Fprintf(&b, "🛑 COMPLIANCE VIOLATIONS:\n")
+		fmt.Fprintf(b, "🛑 COMPLIANCE VIOLATIONS:\n")
 		for _, p := range r.PromptOutcomes {
 			for _, leak := range p.ComplianceLeaks {
-				fmt.Fprintf(&b, "- Prompt %q surfaced banned: %s\n", p.Prompt, leak)
+				fmt.Fprintf(b, "- Prompt %q surfaced banned: %s\n", p.Prompt, leak)
 			}
 			for _, leak := range p.HiddenLeaks {
-				fmt.Fprintf(&b, "- Prompt %q surfaced hidden: %s\n", p.Prompt, leak)
+				fmt.Fprintf(b, "- Prompt %q surfaced hidden: %s\n", p.Prompt, leak)
 			}
 		}
-		fmt.Fprintln(&b)
+		fmt.Fprintln(b)
 	}
+}
 
-	// Failure modes
-	fmt.Fprintf(&b, "## Failure Mode Scenarios\n")
+func (r *Report) writeFailureModes(b *strings.Builder) {
+	fmt.Fprintf(b, "## Failure Mode Scenarios\n")
 	for _, f := range r.FailureModes {
 		emoji := "✅"
 		if f.Verdict != "PASS" {
 			emoji = "❌"
 		}
-		fmt.Fprintf(&b, "- %s **%s** — %s: %s\n", emoji, f.ID, f.Name, f.Behaviour)
+		fmt.Fprintf(b, "- %s **%s** — %s: %s\n", emoji, f.ID, f.Name, f.Behaviour)
 	}
-	fmt.Fprintln(&b)
+	fmt.Fprintln(b)
+}
 
-	// Real-soak sections — only render when populated.
+// writeRealSoakSections renders the real-soak sections only when populated.
+func (r *Report) writeRealSoakSections(b *strings.Builder) {
 	if r.LoadProfile != nil {
 		lp := r.LoadProfile
-		fmt.Fprintf(&b, "## Concurrent Load Profile\n")
-		fmt.Fprintf(&b, "- Concurrency: %d workers · %d total queries\n",
+		fmt.Fprintf(b, "## Concurrent Load Profile\n")
+		fmt.Fprintf(b, "- Concurrency: %d workers · %d total queries\n",
 			lp.Concurrency, lp.TotalQueries)
-		fmt.Fprintf(&b, "- Successful: %d (%.1f%%)\n",
+		fmt.Fprintf(b, "- Successful: %d (%.1f%%)\n",
 			lp.SuccessfulQueries,
 			100.0*float64(lp.SuccessfulQueries)/float64(max(lp.TotalQueries, 1)))
-		fmt.Fprintf(&b, "- Wall clock: %dms · throughput: %.1f QPS\n",
+		fmt.Fprintf(b, "- Wall clock: %dms · throughput: %.1f QPS\n",
 			lp.WallClockMs, lp.QPS)
-		fmt.Fprintf(&b, "- Latency: p50=%dms · p95=%dms · p99=%dms · max=%dms\n\n",
+		fmt.Fprintf(b, "- Latency: p50=%dms · p95=%dms · p99=%dms · max=%dms\n\n",
 			lp.P50LatencyMs, lp.P95LatencyMs, lp.P99LatencyMs, lp.MaxLatencyMs)
 	}
 	if r.CostTelemetry != nil {
 		ct := r.CostTelemetry
-		fmt.Fprintf(&b, "## Cost Telemetry (real HTTP exercise)\n")
-		fmt.Fprintf(&b, "- Embedding requests: %d · tokens served: %d\n",
+		fmt.Fprintf(b, "## Cost Telemetry (real HTTP exercise)\n")
+		fmt.Fprintf(b, "- Embedding requests: %d · tokens served: %d\n",
 			ct.EmbeddingRequests, ct.EmbeddingTokens)
-		fmt.Fprintf(&b, "- Avg tokens / request: %.1f\n", ct.AvgTokensPerRequest)
-		fmt.Fprintf(&b, "- Failures: %d × 429 (rate limit) · %d × 5xx\n",
+		fmt.Fprintf(b, "- Avg tokens / request: %.1f\n", ct.AvgTokensPerRequest)
+		fmt.Fprintf(b, "- Failures: %d × 429 (rate limit) · %d × 5xx\n",
 			ct.Failures429, ct.Failures5xx)
-		fmt.Fprintf(&b, "- Estimated cost: $%.6f (text-embedding-3-small @ $0.02/1M tokens)\n\n",
+		fmt.Fprintf(b, "- Estimated cost: $%.6f (text-embedding-3-small @ $0.02/1M tokens)\n\n",
 			ct.EstimatedCostUSD)
 	}
 	if r.TenantIsolation != nil {
@@ -360,19 +387,19 @@ func (r *Report) ToMarkdown() string {
 		if ti.LeaksDetected > 0 {
 			emoji = "🛑"
 		}
-		fmt.Fprintf(&b, "## Tenant Isolation Under Concurrent Load\n")
-		fmt.Fprintf(&b, "%s %d orgs × %d queries/org · %d leaks detected\n\n",
+		fmt.Fprintf(b, "## Tenant Isolation Under Concurrent Load\n")
+		fmt.Fprintf(b, "%s %d orgs × %d queries/org · %d leaks detected\n\n",
 			emoji, ti.OrgsExercised, ti.QueriesPerOrg, ti.LeaksDetected)
 	}
+}
 
+func (r *Report) writeNotes(b *strings.Builder) {
 	if len(r.Notes) > 0 {
-		fmt.Fprintf(&b, "## Notes\n")
+		fmt.Fprintf(b, "## Notes\n")
 		for _, n := range r.Notes {
-			fmt.Fprintf(&b, "- %s\n", n)
+			fmt.Fprintf(b, "- %s\n", n)
 		}
 	}
-
-	return b.String()
 }
 
 // ToJSON returns the report as pretty-printed JSON for archival.
