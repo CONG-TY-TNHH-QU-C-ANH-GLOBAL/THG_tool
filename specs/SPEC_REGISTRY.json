@@ -177,19 +177,29 @@
       "id": "comment-decision-dryrun-report",
       "path": "specs/COMMENT_DECISION_DRYRUN_REPORT.md",
       "title": "COMMENT DECISION DRYRUN REPORT",
-      "domain": "unknown",
+      "domain": "comment",
       "type": "report",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "archived",
+      "maturity": "snapshot",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "scripts/comment_decision_dryrun_report.sql exists"
+      ],
+      "related_code": [
+        "scripts/comment_decision_dryrun_report.sql"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "comment",
+        "report",
+        "dry-run",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24E. One-time 'AWAITING DATA' evaluation-report template that gated a past P2b/P2c go-live decision; the comment-intelligence work has since progressed. Report-only, not implementation guidance -> archived."
     },
     {
       "id": "comment-intelligence-pipeline",
@@ -561,19 +571,30 @@
       "id": "migration-to-monorepo-plan",
       "path": "specs/MIGRATION_TO_MONOREPO_PLAN.md",
       "title": "MIGRATION TO MONOREPO PLAN",
-      "domain": "migration",
+      "domain": "platform",
       "type": "migration",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "draft",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "baseline services/agent-brain exists; go.work/apps/packages not yet adopted"
+      ],
+      "related_code": [
+        "services/agent-brain"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "platform",
+        "migration",
+        "monorepo",
+        "deferred",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24E. Self-labelled 'Deferred - execution not started' go.work monorepo plan; the only realized baseline is services/agent-brain. Future-facing, revisit before Phase 0 -> draft."
     },
     {
       "id": "multi-actor-coverage-policy",
@@ -696,37 +717,61 @@
       "id": "phase-5a-coordination-audit",
       "path": "specs/PHASE_5A_COORDINATION_AUDIT.md",
       "title": "PHASE 5A COORDINATION AUDIT",
-      "domain": "unknown",
+      "domain": "store",
       "type": "investigation",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "archived",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "audited coordination domain internal/store/coordination exists",
+        "store subpackage extraction (incl. coordination) shipped per STORE_SUBPACKAGE_REFACTOR Phases 0-8b"
+      ],
+      "related_code": [
+        "internal/store/coordination"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "store",
+        "coordination",
+        "audit",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24E. One-time Phase 5A extraction-readiness audit (zero code moves) that gated Phase 5B; the coordination subpackage extraction has since shipped. Historical deliverable -> archived."
     },
     {
       "id": "postgres-compat-plan",
       "path": "specs/POSTGRES_COMPAT_PLAN.md",
       "title": "POSTGRES COMPAT PLAN",
-      "domain": "migration",
+      "domain": "knowledge",
       "type": "migration",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "active",
+      "maturity": "implementation_backed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "pgx/v5 driver in go.mod",
+        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go exists"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge",
+        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "knowledge",
+        "migration",
+        "postgres",
+        "pgvector",
+        "dual-target"
+      ],
+      "notes": "Reviewed in PR24E. PR-1/2/3 SHIPPED: the Knowledge OS domain is dual-target SQLite+Postgres (pgx/v5 in go.mod, pgvector searcher present). Legacy domains remain SQLite-only as the doc states. Active and implementation-backed; complements active workspace-knowledge-os."
     },
     {
       "id": "production-database-migration-plan",
@@ -786,19 +831,30 @@
       "id": "retrieval-soak-report",
       "path": "specs/RETRIEVAL_SOAK_REPORT.md",
       "title": "RETRIEVAL SOAK REPORT",
-      "domain": "unknown",
+      "domain": "knowledge",
       "type": "report",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "archived",
+      "maturity": "snapshot",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "auto-generated by internal/workspace_knowledge/soak",
+        "referenced by active retrieval-soak-runbook"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge/soak"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "knowledge",
+        "report",
+        "soak",
+        "generated"
+      ],
+      "notes": "Reviewed in PR24E. Auto-generated point-in-time soak output (2026-05-21); regenerated each soak run and committed beside the active retrieval-soak-runbook. Report-only generated artifact -> archived (not implementation guidance)."
     },
     {
       "id": "retrieval-soak-runbook",
@@ -852,19 +908,32 @@
       "id": "root-cause-report",
       "path": "specs/ROOT_CAUSE_REPORT.md",
       "title": "ROOT CAUSE REPORT",
-      "domain": "unknown",
+      "domain": "facebook",
       "type": "report",
-      "status": "unreviewed",
-      "maturity": "unknown",
+      "status": "archived",
+      "maturity": "reviewed",
       "owner": "unassigned",
-      "last_reviewed": null,
-      "verified_against": [],
-      "related_code": [],
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "models.NavDiagnostic in internal/models (execution_outcome.go / comment_forensics.go)",
+        "investigation log AUTOCOMMENT_REDIRECT_INVESTIGATION.md"
+      ],
+      "related_code": [
+        "internal/models/execution_outcome.go",
+        "internal/models/comment_forensics.go"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
-      "tags": [],
-      "notes": "Pre-existing document; not yet audited under spec governance. Title/type/domain inferred from filename only."
+      "tags": [
+        "facebook",
+        "comment",
+        "report",
+        "root-cause",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24E. Completed root-cause investigation report (2026-06-04) for the autocomment redirect failure; conclusion fed the PR8 redirect work. Historical/report-only -> archived. Companion to the still-unreviewed autocomment-redirect-investigation."
     },
     {
       "id": "runtime-topology",
