@@ -108,10 +108,15 @@ func applyCommentReasoning(ctx context.Context, in commentReasoningInput) string
 	return in.fallback
 }
 
-func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, error) {
+// queueLeadOutreach returns (summary, queued, err). `queued` is the number of outbound
+// messages actually enqueued this run: it is 0 on every no-queue path (org guard / readiness
+// block / no eligible lead / all leads skipped by coverage/dedup/policy), even when err is nil
+// and `summary` carries the block/skip reason. Async callers (the direct-post scheduler) MUST
+// branch on `queued == 0` so a no-op is never recorded as a queued/completed comment.
+func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, msgType string, args map[string]any, notify func(string)) (string, int, error) {
 	orgID := argInt64(args, "org_id")
 	if orgID <= 0 {
-		return "", fmt.Errorf("org_id is required for outbound automation")
+		return "", 0, fmt.Errorf("org_id is required for outbound automation")
 	}
 	userID := argInt64(args, "user_id")
 	role := argString(args, "user_role")
@@ -120,7 +125,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// drops in without touching this code.
 	actx, err := resolveUserActionContext(db, orgID, userID, role, argInt64(args, "account_id"), true)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	accountID := actx.AccountID
 
@@ -129,16 +134,16 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// posting but can never run. Comment-only here; inbox keeps its behavior.
 	if msgType == "comment" {
 		if blockMsg, blocked := commentReadinessGate(ctx, db, orgID, userID, role, accountID); blocked {
-			return blockMsg, nil
+			return blockMsg, 0, nil
 		}
 	}
 
 	leads, err := leadsFromActionArgs(ctx, db, orgID, msgType, args)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if len(leads) == 0 {
-		return "khong co lead phu hop de queue outbound", nil
+		return "khong co lead phu hop de queue outbound", 0, nil
 	}
 
 	// requestedAuto carries the AI/agent's preference. The store layer
@@ -156,10 +161,10 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		}
 		st.scanned++
 		if err := run.processOutreachLead(ctx, lead, st); err != nil {
-			return "", err
+			return "", st.queued, err
 		}
 	}
-	return run.formatOutreachResult(ctx, requestedAuto, notify, st), nil
+	return run.formatOutreachResult(ctx, requestedAuto, notify, st), st.queued, nil
 }
 
 // friendlySkipReasons summarizes skip reason codes for a customer-facing message.

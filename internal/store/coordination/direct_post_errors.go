@@ -55,3 +55,11 @@ const (
 	// a non-target candidate rather than returning an empty feed scan.
 	DPErrImportTargetNotRendered = "direct_post_import_target_not_rendered"
 )
+
+// DPErrCommentNotQueued — the post lead was found/created but the comment queue step
+// (queueLeadOutreach) enqueued NOTHING and returned err==nil: the account is not ready
+// (no online connector / wrong-identity / outdated extension) or the lead was ineligible
+// (coverage/cooldown/dedup/policy/quality skip). The workflow must NOT be marked completed —
+// no comment was queued — so it fails terminally with this reason and the requester is told,
+// instead of a silent "completed" that never posts. (PR27D.)
+const DPErrCommentNotQueued = "comment_not_queued"

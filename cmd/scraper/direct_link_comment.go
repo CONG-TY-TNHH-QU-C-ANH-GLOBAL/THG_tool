@@ -103,5 +103,6 @@ func commentSinglePost(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if acc := argInt64(args, "account_id"); acc > 0 {
 		qargs["account_id"] = acc
 	}
-	return queueLeadOutreach(ctx, db, msgGen, "comment", qargs, notify)
+	out, _, err := queueLeadOutreach(ctx, db, msgGen, "comment", qargs, notify)
+	return out, err
 }

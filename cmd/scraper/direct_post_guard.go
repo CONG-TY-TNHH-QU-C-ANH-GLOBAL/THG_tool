@@ -52,6 +52,7 @@ var directPostFailureReasons = map[string]string{
 	coordination.DPErrImportBoilerplateContent:  "không trích xuất được nội dung bài viết hợp lệ",
 	coordination.DPErrImportNoMeaningfulContent: "bài viết không có nội dung đủ để comment",
 	coordination.DPErrLeadNotObserved:           "chưa quan sát được bài viết sau nhiều lần thử",
+	coordination.DPErrCommentNotQueued:          "chưa đưa được comment vào hàng đợi — tài khoản Facebook chưa sẵn sàng hoặc lead không đủ điều kiện (mở dashboard để kiểm tra)",
 }
 
 // notifyDirectPostFailed sends one honest, secret-free failure line to the requester when a

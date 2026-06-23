@@ -139,10 +139,21 @@ func advanceDirectPostWorkflow(ctx context.Context, db *store.Store, msgGen *ai.
 	if w.AccountID > 0 {
 		qargs["account_id"] = w.AccountID
 	}
-	if _, err := queueLeadOutreach(ctx, db, msgGen, "comment", qargs, notify); err != nil {
+	_, queued, err := queueLeadOutreach(ctx, db, msgGen, "comment", qargs, notify)
+	if err != nil {
 		// Typed reason only — never the raw error (no secrets in error_message).
 		_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
 			coordination.DPStatusCommentFailed, "comment queue failed")
+		return
+	}
+	if queued == 0 {
+		// queueLeadOutreach returned err==nil but enqueued NOTHING (account not ready /
+		// no eligible lead / coverage-dedup-policy skip). Marking completed here would claim
+		// a comment was queued when none was — the silent-outcome bug (PR27C). Fail with a
+		// typed reason so the requester sees why instead of a false "completed".
+		_, _ = db.Coordination().MarkDirectPostFailed(ctx, w.OrgID, w.ID,
+			coordination.DPErrCommentNotQueued, "no comment queued (account not ready or lead ineligible)")
+		notifyDirectPostFailed(notify, w, coordination.DPErrCommentNotQueued)
 		return
 	}
 	_, _ = db.Coordination().MarkDirectPostCommentQueued(ctx, w.OrgID, w.ID)

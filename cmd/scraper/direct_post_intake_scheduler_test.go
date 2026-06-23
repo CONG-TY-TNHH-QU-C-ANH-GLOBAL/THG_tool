@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,8 +29,10 @@ func seedImportQueuedWorkflow(t *testing.T, ctx context.Context, db *store.Store
 	return w
 }
 
-// D — continuation: once the post lead exists, the poller advances to completed and
-// queues the comment exactly once.
+// D — continuation: once the post lead exists, the poller advances and runs the comment
+// queue step exactly once. With NO ready connector the readiness gate enqueues nothing, so
+// the workflow MUST fail with comment_not_queued (PR27D) and surface the reason — it must NOT
+// be silently marked completed (the PR27C bug). The lead_id is still recorded.
 func TestDirectPostIntake_ContinuationOnLead(t *testing.T) {
 	ctx := context.Background()
 	db := newIntakeDB(t)
@@ -47,15 +50,25 @@ func TestDirectPostIntake_ContinuationOnLead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	advanceDirectPostWorkflow(ctx, db, ai.NewMessageGenerator("", ""), nil, w)
+	var notes []string
+	notify := func(m string) { notes = append(notes, m) }
+	advanceDirectPostWorkflow(ctx, db, ai.NewMessageGenerator("", ""), notify, w)
 	got, _ := db.Coordination().GetDirectPostCommentWorkflowByID(ctx, org, w.ID)
-	if got.Status != coordination.DPStatusCompleted || !got.LeadID.Valid {
-		t.Errorf("workflow should be completed with a lead_id after continuation: status=%s lead=%v err=%s", got.Status, got.LeadID, got.ErrorCode)
+	// No ready connector → nothing queued → failed(comment_not_queued), NOT completed.
+	if got.Status != coordination.DPStatusFailed || got.ErrorCode != coordination.DPErrCommentNotQueued {
+		t.Errorf("no ready connector must fail with comment_not_queued (not silently completed): status=%s code=%s", got.Status, got.ErrorCode)
 	}
-	// Idempotent: a second advance on the now-completed workflow is a clean no-op.
+	if !got.LeadID.Valid {
+		t.Errorf("continuation must still record the resolved lead_id, got %v", got.LeadID)
+	}
+	// The requester must SEE the no-queue reason (no silent outcome).
+	if joined := strings.Join(notes, "\n"); !strings.Contains(joined, coordination.DPErrCommentNotQueued) {
+		t.Errorf("operator must be notified with the no-queue reason, got %q", joined)
+	}
+	// Idempotent: a second advance on the now-terminal (failed) workflow is a clean no-op.
 	advanceDirectPostWorkflow(ctx, db, ai.NewMessageGenerator("", ""), nil, w)
-	if again, _ := db.Coordination().GetDirectPostCommentWorkflowByID(ctx, org, w.ID); again.Status != coordination.DPStatusCompleted {
-		t.Errorf("re-advance must not change a completed workflow, got %s", again.Status)
+	if again, _ := db.Coordination().GetDirectPostCommentWorkflowByID(ctx, org, w.ID); again.Status != coordination.DPStatusFailed {
+		t.Errorf("re-advance must not change a terminal workflow, got %s", again.Status)
 	}
 }
 

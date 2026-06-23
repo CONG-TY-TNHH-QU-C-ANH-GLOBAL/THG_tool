@@ -158,7 +158,8 @@ func runPooledOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	if len(pool) == 1 {
 		a := cloneOutreachArgs(args)
 		a["account_id"] = pool[0]
-		return queueLeadOutreach(ctx, db, msgGen, msgType, a, notify)
+		out, _, err := queueLeadOutreach(ctx, db, msgGen, msgType, a, notify)
+		return out, err
 	}
 	// Multi-account → each account is INDEPENDENT: per-account coverage/cooldown/dedup/risk run
 	// inside queueLeadOutreach, and one account's error MUST NOT poison the others — it is logged
@@ -167,7 +168,7 @@ func runPooledOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	for _, accID := range pool {
 		a := cloneOutreachArgs(args)
 		a["account_id"] = accID
-		out, err := queueLeadOutreach(ctx, db, msgGen, msgType, a, notify)
+		out, _, err := queueLeadOutreach(ctx, db, msgGen, msgType, a, notify)
 		if err != nil {
 			log.Printf("[FBPool] account=%d type=%s error=%v (other accounts continue)", accID, msgType, err)
 			results = append(results, fmt.Sprintf("• Tài khoản #%d: lỗi — %v", accID, err))
