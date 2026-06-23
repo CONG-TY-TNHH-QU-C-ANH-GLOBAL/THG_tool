@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   description: 'Facebook Sales Intelligence Workspace for AI-native sales automation teams.',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="vi"
