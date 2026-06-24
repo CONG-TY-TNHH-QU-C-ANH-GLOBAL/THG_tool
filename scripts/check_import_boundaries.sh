@@ -24,6 +24,7 @@ cd "$ROOT" || exit 0
 RULE_NAMES="AI_PURE AI_NO_EXECUTION AI_STORE_COUPLED COPILOT_NO_DIRECT_REPO \
 OUTBOUND_NO_FACEBOOK OUTBOUND_NO_COPILOT OUTBOUND_APP_FACEBOOK PLATFORM_NO_SERVICES \
 SERVICES_NO_SIBLINGS SERVICES_FB_NO_COPILOT SERVICES_FACEBOOK_NO_STORE_SERVER_CMD \
+NEUTRAL_NO_SERVICES_FACEBOOK_IMPORT \
 STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC \
 NO_CONTRACTS_GODPKG SERVICE_NO_SIBLING WORKER_NO_TRANSPORT SIDECAR_NO_DIRECT_DB"
 RULES=$(echo "$RULE_NAMES" | wc -w | tr -d ' ')
@@ -46,6 +47,7 @@ next_phase() {
     SERVICES_NO_SIBLINGS)           echo "post-E";;
     SERVICES_FB_NO_COPILOT)         echo "C/G";;
     SERVICES_FACEBOOK_NO_STORE_SERVER_CMD) echo "invariant (services/facebook stays store/server/cmd-free — PR29A–E seam)";;
+    NEUTRAL_NO_SERVICES_FACEBOOK_IMPORT) echo "invariant (neutral packages must not depend on the FB service module — reverse of the PR29A–E seam; composition roots only)";;
     STORE_NO_SERVER)                echo "invariant (must stay clean)";;
     NOTIFICATIONS_NO_FB_LOGIC)      echo "E (subscribe to outbox events)";;
     NO_CONTRACTS_GODPKG)            echo "design rule (never create it)";;
@@ -128,6 +130,26 @@ scan_each_service() {
   return 0
 }
 
+# scan_reverse_facebook RULE  — the MIRROR of SERVICES_FACEBOOK_NO_STORE_SERVER_CMD:
+# neutral/internal packages must NOT import the Facebook service module. Dependency
+# direction is one-way (composition root + the service itself may import it; nobody
+# else). The forward guard only checks imports INSIDE services/facebook, so a neutral
+# package reaching INTO it (the PR30A regression) slipped through. Tests are INCLUDED —
+# a neutral test importing the FB service is the same coupling mistake. cmd/* roots are
+# deliberately NOT scanned (wiring at main is allowed). internal/fburl is a neutral
+# shared leaf that deliberately stays OUTSIDE services/facebook, so it never matches.
+scan_reverse_facebook() {
+  local rule="$1" root out
+  for root in internal/store internal/runtime internal/server internal/leadingest \
+              internal/directpost internal/drivers internal/outbound internal/crawler \
+              internal/jobhandlers internal/platform internal/automation internal/connectors; do
+    [[ -d "$root" ]] || continue
+    out="$(grep -rnE "\"github\.com/thg/scraper/internal/services/facebook(\"|/)" "$root" --include='*.go' 2>/dev/null)"
+    [[ -n "$out" ]] && emit "$rule" <<< "$out"
+  done
+  return 0
+}
+
 # scan_sidecar_db RULE  — preventive guard: top-level services/* sidecars (Python, etc.)
 # must reach data through a Go-owned versioned port, NEVER the multi-tenant DB directly.
 # Matches DB-coupling tokens in sidecar source; warn-only. Finds nothing until a sidecar
@@ -195,6 +217,11 @@ scan_dir SERVICES_FB_NO_COPILOT 'drivers/copilot' internal/services/facebook
 scan_paths SERVICES_FACEBOOK_NO_STORE_SERVER_CMD \
   'internal/store("|/)|internal/server("|/)|cmd/scraper("|/)|internal/connectors("|/)|internal/jobhandlers("|/)|internal/leadingest("|/)|internal/services/taobao("|/)|internal/services/supplier1688("|/)' \
   internal/services/facebook
+
+# 7c. NEUTRAL_NO_SERVICES_FACEBOOK_IMPORT — reverse-dependency guard (mirror of 7b):
+#     neutral/internal packages must not import internal/services/facebook. Allowed
+#     importers are composition roots (cmd/scraper, cmd/worker) and the service itself.
+scan_reverse_facebook NEUTRAL_NO_SERVICES_FACEBOOK_IMPORT
 
 # 8. store must not import the HTTP server.
 scan_dir STORE_NO_SERVER 'server($|/)' internal/store
