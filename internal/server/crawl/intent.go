@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/thg/scraper/internal/readiness"
 	"github.com/thg/scraper/internal/store"
 	crawlstore "github.com/thg/scraper/internal/store/crawl"
 )
@@ -122,7 +123,7 @@ func createIntent(deps Deps) fiber.Handler {
 		// "first ready" account. Fail early with a typed, actionable reason.
 		userID, _ := c.Locals("user_id").(int64)
 		role, _ := c.Locals("user_role").(string)
-		if reason, msg := EvaluateCrawlAccountReadiness(c.Context(), deps.DB, orgID, userID, role, body.AccountID); reason != ReadinessReady {
+		if reason, msg := readiness.EvaluateCrawlAccountReadiness(c.Context(), deps.DB, orgID, userID, role, body.AccountID); reason != readiness.ReadinessReady {
 			return c.Status(422).JSON(fiber.Map{"error": msg, "reason_code": reason})
 		}
 

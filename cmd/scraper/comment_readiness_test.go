@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thg/scraper/internal/server/crawl"
+	"github.com/thg/scraper/internal/readiness"
 	"github.com/thg/scraper/internal/store/connectors"
 )
 
@@ -13,18 +13,18 @@ import (
 // actionable Vietnamese message that carries the shared preflight detail.
 func TestCommentReadinessDecision(t *testing.T) {
 	// Ready → not blocked, no message (the comment run continues to the queue).
-	if msg, blocked := commentReadinessDecision(crawl.ReadinessReady, ""); blocked || msg != "" {
+	if msg, blocked := commentReadinessDecision(readiness.ReadinessReady, ""); blocked || msg != "" {
 		t.Fatalf("ready must not block, got blocked=%v msg=%q", blocked, msg)
 	}
 
 	// Every non-ready reason must block and surface the actionable detail.
 	cases := []struct{ name, reason, detail string }{
-		{"no connector", crawl.ReasonConnectorOffline, "Mở Chrome profile đã pair account này"},
-		{"identity unknown", crawl.ReasonActorIdentityUnknown, "chưa đọc được c_user"},
-		{"actor mismatch", crawl.ReasonActorMismatchBlocked, "đăng nhập một Facebook KHÁC"},
+		{"no connector", readiness.ReasonConnectorOffline, "Mở Chrome profile đã pair account này"},
+		{"identity unknown", readiness.ReasonActorIdentityUnknown, "chưa đọc được c_user"},
+		{"actor mismatch", readiness.ReasonActorMismatchBlocked, "đăng nhập một Facebook KHÁC"},
 		{"update required", connectors.ConnExtensionUpdateRequired, "Cập nhật extension"},
 		{"unsupported", connectors.ConnExtensionUnsupported, "không còn được hỗ trợ"},
-		{"not owned", crawl.ReasonAccountNotOwned, "Bạn không sở hữu"},
+		{"not owned", readiness.ReasonAccountNotOwned, "Bạn không sở hữu"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

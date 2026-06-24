@@ -340,7 +340,7 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 // pickOnlineConnectorForCrawl resolves the connector that will run a crawl for
 // task.AccountID. It delegates the eligibility decision to the SHARED
 // connectors.PickReadyConnector so the run-time picker and the create-time
-// mission preflight (server/crawl EvaluateCrawlAccountReadiness) never diverge.
+// mission preflight (readiness.EvaluateCrawlAccountReadiness) never diverge.
 // Returns (connectorID, "") on success, or (0, typed-reason) otherwise.
 func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
 	conns, err := db.Connectors().ListLocalConnectors(task.OrgID)

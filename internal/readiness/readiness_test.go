@@ -1,4 +1,4 @@
-package crawl
+package readiness
 
 import (
 	"context"

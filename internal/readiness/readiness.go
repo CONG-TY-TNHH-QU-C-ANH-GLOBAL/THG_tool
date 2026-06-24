@@ -1,4 +1,4 @@
-package crawl
+package readiness
 
 import (
 	"context"
@@ -11,6 +11,12 @@ import (
 
 // Facebook Automation Reliability Track — PR-A (Mission Preflight).
 // See specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md.
+//
+// Promoted from internal/server/crawl (PR29C): account readiness is a
+// platform-neutral primitive (connector online + live identity + supported
+// extension + ownership), shared by crawl create-time preflight AND the comment
+// run preflight, with future FB/IG/TikTok/YT runners reusing the same decision.
+// It depends only on models + store + store/connectors — never on transport.
 
 // Crawl-readiness reason codes — a CLOSED set. UI and tests branch on these
 // exact strings; messages are actionable Vietnamese.
