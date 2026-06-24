@@ -13,7 +13,6 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/textutil"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
 
@@ -137,7 +136,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		}
 	}
 
-	leads, err := leadsFromActionArgs(ctx, db, orgID, msgType, args)
+	leads, err := facebook.LeadsForAction(ctx, fbLeadSource{db}, orgID, msgType, leadSelectionInputFromArgs(args))
 	if err != nil {
 		return "", 0, err
 	}
@@ -153,7 +152,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	st := newLeadOutreachState()
 	// Eligible-fill (PR-2): keep scanning the candidate pool past skipped leads
 	// until `requested` are queued or the pool is exhausted.
-	requested := requestedOutreachCount(args)
+	requested := facebook.RequestedOutreachCount(int(argInt64(args, "limit")), int(argInt64(args, "max_items")))
 	for _, lead := range leads {
 		if st.queued >= requested {
 			break
@@ -164,68 +163,6 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 		}
 	}
 	return run.formatOutreachResult(ctx, requestedAuto, notify, st), st.queued, nil
-}
-
-func leadsFromActionArgs(ctx context.Context, db *store.Store, orgID int64, msgType string, args map[string]any) ([]models.Lead, error) {
-	// §7 direct-link comment: act on ONE existing lead (resolved by the
-	// orchestrator from a Facebook post URL) so it carries real content +
-	// coverage history — not a synthetic shell. Empty result → the normal
-	// "no eligible lead" path.
-	if lid := argInt64(args, "lead_id"); lid > 0 {
-		lead, err := db.Leads().GetLeadByID(ctx, orgID, lid)
-		if err != nil {
-			return nil, err
-		}
-		if lead == nil {
-			return nil, nil
-		}
-		return []models.Lead{*lead}, nil
-	}
-	// Facebook-specific synthetic-lead shaping (prompt_target conventions) is owned by
-	// internal/services/facebook; the composition root delegates to it. Empty result =
-	// no prompt target → fall through to the work-queue selection below.
-	if lead, ok := facebook.SyntheticLeadFromActionArgs(
-		orgID, msgType,
-		argString(args, "post_url"), argString(args, "target_url"),
-		argString(args, "target_name"), argString(args, "author_url"),
-		argString(args, "context"),
-	); ok {
-		return []models.Lead{lead}, nil
-	}
-	score := argString(args, "score_filter")
-	if score == "" && msgType == "inbox" {
-		score = "hot"
-	}
-	// Lead Lifecycle PR-2: select from the WORK QUEUE, not the raw lead list —
-	// lifecycle-filtered to act-now leads (active/followup_due; archived + stale
-	// excluded) and ordered by score → freshness → next_action_at. Still a LARGER pool
-	// than the requested count for eligible-fill: the planner keeps scanning past
-	// coverage-skipped leads until it has queued `requested`. See
-	// specs/LEAD_LIFECYCLE_WORK_QUEUE.md.
-	return db.Leads().WorkQueueLeads(ctx, orgID, score, scanPoolFor(requestedOutreachCount(args)))
-}
-
-// requestedOutreachCount is how many ELIGIBLE comments/messages the caller asked to
-// queue ("comment thử 5 lead" → 5). Reads limit, then the agent's max_items
-// fallback; defaults to 25.
-func requestedOutreachCount(args map[string]any) int {
-	n := int(argInt64(args, "limit"))
-	if n <= 0 {
-		n = int(argInt64(args, "max_items"))
-	}
-	if n <= 0 {
-		n = 25
-	}
-	return n
-}
-
-// scanPoolFor sizes the candidate pool so the planner can keep scanning past skipped
-// leads until it has queued `requested` eligible comments — max(50, requested*10).
-func scanPoolFor(requested int) int {
-	if n := requested * 10; n > 50 {
-		return n
-	}
-	return 50
 }
 
 func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
@@ -271,32 +208,6 @@ func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGe
 	return queueFacebookPostTargets(ctx, db, msgGen, args, "profile_post", []string{target}, notify)
 }
 
-// resolveFacebookPostContent builds the post body: explicit content/description/title,
-// then an AI-generated job post when a title + available generator are present.
-// Returns an error when no content can be resolved (message preserved).
-func resolveFacebookPostContent(ctx context.Context, msgGen *ai.MessageGenerator, args map[string]any) (string, error) {
-	content := textutil.FirstNonEmpty(argString(args, "content"), argString(args, "description"), argString(args, "title"))
-	if msgGen != nil && msgGen.Available() && argString(args, "title") != "" {
-		genCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		generated, err := msgGen.GenerateJobPost(genCtx,
-			argString(args, "title"),
-			argString(args, "description"),
-			argString(args, "requirements"),
-			argString(args, "benefits"),
-			argString(args, "salary"),
-			argString(args, "email"),
-		)
-		cancel()
-		if err == nil && strings.TrimSpace(generated) != "" {
-			content = generated
-		}
-	}
-	if strings.TrimSpace(content) == "" {
-		return "", fmt.Errorf("Facebook post content is required")
-	}
-	return content, nil
-}
-
 func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, msgType string, targets []string, notify func(string)) (string, error) {
 	orgID := argInt64(args, "org_id")
 	if orgID <= 0 {
@@ -309,7 +220,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 		return "", err
 	}
 
-	content, err := resolveFacebookPostContent(ctx, msgGen, args)
+	content, err := facebook.ResolveFacebookPostContent(ctx, msgGen, postContentInputFromArgs(args))
 	if err != nil {
 		return "", err
 	}
