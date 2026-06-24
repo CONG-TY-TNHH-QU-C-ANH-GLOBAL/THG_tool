@@ -23,7 +23,8 @@ cd "$ROOT" || exit 0
 # All rule names (the count reported as "rules checked").
 RULE_NAMES="AI_PURE AI_NO_EXECUTION AI_STORE_COUPLED COPILOT_NO_DIRECT_REPO \
 OUTBOUND_NO_FACEBOOK OUTBOUND_NO_COPILOT OUTBOUND_APP_FACEBOOK PLATFORM_NO_SERVICES \
-SERVICES_NO_SIBLINGS SERVICES_FB_NO_COPILOT STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC \
+SERVICES_NO_SIBLINGS SERVICES_FB_NO_COPILOT SERVICES_FACEBOOK_NO_STORE_SERVER_CMD \
+STORE_NO_SERVER NOTIFICATIONS_NO_FB_LOGIC \
 NO_CONTRACTS_GODPKG SERVICE_NO_SIBLING WORKER_NO_TRANSPORT SIDECAR_NO_DIRECT_DB"
 RULES=$(echo "$RULE_NAMES" | wc -w | tr -d ' ')
 WARN=0
@@ -40,6 +41,7 @@ next_phase() {
     PLATFORM_NO_SERVICES)           echo "B/C";;
     SERVICES_NO_SIBLINGS)           echo "post-E";;
     SERVICES_FB_NO_COPILOT)         echo "C/G";;
+    SERVICES_FACEBOOK_NO_STORE_SERVER_CMD) echo "invariant (services/facebook stays store/server/cmd-free — PR29A–E seam)";;
     STORE_NO_SERVER)                echo "invariant (must stay clean)";;
     NOTIFICATIONS_NO_FB_LOGIC)      echo "E (subscribe to outbox events)";;
     NO_CONTRACTS_GODPKG)            echo "design rule (never create it)";;
@@ -61,7 +63,7 @@ emit() {
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     file="${line%%:*}"
-    pkg="$(printf '%s' "$line" | grep -oE 'github\.com/thg/scraper/internal/[a-z0-9_/]+' | head -1)"
+    pkg="$(printf '%s' "$line" | grep -oE 'github\.com/thg/scraper/(internal|cmd)/[a-z0-9_/]+' | head -1)"
     printf 'WARN [%s]%s %s imports %s  -> fix in phase: %s\n' "$rule" "$tag" "$file" "$pkg" "$phase"
     WARN=$((WARN + 1))
     known_gap "$rule" && KNOWN=$((KNOWN + 1))
@@ -83,6 +85,22 @@ scan_glob() {
   local rule="$1" forbidden="$2"; shift 2
   local out
   out="$(grep -nE "\"github\.com/thg/scraper/internal/(${forbidden})" "$@" 2>/dev/null \
+    | grep -v '_test\.go:')"
+  [ -n "$out" ] && emit "$rule" <<< "$out"
+  return 0
+}
+
+# scan_paths RULE FORBIDDEN_ERE DIR  (recursive, non-test). Like scan_dir but the
+# ERE is matched directly after the quoted module ROOT, so a forbidden path may be
+# anywhere in the tree (internal/* AND cmd/*), not just under internal/. Each
+# alternative MUST carry a ("|/) boundary so it matches both a bare package import
+# ("…/internal/store") and any subpackage ("…/internal/store/connectors"). The
+# leading literal double-quote anchors on a Go import string, so prose comments
+# that merely mention a path (e.g. // isolated from internal/store) never match.
+scan_paths() {
+  local rule="$1" forbidden="$2" dir="$3" out
+  [ -d "$dir" ] || return 0
+  out="$(grep -rnE "\"github\.com/thg/scraper/(${forbidden})" "$dir" --include='*.go' 2>/dev/null \
     | grep -v '_test\.go:')"
   [ -n "$out" ] && emit "$rule" <<< "$out"
   return 0
@@ -161,6 +179,18 @@ scan_dir PLATFORM_NO_SERVICES 'ai($|/)|jobhandlers|leadingest|services($|/)' int
 # 7. service modules must not import each other; facebook must not import the driver.
 scan_dir SERVICES_NO_SIBLINGS   'services/(taobao|alibaba1688|1688)' internal/services/facebook
 scan_dir SERVICES_FB_NO_COPILOT 'drivers/copilot' internal/services/facebook
+
+# 7b. SERVICES_FACEBOOK_NO_STORE_SERVER_CMD — lock the PR29A–E seam: the FB service
+#     module is consumer-of-ports only. It must NEVER import the data layer
+#     (internal/store + subpkgs incl. store/connectors), HTTP server transport
+#     (internal/server), the composition root (cmd/scraper — also a Go compile
+#     error, guarded here for intent), connector/crawler/ingest runtime internals,
+#     or sibling verticals. Adapters live in cmd/scraper; neutral primitives live
+#     in internal/readiness etc. Uses scan_paths (root-anchored, ("|/)-bounded) so
+#     bare AND subpackage imports are caught while comment prose is not.
+scan_paths SERVICES_FACEBOOK_NO_STORE_SERVER_CMD \
+  'internal/store("|/)|internal/server("|/)|cmd/scraper("|/)|internal/connectors("|/)|internal/jobhandlers("|/)|internal/leadingest("|/)|internal/services/taobao("|/)|internal/services/supplier1688("|/)' \
+  internal/services/facebook
 
 # 8. store must not import the HTTP server.
 scan_dir STORE_NO_SERVER 'server($|/)' internal/store

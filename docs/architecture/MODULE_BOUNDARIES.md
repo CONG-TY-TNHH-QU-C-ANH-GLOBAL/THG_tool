@@ -58,8 +58,17 @@ Legend for "current code": ✅ exists and matches · ◐ exists, partial · ○ 
   `connectors`/`identities` (via ports), `leads`/`crawl` domain accessors, `events`
   (publish), `models`.
 - **Forbidden imports:** `drivers/copilot` (a service must not depend on the driver
-  that calls it), other service modules (`services/taobao`, `services/1688`),
-  `internal/server` transport.
+  that calls it), other service modules (`services/taobao`, `services/supplier1688`),
+  `internal/server` transport, the data layer (`internal/store` + subpkgs incl.
+  `store/connectors`), connector/crawler/ingest runtime internals
+  (`internal/connectors`, `internal/jobhandlers`, `internal/leadingest`), and the
+  composition root (`cmd/scraper`). The module is consumer-of-ports only: data
+  access goes through narrow consumer-owned ports (PR29B/PR29D) and neutral
+  primitives (`internal/readiness`, PR29C), with adapters wired in `cmd/scraper`.
+- **Enforced by:** `scripts/check_import_boundaries.sh` rule
+  `SERVICES_FACEBOOK_NO_STORE_SERVER_CMD` (matches quoted Go import strings, so
+  prose comments mentioning a path are not flagged; a comment containing the *full
+  quoted* module path is the one known residual edge, shared by every rule).
 - **Belongs here:** `queueLeadOutreach` orchestration, `commentSinglePost`,
   single-post import continuation (workflow/process manager), readiness gate wiring.
 - **Must NOT belong here:** raw `execution_attempts` writes (coordination owns them);
