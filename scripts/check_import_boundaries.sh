@@ -30,6 +30,10 @@ RULES=$(echo "$RULE_NAMES" | wc -w | tr -d ' ')
 WARN=0
 KNOWN=0
 
+# Grep pattern that drops Go test files from import scans (path:line: prefix form).
+# Centralised so the scan helpers share one definition.
+TEST_FILE_GREP_PATTERN='_test\.go:'
+
 # next_phase RULE -> the roadmap phase (REFACTOR_ROADMAP.md) that resolves it.
 next_phase() {
   case "$1" in
@@ -75,7 +79,7 @@ scan_dir() {
   local rule="$1" forbidden="$2" dir="$3" out
   [ -d "$dir" ] || return 0
   out="$(grep -rnE "\"github\.com/thg/scraper/internal/(${forbidden})" "$dir" --include='*.go' 2>/dev/null \
-    | grep -v '_test\.go:')"
+    | grep -v "$TEST_FILE_GREP_PATTERN")"
   [ -n "$out" ] && emit "$rule" <<< "$out"
   return 0
 }
@@ -85,8 +89,8 @@ scan_glob() {
   local rule="$1" forbidden="$2"; shift 2
   local out
   out="$(grep -nE "\"github\.com/thg/scraper/internal/(${forbidden})" "$@" 2>/dev/null \
-    | grep -v '_test\.go:')"
-  [ -n "$out" ] && emit "$rule" <<< "$out"
+    | grep -v "$TEST_FILE_GREP_PATTERN")"
+  [[ -n "$out" ]] && emit "$rule" <<< "$out"
   return 0
 }
 
@@ -99,10 +103,10 @@ scan_glob() {
 # that merely mention a path (e.g. // isolated from internal/store) never match.
 scan_paths() {
   local rule="$1" forbidden="$2" dir="$3" out
-  [ -d "$dir" ] || return 0
+  [[ -d "$dir" ]] || return 0
   out="$(grep -rnE "\"github\.com/thg/scraper/(${forbidden})" "$dir" --include='*.go' 2>/dev/null \
-    | grep -v '_test\.go:')"
-  [ -n "$out" ] && emit "$rule" <<< "$out"
+    | grep -v "$TEST_FILE_GREP_PATTERN")"
+  [[ -n "$out" ]] && emit "$rule" <<< "$out"
   return 0
 }
 
@@ -117,7 +121,7 @@ scan_each_service() {
     [[ -d "$svc_dir" ]] || continue
     svc_name="$(basename "$svc_dir")"
     out="$(grep -rnE "\"github\.com/thg/scraper/internal/services/" "$svc_dir" --include='*.go' 2>/dev/null \
-      | grep -v '_test\.go:' \
+      | grep -v "$TEST_FILE_GREP_PATTERN" \
       | grep -vE "\"github\.com/thg/scraper/internal/services/${svc_name}(\"|/)")"
     [[ -n "$out" ]] && emit "$rule" <<< "$out"
   done
