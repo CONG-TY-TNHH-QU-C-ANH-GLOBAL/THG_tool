@@ -45,29 +45,10 @@ func resolveUserActionContext(db *store.Store, orgID, userID int64, role string,
 
 func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (int64, error) {
 	if requestedAccountID > 0 {
-		acc, err := db.Identities().GetAccountForOrg(requestedAccountID, orgID)
-		if err != nil || acc == nil {
-			return 0, fmt.Errorf("account_id %d not found in org %d", requestedAccountID, orgID)
-		}
-		if userID > 0 && !models.IsAccountOwnerAllowed(acc, userID, role) {
-			return 0, fmt.Errorf("you do not own account #%d", requestedAccountID)
-		}
-		return acc.ID, nil
+		return callerAccountForExplicitID(db, orgID, userID, role, requestedAccountID)
 	}
 
-	var candidates []models.Account
-	var err error
-	if userID > 0 {
-		r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
-		if models.IsPlatformRole(r) || r == models.RoleAdmin {
-			candidates, err = db.Identities().GetAllAccounts(orgID)
-		} else {
-			candidates, err = db.Identities().GetAccountsForUser(orgID, userID)
-		}
-	} else {
-		// Legacy / unauthenticated path: any org account.
-		candidates, err = db.Identities().GetAllAccounts(orgID)
-	}
+	candidates, err := ownedAccountCandidates(db, orgID, userID, role)
 	if err != nil {
 		return 0, err
 	}
@@ -78,30 +59,64 @@ func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, r
 		return 0, fmt.Errorf("no Facebook account available for org %d", orgID)
 	}
 	if preferLoggedIn {
-		// Deterministic ExecutionContext (Organic Sales Network): NO heuristic,
-		// NO "first logged-in", NO newest-connector, NO auto-magic default.
-		// Resolution order: explicit account_id (handled above) -> user Default
-		// Account -> exactly-one-owned-account -> error execution_context_required.
-		ownedIDs := make(map[int64]bool, len(candidates))
-		for _, acc := range candidates {
-			ownedIDs[acc.ID] = true
-		}
-		if def := db.GetUserDefaultAccount(orgID, userID); def > 0 && ownedIDs[def] {
-			return def, nil
-		}
-		var usable []int64
-		for _, acc := range candidates {
-			if acc.Platform == models.PlatformFacebook && acc.Status == models.AccountActive {
-				usable = append(usable, acc.ID)
-			}
-		}
-		if len(usable) == 1 {
-			return usable[0], nil
-		}
-		if len(usable) == 0 {
-			return 0, fmt.Errorf("execution_context_required: no usable Facebook account — pair a Chrome connector and log into Facebook first")
-		}
-		return 0, fmt.Errorf("execution_context_required: you have %d Facebook accounts — set a Default Account in Settings (or pass account_id)", len(usable))
+		return selectExecutionAccount(db, orgID, userID, candidates)
 	}
 	return candidates[0].ID, nil
+}
+
+// callerAccountForExplicitID loads an explicitly requested account and enforces
+// execution-layer ownership: it must exist in the org, and (when the caller is
+// identified) the caller must be allowed to own it.
+func callerAccountForExplicitID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64) (int64, error) {
+	acc, err := db.Identities().GetAccountForOrg(requestedAccountID, orgID)
+	if err != nil || acc == nil {
+		return 0, fmt.Errorf("account_id %d not found in org %d", requestedAccountID, orgID)
+	}
+	if userID > 0 && !models.IsAccountOwnerAllowed(acc, userID, role) {
+		return 0, fmt.Errorf("you do not own account #%d", requestedAccountID)
+	}
+	return acc.ID, nil
+}
+
+// ownedAccountCandidates returns the accounts the caller may resolve from:
+// sales staff see only their owned accounts; admin / platform roles and the
+// legacy unauthenticated (userID <= 0) path see all org accounts.
+func ownedAccountCandidates(db *store.Store, orgID, userID int64, role string) ([]models.Account, error) {
+	if userID <= 0 {
+		// Legacy / unauthenticated path: any org account.
+		return db.Identities().GetAllAccounts(orgID)
+	}
+	r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
+	if models.IsPlatformRole(r) || r == models.RoleAdmin {
+		return db.Identities().GetAllAccounts(orgID)
+	}
+	return db.Identities().GetAccountsForUser(orgID, userID)
+}
+
+// selectExecutionAccount applies the deterministic ExecutionContext resolution
+// (Organic Sales Network): NO heuristic, NO "first logged-in", NO
+// newest-connector, NO auto-magic default. Resolution order: explicit
+// account_id (handled by the caller) -> user Default Account ->
+// exactly-one-owned-account -> error execution_context_required.
+func selectExecutionAccount(db *store.Store, orgID, userID int64, candidates []models.Account) (int64, error) {
+	ownedIDs := make(map[int64]bool, len(candidates))
+	for _, acc := range candidates {
+		ownedIDs[acc.ID] = true
+	}
+	if def := db.GetUserDefaultAccount(orgID, userID); def > 0 && ownedIDs[def] {
+		return def, nil
+	}
+	var usable []int64
+	for _, acc := range candidates {
+		if acc.Platform == models.PlatformFacebook && acc.Status == models.AccountActive {
+			usable = append(usable, acc.ID)
+		}
+	}
+	if len(usable) == 1 {
+		return usable[0], nil
+	}
+	if len(usable) == 0 {
+		return 0, fmt.Errorf("execution_context_required: no usable Facebook account — pair a Chrome connector and log into Facebook first")
+	}
+	return 0, fmt.Errorf("execution_context_required: you have %d Facebook accounts — set a Default Account in Settings (or pass account_id)", len(usable))
 }
