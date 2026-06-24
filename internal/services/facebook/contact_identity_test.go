@@ -1,7 +1,6 @@
 package facebook
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
@@ -13,14 +12,14 @@ import (
 type fakeContactDir struct {
 	staff    map[[2]int64]*models.StaffContactProfile
 	accounts map[int64]*models.Account
-	ctx      map[string]string
+	fallback map[int64]string // org-scoped company-contact-fallback setting
 }
 
 func newFakeContactDir() *fakeContactDir {
 	return &fakeContactDir{
 		staff:    map[[2]int64]*models.StaffContactProfile{},
 		accounts: map[int64]*models.Account{},
-		ctx:      map[string]string{},
+		fallback: map[int64]string{},
 	}
 }
 
@@ -36,8 +35,8 @@ func (f *fakeContactDir) AccountForOrg(accountID, orgID int64) (*models.Account,
 	return a, nil
 }
 
-func (f *fakeContactDir) LeadContext(key string) (string, error) {
-	return f.ctx[key], nil
+func (f *fakeContactDir) CompanyContactFallbackSetting(orgID int64) (string, error) {
+	return f.fallback[orgID], nil
 }
 
 // seedStaff inserts an org-scoped staff contact profile into the fake.
@@ -55,7 +54,7 @@ func (f *fakeContactDir) seedAssignedAccount(accountID, orgID, assignee int64) i
 }
 
 func (f *fakeContactDir) disableCompanyFallback(orgID int64) {
-	f.ctx[fmt.Sprintf("org:%d:allow_company_contact_fallback", orgID)] = "false"
+	f.fallback[orgID] = "false"
 }
 
 // assertResolvedContact pins both the resolved OfficialContact and PrimaryCTA carried into

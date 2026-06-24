@@ -1,7 +1,6 @@
 package facebook
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/thg/scraper/internal/ai"
@@ -17,8 +16,10 @@ type ContactDirectory interface {
 	StaffContactProfile(orgID, userID int64) (*models.StaffContactProfile, error)
 	// AccountForOrg returns the account (with its OrgID) or nil if not in this org.
 	AccountForOrg(accountID, orgID int64) (*models.Account, error)
-	// LeadContext returns a stored context value by key (empty when unset).
-	LeadContext(key string) (string, error)
+	// CompanyContactFallbackSetting returns the org's raw company-contact-fallback setting
+	// value (empty when unset). The adapter owns the storage key; this service owns the
+	// business interpretation (see companyContactFallbackAllowed).
+	CompanyContactFallbackSetting(orgID int64) (string, error)
 }
 
 // ResolveCommentIdentity builds the SINGLE grounded comment identity that BOTH the normal
@@ -82,7 +83,7 @@ func usableStaffContact(dir ContactDirectory, orgID, userID int64) *models.Staff
 // companyContactFallbackAllowed reads the org policy flag (default TRUE — workspaces keep
 // today's behavior unless they opt out).
 func companyContactFallbackAllowed(dir ContactDirectory, orgID int64) bool {
-	v, err := dir.LeadContext(fmt.Sprintf("org:%d:allow_company_contact_fallback", orgID))
+	v, err := dir.CompanyContactFallbackSetting(orgID)
 	if err != nil {
 		return true
 	}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/store"
@@ -20,8 +22,8 @@ func (d fbContactDirectory) AccountForOrg(accountID, orgID int64) (*models.Accou
 	return d.db.Identities().GetAccountForOrg(accountID, orgID)
 }
 
-func (d fbContactDirectory) LeadContext(key string) (string, error) {
-	return d.db.Leads().GetContext(key)
+func (d fbContactDirectory) CompanyContactFallbackSetting(orgID int64) (string, error) {
+	return d.db.Leads().GetContext(fmt.Sprintf("org:%d:allow_company_contact_fallback", orgID))
 }
 
 // Compile-time check: the adapter satisfies the consumer-owned port.
