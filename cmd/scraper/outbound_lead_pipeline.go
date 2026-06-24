@@ -128,7 +128,7 @@ func (c *leadOutreachContext) processOutreachLead(ctx context.Context, lead mode
 	}
 
 	if c.msgType == "comment" {
-		cleaned, qSkip := screenCommentQuality(content, c.commentIdentity)
+		cleaned, qSkip := facebook.ScreenCommentQuality(content, c.commentIdentity)
 		if qSkip != "" {
 			st.recordSkip(qSkip, lead.ID)
 			return nil
