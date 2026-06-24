@@ -12,33 +12,25 @@ import (
 // DetectRepeatedText, ScreenCommentContacts, RepairCommentContacts, EnsureWebsite) keep
 // their own tests in internal/ai/comment.
 func TestScreenCommentQuality(t *testing.T) {
-	t.Run("empty content is rejected with the sanitize reason", func(t *testing.T) {
-		got, skip := ScreenCommentQuality("   ", models.CompanyIdentity{})
-		if skip != "comment_quality_empty" {
-			t.Fatalf("skip = %q, want comment_quality_empty", skip)
-		}
-		if got != "" {
-			t.Errorf("rejected content must be empty, got %q", got)
-		}
-	})
-
-	t.Run("placeholder content is rejected with the sanitize reason", func(t *testing.T) {
-		got, skip := ScreenCommentQuality("Chào Anonymous participant, inbox em nhé.", models.CompanyIdentity{})
-		if skip != "comment_quality_placeholder" {
-			t.Fatalf("skip = %q, want comment_quality_placeholder", skip)
-		}
-		if got != "" {
-			t.Errorf("rejected content must be empty, got %q", got)
-		}
-	})
-
-	t.Run("clean comment with no website to add proceeds", func(t *testing.T) {
-		got, skip := ScreenCommentQuality("Sản phẩm đẹp quá, bạn cho mình hỏi thêm thông tin với nhé.", models.CompanyIdentity{})
-		if skip != "" {
-			t.Fatalf("clean comment must proceed, got skip %q", skip)
-		}
-		if got == "" {
-			t.Errorf("clean comment must return non-empty content")
-		}
-	})
+	// wantSkip == "" means the comment must pass through (skip empty, content non-empty);
+	// a non-empty wantSkip means rejection (that exact reason, with empty content).
+	cases := []struct{ name, content, wantSkip string }{
+		{"empty content rejected with sanitize reason", "   ", "comment_quality_empty"},
+		{"placeholder content rejected with sanitize reason", "Chào Anonymous participant, inbox em nhé.", "comment_quality_placeholder"},
+		{"clean comment with no website to add proceeds", "Sản phẩm đẹp quá, bạn cho mình hỏi thêm thông tin với nhé.", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, skip := ScreenCommentQuality(c.content, models.CompanyIdentity{})
+			if skip != c.wantSkip {
+				t.Fatalf("skip = %q, want %q", skip, c.wantSkip)
+			}
+			if c.wantSkip == "" && got == "" {
+				t.Errorf("clean comment must return non-empty content")
+			}
+			if c.wantSkip != "" && got != "" {
+				t.Errorf("rejected content must be empty, got %q", got)
+			}
+		})
+	}
 }
