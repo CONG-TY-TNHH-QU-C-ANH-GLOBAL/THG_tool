@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/thg/scraper/internal/server/crawl"
+	"github.com/thg/scraper/internal/readiness"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -17,21 +17,20 @@ import (
 // the run is BLOCKED with an actionable message instead of queueing comments
 // that can never post.
 //
-// This reuses the shared decision (crawl.EvaluateCrawlAccountReadiness →
+// This reuses the shared decision (readiness.EvaluateCrawlAccountReadiness →
 // connectors.PickReadyConnector) so create-time, crawl, and comment never
 // diverge on what "ready" means. Account paused/cooldown/checkpoint stays a
 // per-message gate downstream (DecideCaps) — this only blocks the "no ready
 // account at all" case, never weakens the per-message caps.
 //
-// Follow-up (noted, out of this slice's scope): the readiness preflight is now
-// shared by crawl + comment, so EvaluateCrawlAccountReadiness should be promoted
-// from package crawl to a neutral readiness package and renamed.
+// The readiness primitive now lives in the neutral internal/readiness package
+// (PR29C), shared by crawl + comment with no dependency on internal/server/crawl.
 
 // commentReadinessGate returns (blockMessage, blocked). When blocked is true the
 // caller must return blockMessage WITHOUT queueing anything. blocked is false
 // only when the account is fully ready to execute a comment now.
 func commentReadinessGate(ctx context.Context, db *store.Store, orgID, userID int64, role string, accountID int64) (string, bool) {
-	reason, detail := crawl.EvaluateCrawlAccountReadiness(ctx, db, orgID, userID, role, accountID)
+	reason, detail := readiness.EvaluateCrawlAccountReadiness(ctx, db, orgID, userID, role, accountID)
 	return commentReadinessDecision(reason, detail)
 }
 
@@ -40,7 +39,7 @@ func commentReadinessGate(ctx context.Context, db *store.Store, orgID, userID in
 // other than ReadinessReady blocks the comment run (connector offline, identity
 // unknown/mismatch, extension update_required/unsupported, account not owned).
 func commentReadinessDecision(reason, detail string) (string, bool) {
-	if reason == crawl.ReadinessReady {
+	if reason == readiness.ReadinessReady {
 		return "", false
 	}
 	return commentReadinessBlock(detail), true
