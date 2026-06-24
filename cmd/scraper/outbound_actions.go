@@ -132,7 +132,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// Facebook account cannot execute instead of queueing comments that imply
 	// posting but can never run. Comment-only here; inbox keeps its behavior.
 	if msgType == "comment" {
-		if blockMsg, blocked := commentReadinessGate(ctx, db, orgID, userID, role, accountID); blocked {
+		if blockMsg, blocked := facebook.CommentReadinessGate(ctx, fbCommentReadinessEvaluator{db}, orgID, userID, role, accountID); blocked {
 			return blockMsg, 0, nil
 		}
 	}

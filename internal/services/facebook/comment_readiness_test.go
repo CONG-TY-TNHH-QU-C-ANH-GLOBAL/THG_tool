@@ -1,12 +1,36 @@
-package main
+package facebook
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/thg/scraper/internal/readiness"
-	"github.com/thg/scraper/internal/store/connectors"
 )
+
+// fakeCommentReadiness is a store-free CommentReadinessEvaluator: it returns a
+// canned (reason, detail) so the gate can be exercised without a real store.
+type fakeCommentReadiness struct{ reason, detail string }
+
+func (f fakeCommentReadiness) EvaluateCommentReadiness(_ context.Context, _, _ int64, _ string, _ int64) (string, string) {
+	return f.reason, f.detail
+}
+
+// TestCommentReadinessGate_Delegates pins the port wiring: a ready verdict lets
+// the run proceed (not blocked, no message); any non-ready verdict blocks and
+// the actionable detail flows through into the block message.
+func TestCommentReadinessGate_Delegates(t *testing.T) {
+	if msg, blocked := CommentReadinessGate(context.Background(), fakeCommentReadiness{reason: readiness.ReadinessReady}, 1, 2, "admin", 3); blocked || msg != "" {
+		t.Fatalf("ready must not block, got blocked=%v msg=%q", blocked, msg)
+	}
+	msg, blocked := CommentReadinessGate(context.Background(), fakeCommentReadiness{reason: readiness.ReasonConnectorOffline, detail: "DETAIL-MARKER"}, 1, 2, "admin", 3)
+	if !blocked {
+		t.Fatalf("non-ready verdict must block the comment run")
+	}
+	if !strings.Contains(msg, "DETAIL-MARKER") {
+		t.Fatalf("gate must carry the evaluator detail into the block message, got %q", msg)
+	}
+}
 
 // TestCommentReadinessDecision asserts §5 block policy: a ready account does NOT
 // block (the run proceeds to queue), and every non-ready verdict blocks with an
@@ -17,13 +41,16 @@ func TestCommentReadinessDecision(t *testing.T) {
 		t.Fatalf("ready must not block, got blocked=%v msg=%q", blocked, msg)
 	}
 
-	// Every non-ready reason must block and surface the actionable detail.
+	// Every non-ready reason must block and surface the actionable detail. The
+	// extension reasons use the real connector reason-code values
+	// (internal/store/connectors version_policy) as literals so this test stays
+	// store-free; commentReadinessDecision blocks on ANY non-ready reason.
 	cases := []struct{ name, reason, detail string }{
 		{"no connector", readiness.ReasonConnectorOffline, "Mở Chrome profile đã pair account này"},
 		{"identity unknown", readiness.ReasonActorIdentityUnknown, "chưa đọc được c_user"},
 		{"actor mismatch", readiness.ReasonActorMismatchBlocked, "đăng nhập một Facebook KHÁC"},
-		{"update required", connectors.ConnExtensionUpdateRequired, "Cập nhật extension"},
-		{"unsupported", connectors.ConnExtensionUnsupported, "không còn được hỗ trợ"},
+		{"update required", "extension_update_required", "Cập nhật extension"},
+		{"unsupported", "extension_unsupported", "không còn được hỗ trợ"},
 		{"not owned", readiness.ReasonAccountNotOwned, "Bạn không sở hữu"},
 	}
 	for _, c := range cases {
