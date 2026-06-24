@@ -57,26 +57,31 @@ func (f *fakeContactDir) disableCompanyFallback(orgID int64) {
 	f.fallback[orgID] = "false"
 }
 
-// assertResolvedContact pins both the resolved OfficialContact and PrimaryCTA carried into
-// the prompt + contact guard for the given resolution inputs.
-func assertResolvedContact(t *testing.T, dir ContactDirectory, orgID, initiator, accountID int64, base models.CompanyIdentity, wantContact, wantCTA string) {
-	t.Helper()
-	got := resolveStaffContactIdentity(dir, orgID, initiator, accountID, base)
-	if got.OfficialContact != wantContact {
-		t.Fatalf("OfficialContact = %q, want %q", got.OfficialContact, wantContact)
-	}
-	if got.PrimaryCTA != wantCTA {
-		t.Fatalf("PrimaryCTA = %q, want %q", got.PrimaryCTA, wantCTA)
-	}
+// contactResolution bundles one resolveStaffContactIdentity call's inputs + expectations
+// (a single struct keeps the assert helper narrow instead of a wide many-param signature).
+// When checkCTA is false only OfficialContact is pinned — the PrimaryCTA is intentionally
+// left unconstrained for that case.
+type contactResolution struct {
+	dir         ContactDirectory
+	orgID       int64
+	initiator   int64
+	accountID   int64
+	base        models.CompanyIdentity
+	wantContact string
+	wantCTA     string
+	checkCTA    bool
 }
 
-// assertResolvedOfficialContact pins only the resolved OfficialContact (used by cases where
-// the PrimaryCTA is intentionally left unconstrained).
-func assertResolvedOfficialContact(t *testing.T, dir ContactDirectory, orgID, initiator, accountID int64, base models.CompanyIdentity, wantContact string) {
+// assertContactResolution pins the OfficialContact (and PrimaryCTA when checkCTA) carried
+// into the prompt + contact guard for the given resolution inputs.
+func assertContactResolution(t *testing.T, c contactResolution) {
 	t.Helper()
-	got := resolveStaffContactIdentity(dir, orgID, initiator, accountID, base)
-	if got.OfficialContact != wantContact {
-		t.Fatalf("OfficialContact = %q, want %q", got.OfficialContact, wantContact)
+	got := resolveStaffContactIdentity(c.dir, c.orgID, c.initiator, c.accountID, c.base)
+	if got.OfficialContact != c.wantContact {
+		t.Fatalf("OfficialContact = %q, want %q", got.OfficialContact, c.wantContact)
+	}
+	if c.checkCTA && got.PrimaryCTA != c.wantCTA {
+		t.Fatalf("PrimaryCTA = %q, want %q", got.PrimaryCTA, c.wantCTA)
 	}
 }
 
@@ -92,7 +97,7 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 	t.Run("initiator wins on unassigned account (reported bug)", func(t *testing.T) {
 		f := newFakeContactDir()
 		f.seedStaff(orgA, 11, true, initiatorProfile)
-		assertResolvedContact(t, f, orgA, 11, 0, base, "Telegram @hairypotter98 · Zalo 0949716391", "INBOX-ME")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: 0, base: base, wantContact: "Telegram @hairypotter98 · Zalo 0949716391", wantCTA: "INBOX-ME", checkCTA: true})
 	})
 
 	t.Run("initiator wins over a different assignee", func(t *testing.T) {
@@ -100,40 +105,40 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 		f.seedStaff(orgA, 11, true, initiatorProfile)
 		f.seedStaff(orgA, 22, true, assigneeProfile)
 		acc := f.seedAssignedAccount(100, orgA, 22)
-		assertResolvedContact(t, f, orgA, 11, acc, base, "Telegram @hairypotter98 · Zalo 0949716391", "INBOX-ME")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: acc, base: base, wantContact: "Telegram @hairypotter98 · Zalo 0949716391", wantCTA: "INBOX-ME", checkCTA: true})
 	})
 
 	t.Run("falls back to account assignee when initiator unusable", func(t *testing.T) {
 		f := newFakeContactDir()
 		f.seedStaff(orgA, 22, true, assigneeProfile)
 		acc := f.seedAssignedAccount(100, orgA, 22)
-		assertResolvedContact(t, f, orgA, 11, acc, base, "Telegram @othersale · Zalo 0900000000", "ASSIGNEE-CTA")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: acc, base: base, wantContact: "Telegram @othersale · Zalo 0900000000", wantCTA: "ASSIGNEE-CTA", checkCTA: true})
 	})
 
 	t.Run("company fallback when neither usable and fallback allowed (default)", func(t *testing.T) {
 		f := newFakeContactDir()
 		acc := f.seedAssignedAccount(100, orgA, 22)
-		assertResolvedContact(t, f, orgA, 11, acc, base, "COMPANY-CONTACT", "COMPANY-CTA")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: acc, base: base, wantContact: "COMPANY-CONTACT", wantCTA: "COMPANY-CTA", checkCTA: true})
 	})
 
 	t.Run("omit when neither usable and fallback disabled", func(t *testing.T) {
 		f := newFakeContactDir()
 		f.disableCompanyFallback(orgA)
 		acc := f.seedAssignedAccount(100, orgA, 22)
-		assertResolvedOfficialContact(t, f, orgA, 11, acc, base, "")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: acc, base: base, wantContact: ""})
 	})
 
 	t.Run("empty fields filtered and empty PreferredCTA keeps company CTA", func(t *testing.T) {
 		f := newFakeContactDir()
 		f.seedStaff(orgA, 11, true, models.StaffContactProfile{Telegram: "hairypotter98", Zalo: "0949716391"})
-		assertResolvedContact(t, f, orgA, 11, 0, base, "Telegram @hairypotter98 · Zalo 0949716391", "COMPANY-CTA")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: 0, base: base, wantContact: "Telegram @hairypotter98 · Zalo 0949716391", wantCTA: "COMPANY-CTA", checkCTA: true})
 	})
 
 	t.Run("tenant isolation: profile under another org is not leaked", func(t *testing.T) {
 		f := newFakeContactDir()
 		const orgB int64 = 2
 		f.seedStaff(orgB, 11, true, initiatorProfile)
-		assertResolvedOfficialContact(t, f, orgA, 11, 0, base, "COMPANY-CONTACT")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: 0, base: base, wantContact: "COMPANY-CONTACT"})
 	})
 
 	t.Run("inactive initiator profile falls through to assignee", func(t *testing.T) {
@@ -141,6 +146,6 @@ func TestResolveStaffContactIdentity_Precedence(t *testing.T) {
 		f.seedStaff(orgA, 11, false, initiatorProfile)
 		f.seedStaff(orgA, 22, true, assigneeProfile)
 		acc := f.seedAssignedAccount(100, orgA, 22)
-		assertResolvedOfficialContact(t, f, orgA, 11, acc, base, "Telegram @othersale · Zalo 0900000000")
+		assertContactResolution(t, contactResolution{dir: f, orgID: orgA, initiator: 11, accountID: acc, base: base, wantContact: "Telegram @othersale · Zalo 0900000000"})
 	})
 }
