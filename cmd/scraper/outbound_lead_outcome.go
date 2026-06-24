@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/services/facebook"
 )
 
 // Comment-quality screening (ScreenCommentQuality / enforceContactPolicy) moved to
@@ -94,7 +95,7 @@ func outreachRiskDetails(st *leadOutreachState, accountID int64) string {
 func (c *leadOutreachContext) formatOutreachResult(ctx context.Context, requestedAuto bool, notify func(string), st *leadOutreachState) string {
 	mode := outreachMode(st.approvedCount, st.queued, requestedAuto)
 	if notify != nil && st.queued > 0 {
-		notify(formatOutboundNotification(c.orgID, c.accountID, c.msgType, st.queued, st.skipped, mode))
+		notify(facebook.FormatOutboundNotification(c.orgID, c.accountID, c.msgType, st.queued, st.skipped, mode))
 	}
 	// Investigation ask §1: one structured, diagnosable line per run — scanned vs
 	// queued vs skipped, the reason histogram AND sample lead IDs per reason.
@@ -115,7 +116,7 @@ func (c *leadOutreachContext) formatCommentResult(ctx context.Context, st *leadO
 	// Business-friendly: queued ≠ posted. Surface a status summary.
 	skipNote := ""
 	if st.skipped > 0 {
-		skipNote = fmt.Sprintf(" Bỏ qua %d lead (%s).", st.skipped, friendlySkipReasons(st.skipReasons))
+		skipNote = fmt.Sprintf(" Bỏ qua %d lead (%s).", st.skipped, facebook.FriendlySkipReasons(st.skipReasons))
 	}
 	if st.queued == 0 {
 		// Lead Lifecycle PR-5: degrade honestly — report what the org DOES have
