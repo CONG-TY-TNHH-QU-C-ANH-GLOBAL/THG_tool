@@ -81,7 +81,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 		if idProfile == nil {
 			idProfile = ai.LoadProfileForOrg(db, orgID)
 		}
-		commentIdentity = resolveCommentIdentity(db, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
+		commentIdentity = facebook.ResolveCommentIdentity(fbContactDirectory{db}, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
 	}
 
 	return &leadOutreachContext{

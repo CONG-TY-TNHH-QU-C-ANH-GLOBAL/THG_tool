@@ -94,7 +94,7 @@ func applyCommentReasoning(ctx context.Context, in commentReasoningInput) string
 		// win, the company website is preserved, and the per-lead grounded CTA
 		// seeds the identity. The live prompt must NOT re-derive a company-only
 		// identity (that dropped the staff swap before this fix).
-		liveIdentity := resolveCommentIdentity(in.db, in.orgID, in.initiatorUserID, in.accountID, in.profile, decision.Selected.CTA)
+		liveIdentity := facebook.ResolveCommentIdentity(fbContactDirectory{in.db}, in.orgID, in.initiatorUserID, in.accountID, in.profile, decision.Selected.CTA)
 		text, gerr := in.msgGen.GenerateCommentV2(rctx, in.leadContent, in.author, in.profile, decision, liveIdentity)
 		if gerr != nil {
 			log.Printf("[reasoning:live] GenerateCommentV2 org=%d: %v — falling back", in.orgID, gerr)
