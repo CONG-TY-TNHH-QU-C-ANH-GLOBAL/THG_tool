@@ -266,60 +266,70 @@ func (h *Harness) runOnePrompt(ctx context.Context, searcher retrieval.Searcher,
 		return out
 	}
 
-	// Check if fallback fired (any fallback_primary_* reason in TotalByReason).
-	for r := range trace.TotalByReason {
-		if strings.HasPrefix(string(r), "fallback_primary_") {
-			out.FellBackTo = string(r)
-			break
-		}
-	}
-
-	for _, hit := range hits {
-		if hit.Asset == nil {
-			continue
-		}
-		out.RetrievedTitles = append(out.RetrievedTitles, hit.Asset.Title)
-		// SAFETY CHECKS — these are the non-negotiables.
-		if hit.Asset.Type == assets.AssetBannedClaim {
-			out.ComplianceLeaks = append(out.ComplianceLeaks, hit.Asset.Title)
-		}
-		if hit.Asset.State == assets.StateHidden {
-			out.HiddenLeaks = append(out.HiddenLeaks, hit.Asset.Title)
-		}
-	}
+	out.FellBackTo = detectFallback(trace)
+	out.RetrievedTitles, out.ComplianceLeaks, out.HiddenLeaks = scanHitSignals(hits)
 	if len(hits) > 0 {
 		out.TopScore = hits[0].Score
 	}
 	out.PrecisionAtK = h.computePrecisionAtK(hits, prompt.IntentTags)
 	out.BelowMinScore = out.TopScore < prompt.MinScore
+	out.Verdict = soakVerdict(out, prompt.IntentTags, len(hits))
+	return out
+}
 
-	// Verdict logic — PRECISION is the dominant quality signal, NOT
-	// raw score. Different searchers produce wildly different score
-	// scales: hybrid in [0, 1], RRF in [0, ~0.05] (intrinsic to the
-	// 1/(60+rank) formula). Cross-scale comparison would be apples
-	// to oranges. We keep BelowMinScore as observability metadata
-	// for the report but stop using it as a verdict gate.
-	//
-	//   FAIL      if any compliance / hidden leak (non-negotiable)
-	//   FAIL      if expected intent exists, hits returned, but
-	//             precision == 0 (retrieval surfaced wrong stuff)
-	//   DEGRADED  if expected intent + no hits (orchestrator
-	//             should ask for clarification)
-	//   DEGRADED  if precision < 0.4 (weak relevance)
-	//   PASS      otherwise — including "no intent → no hits expected"
+// detectFallback returns the first fallback_primary_* reason recorded in the trace,
+// or "" if the primary searcher served the query.
+func detectFallback(trace retrieval.Trace) string {
+	for r := range trace.TotalByReason {
+		if strings.HasPrefix(string(r), "fallback_primary_") {
+			return string(r)
+		}
+	}
+	return ""
+}
+
+// scanHitSignals collects the retrieved titles plus the non-negotiable compliance/hidden
+// leak lists (banned-claim / hidden assets must never surface). Verbatim extraction.
+func scanHitSignals(hits []retrieval.Hit) (titles, complianceLeaks, hiddenLeaks []string) {
+	for _, hit := range hits {
+		if hit.Asset == nil {
+			continue
+		}
+		titles = append(titles, hit.Asset.Title)
+		// SAFETY CHECKS — these are the non-negotiables.
+		if hit.Asset.Type == assets.AssetBannedClaim {
+			complianceLeaks = append(complianceLeaks, hit.Asset.Title)
+		}
+		if hit.Asset.State == assets.StateHidden {
+			hiddenLeaks = append(hiddenLeaks, hit.Asset.Title)
+		}
+	}
+	return titles, complianceLeaks, hiddenLeaks
+}
+
+// soakVerdict applies the precision-dominant verdict policy. PRECISION is the dominant
+// quality signal, NOT raw score: different searchers produce wildly different score scales
+// (hybrid in [0,1], RRF in [0,~0.05] from 1/(60+rank)), so cross-scale comparison would be
+// apples-to-oranges. BelowMinScore stays as report observability metadata, not a gate.
+//
+//	FAIL      any compliance / hidden leak (non-negotiable)
+//	FAIL      expected intent + hits returned but precision == 0 (wrong stuff surfaced)
+//	DEGRADED  expected intent + no hits (orchestrator should ask for clarification)
+//	DEGRADED  precision < 0.4 (weak relevance)
+//	PASS      otherwise — including "no intent → no hits expected"
+func soakVerdict(out PromptOutcome, intentTags []string, hitCount int) string {
 	switch {
 	case len(out.ComplianceLeaks) > 0 || len(out.HiddenLeaks) > 0:
-		out.Verdict = "FAIL"
-	case len(prompt.IntentTags) > 0 && len(hits) > 0 && out.PrecisionAtK == 0:
-		out.Verdict = "FAIL"
-	case len(prompt.IntentTags) > 0 && len(hits) == 0:
-		out.Verdict = "DEGRADED"
-	case len(prompt.IntentTags) > 0 && out.PrecisionAtK < 0.4:
-		out.Verdict = "DEGRADED"
+		return "FAIL"
+	case len(intentTags) > 0 && hitCount > 0 && out.PrecisionAtK == 0:
+		return "FAIL"
+	case len(intentTags) > 0 && hitCount == 0:
+		return "DEGRADED"
+	case len(intentTags) > 0 && out.PrecisionAtK < 0.4:
+		return "DEGRADED"
 	default:
-		out.Verdict = "PASS"
+		return "PASS"
 	}
-	return out
 }
 
 // computePrecisionAtK: what fraction of returned assets share at
