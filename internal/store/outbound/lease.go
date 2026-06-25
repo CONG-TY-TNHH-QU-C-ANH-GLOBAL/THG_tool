@@ -70,7 +70,7 @@ func (s *Store) ResetStaleExecuting(orgID int64, staleAfter time.Duration) error
 	var stale []staleRow
 	for rows.Next() {
 		var r staleRow
-		if scanErr := rows.Scan(&r.id, &r.accountID, &r.actionType, &r.targetURL, &r.executionID); scanErr == nil {
+		if rows.Scan(&r.id, &r.accountID, &r.actionType, &r.targetURL, &r.executionID) == nil {
 			stale = append(stale, r)
 		}
 	}
