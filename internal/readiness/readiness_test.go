@@ -59,3 +59,54 @@ func TestEvaluateCrawlAccountReadiness_RejectsAndReasons(t *testing.T) {
 		t.Fatalf("blocked account → want %q, got %q", ReasonActorMismatchBlocked, r)
 	}
 }
+
+// TestEvaluateCrawlAccountReadiness_OwnershipGate pins the ownership preflight
+// (readiness.go: `userID > 0 && !IsAccountOwnerAllowed`). It is a SECURITY gate —
+// a sales member must not preflight-pass another member's account — and it must be
+// checked BEFORE the connector probe, so a non-owner is rejected as account_not_owned
+// even when the connector is offline. Owner/admin/legacy paths fall through to the
+// connector check (connector_offline here, since no connector is seeded), proving the
+// gate fires for non-owners ONLY and that admin override + the legacy userID=0 bypass
+// are preserved.
+func TestEvaluateCrawlAccountReadiness_OwnershipGate(t *testing.T) {
+	ctx := context.Background()
+	dst := storetest.CopyTemplate(t, bootstrapReadinessStore, "crawl_readiness_ownership")
+	db, err := store.New(dst)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const orgID, owner int64 = 5, 7
+
+	// Account owned by user 7, no connector → ownership decides before the connector probe.
+	accID, err := db.Identities().AddAccount(&models.Account{
+		OrgID: orgID, Platform: models.PlatformFacebook, Name: "owned", Status: models.AccountActive, AssignedUserID: owner,
+	})
+	if err != nil {
+		t.Fatalf("AddAccount: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		userID int64
+		role   string
+		want   string
+	}{
+		// SECURITY: non-owner sales member is blocked, AND ownership is checked before the
+		// connector probe (offline connector would otherwise yield connector_offline).
+		{"non-owner sales blocked", 8, "sales", ReasonAccountNotOwned},
+		// Owner passes ownership → falls through to the connector check.
+		{"owner sales passes ownership", owner, "sales", ReasonConnectorOffline},
+		// Admin override preserved → passes ownership regardless of assignment.
+		{"admin override", 99, "admin", ReasonConnectorOffline},
+		// Legacy unauthenticated (userID=0) bypasses the ownership gate (preserved behavior).
+		{"legacy unauthenticated bypass", 0, "", ReasonConnectorOffline},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if r, _ := EvaluateCrawlAccountReadiness(ctx, db, orgID, tc.userID, tc.role, accID); r != tc.want {
+				t.Fatalf("user=%d role=%q → want %q, got %q", tc.userID, tc.role, tc.want, r)
+			}
+		})
+	}
+}
