@@ -1,12 +1,12 @@
 ---
 id: ARCHCM1
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
 branch: chore/arch-cm1-action-args-split
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/128
 ---
 
 # ARCHCM1 — Split cmd/scraper/action_args.go (coercion vs domain)

@@ -25,18 +25,22 @@ deps — in Go a folder move *is* an import-boundary change). RED: audit-only,
 
 ## At a glance
 
-- **Active item:** [ARCHWK1](items/architecture/workspace_knowledge/ARCHWK1-governance-output-validation-split.md) — REVIEW (this PR).
-- **Next executable (GREEN, no unmet deps):** [ARCHWK2](items/architecture/workspace_knowledge/ARCHWK2-products-canonical-split.md),
+_Status reflects the queue after the last `/thg-next` auto-reconcile (verified via
+GitHub PR `merged_at`). Item-file frontmatter is the source of truth._
+
+- **Done (merged):** ARCHWK1, ARCHCM1, ARCHCP1, DOCS1 (+ legacy PR32A).
+- **Active item:** none in progress.
+- **Next executable READY:** [ARCHCP2](items/architecture/copilot/ARCHCP2-agent-preflight-split.md) (GREEN).
+- **Other executable GREEN (no unmet deps):** [ARCHWK2](items/architecture/workspace_knowledge/ARCHWK2-products-canonical-split.md),
   [ARCHWK3](items/architecture/workspace_knowledge/ARCHWK3-retrieval-helpers-rename.md),
   [ARCHST1](items/architecture/store/ARCHST1-store-test-fallback-migration.md),
   [ARCHSV1](items/architecture/server/ARCHSV1-crawl-direct-post-helper-extract.md),
-  [ARCHCP1](items/architecture/copilot/ARCHCP1-agent-brain-split.md),
-  [ARCHCP2](items/architecture/copilot/ARCHCP2-agent-preflight-split.md),
-  [ARCHCM1](items/architecture/cmd_scraper/ARCHCM1-action-args-split.md).
+  [DOCS2](items/docs/DOCS2-architecture-doc-backlinks.md).
 - **Executable YELLOW (no unmet deps):** [ARCHSV2](items/architecture/server/ARCHSV2-agent-finalize-subpackage.md),
-  [ARCHWK4](items/architecture/workspace_knowledge/ARCHWK4-soak-internal-grouping.md).
-- **Blocked RED (audit-only):** ARCHST-R1, ARCHST-R2, ARCHST-R3, ARCHSV-R1, ARCHCM-R1, ARCHCM-R2.
-- **Docs Architecture Epic:** active [DOCS1](items/docs/DOCS1-docs-architecture-map.md) (REVIEW); see the [Docs Architecture Epic](#docs-architecture-epic) section.
+  [ARCHWK4](items/architecture/workspace_knowledge/ARCHWK4-soak-internal-grouping.md),
+  [DOCS-Y1](items/docs/DOCS-Y1-relocate-pr-checklist.md),
+  [DOCS-Y2](items/docs/DOCS-Y2-governance-frontmatter-backfill.md).
+- **Blocked RED (audit-only):** ARCHST-R1, ARCHST-R2, ARCHST-R3, ARCHSV-R1, ARCHCM-R1, ARCHCM-R2, DOCS-R1, DOCS-R2.
 
 ## How to resume
 
@@ -53,7 +57,7 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHWK1](items/architecture/workspace_knowledge/ARCHWK1-governance-output-validation-split.md) | REVIEW | Split governance Layer-3 validator into per-check files (banned/guarantee/shipping/pricing). |
+| [ARCHWK1](items/architecture/workspace_knowledge/ARCHWK1-governance-output-validation-split.md) | DONE | Split governance Layer-3 validator into per-check files (banned/guarantee/shipping/pricing). |
 | [ARCHWK2](items/architecture/workspace_knowledge/ARCHWK2-products-canonical-split.md) | READY | Split `products/canonical.go` by responsibility (canonical / availability / pricing / normalize). |
 | [ARCHWK3](items/architecture/workspace_knowledge/ARCHWK3-retrieval-helpers-rename.md) | READY | Replace vague `retrieval/helpers.go` with responsibility files (tokenize / scoring / query). |
 
@@ -106,7 +110,7 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHCP1](items/architecture/copilot/ARCHCP1-agent-brain-split.md) | READY | Split 525-line `agent_brain.go` into client / types / validator / action-prep siblings. |
+| [ARCHCP1](items/architecture/copilot/ARCHCP1-agent-brain-split.md) | DONE | Split 525-line `agent_brain.go` into client / types / validator / action-prep siblings. |
 | [ARCHCP2](items/architecture/copilot/ARCHCP2-agent-preflight-split.md) | READY | Split `agent_preflight.go` (account readiness vs business-context inference). |
 
 ### YELLOW implementation
@@ -122,7 +126,7 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHCM1](items/architecture/cmd_scraper/ARCHCM1-action-args-split.md) | READY | Split `action_args.go` (pure coercion vs domain-aware helpers). |
+| [ARCHCM1](items/architecture/cmd_scraper/ARCHCM1-action-args-split.md) | DONE | Split `action_args.go` (pure coercion vs domain-aware helpers). |
 
 ### YELLOW implementation
 | Item | Status | Deps | Summary |
@@ -176,7 +180,7 @@ docs, no duplicated source of truth, no AI-generated spec sprawl. See
 ### GREEN implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [DOCS1](items/docs/DOCS1-docs-architecture-map.md) | REVIEW | — | Add docs/ai + docs/architecture subtree indexes; fix the stale `specs/SPEC_INDEX.md` backlink in docs/INDEX.md. |
+| [DOCS1](items/docs/DOCS1-docs-architecture-map.md) | DONE | — | Add docs/ai + docs/architecture subtree indexes; fix the stale `specs/SPEC_INDEX.md` backlink in docs/INDEX.md. |
 | [DOCS2](items/docs/DOCS2-architecture-doc-backlinks.md) | READY | DOCS1 | Backlinks + governance frontmatter for docs/architecture/*. |
 
 ### YELLOW implementation

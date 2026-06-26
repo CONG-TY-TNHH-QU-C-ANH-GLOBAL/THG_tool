@@ -406,10 +406,14 @@ reuse the existing queue / escalation / governance docs and validation scripts.
 
 ### `/thg-next` — next safe work item
 
-Pull latest main → `scripts/ai_preflight.sh` → read `docs/ai/AUTOPILOT_QUEUE.md`
-+ `docs/ai/queue/items/**/*.md` → pick the first **executable** READY item (all
-`depends_on` DONE) → one branch → bounded work → `scripts/ai_validate.sh` →
-push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
+Pull latest main → `scripts/ai_preflight.sh` → **auto-reconcile queue state**
+(`scripts/ai_queue_reconcile.sh --apply`: marks `REVIEW` items DONE only when the
+merge is VERIFIED via the GitHub PR `merged_at` field — squash-merge safe, never
+branch ancestry alone; unverifiable items stay REVIEW; never DONE by assumption)
+→ read `docs/ai/AUTOPILOT_QUEUE.md` + `docs/ai/queue/items/**/*.md` → pick the
+first **executable** READY item (all `depends_on` DONE) → one branch → bounded
+work, setting the item's `branch`/`pr_url` frontmatter → `scripts/ai_validate.sh`
+→ push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
 
 ### `/thg-sonar <target>` — Sonar / tech-debt cleanup
 
@@ -432,6 +436,14 @@ though the move changed no behavior — move-only is not enough. Before splittin
 god-file, check each function's complexity; reduce any over-threshold function in
 the same PR (flat-dispatch switch, pure helper extraction), not just the helpers
 you newly extract.
+
+**Shell-script learning:** new workflow scripts added under `scripts/` are New Code
+and must be Sonar-clean too. Shell follows Sonar-safe style: assign positional
+parameters to `local` vars inside functions (no bare `$1`/`$2`), explicit `return`
+at the end of each function (preserve the wrapped command's exit status where a
+caller relies on it), redirect error/warn messages to stderr (`>&2`), define a
+constant for any repeated string literal, and give every `case` a default `*)`
+branch.
 
 ### `/thg-red-audit <target>` — controlled zones
 
