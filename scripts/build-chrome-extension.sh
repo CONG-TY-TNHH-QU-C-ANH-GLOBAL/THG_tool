@@ -35,7 +35,7 @@ ZIP_NAME="thg-chrome-extension.zip"
 
 mkdir -p "$OUTPUT_DIR"
 
-if [ ! -d "$EXTENSION_DIR" ]; then
+if [[ ! -d "$EXTENSION_DIR" ]]; then
   echo "Extension directory not found: $EXTENSION_DIR" >&2
   exit 1
 fi
@@ -73,7 +73,7 @@ print(f"Stamped extension version: {manifest['version']}")
 PY
 }
 
-if [ -n "$VERSION" ] && [ "$VERSION" != "dev" ] && [ "$VERSION" != "0" ]; then
+if [[ -n "$VERSION" ]] && [[ "$VERSION" != "dev" ]] && [[ "$VERSION" != "0" ]]; then
   if [[ "$VERSION" =~ ^[0-9]+$ ]]; then
     BUILD_SUFFIX="$VERSION"
   else
@@ -89,7 +89,7 @@ if [ -n "$VERSION" ] && [ "$VERSION" != "dev" ] && [ "$VERSION" != "0" ]; then
     fi
   fi
   # Chrome rejects segments > 65535. Modulo keeps a sortable-ish suffix.
-  if [ "$BUILD_SUFFIX" -gt 65535 ]; then
+  if [[ "$BUILD_SUFFIX" -gt 65535 ]]; then
     BUILD_SUFFIX=$((BUILD_SUFFIX % 65536))
   fi
   stamp_manifest_version "$BUILD_SUFFIX"

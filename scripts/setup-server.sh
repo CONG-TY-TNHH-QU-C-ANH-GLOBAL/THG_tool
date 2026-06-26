@@ -22,7 +22,7 @@ sudo apt-get install -y -qq chromium-browser fonts-liberation libappindicator3-1
 
 # Verify Chrome
 CHROME_PATH=$(which chromium-browser || which chromium || echo "")
-if [ -z "$CHROME_PATH" ]; then
+if [[ -z "$CHROME_PATH" ]]; then
     echo "❌ Chromium installation failed!"
     exit 1
 fi
@@ -35,7 +35,7 @@ sudo mkdir -p /opt/thg-scraper/data
 sudo chown -R $USER:$USER /opt/thg-scraper
 
 # --- 4. Create .env template if not exists ---
-if [ ! -f /opt/thg-scraper/.env ]; then
+if [[ ! -f /opt/thg-scraper/.env ]]; then
     cat > /opt/thg-scraper/.env << 'ENVEOF'
 # THG Agentic Scraper — Production Config
 TELEGRAM_BOT_TOKEN=

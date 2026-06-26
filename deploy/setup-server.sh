@@ -82,7 +82,7 @@ chmod 640 /etc/thg-scraper/env
 echo "✅ Directories and permissions set"
 
 # ── 4. Install systemd service ────────────────────────────────────────────
-if [ -f /tmp/thg-scraper.service ]; then
+if [[ -f /tmp/thg-scraper.service ]]; then
     cp /tmp/thg-scraper.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable thg-scraper
@@ -125,7 +125,7 @@ set_real_ip_from 2c0f:f248::/32;
 real_ip_header CF-Connecting-IP;
 EOF
 
-if [ -f /tmp/nginx.conf ]; then
+if [[ -f /tmp/nginx.conf ]]; then
     cp /tmp/nginx.conf /etc/nginx/sites-available/thg-scraper
     ln -sf /etc/nginx/sites-available/thg-scraper /etc/nginx/sites-enabled/thg-scraper
     rm -f /etc/nginx/sites-enabled/default
