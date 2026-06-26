@@ -32,30 +32,39 @@ type scoredEntry struct {
 // fusion output, incrementing the trace's rejection counters.
 func fuseRankings(lexHits, semHits []retrieval.Hit, lexTrace retrieval.Trace, trace *retrieval.Trace) map[int64]*fusedEntry {
 	fused := map[int64]*fusedEntry{}
+	indexLexicalHits(fused, lexHits, lexTrace, trace)
+	mergeSemanticHits(fused, semHits, trace)
+	return fused
+}
 
-	// Defence-in-depth governance gate. Goal directive G6 makes RRF
-	// the FINAL authority: banned_claim and hidden-state assets must
-	// NEVER appear in fusion output, even if a future upstream-
-	// searcher bug let one through. Upstream searchers already do
-	// this filtering; we double-gate here so the contract holds
-	// regardless of upstream behaviour. Cost is O(n) per call.
-	skipFn := func(a *assets.Asset) bool {
-		if a == nil {
-			return true
-		}
-		if a.Type == assets.AssetBannedClaim {
-			trace.TotalByReason[retrieval.RejectGovernance]++
-			return true
-		}
-		if a.State == assets.StateHidden {
-			trace.TotalByReason[retrieval.RejectStateFilter]++
-			return true
-		}
-		return false
+// governanceSkip is the defence-in-depth gate. Goal directive G6 makes
+// RRF the FINAL authority: banned_claim and hidden-state assets must
+// NEVER appear in fusion output, even if a future upstream-searcher bug
+// let one through. Upstream searchers already do this filtering; we
+// double-gate here so the contract holds regardless of upstream
+// behaviour. Returning true records the rejection reason and drops the
+// asset. Cost is O(1) per asset.
+func governanceSkip(a *assets.Asset, trace *retrieval.Trace) bool {
+	if a == nil {
+		return true
 	}
+	if a.Type == assets.AssetBannedClaim {
+		trace.TotalByReason[retrieval.RejectGovernance]++
+		return true
+	}
+	if a.State == assets.StateHidden {
+		trace.TotalByReason[retrieval.RejectStateFilter]++
+		return true
+	}
+	return false
+}
 
+// indexLexicalHits seeds the fused map from the lexical ranking,
+// recording each surviving asset's 1-indexed rank and its lexical score
+// breakdown (pulled from the lex trace when available).
+func indexLexicalHits(fused map[int64]*fusedEntry, lexHits []retrieval.Hit, lexTrace retrieval.Trace, trace *retrieval.Trace) {
 	for i, h := range lexHits {
-		if skipFn(h.Asset) {
+		if governanceSkip(h.Asset, trace) {
 			continue
 		}
 		fused[h.Asset.ID] = &fusedEntry{
@@ -63,7 +72,6 @@ func fuseRankings(lexHits, semHits []retrieval.Hit, lexTrace retrieval.Trace, tr
 			lexRank:  i + 1, // 1-indexed for the trace's "rank" semantics
 			lexScore: h.Score,
 		}
-		// Pull breakdown from lex trace if available.
 		for _, sh := range lexTrace.Selected {
 			if sh.AssetID == h.Asset.ID {
 				fused[h.Asset.ID].lexBreakdown = sh.Breakdown
@@ -71,8 +79,14 @@ func fuseRankings(lexHits, semHits []retrieval.Hit, lexTrace retrieval.Trace, tr
 			}
 		}
 	}
+}
+
+// mergeSemanticHits folds the semantic ranking into the fused map,
+// adding the semantic rank/score to assets already present and
+// inserting any semantic-only assets.
+func mergeSemanticHits(fused map[int64]*fusedEntry, semHits []retrieval.Hit, trace *retrieval.Trace) {
 	for i, h := range semHits {
-		if skipFn(h.Asset) {
+		if governanceSkip(h.Asset, trace) {
 			continue
 		}
 		entry, ok := fused[h.Asset.ID]
@@ -83,7 +97,6 @@ func fuseRankings(lexHits, semHits []retrieval.Hit, lexTrace retrieval.Trace, tr
 		entry.semRank = i + 1
 		entry.semScore = h.Score
 	}
-	return fused
 }
 
 // rankByRRF computes the RRF score for each fused entry and returns
