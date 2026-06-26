@@ -56,6 +56,13 @@ YELLOW and RED items are sequential by default.
 
 Claude must not start an item if any `depends_on` item is not DONE, unless the user explicitly authorizes parallel work and the item is GREEN + parallel_safe.
 
+Dependency states (enforced by `scripts/ai_queue_check.sh`):
+
+- **Missing dependency id** (references an item that does not exist) = invalid queue → the check FAILS.
+- **Existing dependency not yet DONE** (READY/IN_PROGRESS/REVIEW/BLOCKED) = normal *waiting* state → the dependent item is not executable, but this is NOT a failure.
+
+The first *executable* READY item is the first READY item whose dependencies are all DONE; if every READY item is waiting on a non-DONE dependency, there is simply no executable item right now (not an error).
+
 ## Sprint mode
 
 User may say:

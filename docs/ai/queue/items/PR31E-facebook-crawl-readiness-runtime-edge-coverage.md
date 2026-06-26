@@ -1,11 +1,11 @@
 ---
 id: PR31E
-status: READY
+status: REVIEW
 lane: YELLOW
 risk: GREEN/YELLOW
 depends_on: [PR31D]
 parallel_safe: false
-branch: ""
+branch: test/pr31e-crawl-readiness-runtime-edge-coverage
 pr_url: ""
 ---
 
@@ -34,3 +34,7 @@ Add missing characterization tests around not-ready/offline/human_required/failu
 - go test ./internal/jobhandlers/... -run 'Facebook|Crawl|Session|Runtime|Human|Offline|Readiness' -v
 - scripts/ai_preflight.sh
 - scripts/ai_validate.sh
+
+## Result
+
+Branch pushed for review. Test-only connector-reason readiness coverage added.
