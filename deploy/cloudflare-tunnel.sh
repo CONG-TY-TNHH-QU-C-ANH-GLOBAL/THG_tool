@@ -20,9 +20,9 @@ install_cloudflared() {
 
     echo "Installing cloudflared..."
     ARCH=$(uname -m)
-    if [ "$ARCH" = "x86_64" ]; then
+    if [[ "$ARCH" = "x86_64" ]]; then
         URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-    elif [ "$ARCH" = "aarch64" ]; then
+    elif [[ "$ARCH" = "aarch64" ]]; then
         URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
     else
         echo "❌ Unsupported architecture: $ARCH"
@@ -120,7 +120,7 @@ EOF
 }
 
 # ── Run steps ─────────────────────────────────────────────────────────────
-if [ "$EUID" -ne 0 ]; then
+if [[ "$EUID" -ne 0 ]]; then
     echo "Run with sudo: sudo bash cloudflare-tunnel.sh"
     exit 1
 fi

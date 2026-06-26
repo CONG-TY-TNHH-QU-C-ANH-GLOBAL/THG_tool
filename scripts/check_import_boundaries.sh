@@ -67,7 +67,7 @@ emit() {
   phase="$(next_phase "$rule")"
   known_gap "$rule" && tag=" [known gap]"
   while IFS= read -r line; do
-    [ -z "$line" ] && continue
+    [[ -z "$line" ]] && continue
     file="${line%%:*}"
     pkg="$(printf '%s' "$line" | grep -oE 'github\.com/thg/scraper/(internal|cmd)/[a-z0-9_/]+' | head -1)"
     printf 'WARN [%s]%s %s imports %s  -> fix in phase: %s\n' "$rule" "$tag" "$file" "$pkg" "$phase"
@@ -79,10 +79,10 @@ emit() {
 # scan_dir RULE FORBIDDEN_ERE DIR  (recursive, non-test). here-string keeps counters.
 scan_dir() {
   local rule="$1" forbidden="$2" dir="$3" out
-  [ -d "$dir" ] || return 0
+  [[ -d "$dir" ]] || return 0
   out="$(grep -rnE "\"github\.com/thg/scraper/internal/(${forbidden})" "$dir" --include='*.go' 2>/dev/null \
     | grep -v "$TEST_FILE_GREP_PATTERN")"
-  [ -n "$out" ] && emit "$rule" <<< "$out"
+  [[ -n "$out" ]] && emit "$rule" <<< "$out"
   return 0
 }
 
@@ -231,7 +231,7 @@ scan_dir NOTIFICATIONS_NO_FB_LOGIC 'leadingest|jobhandlers|fburl|store/leads' in
 scan_dir NOTIFICATIONS_NO_FB_LOGIC 'leadingest|jobhandlers|fburl|store/leads' internal/notifications
 
 # 10. no global contracts god-package.
-if [ -d internal/contracts ]; then
+if [[ -d internal/contracts ]]; then
   printf 'WARN [NO_CONTRACTS_GODPKG] internal/contracts exists — interfaces belong with their consumer (PORTS_AND_ADAPTERS.md)  -> fix in phase: design rule\n'
   WARN=$((WARN + 1))
 fi
@@ -250,7 +250,7 @@ scan_sidecar_db SIDECAR_NO_DIRECT_DB
 echo "== summary =="
 echo "rules checked:        ${RULES}"
 echo "warnings:             ${WARN}  (${KNOWN} known documented gap(s), $((WARN - KNOWN)) other)"
-if [ "$WARN" -eq 0 ]; then
+if [[ "$WARN" -eq 0 ]]; then
   echo "status:               OK"
 else
   echo "status:               WARN-ONLY (exit 0) — see docs/architecture/MODULE_OWNERSHIP.yml for phases"
