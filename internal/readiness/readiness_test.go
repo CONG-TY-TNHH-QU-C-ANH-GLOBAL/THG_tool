@@ -2,6 +2,7 @@ package readiness
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
@@ -106,6 +107,77 @@ func TestEvaluateCrawlAccountReadiness_OwnershipGate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if r, _ := EvaluateCrawlAccountReadiness(ctx, db, orgID, tc.userID, tc.role, accID); r != tc.want {
 				t.Fatalf("user=%d role=%q → want %q, got %q", tc.userID, tc.role, tc.want, r)
+			}
+		})
+	}
+}
+
+// seedAccountWithConnector seeds an owned account (optionally with a live fb_user_id)
+// plus an online, logged-in extension connector assigned to it, with connectorFB as the
+// connector's live Facebook identity. The connector shape mirrors the proven ready-seed
+// (active + recent last_seen + supported version) so only connectorFB vs accountFB varies
+// the PickReadyConnector outcome. Returns the account id.
+func seedAccountWithConnector(t *testing.T, db *store.Store, orgID int64, name, accountFB, connectorFB string) int64 {
+	t.Helper()
+	accID, err := db.Identities().AddAccount(&models.Account{
+		OrgID: orgID, Platform: models.PlatformFacebook, Name: name, Status: models.AccountActive,
+	})
+	if err != nil {
+		t.Fatalf("AddAccount: %v", err)
+	}
+	if accountFB != "" {
+		if _, err := db.DB().Exec(`UPDATE accounts SET fb_user_id = ? WHERE id = ?`, accountFB, accID); err != nil {
+			t.Fatalf("set account fb: %v", err)
+		}
+	}
+	if _, err := db.DB().Exec(
+		`INSERT INTO agent_tokens (org_id, name, created_by, token_hash, kind, transport,
+			assigned_account_id, fb_user_id, stream_status, version, active, last_seen, created_at)
+		 VALUES (?, 'ext', 0, ?, 'extension_connector', 'chrome_extension', ?, ?,
+			'facebook_logged_in', '9.9.9', 1, datetime('now'), datetime('now'))`,
+		orgID, fmt.Sprintf("tok-%d", accID), accID, connectorFB,
+	); err != nil {
+		t.Fatalf("seed connector: %v", err)
+	}
+	return accID
+}
+
+// TestEvaluateCrawlAccountReadiness_ConnectorReasons pins how the connector-eligibility
+// outcome (connectors.PickReadyConnector) maps onto readiness reason codes — the happy
+// path AND the live-identity blocks — none of which the reject test covers. userID=0
+// (legacy) bypasses the ownership gate so the CONNECTOR branch is what's exercised. The
+// persisted actor-block path stays untouched (no verdict recorded), so the connector-side
+// mismatch is the one under test.
+func TestEvaluateCrawlAccountReadiness_ConnectorReasons(t *testing.T) {
+	ctx := context.Background()
+	dst := storetest.CopyTemplate(t, bootstrapReadinessStore, "crawl_readiness_connector")
+	db, err := store.New(dst)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const orgID = int64(5)
+
+	cases := []struct {
+		name        string
+		accountFB   string
+		connectorFB string
+		want        string
+	}{
+		// Distinct account fb per case: accounts.(org_id, fb_user_id) is UNIQUE. The
+		// connector's live identity vs the account's is what varies the outcome.
+		// Online + logged-in connector whose live identity matches the account → READY.
+		{"ready", "111", "111", ReadinessReady},
+		// Connector online but has resolved no Facebook identity (no c_user) → identity unknown.
+		{"identity unknown", "112", "", ReasonActorIdentityUnknown},
+		// Connector logged into a DIFFERENT Facebook than the account → live mismatch (blocked).
+		{"identity mismatch", "113", "222", ReasonActorMismatchBlocked},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			accID := seedAccountWithConnector(t, db, orgID, "acc-"+tc.name, tc.accountFB, tc.connectorFB)
+			if r, _ := EvaluateCrawlAccountReadiness(ctx, db, orgID, 0, "admin", accID); r != tc.want {
+				t.Fatalf("%s: want %q, got %q", tc.name, tc.want, r)
 			}
 		})
 	}
