@@ -11,6 +11,7 @@ cd "$ROOT"
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 items_dir="docs/ai/queue/items"
+NONE="(none)" # sentinel for "no item in this slot"
 
 echo "branch: $branch"
 echo "HEAD:   $(git log -1 --format='%h %s')"
@@ -19,7 +20,10 @@ echo
 echo "status:"
 git status --short || true
 
-field_of() { sed -n "s/^$2:[[:space:]]*//p" "$1" | head -1; }       # field_of FILE KEY
+field_of() { # field_of FILE KEY
+  local file="$1" key="$2"
+  sed -n "s/^$key:[[:space:]]*//p" "$file" | head -1
+}
 status_of_id() {                                                     # status_of_id ID
   local want="$1" f
   for f in "$items_dir"/*.md; do
@@ -29,15 +33,16 @@ status_of_id() {                                                     # status_of
   echo "MISSING"
 }
 
-first_ready="(none)"; first_inprog="(none)"; first_review="(none)"
-first_exec="(none)"; waiting=()
+first_ready="$NONE"; first_inprog="$NONE"; first_review="$NONE"
+first_exec="$NONE"; waiting=()
 for f in "$items_dir"/*.md; do
   [[ -e "$f" ]] || continue
   st="$(field_of "$f" status)"; id="$(field_of "$f" id)"
   case "$st" in
-    READY)       [[ "$first_ready"  == "(none)" ]] && first_ready="$id" ;;
-    IN_PROGRESS) [[ "$first_inprog" == "(none)" ]] && first_inprog="$id" ;;
-    REVIEW)      [[ "$first_review" == "(none)" ]] && first_review="$id" ;;
+    READY)       [[ "$first_ready"  == "$NONE" ]] && first_ready="$id" ;;
+    IN_PROGRESS) [[ "$first_inprog" == "$NONE" ]] && first_inprog="$id" ;;
+    REVIEW)      [[ "$first_review" == "$NONE" ]] && first_review="$id" ;;
+    *)           ;; # DONE / BLOCKED / other: no "first of" slot to track
   esac
   [[ "$st" == "READY" ]] || continue
   read -ra deps <<< "$(field_of "$f" depends_on | tr -d '[],')"
@@ -48,7 +53,7 @@ for f in "$items_dir"/*.md; do
   done
   if [[ -n "$blk" ]]; then
     waiting+=("$id waits for $blk")
-  elif [[ "$first_exec" == "(none)" ]]; then
+  elif [[ "$first_exec" == "$NONE" ]]; then
     first_exec="$id"
   fi
 done
