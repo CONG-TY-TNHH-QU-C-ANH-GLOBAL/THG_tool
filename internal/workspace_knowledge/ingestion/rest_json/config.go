@@ -152,7 +152,21 @@ func (c *Config) Validate() error {
 		c.Request.UserAgent = "THGKnowledgeIngestor/1.0"
 	}
 
-	// Auth
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
+	if err := c.validatePagination(); err != nil {
+		return err
+	}
+	if err := c.validateFieldMap(); err != nil {
+		return err
+	}
+	return c.validateAvailability()
+}
+
+// validateAuth normalizes Auth.Type to its canonical lowercase form and
+// enforces the env-var requirements for each scheme.
+func (c *Config) validateAuth() error {
 	switch strings.ToLower(strings.TrimSpace(c.Auth.Type)) {
 	case "", "none":
 		c.Auth.Type = "none"
@@ -169,8 +183,12 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("rest_json: unknown auth type %q", c.Auth.Type)
 	}
+	return nil
+}
 
-	// Pagination
+// validatePagination normalizes the pagination scheme and fills in the
+// page-walk defaults (param names, limit, start page, max pages).
+func (c *Config) validatePagination() error {
 	switch strings.ToLower(strings.TrimSpace(c.Pagination.Scheme)) {
 	case "", "none":
 		c.Pagination.Scheme = "none"
@@ -194,8 +212,12 @@ func (c *Config) Validate() error {
 	if c.Pagination.MaxPages <= 0 {
 		c.Pagination.MaxPages = DefaultMaxPages
 	}
+	return nil
+}
 
-	// Field map: SourceID, Name, SourceUpdatedAt mandatory.
+// validateFieldMap enforces the mandatory canonical mappings:
+// SourceID, Name, SourceUpdatedAt.
+func (c *Config) validateFieldMap() error {
 	if strings.TrimSpace(c.FieldMap.SourceID) == "" {
 		return errors.New("rest_json: field_map.source_id is required")
 	}
@@ -205,8 +227,12 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.FieldMap.SourceUpdatedAt) == "" {
 		return errors.New("rest_json: field_map.source_updated_at is required")
 	}
+	return nil
+}
 
-	// Availability: default fallback if from_field unset.
+// validateAvailability applies the default fallback and checks that the
+// default and every mapped value are known canonical Availability values.
+func (c *Config) validateAvailability() error {
 	if c.Availability.Default == "" {
 		c.Availability.Default = products.AvailUnknown
 	}
@@ -218,7 +244,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("rest_json: availability.map[%q] = %q is not a known canonical value", k, v)
 		}
 	}
-
 	return nil
 }
 
