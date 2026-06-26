@@ -260,3 +260,123 @@ go test ./...
 go vet ./...
 npm --prefix frontend run build
 ```
+
+## Operating Protocol (AI-assisted development)
+
+This section lets Claude self-operate from the repo without long external
+prompts. When the user says **"Execute NEXT from `docs/ai/AUTOPILOT_QUEUE.md`"**,
+pick the first `READY` item (unless the user names a different item) and run it
+end-to-end under the rules below. One queue item = one PR.
+
+### Discipline
+
+- **Ponytail / Lazy Senior Dev**: write the least code necessary; prefer moving
+  or characterizing existing code over rewrites; no new abstraction, broad
+  interface, helper soup, or framework rewrite; no noisy diff or formatting
+  churn outside touched lines.
+- **Refactor vs behavior**: a refactor-only PR must not change behavior; a
+  behavior-changing PR must add tests protecting the new behavior + reason codes.
+  State which in the report.
+
+### Traffic-light classification
+
+Classify each candidate before touching it:
+
+- **GREEN** — pure / behavior-preserving / no queue·ledger·CAS·lease·auth·schema
+  ·DTO dependency. Safe to move or characterize.
+- **YELLOW** — domain logic that needs a *narrow, consumer-owned* port/adapter to
+  move safely. Only proceed if the seam stays tiny; otherwise classify RED.
+- **RED** — queue/outbox writes, action_ledger/execution_attempts, connector
+  CAS/lease, crawler/jobhandler runtime, retry/scheduling, auth/session/cookie,
+  schema/migrations, DTO/wire contracts. **Do not change semantics.** Characterize
+  only; never "make it movable" by inventing abstractions.
+
+### Boundary laws
+
+- `internal/services/facebook` must not import `internal/store`, `internal/server`,
+  `cmd/scraper`, `internal/connectors`, `internal/jobhandlers`, `internal/leadingest`,
+  or sibling verticals. Adapters live in the composition root (`cmd/scraper`,
+  `cmd/worker`).
+- Neutral/internal packages must not import `internal/services/facebook` (reverse
+  guard `NEUTRAL_NO_SERVICES_FACEBOOK_IMPORT`). `internal/fburl` stays a neutral leaf.
+- Do not weaken or reconfigure the boundary guards; do not change Sonar config.
+
+### Sonar
+
+QA/QC only. Fix in-scope New Code issues in files you already touched, under
+Ponytail discipline. No suppressions, no config changes, no chasing unrelated
+backlog.
+
+### Standard validation
+
+Run `bash scripts/ai_preflight.sh` before editing and `bash scripts/ai_validate.sh`
+before pushing (these wrap `go test ./...`, `go build ./...`, `go vet ./...`, the
+import-boundary + file-size guards, and `git diff --check`). Keep `.mcp.json` and
+`specs/knowledge/RETRIEVAL_SOAK_REPORT.md` (a test artifact) out of commits.
+
+### Stop conditions
+
+Stop and report (do not force it) when: the task is RED and would change the
+forbidden semantics above; a safe move needs a broad port/abstraction; tests would
+need a large new fixture/mock framework or real browser/Chrome/network I/O; the
+diff becomes hard to review; or the behavior is ambiguous. A precise stopped report
+is a successful outcome.
+
+### Push rules
+
+Push only after `ai_validate.sh` passes. **Never merge.** Report using
+`docs/ai/AGENT_REPORT_TEMPLATE.md`.
+
+## Escalation Autopilot Protocol
+
+Claude must not wait for a new external prompt when encountering a hard case. Use this protocol.
+
+Hard cases include:
+- RED ambiguity
+- Sonar issue that requires non-trivial refactor
+- architecture boundary decision
+- missing fake/test seam
+- broad fixture requirement
+- conflicting module ownership
+- behavior ambiguity in controlled zones
+
+Default behavior:
+1. Stop coding briefly and classify the case.
+2. Read `docs/ai/ESCALATION_PLAYBOOK.md`.
+3. Create a short decision record in the final report.
+4. Choose the safest bounded option.
+5. Implement only if safe and reviewable.
+6. Validate with `scripts/ai_preflight.sh` and `scripts/ai_validate.sh`.
+7. Push branch if clean.
+8. Never merge.
+
+Claude may proceed without user approval when:
+- the change is behavior-preserving,
+- the risk is GREEN/YELLOW,
+- the decision is documented,
+- validation passes,
+- controlled-zone semantics are unchanged.
+
+Claude must stop and ask for human decision only when:
+- production data/schema migration is required,
+- auth/security semantics would change,
+- connector CAS/lease/ledger/queue semantics would change,
+- DTO/wire contract would change,
+- external credential/secret/access is required,
+- there are two valid product/business behaviors and code cannot infer the correct one.
+
+## Documentation Governance
+
+Keep docs from sprawling. Read `docs/DOCS_GOVERNANCE.md` before creating or moving
+any doc; `docs/INDEX.md` says where things live.
+
+- Do not create new root `.md` docs. Only `README.md`, `AGENTS.md`, `CLAUDE.md`,
+  and `SPEC_GOVERNANCE.md` are permitted at the repo root.
+- Put new docs in the correct `docs/*` category: `business/`, `architecture/`
+  (ADRs under `architecture/decisions/`), `specs/`, `engineering/`, `debt/`, `ai/`.
+- Keep this file concise — it is a thin entrypoint, not a spec dump. Move long
+  procedures into `docs/ai/` (or a short `.claude/rules/` file), and point to them
+  rather than inlining them here.
+- `scripts/check_docs_governance.sh` (wired into the ai_preflight / ai_validate
+  guards) warns on unmanaged root markdown and fails if a required governance doc
+  is missing.
