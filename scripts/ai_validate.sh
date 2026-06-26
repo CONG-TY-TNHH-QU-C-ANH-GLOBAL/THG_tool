@@ -24,6 +24,9 @@ bash scripts/check_import_boundaries.sh
 echo "== file-size guard =="
 python scripts/check_file_size.py
 
+echo "== go cognitive-complexity guard =="
+bash scripts/go_cognitive_check.sh
+
 echo "== docs governance guard =="
 bash scripts/check_docs_governance.sh
 

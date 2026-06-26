@@ -44,6 +44,7 @@ Map of the agentic-development workflow docs. See
 | [AUTOPILOT_QUEUE.md](AUTOPILOT_QUEUE.md) | Stable queue index + operating policy (lanes, lifecycle, sprint mode). |
 | [ESCALATION_PLAYBOOK.md](ESCALATION_PLAYBOOK.md) | Hard-case protocol + decision-record format. |
 | [AGENT_REPORT_TEMPLATE.md](AGENT_REPORT_TEMPLATE.md) | Required completion-report shape. |
+| [COGNITIVE_COMPLEXITY_GUARD.md](COGNITIVE_COMPLEXITY_GUARD.md) | Local S3776 approximation (`scripts/go_cognitive_check.sh`) — fails on >15 cognitive complexity in changed Go files. |
 | [queue/INDEX.md](queue/INDEX.md) | Human map of all queue items (grouped by component + lane, with dependency chains). |
 | [queue/items/](queue/items/) | One file per queue item — the source of truth. |
 
