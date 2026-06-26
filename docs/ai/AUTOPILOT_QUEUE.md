@@ -86,6 +86,15 @@ Rules:
 - PR31E: `docs/ai/queue/items/PR31E-facebook-crawl-readiness-runtime-edge-coverage.md`
 - PR32A: `docs/ai/queue/items/PR32A-facebook-operator-ux-status-flow.md`
 
+### Self-Feeding Architecture Epic (generated 2026-06-26)
+
+23 sequenced decomposition items (ARCH*) from a topology scan of
+`internal/workspace_knowledge`, `internal/store`, `internal/server`,
+`internal/drivers/copilot`, `cmd/scraper`. The human-readable map — grouped by
+component then lane, with active/next/blocked items, dependency chains, and a
+Mermaid diagram — lives in **[`docs/ai/queue/INDEX.md`](queue/INDEX.md)**. The
+item files under `docs/ai/queue/items/ARCH*.md` remain the source of truth.
+
 ### Backlog (not yet item files)
 
 - Sonar Ponytail cleanup batch (GREEN) — fix low-risk Sonar New Code issues only when explicitly requested.
