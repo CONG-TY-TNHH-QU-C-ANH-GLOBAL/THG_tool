@@ -18,8 +18,8 @@ Usage:
 import argparse
 import collections
 import json
-import os
 import sys
+from pathlib import Path
 
 # Substrings that mark a controlled zone (behaviour-sensitive). Path matched
 # case-insensitively. DTO/wire/handlers are softer hints (payload-contract risk).
@@ -48,21 +48,29 @@ def lane(issue, path):
     return "GREEN"
 
 
-def validated_export_path(path):
-    """Validate the CLI-supplied export path before opening it: normalise it
-    (resolves ``..``/symlinks) and require an existing regular file with a data
-    extension. Rejects a faulty/unexpected argument with a clear error instead of
-    opening an arbitrary target."""
-    real = os.path.realpath(path)
-    if not os.path.isfile(real):
-        raise ValueError(f"export is not a readable file: {path}")
-    if os.path.splitext(real)[1].lower() not in (".json", ".txt"):
-        raise ValueError(f"export must be a .json/.txt file: {path}")
-    return real
+def validated_export_path(raw_path):
+    """Constrain the CLI-supplied export path BEFORE any filesystem access
+    (path-injection defence). The path is resolved (``..``/symlinks collapsed)
+    and must live under the repo/cwd, be a regular file, and be ``.json``. A
+    symlink whose target escapes the repo resolves outside the root and is
+    rejected. ``.txt`` is intentionally NOT accepted: Sonar exports are ``.json``;
+    the only ``.txt`` we ever read (an MCP dump) lives outside the repo and is
+    already barred by the root check."""
+    allowed_root = Path.cwd().resolve()
+    candidate = Path(raw_path).expanduser().resolve()
+    try:
+        candidate.relative_to(allowed_root)
+    except ValueError as exc:
+        raise SystemExit(f"export path must be inside repo: {raw_path}") from exc
+    if not candidate.is_file():
+        raise SystemExit(f"export path is not a regular file: {raw_path}")
+    if candidate.suffix.lower() != ".json":
+        raise SystemExit(f"export path must be a .json file: {raw_path}")
+    return candidate
 
 
-def load_open(path):
-    with open(validated_export_path(path), encoding="utf-8") as fh:
+def load_open(raw_path):
+    with validated_export_path(raw_path).open(encoding="utf-8") as fh:
         data = json.load(fh)
     issues = data.get("issues", data) if isinstance(data, dict) else data
     return [i for i in issues if i.get("status") == "OPEN"]
