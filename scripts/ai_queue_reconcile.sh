@@ -71,11 +71,13 @@ json_first_value() {
   return 0
 }
 
-# verify_by_number N -> echoes "$MERGED" | "closed_unmerged" | "open" | "error"
+# verify_by_number N -> echoes "$MERGED" | "closed_unmerged" | "open" on stdout.
+# On API failure it writes a diagnostic to stderr and emits NOTHING on stdout; the
+# caller treats empty stdout the same as a soft error (its `*)` branch).
 verify_by_number() {
   local n="$1" body merged_at state
-  body="$(api_get "${api}/pulls/${n}")" || { echo error; return 0; }
-  [[ -z "$body" ]] && { echo error; return 0; }
+  body="$(api_get "${api}/pulls/${n}")" || { printf 'ai_queue_reconcile: PR #%s lookup failed (GitHub API unreachable)\n' "$n" >&2; return 0; }
+  [[ -z "$body" ]] && { printf 'ai_queue_reconcile: PR #%s returned an empty response\n' "$n" >&2; return 0; }
   merged_at="$(json_first_value "$body" merged_at)"
   state="$(json_first_value "$body" state | tr -d '"')"
   if [[ -n "$merged_at" && "$merged_at" != "null" ]]; then echo "$MERGED"; return 0; fi
@@ -84,10 +86,12 @@ verify_by_number() {
   return 0
 }
 
-# verify_by_branch BRANCH -> echoes "$MERGED <num>" | "closed_unmerged" | "none" | "error"
+# verify_by_branch BRANCH -> echoes "$MERGED <num>" | "closed_unmerged" | "none" on
+# stdout. On API failure it writes a diagnostic to stderr and emits NOTHING on
+# stdout; the caller treats empty stdout the same as a soft error (its `*)` branch).
 verify_by_branch() {
   local br="$1" body merged_at num
-  body="$(api_get "${api}/pulls?state=closed&head=${owner}:${br}&per_page=20")" || { echo error; return 0; }
+  body="$(api_get "${api}/pulls?state=closed&head=${owner}:${br}&per_page=20")" || { printf 'ai_queue_reconcile: branch %s PR lookup failed (GitHub API unreachable)\n' "$br" >&2; return 0; }
   [[ -z "$body" || "$body" == "[]" ]] && { echo none; return 0; }
   merged_at="$(json_first_value "$body" merged_at)"
   num="$(json_first_value "$body" number)"
