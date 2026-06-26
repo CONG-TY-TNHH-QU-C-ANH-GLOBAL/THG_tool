@@ -3,21 +3,26 @@
 This file is the stable queue index and operating policy.
 
 Do not use this file as a mutable PR status board.
-Per-item lifecycle state lives in `docs/ai/queue/items/*.md`.
+Per-item lifecycle state lives in `docs/ai/queue/items/**/*.md` (grouped by
+domain/component; discovered recursively).
 
 ## Lockless queue rule
 
 Feature/work PRs must not edit this central queue file unless the task is explicitly queue-governance work.
 
-A work PR may update only its own queue item file under `docs/ai/queue/items/`.
+A work PR may update only its own queue item file under `docs/ai/queue/items/`
+(in its domain subfolder).
 
 This prevents merge conflicts when multiple branches are open.
 
 ## Queue item files
 
-Each queue item must live under:
+Each queue item must live under its domain/component folder:
 
-`docs/ai/queue/items/<ID>-<slug>.md`
+`docs/ai/queue/items/<domain>/<ID>-<slug>.md`
+(e.g. `architecture/<component>/` or `docs/`). Grouped by stable domain, never
+by mutable status; the queue tooling discovers items recursively and resolves
+`depends_on` by the `id:` field, so an item's folder never affects resolution.
 
 Each item file must contain:
 - id
@@ -93,7 +98,9 @@ Rules:
 `internal/drivers/copilot`, `cmd/scraper`. The human-readable map — grouped by
 component then lane, with active/next/blocked items, dependency chains, and a
 Mermaid diagram — lives in **[`docs/ai/queue/INDEX.md`](queue/INDEX.md)**. The
-item files under `docs/ai/queue/items/ARCH*.md` remain the source of truth.
+item files under `docs/ai/queue/items/architecture/<component>/` (and
+`docs/ai/queue/items/docs/` for the Docs Architecture Epic) remain the source of
+truth.
 
 ### Backlog (not yet item files)
 

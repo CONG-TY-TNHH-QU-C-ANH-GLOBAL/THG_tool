@@ -13,6 +13,11 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 items_dir="docs/ai/queue/items"
 NONE="(none)" # sentinel for "no item in this slot"
 
+# Queue items live in domain/component subfolders under $items_dir — discover
+# recursively. Grouped by stable domain, never by mutable status; resolution is
+# by `id:` frontmatter, so physical location does not affect status reporting.
+mapfile -t items < <(find "$items_dir" -type f -name '*.md' | sort)
+
 echo "branch: $branch"
 echo "HEAD:   $(git log -1 --format='%h %s')"
 
@@ -26,7 +31,7 @@ field_of() { # field_of FILE KEY
 }
 status_of_id() {                                                     # status_of_id ID
   local want="$1" f
-  for f in "$items_dir"/*.md; do
+  for f in "${items[@]}"; do
     [[ -e "$f" ]] || continue
     [[ "$(field_of "$f" id)" == "$want" ]] && { field_of "$f" status; return 0; }
   done
@@ -35,7 +40,7 @@ status_of_id() {                                                     # status_of
 
 first_ready="$NONE"; first_inprog="$NONE"; first_review="$NONE"
 first_exec="$NONE"; waiting=()
-for f in "$items_dir"/*.md; do
+for f in "${items[@]}"; do
   [[ -e "$f" ]] || continue
   st="$(field_of "$f" status)"; id="$(field_of "$f" id)"
   case "$st" in
@@ -74,6 +79,6 @@ index="docs/ai/AUTOPILOT_QUEUE.md"
 if ! git diff --quiet -- "$index" 2>/dev/null || ! git diff --cached --quiet -- "$index" 2>/dev/null; then
   case "$branch" in
     *queue*|*autopilot*|*workflow*) ;; # queue-governance branch: editing the index is expected
-    *) echo; echo "WARN $index is modified on '$branch' — work PRs must edit only $items_dir/*.md (lockless queue)" ;;
+    *) echo; echo "WARN $index is modified on '$branch' — work PRs must edit only $items_dir/**/*.md (lockless queue)" ;;
   esac
 fi

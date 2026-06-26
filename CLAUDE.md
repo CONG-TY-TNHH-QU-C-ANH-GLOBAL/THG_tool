@@ -387,7 +387,7 @@ Claude may operate from `docs/ai/AUTOPILOT_QUEUE.md`.
 
 Rules:
 - `AUTOPILOT_QUEUE.md` is a stable index/policy file, not a mutable status board.
-- Per-item status lives in `docs/ai/queue/items/*.md`.
+- Per-item status lives in `docs/ai/queue/items/**/*.md` (grouped by domain; discovered recursively).
 - Normal work PRs update only their own item file.
 - One PR per branch.
 - Push only; never merge.
@@ -407,7 +407,7 @@ reuse the existing queue / escalation / governance docs and validation scripts.
 ### `/thg-next` — next safe work item
 
 Pull latest main → `scripts/ai_preflight.sh` → read `docs/ai/AUTOPILOT_QUEUE.md`
-+ `docs/ai/queue/items/*.md` → pick the first **executable** READY item (all
++ `docs/ai/queue/items/**/*.md` → pick the first **executable** READY item (all
 `depends_on` DONE) → one branch → bounded work → `scripts/ai_validate.sh` →
 push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
 

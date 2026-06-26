@@ -30,8 +30,10 @@ Map of the agentic-development workflow docs. See
 
 - **Queue policy + lifecycle:** [`AUTOPILOT_QUEUE.md`](AUTOPILOT_QUEUE.md) is the
   stable index/policy. It must NOT be used as a mutable status board.
-- **Per-item state:** each `queue/items/<ID>.md` frontmatter is the source of
-  truth for that item's status/lane/deps. The queue map below is only a view.
+- **Per-item state:** each `queue/items/<domain>/<ID>.md` frontmatter is the
+  source of truth for that item's status/lane/deps. Items are grouped by stable
+  domain/component (never by status); the tooling discovers them recursively, so
+  the folder never affects `depends_on`. The queue map below is only a view.
 - **Hard-case protocol:** [`ESCALATION_PLAYBOOK.md`](ESCALATION_PLAYBOOK.md)
   (decision-record format for RED/ambiguous cases).
 
@@ -47,8 +49,9 @@ Map of the agentic-development workflow docs. See
 
 ## Where to add a new doc
 
-- A new **queue item** → `queue/items/<ID>-<slug>.md` (follow an existing item's
-  frontmatter); register it in [`queue/INDEX.md`](queue/INDEX.md).
+- A new **queue item** → `queue/items/<domain>/<ID>-<slug>.md` under the owning
+  domain folder (`architecture/<component>/` or `docs/`); follow an existing
+  item's frontmatter and register it in [`queue/INDEX.md`](queue/INDEX.md).
 - A new **workflow/protocol** doc → here in `docs/ai/`, with governance
   frontmatter, and add a row to the Contents table above.
 

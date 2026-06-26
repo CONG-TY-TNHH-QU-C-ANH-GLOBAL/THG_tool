@@ -2,7 +2,7 @@ Execute the THG `/thg-next` workflow defined in `CLAUDE.md` (Custom Workflow Com
 
 Use:
 - `docs/ai/AUTOPILOT_QUEUE.md`
-- `docs/ai/queue/items/*.md`
+- `docs/ai/queue/items/**/*.md` (grouped by domain; discovered recursively)
 - `docs/ai/ESCALATION_PLAYBOOK.md`
 - `docs/DOCS_GOVERNANCE.md`
 - `scripts/ai_preflight.sh`

@@ -1,9 +1,15 @@
 # Architecture Queue — Index (human map)
 
-> **Source of truth = the item files** under `docs/ai/queue/items/*.md`. This page
-> is only a navigable map; if it disagrees with an item file's frontmatter, the
-> item file wins. Lifecycle/policy lives in
+> **Source of truth = the item files** under `docs/ai/queue/items/` (discovered
+> recursively). This page is only a navigable map; if it disagrees with an item
+> file's frontmatter, the item file wins. Lifecycle/policy lives in
 > [`docs/ai/AUTOPILOT_QUEUE.md`](../AUTOPILOT_QUEUE.md).
+>
+> **Layout:** items are grouped by **stable domain/component**, never by mutable
+> status — `items/architecture/{workspace_knowledge,store,server,copilot,cmd_scraper}/`
+> and `items/docs/`. Dependency resolution is by the `id:` frontmatter, so an
+> item's folder never affects `depends_on`. (Pre-existing Facebook-track items
+> PR31D/PR31E/PR32A remain at the `items/` root.)
 
 Covers two epics: the **Self-Feeding Architecture Epic** (code decomposition —
 topology scan of `internal/workspace_knowledge`, `internal/store`,
@@ -19,18 +25,18 @@ deps — in Go a folder move *is* an import-boundary change). RED: audit-only,
 
 ## At a glance
 
-- **Active item:** [ARCHWK1](items/ARCHWK1-governance-output-validation-split.md) — REVIEW (this PR).
-- **Next executable (GREEN, no unmet deps):** [ARCHWK2](items/ARCHWK2-products-canonical-split.md),
-  [ARCHWK3](items/ARCHWK3-retrieval-helpers-rename.md),
-  [ARCHST1](items/ARCHST1-store-test-fallback-migration.md),
-  [ARCHSV1](items/ARCHSV1-crawl-direct-post-helper-extract.md),
-  [ARCHCP1](items/ARCHCP1-agent-brain-split.md),
-  [ARCHCP2](items/ARCHCP2-agent-preflight-split.md),
-  [ARCHCM1](items/ARCHCM1-action-args-split.md).
-- **Executable YELLOW (no unmet deps):** [ARCHSV2](items/ARCHSV2-agent-finalize-subpackage.md),
-  [ARCHWK4](items/ARCHWK4-soak-internal-grouping.md).
+- **Active item:** [ARCHWK1](items/architecture/workspace_knowledge/ARCHWK1-governance-output-validation-split.md) — REVIEW (this PR).
+- **Next executable (GREEN, no unmet deps):** [ARCHWK2](items/architecture/workspace_knowledge/ARCHWK2-products-canonical-split.md),
+  [ARCHWK3](items/architecture/workspace_knowledge/ARCHWK3-retrieval-helpers-rename.md),
+  [ARCHST1](items/architecture/store/ARCHST1-store-test-fallback-migration.md),
+  [ARCHSV1](items/architecture/server/ARCHSV1-crawl-direct-post-helper-extract.md),
+  [ARCHCP1](items/architecture/copilot/ARCHCP1-agent-brain-split.md),
+  [ARCHCP2](items/architecture/copilot/ARCHCP2-agent-preflight-split.md),
+  [ARCHCM1](items/architecture/cmd_scraper/ARCHCM1-action-args-split.md).
+- **Executable YELLOW (no unmet deps):** [ARCHSV2](items/architecture/server/ARCHSV2-agent-finalize-subpackage.md),
+  [ARCHWK4](items/architecture/workspace_knowledge/ARCHWK4-soak-internal-grouping.md).
 - **Blocked RED (audit-only):** ARCHST-R1, ARCHST-R2, ARCHST-R3, ARCHSV-R1, ARCHCM-R1, ARCHCM-R2.
-- **Docs Architecture Epic:** active [DOCS1](items/DOCS1-docs-architecture-map.md) (REVIEW); see the [Docs Architecture Epic](#docs-architecture-epic) section.
+- **Docs Architecture Epic:** active [DOCS1](items/docs/DOCS1-docs-architecture-map.md) (REVIEW); see the [Docs Architecture Epic](#docs-architecture-epic) section.
 
 ## How to resume
 
@@ -47,14 +53,14 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHWK1](items/ARCHWK1-governance-output-validation-split.md) | REVIEW | Split governance Layer-3 validator into per-check files (banned/guarantee/shipping/pricing). |
-| [ARCHWK2](items/ARCHWK2-products-canonical-split.md) | READY | Split `products/canonical.go` by responsibility (canonical / availability / pricing / normalize). |
-| [ARCHWK3](items/ARCHWK3-retrieval-helpers-rename.md) | READY | Replace vague `retrieval/helpers.go` with responsibility files (tokenize / scoring / query). |
+| [ARCHWK1](items/architecture/workspace_knowledge/ARCHWK1-governance-output-validation-split.md) | REVIEW | Split governance Layer-3 validator into per-check files (banned/guarantee/shipping/pricing). |
+| [ARCHWK2](items/architecture/workspace_knowledge/ARCHWK2-products-canonical-split.md) | READY | Split `products/canonical.go` by responsibility (canonical / availability / pricing / normalize). |
+| [ARCHWK3](items/architecture/workspace_knowledge/ARCHWK3-retrieval-helpers-rename.md) | READY | Replace vague `retrieval/helpers.go` with responsibility files (tokenize / scoring / query). |
 
 ### YELLOW implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [ARCHWK4](items/ARCHWK4-soak-internal-grouping.md) | READY | — | Decompose the 12-file `soak` package (sibling grouping vs subpackages). |
+| [ARCHWK4](items/architecture/workspace_knowledge/ARCHWK4-soak-internal-grouping.md) | READY | — | Decompose the 12-file `soak` package (sibling grouping vs subpackages). |
 
 ---
 
@@ -63,14 +69,14 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHST1](items/ARCHST1-store-test-fallback-migration.md) | READY | Move top-level cross-domain `*_test.go` fallbacks into owning subpackage external tests. |
+| [ARCHST1](items/architecture/store/ARCHST1-store-test-fallback-migration.md) | READY | Move top-level cross-domain `*_test.go` fallbacks into owning subpackage external tests. |
 
 ### RED audit-only / blocked
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHST-R1](items/ARCHST-R1-append-only-ledger-audit.md) | BLOCKED | Audit append-only ledger UPDATE violations (action_ledger / engagement_reconcile). |
-| [ARCHST-R2](items/ARCHST-R2-connector-lease-cas-audit.md) | BLOCKED | Audit connector pairing lease / CAS consistency vs reverify lease. |
-| [ARCHST-R3](items/ARCHST-R3-direct-post-boundary-audit.md) | BLOCKED | Audit direct-post lookup boundary (leads ↔ coordination ownership). |
+| [ARCHST-R1](items/architecture/store/ARCHST-R1-append-only-ledger-audit.md) | BLOCKED | Audit append-only ledger UPDATE violations (action_ledger / engagement_reconcile). |
+| [ARCHST-R2](items/architecture/store/ARCHST-R2-connector-lease-cas-audit.md) | BLOCKED | Audit connector pairing lease / CAS consistency vs reverify lease. |
+| [ARCHST-R3](items/architecture/store/ARCHST-R3-direct-post-boundary-audit.md) | BLOCKED | Audit direct-post lookup boundary (leads ↔ coordination ownership). |
 
 ---
 
@@ -79,19 +85,19 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHSV1](items/ARCHSV1-crawl-direct-post-helper-extract.md) | READY | Extract pure crawl direct-post outcome-classification helpers. |
+| [ARCHSV1](items/architecture/server/ARCHSV1-crawl-direct-post-helper-extract.md) | READY | Extract pure crawl direct-post outcome-classification helpers. |
 
 ### YELLOW implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [ARCHSV2](items/ARCHSV2-agent-finalize-subpackage.md) | READY | — | Extract `internal/server/agent/finalize` subpackage (move-only, CAS-adjacent). |
-| [ARCHSV3](items/ARCHSV3-agent-crawl-ingest-subpackage.md) | READY | ARCHSV2 | Extract `internal/server/agent/crawl_ingest` subpackage. |
-| [ARCHSV4](items/ARCHSV4-agent-outbox-subpackage.md) | READY | ARCHSV2 | Extract `internal/server/agent/outbox` subpackage (preserve dashboard JSON). |
+| [ARCHSV2](items/architecture/server/ARCHSV2-agent-finalize-subpackage.md) | READY | — | Extract `internal/server/agent/finalize` subpackage (move-only, CAS-adjacent). |
+| [ARCHSV3](items/architecture/server/ARCHSV3-agent-crawl-ingest-subpackage.md) | READY | ARCHSV2 | Extract `internal/server/agent/crawl_ingest` subpackage. |
+| [ARCHSV4](items/architecture/server/ARCHSV4-agent-outbox-subpackage.md) | READY | ARCHSV2 | Extract `internal/server/agent/outbox` subpackage (preserve dashboard JSON). |
 
 ### RED audit-only / blocked
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHSV-R1](items/ARCHSV-R1-workspace-orchestration-audit.md) | BLOCKED | Audit workspace browser-orchestration split (runtime state; auth-adjacent). |
+| [ARCHSV-R1](items/architecture/server/ARCHSV-R1-workspace-orchestration-audit.md) | BLOCKED | Audit workspace browser-orchestration split (runtime state; auth-adjacent). |
 
 ---
 
@@ -100,14 +106,14 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHCP1](items/ARCHCP1-agent-brain-split.md) | READY | Split 525-line `agent_brain.go` into client / types / validator / action-prep siblings. |
-| [ARCHCP2](items/ARCHCP2-agent-preflight-split.md) | READY | Split `agent_preflight.go` (account readiness vs business-context inference). |
+| [ARCHCP1](items/architecture/copilot/ARCHCP1-agent-brain-split.md) | READY | Split 525-line `agent_brain.go` into client / types / validator / action-prep siblings. |
+| [ARCHCP2](items/architecture/copilot/ARCHCP2-agent-preflight-split.md) | READY | Split `agent_preflight.go` (account readiness vs business-context inference). |
 
 ### YELLOW implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [ARCHCP3](items/ARCHCP3-intent-subpackage.md) | READY | ARCHCP1, ARCHCP2 | Extract `copilot/intent` subpackage (no cross-cluster cycle). |
-| [ARCHCP4](items/ARCHCP4-agent-subpackage.md) | READY | ARCHCP3 | (Optional) extract `copilot/agent` subpackage — only if still tripping the file-count trigger. |
+| [ARCHCP3](items/architecture/copilot/ARCHCP3-intent-subpackage.md) | READY | ARCHCP1, ARCHCP2 | Extract `copilot/intent` subpackage (no cross-cluster cycle). |
+| [ARCHCP4](items/architecture/copilot/ARCHCP4-agent-subpackage.md) | READY | ARCHCP3 | (Optional) extract `copilot/agent` subpackage — only if still tripping the file-count trigger. |
 
 ---
 
@@ -116,20 +122,20 @@ items need `/thg-red-audit` and a human decision. One PR per item; never merge.
 ### GREEN implementation
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHCM1](items/ARCHCM1-action-args-split.md) | READY | Split `action_args.go` (pure coercion vs domain-aware helpers). |
+| [ARCHCM1](items/architecture/cmd_scraper/ARCHCM1-action-args-split.md) | READY | Split `action_args.go` (pure coercion vs domain-aware helpers). |
 
 ### YELLOW implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [ARCHCM2](items/ARCHCM2-outbound-pipeline-move.md) | READY | ARCHCM1, ARCHCM-R1 | Move leaked outbound pipeline out of cmd into `internal/outbound`. |
-| [ARCHCM3](items/ARCHCM3-direct-post-intake-move.md) | READY | ARCHCM2, ARCHST-R3 | Move direct-post intake service/scheduler into `internal/directpost`. |
-| [ARCHCM4](items/ARCHCM4-crawl-runtime-move.md) | READY | ARCHCM-R1, ARCHCM-R2 | Move crawl runtime/plan/scheduler into `internal/crawler` + `internal/jobs`. |
+| [ARCHCM2](items/architecture/cmd_scraper/ARCHCM2-outbound-pipeline-move.md) | READY | ARCHCM1, ARCHCM-R1 | Move leaked outbound pipeline out of cmd into `internal/outbound`. |
+| [ARCHCM3](items/architecture/cmd_scraper/ARCHCM3-direct-post-intake-move.md) | READY | ARCHCM2, ARCHST-R3 | Move direct-post intake service/scheduler into `internal/directpost`. |
+| [ARCHCM4](items/architecture/cmd_scraper/ARCHCM4-crawl-runtime-move.md) | READY | ARCHCM-R1, ARCHCM-R2 | Move crawl runtime/plan/scheduler into `internal/crawler` + `internal/jobs`. |
 
 ### RED audit-only / blocked
 | Item | Status | Summary |
 |---|---|---|
-| [ARCHCM-R1](items/ARCHCM-R1-account-scope-consolidation-audit.md) | BLOCKED | Audit + consolidate duplicated account-control RBAC (security). |
-| [ARCHCM-R2](items/ARCHCM-R2-crawl-runtime-semantics-audit.md) | BLOCKED | Audit crawl runtime / connector dispatch / fallback semantics. |
+| [ARCHCM-R1](items/architecture/cmd_scraper/ARCHCM-R1-account-scope-consolidation-audit.md) | BLOCKED | Audit + consolidate duplicated account-control RBAC (security). |
+| [ARCHCM-R2](items/architecture/cmd_scraper/ARCHCM-R2-crawl-runtime-semantics-audit.md) | BLOCKED | Audit crawl runtime / connector dispatch / fallback semantics. |
 
 ---
 
@@ -170,17 +176,17 @@ docs, no duplicated source of truth, no AI-generated spec sprawl. See
 ### GREEN implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [DOCS1](items/DOCS1-docs-architecture-map.md) | REVIEW | — | Add docs/ai + docs/architecture subtree indexes; fix the stale `specs/SPEC_INDEX.md` backlink in docs/INDEX.md. |
-| [DOCS2](items/DOCS2-architecture-doc-backlinks.md) | READY | DOCS1 | Backlinks + governance frontmatter for docs/architecture/*. |
+| [DOCS1](items/docs/DOCS1-docs-architecture-map.md) | REVIEW | — | Add docs/ai + docs/architecture subtree indexes; fix the stale `specs/SPEC_INDEX.md` backlink in docs/INDEX.md. |
+| [DOCS2](items/docs/DOCS2-architecture-doc-backlinks.md) | READY | DOCS1 | Backlinks + governance frontmatter for docs/architecture/*. |
 
 ### YELLOW implementation
 | Item | Status | Deps | Summary |
 |---|---|---|---|
-| [DOCS-Y1](items/DOCS-Y1-relocate-pr-checklist.md) | READY | DOCS1 | Move docs/PR_CHECKLIST.md → docs/engineering/ (update the AGENTS.md referrer). |
-| [DOCS-Y2](items/DOCS-Y2-governance-frontmatter-backfill.md) | READY | DOCS1 | Backfill governance frontmatter across docs/ in small staged batches. |
+| [DOCS-Y1](items/docs/DOCS-Y1-relocate-pr-checklist.md) | READY | DOCS1 | Move docs/PR_CHECKLIST.md → docs/engineering/ (update the AGENTS.md referrer). |
+| [DOCS-Y2](items/docs/DOCS-Y2-governance-frontmatter-backfill.md) | READY | DOCS1 | Backfill governance frontmatter across docs/ in small staged batches. |
 
 ### RED audit-only / blocked
 | Item | Status | Summary |
 |---|---|---|
-| [DOCS-R1](items/DOCS-R1-spec-source-of-truth-audit.md) | BLOCKED | Spec source-of-truth: root `specs/` (tool-referenced) vs governed `docs/specs/`. Recommend keeping root canonical; human decision. |
-| [DOCS-R2](items/DOCS-R2-generated-artifact-location-audit.md) | BLOCKED | Generated `RETRIEVAL_SOAK_REPORT.md` location + soak-test write-gating (`-update`); test-code change, human decision. |
+| [DOCS-R1](items/docs/DOCS-R1-spec-source-of-truth-audit.md) | BLOCKED | Spec source-of-truth: root `specs/` (tool-referenced) vs governed `docs/specs/`. Recommend keeping root canonical; human decision. |
+| [DOCS-R2](items/docs/DOCS-R2-generated-artifact-location-audit.md) | BLOCKED | Generated `RETRIEVAL_SOAK_REPORT.md` location + soak-test write-gating (`-update`); test-code change, human decision. |
