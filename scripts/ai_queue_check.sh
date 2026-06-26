@@ -25,12 +25,14 @@ echo "== autopilot queue check =="
 
 # field FILE KEY -> first frontmatter value for KEY (empty if absent).
 field() {
-  sed -n "s/^$2:[[:space:]]*//p" "$1" | head -1
+  local file="$1" key="$2"
+  sed -n "s/^$key:[[:space:]]*//p" "$file" | head -1
 }
 
 # in_list NEEDLE "a b c" -> 0 if NEEDLE is a whole-word member.
 in_list() {
-  case " $2 " in *" $1 "*) return 0;; *) return 1;; esac
+  local needle="$1" haystack="$2"
+  case " $haystack " in *" $needle "*) return 0;; *) return 1;; esac
 }
 
 shopt -s nullglob
