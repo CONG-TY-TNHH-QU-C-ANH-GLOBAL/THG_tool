@@ -41,9 +41,7 @@ package rrf
 import (
 	"context"
 	"fmt"
-	"sort"
 
-	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
 )
 
@@ -162,87 +160,8 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 
 	trace.CandidatesConsidered = len(lexHits) + len(semHits)
 
-	// Build asset → (lex_rank, sem_rank, asset) map.
-	type fusedEntry struct {
-		asset       *assets.Asset
-		lexRank     int     // 0 = not in lexical results
-		semRank     int     // 0 = not in semantic results
-		lexScore    float64 // primary scoring source (for breakdown preservation)
-		semScore    float64
-		lexBreakdown retrieval.ScoreBreakdown
-	}
-	fused := map[int64]*fusedEntry{}
-
-	// Defence-in-depth governance gate. Goal directive G6 makes RRF
-	// the FINAL authority: banned_claim and hidden-state assets must
-	// NEVER appear in fusion output, even if a future upstream-
-	// searcher bug let one through. Upstream searchers already do
-	// this filtering; we double-gate here so the contract holds
-	// regardless of upstream behaviour. Cost is O(n) per call.
-	skipFn := func(a *assets.Asset) bool {
-		if a == nil {
-			return true
-		}
-		if a.Type == assets.AssetBannedClaim {
-			trace.TotalByReason[retrieval.RejectGovernance]++
-			return true
-		}
-		if a.State == assets.StateHidden {
-			trace.TotalByReason[retrieval.RejectStateFilter]++
-			return true
-		}
-		return false
-	}
-
-	for i, h := range lexHits {
-		if skipFn(h.Asset) {
-			continue
-		}
-		fused[h.Asset.ID] = &fusedEntry{
-			asset:    h.Asset,
-			lexRank:  i + 1, // 1-indexed for the trace's "rank" semantics
-			lexScore: h.Score,
-		}
-		// Pull breakdown from lex trace if available.
-		for _, sh := range lexTrace.Selected {
-			if sh.AssetID == h.Asset.ID {
-				fused[h.Asset.ID].lexBreakdown = sh.Breakdown
-				break
-			}
-		}
-	}
-	for i, h := range semHits {
-		if skipFn(h.Asset) {
-			continue
-		}
-		entry, ok := fused[h.Asset.ID]
-		if !ok {
-			entry = &fusedEntry{asset: h.Asset}
-			fused[h.Asset.ID] = entry
-		}
-		entry.semRank = i + 1
-		entry.semScore = h.Score
-	}
-
-	// Compute RRF score per entry.
-	type scored struct {
-		entry    *fusedEntry
-		rrfScore float64
-	}
-	allScored := make([]scored, 0, len(fused))
-	for _, entry := range fused {
-		score := 0.0
-		if entry.lexRank > 0 {
-			score += 1.0 / float64(rrfK+entry.lexRank)
-		}
-		if entry.semRank > 0 {
-			score += 1.0 / float64(rrfK+entry.semRank)
-		}
-		allScored = append(allScored, scored{entry, score})
-	}
-	sort.SliceStable(allScored, func(i, j int) bool {
-		return allScored[i].rrfScore > allScored[j].rrfScore
-	})
+	fused := fuseRankings(lexHits, semHits, lexTrace, &trace)
+	allScored := rankByRRF(fused, rrfK)
 
 	// Low-confidence check (§7). If top score is below threshold,
 	// return empty so the orchestrator can ask for clarification.
@@ -253,40 +172,7 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 		return nil, trace, nil
 	}
 
-	// Cap to k, record overflow.
-	keep := allScored
-	if len(keep) > k {
-		for _, sc := range allScored[k:] {
-			retrieval.RecordRejection(&trace, sc.entry.asset, retrieval.RejectTopKCap, sc.rrfScore)
-		}
-		keep = allScored[:k]
-	}
-
-	outHits := make([]retrieval.Hit, 0, len(keep))
-	trace.Selected = make([]retrieval.ScoredHit, 0, len(keep))
-	for _, sc := range keep {
-		// Compose the final hit using lex breakdown as base + RRF score
-		// as the primary ordering signal. Reason describes the fusion:
-		// "rrf bm25=#2 sem=#5" so operators see ranks at a glance.
-		reason := fmt.Sprintf("rrf bm25=#%d sem=#%d score=%.4f", sc.entry.lexRank, sc.entry.semRank, sc.rrfScore)
-		outHits = append(outHits, retrieval.Hit{
-			Asset:  sc.entry.asset,
-			Score:  sc.rrfScore,
-			Reason: reason,
-		})
-		trace.Selected = append(trace.Selected, retrieval.ScoredHit{
-			AssetID:      sc.entry.asset.ID,
-			Title:        sc.entry.asset.Title,
-			Type:         sc.entry.asset.Type,
-			Score:        sc.rrfScore,
-			Breakdown:    sc.entry.lexBreakdown, // preserves explainability of lex side
-			Reason:       reason,
-			BM25Rank:     sc.entry.lexRank,
-			SemanticRank: sc.entry.semRank,
-			RRFScore:     sc.rrfScore,
-		})
-	}
-	return outHits, trace, nil
+	return selectAndBuild(allScored, k, &trace), trace, nil
 }
 
 // SearcherName satisfies the fallback wrapper's optional naming hook
