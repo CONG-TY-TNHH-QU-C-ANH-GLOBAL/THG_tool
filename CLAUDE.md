@@ -425,6 +425,14 @@ complexity from the original function into a new helper. After a split, verify
 each new helper is itself under the cognitive-complexity threshold (if a helper
 still nests loops/conditionals, extract again or re-shape the decomposition).
 
+**S3776 learning (move-only splits):** architecture moves into new files must be
+New-Code Sonar clean. A function relocated to a new file counts as New Code, so
+any moved function that is already over the S3776 threshold will be flagged even
+though the move changed no behavior — move-only is not enough. Before splitting a
+god-file, check each function's complexity; reduce any over-threshold function in
+the same PR (flat-dispatch switch, pure helper extraction), not just the helpers
+you newly extract.
+
 ### `/thg-red-audit <target>` — controlled zones
 
 For RED zones (auth/security, schema/migrations, queue/outbox,
