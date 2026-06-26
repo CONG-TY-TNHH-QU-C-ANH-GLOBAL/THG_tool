@@ -1,6 +1,6 @@
 ---
 id: PR31E
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: GREEN/YELLOW
 depends_on: [PR31D]
@@ -37,4 +37,4 @@ Add missing characterization tests around not-ready/offline/human_required/failu
 
 ## Result
 
-Branch pushed for review. Test-only connector-reason readiness coverage added.
+Merged via PR #115.
