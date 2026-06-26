@@ -437,6 +437,14 @@ god-file, check each function's complexity; reduce any over-threshold function i
 the same PR (flat-dispatch switch, pure helper extraction), not just the helpers
 you newly extract.
 
+**Shell-script learning:** new workflow scripts added under `scripts/` are New Code
+and must be Sonar-clean too. Shell follows Sonar-safe style: assign positional
+parameters to `local` vars inside functions (no bare `$1`/`$2`), explicit `return`
+at the end of each function (preserve the wrapped command's exit status where a
+caller relies on it), redirect error/warn messages to stderr (`>&2`), define a
+constant for any repeated string literal, and give every `case` a default `*)`
+branch.
+
 ### `/thg-red-audit <target>` — controlled zones
 
 For RED zones (auth/security, schema/migrations, queue/outbox,
