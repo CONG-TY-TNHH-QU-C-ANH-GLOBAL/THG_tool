@@ -116,7 +116,6 @@ internal/server/observability/handlers.go  # 305 lines
 internal/drivers/copilot/agent_prompt.go  # 302 lines
 internal/store/knowledge/replay.go  # 301 lines
 internal/ai/profile_inference.go  # 297 lines
-internal/workspace_knowledge/retrieval/rrf/rrf_searcher.go  # 295 lines
 internal/jobs/store.go  # 289 lines
 internal/workspace_knowledge/assembly/context_assembly.go  # 287 lines
 internal/workspace/restart.go  # 283 lines
@@ -124,7 +123,6 @@ internal/workspace_knowledge/retrieval/hybrid/hybrid_searcher.go  # 281 lines
 internal/workspace_knowledge/ingestion/rest_json/ingestor.go  # 275 lines
 services/agent-brain/planner_llm.py  # 274 lines
 internal/workspace_knowledge/security/sanitizer.go  # 271 lines
-internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go  # 263 lines
 internal/server/autoflow/data_sources.go  # 262 lines
 internal/server/autoflow/threads.go  # 257 lines
 internal/workspace_knowledge/ingestion/rest_json/config.go  # 251 lines
