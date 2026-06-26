@@ -380,3 +380,20 @@ any doc; `docs/INDEX.md` says where things live.
 - `scripts/check_docs_governance.sh` (wired into the ai_preflight / ai_validate
   guards) warns on unmanaged root markdown and fails if a required governance doc
   is missing.
+
+## Autopilot v2.1
+
+Claude may operate from `docs/ai/AUTOPILOT_QUEUE.md`.
+
+Rules:
+- `AUTOPILOT_QUEUE.md` is a stable index/policy file, not a mutable status board.
+- Per-item status lives in `docs/ai/queue/items/*.md`.
+- Normal work PRs update only their own item file.
+- One PR per branch.
+- Push only; never merge.
+- YELLOW/RED items are sequential by default.
+- GREEN sprint mode is allowed only for `parallel_safe: true` items with no unmet dependencies.
+- Run `scripts/ai_preflight.sh` before work.
+- Run `scripts/ai_validate.sh` before push.
+- Use `docs/ai/ESCALATION_PLAYBOOK.md` for hard cases.
+- Use `docs/DOCS_GOVERNANCE.md` for docs.

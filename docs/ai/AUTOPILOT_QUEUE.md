@@ -1,89 +1,85 @@
 # AUTOPILOT_QUEUE
 
-Claude must pick the first READY item unless the user names a different item.
+This file is the stable queue index and operating policy.
 
-## Rules
+Do not use this file as a mutable PR status board.
+Per-item lifecycle state lives in `docs/ai/queue/items/*.md`.
 
-- One PR per queue item.
-- Do not merge.
-- Push only after validation passes.
-- Stop on RED ambiguity.
-- Do not chase unrelated Sonar backlog.
-- Update the item status in the final report only; do not self-edit this file unless explicitly asked.
+## Lockless queue rule
 
-## Hard-case handling
+Feature/work PRs must not edit this central queue file unless the task is explicitly queue-governance work.
 
-If a READY task hits RED ambiguity, hard Sonar, architecture uncertainty, or missing fake seam, Claude must use `docs/ai/ESCALATION_PLAYBOOK.md`.
+A work PR may update only its own queue item file under `docs/ai/queue/items/`.
 
-Do not ask for a new prompt by default. Produce a decision record, choose the safest bounded action, validate, push, and report. Stop only for human/business/credential/destructive decisions.
+This prevents merge conflicts when multiple branches are open.
 
-## Queue
+## Queue item files
 
-### READY — PR31D: Facebook crawl session fake seam
-Risk: YELLOW
-Goal: Introduce the smallest fakeable seam for the session-acquire branch if needed.
-Scope:
-- internal/jobhandlers/facebook_crawl
-- internal/runtime
-- internal/livesession
-Constraints:
-- no real Chrome/browser/CDP/network in tests
-- no broad Browser framework
-- no package moves
-Validation:
-- go test ./internal/jobhandlers/... -run 'Facebook|Crawl|Session|Runtime|Human|Offline' -v
-- go test ./...
-- go build ./...
-- go vet ./...
-- bash scripts/check_import_boundaries.sh
-- python scripts/check_file_size.py
+Each queue item must live under:
 
-### READY — PR31E: Facebook crawl readiness/runtime edge coverage
-Risk: GREEN/YELLOW
-Goal: Add missing characterization tests around not-ready/offline/human_required/failure mapping if existing seams allow.
-Scope:
-- internal/jobhandlers/facebook_crawl
-- internal/readiness
-- cmd/scraper crawl/readiness tests
-Constraints:
-- test-only preferred
-- no runtime semantics change
+`docs/ai/queue/items/<ID>-<slug>.md`
 
-### READY — PR32A: Product-path audit for Facebook automation operator UX
-Risk: YELLOW
-Goal: Audit and harden operator-visible status flow: readiness reason -> queue status -> execution result.
-Scope:
-- backend API/status payloads
-- dashboard-facing response DTOs only if already existing
-Constraints:
-- no DTO/wire contract change unless explicitly reported
-- characterization first
+Each item file must contain:
+- id
+- status
+- lane
+- risk
+- depends_on
+- parallel_safe
+- branch
+- pr_url
+- goal
+- scope
+- constraints
+- validation
+- result / notes
 
-### BACKLOG — Sonar Ponytail cleanup batch
-Risk: GREEN
-Goal: Fix low-risk Sonar New Code issues only when explicitly requested.
-Scope:
-- issue-specific files only
+## Status lifecycle
 
-### BACKLOG — Escalation-driven hard case
-Risk: RED/YELLOW
-Goal: Use ESCALATION_PLAYBOOK when a normal task hits RED ambiguity, hard Sonar, architecture uncertainty, or missing fake seam.
-Scope:
-- bounded to the current task
-Constraints:
-- decision record required
-- no merge
-- no forbidden semantics change without explicit human approval
+- READY: available to execute.
+- IN_PROGRESS: Claude is currently working on it.
+- REVIEW: branch pushed, waiting for human PR review / CI / Sonar / merge.
+- DONE: merged into main.
+- BLOCKED: cannot proceed without human/product/credential/destructive decision.
 
-### BACKLOG — Docs taxonomy migration
-Risk: GREEN/YELLOW
-Goal: Gradually move legacy root/spec/debt docs into the governed docs taxonomy.
-Scope:
-- root markdown docs
-- specs/governance docs
-- docs/*
-Constraints:
-- no production code
-- preserve history with git mv
-- do not move root AGENTS.md / CLAUDE.md / README.md
-- update references
+Claude may update an item file when:
+- starting work: READY -> IN_PROGRESS
+- pushing branch: IN_PROGRESS -> REVIEW
+- user reports merge success: REVIEW -> DONE
+- stop condition requires human decision: IN_PROGRESS -> BLOCKED
+
+Claude must not mark DONE unless the user explicitly says the PR was merged into main.
+
+## Dependency rule
+
+YELLOW and RED items are sequential by default.
+
+Claude must not start an item if any `depends_on` item is not DONE, unless the user explicitly authorizes parallel work and the item is GREEN + parallel_safe.
+
+## Sprint mode
+
+User may say:
+
+`Autopilot: run green sprint, max N PRs.`
+
+Rules:
+- execute at most N GREEN items,
+- only items with `parallel_safe: true`,
+- no unmet dependencies,
+- disjoint scopes/files,
+- one PR per branch,
+- each PR updates only its own item file,
+- push each branch after validation,
+- never merge,
+- stop immediately if any item becomes YELLOW/RED/hard Sonar/ambiguous.
+
+## Queue index
+
+- PR31D: `docs/ai/queue/items/PR31D-facebook-crawl-session-fake-seam.md`
+- PR31E: `docs/ai/queue/items/PR31E-facebook-crawl-readiness-runtime-edge-coverage.md`
+- PR32A: `docs/ai/queue/items/PR32A-facebook-operator-ux-status-flow.md`
+
+### Backlog (not yet item files)
+
+- Sonar Ponytail cleanup batch (GREEN) — fix low-risk Sonar New Code issues only when explicitly requested.
+- Docs taxonomy migration (GREEN/YELLOW) — gradually move legacy root/spec/debt docs into the governed taxonomy (git mv, update references).

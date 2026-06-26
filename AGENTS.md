@@ -243,3 +243,9 @@ debt lists here. For where docs live and how to add them, see
 (only `README.md`, `AGENTS.md`, `CLAUDE.md`, `SPEC_GOVERNANCE.md` are permitted at
 root); new docs go under the correct `docs/*` category. `scripts/check_docs_governance.sh`
 enforces this (warn-only for legacy root docs).
+
+## Autopilot queue
+
+Use `docs/ai/AUTOPILOT_QUEUE.md` as the stable queue index.
+Per-item status lives in `docs/ai/queue/items/*.md`.
+Do not edit the central queue file in normal work PRs.

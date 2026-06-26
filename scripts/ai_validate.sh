@@ -27,6 +27,9 @@ python scripts/check_file_size.py
 echo "== docs governance guard =="
 bash scripts/check_docs_governance.sh
 
+echo "== autopilot queue guard =="
+bash scripts/ai_queue_check.sh
+
 echo "== git diff --check (whitespace) =="
 git diff --check
 

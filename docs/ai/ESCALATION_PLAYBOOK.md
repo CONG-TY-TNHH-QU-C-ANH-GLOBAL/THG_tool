@@ -135,3 +135,23 @@ Claude must stop when:
 * auth/security policy changes,
 * queue/lease/ledger semantics would change,
 * business/product behavior is ambiguous.
+
+## Lockless queue safety
+
+When working from the queue:
+- do not edit `docs/ai/AUTOPILOT_QUEUE.md` in normal work PRs,
+- update only the current item file under `docs/ai/queue/items/`,
+- do not start YELLOW/RED items with unmet dependencies,
+- do not run parallel work unless item is GREEN and `parallel_safe: true`,
+- if queue state is stale, stop and ask for `git pull` / latest main confirmation.
+
+## Hard Sonar autopilot
+
+If Sonar fails on a pushed PR:
+1. Confirm the issue is New Code or caused by current PR.
+2. Fix only in touched/in-scope files.
+3. Apply Ponytail.
+4. Validate.
+5. Push fix-up commit.
+6. Update report.
+7. Do not chase unrelated backlog.
