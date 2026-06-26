@@ -5,6 +5,13 @@
 - commit:
 - parent main:
 - queue item:
+- queue item file:
+- queue status before:
+- queue status after:
+- lane:
+- dependencies checked:
+- sprint mode? yes/no:
+- next READY item:
 - risk class:
 - files changed:
 - production code changed? yes/no:

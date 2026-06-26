@@ -30,4 +30,8 @@ echo "== docs governance guard =="
 bash scripts/check_docs_governance.sh
 
 echo
+echo "== autopilot queue guard =="
+bash scripts/ai_queue_check.sh
+
+echo
 echo "preflight OK"
