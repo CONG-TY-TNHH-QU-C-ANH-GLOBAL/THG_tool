@@ -37,6 +37,18 @@ shopt -s nullglob
 items=("$items_dir"/*.md)
 shopt -u nullglob
 
+# status_of_id ID -> status of the item file whose `id:` matches ID, or "MISSING".
+status_of_id() {
+  local want="$1" g
+  for g in "${items[@]}"; do
+    if [[ "$(field "$g" id)" == "$want" ]]; then
+      field "$g" status
+      return 0
+    fi
+  done
+  echo "MISSING"
+}
+
 [[ ${#items[@]} -gt 0 ]] || echo "WARN no queue item files under $items_dir"
 
 first_ready=""
@@ -64,6 +76,22 @@ for f in "${items[@]}"; do
     first_ready="$f"
   fi
 done
+
+# Dependency guard for the NEXT-to-execute item: the first READY item must have
+# every depends_on entry present AND DONE before it can be started (queue rule).
+# Only the first READY item is gated — later READY items legitimately wait behind
+# earlier ones in the pipeline, so they are not a failure.
+if [[ -n "$first_ready" ]]; then
+  deps="$(field "$first_ready" depends_on | tr -d '[],')"
+  read -ra dep_ids <<< "$deps"
+  for dep in "${dep_ids[@]}"; do
+    dep_status="$(status_of_id "$dep")"
+    if [[ "$dep_status" != "DONE" ]]; then
+      echo "FAIL $first_ready: READY but dependency $dep is '$dep_status' (must be DONE before start)"
+      fail=1
+    fi
+  done
+fi
 
 echo "== summary =="
 echo "items checked:    ${#items[@]}"

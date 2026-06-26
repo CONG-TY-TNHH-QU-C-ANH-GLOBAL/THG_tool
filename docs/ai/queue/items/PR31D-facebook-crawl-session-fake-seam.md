@@ -1,6 +1,6 @@
 ---
 id: PR31D
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: YELLOW -> GREEN/test-only
 depends_on: []
@@ -38,4 +38,4 @@ Completed as test-only. Existing seam reused. No production seam introduced.
 
 ## Notes
 
-Waiting for PR review / CI / Sonar / merge.
+Merged via PR #113.
