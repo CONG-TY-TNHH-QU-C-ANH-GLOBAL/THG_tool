@@ -79,25 +79,47 @@ for f in "${items[@]}"; do
   fi
 done
 
-# Dependency guard for the NEXT-to-execute item: the first READY item must have
-# every depends_on entry present AND DONE before it can be started (queue rule).
-# Only the first READY item is gated — later READY items legitimately wait behind
-# earlier ones in the pipeline, so they are not a failure.
-if [[ -n "$first_ready" ]]; then
-  deps="$(field "$first_ready" depends_on | tr -d '[],')"
-  read -ra dep_ids <<< "$deps"
+# Dependency semantics:
+#   - a depends_on entry that names a NON-EXISTENT item id is an invalid queue -> FAIL.
+#   - a dependency that EXISTS but is not yet DONE is a normal WAITING state, not a
+#     failure: the dependent READY item simply cannot execute yet.
+# The first EXECUTABLE READY item is the first READY item whose deps are ALL DONE.
+first_executable=""
+waiting=()
+for f in "${items[@]}"; do
+  [[ "$(field "$f" status)" == "READY" ]] || continue
+  read -ra dep_ids <<< "$(field "$f" depends_on | tr -d '[],')"
+  blocked_by=""
+  item_missing=0
   for dep in "${dep_ids[@]}"; do
     dep_status="$(status_of_id "$dep")"
-    if [[ "$dep_status" != "DONE" ]]; then
-      echo "FAIL $first_ready: READY but dependency $dep is '$dep_status' (must be DONE before start)"
+    if [[ "$dep_status" == "MISSING" ]]; then
+      echo "FAIL $f: depends_on references unknown item '$dep'"
       fail=1
+      item_missing=1
+    elif [[ "$dep_status" != "DONE" && -z "$blocked_by" ]]; then
+      blocked_by="$dep=$dep_status"
     fi
   done
-fi
+  [[ "$item_missing" -eq 1 ]] && continue
+  if [[ -n "$blocked_by" ]]; then
+    waiting+=("$(field "$f" id) waits for $blocked_by")
+  elif [[ -z "$first_executable" ]]; then
+    first_executable="$f"
+  fi
+done
 
 echo "== summary =="
-echo "items checked:    ${#items[@]}"
-echo "first READY item: ${first_ready:-(none)}"
+echo "items checked:          ${#items[@]}"
+echo "first READY item:       ${first_ready:-(none)}"
+echo "first executable READY: ${first_executable:-(none)}"
+if [[ ${#waiting[@]} -gt 0 ]]; then
+  echo "waiting:"
+  for w in "${waiting[@]}"; do echo "  - $w"; done
+fi
+if [[ -z "$first_executable" && ${#waiting[@]} -gt 0 ]]; then
+  echo "note: no executable READY item — all READY items are waiting on non-DONE dependencies"
+fi
 
 if [[ "$fail" -ne 0 ]]; then
   echo "status: FAIL"
