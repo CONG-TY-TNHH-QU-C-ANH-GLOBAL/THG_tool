@@ -45,48 +45,29 @@ func (p *BusinessProfile) ToPromptBlock() string {
 	if p == nil || !p.IsConfigured() {
 		return "(Business profile not configured — user should describe their business first)"
 	}
+	// Label → value, in prompt order. Blank values are omitted. Data-driven so
+	// the field list stays flat (one write site) instead of N branches (go:S3776).
+	fields := []struct{ label, value string }{
+		{"BUSINESS", p.Name},
+		{"INDUSTRY", p.Industry},
+		{"WHAT WE DO", p.Description},
+		{"PRODUCTS/SERVICES", p.Services},
+		{"IDEAL CUSTOMER", p.Targets},
+		{"TARGET AUTHOR ROLE", p.TargetAuthorRole},
+		{"PREFER POSTS WITH THESE SIGNALS", p.TargetSignals},
+		{"REJECT POSTS WITH THESE SIGNALS", p.NegativeSignals},
+		{"LOCATION", p.Location},
+		{"TARGET MARKETS", p.Markets},
+		{"WHY CHOOSE US", p.USP},
+		{"TONE", p.Tone},
+		{"APPROVAL POLICY", p.ApprovalPolicy},
+		{"IGNORE THESE POSTS", p.RejectRules},
+	}
 	var sb strings.Builder
-	if p.Name != "" {
-		fmt.Fprintf(&sb, "BUSINESS: %s\n", p.Name)
-	}
-	if p.Industry != "" {
-		fmt.Fprintf(&sb, "INDUSTRY: %s\n", p.Industry)
-	}
-	if p.Description != "" {
-		fmt.Fprintf(&sb, "WHAT WE DO: %s\n", p.Description)
-	}
-	if p.Services != "" {
-		fmt.Fprintf(&sb, "PRODUCTS/SERVICES: %s\n", p.Services)
-	}
-	if p.Targets != "" {
-		fmt.Fprintf(&sb, "IDEAL CUSTOMER: %s\n", p.Targets)
-	}
-	if p.TargetAuthorRole != "" {
-		fmt.Fprintf(&sb, "TARGET AUTHOR ROLE: %s\n", p.TargetAuthorRole)
-	}
-	if p.TargetSignals != "" {
-		fmt.Fprintf(&sb, "PREFER POSTS WITH THESE SIGNALS: %s\n", p.TargetSignals)
-	}
-	if p.NegativeSignals != "" {
-		fmt.Fprintf(&sb, "REJECT POSTS WITH THESE SIGNALS: %s\n", p.NegativeSignals)
-	}
-	if p.Location != "" {
-		fmt.Fprintf(&sb, "LOCATION: %s\n", p.Location)
-	}
-	if p.Markets != "" {
-		fmt.Fprintf(&sb, "TARGET MARKETS: %s\n", p.Markets)
-	}
-	if p.USP != "" {
-		fmt.Fprintf(&sb, "WHY CHOOSE US: %s\n", p.USP)
-	}
-	if p.Tone != "" {
-		fmt.Fprintf(&sb, "TONE: %s\n", p.Tone)
-	}
-	if p.ApprovalPolicy != "" {
-		fmt.Fprintf(&sb, "APPROVAL POLICY: %s\n", p.ApprovalPolicy)
-	}
-	if p.RejectRules != "" {
-		fmt.Fprintf(&sb, "IGNORE THESE POSTS: %s\n", p.RejectRules)
+	for _, f := range fields {
+		if f.value != "" {
+			fmt.Fprintf(&sb, "%s: %s\n", f.label, f.value)
+		}
 	}
 	return sb.String()
 }
