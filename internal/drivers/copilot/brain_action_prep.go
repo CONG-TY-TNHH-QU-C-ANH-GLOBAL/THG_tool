@@ -9,16 +9,7 @@ import (
 )
 
 func prepareBrainActionArgs(action BrainAction, gate BrainMarketSignalGate, prompt string, orgID, accountID int64) map[string]any {
-	args := map[string]any{}
-	for k, v := range action.Args {
-		key := strings.ToLower(strings.TrimSpace(k))
-		switch key {
-		case "org_id", "account_id", "auto":
-			continue
-		default:
-			args[k] = v
-		}
-	}
+	args := forwardedBrainArgs(action.Args)
 	if orgID > 0 {
 		args["org_id"] = orgID
 	}
@@ -42,10 +33,30 @@ func prepareBrainActionArgs(action BrainAction, gate BrainMarketSignalGate, prom
 	if brainToolIsOutbound(action.Tool) {
 		args["auto"] = wantsAutoOutbound(prompt)
 	}
-	if gate.TargetRole != "" || len(gate.PositiveSignals) > 0 || len(gate.NegativeSignals) > 0 || len(gate.RejectRules) > 0 {
+	if marketSignalGateActive(gate) {
 		args["market_signal_gate"] = gate
 	}
 	return args
+}
+
+// forwardedBrainArgs copies the planner's action args, dropping the reserved
+// keys (org_id / account_id / auto) that the Go side sets authoritatively.
+func forwardedBrainArgs(src map[string]any) map[string]any {
+	args := map[string]any{}
+	for k, v := range src {
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "org_id", "account_id", "auto":
+			continue
+		default:
+			args[k] = v
+		}
+	}
+	return args
+}
+
+// marketSignalGateActive reports whether the gate carries any targeting signal.
+func marketSignalGateActive(gate BrainMarketSignalGate) bool {
+	return gate.TargetRole != "" || len(gate.PositiveSignals) > 0 || len(gate.NegativeSignals) > 0 || len(gate.RejectRules) > 0
 }
 
 func brainAccounts(accounts []models.Account) []BrainAccount {
