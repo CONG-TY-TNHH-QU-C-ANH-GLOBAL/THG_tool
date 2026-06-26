@@ -1,12 +1,12 @@
 ---
 id: ARCHCP2
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
 branch: "chore/archcp2-agent-preflight-split"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/131
 ---
 
 # ARCHCP2 — Split agent_preflight.go (readiness vs business-context)

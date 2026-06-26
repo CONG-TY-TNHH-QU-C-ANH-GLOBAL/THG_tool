@@ -311,7 +311,8 @@ backlog.
 
 Run `bash scripts/ai_preflight.sh` before editing and `bash scripts/ai_validate.sh`
 before pushing (these wrap `go test ./...`, `go build ./...`, `go vet ./...`, the
-import-boundary + file-size guards, and `git diff --check`). Keep `.mcp.json` and
+import-boundary + file-size + go cognitive-complexity guards, and
+`git diff --check`). Keep `.mcp.json` and
 `specs/knowledge/RETRIEVAL_SOAK_REPORT.md` (a test artifact) out of commits.
 
 ### Stop conditions
@@ -425,6 +426,10 @@ This includes `_test.go` files — a characterization test added to satisfy a
 refactor is New Code and must itself be S3776-clean (extract assertion helpers
 or split into focused tests rather than nesting loops + conditionals). Changed
 production code, scripts, AND tests must all be Sonar-clean before push.
+`scripts/ai_validate.sh` enforces this locally for Go via
+`scripts/go_cognitive_check.sh` (fails on >15 cognitive complexity in changed Go
+files, incl. `_test.go`); see `docs/ai/COGNITIVE_COMPLEXITY_GUARD.md`. It is a
+local approximation — the Sonar New-Code scan on the PR remains authoritative.
 See the `/thg-sonar` move-only learning below.
 
 ### `/thg-sonar <target>` — Sonar / tech-debt cleanup

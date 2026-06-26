@@ -43,6 +43,7 @@ root `specs/` home with this governed taxonomy is tracked as queue item DOCS-R1
 - `docs/ai/ESCALATION_PLAYBOOK.md` — hard-case protocol.
 - `docs/ai/AGENT_REPORT_TEMPLATE.md` — PR report template.
 - `docs/ai/queue/INDEX.md` — architecture/docs decomposition queue map.
+- `docs/ai/COGNITIVE_COMPLEXITY_GUARD.md` — local S3776 approximation run in `ai_validate.sh`.
 
 ## Root Entrypoints
 - `AGENTS.md` — cross-agent entrypoint (thin).
