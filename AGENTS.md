@@ -247,5 +247,5 @@ enforces this (warn-only for legacy root docs).
 ## Autopilot queue
 
 Use `docs/ai/AUTOPILOT_QUEUE.md` as the stable queue index.
-Per-item status lives in `docs/ai/queue/items/*.md`.
+Per-item status lives in `docs/ai/queue/items/**/*.md` (grouped by domain; discovered recursively).
 Do not edit the central queue file in normal work PRs.

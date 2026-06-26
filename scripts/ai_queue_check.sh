@@ -35,9 +35,11 @@ in_list() {
   case " $haystack " in *" $needle "*) return 0;; *) return 1;; esac
 }
 
-shopt -s nullglob
-items=("$items_dir"/*.md)
-shopt -u nullglob
+# Queue items live in domain/component subfolders under $items_dir
+# (e.g. architecture/<component>/, docs/) — discover recursively. Items are
+# grouped by stable domain, never by mutable status; resolution is by the
+# `id:` frontmatter, so physical location does not affect dependency checks.
+mapfile -t items < <(find "$items_dir" -type f -name '*.md' | sort)
 
 # status_of_id ID -> status of the item file whose `id:` matches ID, or "MISSING".
 status_of_id() {
