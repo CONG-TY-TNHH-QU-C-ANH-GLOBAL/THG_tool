@@ -1,11 +1,11 @@
 ---
 id: PR32A
-status: READY
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [PR31E]
 parallel_safe: false
-branch: ""
+branch: test/pr32a-operator-ux-status-flow
 pr_url: ""
 ---
 
@@ -31,3 +31,14 @@ Audit and harden operator-visible status flow: readiness reason -> queue status 
 
 - scripts/ai_preflight.sh
 - scripts/ai_validate.sh
+
+## Result
+
+Characterization-first (test-only). Pinned the execution-result -> operator-visible
+outcome mapping (models.VerifyOutcomeFromExecution full table incl. fail-closed
+default), the verified-success gate (IsVerifiedSuccess), and IsTerminal — the pure
+"queue status -> execution result" stage of the operator status flow. No DTO/wire,
+schema, or behavior change. Readiness-reason stage already covered by PR31A/PR31E.
+
+Audit note: hardening that would alter an operator-facing DTO/wire payload was out
+of scope (constraint: no DTO/wire change unless explicitly reported) — none made.
