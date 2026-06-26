@@ -43,16 +43,23 @@ func TestInferBusinessCalibrationFromPrompt(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			got := inferBusinessCalibrationFromPrompt(c.prompt)
 			for k, want := range c.want {
-				if want == "" {
-					if _, ok := got[k]; ok {
-						t.Errorf("key %q should be absent; got %q", k, got[k])
-					}
-					continue
-				}
-				if got[k] != want {
-					t.Errorf("key %q = %q; want %q (full: %v)", k, got[k], want, got)
-				}
+				assertBusinessField(t, got, k, want)
 			}
 		})
+	}
+}
+
+// assertBusinessField checks one calibration key. want == "" asserts the key is
+// absent; otherwise it asserts the exact value.
+func assertBusinessField(t *testing.T, got map[string]string, key, want string) {
+	t.Helper()
+	if want == "" {
+		if _, ok := got[key]; ok {
+			t.Errorf("key %q should be absent; got %q", key, got[key])
+		}
+		return
+	}
+	if got[key] != want {
+		t.Errorf("key %q = %q; want %q (full: %v)", key, got[key], want, got)
 	}
 }
