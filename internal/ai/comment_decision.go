@@ -95,30 +95,11 @@ func GroundSelection(prop ProposedSelection, candidates []models.KnowledgeCandid
 		}
 	}
 	var stats GroundingStats
-	ground := func(items []ProposedItem, role string, isOffer bool) []models.GroundedItem {
-		var out []models.GroundedItem
-		for _, p := range items {
-			gi, ok := groundForRole(p, role, byAsset, bySKU)
-			if !ok {
-				if isOffer {
-					stats.OfferDropped++
-				}
-				continue
-			}
-			out = append(out, gi)
-			if isOffer {
-				stats.OfferKept++
-				if gi.Score > stats.BestScore {
-					stats.BestScore = gi.Score
-				}
-			}
-		}
-		return out
-	}
+	g := &grounder{byAsset: byAsset, bySKU: bySKU, stats: &stats}
 	sel := models.Selection{
-		Capabilities: ground(prop.Capabilities, roleCapability, true),
-		Products:     ground(prop.Products, roleProduct, true),
-		Proofs:       ground(prop.Proofs, roleProof, true),
+		Capabilities: g.ground(prop.Capabilities, roleCapability, true),
+		Products:     g.ground(prop.Products, roleProduct, true),
+		Proofs:       g.ground(prop.Proofs, roleProof, true),
 	}
 	if prop.CTA != nil {
 		if gi, ok := groundForRole(*prop.CTA, roleCTA, byAsset, bySKU); ok {
