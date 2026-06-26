@@ -1,11 +1,11 @@
 ---
 id: ARCHCP1
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
-branch: ""
+branch: chore/arch-cp1-agent-brain-split
 pr_url: ""
 ---
 

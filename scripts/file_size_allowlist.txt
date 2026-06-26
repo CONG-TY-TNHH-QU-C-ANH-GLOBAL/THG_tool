@@ -58,7 +58,6 @@ internal/store/crawl/intents.go  # 622 lines
 internal/store/coordination/execution_attempts.go  # 612 lines
 internal/server/leads/handlers.go  # 585 lines
 internal/leadingest/ingest.go  # 580 lines
-internal/drivers/copilot/agent_brain.go  # 573 lines
 internal/server/agent/outbox_agent.go  # 560 lines
 internal/agentloop/verifier.go  # 524 lines
 internal/server/auth/onboarding.go  # 516 lines
