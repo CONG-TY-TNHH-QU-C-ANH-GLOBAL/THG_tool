@@ -154,7 +154,6 @@ internal/store/prompts/prompt_memory.go  # 215 lines
 internal/workspace_knowledge/soak/embedder.go  # 210 lines
 internal/mailer/smtp.go  # 208 lines
 internal/server/agent/outbox_dashboard.go  # 208 lines
-cmd/scraper/action_args.go  # 207 lines
 internal/workspace_knowledge/ingestion/csv/columns.go  # 202 lines
 internal/store/knowledge/cost.go  # 201 lines
 internal/store/leads/classification_log.go  # 201 lines
