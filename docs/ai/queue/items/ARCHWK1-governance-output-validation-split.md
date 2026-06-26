@@ -1,6 +1,6 @@
 ---
 id: ARCHWK1
-status: IN_PROGRESS
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
