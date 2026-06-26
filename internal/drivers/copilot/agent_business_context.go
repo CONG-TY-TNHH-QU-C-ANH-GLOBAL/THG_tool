@@ -71,13 +71,41 @@ func (a *Agent) captureBusinessCalibrationFromPrompt(orgID int64, userCtx map[st
 	}
 }
 
+// businessLineRules maps a context line to the business field it fills (set only
+// when still empty and the folded line contains a trigger). markers == nil means
+// "use the whole line"; otherwise the segment after the first marker (segmentAfterAny).
+var businessLineRules = []struct {
+	key      string
+	triggers []string
+	markers  []string
+}{
+	{"business_name", []string{"doanh nghiep", "cong ty", "brand"}, []string{" la ", " ten la ", ":"}},
+	{"services", []string{"dich vu", "mang kinh doanh", "chuyen ho tro", "offer"}, []string{" chinh la ", " la ", ":"}},
+	{"target_customers", []string{roleKwKhachMua, "can tim khach", "seller", "target"}, nil},
+	{"target_signals", []string{"giu lai"}, []string{" la ", ":"}},
+	{"negative_signals", []string{"loai bo", "reject"}, []string{" loai bo ", " la ", ":"}},
+	{"markets", []string{"thi truong", "ship", "my", "trung quoc", "viet nam"}, nil},
+}
+
 func inferBusinessCalibrationFromPrompt(prompt string) map[string]string {
-	clean := strings.TrimSpace(regexp.MustCompile(`https?://\S+`).ReplaceAllString(stripDashboardContext(prompt), ""))
+	clean := cleanBusinessPrompt(prompt)
 	out := map[string]string{}
 	if clean == "" {
 		return out
 	}
+	contextLines := collectBusinessContextLines(clean, out)
+	inferBusinessProfile(out, contextLines, clean)
+	inferTargetAuthorRole(out, clean)
+	return out
+}
 
+func cleanBusinessPrompt(prompt string) string {
+	return strings.TrimSpace(regexp.MustCompile(`https?://\S+`).ReplaceAllString(stripDashboardContext(prompt), ""))
+}
+
+// collectBusinessContextLines walks the non-empty, non-crawl-command lines,
+// filling per-line business fields in out and returning the kept lines.
+func collectBusinessContextLines(clean string, out map[string]string) []string {
 	var contextLines []string
 	for _, raw := range strings.Split(clean, "\n") {
 		line := strings.TrimSpace(raw)
@@ -85,52 +113,65 @@ func inferBusinessCalibrationFromPrompt(prompt string) map[string]string {
 			continue
 		}
 		folded := foldVietnameseForMatch(line)
-		if strings.Contains(folded, "cao ") || strings.Contains(folded, "crawl") || strings.Contains(folded, "scrape") || strings.Contains(folded, "quet ") {
+		if businessLineIsCrawlCommand(folded) {
 			continue
 		}
 		contextLines = append(contextLines, line)
-		if out["business_name"] == "" && (strings.Contains(folded, "doanh nghiep") || strings.Contains(folded, "cong ty") || strings.Contains(folded, "brand")) {
-			out["business_name"] = compactBusinessField(segmentAfterAny(line, []string{" la ", " ten la ", ":"}))
-		}
-		if out["services"] == "" && (strings.Contains(folded, "dich vu") || strings.Contains(folded, "mang kinh doanh") || strings.Contains(folded, "chuyen ho tro") || strings.Contains(folded, "offer")) {
-			out["services"] = compactBusinessField(segmentAfterAny(line, []string{" chinh la ", " la ", ":"}))
-		}
-		if out["target_customers"] == "" && (strings.Contains(folded, roleKwKhachMua) || strings.Contains(folded, "can tim khach") || strings.Contains(folded, "seller") || strings.Contains(folded, "target")) {
-			out["target_customers"] = compactBusinessField(line)
-		}
-		if out["target_signals"] == "" && strings.Contains(folded, "giu lai") {
-			out["target_signals"] = compactBusinessField(segmentAfterAny(line, []string{" la ", ":"}))
-		}
-		if out["negative_signals"] == "" && (strings.Contains(folded, "loai bo") || strings.Contains(folded, "reject")) {
-			out["negative_signals"] = compactBusinessField(segmentAfterAny(line, []string{" loai bo ", " la ", ":"}))
-		}
-		if out["markets"] == "" && (strings.Contains(folded, "thi truong") || strings.Contains(folded, "ship") || strings.Contains(folded, "my") || strings.Contains(folded, "trung quoc") || strings.Contains(folded, "viet nam")) {
-			out["markets"] = compactBusinessField(line)
-		}
+		inferBusinessLineFields(out, line, folded)
 	}
-	if out["business_profile"] == "" {
-		if len(contextLines) > 0 {
-			out["business_profile"] = strings.Join(contextLines, "\n")
-		} else {
-			out["business_profile"] = clean
+	return contextLines
+}
+
+// businessLineIsCrawlCommand reports a crawl/scrape line (excluded from the profile).
+func businessLineIsCrawlCommand(folded string) bool {
+	return containsAnyFolded(folded, []string{"cao ", "crawl", "scrape", "quet "})
+}
+
+// inferBusinessLineFields fills any still-empty field whose trigger the line matches.
+func inferBusinessLineFields(out map[string]string, line, folded string) {
+	for _, rule := range businessLineRules {
+		if out[rule.key] != "" || !containsAnyFolded(folded, rule.triggers) {
+			continue
 		}
+		if rule.markers == nil {
+			out[rule.key] = compactBusinessField(line)
+			continue
+		}
+		out[rule.key] = compactBusinessField(segmentAfterAny(line, rule.markers))
 	}
-	if out["target_author_role"] == "" {
-		folded := foldVietnameseForMatch(clean)
-		switch {
-		case strings.Contains(folded, roleKwUngVien) || strings.Contains(folded, "nhan su") || strings.Contains(folded, "tuyen"):
-			out["target_author_role"] = "candidates"
-		case strings.Contains(folded, "supplier") || strings.Contains(folded, "nha cung cap") || strings.Contains(folded, roleKwDoiTac):
-			if strings.Contains(folded, roleKwKhachMua) || strings.Contains(folded, "tim khach") {
-				out["target_author_role"] = "customers"
-			} else {
-				out["target_author_role"] = "suppliers"
-			}
-		default:
+}
+
+// inferBusinessProfile sets business_profile from the kept lines (or the whole
+// cleaned prompt as a fallback) when it was not set explicitly.
+func inferBusinessProfile(out map[string]string, contextLines []string, clean string) {
+	if out["business_profile"] != "" {
+		return
+	}
+	if len(contextLines) > 0 {
+		out["business_profile"] = strings.Join(contextLines, "\n")
+		return
+	}
+	out["business_profile"] = clean
+}
+
+// inferTargetAuthorRole defaults the audience role when not already inferred.
+func inferTargetAuthorRole(out map[string]string, clean string) {
+	if out["target_author_role"] != "" {
+		return
+	}
+	folded := foldVietnameseForMatch(clean)
+	switch {
+	case containsAnyFolded(folded, []string{roleKwUngVien, "nhan su", "tuyen"}):
+		out["target_author_role"] = "candidates"
+	case containsAnyFolded(folded, []string{"supplier", "nha cung cap", roleKwDoiTac}):
+		if containsAnyFolded(folded, []string{roleKwKhachMua, "tim khach"}) {
 			out["target_author_role"] = "customers"
+		} else {
+			out["target_author_role"] = "suppliers"
 		}
+	default:
+		out["target_author_role"] = "customers"
 	}
-	return out
 }
 
 func segmentAfterAny(line string, markers []string) string {
