@@ -1,12 +1,12 @@
 ---
 id: PR32A
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [PR31E]
 parallel_safe: false
 branch: test/pr32a-operator-ux-status-flow
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/116
 ---
 
 # PR32A — Product-path audit for Facebook automation operator UX

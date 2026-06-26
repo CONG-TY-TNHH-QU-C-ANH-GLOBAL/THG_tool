@@ -406,10 +406,14 @@ reuse the existing queue / escalation / governance docs and validation scripts.
 
 ### `/thg-next` — next safe work item
 
-Pull latest main → `scripts/ai_preflight.sh` → read `docs/ai/AUTOPILOT_QUEUE.md`
-+ `docs/ai/queue/items/**/*.md` → pick the first **executable** READY item (all
-`depends_on` DONE) → one branch → bounded work → `scripts/ai_validate.sh` →
-push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
+Pull latest main → `scripts/ai_preflight.sh` → **auto-reconcile queue state**
+(`scripts/ai_queue_reconcile.sh --apply`: marks `REVIEW` items DONE only when the
+merge is VERIFIED via the GitHub PR `merged_at` field — squash-merge safe, never
+branch ancestry alone; unverifiable items stay REVIEW; never DONE by assumption)
+→ read `docs/ai/AUTOPILOT_QUEUE.md` + `docs/ai/queue/items/**/*.md` → pick the
+first **executable** READY item (all `depends_on` DONE) → one branch → bounded
+work, setting the item's `branch`/`pr_url` frontmatter → `scripts/ai_validate.sh`
+→ push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
 
 ### `/thg-sonar <target>` — Sonar / tech-debt cleanup
 
