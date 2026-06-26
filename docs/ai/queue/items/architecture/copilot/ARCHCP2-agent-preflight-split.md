@@ -1,11 +1,11 @@
 ---
 id: ARCHCP2
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
-branch: ""
+branch: "chore/archcp2-agent-preflight-split"
 pr_url: ""
 ---
 
@@ -24,7 +24,7 @@ agent_preflight.go → agent_account_readiness.go / agent_business_context.go (s
 None (parallel-safe with ARCHCP1).
 
 ## Risk notes
-GREEN — same package, pure extraction. The two concerns don't call each other (verified no cross-couple). Preserve facade names agent.go depends on.
+GREEN — same package, pure extraction. The two concerns don't call each other (verified no cross-couple). Preserve facade names agent.go depends on. Note: business-context exceeded 200 lines on its own, so it was split again into agent_business_context.go (persisted calibration capture) + agent_crawl_targeting.go (ephemeral prompt-scoped crawl signals) to satisfy the file-size guard. All callers are in-package, so no facades were needed.
 
 ## Validation
 go test ./internal/drivers/copilot/... ; ai_validate.sh

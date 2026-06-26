@@ -85,7 +85,6 @@ internal/runtime/cdp_runtime.go  # 391 lines
 internal/ai/universal.go  # 387 lines
 internal/workspace_knowledge/products/canonical.go  # 376 lines
 internal/server/auth/handlers.go  # 371 lines
-internal/drivers/copilot/agent_preflight.go  # 367 lines
 internal/store/outbound_aliases.go  # 366 lines
 internal/server/knowledge/handlers.go  # 363 lines
 internal/store/knowledge/events.go  # 358 lines

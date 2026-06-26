@@ -415,6 +415,18 @@ first **executable** READY item (all `depends_on` DONE) → one branch → bound
 work, setting the item's `branch`/`pr_url` frontmatter → `scripts/ai_validate.sh`
 → push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
 
+**New-Code Sonar checkpoint (architecture splits).** Before pushing a move-only
+split, check every function relocated into a new file for S3776 risk — a moved
+function counts as New Code, so one already over the cognitive-complexity
+threshold is flagged even though the move changed no behavior. Reduce any
+over-threshold moved function in the same PR (flat-dispatch switch, pure helper
+extraction). Applies to Go and shell scripts, not only newly written helpers.
+This includes `_test.go` files — a characterization test added to satisfy a
+refactor is New Code and must itself be S3776-clean (extract assertion helpers
+or split into focused tests rather than nesting loops + conditionals). Changed
+production code, scripts, AND tests must all be Sonar-clean before push.
+See the `/thg-sonar` move-only learning below.
+
 ### `/thg-sonar <target>` — Sonar / tech-debt cleanup
 
 Work only on **true OPEN** Sonar issues (run `scripts/sonar_triage_from_export.py`
