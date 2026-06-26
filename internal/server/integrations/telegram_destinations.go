@@ -12,6 +12,10 @@ import (
 
 const connectCodeTTL = 30 * time.Minute
 
+// errInvalidID is the 400 response body when the destination id path param
+// cannot be parsed. Factored out to avoid a duplicated literal (go:S1192).
+const errInvalidID = "invalid id"
+
 // destinationDTO is the wire shape: decodes event_types and surfaces last_delivery_at; chat_id is
 // never exposed.
 type destinationDTO struct {
@@ -94,7 +98,7 @@ func (h *Handler) connectDestination(c *fiber.Ctx) error {
 func (h *Handler) deleteDestination(c *fiber.Ctx) error {
 	orgID, id, ok := destID(c)
 	if !ok {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 	}
 	okRes, reason := h.deps.Control.DisableDestination(orgID, id)
 	if !okRes {
@@ -107,7 +111,7 @@ func (h *Handler) deleteDestination(c *fiber.Ctx) error {
 func (h *Handler) testDestination(c *fiber.Ctx) error {
 	orgID, id, ok := destID(c)
 	if !ok {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 	}
 	sent, reason := h.deps.Control.TestDestination(orgID, id)
 	if !sent {
@@ -120,7 +124,7 @@ func (h *Handler) testDestination(c *fiber.Ctx) error {
 func (h *Handler) updateDestinationPreferences(c *fiber.Ctx) error {
 	orgID, id, ok := destID(c)
 	if !ok {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return c.Status(400).JSON(fiber.Map{"error": errInvalidID})
 	}
 	var body struct {
 		EventTypes    []string `json:"event_types"`
