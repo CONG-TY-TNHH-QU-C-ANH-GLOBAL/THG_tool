@@ -1,11 +1,11 @@
 ---
 id: ARCHCM1
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
-branch: ""
+branch: chore/arch-cm1-action-args-split
 pr_url: ""
 ---
 
