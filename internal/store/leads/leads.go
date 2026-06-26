@@ -225,13 +225,7 @@ func (s *Store) GetAutomationLeadsForOrg(orgID int64, score string, limit int) (
 		if len(out) >= limit {
 			return
 		}
-		key := strings.TrimSpace(l.AuthorURL)
-		if key == "" {
-			key = strings.TrimSpace(l.SourceURL)
-		}
-		if key == "" {
-			key = fmt.Sprintf("lead:%d", l.ID)
-		}
+		key := leadDedupKey(l)
 		if seen[key] {
 			return
 		}
