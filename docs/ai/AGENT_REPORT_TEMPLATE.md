@@ -13,6 +13,12 @@
 - boundary guard result:
 - Sonar expectation:
 - stop conditions encountered:
+- escalation used? yes/no:
+- escalation class:
+- trigger:
+- options considered:
+- decision:
+- remaining risk:
 - confirmation no forbidden semantics changed:
 - PR URL:
 - do not merge

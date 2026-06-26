@@ -326,3 +326,41 @@ is a successful outcome.
 
 Push only after `ai_validate.sh` passes. **Never merge.** Report using
 `docs/ai/AGENT_REPORT_TEMPLATE.md`.
+
+## Escalation Autopilot Protocol
+
+Claude must not wait for a new external prompt when encountering a hard case. Use this protocol.
+
+Hard cases include:
+- RED ambiguity
+- Sonar issue that requires non-trivial refactor
+- architecture boundary decision
+- missing fake/test seam
+- broad fixture requirement
+- conflicting module ownership
+- behavior ambiguity in controlled zones
+
+Default behavior:
+1. Stop coding briefly and classify the case.
+2. Read `docs/ai/ESCALATION_PLAYBOOK.md`.
+3. Create a short decision record in the final report.
+4. Choose the safest bounded option.
+5. Implement only if safe and reviewable.
+6. Validate with `scripts/ai_preflight.sh` and `scripts/ai_validate.sh`.
+7. Push branch if clean.
+8. Never merge.
+
+Claude may proceed without user approval when:
+- the change is behavior-preserving,
+- the risk is GREEN/YELLOW,
+- the decision is documented,
+- validation passes,
+- controlled-zone semantics are unchanged.
+
+Claude must stop and ask for human decision only when:
+- production data/schema migration is required,
+- auth/security semantics would change,
+- connector CAS/lease/ledger/queue semantics would change,
+- DTO/wire contract would change,
+- external credential/secret/access is required,
+- there are two valid product/business behaviors and code cannot infer the correct one.

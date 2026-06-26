@@ -11,6 +11,12 @@ Claude must pick the first READY item unless the user names a different item.
 - Do not chase unrelated Sonar backlog.
 - Update the item status in the final report only; do not self-edit this file unless explicitly asked.
 
+## Hard-case handling
+
+If a READY task hits RED ambiguity, hard Sonar, architecture uncertainty, or missing fake seam, Claude must use `docs/ai/ESCALATION_PLAYBOOK.md`.
+
+Do not ask for a new prompt by default. Produce a decision record, choose the safest bounded action, validate, push, and report. Stop only for human/business/credential/destructive decisions.
+
 ## Queue
 
 ### READY — PR31D: Facebook crawl session fake seam
@@ -58,3 +64,13 @@ Risk: GREEN
 Goal: Fix low-risk Sonar New Code issues only when explicitly requested.
 Scope:
 - issue-specific files only
+
+### BACKLOG — Escalation-driven hard case
+Risk: RED/YELLOW
+Goal: Use ESCALATION_PLAYBOOK when a normal task hits RED ambiguity, hard Sonar, architecture uncertainty, or missing fake seam.
+Scope:
+- bounded to the current task
+Constraints:
+- decision record required
+- no merge
+- no forbidden semantics change without explicit human approval
