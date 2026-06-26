@@ -234,3 +234,12 @@ For frontend changes, run:
 ```powershell
 npm --prefix frontend run build
 ```
+
+## Documentation Governance
+
+`AGENTS.md` is a thin cross-agent entrypoint — do not put long specs, plans, or
+debt lists here. For where docs live and how to add them, see
+`docs/DOCS_GOVERNANCE.md` and `docs/INDEX.md`. Do not create new root `.md` files
+(only `README.md`, `AGENTS.md`, `CLAUDE.md`, `SPEC_GOVERNANCE.md` are permitted at
+root); new docs go under the correct `docs/*` category. `scripts/check_docs_governance.sh`
+enforces this (warn-only for legacy root docs).

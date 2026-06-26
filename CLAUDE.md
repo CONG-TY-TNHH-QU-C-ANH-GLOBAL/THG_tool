@@ -364,3 +364,19 @@ Claude must stop and ask for human decision only when:
 - DTO/wire contract would change,
 - external credential/secret/access is required,
 - there are two valid product/business behaviors and code cannot infer the correct one.
+
+## Documentation Governance
+
+Keep docs from sprawling. Read `docs/DOCS_GOVERNANCE.md` before creating or moving
+any doc; `docs/INDEX.md` says where things live.
+
+- Do not create new root `.md` docs. Only `README.md`, `AGENTS.md`, `CLAUDE.md`,
+  and `SPEC_GOVERNANCE.md` are permitted at the repo root.
+- Put new docs in the correct `docs/*` category: `business/`, `architecture/`
+  (ADRs under `architecture/decisions/`), `specs/`, `engineering/`, `debt/`, `ai/`.
+- Keep this file concise — it is a thin entrypoint, not a spec dump. Move long
+  procedures into `docs/ai/` (or a short `.claude/rules/` file), and point to them
+  rather than inlining them here.
+- `scripts/check_docs_governance.sh` (wired into the ai_preflight / ai_validate
+  guards) warns on unmanaged root markdown and fails if a required governance doc
+  is missing.

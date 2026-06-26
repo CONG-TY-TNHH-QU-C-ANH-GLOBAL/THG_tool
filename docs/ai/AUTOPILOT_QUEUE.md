@@ -74,3 +74,16 @@ Constraints:
 - decision record required
 - no merge
 - no forbidden semantics change without explicit human approval
+
+### BACKLOG — Docs taxonomy migration
+Risk: GREEN/YELLOW
+Goal: Gradually move legacy root/spec/debt docs into the governed docs taxonomy.
+Scope:
+- root markdown docs
+- specs/governance docs
+- docs/*
+Constraints:
+- no production code
+- preserve history with git mv
+- do not move root AGENTS.md / CLAUDE.md / README.md
+- update references

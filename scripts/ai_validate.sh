@@ -24,6 +24,9 @@ bash scripts/check_import_boundaries.sh
 echo "== file-size guard =="
 python scripts/check_file_size.py
 
+echo "== docs governance guard =="
+bash scripts/check_docs_governance.sh
+
 echo "== git diff --check (whitespace) =="
 git diff --check
 

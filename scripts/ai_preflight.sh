@@ -26,4 +26,8 @@ echo "== file-size guard =="
 python scripts/check_file_size.py
 
 echo
+echo "== docs governance guard =="
+bash scripts/check_docs_governance.sh
+
+echo
 echo "preflight OK"
