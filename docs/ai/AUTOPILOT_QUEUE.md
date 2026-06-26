@@ -88,34 +88,12 @@ Rules:
 
 ### Self-Feeding Architecture Epic (generated 2026-06-26)
 
-Sequenced decomposition queue from a topology scan of `internal/workspace_knowledge`,
-`internal/store`, `internal/server`, `internal/drivers/copilot`, `cmd/scraper`.
-Lanes: GREEN = package-internal pure/file-responsibility cleanup (no import-boundary,
-no DB/auth/ledger/connector/queue/runtime semantics); YELLOW = behavior-preserving
-move-only that crosses an import boundary (sequential, by deps); RED = audit-only,
-`status: BLOCKED`, human decision required (no autonomous implementation). In Go a
-folder move is a package/import-boundary change, so YELLOW items merge sequentially.
-
-GREEN (executable):
-- ARCHWK1 (IN_PROGRESS — this PR): `ARCHWK1-governance-output-validation-split.md`
-- ARCHWK2: `ARCHWK2-products-canonical-split.md`
-- ARCHWK3: `ARCHWK3-retrieval-helpers-rename.md`
-- ARCHST1: `ARCHST1-store-test-fallback-migration.md`
-- ARCHSV1: `ARCHSV1-crawl-direct-post-helper-extract.md`
-- ARCHCP1: `ARCHCP1-agent-brain-split.md`
-- ARCHCP2: `ARCHCP2-agent-preflight-split.md`
-- ARCHCM1: `ARCHCM1-action-args-split.md`
-
-YELLOW (move-only, sequential by deps):
-- ARCHWK4: `ARCHWK4-soak-internal-grouping.md`
-- ARCHSV2 → ARCHSV3, ARCHSV4: agent finalize / crawl_ingest / outbox subpackages
-- ARCHCP3 (needs CP1+CP2) → ARCHCP4: copilot intent / agent subpackages
-- ARCHCM2 (needs CM1+CM-R1) → ARCHCM3 (needs CM2+ST-R3) → ARCHCM4 (needs CM-R1+CM-R2)
-
-RED (audit-only, BLOCKED — human decision):
-- ARCHST-R1 append-only ledger; ARCHST-R2 connector lease/CAS; ARCHST-R3 direct-post boundary
-- ARCHSV-R1 workspace browser-orchestration
-- ARCHCM-R1 account-scope RBAC consolidation; ARCHCM-R2 crawl runtime semantics
+23 sequenced decomposition items (ARCH*) from a topology scan of
+`internal/workspace_knowledge`, `internal/store`, `internal/server`,
+`internal/drivers/copilot`, `cmd/scraper`. The human-readable map — grouped by
+component then lane, with active/next/blocked items, dependency chains, and a
+Mermaid diagram — lives in **[`docs/ai/queue/INDEX.md`](queue/INDEX.md)**. The
+item files under `docs/ai/queue/items/ARCH*.md` remain the source of truth.
 
 ### Backlog (not yet item files)
 
