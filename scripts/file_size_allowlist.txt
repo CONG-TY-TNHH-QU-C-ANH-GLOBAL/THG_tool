@@ -177,7 +177,6 @@ cmd/scraper/outbound_actions_test.go  # 281 lines
 internal/runtime/cdp_runtime_test.go  # 278 lines
 internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher_test.go  # 277 lines
 internal/workspace_knowledge/assembly/context_assembly_test.go  # 268 lines
-internal/workspace_knowledge/soak/gold_dataset.go  # 264 lines
 internal/workspace_knowledge/soak/harness_test.go  # 260 lines
 internal/fburl/fburl_test.go  # 256 lines
 internal/store/knowledge/sources_test.go  # 251 lines
