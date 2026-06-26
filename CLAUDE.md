@@ -420,6 +420,11 @@ mechanical, outside controlled zones) / S2 (YELLOW: S3776/S107 via pure extracti
 per PR; no suppressions, no Sonar config change, no noisy diff. Never touch RED
 zones without explicit approval. One bounded PR, push, never merge.
 
+**S3776 learning:** extracted helpers must not become new S3776; do not move
+complexity from the original function into a new helper. After a split, verify
+each new helper is itself under the cognitive-complexity threshold (if a helper
+still nests loops/conditionals, extract again or re-shape the decomposition).
+
 ### `/thg-red-audit <target>` — controlled zones
 
 For RED zones (auth/security, schema/migrations, queue/outbox,
