@@ -397,3 +397,38 @@ Rules:
 - Run `scripts/ai_validate.sh` before push.
 - Use `docs/ai/ESCALATION_PLAYBOOK.md` for hard cases.
 - Use `docs/DOCS_GOVERNANCE.md` for docs.
+
+## Custom Workflow Commands
+
+THG workflow macros — command contracts, not new source-of-truth specs. Thin
+`.claude/commands/thg-*.md` files invoke them; the behavior lives here. They
+reuse the existing queue / escalation / governance docs and validation scripts.
+
+### `/thg-next` — next safe work item
+
+Pull latest main → `scripts/ai_preflight.sh` → read `docs/ai/AUTOPILOT_QUEUE.md`
++ `docs/ai/queue/items/*.md` → pick the first **executable** READY item (all
+`depends_on` DONE) → one branch → bounded work → `scripts/ai_validate.sh` →
+push when clean. Never merge. Hard cases: `docs/ai/ESCALATION_PLAYBOOK.md`.
+
+### `/thg-sonar <target>` — Sonar / tech-debt cleanup
+
+Work only on **true OPEN** Sonar issues (run `scripts/sonar_triage_from_export.py`
+when a Sonar export JSON is available). Classify S0 (current branch) / S1 (GREEN
+mechanical, outside controlled zones) / S2 (YELLOW: S3776/S107 via pure extraction
++ direct tests) / S3 (RED → `/thg-red-audit`). Prefer GREEN; ≤3–5 pure extractions
+per PR; no suppressions, no Sonar config change, no noisy diff. Never touch RED
+zones without explicit approval. One bounded PR, push, never merge.
+
+### `/thg-red-audit <target>` — controlled zones
+
+For RED zones (auth/security, schema/migrations, queue/outbox,
+action_ledger/execution_attempts, connector CAS/lease, crawler/runtime, DTO/wire):
+do NOT fix autonomously. Produce a decision record (use the `Escalation:` block in
+`docs/ai/ESCALATION_PLAYBOOK.md`) and stop for human approval.
+
+### `/thg-review` — pre-push branch review
+
+Report: changed files, risk lane, forbidden-zone touches, noisy diff, test
+coverage, validation result, Sonar expectation, queue state. Return one verdict:
+**APPROVE / NEEDS FIX-UP / HOLD / VETO**.
