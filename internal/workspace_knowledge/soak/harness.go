@@ -332,48 +332,6 @@ func soakVerdict(out PromptOutcome, intentTags []string, hitCount int) string {
 	}
 }
 
-// computePrecisionAtK: what fraction of returned assets share at
-// least one cluster (tag) with the prompt's expected intent. Proxy
-// for "retrieval was relevant" without ground-truth relevance
-// labels.
-func (h *Harness) computePrecisionAtK(hits []retrieval.Hit, intentTags []string) float64 {
-	if len(hits) == 0 || len(intentTags) == 0 {
-		return 0
-	}
-	wanted := map[string]struct{}{}
-	for _, t := range intentTags {
-		wanted[strings.ToLower(t)] = struct{}{}
-	}
-	relevant := 0
-	for _, h := range hits {
-		if h.Asset == nil {
-			continue
-		}
-		matched := false
-		for _, tag := range h.Asset.Tags {
-			if _, ok := wanted[strings.ToLower(tag)]; ok {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			// Also check title tokens against intent — handles assets
-			// whose tag list is sparse but title is descriptive.
-			titleTokens := tokenise(h.Asset.Title)
-			for _, tok := range titleTokens {
-				if _, ok := wanted[tok]; ok {
-					matched = true
-					break
-				}
-			}
-		}
-		if matched {
-			relevant++
-		}
-	}
-	return float64(relevant) / float64(len(hits))
-}
-
 // measureReplayHealth: verify every recent retrieval event has a
 // well-formed trace. Reads from knowledge_events directly via the
 // existing ListKnowledgeReplayEventsForOrg path.
