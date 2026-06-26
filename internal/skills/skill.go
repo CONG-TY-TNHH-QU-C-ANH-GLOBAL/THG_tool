@@ -161,27 +161,38 @@ func (s *Skill) Validate(in map[string]any) (map[string]any, error) {
 			}
 			continue
 		}
-		switch p.Type {
-		case "int":
-			n, err := coerceInt(raw)
-			if err != nil {
-				return nil, fmt.Errorf("skill %q param %q: %w", s.ID, p.Name, err)
-			}
-			out[p.Name] = n
-		case "bool":
-			out[p.Name] = coerceBool(raw)
-		case "enum":
-			str := strings.TrimSpace(fmt.Sprint(raw))
-			if !containsString(p.Enum, str) {
-				return nil, fmt.Errorf("skill %q param %q: %q not in %v", s.ID, p.Name, str, p.Enum)
-			}
-			out[p.Name] = str
-		default: // string, url
-			str := prompt.SanitizeText(fmt.Sprint(raw), p.MaxLen)
-			out[p.Name] = str
+		v, err := coerceParamValue(s.ID, p, raw)
+		if err != nil {
+			return nil, err
 		}
+		out[p.Name] = v
 	}
 	return out, nil
+}
+
+// coerceParamValue coerces/sanitises one supplied param value against its
+// declared type, returning the normalised value. Pure; extracted from Validate
+// so its per-param loop stays under the cognitive-complexity limit (go:S3776).
+// Untrusted strings are still control-char-stripped via prompt.SanitizeText.
+func coerceParamValue(skillID string, p SkillParam, raw any) (any, error) {
+	switch p.Type {
+	case "int":
+		n, err := coerceInt(raw)
+		if err != nil {
+			return nil, fmt.Errorf("skill %q param %q: %w", skillID, p.Name, err)
+		}
+		return n, nil
+	case "bool":
+		return coerceBool(raw), nil
+	case "enum":
+		str := strings.TrimSpace(fmt.Sprint(raw))
+		if !containsString(p.Enum, str) {
+			return nil, fmt.Errorf("skill %q param %q: %q not in %v", skillID, p.Name, str, p.Enum)
+		}
+		return str, nil
+	default: // string, url
+		return prompt.SanitizeText(fmt.Sprint(raw), p.MaxLen), nil
+	}
 }
 
 func coerceInt(raw any) (int64, error) {
