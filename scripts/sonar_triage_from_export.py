@@ -18,6 +18,7 @@ Usage:
 import argparse
 import collections
 import json
+import os
 import sys
 
 # Substrings that mark a controlled zone (behaviour-sensitive). Path matched
@@ -47,8 +48,21 @@ def lane(issue, path):
     return "GREEN"
 
 
+def validated_export_path(path):
+    """Validate the CLI-supplied export path before opening it: normalise it
+    (resolves ``..``/symlinks) and require an existing regular file with a data
+    extension. Rejects a faulty/unexpected argument with a clear error instead of
+    opening an arbitrary target."""
+    real = os.path.realpath(path)
+    if not os.path.isfile(real):
+        raise ValueError(f"export is not a readable file: {path}")
+    if os.path.splitext(real)[1].lower() not in (".json", ".txt"):
+        raise ValueError(f"export must be a .json/.txt file: {path}")
+    return real
+
+
 def load_open(path):
-    with open(path, encoding="utf-8") as fh:
+    with open(validated_export_path(path), encoding="utf-8") as fh:
         data = json.load(fh)
     issues = data.get("issues", data) if isinstance(data, dict) else data
     return [i for i in issues if i.get("status") == "OPEN"]
