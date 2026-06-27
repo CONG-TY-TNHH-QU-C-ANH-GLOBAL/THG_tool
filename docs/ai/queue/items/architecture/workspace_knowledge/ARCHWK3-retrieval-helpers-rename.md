@@ -1,12 +1,13 @@
 ---
 id: ARCHWK3
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
-branch: ""
+branch: "chore/archwk3-retrieval-helpers-rename"
 pr_url: ""
+boundary_target: prep-extraction
 ---
 
 # ARCHWK3 — Rename retrieval/helpers.go into responsibility files
