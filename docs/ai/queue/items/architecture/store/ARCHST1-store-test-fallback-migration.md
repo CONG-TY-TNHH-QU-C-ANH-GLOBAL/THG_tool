@@ -5,8 +5,9 @@ lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: ""
+branch: "chore/archst1-connectors-test-ownership"
 pr_url: ""
+last_batch: connectors
 ---
 
 # ARCHST1 — Migrate top-level store test fallbacks into owning subpackages
@@ -22,6 +23,18 @@ comment_*_test.go, lead_*_test.go, outbound_*_test.go, threads_test.go, connecto
 
 ## Dependencies
 None, but sequential (touches many test files; keep batches small, one domain per PR).
+
+## Progress (multi-batch — stays READY until all domains migrated)
+- **connectors — DONE (this batch):** moved connector_identity_meta_test.go +
+  connector_pairing_ownership_test.go (already `package store_test`, exported API +
+  local bootstrap helpers, no cycle) → `internal/store/connectors/` as
+  `package connectors_test`. No top-level connector test remains.
+- **threads — needs YELLOW handling (NOT a clean GREEN move):**
+  `threads_test.go::TestSeedThreadForOrg_ConversationGateAllowsFirstSend` calls the
+  UNEXPORTED root method `s.conversationGateForOutbound(...)`. Per the risk note this
+  needs a tiny exported test seam (or leaving that one cross-domain test in root) —
+  classify YELLOW for that batch, don't force it.
+- **remaining (future batches):** coordination, leads, outbound.
 
 ## Risk notes
 GREEN — test-only moves, no production code, no schema/ownership change. Watch for unexported helpers a moved test relied on (may need a tiny exported test seam — if so, classify YELLOW and stop).
