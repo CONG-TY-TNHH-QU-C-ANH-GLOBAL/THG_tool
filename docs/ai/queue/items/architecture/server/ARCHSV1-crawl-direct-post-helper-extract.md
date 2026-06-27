@@ -1,11 +1,11 @@
 ---
 id: ARCHSV1
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
-branch: ""
+branch: "chore/archsv1-direct-post-outcome-extract"
 pr_url: ""
 ---
 

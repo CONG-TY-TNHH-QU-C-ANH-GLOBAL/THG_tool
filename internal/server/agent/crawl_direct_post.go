@@ -138,31 +138,8 @@ func validateDirectPostObservedItem(wf *coordination.DirectPostCommentWorkflow, 
 	return directPostLeadIdentity{primaryURL: primary, postFBID: wf.PostFBID, groupRef: wf.GroupRef}, v
 }
 
-// directPostImportFailureCode decides the terminal code for a FINISHED direct-post import,
-// given whether a valid requested-post lead was force-created (validObserved) and whether an
-// item-level guard already failed the workflow (alreadyFailed). It returns ("", false) when
-// nothing more is needed; otherwise DPErrImportNoObservedItem — the connector finished but
-// the requested post was never positively observed (no silent retry-forever).
-func directPostImportFailureCode(validObserved, alreadyFailed bool) (string, bool) {
-	if validObserved || alreadyFailed {
-		return "", false
-	}
-	return coordination.DPErrImportNoObservedItem, true
-}
-
-// importContextMismatchCode maps a directpost validation reason to the typed terminal
-// workflow error for the ingest path (P1.3C granular codes). Only reached for an item that
-// POSITIVELY matched the requested post id but failed context/content (IdentityMatched).
-func importContextMismatchCode(reason string) string {
-	switch reason {
-	case directpost.ReasonGroupConflict:
-		return coordination.DPErrImportGroupMismatch
-	case directpost.ReasonContentInvalid:
-		return coordination.DPErrImportBoilerplateContent
-	default:
-		return coordination.DPErrImportRejectedByGuard
-	}
-}
+// directPostImportFailureCode and importContextMismatchCode moved to
+// crawl_direct_post_outcome.go (pure outcome classification, same package).
 
 // contentPreview returns a short, single-line, secret-free snippet of post content for
 // diagnostics. Post text is user-visible Facebook content (no cookies/tokens/session).
