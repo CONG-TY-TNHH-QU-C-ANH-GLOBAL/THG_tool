@@ -1,13 +1,14 @@
 ---
 id: ARCHST1
-status: READY
-lane: GREEN
-risk: GREEN
+status: BLOCKED
+lane: YELLOW
+risk: YELLOW
 depends_on: []
 parallel_safe: false
 branch: "chore/archst1-connectors-test-ownership"
 pr_url: ""
 last_batch: connectors
+blocked_on: shared-test-seam-decision
 ---
 
 # ARCHST1 — Migrate top-level store test fallbacks into owning subpackages
@@ -34,10 +35,47 @@ None, but sequential (touches many test files; keep batches small, one domain pe
   UNEXPORTED root method `s.conversationGateForOutbound(...)`. Per the risk note this
   needs a tiny exported test seam (or leaving that one cross-domain test in root) —
   classify YELLOW for that batch, don't force it.
-- **remaining (future batches):** coordination, leads, outbound.
+- **remaining (leads, coordination, outbound) — BLOCKED, reclassified YELLOW
+  (verified 2026-06-27):** these are NOT clean GREEN moves like connectors was.
+  Connectors was uniquely trivial — those tests were already `package store_test`
+  (external), exported-API-only, with local bootstraps. Every remaining root test is
+  `package store` (internal) and coupled to shared root test infrastructure:
+  - **Shared seeders** defined once in root `package store` test files and used across
+    many: `seedUser` / `seedAccount` / `seedLead` / `seedListableLead` /
+    `containsLeadID` / `markLedger` / `newEngagementTestStore` (in
+    lead_engagement_test.go, schema_template_test.go). An external `<domain>_test`
+    package loses access to all of them.
+  - **Raw `db.db` access** (unexported `*Store.db` field) in work_queue_test (1),
+    lead_lifecycle_test (1), lead_engagement_test (4) — invisible to an external test
+    package; needs an exported test seam.
+  - **Cross-domain + RED setup:** e.g. soft_touch_test (nominally leads) drives
+    `db.Coordination().MarkActionLedgerOutcomeByOutbound` (action_ledger — RED) and
+    `QueueOutboundForOrg` (outbound). So a "leads" test is not single-domain and its
+    setup touches controlled zones.
+
+## BLOCKED — E3 shared-test-seam decision (awaiting founder)
+Before any of leads/coordination/outbound can migrate, the shared test scaffolding
+needs a home reachable from external `<domain>_test` packages. Options:
+
+- **Option A — build the shared seam first (YELLOW infra PR, recommended):** relocate
+  the shared seeders (`seedUser`/`seedAccount`/`seedLead`/`containsLeadID`/`markLedger`)
+  into an exported `internal/store/storetest` (or a `storetest`-adjacent) helper, add a
+  per-subpackage `newXStore` wrapper (canonical shape: `knowledge/testing_helpers_test.go`),
+  and decide where cross-domain tests live (the test belongs to the domain it asserts,
+  even if setup spans others). Then the per-domain moves become mechanical.
+- **Option B — defer:** connectors (the only pre-migrated domain) is done; the root
+  `package store` tests still pass and own no extracted-subpackage gap that breaks CI.
+  Leave the rest until the seam is prioritised.
+- **Option C — partial, leave cross-domain in root:** only move tests that are
+  single-domain + exported-API-only + db.db-free. Survey found NONE among
+  leads/coordination/outbound (all share seeders or touch db.db / RED setup), so this
+  yields nothing today.
 
 ## Risk notes
-GREEN — test-only moves, no production code, no schema/ownership change. Watch for unexported helpers a moved test relied on (may need a tiny exported test seam — if so, classify YELLOW and stop).
+Connectors batch was GREEN (test-only, self-contained). Remaining domains are YELLOW:
+they need a shared-seam design (Option A) — do not force a per-file move that would
+duplicate seeders or reach into `db.db` / action_ledger. Per the item's own rule
+("may need a tiny exported test seam — if so, classify YELLOW and stop"), stopped here.
 
 ## Validation
 go test ./internal/store/... ; ai_validate.sh
