@@ -77,7 +77,6 @@ internal/store/prompts/prompt_routing.go  # 422 lines
 internal/store/app_store.go  # 416 lines
 internal/server/org/superadmin.go  # 413 lines
 services/agent-brain/brain.py  # 411 lines
-internal/workspace_knowledge/soak/harness.go  # 410 lines
 cmd/scraper/skills_register.go  # 408 lines
 internal/store/leads/lead_engagement.go  # 393 lines
 internal/runtime/cdp_runtime.go  # 391 lines
