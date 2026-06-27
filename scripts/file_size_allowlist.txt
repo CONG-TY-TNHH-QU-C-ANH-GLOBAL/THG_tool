@@ -163,7 +163,6 @@ internal/store/knowledge/assets_test.go  # 411 lines
 internal/store/outbound_transition_test.go  # 351 lines
 internal/store/crawl_intents_test.go  # 330 lines
 internal/workspace_knowledge/products/canonical_test.go  # 320 lines
-internal/workspace_knowledge/soak/fixtures.go  # 311 lines
 cmd/scraper/outbound_actions_test.go  # 281 lines
 internal/runtime/cdp_runtime_test.go  # 278 lines
 internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher_test.go  # 277 lines
