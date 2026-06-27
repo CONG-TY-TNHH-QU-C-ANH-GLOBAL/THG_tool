@@ -7,7 +7,6 @@ import (
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/jobs"
-	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/skills"
 	"github.com/thg/scraper/internal/store"
 )
@@ -337,18 +336,10 @@ func scaffoldFanpageInboxRun(deps builtinSkillDeps) skills.SkillRun {
 		// Smoke test: confirm the org has at least one logged-in account so
 		// the scaffold message reflects whether the live skill could run.
 		if env.OrgID > 0 && deps.db != nil {
-			if accounts, err := deps.db.Identities().GetAllAccounts(env.OrgID); err == nil {
-				ready := 0
-				for _, a := range accounts {
-					if a.Platform == models.PlatformFacebook && a.BrowserLoggedIn && a.Status == models.AccountActive {
-						ready++
-					}
-				}
-				if ready == 0 {
-					return skills.SkillResult{
-						Summary: fmt.Sprintf("scan_fanpage_inbox: chưa có account Facebook logged-in cho org %d. Ghép THG Chrome Extension và mở tab Facebook đã đăng nhập trước đã.", env.OrgID),
-					}, nil
-				}
+			if accounts, err := deps.db.Identities().GetAllAccounts(env.OrgID); err == nil && countReadyFacebookAccounts(accounts) == 0 {
+				return skills.SkillResult{
+					Summary: fmt.Sprintf("scan_fanpage_inbox: chưa có account Facebook logged-in cho org %d. Ghép THG Chrome Extension và mở tab Facebook đã đăng nhập trước đã.", env.OrgID),
+				}, nil
 			}
 		}
 		return skills.SkillResult{
