@@ -9,6 +9,7 @@ branch: "chore/archst1-connectors-test-ownership"
 pr_url: ""
 last_batch: connectors
 blocked_on: shared-test-seam-decision
+boundary_target: store-test-seam
 ---
 
 # ARCHST1 — Migrate top-level store test fallbacks into owning subpackages

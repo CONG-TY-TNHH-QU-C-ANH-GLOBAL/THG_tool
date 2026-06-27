@@ -8,6 +8,7 @@ parallel_safe: false
 branch: ""
 pr_url: ""
 blocked_on: human-decision
+boundary_target: blocked-decision
 ---
 
 # ARCHSV-R2 — AUDIT: unwired runtime_feed handler (dead code: delete vs wire)

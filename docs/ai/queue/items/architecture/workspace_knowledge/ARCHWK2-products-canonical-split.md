@@ -1,12 +1,12 @@
 ---
 id: ARCHWK2
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
 branch: "chore/archwk2-products-canonical-split"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/143
 ---
 
 # ARCHWK2 — Split products/canonical.go by responsibility
