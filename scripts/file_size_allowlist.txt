@@ -66,7 +66,6 @@ internal/runtime/verifier.go  # 493 lines
 internal/ai/comment_decision.go  # 490 lines
 internal/store/coordination/behaviour_profile.go  # 458 lines
 internal/drivers/copilot/agent.go  # 450 lines
-internal/workspace_knowledge/soak/report.go  # 450 lines
 internal/store/identities/accounts.go  # 449 lines
 internal/jobhandlers/facebook_crawl/handler.go  # 440 lines
 internal/workspace/workspace.go  # 432 lines
