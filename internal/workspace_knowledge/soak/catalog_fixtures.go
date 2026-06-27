@@ -26,6 +26,27 @@ type CatalogFixture struct {
 	Boost  int
 }
 
+// textAsset builds a non-product fixture (policy / CTA / banned claim, or a
+// payload-less product). Collapses the repeated literal shape so the catalog
+// list stays DRY; values are unchanged.
+func textAsset(id string, typ assets.AssetType, title, desc string, tags ...string) CatalogFixture {
+	return CatalogFixture{ExternalID: id, Type: typ, Title: title, Description: desc, Tags: tags}
+}
+
+// podProduct builds a POD-product fixture with a wholesale-price payload. Reuses
+// textAsset so the shared field shape lives in exactly one place.
+func podProduct(id, title, desc, price string, tags ...string) CatalogFixture {
+	c := textAsset(id, assets.AssetPODProduct, title, desc, tags...)
+	c.Payload = map[string]any{"price": price}
+	return c
+}
+
+// Fixture modifiers — value receivers return a modified copy so they chain off a
+// builder inside the slice literal (e.g. textAsset(...).pinned()).
+func (c CatalogFixture) pinned() CatalogFixture                       { c.Pinned = true; return c }
+func (c CatalogFixture) boosted(b int) CatalogFixture                 { c.Boost = b; return c }
+func (c CatalogFixture) withState(s assets.AssetState) CatalogFixture { c.State = s; return c }
+
 // RealisticCatalog returns a curated POD/fulfillment catalog
 // matching the actual workspace this system serves. ~25 assets
 // spanning products, policies, CTAs, and one banned claim.
@@ -42,150 +63,34 @@ type CatalogFixture struct {
 func RealisticCatalog() []CatalogFixture {
 	return []CatalogFixture{
 		// --- Cat-niche products ---
-		{
-			ExternalID:  "shopify_cat_tee_001",
-			Type:        assets.AssetPODProduct,
-			Title:       "Custom Cat Tee — Unisex Heavyweight",
-			Description: "Premium ring-spun cotton, 6.1oz. POD with 7-day production.",
-			Tags:        []string{"cat", "tee", "unisex", "heavyweight", "pod"},
-			Payload:     map[string]any{"price": "$18.50 wholesale"},
-		},
-		{
-			ExternalID:  "shopify_cat_mug_002",
-			Type:        assets.AssetPODProduct,
-			Title:       "Cat Lover Ceramic Mug 11oz",
-			Description: "Dishwasher safe, full-wrap sublimation print.",
-			Tags:        []string{"cat", "mug", "ceramic", "pet"},
-			Payload:     map[string]any{"price": "$7.20 wholesale"},
-		},
-		{
-			ExternalID:  "shopify_cat_hoodie_003",
-			Type:        assets.AssetPODProduct,
-			Title:       "Cat Mom Oversized Hoodie — Streetwear",
-			Description: "50/50 blend, baggy fit. DTG print on heavyweight blanks.",
-			Tags:        []string{"cat", "hoodie", "oversized", "streetwear", "mom"},
-			Payload:     map[string]any{"price": "$22.00 wholesale"},
-		},
+		podProduct("shopify_cat_tee_001", "Custom Cat Tee — Unisex Heavyweight", "Premium ring-spun cotton, 6.1oz. POD with 7-day production.", "$18.50 wholesale", "cat", "tee", "unisex", "heavyweight", "pod"),
+		podProduct("shopify_cat_mug_002", "Cat Lover Ceramic Mug 11oz", "Dishwasher safe, full-wrap sublimation print.", "$7.20 wholesale", "cat", "mug", "ceramic", "pet"),
+		podProduct("shopify_cat_hoodie_003", "Cat Mom Oversized Hoodie — Streetwear", "50/50 blend, baggy fit. DTG print on heavyweight blanks.", "$22.00 wholesale", "cat", "hoodie", "oversized", "streetwear", "mom"),
 		// --- Dog-niche products ---
-		{
-			ExternalID:  "shopify_dog_hoodie_004",
-			Type:        assets.AssetPODProduct,
-			Title:       "Custom Dog Dad Pullover Hoodie",
-			Description: "Soft-hand DTG print on midweight cotton-poly hoodie.",
-			Tags:        []string{"dog", "hoodie", "dad", "pullover", "pod"},
-			Payload:     map[string]any{"price": "$22.00 wholesale"},
-		},
-		{
-			ExternalID:  "shopify_dog_bandana_005",
-			Type:        assets.AssetPODProduct,
-			Title:       "Personalised Dog Bandana — Cotton Twill",
-			Description: "Custom pet name + tag-friendly cotton twill bandana.",
-			Tags:        []string{"dog", "bandana", "pet", "personalised"},
-			Payload:     map[string]any{"price": "$6.50 wholesale"},
-		},
+		podProduct("shopify_dog_hoodie_004", "Custom Dog Dad Pullover Hoodie", "Soft-hand DTG print on midweight cotton-poly hoodie.", "$22.00 wholesale", "dog", "hoodie", "dad", "pullover", "pod"),
+		podProduct("shopify_dog_bandana_005", "Personalised Dog Bandana — Cotton Twill", "Custom pet name + tag-friendly cotton twill bandana.", "$6.50 wholesale", "dog", "bandana", "pet", "personalised"),
 		// --- Aesthetic / niche-style products ---
-		{
-			ExternalID:  "csv_anime_tee_006",
-			Type:        assets.AssetPODProduct,
-			Title:       "Anime Gothic Oversized Tee — Black",
-			Description: "Dark anime-inspired streetwear; oversized fit, edgy designs.",
-			Tags:        []string{"anime", "gothic", "oversized", "tee", "streetwear"},
-			Payload:     map[string]any{"price": "$24.00 wholesale"},
-		},
-		{
-			ExternalID:  "csv_kawaii_hoodie_007",
-			Type:        assets.AssetPODProduct,
-			Title:       "Kawaii Pastel Hoodie — Y2K Aesthetic",
-			Description: "Soft pastel colourways, Japanese-inspired graphics.",
-			Tags:        []string{"anime", "kawaii", "hoodie", "pastel"},
-			Payload:     map[string]any{"price": "$26.00 wholesale"},
-		},
+		podProduct("csv_anime_tee_006", "Anime Gothic Oversized Tee — Black", "Dark anime-inspired streetwear; oversized fit, edgy designs.", "$24.00 wholesale", "anime", "gothic", "oversized", "tee", "streetwear"),
+		podProduct("csv_kawaii_hoodie_007", "Kawaii Pastel Hoodie — Y2K Aesthetic", "Soft pastel colourways, Japanese-inspired graphics.", "$26.00 wholesale", "anime", "kawaii", "hoodie", "pastel"),
 		// --- Shipping / policy assets ---
-		{
-			ExternalID:  "notion_shipping_sla_008",
-			Type:        assets.AssetShippingPolicy,
-			Title:       "Shipping & Production SLA",
-			Description: "Production 3-7 days. US transit 5-10 days. EU transit 8-14 days. Tracking included.",
-			Tags:        []string{"shipping", "sla", "us", "eu", "fulfillment"},
-		},
-		{
-			ExternalID:  "notion_returns_009",
-			Type:        assets.AssetShippingPolicy,
-			Title:       "Returns & Refunds Policy v3",
-			Description: "90-day defect warranty. POD products are made-to-order; non-defect returns not accepted.",
-			Tags:        []string{"returns", "refunds", "policy", "warranty"},
-		},
-		{
-			ExternalID:  "sheet_pricing_010",
-			Type:        assets.AssetPricingRule,
-			Title:       "Wholesale Pricing Tier",
-			Description: "MOQ 20 = 5% off. MOQ 100 = 15% off. MOQ 500 = 25% off plus dedicated rep.",
-			Tags:        []string{"pricing", "wholesale", "moq", "tier"},
-		},
+		textAsset("notion_shipping_sla_008", assets.AssetShippingPolicy, "Shipping & Production SLA", "Production 3-7 days. US transit 5-10 days. EU transit 8-14 days. Tracking included.", "shipping", "sla", "us", "eu", "fulfillment"),
+		textAsset("notion_returns_009", assets.AssetShippingPolicy, "Returns & Refunds Policy v3", "90-day defect warranty. POD products are made-to-order; non-defect returns not accepted.", "returns", "refunds", "policy", "warranty"),
+		textAsset("sheet_pricing_010", assets.AssetPricingRule, "Wholesale Pricing Tier", "MOQ 20 = 5% off. MOQ 100 = 15% off. MOQ 500 = 25% off plus dedicated rep.", "pricing", "wholesale", "moq", "tier"),
 		// --- CTAs ---
-		{
-			ExternalID:  "notion_cta_vi_dm_011",
-			Type:        assets.AssetCTA,
-			Title:       "Soft CTA — Vietnamese DM Invite",
-			Description: "Inbox mình nhé, mình gửi catalog chi tiết và giá sỉ riêng.",
-			Tags:        []string{"cta", "vi", "inbox", "dm"},
-		},
-		{
-			ExternalID:  "notion_cta_en_dm_012",
-			Type:        assets.AssetCTA,
-			Title:       "Soft CTA — English DM Invite",
-			Description: "DM me for the full catalog and wholesale pricing.",
-			Tags:        []string{"cta", "en", "dm"},
-		},
-		// --- Compliance asset — banned claim ---
-		// Banned: must NEVER surface in retrieval results regardless
-		// of query. The soak verifies this.
-		{
-			ExternalID:  "compliance_banned_001",
-			Type:        assets.AssetBannedClaim,
-			Title:       "Banned: best price guaranteed",
-			Description: "Cannot prove. FTC Section 5 risk. Block in all outbound text.",
-			Tags:        []string{"compliance", "banned", "guaranteed"},
-		},
-		// --- Operator-pinned CTA ---
-		// This CTA is pinned + zero-score on most queries — soak
+		textAsset("notion_cta_vi_dm_011", assets.AssetCTA, "Soft CTA — Vietnamese DM Invite", "Inbox mình nhé, mình gửi catalog chi tiết và giá sỉ riêng.", "cta", "vi", "inbox", "dm"),
+		textAsset("notion_cta_en_dm_012", assets.AssetCTA, "Soft CTA — English DM Invite", "DM me for the full catalog and wholesale pricing.", "cta", "en", "dm"),
+		// --- Compliance asset — banned claim. Banned: must NEVER surface in
+		// retrieval results regardless of query. The soak verifies this.
+		textAsset("compliance_banned_001", assets.AssetBannedClaim, "Banned: best price guaranteed", "Cannot prove. FTC Section 5 risk. Block in all outbound text.", "compliance", "banned", "guaranteed"),
+		// --- Operator-pinned CTA. Pinned + zero-score on most queries — soak
 		// must surface it via the pin path, not the semantic path.
-		{
-			ExternalID:  "notion_pinned_cta_013",
-			Type:        assets.AssetCTA,
-			Title:       "PINNED CTA — Wholesale enquiry",
-			Description: "For wholesale enquiries, message us with your MOQ + target market.",
-			Tags:        []string{"cta", "wholesale", "pinned"},
-			Pinned:      true,
-		},
+		textAsset("notion_pinned_cta_013", assets.AssetCTA, "PINNED CTA — Wholesale enquiry", "For wholesale enquiries, message us with your MOQ + target market.", "cta", "wholesale", "pinned").pinned(),
 		// --- Boosted seasonal product ---
-		{
-			ExternalID:  "csv_seasonal_014",
-			Type:        assets.AssetPODProduct,
-			Title:       "Christmas Cat Sweater — Pre-order",
-			Description: "Q4 seasonal. 45-day lead time. Pre-orders open Aug.",
-			Tags:        []string{"cat", "seasonal", "christmas", "preorder"},
-			Payload:     map[string]any{"price": "$21.00 wholesale"},
-			Boost:       60,
-		},
+		podProduct("csv_seasonal_014", "Christmas Cat Sweater — Pre-order", "Q4 seasonal. 45-day lead time. Pre-orders open Aug.", "$21.00 wholesale", "cat", "seasonal", "christmas", "preorder").boosted(60),
 		// --- Hidden asset (must never appear in approved-only results) ---
-		{
-			ExternalID:  "csv_hidden_015",
-			Type:        assets.AssetPODProduct,
-			Title:       "Generic Plain Tote — Low Margin",
-			Description: "No design. Considered low-margin filler SKU.",
-			Tags:        []string{"tote", "plain"},
-			State:       assets.StateHidden,
-		},
+		textAsset("csv_hidden_015", assets.AssetPODProduct, "Generic Plain Tote — Low Margin", "No design. Considered low-margin filler SKU.", "tote", "plain").withState(assets.StateHidden),
 		// --- Pending asset (not yet approved by operator) ---
-		{
-			ExternalID:  "csv_pending_016",
-			Type:        assets.AssetPODProduct,
-			Title:       "Halloween Bat Tee — Awaiting approval",
-			Description: "Operator has not reviewed this CSV row yet.",
-			Tags:        []string{"halloween", "tee", "seasonal"},
-			State:       assets.StatePending,
-		},
+		textAsset("csv_pending_016", assets.AssetPODProduct, "Halloween Bat Tee — Awaiting approval", "Operator has not reviewed this CSV row yet.", "halloween", "tee", "seasonal").withState(assets.StatePending),
 	}
 }
 
