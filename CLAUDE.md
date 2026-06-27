@@ -432,6 +432,27 @@ files, incl. `_test.go`); see `docs/ai/COGNITIVE_COMPLEXITY_GUARD.md`. It is a
 local approximation — the Sonar New-Code scan on the PR remains authoritative.
 See the `/thg-sonar` move-only learning below.
 
+### `/thg-architect` — Architect Sprint Mode
+
+Alias: `/thg-next architect-sprint`. Authority: **`docs/ai/ARCHITECT_SPRINT_MODE.md`**
+(full protocol). Same safety guards as `/thg-next`; what changes is the *cadence*.
+
+Operate as a senior system architect, not a mechanical file-splitter: the user
+gives the architecture goal, Claude picks the highest-leverage safe slice. State
+selected item / lane / risk / `boundary_target` / target boundary / feasibility
+result BEFORE code (Boundary Migration Playbook §3 is the authority). Throughput:
+GREEN finishes the whole safe same-package batch and combines coherent batches (no
+import-boundary or behavior change); YELLOW is one real seam per PR with
+characterization tests + import-cycle/call-site/export-count report; RED/BLOCKED is
+audit-only — a decision PR with A/B/C options and a recommended default, never
+auto-coded. Controlled parallelism: max 2 open PRs, disjoint package roots, never
+the same item file, never parallel RED/migration/auth/CAS/ledger/outbox. New Code
+Sonar = 0 (no suppressions, no config change; `go_cognitive_check` before push;
+fixture builders over suppression for duplication). PR size is a soft budget — a
+coherent multi-file GREEN PR is fine; justify any over-size PR; never split if it
+makes the architecture worse. End with the Architect Sprint report (protocol §8).
+Push one branch per PR. Never merge.
+
 ### `/thg-sonar <target>` — Sonar / tech-debt cleanup
 
 Work only on **true OPEN** Sonar issues (run `scripts/sonar_triage_from_export.py`
