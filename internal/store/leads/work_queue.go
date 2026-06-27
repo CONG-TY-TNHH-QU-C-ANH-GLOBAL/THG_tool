@@ -39,34 +39,40 @@ func (s *Store) GetWorkQueue(ctx context.Context, orgID int64, opts models.WorkQ
 		}
 		leads = append(leads, archived...)
 	}
-	wantCoverage := opts.ComputeCoverage || opts.ActorAccountID > 0
 	now := time.Now()
 
 	items := make([]models.WorkQueueItem, 0, len(leads))
 	for _, lead := range leads {
-		lc := s.lifecycleForCandidate(ctx, orgID, lead, opts.Policy)
-		// The light candidate projection skips the archived_at read (candidates are
-		// non-archived by construction). For the explicitly-appended archived leads use
-		// the full projection so they carry freshness=archived + the reason.
-		if archivedIDs[lead.ID] {
-			if full, ferr := s.GetLeadLifecycle(ctx, orgID, lead.ID, opts.Policy); ferr == nil {
-				lc = *full
-			}
+		if item, ok := s.workQueueItemFor(ctx, orgID, lead, opts, archivedIDs[lead.ID], now); ok {
+			items = append(items, item)
 		}
-		if !opts.StateAllowed(lc.FreshnessState) {
-			continue
-		}
-		item := models.WorkQueueItem{Lead: lead, Lifecycle: lc}
-		if wantCoverage {
-			s.attachCoverage(ctx, orgID, &item, opts, now)
-		}
-		items = append(items, item)
 	}
 	models.SortWorkQueue(items)
 	if opts.Limit > 0 && len(items) > opts.Limit {
 		items = items[:opts.Limit]
 	}
 	return items, nil
+}
+
+// workQueueItemFor projects one candidate into a WorkQueueItem, returning ok=false
+// when the lead's freshness state is filtered out by the options. Extracted from
+// GetWorkQueue's loop body; behavior unchanged. archived selects the full lifecycle
+// projection (freshness=archived + reason) for explicitly-appended archived leads.
+func (s *Store) workQueueItemFor(ctx context.Context, orgID int64, lead models.Lead, opts models.WorkQueueOptions, archived bool, now time.Time) (models.WorkQueueItem, bool) {
+	lc := s.lifecycleForCandidate(ctx, orgID, lead, opts.Policy)
+	if archived {
+		if full, ferr := s.GetLeadLifecycle(ctx, orgID, lead.ID, opts.Policy); ferr == nil {
+			lc = *full
+		}
+	}
+	if !opts.StateAllowed(lc.FreshnessState) {
+		return models.WorkQueueItem{}, false
+	}
+	item := models.WorkQueueItem{Lead: lead, Lifecycle: lc}
+	if opts.ComputeCoverage || opts.ActorAccountID > 0 {
+		s.attachCoverage(ctx, orgID, &item, opts, now)
+	}
+	return item, true
 }
 
 // WorkQueueLeads returns just the lifecycle-ordered, act-now candidate leads the planner

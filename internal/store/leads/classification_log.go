@@ -159,43 +159,8 @@ func (s *Store) SummariseClassifications(ctx context.Context, orgID int64, taskI
 		if err := rows.Scan(&decision, &intent, &reason); err != nil {
 			return nil, err
 		}
-		out.Total++
-		switch decision {
-		case ClassificationKept:
-			out.Kept++
-		case ClassificationRejected, ClassificationCold:
-			out.Rejected++
-			key := strings.TrimSpace(intent)
-			if key == "" {
-				key = "(no intent)"
-			}
-			out.ByIntent[key]++
-			r := strings.TrimSpace(reason)
-			if r != "" {
-				reasonHits[r]++
-			}
-		}
+		accumulateClassificationRow(out, reasonHits, decision, intent, reason)
 	}
-	// Top-10 reasons.
-	type kv struct {
-		k string
-		v int
-	}
-	arr := make([]kv, 0, len(reasonHits))
-	for k, v := range reasonHits {
-		arr = append(arr, kv{k, v})
-	}
-	for i := 1; i < len(arr); i++ {
-		for j := i; j > 0 && arr[j].v > arr[j-1].v; j-- {
-			arr[j-1], arr[j] = arr[j], arr[j-1]
-		}
-	}
-	if len(arr) > 10 {
-		arr = arr[:10]
-	}
-	out.ByReason = make([]ReasonCount, len(arr))
-	for i, kv := range arr {
-		out.ByReason[i] = ReasonCount{Reason: kv.k, Count: kv.v}
-	}
+	out.ByReason = topReasons(reasonHits, 10)
 	return out, nil
 }
