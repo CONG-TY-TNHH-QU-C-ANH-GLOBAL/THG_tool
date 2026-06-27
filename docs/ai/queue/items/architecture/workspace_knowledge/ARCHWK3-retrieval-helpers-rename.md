@@ -1,12 +1,12 @@
 ---
 id: ARCHWK3
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
 branch: "chore/archwk3-retrieval-helpers-rename"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/145
 boundary_target: prep-extraction
 ---
 
