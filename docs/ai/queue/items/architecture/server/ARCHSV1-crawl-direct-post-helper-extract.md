@@ -1,12 +1,12 @@
 ---
 id: ARCHSV1
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
 branch: "chore/archsv1-direct-post-outcome-extract"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/134
 ---
 
 # ARCHSV1 — Extract crawl_direct_post outcome-classification helpers
