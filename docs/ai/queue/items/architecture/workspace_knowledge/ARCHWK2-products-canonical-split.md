@@ -1,11 +1,11 @@
 ---
 id: ARCHWK2
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: true
-branch: ""
+branch: "chore/archwk2-products-canonical-split"
 pr_url: ""
 ---
 
