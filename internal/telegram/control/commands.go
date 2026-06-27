@@ -1,6 +1,9 @@
 package control
 
-import "github.com/thg/scraper/internal/telegram/render"
+import (
+	tgstore "github.com/thg/scraper/internal/store/telegram"
+	"github.com/thg/scraper/internal/telegram/render"
+)
 
 // IncomingMessage is the channel-neutral, already-extracted Telegram message the webhook hands to
 // the domain. The webhook stays thin: parse JSON → fill this → HandleMessage.
@@ -49,7 +52,13 @@ func (s *Service) HandleMessage(m IncomingMessage) error {
 		_ = s.store.UpdateLastCommand(m.TgUserID)
 		s.audit(bindings[0].OrgID, 0, m.TgUserID, AuditCommandReceived, cmd, "")
 	}
+	return s.handleBoundCommand(m, cmd, bindings, bound)
+}
 
+// handleBoundCommand answers the binding-aware commands (/status, /unbind) and
+// falls back to Unknown. Extracted from HandleMessage's dispatch switch; behavior
+// unchanged (an unbound user still gets the unbound variant).
+func (s *Service) handleBoundCommand(m IncomingMessage, cmd string, bindings []tgstore.Binding, bound bool) error {
 	switch cmd {
 	case CmdStatus:
 		if !bound {

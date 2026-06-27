@@ -98,23 +98,8 @@ func (c *Classifier) buildDynamicSystemPrompt() string {
 	// If this is a recruitment business, also inject open jobs for scoring
 	if strings.Contains(strings.ToLower(profile.Industry), "recruit") ||
 		strings.EqualFold(userCtx["active_niche"], "tuyen_dung") {
-		if jobs, err := c.db.App().GetActiveCareerJobs(); err == nil && len(jobs) > 0 {
-			sb.WriteString("\nOPEN POSITIONS:\n")
-			for _, j := range jobs {
-				line := fmt.Sprintf("- %s", j.Title)
-				if j.Location != "" {
-					line += " (" + j.Location + ")"
-				}
-				if j.Requirements != "" {
-					req := j.Requirements
-					if len(req) > 150 {
-						req = req[:150]
-					}
-					line += ": " + req
-				}
-				sb.WriteString(line + "\n")
-			}
-			sb.WriteString("Score candidates based on fit to these positions.\n")
+		if jobs, err := c.db.App().GetActiveCareerJobs(); err == nil {
+			sb.WriteString(formatOpenPositions(jobs))
 		}
 	}
 
@@ -132,6 +117,33 @@ SCORING SCALE:
 
 Respond ONLY in valid JSON format.`)
 
+	return sb.String()
+}
+
+// formatOpenPositions renders the OPEN POSITIONS prompt block for recruitment
+// businesses (requirements clipped to 150 chars). Pure — no DB. Returns "" when
+// there are no jobs. Extracted from buildDynamicSystemPrompt; behavior unchanged.
+func formatOpenPositions(jobs []models.CareerJob) string {
+	if len(jobs) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\nOPEN POSITIONS:\n")
+	for _, j := range jobs {
+		line := fmt.Sprintf("- %s", j.Title)
+		if j.Location != "" {
+			line += " (" + j.Location + ")"
+		}
+		if j.Requirements != "" {
+			req := j.Requirements
+			if len(req) > 150 {
+				req = req[:150]
+			}
+			line += ": " + req
+		}
+		sb.WriteString(line + "\n")
+	}
+	sb.WriteString("Score candidates based on fit to these positions.\n")
 	return sb.String()
 }
 
