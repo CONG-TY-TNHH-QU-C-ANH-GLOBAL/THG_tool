@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 )
@@ -145,55 +144,8 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 500 {
-		return nil, WrapRecoverable(fmt.Errorf("openai embedder: HTTP %d", resp.StatusCode))
+	if statusErr := embedHTTPStatusError(resp); statusErr != nil {
+		return nil, statusErr
 	}
-	if resp.StatusCode == 429 {
-		// Rate limit — recoverable but with operator visibility. The
-		// worker's exponential backoff will accommodate.
-		return nil, WrapRecoverable(fmt.Errorf("openai embedder: rate limited (HTTP 429)"))
-	}
-	if resp.StatusCode >= 400 {
-		// 4xx other than rate-limit: auth, malformed payload, model
-		// not available, etc. Permanent — operator must intervene.
-		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, WrapPermanent(fmt.Errorf("openai embedder: HTTP %d: %s", resp.StatusCode, string(bodyBytes)))
-	}
-
-	var parsed struct {
-		Data []struct {
-			Index     int       `json:"index"`
-			Embedding []float32 `json:"embedding"`
-		} `json:"data"`
-		Usage struct {
-			TotalTokens int `json:"total_tokens"`
-		} `json:"usage"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return nil, WrapRecoverable(fmt.Errorf("decode response: %w", err))
-	}
-	if len(parsed.Data) != len(texts) {
-		return nil, WrapPermanent(fmt.Errorf("openai embedder: response had %d embeddings, expected %d", len(parsed.Data), len(texts)))
-	}
-
-	// OpenAI returns data WITHOUT a guaranteed order; sort by Index
-	// before assigning. Defensive — historically the API has been
-	// in-order but we don't bet on it.
-	out := make([][]float32, len(texts))
-	for _, d := range parsed.Data {
-		if d.Index < 0 || d.Index >= len(out) {
-			return nil, WrapPermanent(fmt.Errorf("openai embedder: bad index %d", d.Index))
-		}
-		if len(d.Embedding) != e.dimensions {
-			return nil, WrapPermanent(fmt.Errorf("openai embedder: vector at index %d has %d dims, expected %d",
-				d.Index, len(d.Embedding), e.dimensions))
-		}
-		out[d.Index] = d.Embedding
-	}
-	for i := range out {
-		if out[i] == nil {
-			return nil, WrapPermanent(fmt.Errorf("openai embedder: missing embedding for index %d", i))
-		}
-	}
-	return out, nil
+	return parseEmbeddingVectors(resp, len(texts), e.dimensions)
 }

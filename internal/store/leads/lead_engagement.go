@@ -138,8 +138,15 @@ func (s *Store) GetLeadEngagementsBatch(ctx context.Context, orgID int64, leadID
 		return nil, err
 	}
 
-	// Per-lead: sort entries (desc), look up thread, derive badge.
-	now := time.Now().UTC()
+	enrichLeadEngagementStates(leads, out, threadByURL, time.Now().UTC())
+	return out, nil
+}
+
+// enrichLeadEngagementStates finalises each lead's engagement state IN MEMORY:
+// sort entries desc, derive last-engaged + champion + thread status + badge. Pure
+// (no DB) — operates on the already-loaded entries/threads. Extracted verbatim
+// from GetLeadEngagementsBatch's per-lead loop; behavior is unchanged.
+func enrichLeadEngagementStates(leads []models.Lead, out map[int64]*models.LeadEngagementState, threadByURL map[string]*models.ConversationThread, now time.Time) {
 	for _, l := range leads {
 		state := out[l.ID]
 		sortEngagementEntriesDesc(state.Entries)
@@ -155,7 +162,6 @@ func (s *Store) GetLeadEngagementsBatch(ctx context.Context, orgID int64, leadID
 		state.Badge = models.DeriveBadge(state.Entries, threadStatus, awaitingReply, now,
 			models.DefaultProtectedWindow, models.DefaultFollowupWindow)
 	}
-	return out, nil
 }
 
 // batchThreadStateForLeads pulls all conversation_threads that match any
