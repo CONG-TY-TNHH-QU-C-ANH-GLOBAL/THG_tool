@@ -5,10 +5,10 @@ lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: "chore/archwk4-design-decision"
+branch: "chore/archwk4-batch-a-report-split"
 pr_url: ""
 boundary_target: prep-extraction
-last_batch: design-decision
+last_batch: A-report
 ---
 
 # ARCHWK4 — Soak package internal decomposition
@@ -42,13 +42,14 @@ Each god-file needs a 3-way split or a documented large-data/cohesion exception 
 2-file split leaves a >200 sibling (measured), so this is staged, not big-bang. Seam
 analysis (verified via top-level decl scan):
 
-- **Batch A — report.go (477):** split `report.go` (the Report + 11 metric sub-structs
-  = the data model, ~190) from the markdown rendering (`ToMarkdown` + 9 `write*` section
-  methods, ~275). The rendering is ONE cohesive responsibility with no clean <200
-  sub-seam → either accept `report_markdown.go` as a cohesive renderer (allowlist with
-  justification) or split the `write*` methods into summary vs detail sections. Decide in
-  the batch PR. **Do NOT change the emitted markdown** (it drives the
-  `RETRIEVAL_SOAK_REPORT.md` artifact — behavior-locked).
+- **Batch A — report.go (477) — DONE (this PR):** found a 3rd responsibility
+  (`computeQualityAggregates`/`mean`/`percentile` = aggregation, not rendering). Split
+  into 4 files, all <200, bodies moved verbatim: `report.go` (data-model types, 195),
+  `report_markdown.go` (ToMarkdown + summary sections, 127), `report_markdown_detail.go`
+  (compliance/failure-mode/real-soak detail, 94), `report_metrics.go` (ToJSON +
+  aggregation, 84). Markdown verified byte-identical (only the `Generated:` timestamp +
+  pre-existing `AssetsByType` map-iteration order vary). report.go dropped off the
+  allowlist.
 - **Batch B — harness.go (397):** keep `Harness` + `Run` + ingest/embedding/searcher/
   prompt orchestration; move the pure scoring free-funcs (`detectFallback`,
   `scanHitSignals`, `soakVerdict`, `isTraceComplete`) + `measureReplayHealth`/
