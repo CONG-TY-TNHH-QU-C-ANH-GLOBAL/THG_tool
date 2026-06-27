@@ -5,10 +5,10 @@ lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: "chore/archwk4-batch-a-report-split"
+branch: "chore/archwk4-batch-b-harness-split"
 pr_url: ""
 boundary_target: prep-extraction
-last_batch: A-report
+last_batch: B-harness
 ---
 
 # ARCHWK4 — Soak package internal decomposition
@@ -50,10 +50,14 @@ analysis (verified via top-level decl scan):
   aggregation, 84). Markdown verified byte-identical (only the `Generated:` timestamp +
   pre-existing `AssetsByType` map-iteration order vary). report.go dropped off the
   allowlist.
-- **Batch B — harness.go (397):** keep `Harness` + `Run` + ingest/embedding/searcher/
-  prompt orchestration; move the pure scoring free-funcs (`detectFallback`,
-  `scanHitSignals`, `soakVerdict`, `isTraceComplete`) + `measureReplayHealth`/
-  `measureStale` into `harness_metrics.go`. May still need a 3rd file to land <200.
+- **Batch B — harness.go (397) — DONE:** contiguous 3-way split, all <200, bodies
+  sed-extracted verbatim (imports auto-fixed with pinned goimports): `harness.go`
+  (Harness type + Run orchestrator, 136), `harness_pipeline.go` (ingest/embed/
+  buildSearcher/setupSource/runOnePrompt stage steps, 154), `harness_metrics.go`
+  (detectFallback/scanHitSignals/soakVerdict/measureReplayHealth/measureStale/
+  isTraceComplete, 132). harness.go dropped off the allowlist. soak tests green;
+  artifact diffs are only non-deterministic runtime values (timestamp, map order,
+  measured latencies) — structure/scores/verdicts identical.
 - **Batch C — failure_modes.go (237):** move the test-doubles (`brokenEmbedder`,
   `slowSearcher`) into `soak_doubles.go`; the 7 `failureMode*` scenario methods stay.
   (~207 after — likely needs one scenario sub-split or a documented exception.)
