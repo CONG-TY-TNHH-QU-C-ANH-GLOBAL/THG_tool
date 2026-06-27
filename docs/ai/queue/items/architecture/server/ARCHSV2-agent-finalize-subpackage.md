@@ -8,6 +8,7 @@ parallel_safe: false
 branch: ""
 pr_url: ""
 blocked_on: human-boundary-decision
+boundary_target: transport-to-usecase
 ---
 
 # ARCHSV2 — Extract internal/server/agent/finalize subpackage

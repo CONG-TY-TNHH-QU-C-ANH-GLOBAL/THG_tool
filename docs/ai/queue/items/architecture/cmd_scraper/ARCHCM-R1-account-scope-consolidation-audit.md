@@ -7,6 +7,7 @@ depends_on: []
 parallel_safe: false
 branch: ""
 pr_url: ""
+boundary_target: blocked-decision
 ---
 
 # ARCHCM-R1 — AUDIT: consolidate duplicated account-control RBAC

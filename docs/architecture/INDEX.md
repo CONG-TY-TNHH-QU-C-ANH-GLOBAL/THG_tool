@@ -43,6 +43,7 @@ Map of architecture standards, boundaries, ownership, and decision records. See
 |---|---|
 | [ARCHITECTURE_STANDARD.md](ARCHITECTURE_STANDARD.md) | The official architecture standard (modular monolith / hexagonal / outbox). |
 | [MODULE_BOUNDARIES.md](MODULE_BOUNDARIES.md) | Allowed import boundaries between modules. |
+| [BOUNDARY_MIGRATION_PLAYBOOK.md](BOUNDARY_MIGRATION_PLAYBOOK.md) | Layer-target map + per-item feasibility/lane playbook; maps queue items to a `boundary_target`. |
 | [PORTS_AND_ADAPTERS.md](PORTS_AND_ADAPTERS.md) | Ports/adapters conventions. |
 | [DATABASE_OWNERSHIP.md](DATABASE_OWNERSHIP.md) | Per-domain DB/table ownership. |
 | [CONNECTOR_STATE_MACHINE.md](CONNECTOR_STATE_MACHINE.md) | Connector lifecycle state machine. |

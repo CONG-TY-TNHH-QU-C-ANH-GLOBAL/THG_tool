@@ -8,6 +8,7 @@ parallel_safe: false
 branch: ""
 pr_url: ""
 blocked_on: human-boundary-decision
+boundary_target: leaf-move
 ---
 
 # ARCHCP3 — Extract copilot/intent subpackage

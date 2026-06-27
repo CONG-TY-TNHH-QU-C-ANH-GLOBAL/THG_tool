@@ -23,6 +23,13 @@ behavior-preserving move-only that crosses an import boundary (sequential by
 deps — in Go a folder move *is* an import-boundary change). RED: audit-only,
 `status: BLOCKED`, human decision required — never auto-implemented.
 
+**Boundary target** — architecture items SHOULD carry a `boundary_target:`
+frontmatter value naming the boundary move they serve: `prep-extraction`,
+`leaf-move`, `transport-to-usecase`, `store-test-seam`, or `blocked-decision`.
+The lane is *how risky*; the boundary target is *what layer move it is for*. See
+[`docs/architecture/BOUNDARY_MIGRATION_PLAYBOOK.md`](../../architecture/BOUNDARY_MIGRATION_PLAYBOOK.md)
+for the layer-target map + the feasibility-before-code playbook.
+
 ## At a glance
 
 _Status reflects the queue after the last `/thg-next` auto-reconcile (verified via
