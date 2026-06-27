@@ -5,10 +5,10 @@ lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: "chore/archwk4-batch-b-harness-split"
+branch: "chore/archwk4-batch-c-failure-modes-split"
 pr_url: ""
 boundary_target: prep-extraction
-last_batch: B-harness
+last_batch: C-failure-modes
 ---
 
 # ARCHWK4 — Soak package internal decomposition
@@ -58,9 +58,12 @@ analysis (verified via top-level decl scan):
   isTraceComplete, 132). harness.go dropped off the allowlist. soak tests green;
   artifact diffs are only non-deterministic runtime values (timestamp, map order,
   measured latencies) — structure/scores/verdicts identical.
-- **Batch C — failure_modes.go (237):** move the test-doubles (`brokenEmbedder`,
-  `slowSearcher`) into `soak_doubles.go`; the 7 `failureMode*` scenario methods stay.
-  (~207 after — likely needs one scenario sub-split or a documented exception.)
+- **Batch C — failure_modes.go (237) — DONE:** moved the test-doubles
+  (`brokenEmbedder`, `slowSearcher`) into `soak_doubles.go` (46); the
+  `runFailureModes` dispatcher + 6 `failureMode*` scenario methods stay in
+  `failure_modes.go` (198, after condensing one verbose doc comment — no scenario
+  sub-split needed). Both <200; failure_modes.go dropped off the allowlist. soak
+  tests green; doubles are same-package so no behavior change.
 - **Batch D — fixtures.go (311):** split `LeadPrompt` + `RealisticLeads()` into
   `lead_fixtures.go` (~95). `CatalogFixture` + `RealisticCatalog()` is a ~150-line
   HAND-TUNED curated catalog literal = **intentionally large test data** → allowlist

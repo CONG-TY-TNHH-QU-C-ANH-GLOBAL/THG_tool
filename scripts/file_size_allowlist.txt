@@ -127,7 +127,6 @@ internal/workspace_knowledge/embedding/worker.go  # 241 lines
 internal/store/outbound/dedup.go  # 238 lines
 internal/runtime/stateful.go  # 237 lines
 internal/skills/registry.go  # 237 lines
-internal/workspace_knowledge/soak/failure_modes.go  # 237 lines
 internal/drivers/copilot/routing_decision.go  # 235 lines
 internal/server/crawl/intent.go  # 234 lines
 internal/workspace_knowledge/ingestion/rest_json/fieldmap.go  # 234 lines
