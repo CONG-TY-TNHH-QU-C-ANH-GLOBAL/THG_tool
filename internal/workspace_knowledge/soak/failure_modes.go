@@ -6,21 +6,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/thg/scraper/internal/workspace_knowledge/embedding"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval/fallback"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval/hybrid"
 )
 
-// runFailureModes injects each of the six production failure
-// scenarios listed in goal directive PR-4 §5 and verifies the
-// system degrades gracefully. Each scenario returns a [FailureModeOutcome]
-// the report renders.
-//
-// PASS = system behaved as documented (fell back, returned empty
-// cleanly, surfaced error, etc.)
-// FAIL = system panicked, silently produced wrong results, leaked
-// to wrong tenant, or otherwise violated an invariant.
+// runFailureModes injects the six production failure scenarios (goal directive
+// PR-4 §5) and verifies graceful degradation. Each returns a [FailureModeOutcome]
+// the report renders. PASS = behaved as documented (fell back, returned empty,
+// surfaced error). FAIL = panicked, produced wrong results, leaked to the wrong
+// tenant, or otherwise violated an invariant.
 func (h *Harness) runFailureModes(ctx context.Context, sourceID int64) []FailureModeOutcome {
 	return []FailureModeOutcome{
 		h.failureModeAEmbedderDown(ctx),
@@ -201,37 +196,3 @@ func (h *Harness) failureModeFStaleOnly(ctx context.Context) FailureModeOutcome 
 	out.Behaviour = "Stale-asset query returned " + strconv.Itoa(staleCount) + " (catalog fresh; observability works)."
 	return out
 }
-
-// --- Helpers ---
-
-// brokenEmbedder always errors. Used in failure mode A.
-type brokenEmbedder struct {
-	err error
-}
-
-func (b *brokenEmbedder) Embed(_ context.Context, _ []string) ([][]float32, error) {
-	return nil, embedding.WrapRecoverable(b.err)
-}
-func (b *brokenEmbedder) ModelVersion() string { return "broken:v1" }
-func (b *brokenEmbedder) Dimensions() int      { return 8 }
-
-// slowSearcher simulates a backend that times out. Returns err
-// (typically context.DeadlineExceeded) after the configured delay.
-type slowSearcher struct {
-	delay time.Duration
-	err   error
-}
-
-func (s *slowSearcher) TopK(ctx context.Context, _ int64, _ string, _ retrieval.SearchFilter, _ int) ([]retrieval.Hit, error) {
-	select {
-	case <-time.After(s.delay):
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	return nil, s.err
-}
-func (s *slowSearcher) TopKWithTrace(ctx context.Context, orgID int64, query string, filter retrieval.SearchFilter, k int) ([]retrieval.Hit, retrieval.Trace, error) {
-	hits, err := s.TopK(ctx, orgID, query, filter, k)
-	return hits, retrieval.Trace{SearcherImpl: "slow-mock", TotalByReason: map[retrieval.RejectionReason]int{}}, err
-}
-func (s *slowSearcher) SearcherName() string { return "slow-mock" }
