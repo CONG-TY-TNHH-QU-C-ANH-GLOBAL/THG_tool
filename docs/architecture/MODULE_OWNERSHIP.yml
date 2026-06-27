@@ -72,6 +72,19 @@ modules:
     status: documented
     next_phase: "post-E"
 
+  - name: services/reel
+    current_paths: [internal/services/reel, internal/store/reel, internal/server/reels]
+    target_paths: [internal/services/reel]
+    responsibility: >-
+      Reel-generation workflow: AI script -> external render (money invariant: spend
+      committed once, never auto-cancelled) -> post finished video via the outbound spine
+      as a post_reel action. Owns the reel domain tables + the VideoRenderer port.
+    allowed_dependency_direction: "reel -> {ai, store(reel/outbound accessors), store/reel, models}"
+    forbidden_imports: [drivers/copilot, services/facebook, services/taobao, services/1688, internal/server]
+    status: partially_migrated   # store/reel domain + services/reel workflow + server/reels transport all landed; cloudflare renderer + extension video upload deferred
+    next_phase: "follow-up: real Cloudflare renderer (R2 + stitching), connector post_reel video-upload handler, reel frontend"
+    owns_port: internal/services/reel.VideoRenderer
+
   - name: ai
     current_paths: [internal/ai/comment, internal/ai (generators)]
     target_paths: [internal/ai]

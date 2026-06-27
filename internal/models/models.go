@@ -342,6 +342,11 @@ type OutboundMessage struct {
 	Content             string              `json:"content" db:"content"`         // message content
 	Context             string              `json:"context" db:"context"`         // original post/lead content for reference
 	ImagePath           string              `json:"image_path" db:"image_path"`   // local path of company image to attach
+	// MediaPath/MediaType carry non-image attachments (e.g. a rendered reel video) for
+	// action kinds like post_reel. Kept separate from ImagePath because video upload differs
+	// from image attach (size, composer flow). MediaType is '' | 'image' | 'video'.
+	MediaPath           string              `json:"media_path" db:"media_path"`
+	MediaType           string              `json:"media_type" db:"media_type"`
 	ExecutionState      ExecutionState      `json:"execution_state" db:"execution_state"`
 	VerificationOutcome VerificationOutcome `json:"verification_outcome,omitempty" db:"verification_outcome"`
 	AIModel             string              `json:"ai_model" db:"ai_model"` // model used to generate

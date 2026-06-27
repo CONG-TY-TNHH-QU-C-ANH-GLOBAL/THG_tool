@@ -10,6 +10,7 @@ import { isPlatformRole } from '../services/authService';
 import {
   Activity,
   Bot,
+  Clapperboard,
   FileText,
   Globe,
   MessageCircle,
@@ -27,10 +28,11 @@ const AccountHealthBoard = lazy(() => import('./accountHealth/AccountHealthBoard
 const InboxView = lazy(() => import('./views/InboxView'));
 const PostingView = lazy(() => import('./views/PostingView'));
 const CommentingView = lazy(() => import('./views/CommentingView'));
+const ReelView = lazy(() => import('./views/ReelView'));
 const LeaderboardView = lazy(() => import('./views/LeaderboardView'));
 const MissionsView = lazy(() => import('./views/MissionsView'));
 
-type Tab = 'leads' | 'chat' | 'browser' | 'health' | 'inbox' | 'posting' | 'commenting' | 'leaderboard' | 'missions' | 'settings';
+type Tab = 'leads' | 'chat' | 'browser' | 'health' | 'inbox' | 'posting' | 'commenting' | 'reel' | 'leaderboard' | 'missions' | 'settings';
 
 interface FacebookWorkspaceAppProps {
   workspaceId: string;
@@ -54,6 +56,7 @@ const ADMIN_TABS: NavItem[] = [
   { id: 'inbox', Icon: MessageSquare },
   { id: 'posting', Icon: FileText },
   { id: 'commenting', Icon: MessageCircle },
+  { id: 'reel', Icon: Clapperboard },
 ];
 
 const STAFF_TABS: NavItem[] = [
@@ -171,6 +174,9 @@ export default function FacebookWorkspaceApp({ workspaceId }: Readonly<FacebookW
       inbox: t.nav.inbox,
       posting: t.nav.posting,
       commenting: t.nav.commenting,
+      // Inline label (like `health`) to avoid growing the i18n strings.ts god file; the
+      // view's own copy is localized via i18n/reelStrings.ts.
+      reel: 'Reel',
       leaderboard: t.nav.leaderboard,
       missions: t.nav.missions,
       settings: t.nav.settings,
@@ -196,6 +202,8 @@ export default function FacebookWorkspaceApp({ workspaceId }: Readonly<FacebookW
         return <PostingView orgId={orgId} isAdmin={isAdmin} />;
       case 'commenting':
         return <CommentingView orgId={orgId} isAdmin={isAdmin} />;
+      case 'reel':
+        return <ReelView orgId={orgId} isAdmin={isAdmin} />;
       case 'leaderboard':
         return <LeaderboardView orgId={orgId} isAdmin={isAdmin} />;
       case 'missions':

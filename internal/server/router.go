@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -29,10 +30,12 @@ import (
 	serverobservability "github.com/thg/scraper/internal/server/observability"
 	serverorg "github.com/thg/scraper/internal/server/org"
 	serverplatform "github.com/thg/scraper/internal/server/platform"
+	serverreels "github.com/thg/scraper/internal/server/reels"
 	serverskills "github.com/thg/scraper/internal/server/skills"
 	"github.com/thg/scraper/internal/server/system"
 	servertelegram "github.com/thg/scraper/internal/server/telegram"
 	serverworkspace "github.com/thg/scraper/internal/server/workspace"
+	reelsvc "github.com/thg/scraper/internal/services/reel"
 	tgclient "github.com/thg/scraper/internal/telegram/client"
 	"github.com/thg/scraper/internal/telegram/control"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
@@ -82,7 +85,7 @@ func (s *Server) registerRoutes() {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Content-Type,Authorization,X-Refresh-Token,X-Agent-Token,X-Agent-Hostname,X-Agent-OS,X-Agent-Version",
+		AllowHeaders:     "Content-Type,Authorization,X-Refresh-Token,X-Agent-Token,X-Agent-Hostname,X-Agent-OS,X-Agent-Version,X-Reel-Signature",
 		ExposeHeaders:    "Content-Length",
 		AllowCredentials: true, // needed for httpOnly cookie refresh token
 	}))
@@ -148,6 +151,39 @@ func (s *Server) registerRoutes() {
 	serverauth.OnboardingRoutes(api, authDeps)
 
 	// Protected API routes — require JWT
+	// Reel generation service (shared by protected reel routes + the public webhook).
+	// The render webhook MUST be registered on `api` BEFORE the protected `r` group:
+	// Fiber's empty-prefix group middleware (RequireAuth) applies to every /api route
+	// registered after it, so a public webhook registered later would be auth-gated.
+	var reelRenderer reelsvc.VideoRenderer
+	// renderCfg stays empty for fake/cloudflare (synthetic stitch path); only the real
+	// renderer populates it so assembleFinal/VideoPath do local ffmpeg work + file serving.
+	var renderCfg reelsvc.RenderConfig
+	webhookURL := fmt.Sprintf("http://127.0.0.1:%d/api/reel/webhook/render", cfg.Port)
+	switch {
+	case strings.EqualFold(cfg.RenderProvider, "real"):
+		renderCfg = reelsvc.RenderConfig{MediaDir: cfg.ReelMediaDir, FFmpegPath: cfg.FFmpegPath, LogoPath: cfg.ReelLogoPath}
+		reelRenderer = reelsvc.NewRealRenderer(reelsvc.RealProviderConfig{
+			FALKey: cfg.FALKey, FALVideoModel: cfg.FALVideoModel,
+			HeyGenKey: cfg.HeyGenKey, HeyGenAvatar: cfg.HeyGenAvatarID, HeyGenVoice: cfg.HeyGenVoiceID,
+			FPTKey: cfg.FPTTTSKey, FPTVoice: cfg.FPTVoice,
+		}, renderCfg, webhookURL, cfg.ReelWebhookSecret)
+	case strings.EqualFold(cfg.RenderProvider, "cloudflare"):
+		reelRenderer = reelsvc.NewCloudflareRenderer(cfg.CloudflareAPIToken, cfg.CloudflareAccountID)
+	case cfg.ReelFakeAutocomplete:
+		// DEV ONLY: fake renderer self-completes via the local webhook for a smooth UI demo.
+		reelRenderer = reelsvc.NewAutoFakeRenderer(webhookURL, cfg.ReelWebhookSecret)
+	default:
+		reelRenderer = reelsvc.NewFakeRenderer()
+	}
+	reelService := reelsvc.NewService(s.db, reelRenderer, func() *ai.MessageGenerator { return s.aiClass },
+		reelsvc.ScriptConfig{
+			AnthropicAPIKey: cfg.AnthropicAPIKey, AnthropicModel: cfg.AnthropicScriptModel,
+			MarketingGuide: loadMarketingGuide(cfg.ReelMarketingGuidePath),
+		}, renderCfg)
+	reelDeps := serverreels.Deps{Service: reelService, WebhookSecret: cfg.ReelWebhookSecret}
+	serverreels.WebhookRoutes(api, reelDeps) // PUBLIC (HMAC-authenticated) — must precede `r`
+
 	r := api.Group("", authpkg.RequireAuth(cfg.JWTSecret), tenantReady, freshOrg)
 
 	// In-app notification bell (PR-1): invite + connector events.
@@ -164,6 +200,10 @@ func (s *Server) registerRoutes() {
 		AIClass: func() *ai.MessageGenerator { return s.aiClass },
 	}, adminOnly)
 	crawl.Routes(r, crawl.Deps{DB: s.db}, adminOnly)
+
+	// Protected reel endpoints (create/list/get/script/approve/publish). The public render
+	// webhook for these is registered above, before the JWT group.
+	serverreels.Routes(r, reelDeps)
 
 	// Chrome Profile Login Sessions — any staff can log in their own account
 	serverauth.LoginSessionRoutes(r, authDeps)

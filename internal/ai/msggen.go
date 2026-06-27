@@ -538,6 +538,15 @@ CHỈ TRẢ VỀ NỘI DUNG TIN NHẮN.`,
 	return mg.callOpenAI(ctx, prompt)
 }
 
+// GenerateStructured runs a strict-JSON OpenAI completion: the model is forced to emit
+// a payload conforming to `schema`, decoded into `out` (a pointer). Exposed so feature
+// packages (e.g. the services/reel script engine) can ground structured generations
+// without re-implementing the OpenAI plumbing or the brace-scanning that callOpenAI needs.
+func (mg *MessageGenerator) GenerateStructured(ctx context.Context, prompt, schemaName string, schema map[string]any, out any) error {
+	_, err := mg.callOpenAIStrictJSON(ctx, prompt, schemaName, schema, out)
+	return err
+}
+
 // callOpenAIStrictJSON is the JSON-schema-locked counterpart to callOpenAI.
 // The model is forced to emit a payload that conforms exactly to `schema`,
 // so callers no longer have to scan the response for balanced braces or

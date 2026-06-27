@@ -21,6 +21,7 @@ import (
 	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
+	"github.com/thg/scraper/internal/store/reel"
 	"github.com/thg/scraper/internal/store/telegram"
 	"github.com/thg/scraper/internal/store/threads"
 
@@ -118,7 +119,17 @@ type Store struct {
 	// channel-neutral, zero cross-domain writes. See
 	// specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md.
 	telegram *telegram.Store
+
+	// reel owns the reel-generation tables (reels, reel_scripts,
+	// reel_shots). Org-scoped, zero cross-domain writes — posting the
+	// finished video flows through the outbound spine from the
+	// internal/services/reel workflow layer, not from this store.
+	reel *reel.Store
 }
+
+// Reel exposes the reel-domain subpackage handle (reel generation
+// control-plane). Reach it via this accessor; no top-level bridge wrappers.
+func (s *Store) Reel() *reel.Store { return s.reel }
 
 // Telegram exposes the telegram-domain subpackage handle (integration
 // control-plane). Reach it via this accessor; no top-level bridge wrappers.
@@ -258,6 +269,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
+	s.reel = reel.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
 }
@@ -307,6 +319,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
+	s.reel = reel.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
 }

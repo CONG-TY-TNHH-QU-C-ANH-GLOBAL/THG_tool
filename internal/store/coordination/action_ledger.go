@@ -52,6 +52,8 @@ func targetTypeFromAction(actionType string) string {
 		return "group"
 	case "profile_post":
 		return "profile"
+	case "post_reel":
+		return "post"
 	default:
 		return ""
 	}

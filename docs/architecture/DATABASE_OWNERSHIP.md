@@ -69,6 +69,19 @@ is the current store subpackage (`internal/store/<x>`).
 | `comment_reverify`, `comment_verification_audit` | coordination | server, drivers/connector | coordination | services direct | async reverify pipeline |
 | `runtime_events` | events/coordination | server (SSE), audit | coordination | services direct | runtime audit stream (NOT yet the durable outbox — see TRANSACTIONAL_OUTBOX.md) |
 
+## Reel generation
+
+| Table | Owner | Allowed readers | Allowed writers | Forbidden writers | Migration notes |
+|---|---|---|---|---|---|
+| `reels` | reel (store/reel) | services/reel, server | reel | ai, outbound, drivers | aggregate; `render_idempotency_key` UNIQUE = double-charge guard |
+| `reel_scripts` | reel | services/reel, server | reel | ai direct, outbound | versioned script + shot-list |
+| `reel_shots` | reel | services/reel, server | reel | ai, outbound | per-shot render state (CAS/lease); cost ledger |
+
+> The reel **posts** through the outbound spine: the `services/reel` workflow builds a
+> `post_reel` `outbound_messages` row via `s.Outbound().Queue` — it never writes
+> `outbound_messages` directly. The rendered video rides the new `outbound_messages.media_path`
+> / `media_type` columns (owned by `outbound`).
+
 ## Knowledge, brand, content
 
 | Table | Owner | Allowed readers | Allowed writers | Forbidden writers | Migration notes |

@@ -26,9 +26,9 @@ func (s *Store) Insert(msg *models.OutboundMessage) (int64, error) {
 		outcomeArg = string(msg.VerificationOutcome)
 	}
 	result, err := s.db.Exec(
-		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, execution_state, verification_outcome, ai_model, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.ExecutionState, outcomeArg, msg.AIModel, msg.CreatedBy,
+		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, media_path, media_type, execution_state, verification_outcome, ai_model, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.MediaPath, msg.MediaType, msg.ExecutionState, outcomeArg, msg.AIModel, msg.CreatedBy,
 	)
 	if err != nil {
 		return 0, err
@@ -106,9 +106,9 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 	msg.VerificationOutcome = ""
 
 	res, err := tx.Exec(
-		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, execution_state, verification_outcome, ai_model, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
-		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.ExecutionState, msg.AIModel, msg.CreatedBy,
+		`INSERT INTO outbound_messages (org_id, type, platform, account_id, target_url, target_name, content, context, image_path, media_path, media_type, execution_state, verification_outcome, ai_model, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+		msg.OrgID, msg.Type, msg.Platform, msg.AccountID, msg.TargetURL, msg.TargetName, msg.Content, msg.Context, msg.ImagePath, msg.MediaPath, msg.MediaType, msg.ExecutionState, msg.AIModel, msg.CreatedBy,
 	)
 	if err != nil {
 		// Likely UNIQUE collision under concurrency — surface as a

@@ -44,6 +44,31 @@ type Config struct {
 	TelegramActionsEnabled      bool
 	TelegramWebhookSecret       string
 	TelegramAllowGlobalFallback bool
+
+	// Reel generation (services/reel). RenderProvider picks the VideoRenderer adapter
+	// ("fake" default | "cloudflare"); ReelWebhookSecret validates render webhooks (HMAC).
+	RenderProvider       string
+	ReelWebhookSecret    string
+	CloudflareAPIToken   string
+	CloudflareAccountID  string
+	ReelFakeAutocomplete bool
+	AnthropicAPIKey      string
+	AnthropicScriptModel string
+	// ReelMarketingGuidePath grounds the script prompt on the company marketing playbook.
+	ReelMarketingGuidePath string
+
+	// Real render pipeline (RenderProvider=real): FAL + HeyGen + FPT TTS + local ffmpeg.
+	FALKey         string
+	FALVideoModel  string
+	HeyGenKey      string
+	HeyGenAvatarID string
+	HeyGenVoiceID  string
+	FPTTTSKey      string
+	FPTVoice       string
+	ReelMediaDir   string
+	FFmpegPath     string
+	// ReelLogoPath: brand watermark overlaid top-left on every assembled reel.
+	ReelLogoPath string
 }
 
 // Server provides the REST API and serves the Web UI.

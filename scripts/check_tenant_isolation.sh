@@ -123,10 +123,13 @@ TENANT_TABLES=(
   "outbound_messages"
   "action_policies"
   "execution_attempts"
+  "reels"
+  "reel_scripts"
+  "reel_shots"
 )
 
 # Collect Go files that reference any tenant table.
-FILES=$(grep -rl -E "outbound_messages|action_policies|execution_attempts" \
+FILES=$(grep -rl -E "outbound_messages|action_policies|execution_attempts|reel_scripts|reel_shots|reels" \
   --include='*.go' internal cmd 2>/dev/null | sort -u || true)
 
 for f in $FILES; do
@@ -157,7 +160,7 @@ for f in $FILES; do
           # Closing backtick — flush block.
           in_block = 0
           # Check whether the block references a tenant table.
-          if (block ~ /outbound_messages|action_policies|execution_attempts/) {
+          if (block ~ /outbound_messages|action_policies|execution_attempts|reel_scripts|reel_shots|reels/) {
             # Block must START with an actual SQL verb — skip plain
             # Go strings, prompt text, doc comments that mention the
             # table name in prose.

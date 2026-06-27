@@ -76,6 +76,24 @@ Legend for "current code": ✅ exists and matches · ◐ exists, partial · ○ 
 - **Today:** only resolver stubs in `internal/platform/services/resolver`. The rule
   is reserved; nothing to enforce until the module is extracted.
 
+## services/reel  ◐
+
+- **Responsibility:** reel-generation workflow — turn a brief into an AI-grounded script,
+  drive an external render provider shot-by-shot (money invariant: spend committed once,
+  never auto-cancelled/re-rendered), then post the finished video through the SHARED
+  outbound spine as a `post_reel` action. Orchestration only; durable state lives in
+  `store.Reel()`, posting in `store.Outbound()`.
+- **Allowed imports:** `ai` (script grounding), `models`, `internal/store` domain
+  accessors (`Reel()`, `Outbound()`), `internal/store/reel` (constants/types). The
+  `VideoRenderer` port is consumer-owned here; adapters (fake/cloudflare) implement it.
+- **Forbidden imports:** `drivers/*` (a service must not depend on its caller), sibling
+  services (`services/facebook`/`taobao`/`1688`), `internal/server` transport.
+- **Belongs here:** `RequestReel`/`Approve` (spend gate)/`HandleRenderResult`/`Publish`
+  workflow, the script engine, render adapters.
+- **Must NOT belong here:** raw `outbound_messages` or `execution_attempts` writes
+  (queue via `store.Outbound().Queue`); HTTP parsing (that is `internal/server/reels`);
+  HMAC/webhook transport.
+
 ## ai  ✅
 
 - **Responsibility:** PURE intelligence. Classify leads, generate/repair comment &
