@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # Current Code Audit (2026-06-14)
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** AUDIT ONLY — no code is moved or changed by this document.
 Honest assessment of how the code-as-of-`d8871712` compares to the standard in

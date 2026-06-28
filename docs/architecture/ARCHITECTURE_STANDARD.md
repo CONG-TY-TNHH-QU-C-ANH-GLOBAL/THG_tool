@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # THG AutoFlow — Architecture Standard (v3)
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** OFFICIAL STANDARD (target architecture). **Created:** 2026-06-14.
 **Scope:** the whole platform — `Sale.thgfulfill.com` / THG AutoFlow.

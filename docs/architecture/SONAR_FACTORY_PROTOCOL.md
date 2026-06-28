@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # THG Sonar Factory Operating Protocol
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** binding SOP. Mandatory for **all** future Sonar cleanup work in
 `THG_tool`.
