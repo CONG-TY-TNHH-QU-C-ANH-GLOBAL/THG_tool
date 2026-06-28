@@ -15,8 +15,15 @@ boundary_target: transport-to-usecase
 
 ## Goal
 Move the remaining L3 files — `outbound_lead_outcome.go` and the
-`outbound_lead_pipeline.go` orchestration spine — into `internal/outbound`, after
+`outbound_lead_pipeline.go` orchestration spine — out of the composition root, after
 de-coupling them from the cmd-local helpers they reach into.
+
+> **TARGET CORRECTION (2026-06-28, per ARCHCM2b, founder-directed):** NOT
+> `internal/outbound` — that package is the vertical-neutral spine and forbids
+> `services/facebook` + `ai` imports. Both files import `services/facebook` (lead_pipeline
+> also `ai` + knowledge), so they are FB+AI content logic whose home is the **FB usecase
+> side** (`internal/services/facebook/...`). `cmd/scraper` builds adapters and calls the
+> usecase. Plan the move against the FB usecase package, not `internal/outbound`.
 
 ## Component / domain
 outbound lead pipeline + outcome recording.
