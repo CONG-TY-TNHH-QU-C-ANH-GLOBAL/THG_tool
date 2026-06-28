@@ -28,6 +28,15 @@ ARCHCM1 (DONE — pure-helper split); ARCHCM-R1 (DONE — account-scope decision
 
 ---
 
+> **CORRECTION (2026-06-28, ARCHCM2b feasibility):** the destination assumed below —
+> `internal/outbound` — is the **vertical-NEUTRAL** coordination spine and forbids
+> importing `services/facebook` + `ai` (see `internal/outbound/doc.go`). The entire L3
+> "core" (comment_reasoning, lead_pipeline, lead_outcome) imports `services/facebook`
+> (and mostly `ai` + knowledge), so it is FB+AI **content** logic and does NOT belong in
+> the neutral spine. The L3 destination must be the **FB usecase side**, not
+> `internal/outbound`. See ARCHCM2b for the decision; this umbrella's target needs that
+> correction before ARCHCM2c is planned.
+
 # FEASIBILITY & RE-SCOPE (verified 2026-06-28 — move-only big-bang is NOT possible; reclassified to staged + BLOCKED on one decision)
 
 The "move ~724 LOC into internal/outbound behind a facade" framing does not hold.
