@@ -5,10 +5,10 @@ lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: "chore/archwk4-batch-c-failure-modes-split"
+branch: "chore/archwk4-batch-d-fixtures-split"
 pr_url: ""
 boundary_target: prep-extraction
-last_batch: C-failure-modes
+last_batch: D-fixtures
 ---
 
 # ARCHWK4 — Soak package internal decomposition
@@ -64,10 +64,12 @@ analysis (verified via top-level decl scan):
   `failure_modes.go` (198, after condensing one verbose doc comment — no scenario
   sub-split needed). Both <200; failure_modes.go dropped off the allowlist. soak
   tests green; doubles are same-package so no behavior change.
-- **Batch D — fixtures.go (311):** split `LeadPrompt` + `RealisticLeads()` into
-  `lead_fixtures.go` (~95). `CatalogFixture` + `RealisticCatalog()` is a ~150-line
-  HAND-TUNED curated catalog literal = **intentionally large test data** → allowlist
-  `catalog_fixtures.go` (~210) with that justification rather than fragmenting the data.
+- **Batch D — fixtures.go (311) — DONE:** split into `lead_fixtures.go`
+  (`LeadPrompt` + `RealisticLeads`, 112, no imports — pure literals) and
+  `catalog_fixtures.go` (`CatalogFixture` + `RealisticCatalog` + `PayloadJSON`, 200).
+  Catalog landed exactly at the 200 limit (curated data literal), so NO allowlist
+  entry was needed; the old `fixtures.go` (allowlisted 311) was deleted + removed
+  from the allowlist. soak tests green; same package, no behavior change.
 - **Batch E — embedder.go (210):** cohesive deterministic test embedder, only 10 over.
   Low value to split; prefer a documented large-fixture exception unless `tokenise`
   extraction earns its own file.
