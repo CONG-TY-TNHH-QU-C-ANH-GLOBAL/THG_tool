@@ -13,12 +13,13 @@ import (
 	"github.com/thg/scraper/internal/textutil"
 )
 
-func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *jobs.Task, args map[string]any) {
+// rememberRecurringCrawlIntents takes already-resolved typed inputs (prompt / name /
+// intervalMinutes) rather than the raw args bag (ARCHCM4a de-arg). The resolution lives
+// in resolveCrawlRequest; this function and its UpsertIntent behavior are unchanged.
+func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *jobs.Task, prompt, name string, intervalMinutes int) {
 	if db == nil || task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
 		return
 	}
-	prompt := argString(args, "user_prompt")
-	intervalMinutes := int(argInt64(args, "interval_minutes"))
 	maxItems := task.CrawlPlan.MaxItems
 	for _, src := range task.CrawlPlan.Sources {
 		if !isRecurringCrawlSource(src) {
@@ -27,7 +28,7 @@ func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *j
 		intent, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
 			OrgID:           task.OrgID,
 			AccountID:       task.AccountID,
-			Name:            textutil.FirstNonEmpty(argString(args, "name"), argString(args, "query")),
+			Name:            name,
 			Prompt:          prompt,
 			Intent:          task.Intent,
 			SourceType:      src.Type,

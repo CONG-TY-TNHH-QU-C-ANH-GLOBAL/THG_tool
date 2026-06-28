@@ -11,37 +11,43 @@ import (
 
 	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/jobs"
-	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
 )
 
+// submitOpenCrawl is the thin cmd facade: it resolves the raw args bag into a typed
+// crawlRequest (the arg/prompt plumbing, ARCHCM4a) and delegates to the typed core.
+// Callers are unchanged; behavior is identical.
 func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
 	if len(sources) == 0 {
 		return "", fmt.Errorf("crawler requires at least one source")
 	}
-	maxItems := resolveCrawlMaxItems(args)
-	keywords := resolveCrawlKeywords(args)
-	orgID := argInt64(args, "org_id")
-	accountID := resolveCrawlAccountID(db, args, orgID)
-	extras := buildCrawlExtras(args)
+	return submitCrawlRequest(ctx, db, jobStore, resolveCrawlRequest(db, intent, sources, args))
+}
+
+// submitCrawlRequest is the typed open-crawl execution core: build the Task, remember
+// a recurring intent when configured, then run the connector-dispatch ladder with the
+// server-job fallback. No map[string]any — this is the unit that moves to
+// internal/crawler in ARCHCM4b. Dispatch / fallback / recurring semantics are byte-for-
+// byte what submitOpenCrawl did inline.
+func submitCrawlRequest(ctx context.Context, db *store.Store, jobStore *jobs.Store, req crawlRequest) (string, error) {
 	task := &jobs.Task{
 		SchemaVersion: "1",
-		TaskID:        openCrawlTaskID(intent, sources, args),
-		OrgID:         orgID,
-		AccountID:     accountID,
-		IntentID:      argInt64(args, "_intent_id"),
-		Intent:        intent,
-		Keywords:      keywords,
+		TaskID:        req.TaskID,
+		OrgID:         req.OrgID,
+		AccountID:     req.AccountID,
+		IntentID:      req.IntentID,
+		Intent:        req.Intent,
+		Keywords:      req.Keywords,
 		CrawlPlan: jobs.CrawlPlan{
-			Sources:          sources,
-			MaxItems:         maxItems,
+			Sources:          req.Sources,
+			MaxItems:         req.MaxItems,
 			BatchSize:        20,
-			CursorLastPostID: strings.TrimSpace(argString(args, "_cursor_last_post_id")),
-			CursorLastPostAt: parseRFC3339OrZero(argString(args, "_cursor_last_post_at")),
-			SinceRunAt:       parseRFC3339OrZero(argString(args, "_since_run_at")),
+			CursorLastPostID: req.CursorLastPostID,
+			CursorLastPostAt: req.CursorLastPostAt,
+			SinceRunAt:       req.SinceRunAt,
 		},
-		Filters: jobs.Filters{Keywords: keywords, MinContentLength: 20, KeywordMinScore: 0},
+		Filters: jobs.Filters{Keywords: req.Keywords, MinContentLength: 20, KeywordMinScore: 0},
 		ScoringConfig: jobs.ScoringConfig{
 			HotThreshold:  70,
 			WarmThreshold: 40,
@@ -55,10 +61,10 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 		ExecutionMode:       "async",
 		OutputSchema:        "open_crawler_v1",
 		OutputSchemaVersion: "1",
-		Extras:              extras,
+		Extras:              req.Extras,
 	}
-	if db != nil && !argBool(args, "_recurring_run") && argInt64(args, "interval_minutes") > 0 {
-		rememberRecurringCrawlIntents(ctx, db, task, args)
+	if db != nil && !req.RecurringRun && req.IntervalMinutes > 0 {
+		rememberRecurringCrawlIntents(ctx, db, task, req.Prompt, req.Name, req.IntervalMinutes)
 	}
 	payload, err := json.Marshal(task)
 	if err != nil {
@@ -73,7 +79,7 @@ func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store,
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, intent), nil
+	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, req.Intent), nil
 }
 
 // resolveCrawlMaxItems applies the max_items → limit → prompt → default(50)
@@ -140,78 +146,6 @@ func buildCrawlExtras(args map[string]any) map[string]any {
 		}
 	}
 	return extras
-}
-
-func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID, userID int64, role string) (int64, error) {
-	// PR-M3 member scope: a non-privileged member's auto-resolved crawl must only
-	// land on an account they OWN — mirroring the comment path
-	// (resolveCallerAccountID). Without this, a sales member's crawl could
-	// silently run on another member's online account (cross-member confusion).
-	// Admin / platform roles, and the system scheduler (userID<=0), keep org-wide
-	// resolution. `allow` gates every candidate below by this ownership filter.
-	ownedOnly := false
-	owned := map[int64]bool{}
-	if userID > 0 {
-		r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
-		if !models.IsPlatformRole(r) && r != models.RoleAdmin {
-			ownedOnly = true
-			accs, err := db.Identities().GetAccountsForUser(orgID, userID)
-			if err != nil {
-				return 0, err
-			}
-			for _, a := range accs {
-				owned[a.ID] = true
-			}
-			if len(owned) == 0 {
-				return 0, nil // member owns no account — nothing safe to auto-pick
-			}
-		}
-	}
-	allow := func(id int64) bool { return !ownedOnly || owned[id] }
-
-	// PRIMARY: prefer the account an ONLINE, FB-logged-in extension connector is
-	// actually bound to. The dispatcher (pickOnlineConnectorForCrawl) routes by
-	// the connector's assigned_account_id, so the picker MUST agree with it.
-	// Otherwise the picker can choose an account by the stale
-	// accounts.browser_logged_in flag (e.g. #50) that NO online connector serves,
-	// while the live connector is bound to a different account record (e.g. #49) —
-	// and every dispatch then fails with "Chrome Extension is not online for this
-	// account" even though an extension is connected and logged in. That picker↔
-	// dispatcher mismatch was the #49-connector / #50-mission bug. Aligning the
-	// picker here makes auto-resolved crawls target the account that can actually
-	// execute them.
-	if conns, cErr := db.Connectors().ListLocalConnectors(orgID); cErr == nil {
-		for _, c := range conns {
-			if c.Online && c.AssignedAccountID > 0 && allow(c.AssignedAccountID) &&
-				strings.EqualFold(strings.TrimSpace(c.StreamStatus), browsergateway.StreamFacebookLoggedIn) {
-				return c.AssignedAccountID, nil
-			}
-		}
-	}
-	screen, err := db.Connectors().GetLatestConnectorScreenshot(orgID, 0)
-	if err != nil {
-		return 0, err
-	}
-	if screen != nil &&
-		screen.AccountID > 0 && allow(screen.AccountID) &&
-		screen.AgentID > 0 &&
-		strings.EqualFold(strings.TrimSpace(screen.StreamStatus), browsergateway.StreamFacebookLoggedIn) &&
-		time.Since(screen.UpdatedAt) <= 5*time.Minute {
-		return screen.AccountID, nil
-	}
-	accounts, err := db.Identities().GetAllAccounts(orgID)
-	if err != nil {
-		return 0, err
-	}
-	for _, acc := range accounts {
-		if acc.Platform == models.PlatformFacebook &&
-			acc.BrowserLoggedIn &&
-			acc.Status == models.AccountActive &&
-			strings.TrimSpace(acc.FBUserID) != "" && allow(acc.ID) {
-			return acc.ID, nil
-		}
-	}
-	return 0, nil
 }
 
 func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task, payload string) (string, bool, error) {
