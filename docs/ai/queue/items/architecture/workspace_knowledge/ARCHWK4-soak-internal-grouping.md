@@ -1,14 +1,14 @@
 ---
 id: ARCHWK4
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: "chore/archwk4-batch-d-fixtures-split"
+branch: "chore/archwk4-batch-e-embedder-split"
 pr_url: ""
 boundary_target: prep-extraction
-last_batch: D-fixtures
+last_batch: E-embedder
 ---
 
 # ARCHWK4 — Soak package internal decomposition
@@ -70,12 +70,17 @@ analysis (verified via top-level decl scan):
   Catalog landed exactly at the 200 limit (curated data literal), so NO allowlist
   entry was needed; the old `fixtures.go` (allowlisted 311) was deleted + removed
   from the allowlist. soak tests green; same package, no behavior change.
-- **Batch E — embedder.go (210):** cohesive deterministic test embedder, only 10 over.
-  Low value to split; prefer a documented large-fixture exception unless `tokenise`
-  extraction earns its own file.
+- **Batch E — embedder.go (210) — DONE:** the 10-over was not "cohesive fixture"
+  but two responsibilities — embedder IDENTITY (type + POD cluster taxonomy) vs the
+  vectorisation ALGORITHM. Split config from algorithm (cleaner SRP than a `tokenise`
+  orphan): `embedder.go` (ClusteredEmbedder/cluster types + NewClusteredEmbedder, 113,
+  zero imports — pure config) and `embedder_vectorize.go` (ModelVersion/Dimensions/
+  Embed/embedOne/tokenise + compile-check, 106). Bodies moved verbatim; same package,
+  no behavior change. embedder.go dropped off the allowlist. soak tests green.
 
-This PR records the decision only (no code). Each batch above is a clean GREEN
-follow-up under `BOUNDARY_MIGRATION_PLAYBOOK.md` §3.
+All batches A–E DONE — every soak file now maps to one responsibility, no soak
+god-files >200 remain. Each batch was a clean GREEN follow-up under
+`BOUNDARY_MIGRATION_PLAYBOOK.md` §3.
 
 ## Risk notes
 YELLOW if subpackages (import boundaries); GREEN if pure sibling re-grouping. Soak is test-support, not a runtime hot path. Confirm no import cycle (soak imports retrieval/embedding/assets only).
