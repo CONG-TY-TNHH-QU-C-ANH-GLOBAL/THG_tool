@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
@@ -80,17 +79,14 @@ func callerAccountForExplicitID(db *store.Store, orgID, userID int64, role strin
 
 // ownedAccountCandidates returns the accounts the caller may resolve from:
 // sales staff see only their owned accounts; admin / platform roles and the
-// legacy unauthenticated (userID <= 0) path see all org accounts.
+// legacy unauthenticated (userID <= 0) path see all org accounts. The
+// restriction decision is shared with the crawl gate via
+// callerRestrictedToOwnedAccounts (ARCHCM-R1 Option A).
 func ownedAccountCandidates(db *store.Store, orgID, userID int64, role string) ([]models.Account, error) {
-	if userID <= 0 {
-		// Legacy / unauthenticated path: any org account.
-		return db.Identities().GetAllAccounts(orgID)
+	if callerRestrictedToOwnedAccounts(userID, role) {
+		return db.Identities().GetAccountsForUser(orgID, userID)
 	}
-	r := models.UserRole(strings.ToLower(strings.TrimSpace(role)))
-	if models.IsPlatformRole(r) || r == models.RoleAdmin {
-		return db.Identities().GetAllAccounts(orgID)
-	}
-	return db.Identities().GetAccountsForUser(orgID, userID)
+	return db.Identities().GetAllAccounts(orgID)
 }
 
 // selectExecutionAccount applies the deterministic ExecutionContext resolution

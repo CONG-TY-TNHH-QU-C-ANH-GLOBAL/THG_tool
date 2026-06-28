@@ -1,6 +1,6 @@
 ---
 id: ARCHCM-R1
-status: BLOCKED
+status: DONE
 lane: RED
 risk: RED
 depends_on: []
@@ -8,8 +8,10 @@ parallel_safe: false
 branch: "audit/archcm-r1-account-scope-rbac"
 pr_url: ""
 boundary_target: blocked-decision
-blocked_on: founder-approval-of-decision
-audit_status: COMPLETE
+audit_status: APPROVED
+decision: option-A
+approved_by: founder
+implemented_by: ARCHCM-R1a
 ---
 
 # ARCHCM-R1 — AUDIT: consolidate duplicated account-control RBAC
@@ -27,7 +29,15 @@ Blocks ARCHCM2 and ARCHCM4 (they sit on this RBAC); ARCHCM2 in turn gates ARCHCM
 
 ---
 
-# DECISION RECORD (audit complete 2026-06-28 — awaiting founder approval)
+# DECISION RECORD (audit complete 2026-06-28 — **APPROVED by founder, Option A**)
+
+> **Founder decision (2026-06-28):** APPROVE Option A. CONTROL / OWNER / VISIBILITY
+> are intentionally distinct gates and are NOT merged into a generic
+> `CanControl`/`PickSafe` facade. OWNER stays canonical in
+> `models.IsAccountOwnerAllowed`; CONTROL stays the cmd/scraper
+> `facebook_account_scope.go` cluster; VISIBILITY stays `models.CanViewAccountDevice`.
+> The only code follow-up is the role-aware owned-candidate dedup — implemented in
+> **ARCHCM-R1a** (`chore/archcm-r1a-owned-candidate-dedup`). This unblocks ARCHCM2.
 
 ## 1. Headline finding — this is NOT one duplicated predicate
 
