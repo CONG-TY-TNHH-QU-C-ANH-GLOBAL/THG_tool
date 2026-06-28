@@ -10,8 +10,11 @@
 //     internal/drivers/{http,telegram,connector}) — enforced warn-only by
 //     WORKER_NO_TRANSPORT; drivers/*.
 //
-// SCAFFOLD ONLY (Phase A): boundary marker; no runtime logic lives here. Crawler
-// pieces currently live under internal/jobs, internal/jobhandlers,
+// Hosts the typed open-crawl execution core (SubmitCrawlRequest + the connector
+// dispatch ladder + recurring-intent memory), moved from cmd/scraper under ARCHCM4b.
+// cmd/scraper remains the composition root: it resolves the raw args/prompt into a
+// CrawlRequest and performs the RBAC account auto-pick, then calls SubmitCrawlRequest.
+// Other crawler pieces still live under internal/jobs, internal/jobhandlers,
 // internal/store/crawl, and cmd/worker (see MODULE_OWNERSHIP.yml). Code migrates here
 // only via a reviewed refactor — do not add or move runtime logic casually.
 package crawler

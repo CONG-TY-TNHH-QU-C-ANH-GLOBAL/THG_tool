@@ -3,83 +3,26 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
-	"github.com/thg/scraper/internal/browsergateway"
+	"github.com/thg/scraper/internal/crawler"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/store/connectors"
 )
 
 // submitOpenCrawl is the thin cmd facade: it resolves the raw args bag into a typed
 // crawlRequest (the arg/prompt plumbing, ARCHCM4a) and delegates to the typed core.
 // Callers are unchanged; behavior is identical.
+// submitOpenCrawl is the cmd composition-root facade: resolve the raw args bag into a
+// typed crawler.CrawlRequest (arg/prompt facade + RBAC account auto-pick, both kept in
+// cmd) and delegate to the crawler execution core (ARCHCM4b). Behavior is unchanged.
 func submitOpenCrawl(ctx context.Context, db *store.Store, jobStore *jobs.Store, intent string, sources []jobs.Source, args map[string]any) (string, error) {
 	if len(sources) == 0 {
 		return "", fmt.Errorf("crawler requires at least one source")
 	}
-	return submitCrawlRequest(ctx, db, jobStore, resolveCrawlRequest(db, intent, sources, args))
-}
-
-// submitCrawlRequest is the typed open-crawl execution core: build the Task, remember
-// a recurring intent when configured, then run the connector-dispatch ladder with the
-// server-job fallback. No map[string]any — this is the unit that moves to
-// internal/crawler in ARCHCM4b. Dispatch / fallback / recurring semantics are byte-for-
-// byte what submitOpenCrawl did inline.
-func submitCrawlRequest(ctx context.Context, db *store.Store, jobStore *jobs.Store, req crawlRequest) (string, error) {
-	task := &jobs.Task{
-		SchemaVersion: "1",
-		TaskID:        req.TaskID,
-		OrgID:         req.OrgID,
-		AccountID:     req.AccountID,
-		IntentID:      req.IntentID,
-		Intent:        req.Intent,
-		Keywords:      req.Keywords,
-		CrawlPlan: jobs.CrawlPlan{
-			Sources:          req.Sources,
-			MaxItems:         req.MaxItems,
-			BatchSize:        20,
-			CursorLastPostID: req.CursorLastPostID,
-			CursorLastPostAt: req.CursorLastPostAt,
-			SinceRunAt:       req.SinceRunAt,
-		},
-		Filters: jobs.Filters{Keywords: req.Keywords, MinContentLength: 20, KeywordMinScore: 0},
-		ScoringConfig: jobs.ScoringConfig{
-			HotThreshold:  70,
-			WarmThreshold: 40,
-			Weights: jobs.ScoringWeights{
-				KeywordRelevance: 0.4,
-				Engagement:       0.2,
-				ContentQuality:   0.4,
-			},
-		},
-		RetryPolicy:         jobs.RetryPolicy{MaxAttempts: 3, BackoffMs: 1000},
-		ExecutionMode:       "async",
-		OutputSchema:        "open_crawler_v1",
-		OutputSchemaVersion: "1",
-		Extras:              req.Extras,
-	}
-	if db != nil && !req.RecurringRun && req.IntervalMinutes > 0 {
-		rememberRecurringCrawlIntents(ctx, db, task, req.Prompt, req.Name, req.IntervalMinutes)
-	}
-	payload, err := json.Marshal(task)
-	if err != nil {
-		return "", err
-	}
-	if db != nil {
-		if result, routed, err := submitConnectorCrawl(ctx, db, task, string(payload)); routed {
-			return result, err
-		}
-	}
-	job, err := jobStore.Submit(ctx, task, string(payload))
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("da tao crawler job #%d task=%s intent=%s", job.ID, job.TaskID, req.Intent), nil
+	return crawler.SubmitCrawlRequest(ctx, db, jobStore, resolveCrawlRequest(db, intent, sources, args))
 }
 
 // resolveCrawlMaxItems applies the max_items → limit → prompt → default(50)
@@ -146,151 +89,6 @@ func buildCrawlExtras(args map[string]any) map[string]any {
 		}
 	}
 	return extras
-}
-
-func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task, payload string) (string, bool, error) {
-	if task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
-		return "", false, nil
-	}
-	screen, err := db.Connectors().GetLatestConnectorScreenshot(task.OrgID, task.AccountID)
-	if err != nil {
-		return "", true, err
-	}
-	if screen != nil && screen.AgentID > 0 && strings.EqualFold(strings.TrimSpace(screen.StreamStatus), browsergateway.StreamFacebookLoggedIn) && time.Since(screen.UpdatedAt) <= 5*time.Minute {
-		result, err := enqueueConnectorCrawlCommand(ctx, db, task, payload, screen.AgentID)
-		return result, true, err
-	}
-	// connectorReason carries the PRECISE per-connector rejection detail that
-	// pickOnlineConnectorForCrawl computed (assigned to a different account /
-	// fb_user_id mismatch / status=facebook_login_required / none paired). It is
-	// logged AND surfaced in the operator-facing error below — without this the
-	// operator only saw the generic "not online" and could not tell "log in" from
-	// "you're on the wrong FB account" from "this connector belongs to account #X".
-	connectorReason := ""
-	if agentID, reason := pickOnlineConnectorForCrawl(db, task); agentID > 0 {
-		result, err := enqueueConnectorCrawlCommand(ctx, db, task, payload, agentID)
-		return result, true, err
-	} else if reason != "" {
-		connectorReason = reason
-		log.Printf("[ConnectorCrawl] no heartbeat-routable connector org=%d account=%d: %s", task.OrgID, task.AccountID, reason)
-	}
-
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		return "", true, err
-	}
-	sess, _ := appStore.GetSession(ctx, task.AccountID)
-	if sess != nil && sess.CDPPort > 0 && (sess.Status == "idle" || sess.Status == "ready" || sess.Status == "active") {
-		return "", false, nil
-	}
-	msg := fmt.Sprintf("Facebook account #%d is saved, but THG Chrome Extension is not online for this account yet. Open Browser, pair the Chrome Extension, keep a logged-in Facebook tab open, then send the prompt again", task.AccountID)
-	if connectorReason != "" {
-		// The precise reason names which of the 5 routing gates failed, so the
-		// operator knows exactly what to fix (log in / switch FB account / pair).
-		msg += " — chi tiết: " + connectorReason
-	}
-	return "", true, fmt.Errorf("%s", msg)
-}
-
-// connectorCrawlEnvelope wraps the full Task JSON with flat top-level hints so
-// the Chrome Extension can find the navigation target without deep JSON parsing.
-// MarketSignalGate carries Brain's positive/negative signal hints to the
-// extension and back to the crawl-result endpoint so AI classification can
-// honor org-specific gating without re-reading context.
-type connectorCrawlEnvelope struct {
-	NavigateTo       string         `json:"navigate_to"`
-	SourceType       string         `json:"source_type"`
-	UseBackgroundTab bool           `json:"use_background_tab"`
-	MarketSignalGate map[string]any `json:"market_signal_gate,omitempty"`
-	UserPrompt       string         `json:"user_prompt,omitempty"`
-	Task             *jobs.Task     `json:"task"`
-	TaskID           string         `json:"task_id,omitempty"`
-	Intent           string         `json:"intent,omitempty"`
-	Keywords         []string       `json:"keywords,omitempty"`
-	CrawlPlan        jobs.CrawlPlan `json:"crawl_plan"`
-	Filters          jobs.Filters   `json:"filters,omitempty"`
-}
-
-func connectorCrawlEnvelopeForTask(task *jobs.Task) (connectorCrawlEnvelope, error) {
-	if task == nil {
-		return connectorCrawlEnvelope{}, fmt.Errorf("crawl task is required")
-	}
-	// Refuse early when no concrete navigation target exists. Without this,
-	// the extension receives navigate_to="" and silently falls back to the
-	// Facebook newsfeed instead of the intended group/post URL.
-	if len(task.CrawlPlan.Sources) == 0 || strings.TrimSpace(task.CrawlPlan.Sources[0].URL) == "" {
-		return connectorCrawlEnvelope{}, fmt.Errorf("crawl task has no concrete source URL; refusing to dispatch (prevents newsfeed fallback)")
-	}
-
-	env := connectorCrawlEnvelope{
-		UseBackgroundTab: true,
-		Task:             task,
-		NavigateTo:       strings.TrimSpace(task.CrawlPlan.Sources[0].URL),
-		SourceType:       task.CrawlPlan.Sources[0].Type,
-		TaskID:           task.TaskID,
-		Intent:           task.Intent,
-		Keywords:         task.Keywords,
-		CrawlPlan:        task.CrawlPlan,
-		Filters:          task.Filters,
-	}
-	if gate, ok := task.Extras["market_signal_gate"].(map[string]any); ok && len(gate) > 0 {
-		env.MarketSignalGate = gate
-	}
-	if up, ok := task.Extras["user_prompt"].(string); ok {
-		env.UserPrompt = strings.TrimSpace(up)
-	}
-	return env, nil
-}
-
-func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jobs.Task, _ string, agentID int64) (string, error) {
-	if agentID <= 0 {
-		return "", fmt.Errorf("Chrome Extension connector id is required")
-	}
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		return "", err
-	}
-	_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
-	_ = appStore.StartTask(ctx, task.TaskID)
-
-	env, err := connectorCrawlEnvelopeForTask(task)
-	if err != nil {
-		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
-		return "", err
-	}
-	envPayload, envErr := json.Marshal(env)
-	if envErr != nil {
-		return "", fmt.Errorf("marshal connector envelope: %w", envErr)
-	}
-	log.Printf("[ConnectorCrawl] enqueue navigate_to=%s task=%s org=%d account=%d", env.NavigateTo, task.TaskID, task.OrgID, task.AccountID)
-	cmdID, err := db.Connectors().CreateConnectorCommand(task.OrgID, task.AccountID, agentID, 0, "crawl", string(envPayload))
-	if err != nil {
-		_ = appStore.FailTask(ctx, task.TaskID, err.Error())
-		return "", err
-	}
-	return fmt.Sprintf("da tao Chrome Extension crawler command #%d task=%s intent=%s mode=chrome_extension", cmdID, task.TaskID, task.Intent), nil
-}
-
-// pickOnlineConnectorForCrawl resolves the connector that will run a crawl for
-// task.AccountID. It delegates the eligibility decision to the SHARED
-// connectors.PickReadyConnector so the run-time picker and the create-time
-// mission preflight (readiness.EvaluateCrawlAccountReadiness) never diverge.
-// Returns (connectorID, "") on success, or (0, typed-reason) otherwise.
-func pickOnlineConnectorForCrawl(db *store.Store, task *jobs.Task) (int64, string) {
-	conns, err := db.Connectors().ListLocalConnectors(task.OrgID)
-	if err != nil {
-		return 0, err.Error()
-	}
-	expectedFB := ""
-	if acc, _ := db.Identities().GetAccountForOrg(task.AccountID, task.OrgID); acc != nil {
-		expectedFB = acc.FBUserID
-	}
-	policy, _ := db.Connectors().GetExtensionPolicy()
-	id, reason := connectors.PickReadyConnector(conns, task.AccountID, expectedFB, policy)
-	if reason == connectors.ConnReady {
-		return id, ""
-	}
-	return 0, reason
 }
 
 func openCrawlTaskID(intent string, sources []jobs.Source, args map[string]any) string {

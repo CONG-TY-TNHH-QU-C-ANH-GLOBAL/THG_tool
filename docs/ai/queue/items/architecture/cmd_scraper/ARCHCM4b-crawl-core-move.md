@@ -1,17 +1,35 @@
 ---
 id: ARCHCM4b
-status: BLOCKED
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM4a]
 parallel_safe: false
-branch: ""
+branch: "chore/archcm4b-crawl-core-move"
 pr_url: ""
-blocked_on: dearg-seam-prep
 boundary_target: transport-to-usecase
 ---
 
 # ARCHCM4b — Move the typed crawl core into internal/crawler
+
+## IMPLEMENTED (2026-06-29, branch chore/archcm4b-crawl-core-move)
+Feasibility confirmed: no import cycle (move set is arg-free, imports only
+jobs/store/connectors/browsergateway/models/store-crawl/textutil; crawler imported by
+nothing); small facade (2 exports). The only real external coupling was a cmd test on
+`connectorCrawlEnvelopeForTask` — moved with its function. `check_topology` clean.
+- **Created** `internal/crawler/{request,dispatch,recurring}.go` + `dispatch_test.go`:
+  `SubmitCrawlRequest` + `CrawlRequest` (exported), and package-private
+  `submitConnectorCrawl` / `connectorCrawlEnvelope(+ForTask)` /
+  `enqueueConnectorCrawlCommand` / `pickOnlineConnectorForCrawl` /
+  `rememberRecurringCrawlIntents` / `isRecurringCrawlSource` — all verbatim.
+- **cmd**: `submitOpenCrawl` now calls `crawler.SubmitCrawlRequest`; `resolveCrawlRequest`
+  returns `crawler.CrawlRequest`. `resolveCrawlRequest` + `crawl_account_pick.go` (RBAC)
+  + the scheduler stay in cmd. crawl_runtime.go shrank 307 → 105 (off the allowlist).
+- Verbatim move → dispatch ladder / 5-min freshness / server fallback / deterministic
+  task ids / claim scheduler / retry+envelope refusal / connector-command semantics all
+  unchanged. RBAC (auto-pick owner filter + explicit-account pass-through) untouched in
+  cmd. No queue/CAS/ledger/schema/auth change. ARCHCM-R2a / ARCHCM-R2b not touched.
+Validation: go build/vet/test ./... green; topology + cognitive + file-size guards pass.
 
 ## Goal
 After ARCHCM4a's de-arg seam, move the typed plan-assembly + recurring scheduler +
