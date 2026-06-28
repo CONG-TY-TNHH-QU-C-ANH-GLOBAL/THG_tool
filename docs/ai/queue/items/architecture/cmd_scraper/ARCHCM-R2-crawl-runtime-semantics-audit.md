@@ -71,11 +71,15 @@ Recurring spine (crawl_scheduler.go): `runCrawlIntentScheduler` ticks (default 1
   day/sources/account).
 - **Server fallback:** `jobStore.Submit` carries `RetryPolicy{3, 1000ms}` → resumable
   via job retry.
-- **OPEN QUESTION (out of this file, for connector/jobs owners):** does
+- **OPEN QUESTION — NON-BLOCKING for ARCHCM4, tracked as
+  [`ARCHCM-R2b`](ARCHCM-R2b-connector-command-ttl-idempotency.md):** does
   `CreateConnectorCommand` have a TTL / GC? A command for a connector that never
   returns online appears to sit indefinitely (resumable but potentially stale). And is
   `CreateConnectorCommand` idempotent on re-dispatch, or can a manual re-submit create
-  a duplicate command row?
+  a duplicate command row? This is a connector-reliability question, **not a blocker
+  for ARCHCM4**: ARCHCM4 is behavior-preserving and does NOT change command
+  creation/dispatch semantics, so it neither fixes nor worsens this. Tracked separately
+  so it is not lost.
 
 ## Q2 — Race conditions on account-offline mid-submit
 - The "is the connector online" decision is **read at submit time** (screenshot
@@ -110,8 +114,10 @@ Recurring spine (crawl_scheduler.go): `runCrawlIntentScheduler` ticks (default 1
     control gate (`canRequesterControlAccount`) deliberately excludes read/crawl/search.
   - *Risk to decide:* a sales member can target ANOTHER member's account for a crawl
     (uses that account's connector/identity for a read). Acceptable for a pure read, or
-    should the explicit crawl path also be owner-filtered for consistency? **Founder RBAC
-    decision** — it is a behavior question, NOT a refactor.
+    should the explicit crawl path also be owner-filtered for consistency? This is a
+    real RED account-scope finding, **tracked as its own decision item
+    [`ARCHCM-R2a`](ARCHCM-R2a-crawl-explicit-account-rbac-decision.md)** — it is a
+    behavior question, NOT a refactor, and is NOT resolved by this audit.
 - **Scheduler path:** recurring intents carry their creator's `account_id`
   (`intent.AccountID`, creation-time). The scheduler runs as system (`userID<=0`, org-wide)
   but pins the account, so a recurring crawl runs on its pinned account even if that
@@ -132,18 +138,30 @@ Recurring spine (crawl_scheduler.go): `runCrawlIntentScheduler` ticks (default 1
 ## Recommended default: **Option A**
 The dispatch semantics are coherent and the resumability/race behaviors are
 intentional (durable command queue + claim-based scheduler + deterministic task ids).
-ARCHCM4 may proceed as a **behavior-preserving move** (RED-adjacent) once a human signs
-off, preserving the invariants below; the Q3 RBAC asymmetry is a separate founder
-decision, not a refactor.
+The Q3 RBAC asymmetry is a separate founder decision (ARCHCM-R2a), not a refactor.
 
-### ARCHCM4 move invariant checklist (must hold byte-for-byte)
+### ARCHCM4 is NOT auto-unblocked by this audit
+This audit existing does NOT unblock ARCHCM4. ARCHCM4 may proceed **only after the
+founder explicitly signs off ONE of**:
+- **(A) preserve current crawl semantics during the move** — including the
+  explicit-account behavior (Q3) and every invariant below — and decide RBAC hardening
+  separately in ARCHCM-R2a; OR
+- **(B) fix the RBAC asymmetry first** (ARCHCM-R2a Option B) and then move.
+
+Until one is explicitly chosen, ARCHCM-R2 stays BLOCKED and ARCHCM4 stays gated.
+
+### ARCHCM4 move invariant checklist — behavior-preserving; must NOT alter
+ARCHCM4 is a **behavior-preserving move**. It must NOT change any of:
 1. Dispatch ladder ORDER + first-match short-circuit (steps 1–5).
-2. The `≤5min` screenshot freshness window (step 2).
+2. The `≤5min` screenshot freshness behavior (step 2).
 3. not-routed → `jobStore.Submit` server fallback (steps 1 & 4).
 4. Deterministic `openCrawlTaskID` / `recurringCrawlTaskID` (idempotency keys).
-5. Claim-based scheduler + `account_not_selected` permanent-fail (no first-ready fallback).
-6. The auto-pick owner filter (Q3) and the explicit-path pass-through — unchanged.
-7. `RetryPolicy{3,1000ms}` on the server task; envelope "no concrete source URL" refusal.
+5. Claim-based scheduler + `account_not_selected` permanent-fail (NO first-ready fallback).
+6. **Current RBAC behavior** (auto-pick owner filter AND the explicit-path pass-through)
+   — unchanged **unless the founder explicitly chooses Option B** in ARCHCM-R2a.
+7. `RetryPolicy{3,1000ms}` on the server task; envelope "no concrete source URL" refusal
+   (retry/envelope-refusal semantics).
+Command creation/dispatch semantics are likewise unchanged (so ARCHCM-R2b is untouched).
 Characterization tests for 1–6 are required before the move (move-only is not a
 licence to ship untested runtime logic).
 
@@ -151,6 +169,9 @@ licence to ship untested runtime logic).
 N/A (audit — no production code changed).
 
 ## Done criteria
-Semantics documented + the three audit questions answered (above). ARCHCM4 unblocked
-only after human sign-off of Option A (or B). The Q3 RBAC asymmetry is recorded as a
-separate founder decision. Stays BLOCKED until sign-off.
+Semantics documented + the three audit questions answered (above). ARCHCM4 is NOT
+auto-unblocked — it proceeds only after explicit founder sign-off of (A) preserve
+current semantics or (B) fix RBAC first. Two findings are tracked as their own items so
+they are not lost: the Q3 RBAC asymmetry → **ARCHCM-R2a** (RED decision); the connector
+command TTL/GC + idempotency open question → **ARCHCM-R2b** (non-blocking reliability
+follow-up). ARCHCM-R2 stays BLOCKED until sign-off.
