@@ -1,6 +1,6 @@
 ---
 id: ARCHCM-R2
-status: BLOCKED
+status: DONE
 lane: RED
 risk: RED
 depends_on: []
@@ -8,7 +8,9 @@ parallel_safe: false
 branch: "audit/archcm-r2-crawl-runtime-semantics"
 pr_url: ""
 boundary_target: blocked-decision
-audit_status: COMPLETE
+audit_status: APPROVED
+decision: option-A
+approved_by: founder
 ---
 
 # ARCHCM-R2 — AUDIT: crawl runtime / dispatch semantics
@@ -27,6 +29,15 @@ Blocks ARCHCM4.
 ---
 
 # AUDIT RESULT (2026-06-28 — semantics documented; the 3 questions answered)
+
+> **Founder decision (2026-06-29): APPROVE Option A.** ARCHCM4 may proceed as a
+> behavior-preserving crawl-runtime move that preserves current semantics exactly
+> (dispatch ladder order, 5-min screenshot freshness, server fallback, deterministic
+> task ids, claim scheduler / no first-ready fallback, retry/envelope refusal, auto-pick
+> owner filter, AND the explicit-account pass-through). ARCHCM-R2a (RBAC) is NOT fixed
+> in the move; ARCHCM-R2b (connector command TTL/GC/idempotency) stays separate; no
+> queue/outbox/action_ledger/CAS/lease/schema/auth/session change. Feasibility for the
+> move itself is re-scoped in ARCHCM4 (the move is staged — see ARCHCM4 + ARCHCM4a/b).
 
 ## 0. The dispatch chain (as built)
 `submitOpenCrawl` (crawl_runtime.go:19): `resolveCrawlAccountID` → build `jobs.Task`
