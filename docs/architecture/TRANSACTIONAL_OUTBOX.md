@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # Transactional Outbox & Process Managers
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** OFFICIAL STANDARD (target). **Companion of** `ARCHITECTURE_STANDARD.md`.
 Defines how critical cross-module side effects are made **durable and exactly-once-

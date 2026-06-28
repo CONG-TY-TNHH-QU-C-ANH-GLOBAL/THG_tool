@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # ADR — PR9 Data Platform
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** ACCEPTED (documentation only — PR9 ships NO runtime/data code).
 **Date:** 2026-06-21.

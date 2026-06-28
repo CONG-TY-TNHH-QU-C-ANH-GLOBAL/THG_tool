@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # Refactor Roadmap
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** OFFICIAL STANDARD (sequencing). **Companion of** `ARCHITECTURE_STANDARD.md`.
 Staged path from the code-as-of-now (`CURRENT_CODE_AUDIT.md`) to the standard. Every

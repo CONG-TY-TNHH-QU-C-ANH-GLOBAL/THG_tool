@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # Current Package Inventory
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** AUDIT (Phase A) — describes `internal/` as-of-now (base commit
 `6bd9efb6`). No code is moved by this document. Companion of

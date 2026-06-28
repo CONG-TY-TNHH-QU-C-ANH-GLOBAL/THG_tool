@@ -8,6 +8,8 @@ related_pr_or_issue: docs/architecture-boundary-map
 
 # Boundary Migration Playbook
 
+> Part of the [architecture docs index](INDEX.md).
+
 **Status:** OFFICIAL STANDARD (process). **Companion of**
 [`ARCHITECTURE_STANDARD.md`](ARCHITECTURE_STANDARD.md) (target shape),
 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md) (the per-module import rules — the

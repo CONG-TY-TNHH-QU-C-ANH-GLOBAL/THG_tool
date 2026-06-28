@@ -1,11 +1,11 @@
 ---
 id: DOCS2
-status: READY
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: [DOCS1]
 parallel_safe: true
-branch: ""
+branch: "chore/docs2-architecture-backlinks-frontmatter"
 pr_url: ""
 ---
 

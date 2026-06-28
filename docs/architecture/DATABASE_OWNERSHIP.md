@@ -1,4 +1,14 @@
+---
+doc_type: architecture
+status: active
+owner: platform
+last_reviewed: 2026-06-28
+related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+---
+
 # Database Table Ownership
+
+> Part of the [architecture docs index](INDEX.md).
 
 **Status:** OFFICIAL STANDARD. **Companion of** `ARCHITECTURE_STANDARD.md`.
 Builds on the existing `internal/store/DOMAINS.md` truth-ownership matrix (§2.4)
