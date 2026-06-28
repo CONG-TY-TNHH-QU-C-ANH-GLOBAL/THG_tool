@@ -175,8 +175,11 @@ justified. A durable ADR under `docs/architecture/decisions/` can capture the
 three-gate model if the founder wants it outside the queue.)
 
 ## Validation
-N/A (audit — no production code changed). The eventual ARCHCM-R1a PR needs the
-RBAC characterization tests named in §8.
+- **N/A for this audit** — no production code changed (docs/queue item only).
+- The follow-up **ARCHCM-R1a** implementation PR must add RBAC / crawl
+  characterization tests covering all three role cases: **sales** (→ only owned
+  accounts), **admin/platform** (→ all org accounts), and **userID<=0** (→ org-wide,
+  unchanged).
 
 ## Done criteria
 Decision record naming the canonical implementation(s) + the three-gate distinction,
