@@ -1,11 +1,11 @@
 ---
 id: ARCHCM4a
-status: READY
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM-R1, ARCHCM-R2]
 parallel_safe: false
-branch: ""
+branch: "chore/archcm4a-crawl-dearg-seam"
 pr_url: ""
 boundary_target: prep-extraction
 ---

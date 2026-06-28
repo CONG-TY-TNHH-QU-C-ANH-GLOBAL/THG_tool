@@ -99,7 +99,7 @@ ai/architect/executor.ts  # 334 lines
 internal/models/execution_outcome.go  # 332 lines
 internal/server/router.go  # 332 lines
 internal/store/threads/threads.go  # 331 lines
-cmd/scraper/crawl_runtime.go  # 330 lines
+cmd/scraper/crawl_runtime.go  # 307 lines (ARCHCM4a extracted the account picker to crawl_account_pick.go)
 internal/store/migrator.go  # 330 lines
 internal/server/auth/google.go  # 320 lines
 internal/ai/business.go  # 319 lines
