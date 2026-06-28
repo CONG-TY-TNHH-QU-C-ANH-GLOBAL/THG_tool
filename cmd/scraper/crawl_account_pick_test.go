@@ -8,21 +8,30 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
+// gateExpectation is the expected crawlOwnershipGate outcome for one account pair.
+type gateExpectation struct {
+	label string
+	a     int64
+	b     int64
+	wantA bool
+	wantB bool
+}
+
 // requireGate asserts the crawlOwnershipGate result: a non-nil gate whose allow(a)/
 // allow(b) match the expected ownership decision.
-func requireGate(t *testing.T, label string, allow func(int64) bool, err error, a, b int64, wantA, wantB bool) {
+func requireGate(t *testing.T, allow func(int64) bool, err error, exp gateExpectation) {
 	t.Helper()
 	if err != nil {
-		t.Fatalf("%s: unexpected err %v", label, err)
+		t.Fatalf("%s: unexpected err %v", exp.label, err)
 	}
 	if allow == nil {
-		t.Fatalf("%s: got nil gate, want non-nil", label)
+		t.Fatalf("%s: got nil gate, want non-nil", exp.label)
 	}
-	if allow(a) != wantA {
-		t.Errorf("%s: allow(%d)=%v, want %v", label, a, allow(a), wantA)
+	if allow(exp.a) != exp.wantA {
+		t.Errorf("%s: allow(%d)=%v, want %v", exp.label, exp.a, allow(exp.a), exp.wantA)
 	}
-	if allow(b) != wantB {
-		t.Errorf("%s: allow(%d)=%v, want %v", label, b, allow(b), wantB)
+	if allow(exp.b) != exp.wantB {
+		t.Errorf("%s: allow(%d)=%v, want %v", exp.label, exp.b, allow(exp.b), exp.wantB)
 	}
 }
 
@@ -43,13 +52,13 @@ func TestCrawlOwnershipGate(t *testing.T) {
 
 	// sales is restricted to owned accounts.
 	allow, gErr := crawlOwnershipGate(db, 1, 7, "sales")
-	requireGate(t, "sales restricted", allow, gErr, a, b, true, false)
+	requireGate(t, allow, gErr, gateExpectation{label: "sales restricted", a: a, b: b, wantA: true, wantB: false})
 
 	// admin + platform + the userID<=0 scheduler are org-wide.
 	allow, gErr = crawlOwnershipGate(db, 1, 5, "admin")
-	requireGate(t, "admin org-wide", allow, gErr, a, b, true, true)
+	requireGate(t, allow, gErr, gateExpectation{label: "admin org-wide", a: a, b: b, wantA: true, wantB: true})
 	allow, gErr = crawlOwnershipGate(db, 1, 0, "")
-	requireGate(t, "scheduler org-wide", allow, gErr, a, b, true, true)
+	requireGate(t, allow, gErr, gateExpectation{label: "scheduler org-wide", a: a, b: b, wantA: true, wantB: true})
 
 	// a sales member who owns nothing yields a nil gate (pick nothing), not an error.
 	allow, gErr = crawlOwnershipGate(db, 1, 99, "sales")
