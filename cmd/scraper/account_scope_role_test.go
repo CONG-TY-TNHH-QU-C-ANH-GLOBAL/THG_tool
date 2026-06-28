@@ -2,12 +2,14 @@ package main
 
 import "testing"
 
-// callerRestrictedToOwnedAccounts is the single OWNER-scope role classification
-// shared by ownedAccountCandidates (outbound) and pickReadyFacebookAccountIDForCrawl
-// (crawl) per the approved ARCHCM-R1 Option A decision. This pins the RBAC behavior
-// the extraction must preserve: only an identified, non-privileged sales member is
-// restricted to owned accounts; admin / platform roles and the userID<=0 scheduler /
-// legacy path stay org-wide. A regression here is an account-scope auth change.
+// callerRestrictedToOwnedAccounts is the single OWNER-scope role classification per
+// the approved ARCHCM-R1 Option A decision. ownedAccountCandidates (outbound) uses it
+// today; the crawl gate (pickReadyFacebookAccountIDForCrawl) still re-implements the
+// rule inline and its adoption is intentionally deferred to ARCHCM-R2 / ARCHCM4. This
+// pins the RBAC behavior the extraction must preserve: only an identified,
+// non-privileged sales member is restricted to owned accounts; admin / platform roles
+// and the userID<=0 scheduler / legacy path stay org-wide. A regression here is an
+// account-scope auth change.
 func TestCallerRestrictedToOwnedAccounts(t *testing.T) {
 	cases := []struct {
 		name   string

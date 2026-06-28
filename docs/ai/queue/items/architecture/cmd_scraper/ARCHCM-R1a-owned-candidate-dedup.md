@@ -1,8 +1,8 @@
 ---
 id: ARCHCM-R1a
 status: REVIEW
-lane: GREEN
-risk: GREEN
+lane: YELLOW
+risk: YELLOW
 depends_on: [ARCHCM-R1]
 parallel_safe: false
 branch: "chore/archcm-r1a-owned-candidate-dedup"
@@ -36,7 +36,10 @@ in `GetAllAccounts`. Reusing the list helper would narrow that to "only enumerat
 org accounts" — an edge-case OWNER-gate semantics change (a hard stop). So only the
 shared KERNEL (the role decision) was extracted.
 
-## Scope delivered (GREEN) + crawl deferral (why)
+## Scope delivered + crawl deferral (why)
+Lane/risk YELLOW: behavior-preserving and package-internal, but it touches the
+account-scope / RBAC role classification, so it is deliberately NOT classified GREEN.
+
 - **Delivered:** extracted `callerRestrictedToOwnedAccounts(userID, role) bool` and
   applied it in `ownedAccountCandidates`. Pure, package-internal, behavior-identical.
 - **Deferred to ARCHCM4:** applying the helper inside
