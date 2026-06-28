@@ -6,7 +6,7 @@ package soak
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/binary"
 	"math"
 	"strings"
@@ -56,11 +56,13 @@ func (e *ClusteredEmbedder) embedOne(text string) []float32 {
 	}
 
 	// Hash-noise axes — let unrelated texts have orthogonal residue
-	// instead of identical zero vectors. SHA-1 over the text, split
-	// into 8 float32 axes in [-0.05, 0.05] range. Small enough that
-	// it doesn't dominate cluster signal; large enough to prevent
-	// degenerate cosine=NaN for empty-cluster texts.
-	h := sha1.Sum([]byte(strings.ToLower(text)))
+	// instead of identical zero vectors. A SHA-256 digest of the text,
+	// split into 8 float32 axes in [-0.05, 0.05] range. Small enough
+	// that it doesn't dominate cluster signal; large enough to prevent
+	// degenerate cosine=NaN for empty-cluster texts. The hash is used
+	// only as a deterministic noise source, never for any security
+	// claim — sha256 over sha1 just keeps the static analysers quiet.
+	h := sha256.Sum256([]byte(strings.ToLower(text)))
 	for j := range 8 {
 		// Each axis uses 2 bytes of the hash → uint16 → [-1, 1] → scale.
 		raw := binary.BigEndian.Uint16(h[j*2 : j*2+2])
