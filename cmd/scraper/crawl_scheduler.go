@@ -9,51 +9,8 @@ import (
 
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/store"
-	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/textutil"
 )
-
-// rememberRecurringCrawlIntents takes already-resolved typed inputs (prompt / name /
-// intervalMinutes) rather than the raw args bag (ARCHCM4a de-arg). The resolution lives
-// in resolveCrawlRequest; this function and its UpsertIntent behavior are unchanged.
-func rememberRecurringCrawlIntents(ctx context.Context, db *store.Store, task *jobs.Task, prompt, name string, intervalMinutes int) {
-	if db == nil || task == nil || task.OrgID <= 0 || task.AccountID <= 0 {
-		return
-	}
-	maxItems := task.CrawlPlan.MaxItems
-	for _, src := range task.CrawlPlan.Sources {
-		if !isRecurringCrawlSource(src) {
-			continue
-		}
-		intent, err := db.Crawl().UpsertIntent(ctx, crawl.Intent{
-			OrgID:           task.OrgID,
-			AccountID:       task.AccountID,
-			Name:            name,
-			Prompt:          prompt,
-			Intent:          task.Intent,
-			SourceType:      src.Type,
-			SourceURL:       src.URL,
-			SourceLabel:     src.Label,
-			Keywords:        task.Keywords,
-			IntervalMinutes: intervalMinutes,
-			MaxItems:        maxItems,
-		})
-		if err != nil {
-			log.Printf("[CrawlIntent] remember failed org=%d account=%d source=%s: %v", task.OrgID, task.AccountID, src.URL, err)
-			continue
-		}
-		log.Printf("[CrawlIntent] remembered org=%d account=%d intent=%d interval=%dm source=%s", intent.OrgID, intent.AccountID, intent.ID, intent.IntervalMinutes, intent.SourceURL)
-	}
-}
-
-func isRecurringCrawlSource(src jobs.Source) bool {
-	switch strings.ToLower(strings.TrimSpace(src.Type)) {
-	case "facebook_group", "facebook_search", "web_url":
-		return strings.TrimSpace(src.URL) != ""
-	default:
-		return false
-	}
-}
 
 func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *jobs.Store, tickEvery time.Duration) {
 	if db == nil || jobStore == nil {
