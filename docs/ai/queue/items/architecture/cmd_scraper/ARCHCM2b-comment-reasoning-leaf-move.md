@@ -1,23 +1,25 @@
 ---
 id: ARCHCM2b
-status: BLOCKED
+status: READY
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM1]
 parallel_safe: false
-branch: "audit/archcm2b-target-rescope"
+branch: ""
 pr_url: ""
-blocked_on: comment-usecase-home-decision
-boundary_target: blocked-decision
+boundary_target: leaf-move
+target_package: internal/services/facebook/commenting
 audit_status: COMPLETE
 ---
 
-# ARCHCM2b — Move comment_reasoning out of cmd (target was WRONG — re-scoped)
+# ARCHCM2b — Move comment_reasoning to a Facebook comment usecase package
 
 ## Goal
 Move the comment-reasoning leaf (`outbound_comment_reasoning.go`) out of the
-composition root. The prior plan targeted `internal/outbound`; **feasibility-before-code
-found that target is wrong** and would corrupt an existing boundary. No code written.
+composition root into a **Facebook-specific comment usecase package**
+(`internal/services/facebook/commenting`). The prior plan targeted `internal/outbound`;
+**feasibility-before-code found that target is wrong** (it is the vertical-neutral
+spine). Target corrected; direction decided. No code written in this audit.
 
 ## Component / domain
 FB comment-intelligence usecase (P2c knowledge-grounded comment decision).
@@ -63,37 +65,67 @@ ai + knowledge), which the layer map already allows to live at the composition r
 or in a usecase package — NOT in the neutral outbound domain.
 
 ## 4. Options (correct home for the FB comment-intelligence usecase)
-- **Option A (recommended): keep it in cmd for now; do NOT move into `internal/outbound`.**
-  Mark the ARCHCM2 umbrella's L3 target as mis-specified. comment_reasoning is a
-  cross-service usecase orchestrator; the composition root is a legitimate home until a
-  dedicated usecase package is justified. Zero risk, unblocks nothing falsely, and
-  prevents an architecture-corrupting move. The DI seam (inject `facebook.ContactDirectory`)
-  can still be done later as a small GREEN readability prep if desired, independent of any move.
-- **Option B: move to a FB comment-intelligence usecase package** (e.g.
-  `internal/services/facebook/comment` or a new `internal/comment`), where importing
-  `ai` + `facebook` + `knowledge` is allowed. A real YELLOW move, but needs the
-  package-home decision (where the FB comment usecase lives) + MODULE_BOUNDARIES sign-off.
-- **Option C: invert FB+AI behind outbound-owned ports and move to `internal/outbound`.**
-  REJECTED: broad abstraction over content generation; not a leaf-move; violates the
-  "no broad port" stop; high risk for no boundary payoff.
+- **Option A — keep it in `cmd/scraper`. TEMPORARY BASELINE ONLY, not the final
+  architecture.** A safe no-op: the file compiles and works where it is. But
+  `cmd/scraper` is the composition root / facade, NOT the long-term home for Facebook +
+  AI comment-intelligence usecase logic. Acceptable only until Option B lands; must not
+  be treated as the destination.
+- **Option B (RECOMMENDED) — move to a Facebook-specific comment usecase package:**
+  `internal/services/facebook/commenting` (repo-conventional: `internal/services/facebook`
+  already hosts `comment_quality.go` / `comment_readiness.go`; a `commenting/` subpackage
+  is the bounded SRP home and avoids growing the flat `comment_*` prefix). There,
+  importing `ai` + `facebook` + `knowledge` is legitimate (FB usecase orchestration).
+  `cmd/scraper` keeps a thin adapter and calls the usecase. YELLOW move via a narrow DI
+  seam (inject `facebook.ContactDirectory` from cmd).
+- **Option C — invert FB+AI behind outbound-owned ports and move to `internal/outbound`.**
+  REJECTED: a broad abstraction over content generation just to satisfy a wrong target;
+  not a leaf-move; violates the "no broad port" stop; high risk for no boundary payoff.
 
-## 5. Recommended default: **Option A**
-Do not move it into the neutral spine. Keep comment_reasoning in cmd; correct the
-ARCHCM2 umbrella so L3's destination is the FB usecase side, not `internal/outbound`.
-Re-open ARCHCM2b only once Option B's usecase-home is decided.
+## 5. Recommended default: **Option B** — Facebook comment usecase package
 
-## 6. Impact on the ARCHCM2 umbrella
-The umbrella (and ARCHCM2c) assume `internal/outbound` as the L3 destination. That is
-incorrect for FB-coupled content logic. ARCHCM2 should be re-framed: only the
-**vertical-neutral** parts of the cmd outbound surface (queueing/dedup/policy call
-orchestration) could approach `internal/outbound`; the FB+AI content (comment_reasoning,
-lead_pipeline content, lead_outcome formatting) belongs on the FB usecase side. This
-needs a corrected umbrella target before ARCHCM2c is planned.
+## 6. Founder / architect direction (recorded 2026-06-28)
+- `internal/outbound` **stays vertical-neutral** — no FB/AI content logic moves into it.
+- Facebook + AI comment-intelligence **belongs on the Facebook service/usecase side**
+  (`internal/services/facebook/commenting` or the closest repo-conventional equivalent).
+- `cmd/scraper` **builds adapters and calls the usecase** — it is the composition
+  root/facade, not the long-term home for this logic.
+- **No broad abstraction** invented just to satisfy a wrong target (Option C stays
+  rejected).
+
+## 7. Impact on the ARCHCM2 umbrella
+The umbrella (and ARCHCM2c) previously assumed `internal/outbound` as the L3
+destination — wrong for FB-coupled content. Corrected target: the FB usecase side
+(`internal/services/facebook/...`). Only genuinely **vertical-neutral** parts of the cmd
+outbound surface (queueing/dedup/policy call orchestration) could approach
+`internal/outbound`; the FB+AI content (comment_reasoning, lead_pipeline content,
+lead_outcome formatting) goes to the FB usecase side. The umbrella target is updated
+accordingly (see its banner).
+
+## 8. Next implementation slice (ARCHCM2b is READY)
+1. **Feasibility-check first** (Boundary Playbook §3): confirm
+   `internal/services/facebook/commenting` importing `ai` + `workspace_knowledge/runtime`
+   creates no import cycle (i.e. neither imports `internal/services/facebook`); if a
+   cycle exists, stop and re-scope the seam.
+2. Create `internal/services/facebook/commenting` with a package doc.
+3. Move `outbound_comment_reasoning.go` there (`CommentReasoningMode`,
+   `ApplyCommentReasoning`, `CommentReasoningInput`); the `facebook` import becomes
+   in-package.
+4. **Narrow DI seam:** inject `facebook.ContactDirectory` (the existing interface) into
+   `ApplyCommentReasoning` instead of constructing the concrete `fbContactDirectory`;
+   `cmd/scraper` (`outbound_lead_pipeline.go`) builds the adapter and passes it.
+5. Caller switches to `commenting.*`. Keep behavior unchanged; add a characterization
+   test for the off/dryrun/live mode decision.
+6. **Do not** touch queue / RBAC / CAS / ledger / runtime semantics; keep
+   `internal/outbound` untouched.
 
 ## Validation
-N/A (feasibility re-scope — no production code).
+N/A for this audit (no production code). The implementation PR runs:
+go build/test ./... ; scripts/check_topology.sh ; scripts/go_cognitive_check.sh ;
+scripts/check_file_size.py ; ai_validate.sh. New Code Sonar clean.
 
 ## Done criteria
-Re-scoped: target corrected away from the neutral `internal/outbound`; comment-usecase
-home decision recorded (Option A: stay in cmd; Option B: FB usecase package). Stays
-BLOCKED until the home decision is taken.
+This audit: target corrected to the FB comment usecase package; Option B recorded as
+the direction; ARCHCM2b READY. Implementation (separate PR): `comment_reasoning` lives
+in `internal/services/facebook/commenting` behind a facade with an injected
+`facebook.ContactDirectory`; caller updated; no import cycle; behavior + tests green;
+`internal/outbound` untouched; no queue/RBAC semantics change.
