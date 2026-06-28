@@ -1,11 +1,11 @@
 ---
 id: ARCHCM2b
-status: READY
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM1]
 parallel_safe: false
-branch: ""
+branch: "chore/archcm2b-commenting-usecase-move"
 pr_url: ""
 boundary_target: leaf-move
 target_package: internal/services/facebook/commenting
@@ -13,6 +13,21 @@ audit_status: COMPLETE
 ---
 
 # ARCHCM2b — Move comment_reasoning to a Facebook comment usecase package
+
+## IMPLEMENTED (2026-06-28, branch chore/archcm2b-commenting-usecase-move)
+Feasibility §8.1 confirmed (no import cycle: `services/facebook` already imports `ai`;
+neither `ai` nor `workspace_knowledge/runtime` imports `services/facebook`; the new
+package is imported by nothing). Done:
+- New `internal/services/facebook/commenting/comment_reasoning.go` (113) — `Mode()`,
+  `Apply()`, `Input` (verbatim logic, exported names).
+- DI seam: `Apply` takes an injected `facebook.ContactDirectory` (Input.Contacts)
+  instead of building the concrete `fbContactDirectory`; the cmd caller passes
+  `fbContactDirectory{c.db}`. `fbContactDirectory` stays in cmd.
+- Deleted `cmd/scraper/outbound_comment_reasoning.go`; caller
+  `outbound_lead_pipeline.go` switches to `commenting.*` (kept at 200 lines).
+- `internal/outbound` untouched; no queue/RBAC/CAS/ledger/runtime semantics changed.
+- New characterization test `TestMode` (off/dryrun/live + alias + case/space).
+Validation: go build/test ./... green; topology + cognitive + file-size guards pass.
 
 ## Goal
 Move the comment-reasoning leaf (`outbound_comment_reasoning.go`) out of the

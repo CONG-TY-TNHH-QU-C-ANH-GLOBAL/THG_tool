@@ -9,6 +9,7 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/services/facebook"
+	"github.com/thg/scraper/internal/services/facebook/commenting"
 	"github.com/thg/scraper/internal/store"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
@@ -69,7 +70,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 	knowledgeBuilder.Recorder = db.Knowledge()
 	knowledgeBuilder.TraceRec = db.Knowledge()
 
-	reasoningMode := commentReasoningMode()
+	reasoningMode := commenting.Mode()
 	var reasoningProfile *ai.BusinessProfile
 	if reasoningMode != "off" {
 		reasoningProfile = ai.LoadProfileForOrg(db, orgID)
@@ -189,11 +190,10 @@ func (c *leadOutreachContext) prepareOutreachContent(ctx context.Context, lead m
 		return "", retrievalID, "empty_content", nil
 	}
 	if c.reasoningMode != "off" && c.msgType == "comment" {
-		content = applyCommentReasoning(ctx, commentReasoningInput{
-			db: c.db, kb: c.knowledgeBuilder, msgGen: c.msgGen, mode: c.reasoningMode,
-			profile: c.reasoningProfile, orgID: c.orgID, accountID: c.accountID,
-			initiatorUserID: c.actx.InitiatorUserID, leadContent: lead.Content,
-			author: lead.Author, fallback: content,
+		content = commenting.Apply(ctx, commenting.Input{
+			DB: c.db, KB: c.knowledgeBuilder, MsgGen: c.msgGen, Contacts: fbContactDirectory{c.db},
+			Mode: c.reasoningMode, Profile: c.reasoningProfile, OrgID: c.orgID, AccountID: c.accountID,
+			InitiatorUserID: c.actx.InitiatorUserID, LeadContent: lead.Content, Author: lead.Author, Fallback: content,
 		})
 	}
 	return content, retrievalID, "", nil
