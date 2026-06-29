@@ -14,40 +14,10 @@ import (
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
 
-// leadOutreachState accumulates one queueLeadOutreach pass's counters + diagnostics.
-type leadOutreachState struct {
-	queued        int
-	skipped       int
-	approvedCount int
-	scanned       int
-	skipReasons   map[string]int
-	// skipSamples keeps up to 5 sample lead IDs per skip reason (diagnosability).
-	skipSamples map[string][]int64
-	lastGenErr  error
-	// riskBlock* capture the last risk_ceiling_exceeded deny for the response.
-	riskBlockSeen    bool
-	riskBlockRisk    float64
-	riskBlockCeiling float64
-}
-
-func newLeadOutreachState() *leadOutreachState {
-	return &leadOutreachState{
-		skipReasons: map[string]int{},
-		skipSamples: map[string][]int64{},
-	}
-}
-
-func (s *leadOutreachState) recordSkip(reason string, leadID int64) {
-	s.skipped++
-	s.skipReasons[reason]++
-	if leadID > 0 && len(s.skipSamples[reason]) < 5 {
-		s.skipSamples[reason] = append(s.skipSamples[reason], leadID)
-	}
-}
-
 // leadOutreachContext is the resolved per-run config for the per-lead pipeline (S107).
 type leadOutreachContext struct {
 	db               *store.Store
+	outbound         outboundRecorder
 	msgGen           *ai.MessageGenerator
 	knowledgeBuilder *knowledgeRuntime.Builder
 	msgType          string
@@ -87,6 +57,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 
 	return &leadOutreachContext{
 		db:               db,
+		outbound:         storeOutboundRecorder{db},
 		msgGen:           msgGen,
 		knowledgeBuilder: knowledgeBuilder,
 		msgType:          msgType,

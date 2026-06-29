@@ -13,6 +13,39 @@ boundary_target: transport-to-usecase
 
 # ARCHCM2c — De-couple + move outbound_lead_outcome.go / outbound_lead_pipeline.go
 
+## SEAM 1 DONE (2026-06-29) — outbound persistence port (the RED-core decouple)
+First behavior-preserving decoupling brick, on branch `chore/archcm2c-outbound-recorder-seam`.
+The scariest concrete-store dependency in the movable per-lead path — the queue WRITE +
+Knowledge outcome recording in `queueOutreachMessage` — is now behind a narrow consumer-owned
+port instead of `*store.Store`:
+- **New `cmd/scraper/outbound_lead_recorder.go`:** `outboundRecorder` interface (2 methods:
+  `QueueOutbound` + `RecordOutcome`) + a neutral `queueOutcome` DTO (models/primitives only, so
+  the port does NOT leak the store-tree `outbound.QueueResult`) + `storeOutboundRecorder`, a
+  pass-through cmd adapter over `*store.Store` (uses the non-deprecated `Outbound().Queue`).
+- `leadOutreachContext` gains an `outbound outboundRecorder` field (wired once in
+  `buildLeadOutreachContext`); `queueOutreachMessage` no longer names `*store.Store`.
+- The pure store-free `leadOutreachState` accumulator moved from lead_pipeline.go (was at the
+  200-line cap) to lead_outcome.go beside its formatters — "extract pure logic first".
+- Store-free characterization tests (fakeRecorder) pin the allowed / risk-block / no-retrievalID
+  paths + the 24h cooldown + immutable CreatedBy. queue/dedup/policy semantics UNCHANGED (the
+  concrete store still executes the write).
+
+**Not a god interface:** one 2-method port, not a re-export of the store surface. **Partial
+unblock** — the move is still blocked; remaining store coupling in the cluster (next seams):
+1. `commenting.Apply` takes `commenting.Input.DB *store.Store` (and `Contacts fbContactDirectory`)
+   — the `internal/services/facebook/commenting` package is itself store-coupled; decoupling it
+   is a separate, larger seam and is the critical-path blocker for the move.
+2. `noEligibleCommentMessage(ctx, c.db, ...)` (cmd-local, in formatCommentResult) — needs a small
+   read port or relocation.
+3. The build layer (`buildLeadOutreachContext`): `businessContextForOrg(db,…)`,
+   `ai.LoadProfileForOrg(db,…)`, `fbContactDirectory{db}`, `knowledgeRuntime.NewBuilder(db.Knowledge())`,
+   coverage read `c.db.Leads().GetLeadCoverageState`. The build is the composition-root adapter; most
+   of it can STAY in cmd and pass already-resolved neutral objects, but the coverage read inside the
+   per-lead `coverageGate` still needs a narrow read port before the move.
+
+Stays BLOCKED on those follow-on seams; SEAM 1 is the reversible first brick.
+
+
 ## Goal
 Move the remaining L3 files — `outbound_lead_outcome.go` and the
 `outbound_lead_pipeline.go` orchestration spine — out of the composition root, after
