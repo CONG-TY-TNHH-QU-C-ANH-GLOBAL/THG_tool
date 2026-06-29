@@ -1,18 +1,28 @@
 ---
 id: ARCHCP4
-status: BLOCKED
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCP3]
 parallel_safe: false
 branch: "audit/archcp4-leave-flat-decision"
 pr_url: ""
-blocked_on: founder-decision-agent-split-vs-leave-flat
+blocked_on: ""
 boundary_target: blocked-decision
 audit_status: COMPLETE
 ---
 
 # ARCHCP4 — (Optional) Extract copilot/agent subpackage
+
+# FOUNDER DECISION (2026-06-29) — APPROVE Option A: LEAVE FLAT. ARCHCP4 closed DONE.
+Founder approved Option A (leave the copilot package flat). Rationale: ARCHCP3 already
+delivered the meaningful copilot intent boundary; the `brain_*` leaf is optional cohesion
+work, wide-churn, and does NOT clear the warn-only trigger; the `agent_*` split is
+unsafe/cycle-prone around the external `Agent` surface and must not be forced now. No code
+change. The warn-only component-structure trigger (20 src / 16 `agent_*`) is accepted as
+inherent to the orchestrator. Option B (optional brain cohesion PR) and Option C (scope the
+`agent_*` seam) remain available as separate future items if independently wanted — neither
+is required. Done-criteria met via "a documented decision to leave flat".
 
 # DECISION (2026-06-29, senior-architect feasibility) — LEAVE FLAT for now; brain extraction is the only safe code slice and is optional
 
