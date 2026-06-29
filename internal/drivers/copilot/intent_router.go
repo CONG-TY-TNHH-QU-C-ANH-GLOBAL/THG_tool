@@ -1,6 +1,10 @@
 package copilot
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/thg/scraper/internal/drivers/copilot/textnorm"
+)
 
 // Copilot intent — router layer. Maps the normalized prompt + extracted entities
 // to an existing action name. Pure classification: no DB / outbound / session
@@ -15,7 +19,7 @@ import "strings"
 // ok=true on its match) — extracted from one big function to keep each branch (and
 // the dispatch) under the cognitive-complexity threshold; order + behavior unchanged.
 func deterministicFacebookAction(prompt string, orgID, accountID int64) (string, map[string]any, bool) {
-	folded := foldVietnameseForMatch(strings.ToLower(stripDashboardContext(prompt)))
+	folded := textnorm.Fold(strings.ToLower(stripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	args := map[string]any{}
 	if orgID > 0 {
@@ -51,7 +55,7 @@ func deterministicFacebookAction(prompt string, orgID, accountID int64) (string,
 
 // classifyInboxBulk — inbox bulk (bulk scope includes a bare "lead").
 func classifyInboxBulk(folded string) (string, bool) {
-	if containsAnyFolded(folded, lexInboxVerbs) && containsAnyFolded(folded, lexInboxBulkScope) {
+	if textnorm.ContainsAny(folded, lexInboxVerbs) && textnorm.ContainsAny(folded, lexInboxBulkScope) {
 		return "inbox_all_leads", true
 	}
 	return "", false
@@ -61,7 +65,7 @@ func classifyInboxBulk(folded string) (string, bool) {
 // comment_all_leads (so "comment lead này <url>" targets the one post) and excludes
 // crawl verbs (a crawl verb means "scrape this post's comments", handled later).
 func classifyCommentSingle(folded string, ent IntentEntities, prompt string, args map[string]any) (string, bool) {
-	if !containsAnyFolded(folded, lexCommentVerbs) || ent.HasCrawlVerb {
+	if !textnorm.ContainsAny(folded, lexCommentVerbs) || ent.HasCrawlVerb {
 		return "", false
 	}
 	if ent.HasPostURL {
@@ -72,7 +76,7 @@ func classifyCommentSingle(folded string, ent IntentEntities, prompt string, arg
 	// No URL but singular phrasing ("comment bài này" / "lead này") and NOT an
 	// explicit bulk scope → single-post; the orchestrator asks for the link.
 	if len(ent.FacebookURLs) == 0 && ent.HasSpecificScope &&
-		!containsAnyFolded(folded, lexBulkScopeStrict) {
+		!textnorm.ContainsAny(folded, lexBulkScopeStrict) {
 		args["nl_prompt"] = stripDashboardContext(prompt)
 		return "comment_single_post", true
 	}
@@ -81,7 +85,7 @@ func classifyCommentSingle(folded string, ent IntentEntities, prompt string, arg
 
 // classifyCommentBulk — bulk comment requires an explicit bulk scope (no bare "lead").
 func classifyCommentBulk(folded string) (string, bool) {
-	if containsAnyFolded(folded, lexCommentVerbs) && containsAnyFolded(folded, lexCommentBulkScope) {
+	if textnorm.ContainsAny(folded, lexCommentVerbs) && textnorm.ContainsAny(folded, lexCommentBulkScope) {
 		return "comment_all_leads", true
 	}
 	return "", false
@@ -89,7 +93,7 @@ func classifyCommentBulk(folded string) (string, bool) {
 
 // classifyPostingAction — create a Facebook post (optionally pinned to a group URL).
 func classifyPostingAction(folded, prompt string, args map[string]any) (string, bool) {
-	if !containsAnyFolded(folded, lexPostingVerbs) {
+	if !textnorm.ContainsAny(folded, lexPostingVerbs) {
 		return "", false
 	}
 	args["content"] = strings.TrimSpace(stripDashboardContext(prompt))
@@ -103,10 +107,10 @@ func classifyPostingAction(folded, prompt string, args map[string]any) (string, 
 // verb), else scrape_group.
 func classifyScrape(folded, prompt string, args map[string]any) (string, bool) {
 	u := firstFacebookURL(prompt)
-	if u == "" || !containsAnyFolded(folded, lexScrapeVerbs) {
+	if u == "" || !textnorm.ContainsAny(folded, lexScrapeVerbs) {
 		return "", false
 	}
-	if isLikelyFacebookPostURL(u) && containsAnyFolded(folded, lexCommentVerbs) {
+	if isLikelyFacebookPostURL(u) && textnorm.ContainsAny(folded, lexCommentVerbs) {
 		args["post_url"] = u
 		return "scrape_comments", true
 	}
@@ -116,7 +120,7 @@ func classifyScrape(folded, prompt string, args map[string]any) (string, bool) {
 
 // classifySearch — a search verb with no URL: search groups by the prompt keywords.
 func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
-	if firstFacebookURL(prompt) != "" || !containsAnyFolded(folded, lexSearchVerbs) {
+	if firstFacebookURL(prompt) != "" || !textnorm.ContainsAny(folded, lexSearchVerbs) {
 		return "", false
 	}
 	query := promptKeywords(prompt)
@@ -147,18 +151,18 @@ func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
 //  4. NOT a bulk comment scope (leads / các lead / tất cả / tệp khách / all) —
 //     bulk stays comment_all_leads.
 func promptIsDirectPostComment(prompt string) bool {
-	folded := foldVietnameseForMatch(strings.ToLower(stripDashboardContext(prompt)))
+	folded := textnorm.Fold(strings.ToLower(stripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	if !ent.HasPostURL {
 		return false
 	}
-	if !containsAnyFolded(folded, lexCommentVerbs) {
+	if !textnorm.ContainsAny(folded, lexCommentVerbs) {
 		return false
 	}
 	if ent.HasCrawlVerb {
 		return false
 	}
-	if containsAnyFolded(folded, lexCommentBulkScope) {
+	if textnorm.ContainsAny(folded, lexCommentBulkScope) {
 		return false
 	}
 	return true
@@ -169,7 +173,7 @@ func promptIsDirectPostComment(prompt string) bool {
 // debug/observability surfaces; re-runs the pure classifier.
 func RouteDecisionFor(prompt string) RouteDecision {
 	action, _, ok := deterministicFacebookAction(prompt, 0, 0)
-	folded := foldVietnameseForMatch(strings.ToLower(stripDashboardContext(prompt)))
+	folded := textnorm.Fold(strings.ToLower(stripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	conf, reason := ConfidenceLow, "no deterministic match"
 	if ok {
