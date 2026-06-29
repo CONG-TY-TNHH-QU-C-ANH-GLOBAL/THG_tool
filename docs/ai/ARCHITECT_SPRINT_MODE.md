@@ -93,33 +93,60 @@ only allowed once the seam is already clean.
 - provide **A / B / C options with a recommended default**;
 - unblock the queue by making the decision *explicit*, not by guessing.
 
-## 4. Autonomy rules
+## 4. Principal Engineer Autonomy v2
 
-Claude **may** do autonomously (decide + report, no ask):
+**Policy:** Claude self-selects and executes architecture/refactor slices without a
+detailed founder mission for every step. **Optimize for safe forward motion, not risk
+avoidance.** When a boundary is blocked by coupling, prefer creating a safe seam,
+facade, adapter, port, characterization test, or migration phase **over stopping**. Do
+**not** fall back to docs hygiene while a meaningful code architecture slice is available.
 
-- split vs leave / take an exception, when justified;
-- rename files for SRP accuracy;
-- add same-package helpers / builders / fixture constructors to cut Sonar
-  duplication;
-- add direct tests for moved or pure helpers;
-- update queue-item frontmatter metadata (its own item only);
-- create enabling docs / new queue items;
-- combine safe staged GREEN work into one PR.
+### 4.1 Allowed self-approval
+- GREEN work.
+- YELLOW work when **bounded, reversible, and validated**.
+- Behavior-preserving refactors; same-package extraction/split.
+- Move-after-seam when the topology / import-cycle check is clean.
+- Mechanical Sonar fixes (no suppressions / no config change).
+- Test-only / characterization-test work.
+- Docs/governance **only when no meaningful code architecture slice is available**.
+- Choosing the **recommended option in a decision record** when that option explicitly
+  **preserves current behavior** and defers behavior/security/product changes to tracked
+  follow-up items.
 
-Claude **must stop / escalate** before:
+### 4.2 RED-zone autonomy — touch is allowed, cutover is controlled
+RED zones: RBAC/account-scope/security gates · schema/migrations · auth/session/cookie ·
+CAS/lease · queue/outbox/action_ledger · connector command semantics · DTO/public wire
+contracts · runtime dispatch semantics.
 
-- schema / migration changes,
-- auth / session / cookie changes,
-- connector CAS / lease changes,
-- queue / outbox / action_ledger / execution_attempts changes,
-- DTO / wire contract changes,
-- runtime store **semantics** changes,
-- endpoint delete-vs-wire decisions,
-- raw DB or raw `*Handler` crossing a boundary,
-- public API / export explosion,
-- import cycle or package-boundary uncertainty.
+Claude **MAY touch** a RED zone when the change is a **safe migration phase**:
+1. interface extraction / port creation; 2. facade around existing behavior;
+3. adapter insertion preserving the old path; 4. characterization tests around current
+behavior; 5. shadow-read / shadow-compare not affecting production decisions;
+6. additive schema only while the old schema/path stays valid; 7. dual-write only when
+idempotent, backward-compatible, old read path authoritative; 8. feature-flagged /
+disabled-by-default new path; 9. **expand/contract phase 1 only** (expand/add/seam/
+observe — never contract/delete/cutover); 10. moving code only after proving import
+topology and preserving behavior.
 
-These map to Escalation classes E2/E3 — produce a decision record, do not force it.
+### 4.3 Never self-approve (stop → founder decision)
+- Changing RBAC/security behavior (who can do what); enabling a new auth/session/security
+  path by default.
+- Making a new schema path authoritative; removing old schema fields / old execution paths.
+- Changing queue / CAS / lease / outbox / action_ledger semantics.
+- Changing connector command TTL / GC / idempotency behavior.
+- Changing public API / DTO / wire-contract behavior; any product-visible behavior change.
+- Any irreversible or hard-to-rollback cutover.
+- Any change whose safety depends on assuming product intent.
+
+If only a behavior-changing cutover can make progress: do the first safe seam phase
+instead (old path stays authoritative + characterization tests + documented rollback);
+if even that is impossible, **stop and request a founder decision** (E2/E3 decision record).
+
+### 4.4 Required before coding (every slice)
+Select the highest-leverage item → state lane/risk/boundary_target → feasibility-before-code
+→ identify RED/controlled-zone touch points → define behavior-preservation invariants →
+define the migration pattern (if touching a RED zone) → define the rollback plan → then
+implement if safe.
 
 ## 5. Open PR policy (controlled parallelism)
 
