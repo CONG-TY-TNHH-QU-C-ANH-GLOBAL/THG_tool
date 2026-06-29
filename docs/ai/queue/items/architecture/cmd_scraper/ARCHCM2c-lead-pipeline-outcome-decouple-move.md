@@ -13,6 +13,34 @@ boundary_target: transport-to-usecase
 
 # ARCHCM2c — De-couple + move outbound_lead_outcome.go / outbound_lead_pipeline.go
 
+## SEAM 4 DONE (2026-06-30) — commenting usecase decoupled from *store.Store; context is now store-FREE
+Fourth brick, on branch `chore/archcm2c-commenting-store-decouple`. Removes the LAST and
+critical-path store coupling — `commenting.Apply`'s `Input.DB *store.Store` (blast radius:
+1 caller each for `commenting.Apply` and `ai.LoadOrgCommentPolicies`):
+- **`internal/services/facebook/commenting`** no longer imports `internal/store`. `Input.DB`
+  → `Input.Policies ai.CommentPolicies` (resolved in the cmd composition root) +
+  `Input.PromptLog PromptLogSink` (new 1-method interface). `ai.LoadOrgCommentPolicies` moved
+  to the caller; the prompt-log write goes through the injected sink. Extracted a testable
+  `logDecision` helper.
+- **cmd:** new `storePromptLog` adapter (pass-through over `Prompts().InsertSystemPromptLog`);
+  `buildLeadOutreachContext` resolves `contacts`/`promptLog`/`commentPolicies` (policies under
+  the exact original condition: `comment && reasoning != off`).
+- **`leadOutreachContext` lost its `db *store.Store` field entirely** — it became unread once
+  the commenting + contacts coupling moved to resolved fields, so it was deleted. The per-lead
+  execution path (lead_pipeline + lead_outcome) is now **fully store-free**; only
+  `buildLeadOutreachContext` (the composition-root adapter, by design) takes `*store.Store`.
+- Store-free characterization tests (`TestLogDecision`/`_KnowledgeGap`) pin the prompt-log seam
+  (mode-tagged action, `success == !KnowledgeGap`, marshaled payload). Existing `TestMode` kept.
+
+**ARCHCM2c decoupling is essentially COMPLETE.** Both target files' execution paths hold no
+`*store.Store`; the build layer is the intended cmd adapter. What remains is the MOVE itself
+(relocate the execution spine + the consumer-owned ports/Input to the FB usecase package, leave
+the build adapter in cmd) — a separate move-only slice, now unblocked.
+
+Behavior-preserving notes: org comment policies are run-invariant, so resolving once per run ==
+the original per-lead load (same value, fewer reads); `logDecision` keeps the best-effort
+swallow (marshal-fail + ignored write error) verbatim. No RED zone touched.
+
 ## SEAM 3 DONE (2026-06-30) — lifecycle read port; outbound_lead_outcome.go is now STORE-FREE
 Third decoupling brick, on branch `chore/archcm2c-lifecycle-read-port`. Removes the LAST
 direct `*store.Store` read in the outcome path:

@@ -16,10 +16,11 @@ import (
 
 // leadOutreachContext is the resolved per-run config for the per-lead pipeline (S107).
 type leadOutreachContext struct {
-	db               *store.Store
 	outbound         outboundRecorder
 	coverage         leadCoverageReader
 	lifecycle        leadLifecycleReader
+	contacts         facebook.ContactDirectory
+	promptLog        commenting.SystemPromptLogInserter
 	msgGen           *ai.MessageGenerator
 	knowledgeBuilder *knowledgeRuntime.Builder
 	msgType          string
@@ -31,6 +32,7 @@ type leadOutreachContext struct {
 	reasoningMode    string
 	reasoningProfile *ai.BusinessProfile
 	commentIdentity  models.CompanyIdentity
+	commentPolicies  ai.CommentPolicies
 	coveragePolicy   models.CoveragePolicy
 }
 
@@ -42,6 +44,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 	knowledgeBuilder.Recorder = db.Knowledge()
 	knowledgeBuilder.TraceRec = db.Knowledge()
 
+	contacts := fbContactDirectory{db}
 	reasoningMode := commenting.Mode()
 	var reasoningProfile *ai.BusinessProfile
 	if reasoningMode != "off" {
@@ -54,14 +57,22 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 		if idProfile == nil {
 			idProfile = ai.LoadProfileForOrg(db, orgID)
 		}
-		commentIdentity = facebook.ResolveCommentIdentity(fbContactDirectory{db}, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
+		commentIdentity = facebook.ResolveCommentIdentity(contacts, orgID, actx.InitiatorUserID, accountID, idProfile, nil)
+	}
+
+	// commenting.Apply runs (and originally loaded these org policies per lead) only
+	// for comment runs with reasoning on — resolve once here under the same condition.
+	var commentPolicies ai.CommentPolicies
+	if msgType == "comment" && reasoningMode != "off" {
+		commentPolicies = ai.LoadOrgCommentPolicies(db, orgID)
 	}
 
 	return &leadOutreachContext{
-		db:               db,
 		outbound:         storeOutboundRecorder{db},
 		coverage:         storeLeadCoverage{db},
 		lifecycle:        storeLeadLifecycle{db},
+		contacts:         contacts,
+		promptLog:        storePromptLog{db},
 		msgGen:           msgGen,
 		knowledgeBuilder: knowledgeBuilder,
 		msgType:          msgType,
@@ -73,6 +84,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 		reasoningMode:    reasoningMode,
 		reasoningProfile: reasoningProfile,
 		commentIdentity:  commentIdentity,
+		commentPolicies:  commentPolicies,
 		coveragePolicy:   models.DefaultCoveragePolicy(),
 	}
 }
@@ -166,7 +178,8 @@ func (c *leadOutreachContext) prepareOutreachContent(ctx context.Context, lead m
 	}
 	if c.reasoningMode != "off" && c.msgType == "comment" {
 		content = commenting.Apply(ctx, commenting.Input{
-			DB: c.db, KB: c.knowledgeBuilder, MsgGen: c.msgGen, Contacts: fbContactDirectory{c.db},
+			Policies: c.commentPolicies, PromptLog: c.promptLog,
+			KB: c.knowledgeBuilder, MsgGen: c.msgGen, Contacts: c.contacts,
 			Mode: c.reasoningMode, Profile: c.reasoningProfile, OrgID: c.orgID, AccountID: c.accountID,
 			InitiatorUserID: c.actx.InitiatorUserID, LeadContent: lead.Content, Author: lead.Author, Fallback: content,
 		})
