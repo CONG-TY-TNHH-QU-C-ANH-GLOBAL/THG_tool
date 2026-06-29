@@ -33,10 +33,12 @@ Reached incrementally so the E3 boundary question is resolved by construction:
   fold/containsAny calls at `textnorm.*` directly (no longer via the copilot shims),
   removing the intent→copilot cycle blocker on text-norm. agent_* callers keep the
   shims (no churn).
-- **Phase 1d (next prerequisite):** give `stripDashboardContext` a neutral home — it is
-  shared by 9 copilot files (agent_*/routing_*/intent_*), so it cannot move into
-  `intent/`; the classifier depends on it → cycle blocker until relocated to a copilot
-  prompt-prep leaf (wrapper-first, like ARCHCP3a).
+- **Phase 1d — DONE in [`ARCHCP3d`](ARCHCP3d-promptprep-leaf.md)** (branch
+  `chore/archcp3d-promptprep-leaf`): extracted `stripDashboardContext` to the neutral
+  `internal/drivers/copilot/promptprep` leaf (wrapper-first; 12 agent_* callers keep the
+  shim) and migrated the 8 intent-cluster calls. **The intent files now depend only on
+  neutral leaves (textnorm, promptprep, fburl) + each other — no package-copilot symbols,
+  so the move is cycle-free.**
 - **Phase 2 (optional / deferred):** migrate the remaining 24 agent_* shim calls to
   `textnorm.*`; drop the shims. Not required before phase 3.
 - **Phase 3:** move the genuinely-intent files into `internal/drivers/copilot/intent/`

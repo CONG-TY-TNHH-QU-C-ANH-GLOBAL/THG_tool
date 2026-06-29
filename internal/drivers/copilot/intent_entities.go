@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thg/scraper/internal/drivers/copilot/promptprep"
 	"github.com/thg/scraper/internal/drivers/copilot/textnorm"
 	"github.com/thg/scraper/internal/fburl"
 )
@@ -86,7 +87,7 @@ func extractIntentEntities(folded, prompt string) IntentEntities {
 // (URLs + stop words removed) — used to seed a group search when no FB URL is
 // given.
 func promptKeywords(prompt string) string {
-	prompt = stripDashboardContext(prompt)
+	prompt = promptprep.StripDashboardContext(prompt)
 	prompt = regexp.MustCompile(`https?://\S+`).ReplaceAllString(prompt, " ")
 	cleaner := strings.NewReplacer(
 		"\n", " ", "\t", " ", ".", " ", ",", ",", ";", ",", ":", " ",

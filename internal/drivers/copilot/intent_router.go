@@ -3,6 +3,7 @@ package copilot
 import (
 	"strings"
 
+	"github.com/thg/scraper/internal/drivers/copilot/promptprep"
 	"github.com/thg/scraper/internal/drivers/copilot/textnorm"
 )
 
@@ -19,7 +20,7 @@ import (
 // ok=true on its match) — extracted from one big function to keep each branch (and
 // the dispatch) under the cognitive-complexity threshold; order + behavior unchanged.
 func deterministicFacebookAction(prompt string, orgID, accountID int64) (string, map[string]any, bool) {
-	folded := textnorm.Fold(strings.ToLower(stripDashboardContext(prompt)))
+	folded := textnorm.Fold(strings.ToLower(promptprep.StripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	args := map[string]any{}
 	if orgID > 0 {
@@ -70,14 +71,14 @@ func classifyCommentSingle(folded string, ent IntentEntities, prompt string, arg
 	}
 	if ent.HasPostURL {
 		args["post_url"] = ent.FacebookURLs[0]
-		args["nl_prompt"] = stripDashboardContext(prompt)
+		args["nl_prompt"] = promptprep.StripDashboardContext(prompt)
 		return "comment_single_post", true
 	}
 	// No URL but singular phrasing ("comment bài này" / "lead này") and NOT an
 	// explicit bulk scope → single-post; the orchestrator asks for the link.
 	if len(ent.FacebookURLs) == 0 && ent.HasSpecificScope &&
 		!textnorm.ContainsAny(folded, lexBulkScopeStrict) {
-		args["nl_prompt"] = stripDashboardContext(prompt)
+		args["nl_prompt"] = promptprep.StripDashboardContext(prompt)
 		return "comment_single_post", true
 	}
 	return "", false
@@ -96,7 +97,7 @@ func classifyPostingAction(folded, prompt string, args map[string]any) (string, 
 	if !textnorm.ContainsAny(folded, lexPostingVerbs) {
 		return "", false
 	}
-	args["content"] = strings.TrimSpace(stripDashboardContext(prompt))
+	args["content"] = strings.TrimSpace(promptprep.StripDashboardContext(prompt))
 	if u := firstFacebookURL(prompt); u != "" {
 		args["group_url"] = u
 	}
@@ -125,7 +126,7 @@ func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
 	}
 	query := promptKeywords(prompt)
 	if query == "" {
-		query = strings.TrimSpace(stripDashboardContext(prompt))
+		query = strings.TrimSpace(promptprep.StripDashboardContext(prompt))
 	}
 	if query != "" {
 		args["query"] = query
@@ -151,7 +152,7 @@ func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
 //  4. NOT a bulk comment scope (leads / các lead / tất cả / tệp khách / all) —
 //     bulk stays comment_all_leads.
 func promptIsDirectPostComment(prompt string) bool {
-	folded := textnorm.Fold(strings.ToLower(stripDashboardContext(prompt)))
+	folded := textnorm.Fold(strings.ToLower(promptprep.StripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	if !ent.HasPostURL {
 		return false
@@ -173,7 +174,7 @@ func promptIsDirectPostComment(prompt string) bool {
 // debug/observability surfaces; re-runs the pure classifier.
 func RouteDecisionFor(prompt string) RouteDecision {
 	action, _, ok := deterministicFacebookAction(prompt, 0, 0)
-	folded := textnorm.Fold(strings.ToLower(stripDashboardContext(prompt)))
+	folded := textnorm.Fold(strings.ToLower(promptprep.StripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	conf, reason := ConfidenceLow, "no deterministic match"
 	if ok {
