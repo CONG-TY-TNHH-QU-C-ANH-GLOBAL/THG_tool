@@ -148,6 +148,45 @@ Select the highest-leverage item → state lane/risk/boundary_target → feasibi
 define the migration pattern (if touching a RED zone) → define the rollback plan → then
 implement if safe.
 
+## 4a. Skill-augmented passes (run sequence)
+
+`/thg-architect` runs as **review-bracketed implementation**: a minimalism + senior
+pass *before* coding, and a senior review pass *before* push. Use real skills/agents
+when present; otherwise emulate their checklist and **say so** in the report. **Never
+claim a skill was invoked unless it actually exists and was invoked.**
+
+**A. Skill discovery (at start).** Inventory what is available this session:
+`.claude/skills/**/SKILL.md`, `.claude/commands/*.md`, the bundled skills list, and
+the Agent subagent types. Known relevant ones in this repo: **Ponytail**
+(`ponytail:ponytail`, `ponytail:ponytail-review`; a session hook may already force
+Ponytail mode), **code-review** (`/code-review`), and the senior agents/skills
+**senior-architect**, **code-reviewer**, **senior-backend**, **senior-security**
+(`.claude/skills/development/*` + matching Agent `subagent_type`s). Report the list.
+
+**B. Ponytail / minimalism pass (before coding).** If Ponytail is available, invoke it
+(`ponytail:ponytail`); else emulate and report "Ponytail-style pass: emulated". Answer:
+does this code need to exist? · move/extraction over new abstraction? · stdlib /
+existing helper / existing package instead? · one smaller seam over a new framework? ·
+the smallest reversible diff that unblocks the item? · what can be deleted / not written?
+
+**C. Senior architecture pass (before coding).** Optionally via the **senior-architect**
+/ **code-reviewer** skill or Agent; else emulate. Produce: boundary target ·
+import-cycle risk · controlled-zone (RED) touch points · behavior-preservation
+invariants · rollback plan · test plan · Sonar New-Code risk. This is the §2 + §4.4
+gate, sharpened.
+
+**D. Implementation pass.** Execute the self-selected highest-leverage **code**
+architecture slice under §4 (Autonomy v2). No docs fallback while a code slice exists;
+RED-zone touch only as a safe migration phase; cutover stays controlled.
+
+**E. Pre-push senior review pass.** Before push, run a second review — via
+`ponytail:ponytail-review` + `/code-review` (or the **code-reviewer** Agent) when
+available, else emulate — checking: minimalism (no needless abstraction/framework/
+broad formatting churn) · boundaries (no forbidden imports/cycles) · behavior (no
+product/security/RBAC/schema/queue/auth/runtime change unless explicitly approved) ·
+tests (characterization covers the moved/refactored behavior) · Sonar (no obvious
+S3776 / S107 / duplication / security finding). Then run the §9 validation guards.
+
 ## 5. Open PR policy (controlled parallelism)
 
 - **max 2 open PRs at once**;
@@ -185,16 +224,23 @@ Every architect-sprint PR reports (superset of `AGENT_REPORT_TEMPLATE.md`):
 
 ```text
 Architect Sprint:
-- selected item(s):
+- skills discovered:         (what was available this session)
+- skills invoked / emulated: (which were actually invoked vs emulated — honest)
+- Ponytail / minimalism findings: (what was NOT written / deleted / kept as a move)
+- selected item(s) and why:
 - lane / risk / boundary_target:
-- goal:
 - feasibility result:        (receiver/coupling · import-cycle · call-sites · exports · coverage)
-- files changed:
+- RED-zone touch points:     (controlled zones touched, if any)
+- migration pattern:         (which §4.2 safe-phase pattern, if RED touched)
+- rollback plan:
+- behavior-preservation proof:
+- files touched / moved:
 - architecture impact:       (which boundary/layer moved closer to target)
 - Sonar / New Code risk:     (S3776 / duplication outcome; go_cognitive_check result)
 - tests / validation:        (which guards/tests ran + result)
 - skipped risky candidates:  (what was deliberately NOT done, and why)
-- next recommended action:   (the highest-leverage next slice)
+- PR link:
+- next likely slice:
 ```
 
 For a RED/BLOCKED audit PR, also include the Escalation decision record
