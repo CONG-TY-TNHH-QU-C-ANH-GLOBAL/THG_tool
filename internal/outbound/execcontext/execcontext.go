@@ -1,4 +1,9 @@
-package main
+// Package execcontext resolves the execution account / campaign-ready ActionContext
+// for an outbound action: given (org, user, role, optional requested account) it
+// applies the deterministic Organic Sales Network resolution + RBAC-1 execution-layer
+// ownership. It is outbound-scoped (only the outbound queueing path uses it) and was
+// moved verbatim out of cmd/scraper under ARCHCM2a phase 2 — behavior unchanged.
+package execcontext
 
 import (
 	"fmt"
@@ -7,7 +12,26 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// resolveCallerAccountID picks the FB account_id the skill executor will use,
+// ResolveUserActionContext produces the campaign-ready models.ActionContext for a
+// member-initiated (Source=manual) outbound. It wraps the deterministic account
+// resolution; a future campaign resolver returns the SAME shape so the execution path
+// stays source-agnostic (campaign is additive). ConnectorID/CampaignID/
+// ExecutionSourceID are left 0 — filled by the future connector-availability +
+// campaign layers.
+func ResolveUserActionContext(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (models.ActionContext, error) {
+	accID, err := ResolveCallerAccountID(db, orgID, userID, role, requestedAccountID, preferLoggedIn)
+	if err != nil {
+		return models.ActionContext{}, err
+	}
+	return models.ActionContext{
+		OrgID:           orgID,
+		Source:          models.ActionSourceManual,
+		InitiatorUserID: userID,
+		AccountID:       accID,
+	}, nil
+}
+
+// ResolveCallerAccountID picks the FB account_id the skill executor will use,
 // enforcing execution-layer ownership per RBAC-1 (see
 // feedback_shared_battlefield_not_crm.md):
 //
@@ -20,29 +44,10 @@ import (
 //     from any account in the org (preserves current behaviour; future PR
 //     resolves Telegram operator → DB user).
 //
-// preferLoggedIn rewards the first FB-platform, browser-logged-in, active
-// account in the candidate list (legacy lead-outreach behaviour). Set to
-// false for post / profile_post paths that don't need a logged-in browser.
-// resolveUserActionContext produces the campaign-ready models.ActionContext for
-// a member-initiated (Source=manual) outbound. It wraps the deterministic
-// account resolution; a future resolveCampaignActionContext returns the SAME
-// shape so the execution path stays source-agnostic (campaign is additive).
-// ConnectorID/CampaignID/ExecutionSourceID are left 0 — filled by the future
-// connector-availability + campaign layers.
-func resolveUserActionContext(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (models.ActionContext, error) {
-	accID, err := resolveCallerAccountID(db, orgID, userID, role, requestedAccountID, preferLoggedIn)
-	if err != nil {
-		return models.ActionContext{}, err
-	}
-	return models.ActionContext{
-		OrgID:           orgID,
-		Source:          models.ActionSourceManual,
-		InitiatorUserID: userID,
-		AccountID:       accID,
-	}, nil
-}
-
-func resolveCallerAccountID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (int64, error) {
+// preferLoggedIn rewards the first FB-platform, browser-logged-in, active account in
+// the candidate list (legacy lead-outreach behaviour). Set to false for post /
+// profile_post paths that don't need a logged-in browser.
+func ResolveCallerAccountID(db *store.Store, orgID, userID int64, role string, requestedAccountID int64, preferLoggedIn bool) (int64, error) {
 	if requestedAccountID > 0 {
 		return callerAccountForExplicitID(db, orgID, userID, role, requestedAccountID)
 	}

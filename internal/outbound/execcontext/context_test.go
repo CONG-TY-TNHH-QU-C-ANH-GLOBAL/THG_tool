@@ -1,4 +1,4 @@
-package main
+package execcontext
 
 import (
 	"path/filepath"
@@ -24,7 +24,7 @@ func TestResolveCallerAccountID_DeterministicContext(t *testing.T) {
 	})
 
 	// Exactly one owned account → deterministic, resolves to it (not a guess).
-	if got, err := resolveCallerAccountID(db, org, member, "sales", 0, true); err != nil || got != acc1 {
+	if got, err := ResolveCallerAccountID(db, org, member, "sales", 0, true); err != nil || got != acc1 {
 		t.Fatalf("exactly-one: got %d err %v, want %d", got, err, acc1)
 	}
 
@@ -32,7 +32,7 @@ func TestResolveCallerAccountID_DeterministicContext(t *testing.T) {
 	acc2, _ := db.Identities().AddAccount(&models.Account{
 		OrgID: org, Platform: models.PlatformFacebook, Name: "FB2", AssignedUserID: member, Status: models.AccountActive,
 	})
-	if _, err := resolveCallerAccountID(db, org, member, "sales", 0, true); err == nil {
+	if _, err := ResolveCallerAccountID(db, org, member, "sales", 0, true); err == nil {
 		t.Fatal("ambiguous (2 accounts, no default) must error execution_context_required")
 	}
 
@@ -40,7 +40,7 @@ func TestResolveCallerAccountID_DeterministicContext(t *testing.T) {
 	if err := db.SetUserDefaultAccount(org, member, acc2, "sales"); err != nil {
 		t.Fatalf("set default: %v", err)
 	}
-	if got, err := resolveCallerAccountID(db, org, member, "sales", 0, true); err != nil || got != acc2 {
+	if got, err := ResolveCallerAccountID(db, org, member, "sales", 0, true); err != nil || got != acc2 {
 		t.Fatalf("default: got %d err %v, want %d", got, err, acc2)
 	}
 
@@ -68,7 +68,7 @@ func TestResolveUserActionContext(t *testing.T) {
 		OrgID: org, Platform: models.PlatformFacebook, Name: "FB", AssignedUserID: member, Status: models.AccountActive,
 	})
 
-	actx, err := resolveUserActionContext(db, org, member, "sales", 0, true)
+	actx, err := ResolveUserActionContext(db, org, member, "sales", 0, true)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

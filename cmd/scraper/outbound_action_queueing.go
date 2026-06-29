@@ -8,6 +8,7 @@ import (
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/outbound/execcontext"
 	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/store"
 )
@@ -27,7 +28,7 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// Resolve the campaign-ready ActionContext (Source=manual). The queue path
 	// below consumes only the context, so a future ResolveCampaignActionContext
 	// drops in without touching this code.
-	actx, err := resolveUserActionContext(db, orgID, userID, role, argInt64(args, "account_id"), true)
+	actx, err := execcontext.ResolveUserActionContext(db, orgID, userID, role, argInt64(args, "account_id"), true)
 	if err != nil {
 		return "", 0, err
 	}
@@ -100,7 +101,7 @@ func queueProfilePost(ctx context.Context, db *store.Store, msgGen *ai.MessageGe
 	orgID := argInt64(args, "org_id")
 	userID := argInt64(args, "user_id")
 	role := argString(args, "user_role")
-	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
+	accountID, err := execcontext.ResolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +122,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 	}
 	userID := argInt64(args, "user_id")
 	role := argString(args, "user_role")
-	accountID, err := resolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
+	accountID, err := execcontext.ResolveCallerAccountID(db, orgID, userID, role, argInt64(args, "account_id"), false)
 	if err != nil {
 		return "", err
 	}

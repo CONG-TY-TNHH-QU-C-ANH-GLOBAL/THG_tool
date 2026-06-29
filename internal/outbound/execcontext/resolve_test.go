@@ -1,4 +1,4 @@
-package main
+package execcontext
 
 import (
 	"path/filepath"
@@ -9,51 +9,51 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// requireResolvedAccount asserts resolveCallerAccountID succeeds and resolves to want.
+// requireResolvedAccount asserts ResolveCallerAccountID succeeds and resolves to want.
 func requireResolvedAccount(t *testing.T, db *store.Store, orgID, userID int64, role string, accID, want int64) {
 	t.Helper()
-	got, err := resolveCallerAccountID(db, orgID, userID, role, accID, false)
+	got, err := ResolveCallerAccountID(db, orgID, userID, role, accID, false)
 	if err != nil {
-		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
+		t.Fatalf("ResolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
 	}
 	if got != want {
-		t.Errorf("resolveCallerAccountID(user=%d, role=%q, acc=%d) = %d, want %d", userID, role, accID, got, want)
+		t.Errorf("ResolveCallerAccountID(user=%d, role=%q, acc=%d) = %d, want %d", userID, role, accID, got, want)
 	}
 }
 
-// requireResolveRejected asserts resolveCallerAccountID denies the call.
+// requireResolveRejected asserts ResolveCallerAccountID denies the call.
 func requireResolveRejected(t *testing.T, db *store.Store, orgID, userID int64, role string, accID int64) {
 	t.Helper()
-	if _, err := resolveCallerAccountID(db, orgID, userID, role, accID, false); err == nil {
-		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): expected error, got nil", userID, role, accID)
+	if _, err := ResolveCallerAccountID(db, orgID, userID, role, accID, false); err == nil {
+		t.Fatalf("ResolveCallerAccountID(user=%d, role=%q, acc=%d): expected error, got nil", userID, role, accID)
 	}
 }
 
 // requireResolvedOneOf asserts the call succeeds and resolves to one of allowed.
 func requireResolvedOneOf(t *testing.T, db *store.Store, orgID, userID int64, role string, accID int64, allowed ...int64) {
 	t.Helper()
-	got, err := resolveCallerAccountID(db, orgID, userID, role, accID, false)
+	got, err := ResolveCallerAccountID(db, orgID, userID, role, accID, false)
 	if err != nil {
-		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
+		t.Fatalf("ResolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
 	}
 	if !slices.Contains(allowed, got) {
-		t.Errorf("resolveCallerAccountID(user=%d, role=%q, acc=%d) = %d, want one of %v", userID, role, accID, got, allowed)
+		t.Errorf("ResolveCallerAccountID(user=%d, role=%q, acc=%d) = %d, want one of %v", userID, role, accID, got, allowed)
 	}
 }
 
 // requireResolvedNonZero asserts the call succeeds and resolves to some account.
 func requireResolvedNonZero(t *testing.T, db *store.Store, orgID, userID int64, role string, accID int64) {
 	t.Helper()
-	got, err := resolveCallerAccountID(db, orgID, userID, role, accID, false)
+	got, err := ResolveCallerAccountID(db, orgID, userID, role, accID, false)
 	if err != nil {
-		t.Fatalf("resolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
+		t.Fatalf("ResolveCallerAccountID(user=%d, role=%q, acc=%d): unexpected err: %v", userID, role, accID, err)
 	}
 	if got == 0 {
-		t.Errorf("resolveCallerAccountID(user=%d, role=%q, acc=%d) = 0, want some account", userID, role, accID)
+		t.Errorf("ResolveCallerAccountID(user=%d, role=%q, acc=%d) = 0, want some account", userID, role, accID)
 	}
 }
 
-// resolveCallerAccountID gates skill-path outbound by execution-layer ownership
+// ResolveCallerAccountID gates skill-path outbound by execution-layer ownership
 // (RBAC-1 skill-path enforcement). See feedback_shared_battlefield_not_crm.md.
 //
 // Matrix per call:
