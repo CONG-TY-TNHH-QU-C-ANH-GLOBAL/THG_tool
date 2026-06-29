@@ -1,4 +1,4 @@
-package main
+package leadoutreach
 
 import (
 	"fmt"
@@ -24,8 +24,8 @@ func TestOutreachMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := outreachMode(tt.approvedCount, tt.queued, tt.requestedAuto); got != tt.want {
-				t.Errorf("outreachMode(%d, %d, %v) = %q, want %q", tt.approvedCount, tt.queued, tt.requestedAuto, got, tt.want)
+			if got := Mode(tt.approvedCount, tt.queued, tt.requestedAuto); got != tt.want {
+				t.Errorf("Mode(%d, %d, %v) = %q, want %q", tt.approvedCount, tt.queued, tt.requestedAuto, got, tt.want)
 			}
 		})
 	}
@@ -43,10 +43,10 @@ func TestOutreachErrDetails(t *testing.T) {
 
 // TestOutreachRiskDetails pins the risk_block suffix (empty unless a risk block was seen).
 func TestOutreachRiskDetails(t *testing.T) {
-	if got := outreachRiskDetails(&leadOutreachState{}, 42); got != "" {
+	if got := outreachRiskDetails(&State{}, 42); got != "" {
 		t.Errorf("no risk block = %q, want empty", got)
 	}
-	st := &leadOutreachState{riskBlockSeen: true, riskBlockRisk: 0.9, riskBlockCeiling: 0.5}
+	st := &State{riskBlockSeen: true, riskBlockRisk: 0.9, riskBlockCeiling: 0.5}
 	want := " risk_block=account=42,risk_score=0.900,effective_ceiling=0.500"
 	if got := outreachRiskDetails(st, 42); got != want {
 		t.Errorf("got %q, want %q", got, want)

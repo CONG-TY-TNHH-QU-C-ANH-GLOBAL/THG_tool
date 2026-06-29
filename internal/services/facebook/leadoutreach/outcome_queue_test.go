@@ -1,4 +1,4 @@
-package main
+package leadoutreach
 
 import (
 	"context"
@@ -8,17 +8,17 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// fakeRecorder is a store-free outboundRecorder stub. The seam (ARCHCM2c) is what
-// makes queueOutreachMessage testable without a real *store.Store.
+// fakeRecorder is a store-free OutboundRecorder stub. The seam (ARCHCM2c) is what
+// makes queueMessage testable without a real *store.Store.
 type fakeRecorder struct {
-	result   queueOutcome
+	result   QueueOutcome
 	err      error
 	queued   *models.OutboundMessage
 	cooldown time.Duration
 	outcomes []string // statuses passed to RecordOutcome, in order
 }
 
-func (f *fakeRecorder) QueueOutbound(msg *models.OutboundMessage, cooldown time.Duration) (queueOutcome, error) {
+func (f *fakeRecorder) QueueOutbound(msg *models.OutboundMessage, cooldown time.Duration) (QueueOutcome, error) {
 	f.queued = msg
 	f.cooldown = cooldown
 	return f.result, f.err
@@ -28,8 +28,8 @@ func (f *fakeRecorder) RecordOutcome(_ context.Context, _ int64, _, status strin
 	f.outcomes = append(f.outcomes, status)
 }
 
-func newTestOutreachCtx(rec outboundRecorder) *leadOutreachContext {
-	return &leadOutreachContext{
+func newTestOutreachCtx(rec OutboundRecorder) *Context {
+	return &Context{
 		outbound:  rec,
 		orgID:     7,
 		accountID: 3,
@@ -41,15 +41,15 @@ func newTestOutreachCtx(rec outboundRecorder) *leadOutreachContext {
 // TestQueueOutreachMessage_Allowed pins the queue-success path: counters bump, an
 // ExecPlanned result counts as approved, and a "queued" outcome is recorded.
 func TestQueueOutreachMessage_Allowed(t *testing.T) {
-	rec := &fakeRecorder{result: queueOutcome{Allowed: true, ExecutionState: models.ExecPlanned}}
+	rec := &fakeRecorder{result: QueueOutcome{Allowed: true, ExecutionState: models.ExecPlanned}}
 	c := newTestOutreachCtx(rec)
-	st := newLeadOutreachState()
+	st := NewState()
 
-	if err := c.queueOutreachMessage(context.Background(), models.Lead{ID: 1}, "https://t", "hi", "ret-1", st); err != nil {
+	if err := c.queueMessage(context.Background(), models.Lead{ID: 1}, "https://t", "hi", "ret-1", st); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if st.queued != 1 || st.approvedCount != 1 || st.skipped != 0 {
-		t.Fatalf("queued=%d approved=%d skipped=%d, want 1/1/0", st.queued, st.approvedCount, st.skipped)
+	if st.Queued != 1 || st.approvedCount != 1 || st.skipped != 0 {
+		t.Fatalf("queued=%d approved=%d skipped=%d, want 1/1/0", st.Queued, st.approvedCount, st.skipped)
 	}
 	if len(rec.outcomes) != 1 || rec.outcomes[0] != "queued" {
 		t.Fatalf("outcomes=%v, want [queued]", rec.outcomes)
@@ -89,17 +89,17 @@ func TestQueueOutreachMessage_Allowed(t *testing.T) {
 // TestQueueOutreachMessage_RiskBlock pins the risk_ceiling_exceeded deny: it is a
 // skip (not an error), captures the risk block for the response, and records "rejected".
 func TestQueueOutreachMessage_RiskBlock(t *testing.T) {
-	rec := &fakeRecorder{result: queueOutcome{
+	rec := &fakeRecorder{result: QueueOutcome{
 		Allowed: false, Reason: "risk_ceiling_exceeded", RiskScore: 0.9, RiskCeiling: 0.5,
 	}}
 	c := newTestOutreachCtx(rec)
-	st := newLeadOutreachState()
+	st := NewState()
 
-	if err := c.queueOutreachMessage(context.Background(), models.Lead{ID: 2}, "https://t", "hi", "ret-2", st); err != nil {
+	if err := c.queueMessage(context.Background(), models.Lead{ID: 2}, "https://t", "hi", "ret-2", st); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if st.queued != 0 || st.skipped != 1 {
-		t.Fatalf("queued=%d skipped=%d, want 0/1", st.queued, st.skipped)
+	if st.Queued != 0 || st.skipped != 1 {
+		t.Fatalf("queued=%d skipped=%d, want 0/1", st.Queued, st.skipped)
 	}
 	if !st.riskBlockSeen || st.riskBlockRisk != 0.9 || st.riskBlockCeiling != 0.5 {
 		t.Fatalf("riskBlock seen=%v risk=%v ceil=%v, want true/0.9/0.5", st.riskBlockSeen, st.riskBlockRisk, st.riskBlockCeiling)
@@ -112,11 +112,11 @@ func TestQueueOutreachMessage_RiskBlock(t *testing.T) {
 // TestQueueOutreachMessage_NoRetrievalID: no Knowledge outcome is recorded when the
 // retrievalID is empty (preserves the original `if retrievalID != ""` guards).
 func TestQueueOutreachMessage_NoRetrievalID(t *testing.T) {
-	rec := &fakeRecorder{result: queueOutcome{Allowed: true}}
+	rec := &fakeRecorder{result: QueueOutcome{Allowed: true}}
 	c := newTestOutreachCtx(rec)
-	st := newLeadOutreachState()
+	st := NewState()
 
-	if err := c.queueOutreachMessage(context.Background(), models.Lead{ID: 3}, "https://t", "hi", "", st); err != nil {
+	if err := c.queueMessage(context.Background(), models.Lead{ID: 3}, "https://t", "hi", "", st); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if len(rec.outcomes) != 0 {

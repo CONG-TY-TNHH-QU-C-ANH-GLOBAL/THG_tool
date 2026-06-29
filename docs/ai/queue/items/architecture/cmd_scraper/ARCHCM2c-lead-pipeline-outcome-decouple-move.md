@@ -1,17 +1,34 @@
 ---
 id: ARCHCM2c
-status: BLOCKED
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM2a, ARCHCM2b]
 parallel_safe: false
-branch: ""
+branch: "chore/archcm2c-move-leadoutreach"
 pr_url: ""
-blocked_on: cmd-local-helper-decoupling
+blocked_on: ""
 boundary_target: transport-to-usecase
 ---
 
 # ARCHCM2c — De-couple + move outbound_lead_outcome.go / outbound_lead_pipeline.go
+
+## MOVE DONE (2026-06-30) — execution spine relocated to internal/services/facebook/leadoutreach
+The finisher, on branch `chore/archcm2c-move-leadoutreach` (move-only, behavior-preserving;
+senior-architect feasibility + senior-backend implementation + code-review verified).
+- **New package `internal/services/facebook/leadoutreach`** (store-free): `Context`+`Config`+`New`,
+  `ProcessLead`/`FormatResult`/`Mode` (exported), the 3 ports + `QueueOutcome` DTO, `State`
+  (`Queued`/`Scanned` exported), and the pipeline/outcome/state/copilot-wording helpers — split
+  across `context.go`/`pipeline.go`/`outcome.go`/`state.go`/`ports.go`/`copilot_wording.go`/`doc.go`,
+  each ≤200 lines. The 4 cluster tests moved as internal `package leadoutreach` tests.
+- **cmd stays the composition root:** `buildLeadOutreachContext` (resolves store→neutral, builds
+  `leadoutreach.Config`, calls `New`) and the four `store*` adapters remain in cmd. Deleted the now-
+  empty `outbound_lead_outcome.go` + `lifecycle_copilot.go`; the post path calls `leadoutreach.Mode`.
+- Verbatim move: Vietnamese strings + `[queueLeadOutreach]` log line byte-identical; queue/dedup/
+  policy semantics unchanged (recorder maps the store result 1:1). No `internal/store` import in the
+  new package (import-boundary guard clean); cycle-free (cmd→leadoutreach one-way).
+
+**ARCHCM2c COMPLETE pending merge** — all 4 seams + the move shipped. On merge → DONE.
 
 ## SEAM 4 DONE (2026-06-30) — commenting usecase decoupled from *store.Store; context is now store-FREE
 Fourth brick, on branch `chore/archcm2c-commenting-store-decouple`. Removes the LAST and

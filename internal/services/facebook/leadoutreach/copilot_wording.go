@@ -1,4 +1,4 @@
-package main
+package leadoutreach
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 
 // noEligibleCommentMessage builds the "0 queued" reply, enriched with a lifecycle-aware
 // inventory + suggestion. Falls back to the bare line if the summary can't be read.
-// Reads via the leadLifecycleReader port (ARCHCM2c seam 3) — no concrete *store.Store.
-func noEligibleCommentMessage(ctx context.Context, lifecycle leadLifecycleReader, orgID int64, scanned int, skipNote string) string {
+// Reads via the LeadLifecycleReader port (ARCHCM2c seam 3) — no concrete *store.Store.
+func noEligibleCommentMessage(ctx context.Context, lifecycle LeadLifecycleReader, orgID int64, scanned int, skipNote string) string {
 	base := fmt.Sprintf("Không tìm được lead hợp lệ để comment sau khi quét %d lead.%s", scanned, skipNote)
 	sum, err := lifecycle.LeadLifecycleSummary(ctx, orgID)
 	if err != nil {
