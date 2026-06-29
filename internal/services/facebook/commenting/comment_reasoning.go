@@ -2,8 +2,9 @@
 // AI message generator, KnowledgeOS retrieval, the policy gate, and Facebook comment
 // identity into the P2c knowledge-grounded comment decision. It is FB+AI content
 // logic — it deliberately lives on the Facebook service/usecase side, NOT in the
-// vertical-neutral internal/outbound spine. cmd/scraper builds the adapters (store,
-// msggen, ContactDirectory) and calls this usecase. (ARCHCM2b)
+// vertical-neutral internal/outbound spine. cmd/scraper builds the adapters (msggen,
+// ContactDirectory, resolved comment policies, prompt-log sink) and calls this usecase;
+// the usecase itself takes NO *store.Store (ARCHCM2b / ARCHCM2c seam 4).
 package commenting
 
 import (
@@ -15,10 +16,18 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/services/facebook"
-	"github.com/thg/scraper/internal/store"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
+
+// PromptLogSink records the agent comment decision for observation (Operator Replay).
+// Best-effort — a failed write never breaks the queue path. Implemented by a cmd
+// adapter over *store.Store's Prompts().InsertSystemPromptLog, so the usecase stays
+// store-free. (ARCHCM2c seam 4)
+type PromptLogSink interface {
+	InsertSystemPromptLog(orgID, accountID int64, message, action, args string, success bool) error
+}
 
 // Mode reads the P2c knowledge-reasoning switch (env, hot kill-switch — no redeploy
 // to flip):
@@ -49,7 +58,8 @@ func Mode() string {
 // facebook.ContactDirectory adapter (the cmd composition root constructs it); the
 // usecase never builds a concrete directory itself.
 type Input struct {
-	DB              *store.Store
+	Policies        ai.CommentPolicies // resolved by the cmd composition root (was loaded from *store.Store here)
+	PromptLog       PromptLogSink
 	KB              *knowledgeRuntime.Builder
 	MsgGen          *ai.MessageGenerator
 	Contacts        facebook.ContactDirectory
@@ -85,15 +95,12 @@ func Apply(ctx context.Context, in Input) string {
 	// prompt may pitch — high conf → product (+price if allowed), medium
 	// → category/service only (no exact price), low/gap → generic
 	// fallback. Strictly subtractive over the grounded selection.
-	verdict := ai.EvaluateGate(decision, ai.LoadOrgCommentPolicies(in.DB, in.OrgID))
+	verdict := ai.EvaluateGate(decision, in.Policies)
 	decision = ai.ApplyGate(decision, verdict)
 	log.Printf("[reasoning:%s] org=%d account=%d intent=%s conf=%.2f knowledge_gap=%v gate=%s caps=%d products=%d proofs=%d",
 		in.Mode, in.OrgID, in.AccountID, decision.Intent, decision.Confidence, decision.KnowledgeGap, verdict.Mode,
 		len(decision.Selected.Capabilities), len(decision.Selected.Products), len(decision.Selected.Proofs))
-	if payload, perr := json.Marshal(decision); perr == nil {
-		_ = in.DB.Prompts().InsertSystemPromptLog(in.OrgID, in.AccountID,
-			"agent comment decision ("+in.Mode+")", "comment_decision_"+in.Mode, string(payload), !decision.KnowledgeGap)
-	}
+	logDecision(in.PromptLog, in, decision)
 	if in.Mode == "live" && !decision.KnowledgeGap {
 		// Same resolver/contract as the normal path: staff contact channels + CTA
 		// win, the company website is preserved, and the per-lead grounded CTA
@@ -110,4 +117,17 @@ func Apply(ctx context.Context, in Input) string {
 		}
 	}
 	return in.Fallback
+}
+
+// logDecision persists the comment decision for Operator Replay via the injected
+// sink. Best-effort: a marshal or write failure is swallowed (the queue path must
+// never break). Extracted so the prompt-log seam (ARCHCM2c seam 4) is unit-testable
+// without the concrete KB/MsgGen happy path.
+func logDecision(sink PromptLogSink, in Input, decision *models.CommentDecision) {
+	payload, err := json.Marshal(decision)
+	if err != nil {
+		return
+	}
+	_ = sink.InsertSystemPromptLog(in.OrgID, in.AccountID,
+		"agent comment decision ("+in.Mode+")", "comment_decision_"+in.Mode, string(payload), !decision.KnowledgeGap)
 }
