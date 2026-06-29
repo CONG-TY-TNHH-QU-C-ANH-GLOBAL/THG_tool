@@ -19,6 +19,7 @@ type leadOutreachContext struct {
 	db               *store.Store
 	outbound         outboundRecorder
 	coverage         leadCoverageReader
+	lifecycle        leadLifecycleReader
 	msgGen           *ai.MessageGenerator
 	knowledgeBuilder *knowledgeRuntime.Builder
 	msgType          string
@@ -60,6 +61,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 		db:               db,
 		outbound:         storeOutboundRecorder{db},
 		coverage:         storeLeadCoverage{db},
+		lifecycle:        storeLeadLifecycle{db},
 		msgGen:           msgGen,
 		knowledgeBuilder: knowledgeBuilder,
 		msgType:          msgType,

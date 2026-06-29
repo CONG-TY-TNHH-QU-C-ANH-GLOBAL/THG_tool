@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
 )
 
 // Lifecycle-aware copilot wording (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-5). When
@@ -16,9 +15,10 @@ import (
 
 // noEligibleCommentMessage builds the "0 queued" reply, enriched with a lifecycle-aware
 // inventory + suggestion. Falls back to the bare line if the summary can't be read.
-func noEligibleCommentMessage(ctx context.Context, db *store.Store, orgID int64, scanned int, skipNote string) string {
+// Reads via the leadLifecycleReader port (ARCHCM2c seam 3) — no concrete *store.Store.
+func noEligibleCommentMessage(ctx context.Context, lifecycle leadLifecycleReader, orgID int64, scanned int, skipNote string) string {
 	base := fmt.Sprintf("Không tìm được lead hợp lệ để comment sau khi quét %d lead.%s", scanned, skipNote)
-	sum, err := db.Leads().LeadLifecycleSummary(ctx, orgID)
+	sum, err := lifecycle.LeadLifecycleSummary(ctx, orgID)
 	if err != nil {
 		return base
 	}

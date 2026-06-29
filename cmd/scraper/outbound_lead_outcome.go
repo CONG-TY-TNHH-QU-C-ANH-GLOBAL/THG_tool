@@ -154,7 +154,7 @@ func (c *leadOutreachContext) formatCommentResult(ctx context.Context, st *leadO
 	if st.queued == 0 {
 		// Lead Lifecycle PR-5: degrade honestly — report what the org DOES have
 		// (waiting/follow-up/archived) and a next step, not a dead-end "0 queued".
-		return noEligibleCommentMessage(ctx, c.db, c.orgID, st.scanned, skipNote) + errDetails
+		return noEligibleCommentMessage(ctx, c.lifecycle, c.orgID, st.scanned, skipNote) + errDetails
 	}
 	// PR-5: name the source group ("Cần xử lý") so the operator knows selection came
 	// from the act-now work queue, not the raw lead list.
