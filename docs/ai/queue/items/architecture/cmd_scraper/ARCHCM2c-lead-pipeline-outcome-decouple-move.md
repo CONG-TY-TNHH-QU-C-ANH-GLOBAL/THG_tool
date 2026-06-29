@@ -1,12 +1,12 @@
 ---
 id: ARCHCM2c
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM2a, ARCHCM2b]
 parallel_safe: false
 branch: "chore/archcm2c-move-leadoutreach"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/181
 blocked_on: ""
 boundary_target: transport-to-usecase
 ---
