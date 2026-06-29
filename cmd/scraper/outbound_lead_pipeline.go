@@ -18,6 +18,7 @@ import (
 type leadOutreachContext struct {
 	db               *store.Store
 	outbound         outboundRecorder
+	coverage         leadCoverageReader
 	msgGen           *ai.MessageGenerator
 	knowledgeBuilder *knowledgeRuntime.Builder
 	msgType          string
@@ -58,6 +59,7 @@ func buildLeadOutreachContext(db *store.Store, msgGen *ai.MessageGenerator, msgT
 	return &leadOutreachContext{
 		db:               db,
 		outbound:         storeOutboundRecorder{db},
+		coverage:         storeLeadCoverage{db},
 		msgGen:           msgGen,
 		knowledgeBuilder: knowledgeBuilder,
 		msgType:          msgType,
@@ -119,7 +121,7 @@ func (c *leadOutreachContext) coverageGate(ctx context.Context, lead models.Lead
 	if c.msgType != "comment" || lead.ID <= 0 {
 		return persona, ""
 	}
-	cov, cerr := c.db.Leads().GetLeadCoverageState(ctx, c.orgID, lead.ID, c.commentIdentity.Website)
+	cov, cerr := c.coverage.GetLeadCoverageState(ctx, c.orgID, lead.ID, c.commentIdentity.Website)
 	if cerr != nil {
 		return persona, ""
 	}

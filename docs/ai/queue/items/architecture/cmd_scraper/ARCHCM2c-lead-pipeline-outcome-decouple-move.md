@@ -13,6 +13,34 @@ boundary_target: transport-to-usecase
 
 # ARCHCM2c — De-couple + move outbound_lead_outcome.go / outbound_lead_pipeline.go
 
+## SEAM 2 DONE (2026-06-30) — coverage read port
+Second decoupling brick, on branch `chore/archcm2c-coverage-read-port`. Removes the
+per-lead execution path's direct `*store.Store` coverage read:
+- **New `cmd/scraper/outbound_lead_reader.go`:** `leadCoverageReader` interface (1
+  read-only method, neutral `*models.LeadCoverageState` return — not a store re-export)
+  + `storeLeadCoverage`, a pass-through cmd adapter over `*store.Store`.
+- `leadOutreachContext` gains a `coverage leadCoverageReader` field (wired once in
+  `buildLeadOutreachContext`); `coverageGate` now calls `c.coverage.GetLeadCoverageState`
+  instead of `c.db.Leads().GetLeadCoverageState`.
+- Store-free characterization tests (fakeCoverage) pin coverageGate's seam behavior:
+  non-comment short-circuit (reader untouched), error-tolerant proceed, exact
+  org/lead/website args passed. `models.EvaluateCoverage`/`DeriveActorPersona` semantics
+  unchanged (already covered by multi-actor coverage tests).
+
+**After Seam 2, the movable per-lead execution path's only remaining store coupling is
+the cross-component `commenting.Apply` call** (`commenting.Input.DB *store.Store` +
+`Contacts fbContactDirectory`). That is the critical-path blocker — a separate, larger
+seam OWNED BY `internal/services/facebook/commenting` (its public API takes the store),
+not the lead pipeline. The build layer (`buildLeadOutreachContext`) stays in cmd as the
+composition-root adapter (it resolves store into neutral objects). Remaining seams:
+1. **`commenting.Apply` store-coupling** — decouple `commenting.Input.DB` to an interface
+   (commenting-package-owned). Critical-path blocker for the move.
+2. **`noEligibleCommentMessage(ctx, c.db, …)`** (cmd-local free helper reading
+   `Leads().LeadLifecycleSummary`) — needs a small read port or relocation.
+
+Stays BLOCKED on those; Seams 1+2 are the reversible first bricks.
+
+
 ## SEAM 1 DONE (2026-06-29) — outbound persistence port (the RED-core decouple)
 First behavior-preserving decoupling brick, on branch `chore/archcm2c-outbound-recorder-seam`.
 The scariest concrete-store dependency in the movable per-lead path — the queue WRITE +
