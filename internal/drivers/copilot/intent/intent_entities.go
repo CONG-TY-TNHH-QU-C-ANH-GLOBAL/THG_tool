@@ -1,4 +1,4 @@
-package copilot
+package intent
 
 import (
 	"regexp"
@@ -15,9 +15,9 @@ import (
 // prompt. Facebook URL recognition is delegated to internal/fburl (the single,
 // host-anchored source of truth). No DB / outbound / session access.
 
-// firstFacebookURL returns the first host-anchored Facebook URL in the prompt
+// FirstFacebookURL returns the first host-anchored Facebook URL in the prompt
 // (lookalike hosts like facebook.com.evil.com are rejected by fburl).
-func firstFacebookURL(prompt string) string {
+func FirstFacebookURL(prompt string) string {
 	if urls := fburl.ExtractFacebookURLs(prompt); len(urls) > 0 {
 		return urls[0]
 	}
@@ -36,9 +36,9 @@ func isLikelyFacebookPostURL(u string) bool {
 	return strings.Contains(lower, "/videos/") || strings.Contains(lower, "/reel/")
 }
 
-// extractMaxItemsFromPrompt parses an explicit count ("50 bài", "crawl 30"),
+// ExtractMaxItemsFromPrompt parses an explicit count ("50 bài", "crawl 30"),
 // clamped to [1,200]. 0 = none specified.
-func extractMaxItemsFromPrompt(prompt string) int64 {
+func ExtractMaxItemsFromPrompt(prompt string) int64 {
 	folded := textnorm.Fold(prompt)
 	for _, re := range []*regexp.Regexp{
 		regexp.MustCompile(`(\d{1,3})\s*(?:bai|post|posts|lead|leads)`),
@@ -83,10 +83,10 @@ func extractIntentEntities(folded, prompt string) IntentEntities {
 	return e
 }
 
-// promptKeywords extracts up to 8 meaningful search keywords from a prompt
+// PromptKeywords extracts up to 8 meaningful search keywords from a prompt
 // (URLs + stop words removed) — used to seed a group search when no FB URL is
 // given.
-func promptKeywords(prompt string) string {
+func PromptKeywords(prompt string) string {
 	prompt = promptprep.StripDashboardContext(prompt)
 	prompt = regexp.MustCompile(`https?://\S+`).ReplaceAllString(prompt, " ")
 	cleaner := strings.NewReplacer(

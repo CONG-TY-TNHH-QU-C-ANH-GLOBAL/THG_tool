@@ -1,10 +1,10 @@
-package copilot
+package intent
 
 // Copilot intent/routing contract types (Architecture-first refactor — see
 // specs/COPILOT_INTENT_ROUTING_ARCHITECTURE.md). These give the routing pipeline
 // an explicit shape — raw text → normalize → entities → classify → route — so
 // future NLU (typo-tolerant / multilingual) has a clean home. Additive: the
-// existing deterministicFacebookAction contract (string, args, bool) is kept.
+// existing DeterministicFacebookAction contract (string, args, bool) is kept.
 
 // Confidence is the classifier's confidence in a routing decision. Reserved for
 // the future NLU layer; the current deterministic classifier emits High on a
