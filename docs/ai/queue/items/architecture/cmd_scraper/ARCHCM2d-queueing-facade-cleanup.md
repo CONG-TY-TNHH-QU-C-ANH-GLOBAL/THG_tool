@@ -1,17 +1,39 @@
 ---
 id: ARCHCM2d
-status: BLOCKED
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM2b, ARCHCM2c]
 parallel_safe: false
-branch: ""
+branch: "chore/archcm2d-facade-queue-port"
 pr_url: ""
-blocked_on: prior-staged-moves
+blocked_on: ""
 boundary_target: transport-to-usecase
 ---
 
 # ARCHCM2d — Reduce outbound_action_queueing.go to a thin cmd facade
+
+## DONE (2026-06-30) — facade holds no direct queue write
+On branch `chore/archcm2d-facade-queue-port`. After ARCHCM2c moved the lead-outreach
+spine to `internal/services/facebook/leadoutreach`, `queueLeadOutreach` was already a thin
+facade (resolve context → readiness gate → fetch leads → `leadoutreach.New`/`ProcessLead`/
+`FormatResult`). The one remaining piece of composition-root business logic was
+`queueFacebookPostTargets`'s direct `db.QueueOutboundForOrg` write loop (also the *deprecated*
+wrapper). This slice routes that write through the existing, proven `leadoutreach.OutboundRecorder`
+(`storeOutboundRecorder`, already 1:1-verified in seam 1) — the post path already imported
+`leadoutreach` for `Mode`. Effect:
+- **No direct queue write left in `outbound_action_queueing.go`** — all four `queue*` entry
+  points are now thin arg-parse + context/target-resolution + delegate adapters.
+- Fixes the deprecated `db.QueueOutboundForOrg` call (now the non-deprecated `Outbound().Queue`
+  via the recorder).
+- Behavior-preserving: same `OutboundMessage` payload / 24h cooldown / `Allowed`+`ExecutionState`
+  checks; `QueueOutbound` maps the store `Decision` 1:1 (`result.Decision.Allowed` → `result.Allowed`).
+
+Closes the ARCHCM2 umbrella's facade goal. NOTE: ARCHCM3 (`depends_on: [ARCHCM2, ARCHST-R3]`)
+stays blocked on the RED `ARCHST-R3` even once the umbrella closes — it does not free on this PR.
+Mild residual smell (non-blocking): the shared outbound primitives `Mode`/`OutboundRecorder`/
+`QueueOutcome` live in `leadoutreach` but are reused by the FB-post path; a future neutral
+`fboutbound` home could host them if the posting cluster grows — not worth a speculative package now.
 
 ## Goal
 Once the L3 core lives in `internal/outbound` (ARCHCM2b + ARCHCM2c), reduce L1

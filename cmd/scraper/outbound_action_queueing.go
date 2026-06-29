@@ -136,8 +136,9 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 	requestedAuto := argBool(args, "auto")
 	queued, skipped := 0, 0
 	approvedCount := 0
+	recorder := storeOutboundRecorder{db}
 	for _, target := range targets {
-		result, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		result, err := recorder.QueueOutbound(&models.OutboundMessage{
 			OrgID:     orgID,
 			Type:      msgType,
 			Platform:  models.PlatformFacebook,
@@ -150,7 +151,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 		if err != nil {
 			return "", err
 		}
-		if !result.Decision.Allowed {
+		if !result.Allowed {
 			skipped++
 			continue
 		}
