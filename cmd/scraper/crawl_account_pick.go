@@ -39,13 +39,13 @@ func pickReadyFacebookAccountIDForCrawl(db *store.Store, orgID, userID int64, ro
 }
 
 // crawlOwnershipGate builds the PR-M3 ownership predicate for auto-pick: a non-
-// privileged sales member (callerRestrictedToOwnedAccounts) is limited to accounts
+// privileged sales member (models.RestrictedToOwnedAccounts) is limited to accounts
 // they own; admin / platform / the userID<=0 scheduler are org-wide. Returns a nil
 // allow func to signal "member owns nothing — stop, pick nothing" (caller returns
 // 0, nil), or a non-nil error on the ownership lookup. Behaviorally identical to the
 // previous inline gate.
 func crawlOwnershipGate(db *store.Store, orgID, userID int64, role string) (func(int64) bool, error) {
-	if !callerRestrictedToOwnedAccounts(userID, role) {
+	if !models.RestrictedToOwnedAccounts(userID, role) {
 		return func(int64) bool { return true }, nil
 	}
 	accs, err := db.Identities().GetAccountsForUser(orgID, userID)

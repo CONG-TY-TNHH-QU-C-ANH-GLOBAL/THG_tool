@@ -46,6 +46,25 @@ func CanViewAccountDevice(acc *Account, userID int64, role string) bool {
 	return acc.AssignedUserID == 0 && (IsPlatformRole(r) || r == RoleAdmin)
 }
 
+// RestrictedToOwnedAccounts reports whether a caller may only resolve / auto-pick
+// Facebook accounts they personally own — the OWNER-scope role classification shared by
+// the outbound candidate pool and the crawl account auto-pick (ARCHCM-R1 / ARCHCM2a).
+//
+//   - Restricted   → identified sales member (userID > 0, non-privileged): owned only.
+//   - Unrestricted → admin / platform roles, AND the userID <= 0 scheduler / legacy path.
+//
+// It decides only WHETHER the owned restriction applies; it does NOT decide per-account
+// ownership (that is IsAccountOwnerAllowed) and is distinct from the VISIBILITY gate
+// (CanViewAccountDevice) and the EXECUTION-control gate (AccountControlAllowed). Pure
+// logic; lives in models so both the outbound and crawl callers share one definition.
+func RestrictedToOwnedAccounts(userID int64, role string) bool {
+	if userID <= 0 {
+		return false
+	}
+	r := UserRole(strings.TrimSpace(strings.ToLower(role)))
+	return !IsPlatformRole(r) && r != RoleAdmin
+}
+
 // AccountControlAllowed is the EXECUTION-control predicate for the readiness UI (P1.3E),
 // deliberately stricter than CanViewAccountDevice: VISIBILITY is not CONTROL. An account is
 // controllable by a requester only when it is ASSIGNED to them — admin role and inventory
