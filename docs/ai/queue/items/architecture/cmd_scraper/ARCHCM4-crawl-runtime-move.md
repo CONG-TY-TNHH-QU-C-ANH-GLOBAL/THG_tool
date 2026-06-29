@@ -1,13 +1,13 @@
 ---
 id: ARCHCM4
-status: BLOCKED
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM-R1, ARCHCM-R2]
 parallel_safe: false
 branch: "audit/archcm4-feasibility-restage"
 pr_url: ""
-blocked_on: dearg-seam-prep
+blocked_on: ""
 boundary_target: transport-to-usecase
 audit_status: COMPLETE
 role: umbrella
@@ -15,6 +15,14 @@ decomposed_into: [ARCHCM4a, ARCHCM4b]
 ---
 
 # ARCHCM4 — Move crawl runtime/plan/scheduler out of cmd/scraper
+
+## UMBRELLA CLOSED (2026-06-30)
+Both decomposed children are DONE — the crawl runtime move is complete:
+- **ARCHCM4a** (PR merged) — de-arg seam: typed crawl request at the cmd boundary.
+- **ARCHCM4b** (PR merged) — typed plan-assembly + scheduler + connector-dispatch core moved to
+  `internal/crawler` behind the cmd facade (verbatim dispatch; the 10-point semantics checklist held).
+The `dearg-seam-prep` blocker was resolved by ARCHCM4a. No code in this edit — queue-state correction
+only (umbrella was stale-BLOCKED with all children DONE).
 
 ## Goal
 Relocate crawl_runtime.go (373) + crawl_scheduler.go (172) plan-assembly /

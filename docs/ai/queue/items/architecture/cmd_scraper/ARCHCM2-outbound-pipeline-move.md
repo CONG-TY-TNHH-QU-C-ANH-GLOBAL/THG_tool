@@ -1,19 +1,29 @@
 ---
 id: ARCHCM2
-status: BLOCKED
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM1, ARCHCM-R1]
 parallel_safe: false
 branch: "audit/archcm2-feasibility-restage"
 pr_url: ""
-blocked_on: execution-context-home-decision
+blocked_on: ""
 boundary_target: transport-to-usecase
 audit_status: COMPLETE
 role: umbrella
 decomposed_into: [ARCHCM2a, ARCHCM2b, ARCHCM2c, ARCHCM2d]
-note: "umbrella BLOCKED on ARCHCM2a (L2 home); ARCHCM2b (comment_reasoning leaf) is independently READY"
+note: "umbrella CLOSED 2026-06-30 — all four sub-items DONE (2a exec-context home, 2b comment_reasoning leaf, 2c lead-pipeline move to internal/services/facebook/leadoutreach, 2d thin queueing facade). The L2 execution-context-home decision was resolved by ARCHCM2a; the lead-outreach execution spine is store-free and out of the composition root."
 ---
+
+## UMBRELLA CLOSED (2026-06-30)
+All decomposed children are DONE — the outbound lead-pipeline move is complete:
+- **ARCHCM2a** (PR merged) — execution-context home decided + `execcontext` extracted.
+- **ARCHCM2b** (PR merged) — comment_reasoning leaf moved to `internal/services/facebook/commenting`.
+- **ARCHCM2c** (PR #181) — lead pipeline/outcome decoupled from `*store.Store` (4 seams) and
+  relocated to `internal/services/facebook/leadoutreach`.
+- **ARCHCM2d** (PR #182) — `outbound_action_queueing.go` reduced to a thin cmd facade (no direct
+  queue write left).
+No code in this edit — queue-state correction only (umbrella was stale-BLOCKED with all children DONE).
 
 # ARCHCM2 — Move outbound pipeline out of cmd/scraper into internal/outbound
 
