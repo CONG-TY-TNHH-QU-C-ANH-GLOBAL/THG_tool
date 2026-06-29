@@ -1,4 +1,4 @@
-package main
+package leadoutreach
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// fakeCoverage is a store-free leadCoverageReader stub. The seam (ARCHCM2c Seam 2)
+// fakeCoverage is a store-free LeadCoverageReader stub. The seam (ARCHCM2c Seam 2)
 // is what makes coverageGate's store-read behavior testable without a real store.
 type fakeCoverage struct {
 	state   *models.LeadCoverageState
@@ -25,8 +25,8 @@ func (f *fakeCoverage) GetLeadCoverageState(_ context.Context, orgID, leadID int
 	return f.state, f.err
 }
 
-func newCoverageCtx(cov leadCoverageReader) *leadOutreachContext {
-	return &leadOutreachContext{
+func newCoverageCtx(cov LeadCoverageReader) *Context {
+	return &Context{
 		coverage:        cov,
 		orgID:           7,
 		accountID:       3,

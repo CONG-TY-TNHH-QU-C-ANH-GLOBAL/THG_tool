@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/outbound/execcontext"
 	"github.com/thg/scraper/internal/services/facebook"
+	"github.com/thg/scraper/internal/services/facebook/leadoutreach"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -56,20 +57,20 @@ func queueLeadOutreach(ctx context.Context, db *store.Store, msgGen *ai.MessageG
 	// gatekeeper: it downgrades to draft if the org has not opted in.
 	requestedAuto := argBool(args, "auto")
 	run := buildLeadOutreachContext(db, msgGen, msgType, args, orgID, accountID, actx)
-	st := newLeadOutreachState()
+	st := leadoutreach.NewState()
 	// Eligible-fill (PR-2): keep scanning the candidate pool past skipped leads
 	// until `requested` are queued or the pool is exhausted.
 	requested := facebook.RequestedOutreachCount(int(argInt64(args, "limit")), int(argInt64(args, "max_items")))
 	for _, lead := range leads {
-		if st.queued >= requested {
+		if st.Queued >= requested {
 			break
 		}
-		st.scanned++
-		if err := run.processOutreachLead(ctx, lead, st); err != nil {
-			return "", st.queued, err
+		st.Scanned++
+		if err := run.ProcessLead(ctx, lead, st); err != nil {
+			return "", st.Queued, err
 		}
 	}
-	return run.formatOutreachResult(ctx, requestedAuto, notify, st), st.queued, nil
+	return run.FormatResult(ctx, requestedAuto, notify, st), st.Queued, nil
 }
 
 func queueGroupPost(ctx context.Context, db *store.Store, msgGen *ai.MessageGenerator, args map[string]any, notify func(string)) (string, error) {
@@ -158,7 +159,7 @@ func queueFacebookPostTargets(ctx context.Context, db *store.Store, msgGen *ai.M
 			approvedCount++
 		}
 	}
-	mode := outreachMode(approvedCount, queued, requestedAuto)
+	mode := leadoutreach.Mode(approvedCount, queued, requestedAuto)
 	if notify != nil && queued > 0 {
 		notify(facebook.FormatOutboundNotification(orgID, accountID, msgType, queued, skipped, mode))
 	}

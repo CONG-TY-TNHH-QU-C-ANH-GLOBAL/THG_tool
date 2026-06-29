@@ -1,4 +1,4 @@
-package main
+package leadoutreach
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// fakeLifecycle is a store-free leadLifecycleReader stub. The seam (ARCHCM2c Seam 3)
+// fakeLifecycle is a store-free LeadLifecycleReader stub. The seam (ARCHCM2c Seam 3)
 // is what makes noEligibleCommentMessage testable without a real *store.Store.
 type fakeLifecycle struct {
 	sum models.LifecycleSummary
