@@ -1,4 +1,4 @@
-package copilot
+package intent
 
 import "testing"
 
@@ -24,7 +24,7 @@ func TestDeterministicFacebookAction_Characterization(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			action, _, ok := deterministicFacebookAction(c.prompt, 5, 0)
+			action, _, ok := DeterministicFacebookAction(c.prompt, 5, 0)
 			if c.want == "" {
 				if ok {
 					t.Fatalf("expected no match, got %q", action)
@@ -43,7 +43,7 @@ func TestDeterministicFacebookAction_Characterization(t *testing.T) {
 // (cmd/scraper resolveDirectCommentURL), tested there.
 func TestDeterministicFacebookAction_MultipleURLsStillSinglePost(t *testing.T) {
 	two := "comment bài này https://www.facebook.com/groups/1/posts/2/ và https://www.facebook.com/groups/3/posts/4/"
-	if action, _, ok := deterministicFacebookAction(two, 5, 0); !ok || action != "comment_single_post" {
+	if action, _, ok := DeterministicFacebookAction(two, 5, 0); !ok || action != "comment_single_post" {
 		t.Fatalf("two URLs + comment should route single-post (orchestrator enforces one-link), got %q", action)
 	}
 }

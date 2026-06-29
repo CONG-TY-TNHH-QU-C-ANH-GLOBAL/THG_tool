@@ -1,4 +1,4 @@
-package copilot
+package intent
 
 import (
 	"strings"
@@ -14,12 +14,12 @@ import (
 // the pre-split router — only the keyword sets are named (intent_lexicon.go) and
 // the URL/scope checks read off IntentEntities (intent_entities.go).
 
-// deterministicFacebookAction classifies a Copilot prompt into an action name +
+// DeterministicFacebookAction classifies a Copilot prompt into an action name +
 // args. Returns ok=false (no match) to let the brain planner handle ambiguity. The
 // classification ladder is a fixed-order sequence of classifyX helpers (each returns
 // ok=true on its match) — extracted from one big function to keep each branch (and
 // the dispatch) under the cognitive-complexity threshold; order + behavior unchanged.
-func deterministicFacebookAction(prompt string, orgID, accountID int64) (string, map[string]any, bool) {
+func DeterministicFacebookAction(prompt string, orgID, accountID int64) (string, map[string]any, bool) {
 	folded := textnorm.Fold(strings.ToLower(promptprep.StripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	args := map[string]any{}
@@ -29,7 +29,7 @@ func deterministicFacebookAction(prompt string, orgID, accountID int64) (string,
 	if accountID > 0 {
 		args["account_id"] = accountID
 	}
-	if maxItems := extractMaxItemsFromPrompt(prompt); maxItems > 0 {
+	if maxItems := ExtractMaxItemsFromPrompt(prompt); maxItems > 0 {
 		args["max_items"] = maxItems
 	}
 
@@ -98,7 +98,7 @@ func classifyPostingAction(folded, prompt string, args map[string]any) (string, 
 		return "", false
 	}
 	args["content"] = strings.TrimSpace(promptprep.StripDashboardContext(prompt))
-	if u := firstFacebookURL(prompt); u != "" {
+	if u := FirstFacebookURL(prompt); u != "" {
 		args["group_url"] = u
 	}
 	return "create_job_post", true
@@ -107,7 +107,7 @@ func classifyPostingAction(folded, prompt string, args map[string]any) (string, 
 // classifyScrape — a URL + a scrape verb: scrape_comments for a post (with a comment
 // verb), else scrape_group.
 func classifyScrape(folded, prompt string, args map[string]any) (string, bool) {
-	u := firstFacebookURL(prompt)
+	u := FirstFacebookURL(prompt)
 	if u == "" || !textnorm.ContainsAny(folded, lexScrapeVerbs) {
 		return "", false
 	}
@@ -121,10 +121,10 @@ func classifyScrape(folded, prompt string, args map[string]any) (string, bool) {
 
 // classifySearch — a search verb with no URL: search groups by the prompt keywords.
 func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
-	if firstFacebookURL(prompt) != "" || !textnorm.ContainsAny(folded, lexSearchVerbs) {
+	if FirstFacebookURL(prompt) != "" || !textnorm.ContainsAny(folded, lexSearchVerbs) {
 		return "", false
 	}
-	query := promptKeywords(prompt)
+	query := PromptKeywords(prompt)
 	if query == "" {
 		query = strings.TrimSpace(promptprep.StripDashboardContext(prompt))
 	}
@@ -135,7 +135,7 @@ func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
 	return "", false
 }
 
-// promptIsDirectPostComment reports whether the prompt is an unambiguous
+// PromptIsDirectPostComment reports whether the prompt is an unambiguous
 // "comment on THIS specific post" instruction that must reach the deterministic
 // comment_single_post route BEFORE the brain planner. Without this gate the brain
 // handles "comment bài này <url>" first and returns generic Copilot text,
@@ -151,7 +151,7 @@ func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
 //     post's comments" (scrape_comments), not "post a comment".
 //  4. NOT a bulk comment scope (leads / các lead / tất cả / tệp khách / all) —
 //     bulk stays comment_all_leads.
-func promptIsDirectPostComment(prompt string) bool {
+func PromptIsDirectPostComment(prompt string) bool {
 	folded := textnorm.Fold(strings.ToLower(promptprep.StripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	if !ent.HasPostURL {
@@ -173,7 +173,7 @@ func promptIsDirectPostComment(prompt string) bool {
 // prompt would route (no cookies/tokens/session/payload). Additive — for
 // debug/observability surfaces; re-runs the pure classifier.
 func RouteDecisionFor(prompt string) RouteDecision {
-	action, _, ok := deterministicFacebookAction(prompt, 0, 0)
+	action, _, ok := DeterministicFacebookAction(prompt, 0, 0)
 	folded := textnorm.Fold(strings.ToLower(promptprep.StripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
 	conf, reason := ConfidenceLow, "no deterministic match"

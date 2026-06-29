@@ -1,15 +1,28 @@
 ---
 id: ARCHCP3
-status: BLOCKED
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCP1, ARCHCP2]
 parallel_safe: false
-branch: ""
+branch: "chore/archcp3-intent-subpackage-move"
 pr_url: ""
-blocked_on: human-boundary-decision
 boundary_target: leaf-move
 ---
+
+## PHASE 3 DONE — the move (2026-06-29, branch chore/archcp3-intent-subpackage-move)
+Wrapper-first move (senior-architect plan): the 4 intent files + test moved to
+`internal/drivers/copilot/intent/` (package intent, + doc.go); the 5 externally-used
+funcs are exported (`DeterministicFacebookAction`, `PromptIsDirectPostComment`,
+`FirstFacebookURL`, `ExtractMaxItemsFromPrompt`, `PromptKeywords`; `RouteDecisionFor`
+already was). Thin package-copilot shims (`intent_shims.go`) keep ALL ~10 agent_*/
+routing_*/test call sites UNCHANGED — verified zero external uses of a moved type, so no
+caller imports `intent` and no near-200 caller grows. `intent_normalize.go` (textnorm/
+promptprep shims) stays. No import cycle (intent → leaves only). Behavior pinned by the
+moved `intent_router_test.go` (all 7 routes + RouteDecisionFor flags) + the copilot
+shim-consumer tests — all pass. Option B reached incrementally (3a textnorm → 3b
+classifier ≤15 → 3c intent fold-decouple → 3d promptprep → this move). On merge → DONE,
+unblocking ARCHCP4. Follow-up (optional): migrate callers to `intent.*` + drop the shims.
 
 # ARCHCP3 — Extract copilot/intent subpackage
 
