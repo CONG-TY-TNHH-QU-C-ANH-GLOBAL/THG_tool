@@ -11,14 +11,47 @@ import (
 )
 
 // Comment-quality screening (ScreenCommentQuality / enforceContactPolicy) moved to
-// internal/services/facebook (Phase C). This file keeps the store-coupled outbound
-// outcome/queue handling.
+// internal/services/facebook (Phase C). This file keeps the outbound outcome/queue
+// handling + the store-free run accumulator (leadOutreachState) it feeds.
+
+// leadOutreachState accumulates one queueLeadOutreach pass's counters + diagnostics.
+// Pure (store-free) — colocated with the outcome formatters that read it.
+type leadOutreachState struct {
+	queued        int
+	skipped       int
+	approvedCount int
+	scanned       int
+	skipReasons   map[string]int
+	// skipSamples keeps up to 5 sample lead IDs per skip reason (diagnosability).
+	skipSamples map[string][]int64
+	lastGenErr  error
+	// riskBlock* capture the last risk_ceiling_exceeded deny for the response.
+	riskBlockSeen    bool
+	riskBlockRisk    float64
+	riskBlockCeiling float64
+}
+
+func newLeadOutreachState() *leadOutreachState {
+	return &leadOutreachState{
+		skipReasons: map[string]int{},
+		skipSamples: map[string][]int64{},
+	}
+}
+
+func (s *leadOutreachState) recordSkip(reason string, leadID int64) {
+	s.skipped++
+	s.skipReasons[reason]++
+	if leadID > 0 && len(s.skipSamples[reason]) < 5 {
+		s.skipSamples[reason] = append(s.skipSamples[reason], leadID)
+	}
+}
 
 // queueOutreachMessage inserts one queued outbound message and records the
-// queue-stage outcome. Returns a non-nil error only on a hard store failure
-// (preserving the original `return "", err`); a policy denial is recorded as a skip.
+// queue-stage outcome via the outboundRecorder port (ARCHCM2c seam — no direct
+// *store.Store). Returns a non-nil error only on a hard store failure (preserving
+// the original `return "", err`); a policy denial is recorded as a skip.
 func (c *leadOutreachContext) queueOutreachMessage(ctx context.Context, lead models.Lead, targetURL, content, retrievalID string, st *leadOutreachState) error {
-	result, err := c.db.QueueOutboundForOrg(&models.OutboundMessage{
+	result, err := c.outbound.QueueOutbound(&models.OutboundMessage{
 		OrgID:      c.orgID,
 		Type:       c.msgType,
 		Platform:   models.PlatformFacebook,
@@ -33,17 +66,17 @@ func (c *leadOutreachContext) queueOutreachMessage(ctx context.Context, lead mod
 	if err != nil {
 		return err
 	}
-	if !result.Decision.Allowed {
-		st.recordSkip(result.Decision.Reason, lead.ID)
-		if result.Decision.Reason == "risk_ceiling_exceeded" && result.Decision.RiskCeiling > 0 {
+	if !result.Allowed {
+		st.recordSkip(result.Reason, lead.ID)
+		if result.Reason == "risk_ceiling_exceeded" && result.RiskCeiling > 0 {
 			st.riskBlockSeen = true
-			st.riskBlockRisk = result.Decision.RiskScore
-			st.riskBlockCeiling = result.Decision.RiskCeiling
+			st.riskBlockRisk = result.RiskScore
+			st.riskBlockCeiling = result.RiskCeiling
 		}
 		// Record the rejection outcome so Operator Replay shows
 		// "retrieved → drafted → rejected (reason)".
 		if retrievalID != "" {
-			c.db.Knowledge().RecordOutcome(ctx, c.orgID, retrievalID, "rejected")
+			c.outbound.RecordOutcome(ctx, c.orgID, retrievalID, "rejected")
 		}
 		return nil
 	}
@@ -54,7 +87,7 @@ func (c *leadOutreachContext) queueOutreachMessage(ctx context.Context, lead mod
 	// Stage outcome: queue success. The browser-execution layer owns the FINAL
 	// sent/failed outcome against the same retrievalID.
 	if retrievalID != "" {
-		c.db.Knowledge().RecordOutcome(ctx, c.orgID, retrievalID, "queued")
+		c.outbound.RecordOutcome(ctx, c.orgID, retrievalID, "queued")
 	}
 	return nil
 }
