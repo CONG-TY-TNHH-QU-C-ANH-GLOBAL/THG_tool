@@ -1,11 +1,55 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
 )
+
+// fakeLifecycle is a store-free leadLifecycleReader stub. The seam (ARCHCM2c Seam 3)
+// is what makes noEligibleCommentMessage testable without a real *store.Store.
+type fakeLifecycle struct {
+	sum models.LifecycleSummary
+	err error
+}
+
+func (f fakeLifecycle) LeadLifecycleSummary(_ context.Context, _ int64) (models.LifecycleSummary, error) {
+	return f.sum, f.err
+}
+
+// TestNoEligibleCommentMessage_Enriched pins the lifecycle-enriched reply: the base
+// "0 eligible" line plus the inventory/suggestion derived from the summary.
+func TestNoEligibleCommentMessage_Enriched(t *testing.T) {
+	rec := fakeLifecycle{sum: models.LifecycleSummary{WaitingReply: 2, FollowupDue: 1}}
+	got := noEligibleCommentMessage(context.Background(), rec, 7, 9, " skip.")
+
+	if !strings.Contains(got, "quét 9 lead") {
+		t.Errorf("missing scanned count: %q", got)
+	}
+	if !strings.Contains(got, " skip.") {
+		t.Errorf("missing skipNote: %q", got)
+	}
+	if !strings.Contains(got, "đang chờ phản hồi") {
+		t.Errorf("missing lifecycle inventory: %q", got)
+	}
+}
+
+// TestNoEligibleCommentMessage_FallsBackOnError: a read error degrades to the bare
+// base line (no suggestion), preserving the original error-tolerant behavior.
+func TestNoEligibleCommentMessage_FallsBackOnError(t *testing.T) {
+	rec := fakeLifecycle{err: errors.New("boom")}
+	got := noEligibleCommentMessage(context.Background(), rec, 7, 4, "")
+
+	if !strings.Contains(got, "quét 4 lead") {
+		t.Errorf("missing base line: %q", got)
+	}
+	if strings.Contains(got, "Gợi ý") {
+		t.Errorf("suggestion must be absent on error: %q", got)
+	}
+}
 
 func TestJoinVietnamese(t *testing.T) {
 	cases := map[string][]string{

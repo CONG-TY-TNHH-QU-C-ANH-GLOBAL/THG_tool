@@ -13,6 +13,36 @@ boundary_target: transport-to-usecase
 
 # ARCHCM2c — De-couple + move outbound_lead_outcome.go / outbound_lead_pipeline.go
 
+## SEAM 3 DONE (2026-06-30) — lifecycle read port; outbound_lead_outcome.go is now STORE-FREE
+Third decoupling brick, on branch `chore/archcm2c-lifecycle-read-port`. Removes the LAST
+direct `*store.Store` read in the outcome path:
+- **`outbound_lead_reader.go`:** added `leadLifecycleReader` interface (1 read-only method,
+  neutral `models.LifecycleSummary` return) + `storeLeadLifecycle` pass-through adapter.
+- `noEligibleCommentMessage` (lifecycle_copilot.go) signature changed `db *store.Store` →
+  `lifecycle leadLifecycleReader` (1 caller — formatCommentResult); body reads via the port;
+  **the file drops its `internal/store` import** (noEligible was its only store user).
+- `leadOutreachContext` gains a `lifecycle` field, wired in `buildLeadOutreachContext`;
+  `formatCommentResult` calls `noEligibleCommentMessage(ctx, c.lifecycle, …)`.
+- Store-free characterization tests (fakeLifecycle) pin the enriched message + the
+  error→bare-base fallback.
+
+**Effect: `outbound_lead_outcome.go` no longer references `c.db` at all — it is fully
+store-free and independently movable.** The remaining ARCHCM2c blocker is entirely in
+`outbound_lead_pipeline.go`:
+1. **`commenting.Apply` store-coupling (the only blocker left).** `commenting.Input.DB
+   *store.Store` is used inside `internal/services/facebook/commenting` for
+   `ai.LoadOrgCommentPolicies(in.DB, orgID)` (cascades into `internal/ai`) +
+   `in.DB.Prompts().InsertSystemPromptLog(...)` (a write). Decoupling it is a CROSS-COMPONENT
+   YELLOW seam owned by the commenting package (its public API takes the store) + an
+   internal/ai cascade — NOT a bounded lead-pipeline slice. Needs its own feasibility pass /
+   likely a commenting-API decision (does commenting own its data access or receive resolved
+   policies + a prompt-log sink?). Deferred.
+
+The build layer (`buildLeadOutreachContext`) stays in cmd as the composition-root adapter
+(resolves store → neutral objects). Seams 1+2+3 are the reversible bricks; the move stays
+BLOCKED only on the commenting decouple.
+
+
 ## SEAM 2 DONE (2026-06-30) — coverage read port
 Second decoupling brick, on branch `chore/archcm2c-coverage-read-port`. Removes the
 per-lead execution path's direct `*store.Store` coverage read:
