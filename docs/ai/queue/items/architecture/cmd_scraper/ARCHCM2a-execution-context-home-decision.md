@@ -1,14 +1,13 @@
 ---
 id: ARCHCM2a
-status: BLOCKED
-lane: RED
-risk: RED
+status: REVIEW
+lane: YELLOW
+risk: YELLOW
 depends_on: []
 parallel_safe: false
-branch: ""
+branch: "chore/archcm2a-phase2-execcontext"
 pr_url: ""
-blocked_on: founder-architect-decision
-boundary_target: blocked-decision
+boundary_target: transport-to-usecase
 ---
 
 # ARCHCM2a — DECISION: home for the L2 execution-context resolution layer
@@ -29,15 +28,26 @@ the only thing outbound AND crawl still share is the OWNER-restriction predicate
 - **Effect:** the cross-vertical account-scope coupling is gone (single source in
   `models`). The remaining ARCHCM2a question narrows to **phase 2** below.
 
-## PHASE 2 (remaining — gates ARCHCM2c)
-Decide the home for the **outbound-only, store-coupled** L2 resolution
-(`resolveCallerAccountID`, `resolveUserActionContext`, `ownedAccountCandidates`,
-`callerAccountForExplicitID`, `selectExecutionAccount`). It is no longer shared with
-crawl, so the original "neutral leaf vs crawl→outbound cycle" objection is weaker:
-candidates are a new `internal/execcontext` leaf OR co-locating with the outbound
-usecase. ARCHCM2c (which moves lead_pipeline — a caller of `resolveUserActionContext`)
-needs this resolved so the moved code does not call back into cmd. Stays BLOCKED on
-this phase-2 home decision.
+## PHASE 2 DONE (2026-06-29, branch chore/archcm2a-phase2-execcontext)
+Feasibility re-confirmed: the L2 resolution is **outbound-only** (sole external prod
+caller `outbound_action_queueing.go` ×3; crawl uses its own `crawlOwnershipGate`). Per
+the decision rule (`internal/outbound/...` when truly outbound-only; a top-level neutral
+leaf only if neutral reuse is real — it is not), the home is **`internal/outbound/execcontext`**
+(outbound-scoped, bounded subpackage), NOT a top-level neutral leaf.
+- Moved verbatim: `ResolveUserActionContext` + `ResolveCallerAccountID` (exported) +
+  `callerAccountForExplicitID` / `ownedAccountCandidates` / `selectExecutionAccount`
+  (package-private). cmd `outbound_action_queueing.go` calls `execcontext.*`. Both
+  characterization test files moved into the package (matrix + deterministic-context).
+- Import topology proven: `internal/store` does not import `internal/outbound`; the new
+  package imports only `store` + `models`; nothing imported it before → clean DAG, no
+  cycle (`check_topology` green).
+- RED-zone (account-scope/RBAC) touched as a SAFE MIGRATION (move-after-topology-proof):
+  who-can-do-what unchanged, no new authoritative path, reversible.
+
+**ARCHCM2a is fully realized** (phase 1: shared predicate → `models`; phase 2: L2
+resolution → `internal/outbound/execcontext`). On merge → DONE, which **unblocks
+ARCHCM2c** (its `resolveUserActionContext` dependency is now importable from a non-cmd
+package, so the lead_pipeline move will not call back into cmd).
 
 ## Goal (decision-only — account-scope / RBAC-adjacent)
 Decide where the L2 execution-context resolution layer lives. Today it sits in
