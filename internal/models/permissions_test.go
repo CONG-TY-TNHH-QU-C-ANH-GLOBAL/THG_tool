@@ -35,3 +35,33 @@ func TestIsAccountOwnerAllowed(t *testing.T) {
 		}
 	}
 }
+
+// TestRestrictedToOwnedAccounts pins the OWNER-scope role classification shared by the
+// outbound candidate pool and crawl auto-pick (ARCHCM2a): only an identified,
+// non-privileged sales member is restricted to owned accounts; admin / platform and the
+// userID<=0 scheduler / legacy path are org-wide. A regression is an account-scope change.
+func TestRestrictedToOwnedAccounts(t *testing.T) {
+	cases := []struct {
+		name   string
+		userID int64
+		role   string
+		want   bool
+	}{
+		{"sales restricted", 7, "sales", true},
+		{"sales mixed case + spaces", 7, "  Sales  ", true},
+		{"unknown role treated as restricted member", 7, "member", true},
+		{"empty role but identified user", 7, "", true},
+		{"admin unrestricted", 5, "admin", false},
+		{"admin mixed case", 5, "ADMIN", false},
+		{"founder unrestricted", 5, "founder", false},
+		{"superadmin unrestricted", 5, "superadmin", false},
+		{"scheduler userID 0", 0, "", false},
+		{"scheduler userID 0 with sales role", 0, "sales", false},
+		{"negative userID", -1, "sales", false},
+	}
+	for _, tc := range cases {
+		if got := RestrictedToOwnedAccounts(tc.userID, tc.role); got != tc.want {
+			t.Errorf("%s: RestrictedToOwnedAccounts(%d, %q) = %v, want %v", tc.name, tc.userID, tc.role, got, tc.want)
+		}
+	}
+}

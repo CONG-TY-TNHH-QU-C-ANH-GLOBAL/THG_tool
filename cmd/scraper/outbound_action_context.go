@@ -79,11 +79,10 @@ func callerAccountForExplicitID(db *store.Store, orgID, userID int64, role strin
 
 // ownedAccountCandidates returns the accounts the caller may resolve from:
 // sales staff see only their owned accounts; admin / platform roles and the
-// legacy unauthenticated (userID <= 0) path see all org accounts. The
-// restriction decision is shared with the crawl gate via
-// callerRestrictedToOwnedAccounts (ARCHCM-R1 Option A).
+// legacy unauthenticated (userID <= 0) path see all org accounts. The restriction
+// decision is the shared models.RestrictedToOwnedAccounts predicate (ARCHCM2a).
 func ownedAccountCandidates(db *store.Store, orgID, userID int64, role string) ([]models.Account, error) {
-	if callerRestrictedToOwnedAccounts(userID, role) {
+	if models.RestrictedToOwnedAccounts(userID, role) {
 		return db.Identities().GetAccountsForUser(orgID, userID)
 	}
 	return db.Identities().GetAllAccounts(orgID)

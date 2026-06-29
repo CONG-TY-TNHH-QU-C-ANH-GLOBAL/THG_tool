@@ -13,6 +13,32 @@ boundary_target: blocked-decision
 
 # ARCHCM2a — DECISION: home for the L2 execution-context resolution layer
 
+## PHASE 1 DONE (2026-06-29, branch chore/archcm2a-owner-predicate-to-models)
+Realized the neutral home for the **shared** account-scope primitive. Post-ARCHCM4,
+the only thing outbound AND crawl still share is the OWNER-restriction predicate
+(`callerRestrictedToOwnedAccounts`); the store-coupled L2 resolution
+(`resolveCallerAccountID` etc.) is now **outbound-only** (callers:
+`outbound_action_queueing.go` + tests — crawl uses its own `crawlOwnershipGate`).
+- Moved the pure predicate into `internal/models/permissions.go` as
+  `models.RestrictedToOwnedAccounts` (next to `IsAccountOwnerAllowed` /
+  `CanViewAccountDevice` / `AccountControlAllowed` — the neutral permission-predicate
+  leaf both verticals already import). Deleted cmd's `account_scope_role.go`; the test
+  moved to `permissions_test.go`. Behavior-preserving (verbatim predicate); RBAC
+  who-can-do-what unchanged. RED-zone touch via safe migration (move-after-topology-
+  proof); rollback = move back to cmd.
+- **Effect:** the cross-vertical account-scope coupling is gone (single source in
+  `models`). The remaining ARCHCM2a question narrows to **phase 2** below.
+
+## PHASE 2 (remaining — gates ARCHCM2c)
+Decide the home for the **outbound-only, store-coupled** L2 resolution
+(`resolveCallerAccountID`, `resolveUserActionContext`, `ownedAccountCandidates`,
+`callerAccountForExplicitID`, `selectExecutionAccount`). It is no longer shared with
+crawl, so the original "neutral leaf vs crawl→outbound cycle" objection is weaker:
+candidates are a new `internal/execcontext` leaf OR co-locating with the outbound
+usecase. ARCHCM2c (which moves lead_pipeline — a caller of `resolveUserActionContext`)
+needs this resolved so the moved code does not call back into cmd. Stays BLOCKED on
+this phase-2 home decision.
+
 ## Goal (decision-only — account-scope / RBAC-adjacent)
 Decide where the L2 execution-context resolution layer lives. Today it sits in
 `cmd/scraper/outbound_action_context.go` (`resolveCallerAccountID`,
