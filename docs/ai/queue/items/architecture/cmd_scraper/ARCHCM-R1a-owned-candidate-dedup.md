@@ -1,12 +1,12 @@
 ---
 id: ARCHCM-R1a
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM-R1]
 parallel_safe: false
 branch: "chore/archcm-r1a-owned-candidate-dedup"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/154
 boundary_target: prep-extraction
 ---
 

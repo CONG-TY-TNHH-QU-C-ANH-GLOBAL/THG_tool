@@ -1,12 +1,12 @@
 ---
 id: ARCHCP3c
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCP3a, ARCHCP3b]
 parallel_safe: false
 branch: "chore/archcp3c-intent-textnorm-decouple"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/170
 boundary_target: prep-extraction
 ---
 

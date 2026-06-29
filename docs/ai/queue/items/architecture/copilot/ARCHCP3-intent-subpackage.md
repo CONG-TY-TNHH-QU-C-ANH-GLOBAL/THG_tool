@@ -1,12 +1,12 @@
 ---
 id: ARCHCP3
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCP1, ARCHCP2]
 parallel_safe: false
 branch: "chore/archcp3-intent-subpackage-move"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/172
 boundary_target: leaf-move
 ---
 

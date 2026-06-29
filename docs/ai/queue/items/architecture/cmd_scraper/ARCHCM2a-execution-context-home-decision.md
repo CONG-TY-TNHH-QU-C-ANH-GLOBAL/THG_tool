@@ -1,12 +1,12 @@
 ---
 id: ARCHCM2a
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: []
 parallel_safe: false
 branch: "chore/archcm2a-phase2-execcontext"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/166
 boundary_target: transport-to-usecase
 ---
 
