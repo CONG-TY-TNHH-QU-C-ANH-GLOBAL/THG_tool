@@ -62,7 +62,7 @@ func (r storeOutboundRecorder) RecordOutcome(ctx context.Context, orgID int64, r
 	r.db.Knowledge().RecordOutcome(ctx, orgID, retrievalID, status)
 }
 
-// storePromptLog adapts *store.Store to commenting.PromptLogSink (ARCHCM2c seam 4),
+// storePromptLog adapts *store.Store to commenting.SystemPromptLogInserter (ARCHCM2c seam 4),
 // so the commenting usecase records its decision log without taking a *store.Store.
 // Pure pass-through over Prompts().InsertSystemPromptLog.
 type storePromptLog struct{ db *store.Store }

@@ -21,11 +21,11 @@ import (
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
 
-// PromptLogSink records the agent comment decision for observation (Operator Replay).
-// Best-effort — a failed write never breaks the queue path. Implemented by a cmd
+// SystemPromptLogInserter records the agent comment decision for observation (Operator
+// Replay). Best-effort — a failed write never breaks the queue path. Implemented by a cmd
 // adapter over *store.Store's Prompts().InsertSystemPromptLog, so the usecase stays
 // store-free. (ARCHCM2c seam 4)
-type PromptLogSink interface {
+type SystemPromptLogInserter interface {
 	InsertSystemPromptLog(orgID, accountID int64, message, action, args string, success bool) error
 }
 
@@ -59,7 +59,7 @@ func Mode() string {
 // usecase never builds a concrete directory itself.
 type Input struct {
 	Policies        ai.CommentPolicies // resolved by the cmd composition root (was loaded from *store.Store here)
-	PromptLog       PromptLogSink
+	PromptLog       SystemPromptLogInserter
 	KB              *knowledgeRuntime.Builder
 	MsgGen          *ai.MessageGenerator
 	Contacts        facebook.ContactDirectory
@@ -123,7 +123,7 @@ func Apply(ctx context.Context, in Input) string {
 // sink. Best-effort: a marshal or write failure is swallowed (the queue path must
 // never break). Extracted so the prompt-log seam (ARCHCM2c seam 4) is unit-testable
 // without the concrete KB/MsgGen happy path.
-func logDecision(sink PromptLogSink, in Input, decision *models.CommentDecision) {
+func logDecision(sink SystemPromptLogInserter, in Input, decision *models.CommentDecision) {
 	payload, err := json.Marshal(decision)
 	if err != nil {
 		return

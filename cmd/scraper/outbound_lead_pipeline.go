@@ -20,7 +20,7 @@ type leadOutreachContext struct {
 	coverage         leadCoverageReader
 	lifecycle        leadLifecycleReader
 	contacts         facebook.ContactDirectory
-	promptLog        commenting.PromptLogSink
+	promptLog        commenting.SystemPromptLogInserter
 	msgGen           *ai.MessageGenerator
 	knowledgeBuilder *knowledgeRuntime.Builder
 	msgType          string
