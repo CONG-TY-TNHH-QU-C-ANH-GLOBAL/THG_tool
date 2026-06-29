@@ -1,11 +1,11 @@
 ---
 id: DOCS-Y1
-status: READY
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [DOCS1]
 parallel_safe: false
-branch: ""
+branch: "chore/docs-y1-relocate-pr-checklist"
 pr_url: ""
 ---
 
