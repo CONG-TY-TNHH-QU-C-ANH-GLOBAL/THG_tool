@@ -13,6 +13,20 @@ boundary_target: leaf-move
 
 # ARCHCP3 — Extract copilot/intent subpackage
 
+## DIRECTION (2026-06-29): Option B, incrementally — phase 1 shipped
+Self-selected **Option B** (core intent move + separate generic `textnorm` leaf) under
+Autonomy v2, confirmed by a senior-architect feasibility pass — NOT Option A's ~60-edit
+big-bang (which would publish generic helpers as `intent.*` and pollute the boundary).
+Reached incrementally so the E3 boundary question is resolved by construction:
+- **Phase 1 — DONE in [`ARCHCP3a`](ARCHCP3a-textnorm-leaf.md)** (branch
+  `chore/archcp3-textnorm-leaf`): extracted the generic `Fold`/`ContainsAny` helpers to
+  the neutral leaf `internal/drivers/copilot/textnorm`, wrapper-first (shims keep all 42
+  call sites unchanged). This removes the heaviest, non-intent refs from the eventual move.
+- **Phase 2 (next):** rewrite the 42 call sites to `textnorm.*`; drop the shims.
+- **Phase 3:** move the genuinely-intent files into `internal/drivers/copilot/intent/`
+  (~6 real intent exports, ~10 remaining refs) — the original ARCHCP3 deliverable, now
+  small and boundary-clean. Stays open until phases 2–3 land.
+
 ## Goal
 Move the pure intent-classification cluster (intent_normalize/lexicon/types/entities/router) into a bounded `copilot/intent/` subpackage with a small facade (DeterministicFacebookAction, RouteDecisionFor).
 
