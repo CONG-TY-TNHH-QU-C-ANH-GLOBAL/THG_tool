@@ -22,7 +22,14 @@ Reached incrementally so the E3 boundary question is resolved by construction:
   `chore/archcp3-textnorm-leaf`): extracted the generic `Fold`/`ContainsAny` helpers to
   the neutral leaf `internal/drivers/copilot/textnorm`, wrapper-first (shims keep all 42
   call sites unchanged). This removes the heaviest, non-intent refs from the eventual move.
-- **Phase 2 (next):** rewrite the 42 call sites to `textnorm.*`; drop the shims.
+- **Phase 1b — DONE in [`ARCHCP3b`](ARCHCP3b-classifier-complexity.md)** (branch
+  `chore/archcp3b-classifier-complexity`): reduced `deterministicFacebookAction` (28 →
+  ≤15) via verbatim per-branch helper extraction. The bulk textnorm-call migration was
+  attempted and abandoned (it made the 28-complexity classifier New Code + crossed a
+  near-200 caller); this reduction is the real unblocker so any later phase can touch
+  the classifier. The textnorm shims persist (no caller churn).
+- **Phase 2 (optional / deferred):** rewrite the 42 call sites to `textnorm.*`; drop the
+  shims. Not required before phase 3 — the shims can stay in copilot.
 - **Phase 3:** move the genuinely-intent files into `internal/drivers/copilot/intent/`
   (~6 real intent exports, ~10 remaining refs) — the original ARCHCP3 deliverable, now
   small and boundary-clean. Stays open until phases 2–3 land.

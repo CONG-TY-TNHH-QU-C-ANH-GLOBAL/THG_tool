@@ -10,7 +10,10 @@ import "strings"
 // the URL/scope checks read off IntentEntities (intent_entities.go).
 
 // deterministicFacebookAction classifies a Copilot prompt into an action name +
-// args. Returns ok=false (no match) to let the brain planner handle ambiguity.
+// args. Returns ok=false (no match) to let the brain planner handle ambiguity. The
+// classification ladder is a fixed-order sequence of classifyX helpers (each returns
+// ok=true on its match) — extracted from one big function to keep each branch (and
+// the dispatch) under the cognitive-complexity threshold; order + behavior unchanged.
 func deterministicFacebookAction(prompt string, orgID, accountID int64) (string, map[string]any, bool) {
 	folded := foldVietnameseForMatch(strings.ToLower(stripDashboardContext(prompt)))
 	ent := extractIntentEntities(folded, prompt)
@@ -25,62 +28,106 @@ func deterministicFacebookAction(prompt string, orgID, accountID int64) (string,
 		args["max_items"] = maxItems
 	}
 
-	// Inbox bulk (kept as-is: bulk scope includes bare "lead").
-	if containsAnyFolded(folded, lexInboxVerbs) && containsAnyFolded(folded, lexInboxBulkScope) {
-		return "inbox_all_leads", args, true
+	if a, ok := classifyInboxBulk(folded); ok {
+		return a, args, true
 	}
-
-	// §7 direct-link comment on ONE specific post. Checked BEFORE comment_all_leads
-	// (so "comment lead này <url>" targets the one post) and excludes crawl verbs
-	// (a crawl verb means "scrape this post's comments", handled below).
-	if containsAnyFolded(folded, lexCommentVerbs) && !ent.HasCrawlVerb {
-		if ent.HasPostURL {
-			args["post_url"] = ent.FacebookURLs[0]
-			args["nl_prompt"] = stripDashboardContext(prompt)
-			return "comment_single_post", args, true
-		}
-		// No URL but singular phrasing ("comment bài này" / "lead này") and NOT an
-		// explicit bulk scope → single-post; the orchestrator asks for the link.
-		if len(ent.FacebookURLs) == 0 && ent.HasSpecificScope &&
-			!containsAnyFolded(folded, lexBulkScopeStrict) {
-			args["nl_prompt"] = stripDashboardContext(prompt)
-			return "comment_single_post", args, true
-		}
+	if a, ok := classifyCommentSingle(folded, ent, prompt, args); ok {
+		return a, args, true
 	}
-
-	// Bulk comment requires an explicit bulk scope (no bare singular "lead").
-	if containsAnyFolded(folded, lexCommentVerbs) && containsAnyFolded(folded, lexCommentBulkScope) {
-		return "comment_all_leads", args, true
+	if a, ok := classifyCommentBulk(folded); ok {
+		return a, args, true
 	}
-
-	if containsAnyFolded(folded, lexPostingVerbs) {
-		args["content"] = strings.TrimSpace(stripDashboardContext(prompt))
-		if u := firstFacebookURL(prompt); u != "" {
-			args["group_url"] = u
-		}
-		return "create_job_post", args, true
+	if a, ok := classifyPostingAction(folded, prompt, args); ok {
+		return a, args, true
 	}
-
-	if u := firstFacebookURL(prompt); u != "" && containsAnyFolded(folded, lexScrapeVerbs) {
-		if isLikelyFacebookPostURL(u) && containsAnyFolded(folded, lexCommentVerbs) {
-			args["post_url"] = u
-			return "scrape_comments", args, true
-		}
-		args["url"] = u
-		return "scrape_group", args, true
+	if a, ok := classifyScrape(folded, prompt, args); ok {
+		return a, args, true
 	}
-
-	if firstFacebookURL(prompt) == "" && containsAnyFolded(folded, lexSearchVerbs) {
-		query := promptKeywords(prompt)
-		if query == "" {
-			query = strings.TrimSpace(stripDashboardContext(prompt))
-		}
-		if query != "" {
-			args["query"] = query
-			return "search_groups", args, true
-		}
+	if a, ok := classifySearch(folded, prompt, args); ok {
+		return a, args, true
 	}
 	return "", nil, false
+}
+
+// classifyInboxBulk — inbox bulk (bulk scope includes a bare "lead").
+func classifyInboxBulk(folded string) (string, bool) {
+	if containsAnyFolded(folded, lexInboxVerbs) && containsAnyFolded(folded, lexInboxBulkScope) {
+		return "inbox_all_leads", true
+	}
+	return "", false
+}
+
+// classifyCommentSingle — §7 direct-link comment on ONE specific post. Checked BEFORE
+// comment_all_leads (so "comment lead này <url>" targets the one post) and excludes
+// crawl verbs (a crawl verb means "scrape this post's comments", handled later).
+func classifyCommentSingle(folded string, ent IntentEntities, prompt string, args map[string]any) (string, bool) {
+	if !containsAnyFolded(folded, lexCommentVerbs) || ent.HasCrawlVerb {
+		return "", false
+	}
+	if ent.HasPostURL {
+		args["post_url"] = ent.FacebookURLs[0]
+		args["nl_prompt"] = stripDashboardContext(prompt)
+		return "comment_single_post", true
+	}
+	// No URL but singular phrasing ("comment bài này" / "lead này") and NOT an
+	// explicit bulk scope → single-post; the orchestrator asks for the link.
+	if len(ent.FacebookURLs) == 0 && ent.HasSpecificScope &&
+		!containsAnyFolded(folded, lexBulkScopeStrict) {
+		args["nl_prompt"] = stripDashboardContext(prompt)
+		return "comment_single_post", true
+	}
+	return "", false
+}
+
+// classifyCommentBulk — bulk comment requires an explicit bulk scope (no bare "lead").
+func classifyCommentBulk(folded string) (string, bool) {
+	if containsAnyFolded(folded, lexCommentVerbs) && containsAnyFolded(folded, lexCommentBulkScope) {
+		return "comment_all_leads", true
+	}
+	return "", false
+}
+
+// classifyPostingAction — create a Facebook post (optionally pinned to a group URL).
+func classifyPostingAction(folded, prompt string, args map[string]any) (string, bool) {
+	if !containsAnyFolded(folded, lexPostingVerbs) {
+		return "", false
+	}
+	args["content"] = strings.TrimSpace(stripDashboardContext(prompt))
+	if u := firstFacebookURL(prompt); u != "" {
+		args["group_url"] = u
+	}
+	return "create_job_post", true
+}
+
+// classifyScrape — a URL + a scrape verb: scrape_comments for a post (with a comment
+// verb), else scrape_group.
+func classifyScrape(folded, prompt string, args map[string]any) (string, bool) {
+	u := firstFacebookURL(prompt)
+	if u == "" || !containsAnyFolded(folded, lexScrapeVerbs) {
+		return "", false
+	}
+	if isLikelyFacebookPostURL(u) && containsAnyFolded(folded, lexCommentVerbs) {
+		args["post_url"] = u
+		return "scrape_comments", true
+	}
+	args["url"] = u
+	return "scrape_group", true
+}
+
+// classifySearch — a search verb with no URL: search groups by the prompt keywords.
+func classifySearch(folded, prompt string, args map[string]any) (string, bool) {
+	if firstFacebookURL(prompt) != "" || !containsAnyFolded(folded, lexSearchVerbs) {
+		return "", false
+	}
+	query := promptKeywords(prompt)
+	if query == "" {
+		query = strings.TrimSpace(stripDashboardContext(prompt))
+	}
+	if query != "" {
+		args["query"] = query
+		return "search_groups", true
+	}
+	return "", false
 }
 
 // promptIsDirectPostComment reports whether the prompt is an unambiguous
