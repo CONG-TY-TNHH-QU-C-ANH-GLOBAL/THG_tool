@@ -28,8 +28,17 @@ Reached incrementally so the E3 boundary question is resolved by construction:
   attempted and abandoned (it made the 28-complexity classifier New Code + crossed a
   near-200 caller); this reduction is the real unblocker so any later phase can touch
   the classifier. The textnorm shims persist (no caller churn).
-- **Phase 2 (optional / deferred):** rewrite the 42 call sites to `textnorm.*`; drop the
-  shims. Not required before phase 3 — the shims can stay in copilot.
+- **Phase 1c — DONE in [`ARCHCP3c`](ARCHCP3c-intent-textnorm-decouple.md)** (branch
+  `chore/archcp3c-intent-textnorm-decouple`): pointed the intent cluster's own 18
+  fold/containsAny calls at `textnorm.*` directly (no longer via the copilot shims),
+  removing the intent→copilot cycle blocker on text-norm. agent_* callers keep the
+  shims (no churn).
+- **Phase 1d (next prerequisite):** give `stripDashboardContext` a neutral home — it is
+  shared by 9 copilot files (agent_*/routing_*/intent_*), so it cannot move into
+  `intent/`; the classifier depends on it → cycle blocker until relocated to a copilot
+  prompt-prep leaf (wrapper-first, like ARCHCP3a).
+- **Phase 2 (optional / deferred):** migrate the remaining 24 agent_* shim calls to
+  `textnorm.*`; drop the shims. Not required before phase 3.
 - **Phase 3:** move the genuinely-intent files into `internal/drivers/copilot/intent/`
   (~6 real intent exports, ~10 remaining refs) — the original ARCHCP3 deliverable, now
   small and boundary-clean. Stays open until phases 2–3 land.

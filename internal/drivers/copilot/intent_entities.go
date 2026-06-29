@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thg/scraper/internal/drivers/copilot/textnorm"
 	"github.com/thg/scraper/internal/fburl"
 )
 
@@ -37,7 +38,7 @@ func isLikelyFacebookPostURL(u string) bool {
 // extractMaxItemsFromPrompt parses an explicit count ("50 bài", "crawl 30"),
 // clamped to [1,200]. 0 = none specified.
 func extractMaxItemsFromPrompt(prompt string) int64 {
-	folded := foldVietnameseForMatch(prompt)
+	folded := textnorm.Fold(prompt)
 	for _, re := range []*regexp.Regexp{
 		regexp.MustCompile(`(\d{1,3})\s*(?:bai|post|posts|lead|leads)`),
 		regexp.MustCompile(`(?:lay|cao|crawl|quet|tim)\s*(\d{1,3})`),
@@ -65,10 +66,10 @@ func extractIntentEntities(folded, prompt string) IntentEntities {
 	urls := fburl.ExtractFacebookURLs(prompt)
 	e := IntentEntities{
 		FacebookURLs:        urls,
-		HasSpecificScope:    containsAnyFolded(folded, lexSpecificScope),
-		HasCommentBulkScope: containsAnyFolded(folded, lexCommentBulkScope),
-		HasInboxBulkScope:   containsAnyFolded(folded, lexInboxBulkScope),
-		HasCrawlVerb:        containsAnyFolded(folded, lexCrawlVerbs),
+		HasSpecificScope:    textnorm.ContainsAny(folded, lexSpecificScope),
+		HasCommentBulkScope: textnorm.ContainsAny(folded, lexCommentBulkScope),
+		HasInboxBulkScope:   textnorm.ContainsAny(folded, lexInboxBulkScope),
+		HasCrawlVerb:        textnorm.ContainsAny(folded, lexCrawlVerbs),
 	}
 	e.HasBulkScope = e.HasCommentBulkScope || e.HasInboxBulkScope
 	if len(urls) > 0 {
