@@ -1,12 +1,12 @@
 ---
 id: ARCHCP3a
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCP1, ARCHCP2]
 parallel_safe: false
 branch: "chore/archcp3-textnorm-leaf"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/168
 boundary_target: leaf-move
 ---
 

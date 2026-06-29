@@ -1,12 +1,12 @@
 ---
 id: DOCS-Y1
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [DOCS1]
 parallel_safe: false
 branch: "chore/docs-y1-relocate-pr-checklist"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/163
 ---
 
 # DOCS-Y1 — Relocate docs/PR_CHECKLIST.md into docs/engineering/

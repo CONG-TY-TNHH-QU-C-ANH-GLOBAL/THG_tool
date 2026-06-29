@@ -1,12 +1,12 @@
 ---
 id: ARCHCM4b
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM4a]
 parallel_safe: false
 branch: "chore/archcm4b-crawl-core-move"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/162
 boundary_target: transport-to-usecase
 ---
 

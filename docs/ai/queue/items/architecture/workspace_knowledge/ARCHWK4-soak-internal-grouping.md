@@ -1,12 +1,12 @@
 ---
 id: ARCHWK4
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
 branch: "chore/archwk4-batch-e-embedder-split"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/152
 boundary_target: prep-extraction
 last_batch: E-embedder
 ---
