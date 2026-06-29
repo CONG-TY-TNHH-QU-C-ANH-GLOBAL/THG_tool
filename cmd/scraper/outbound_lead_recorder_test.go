@@ -29,7 +29,13 @@ func (f *fakeRecorder) RecordOutcome(_ context.Context, _ int64, _, status strin
 }
 
 func newTestOutreachCtx(rec outboundRecorder) *leadOutreachContext {
-	return &leadOutreachContext{outbound: rec, orgID: 7, accountID: 3, msgType: "comment"}
+	return &leadOutreachContext{
+		outbound:  rec,
+		orgID:     7,
+		accountID: 3,
+		msgType:   "comment",
+		actx:      models.ActionContext{InitiatorUserID: 99},
+	}
 }
 
 // TestQueueOutreachMessage_Allowed pins the queue-success path: counters bump, an
@@ -48,9 +54,35 @@ func TestQueueOutreachMessage_Allowed(t *testing.T) {
 	if len(rec.outcomes) != 1 || rec.outcomes[0] != "queued" {
 		t.Fatalf("outcomes=%v, want [queued]", rec.outcomes)
 	}
-	// 24h cooldown + immutable CreatedBy ownership must be preserved verbatim.
+	// 24h cooldown must be preserved verbatim.
 	if rec.cooldown != 24*time.Hour {
 		t.Fatalf("cooldown=%v, want 24h", rec.cooldown)
+	}
+	// The queued OutboundMessage payload must be pinned exactly — this PR touches the
+	// queue-write seam, so the fields the old c.db.QueueOutboundForOrg path built must
+	// pass through the port unchanged. Flat checks keep cognitive complexity low.
+	m := rec.queued
+	if m == nil {
+		t.Fatal("rec.queued is nil, want the queued OutboundMessage")
+	}
+	if m.OrgID != 7 {
+		t.Errorf("OrgID=%d, want 7", m.OrgID)
+	}
+	if m.AccountID != 3 {
+		t.Errorf("AccountID=%d, want 3", m.AccountID)
+	}
+	if m.Type != "comment" {
+		t.Errorf("Type=%q, want \"comment\"", m.Type)
+	}
+	if m.TargetURL != "https://t" {
+		t.Errorf("TargetURL=%q, want \"https://t\"", m.TargetURL)
+	}
+	if m.Content != "hi" {
+		t.Errorf("Content=%q, want \"hi\"", m.Content)
+	}
+	// CreatedBy is immutable execution ownership sourced from actx.InitiatorUserID (99).
+	if m.CreatedBy != 99 {
+		t.Errorf("CreatedBy=%d, want 99 (actx.InitiatorUserID)", m.CreatedBy)
 	}
 }
 
