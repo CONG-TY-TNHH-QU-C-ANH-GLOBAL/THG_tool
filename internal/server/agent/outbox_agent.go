@@ -94,11 +94,11 @@ func (h *Handler) agentOutboxSent(c *fiber.Ctx) error {
 	// The verifier's classification supersedes the endpoint name —
 	// even though /sent fires, a non-success outcome lands the row in
 	// finished/<non-verified> per TerminalFromOutcome.
-	resolution, err := h.finalizeOutbound(c, orgID, id, report, outcome, proof)
+	resolution, err := h.finalize.FinalizeOutbound(c, orgID, id, report, outcome, proof)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return resolution.write(c)
+	return resolution.Write(c)
 }
 
 // agentOutboxFailed records a failed send attempt.
@@ -124,23 +124,9 @@ func (h *Handler) agentOutboxFailed(c *fiber.Ctx) error {
 
 	outcome, proof := runtime.ClassifyExtensionReport(report)
 	// Same execution_id-gated CAS pathway as agentOutboxSent.
-	resolution, err := h.finalizeOutbound(c, orgID, id, report, outcome, proof)
+	resolution, err := h.finalize.FinalizeOutbound(c, orgID, id, report, outcome, proof)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return resolution.write(c)
-}
-
-// finalizeResolution is the HTTP-shaped result of a /sent or /failed
-// callback. The handler builds one of these and writes it through.
-// Centralising the shape here keeps the two handlers symmetric and
-// makes the three terminal pathways (committed / idempotent replay /
-// stale execution_id) easy to audit.
-type finalizeResolution struct {
-	HTTPStatus int
-	Body       fiber.Map
-}
-
-func (f *finalizeResolution) write(c *fiber.Ctx) error {
-	return c.Status(f.HTTPStatus).JSON(f.Body)
+	return resolution.Write(c)
 }
