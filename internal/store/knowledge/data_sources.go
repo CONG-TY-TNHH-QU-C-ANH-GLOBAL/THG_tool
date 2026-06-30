@@ -1,19 +1,21 @@
-// Domain: knowledge (see internal/store/DOMAINS.md)
-//
-// Note 2026-05-21 (Phase 3 of STORE_SUBPACKAGE_REFACTOR): this file
-// was reassigned from `crawl` → `knowledge` after audit. The
-// `data_sources` table is a LEGACY pre-Knowledge-OS connector
-// registry; consumers are agent_brain / skills / autoflow handlers,
-// not the crawl scheduler. Co-locating with the knowledge domain
-// matches the architectural intent. Stays in top-level store/ for
-// now; will be folded into the knowledge subpackage when that domain
-// extracts (Phase 4) or deprecated in favour of `knowledge_sources`.
-package store
+package knowledge
 
 import (
 	"database/sql"
 	"time"
 )
+
+// data_sources is the LEGACY pre-Knowledge-OS connector registry (consumers:
+// autoflow handlers / skills). Reassigned crawl → knowledge in the Phase 3 audit
+// and folded into this subpackage from the top-level store (DOMAINS.md Candidate A).
+// Behavior is byte-for-byte what the top-level *Store methods did — same tables,
+// queries, org filtering, and JSON shape; only the home package changed.
+
+// dataSourceScanner abstracts *sql.Row and *sql.Rows so scanDataSource serves both
+// the single-row and list queries.
+type dataSourceScanner interface {
+	Scan(dest ...any) error
+}
 
 // DataSource is an org-scoped external/private knowledge source.
 type DataSource struct {
@@ -103,7 +105,7 @@ func (s *Store) DeleteDataSourceForOrg(orgID, id int64) error {
 	return err
 }
 
-func scanDataSource(row scanner) (*DataSource, error) {
+func scanDataSource(row dataSourceScanner) (*DataSource, error) {
 	var src DataSource
 	var lastSync sql.NullTime
 	err := row.Scan(

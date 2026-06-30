@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/knowledge"
 )
 
 const maxConnectorFetchBytes = 2 * 1024 * 1024
@@ -23,7 +23,7 @@ var googleSheetIDRe = regexp.MustCompile(`/spreadsheets/d/([a-zA-Z0-9-_]+)`)
 
 func (h *Handler) listDataSources(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(int64)
-	sources, err := h.deps.DB.ListDataSources(orgID)
+	sources, err := h.deps.DB.Knowledge().ListDataSources(orgID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -56,7 +56,7 @@ func (h *Handler) createDataSource(c *fiber.Ctx) error {
 	if req.Type == "google_drive" {
 		status = "needs_auth"
 	}
-	id, err := h.deps.DB.CreateDataSource(&store.DataSource{
+	id, err := h.deps.DB.Knowledge().CreateDataSource(&knowledge.DataSource{
 		OrgID:        orgID,
 		Type:         req.Type,
 		Name:         req.Name,
@@ -67,7 +67,7 @@ func (h *Handler) createDataSource(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	src, _ := h.deps.DB.GetDataSourceForOrg(orgID, id)
+	src, _ := h.deps.DB.Knowledge().GetDataSourceForOrg(orgID, id)
 	return c.Status(201).JSON(src)
 }
 
@@ -77,7 +77,7 @@ func (h *Handler) syncDataSource(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	src, err := h.deps.DB.GetDataSourceForOrg(orgID, id)
+	src, err := h.deps.DB.Knowledge().GetDataSourceForOrg(orgID, id)
 	if err != nil || src == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "data source not found"})
 	}
@@ -85,13 +85,13 @@ func (h *Handler) syncDataSource(c *fiber.Ctx) error {
 	switch src.Type {
 	case "google_sheet":
 		if err := h.syncGoogleSheetSource(c.UserContext(), orgID, src); err != nil {
-			_ = h.deps.DB.UpdateDataSourceSyncResult(orgID, src.ID, "error", src.ItemCount, src.Summary, src.MetadataJSON, err.Error(), false)
+			_ = h.deps.DB.Knowledge().UpdateDataSourceSyncResult(orgID, src.ID, "error", src.ItemCount, src.Summary, src.MetadataJSON, err.Error(), false)
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 	case "google_drive":
 		msg := "Google Drive private media sync requires read-only OAuth; source is saved and waiting for OAuth connection"
 		meta := `{"requires_oauth":true,"scope":"drive.readonly"}`
-		if err := h.deps.DB.UpdateDataSourceSyncResult(orgID, src.ID, "needs_auth", 0, "", meta, msg, false); err != nil {
+		if err := h.deps.DB.Knowledge().UpdateDataSourceSyncResult(orgID, src.ID, "needs_auth", 0, "", meta, msg, false); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	default:
@@ -99,7 +99,7 @@ func (h *Handler) syncDataSource(c *fiber.Ctx) error {
 	}
 
 	_ = h.refreshDataSourcesContext(orgID)
-	updated, err := h.deps.DB.GetDataSourceForOrg(orgID, id)
+	updated, err := h.deps.DB.Knowledge().GetDataSourceForOrg(orgID, id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -112,14 +112,14 @@ func (h *Handler) deleteDataSource(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := h.deps.DB.DeleteDataSourceForOrg(orgID, id); err != nil {
+	if err := h.deps.DB.Knowledge().DeleteDataSourceForOrg(orgID, id); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	_ = h.refreshDataSourcesContext(orgID)
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
-func (h *Handler) syncGoogleSheetSource(ctx context.Context, orgID int64, src *store.DataSource) error {
+func (h *Handler) syncGoogleSheetSource(ctx context.Context, orgID int64, src *knowledge.DataSource) error {
 	csvURL, err := googleSheetCSVURL(src.SourceURL)
 	if err != nil {
 		return err
@@ -156,7 +156,7 @@ func (h *Handler) syncGoogleSheetSource(ctx context.Context, orgID int64, src *s
 		"csv_url": csvURL,
 		"headers": headers,
 	})
-	if err := h.deps.DB.UpdateDataSourceSyncResult(orgID, src.ID, "synced", itemCount, summary, string(metaBytes), "", true); err != nil {
+	if err := h.deps.DB.Knowledge().UpdateDataSourceSyncResult(orgID, src.ID, "synced", itemCount, summary, string(metaBytes), "", true); err != nil {
 		return err
 	}
 	return nil
@@ -199,7 +199,7 @@ func trimCells(in []string) []string {
 }
 
 func (h *Handler) refreshDataSourcesContext(orgID int64) error {
-	sources, err := h.deps.DB.ListDataSources(orgID)
+	sources, err := h.deps.DB.Knowledge().ListDataSources(orgID)
 	if err != nil {
 		return err
 	}
