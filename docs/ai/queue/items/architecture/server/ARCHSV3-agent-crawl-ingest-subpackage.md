@@ -1,14 +1,13 @@
 ---
 id: ARCHSV3
-status: BLOCKED
-lane: RED
-risk: RED
-depends_on: [ARCHSV2]
+status: REVIEW
+lane: YELLOW
+risk: YELLOW
+depends_on: []
 parallel_safe: false
-branch: ""
+branch: "refactor/extract-agent-crawlingest-subpackage"
 pr_url: ""
-blocked_on: human-boundary-decision
-boundary_target: transport-to-usecase
+boundary_target: leaf-move
 ---
 
 # ARCHSV3 — Extract internal/server/agent/crawl_ingest subpackage
@@ -74,3 +73,30 @@ go test ./internal/server/agent/... ; ai_validate.sh
 
 ## Done criteria
 crawl_ingest/ subpackage + facade; crawl.go updated; no cycle; characterization tests green; move-only.
+
+## RESOLUTION (Architecture Convergence Mode — self-Handler pattern reverses the RED verdict)
+
+The 2026-06-29 RED note assumed the moved cluster would keep depending on
+`*agent.Handler` (→ `agent ↔ crawl_ingest` cycle → DI-port refactor). It did **not**
+apply the **self-Handler subpackage pattern** already proven by the sibling `presence`
+and `account` subpackages in this exact package: the cluster gets its **own**
+`crawlingest.Handler{db, aiClass, notifier, tgEvents, baseURL}`, so the new package
+**never imports `agent`** — no cycle, no DI port, no broad abstraction.
+
+Verified before coding (all true at HEAD): the cluster references **zero** non-cluster
+agent symbols; every sibling method (`resolveDirectPostIntake`, `evaluateDirectPostCrawlItem`,
+`failDirectPostImport`, `resolveCrawlOwnership`, `processConnectorCrawlResult`) is
+**in-cluster** and moves with it; **no reverse coupling** (nothing outside calls in); the
+processor's `*Handler` field becomes `*crawlingest.Handler`. The direct-post **CAS moved
+verbatim** (no alteration), honoring "MOVE ONLY, do not alter CAS".
+
+Shipped as `internal/server/agent/crawlingest` (8 production files + 7 characterization
+tests + `routes.go`). Parent `routes.go` delegates the 4 crawl routes via
+`crawlingest.RegisterRoutes(group, agentGrp, deps, h.agentAuth)` — identical paths/auth.
+Agent god-package: 34 → 26 files. One moved function over the S3776 threshold
+(`orgIntelligenceKeywords`, 16) was reduced in-PR by pure helper extraction
+(`crawl_org_keywords.go`). Behavior-preserving; all characterization tests green.
+
+**Note for SV2/SV4:** this proves the self-Handler pattern works for the "one problem"
+finalize/outbox clusters too — but those touch the ledger (SV2) / outbox CAS (SV4) hot
+paths and warrant their own staged batches; not bundled here.
