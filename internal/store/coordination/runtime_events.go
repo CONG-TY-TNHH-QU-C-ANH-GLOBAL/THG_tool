@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // RuntimeEvent is one typed lifecycle event persisted from the
@@ -23,8 +21,9 @@ import (
 //   - When a Sink is registered (top-level store wires it at boot),
 //     each emission ALSO writes a row here. Best-effort — sink
 //     failure is logged once and the slog record still landed.
-//   - Dashboard "runtime feed" panel reads from this table via
-//     ListRecentRuntimeEvents.
+//   - This is currently a write-only mirror: the dashboard read path
+//     (runtime-feed handler) was removed; PruneRuntimeEvents trims the
+//     tail. Rows persist for future/external consumers.
 type RuntimeEvent struct {
 	ID         int64
 	OrgID      int64
@@ -136,46 +135,6 @@ func (s *Store) RecordRuntimeEvent(ctx context.Context, level, event string, att
 		row.OutboundID, row.AttemptID, row.TargetURL, row.AttrsJSON,
 	)
 	return err
-}
-
-// ListRecentRuntimeEvents serves the runtime-feed dashboard query.
-// Newest-first, bounded by `since`, capped by `limit` (default 100,
-// max 500). Org-scoped; pass orgID=0 only from superadmin contexts.
-func (s *Store) ListRecentRuntimeEvents(ctx context.Context, orgID int64, since time.Time, limit int) ([]RuntimeEvent, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	query := `SELECT id, org_id, account_id, event, level, outbound_id, attempt_id, target_url, attrs_json, created_at
-	            FROM runtime_events
-	           WHERE created_at >= ?`
-	args := []any{since.UTC().Format("2006-01-02 15:04:05")}
-	if orgID > 0 {
-		query += ` AND (org_id = ? OR org_id = 0)`
-		args = append(args, orgID)
-	}
-	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
-	args = append(args, limit)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []RuntimeEvent
-	for rows.Next() {
-		var r RuntimeEvent
-		var createdAt string
-		if err := rows.Scan(&r.ID, &r.OrgID, &r.AccountID, &r.Event, &r.Level,
-			&r.OutboundID, &r.AttemptID, &r.TargetURL, &r.AttrsJSON, &createdAt); err != nil {
-			return nil, err
-		}
-		r.CreatedAt = dbutil.ParseSQLiteTime(createdAt)
-		out = append(out, r)
-	}
-	return out, rows.Err()
 }
 
 // PruneRuntimeEvents drops rows older than the cutoff. The runtime
