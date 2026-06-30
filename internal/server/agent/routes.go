@@ -5,6 +5,7 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/server/agent/account"
+	"github.com/thg/scraper/internal/server/agent/crawlingest"
 	"github.com/thg/scraper/internal/server/agent/presence"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
@@ -53,8 +54,6 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	group.Post("/connectors/chrome-status", h.agentAuth, h.agentChromeStatus)
 	group.Get("/connectors/browser-targets", h.agentAuth, h.agentBrowserTargets)
 	group.Post("/connectors/screenshot", h.agentAuth, h.agentScreenshot)
-	group.Post("/connectors/crawl-result", h.agentAuth, h.agentConnectorCrawlResult)
-	group.Post("/connectors/crawl-progress", h.agentAuth, h.agentConnectorCrawlProgress)
 	group.Get("/connectors/commands", h.agentAuth, h.agentConnectorCommands)
 	group.Post("/connectors/commands/:id/done", h.agentAuth, h.agentConnectorCommandDone)
 	group.Get("/connectors/outbox", h.agentAuth, h.agentGetOutbox)
@@ -70,8 +69,6 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	agentGrp.Post("/chrome-status", h.agentChromeStatus)
 	agentGrp.Get("/browser-targets", h.agentBrowserTargets)
 	agentGrp.Post("/screenshot", h.agentScreenshot)
-	agentGrp.Post("/crawl-result", h.agentConnectorCrawlResult)
-	agentGrp.Post("/crawl-progress", h.agentConnectorCrawlProgress)
 	agentGrp.Get("/commands", h.agentConnectorCommands)
 	agentGrp.Post("/commands/:id/done", h.agentConnectorCommandDone)
 	agentGrp.Get("/outbox", h.agentGetOutbox)
@@ -82,6 +79,14 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	agentGrp.Get("/reverify/claim", h.agentReverifyClaim)
 	agentGrp.Post("/reverify/result", h.agentReverifyResult)
 	agentGrp.Get("/images", h.agentServeImage)
+
+	// Connector crawl-result ingestion (crawl-result/crawl-progress on both the
+	// /connectors and /agent groups) lives in the crawlingest subpackage — same
+	// effective paths + token auth; the cluster owns its own Handler.
+	crawlingest.RegisterRoutes(group, agentGrp, crawlingest.Deps{
+		DB: deps.DB, AIClass: deps.AIClass, Notifier: deps.Notifier,
+		TgEvents: deps.TgEvents, BaseURL: deps.BaseURL,
+	}, h.agentAuth)
 }
 
 // AdminTokenRoutes registers JWT/admin-authenticated agent token management.
