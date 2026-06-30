@@ -146,15 +146,17 @@ func TestQueueOutbound_RecordsLedger(t *testing.T) {
 	}
 }
 
-// Standalone RecordActionLedger + MarkActionLedgerOutcome round-trip.
+// Standalone RecordActionLedger + MarkActionLedgerOutcomeByOutbound round-trip.
 func TestActionLedger_RecordAndMarkOutcome(t *testing.T) {
 	db := newLedgerTestStore(t)
 	ctx := context.Background()
 
+	const outboundID = int64(42)
 	id, err := db.Coordination().RecordActionLedger(ctx, coordination.ActionLedgerEntry{
 		OrgID: 1, ActionType: "group_post",
-		TargetURL: "https://facebook.com/groups/999",
-		AccountID: 7,
+		TargetURL:  "https://facebook.com/groups/999",
+		AccountID:  7,
+		OutboundID: outboundID,
 	})
 	if err != nil {
 		t.Fatalf("RecordActionLedger: %v", err)
@@ -163,8 +165,8 @@ func TestActionLedger_RecordAndMarkOutcome(t *testing.T) {
 		t.Fatal("expected positive id")
 	}
 
-	if err := db.Coordination().MarkActionLedgerOutcome(ctx, id, coordination.LedgerOutcomeSucceeded, "sent ok"); err != nil {
-		t.Fatalf("MarkActionLedgerOutcome: %v", err)
+	if _, err := db.Coordination().MarkActionLedgerOutcomeByOutbound(ctx, 1, outboundID, coordination.LedgerOutcomeSucceeded, "sent ok"); err != nil {
+		t.Fatalf("MarkActionLedgerOutcomeByOutbound: %v", err)
 	}
 	entries, _ := db.Coordination().ListActionLedger(ctx, 1, "group_post", "https://facebook.com/groups/999", time.Time{}, 10)
 	if len(entries) != 1 {

@@ -204,7 +204,7 @@ func RiskSignalForOutcome(o ExecutionOutcome) RiskSignal {
 }
 
 // LedgerOutcomeAlias maps the rich ExecutionOutcome onto the legacy
-// action_ledger.outcome string column so MarkActionLedgerOutcome stays
+// action_ledger.outcome string column so MarkActionLedgerOutcomeByOutbound stays
 // compatible with the existing 4-value taxonomy until callers migrate.
 // Verified successes collapse to "succeeded"; everything failure-class
 // collapses to "failed" (with the rich classification in the reason
