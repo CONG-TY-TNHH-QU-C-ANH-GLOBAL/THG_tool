@@ -14,20 +14,32 @@ import (
 // companion, Part A/B). JWT-authed dashboard routes; tenant + account-owner scoped via
 // requireOutboundOwnerRow. Both APPEND through the canonical paths — never mutate old rows.
 
-// humanVerifyComment handles POST /api/comments/:id/human-verify — an operator confirms a
-// submitted_unverified comment they verified by eye on Facebook. Appends a
-// 'succeeded'/'human_verified' correction (idempotent).
-func (h *Handler) humanVerifyComment(c *fiber.Ctx) error {
+// resolveOwnedOutbound parses the actor locals + :id param and loads the outbound
+// row the caller owns. On any failure it has already written the 400/403/404
+// response and returns a non-nil error the handler should propagate. Shared by the
+// comment human-verify + retry handlers (identical entry contract).
+func (h *Handler) resolveOwnedOutbound(c *fiber.Ctx) (*models.OutboundMessage, int64, int64, error) {
 	orgID := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
 	role, _ := c.Locals("user_role").(string)
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id <= 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+		return nil, 0, 0, c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
 	msg, ownErr := h.requireOutboundOwnerRow(c, orgID, userID, role, id)
 	if ownErr != nil {
-		return ownErr // response already written
+		return nil, 0, 0, ownErr // response already written
+	}
+	return msg, orgID, userID, nil
+}
+
+// humanVerifyComment handles POST /api/comments/:id/human-verify — an operator confirms a
+// submitted_unverified comment they verified by eye on Facebook. Appends a
+// 'succeeded'/'human_verified' correction (idempotent).
+func (h *Handler) humanVerifyComment(c *fiber.Ctx) error {
+	msg, orgID, userID, err := h.resolveOwnedOutbound(c)
+	if err != nil {
+		return err
 	}
 	if ok, reason := models.HumanVerifyEligible(*msg); !ok {
 		return c.Status(400).JSON(fiber.Map{
@@ -37,7 +49,7 @@ func (h *Handler) humanVerifyComment(c *fiber.Ctx) error {
 	}
 	res, err := h.db.Coordination().AppendHumanVerifyCorrection(c.UserContext(), coordination.HumanVerifyInput{
 		OrgID:           orgID,
-		OutboundID:      id,
+		OutboundID:      msg.ID,
 		TargetURL:       msg.TargetURL,
 		AccountID:       msg.AccountID,
 		VerifiedBy:      userID,
@@ -48,7 +60,7 @@ func (h *Handler) humanVerifyComment(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{
 		"ok":                    true,
-		"outbound_id":           id,
+		"outbound_id":           msg.ID,
 		"corrected":             res.Corrected,
 		"already_verified":      res.AlreadyVerified,
 		"correction_event_id":   res.CorrectionLedgerID,
@@ -63,16 +75,9 @@ func (h *Handler) humanVerifyComment(c *fiber.Ctx) error {
 // attempt through the canonical queue (PolicyGate / dedup / readiness). The old failed row is
 // never touched; a new outbound + ledger row is appended.
 func (h *Handler) retryComment(c *fiber.Ctx) error {
-	orgID := c.Locals("org_id").(int64)
-	userID, _ := c.Locals("user_id").(int64)
-	role, _ := c.Locals("user_role").(string)
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil || id <= 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
-	}
-	msg, ownErr := h.requireOutboundOwnerRow(c, orgID, userID, role, id)
-	if ownErr != nil {
-		return ownErr
+	msg, orgID, userID, err := h.resolveOwnedOutbound(c)
+	if err != nil {
+		return err
 	}
 	if msg.Type != "comment" || !models.IsRetryableVerificationOutcome(msg.VerificationOutcome) {
 		return c.Status(400).JSON(fiber.Map{
