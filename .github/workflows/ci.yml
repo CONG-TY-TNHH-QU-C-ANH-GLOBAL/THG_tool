@@ -146,6 +146,19 @@ jobs:
           set -euo pipefail
           BASE='${{ github.event.pull_request.base.sha }}'
           HEAD='${{ github.event.pull_request.head.sha }}'
+          echo "base=$BASE head=$HEAD"
+          # Defensive (see pr-guard "Changed files"): ensure both commit objects exist
+          # before diffing, fetching from origin if the merge-ref checkout did not
+          # include them — avoids a "bad object" abort on this BASE..HEAD scan.
+          ensure_commit() {
+            local sha="$1"
+            git cat-file -e "${sha}^{commit}" 2>/dev/null && return 0
+            echo "::notice::commit ${sha} not present locally — fetching from origin"
+            git fetch --no-tags -q origin "${sha}" 2>/dev/null || true
+            git cat-file -e "${sha}^{commit}"
+          }
+          ensure_commit "$BASE"
+          ensure_commit "$HEAD"
           # Hot functions + sensitive ledger/connector/reason-code tokens. Catches
           # controlled logic scattered outside the path globs. Scanned on changed
           # *.go files only — migrations (*.sql) and the extension are already
@@ -190,6 +203,22 @@ jobs:
           set -euo pipefail
           BASE='${{ github.event.pull_request.base.sha }}'
           HEAD='${{ github.event.pull_request.head.sha }}'
+          echo "base=$BASE head=$HEAD"
+          # Defensive: on a pull_request event the checkout is the MERGE ref, so the
+          # literal base/head commit objects can be absent locally (recomputed merge,
+          # fork PR). Verify each exists; fetch it from origin if missing, then verify
+          # again so a real gap fails loudly here instead of a cryptic "bad object"
+          # mid-diff. (fetch-depth: 0 above already pulls full history of the checked-out
+          # ref; this covers the commits that ref does not reach.)
+          ensure_commit() {
+            local sha="$1"
+            git cat-file -e "${sha}^{commit}" 2>/dev/null && return 0
+            echo "::notice::commit ${sha} not present locally — fetching from origin"
+            git fetch --no-tags -q origin "${sha}" 2>/dev/null || true
+            git cat-file -e "${sha}^{commit}"
+          }
+          ensure_commit "$BASE"
+          ensure_commit "$HEAD"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "head=$HEAD" >> "$GITHUB_OUTPUT"
           git diff --name-only "$BASE" "$HEAD" | tee /tmp/changed_files.txt
