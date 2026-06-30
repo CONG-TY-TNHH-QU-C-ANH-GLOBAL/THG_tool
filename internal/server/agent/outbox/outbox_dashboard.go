@@ -14,7 +14,7 @@ func (h *Handler) getOutbox(c *fiber.Ctx) error {
 	status := c.Query("status", "")
 	msgType := c.Query("type", "")
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
-	messages, err := h.db.GetOutboundByFilterForOrg(orgID, status, msgType, limit)
+	messages, err := h.db.Outbound().ListByLegacyStatus(orgID, status, msgType, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
