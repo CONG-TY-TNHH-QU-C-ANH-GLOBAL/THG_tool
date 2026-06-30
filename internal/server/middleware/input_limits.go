@@ -1,10 +1,24 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
 	"github.com/thg/scraper/internal/store/connectors"
 )
+
+// AgentTokenFingerprint returns a short, non-reversible fingerprint of a plaintext
+// agent token for safe logging / correlation (never the token itself). Shared by the
+// agent auth middleware and the connector handlers; lives here (a leaf both import)
+// so neither needs to import the other.
+func AgentTokenFingerprint(plain string) string {
+	if strings.TrimSpace(plain) == "" {
+		return "empty"
+	}
+	sum := sha256.Sum256([]byte(plain))
+	return hex.EncodeToString(sum[:])[:12]
+}
 
 // Connector heartbeat / screenshot / chrome-status payloads come from
 // untrusted browser connectors. Without bounds the dashboard could be DOS'd
