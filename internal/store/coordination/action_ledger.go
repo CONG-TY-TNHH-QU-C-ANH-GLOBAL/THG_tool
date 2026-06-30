@@ -180,32 +180,6 @@ func (s *Store) ListActionLedger(ctx context.Context, orgID int64, actionType, t
 	return out, rows.Err()
 }
 
-// MarkActionLedgerOutcome updates the outcome of a ledger entry — used when an
-// outbound message transitions to sent / failed so the ledger reflects truth,
-// not just intent. Best-effort: callers should not fail the user-visible flow
-// if this returns an error.
-func (s *Store) MarkActionLedgerOutcome(ctx context.Context, ledgerID int64, outcome, reason string) error {
-	if ledgerID <= 0 {
-		return fmt.Errorf("ledger_id is required")
-	}
-	outcome = strings.TrimSpace(outcome)
-	if outcome == "" {
-		outcome = LedgerOutcomeQueued
-	}
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE action_ledger SET outcome = ?, reason = ? WHERE id = ?`,
-		outcome, reason, ledgerID,
-	)
-	if err != nil {
-		return err
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
 // MarkActionLedgerOutcomeByOutbound updates the ledger entry tied to a given
 // outbound_messages.id. The Execution Verification layer (Step 3) uses this
 // as its single write-point: the verifier classifies an outcome and propagates

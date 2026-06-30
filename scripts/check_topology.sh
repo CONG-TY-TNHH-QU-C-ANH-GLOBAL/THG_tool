@@ -153,7 +153,7 @@ echo
 # ---------------------------------------------------------------------
 
 echo "[6] action_ledger append-only invariant (with baseline)"
-LEDGER_UPDATE_BASELINE=3  # Phase 5B carry-over: action_ledger.go x2 + engagement_reconcile.go x1
+LEDGER_UPDATE_BASELINE=2  # carry-over: action_ledger.go x1 (MarkActionLedgerOutcomeByOutbound) + engagement_reconcile.go x1 (ARCHST-R1: unused by-id MarkActionLedgerOutcome deleted, 3->2)
 LEDGER_UPDATE_ACTUAL=$(grep -rln "UPDATE action_ledger\|DELETE FROM action_ledger" \
   --include="*.go" internal/ cmd/ 2>/dev/null \
   | grep -v '_test\.go' \
