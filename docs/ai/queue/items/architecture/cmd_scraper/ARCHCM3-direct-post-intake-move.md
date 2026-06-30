@@ -1,6 +1,6 @@
 ---
 id: ARCHCM3
-status: DONE
+status: REVIEW
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM2, ARCHST-R3]
@@ -67,6 +67,7 @@ queue / CAS / ledger / DTO semantics changed. The pre-existing characterization 
 moved alongside the function (now `directpost.TestResolveCommentURL`); the cmd-side
 `TestCommentSinglePost_Delegation` still pins the orchestration contract.
 
-Done: pure URL-resolution lives in the leaf; cmd orchestration delegates to it; the
+Outcome: pure URL-resolution lives in the leaf; cmd orchestration delegates to it; the
 service/scheduler keep-as-is is recorded. No further move pursued (would harm the
-architecture).
+architecture). Item stays `REVIEW` until the PR merges; DONE is set only by queue
+reconcile (GitHub `merged_at`-verified), never self-asserted pre-merge.
