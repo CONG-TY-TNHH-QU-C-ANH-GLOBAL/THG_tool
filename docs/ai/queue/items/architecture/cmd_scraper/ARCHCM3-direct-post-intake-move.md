@@ -1,12 +1,12 @@
 ---
 id: ARCHCM3
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM2, ARCHST-R3]
 parallel_safe: false
 branch: "arch/archcm3-directpost-url-resolve"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/188
 ---
 
 # ARCHCM3 — Move direct-post intake into internal/directpost
