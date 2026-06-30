@@ -1,4 +1,4 @@
-package agent
+package connector
 
 import (
 	"errors"
@@ -42,6 +42,24 @@ func pairingClaimErrorResponse(c *fiber.Ctx, err error) error {
 // the same laptop. Only the member who created the pairing session may verify
 // it; that is the owner binding, so even an admin cannot verify through a
 // staff member's device.
+// buildPairingStatusResponse renders the pairing-status JSON. Pure; the wire shape
+// (keys, types, and the detected-only fb fields) is identical to the inline block it
+// replaced — extracted only to keep getPairingFacebookStatus under the complexity gate.
+func buildPairingStatusResponse(session *connectors.ConnectorPairingSession, token *connectors.AgentToken, status connectors.PairingFacebookStatus) fiber.Map {
+	resp := fiber.Map{"status": status, "pairing_session_id": session.ID}
+	if token != nil {
+		resp["connector_id"] = token.ID
+		if status == connectors.PairingStatusDetected {
+			resp["fb_user_id"] = token.FBUserID
+			resp["fb_display_name"] = token.FBDisplayName
+		}
+		if token.LastSeen != nil {
+			resp["last_proof_at"] = token.LastSeen.UTC().Format(time.RFC3339)
+		}
+	}
+	return resp
+}
+
 func (h *LocalConnectorHandler) getPairingFacebookStatus(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
@@ -82,17 +100,5 @@ func (h *LocalConnectorHandler) getPairingFacebookStatus(c *fiber.Ctx) error {
 		}
 	}
 	status := connectors.ResolvePairingFacebookStatus(session, token, accountOwnerID, time.Now().UTC())
-
-	resp := fiber.Map{"status": status, "pairing_session_id": session.ID}
-	if token != nil {
-		resp["connector_id"] = token.ID
-		if status == connectors.PairingStatusDetected {
-			resp["fb_user_id"] = token.FBUserID
-			resp["fb_display_name"] = token.FBDisplayName
-		}
-		if token.LastSeen != nil {
-			resp["last_proof_at"] = token.LastSeen.UTC().Format(time.RFC3339)
-		}
-	}
-	return c.JSON(resp)
+	return c.JSON(buildPairingStatusResponse(session, token, status))
 }

@@ -1,4 +1,4 @@
-package agent
+package connector
 
 import (
 	"encoding/json"
@@ -37,6 +37,33 @@ func extensionAlertDue(orgID, agentID int64) bool {
 	return true
 }
 
+// resolveExtensionAlertContext looks up the owning staff member + the account the
+// outdated connector serves, for the actionable alert copy. Best-effort: any lookup
+// failure leaves the corresponding name blank. Behavior identical to the inline
+// block it replaced — extracted only to keep maybeAlertExtensionOutdated under the
+// complexity gate.
+func (h *Handler) resolveExtensionAlertContext(orgID, agentID int64) (ownerID int64, staffName, accountName string) {
+	if conns, lerr := h.db.Connectors().ListLocalConnectors(orgID); lerr == nil {
+		for i := range conns {
+			if conns[i].ID != agentID {
+				continue
+			}
+			ownerID = conns[i].CreatedBy
+			if acc, aerr := h.db.Identities().GetAccountForOrg(conns[i].AssignedAccountID, orgID); aerr == nil && acc != nil {
+				accountName = acc.Name
+				if acc.FBDisplayName != "" {
+					accountName = acc.FBDisplayName
+				}
+			}
+			break
+		}
+	}
+	if owner, _ := h.db.GetUserByID(ownerID); owner != nil {
+		staffName = owner.Name
+	}
+	return ownerID, staffName, accountName
+}
+
 // maybeAlertExtensionOutdated is called from the heartbeat handlers
 // AFTER presence is persisted. Cheap early exits; all failures logged,
 // never surfaced to the extension.
@@ -57,26 +84,7 @@ func (h *Handler) maybeAlertExtensionOutdated(orgID, agentID int64, version stri
 	}
 
 	// Resolve owner + account for actionable copy.
-	staffName, accountName := "", ""
-	var ownerID int64
-	if conns, lerr := h.db.Connectors().ListLocalConnectors(orgID); lerr == nil {
-		for i := range conns {
-			if conns[i].ID != agentID {
-				continue
-			}
-			ownerID = conns[i].CreatedBy
-			if acc, aerr := h.db.Identities().GetAccountForOrg(conns[i].AssignedAccountID, orgID); aerr == nil && acc != nil {
-				accountName = acc.Name
-				if acc.FBDisplayName != "" {
-					accountName = acc.FBDisplayName
-				}
-			}
-			break
-		}
-	}
-	if owner, _ := h.db.GetUserByID(ownerID); owner != nil {
-		staffName = owner.Name
-	}
+	ownerID, staffName, accountName := h.resolveExtensionAlertContext(orgID, agentID)
 
 	payload, _ := json.Marshal(map[string]string{"version": version, "state": state})
 	staffBody := "Automation đang tạm dừng vì extension của bạn đã cũ. Cập nhật extension để tiếp tục nhận task."
