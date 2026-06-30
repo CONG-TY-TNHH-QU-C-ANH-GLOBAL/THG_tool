@@ -1,4 +1,4 @@
-package agent
+package outbox
 
 import (
 	"net/http/httptest"
@@ -17,8 +17,7 @@ import (
 func TestFinalizeOutbound_VerifiedSentSuccess(t *testing.T) {
 	db := testsupport.NewTestStore(t, "finalize_success")
 	const orgID = int64(1)
-	accID := seedCrawlAccount(t, db, orgID)
-	id, execID := seedClaimedOutbound(t, db, orgID, accID)
+	id, execID := seedClaimedOutbound(t, db, orgID)
 
 	notify, notes := recordingNotifier()
 	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
@@ -56,8 +55,7 @@ func TestFinalizeOutbound_VerifiedSentSuccess(t *testing.T) {
 func TestFinalizeOutbound_IdempotentReplay(t *testing.T) {
 	db := testsupport.NewTestStore(t, "finalize_replay")
 	const orgID = int64(1)
-	accID := seedCrawlAccount(t, db, orgID)
-	id, execID := seedClaimedOutbound(t, db, orgID, accID)
+	id, execID := seedClaimedOutbound(t, db, orgID)
 
 	notify, notes := recordingNotifier()
 	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
@@ -88,8 +86,7 @@ func TestFinalizeOutbound_IdempotentReplay(t *testing.T) {
 func TestFinalizeOutbound_StaleExecutionID(t *testing.T) {
 	db := testsupport.NewTestStore(t, "finalize_stale")
 	const orgID = int64(1)
-	accID := seedCrawlAccount(t, db, orgID)
-	id, _ := seedClaimedOutbound(t, db, orgID, accID) // real execID discarded; send a wrong one
+	id, _ := seedClaimedOutbound(t, db, orgID) // real execID discarded; send a wrong one
 
 	notify, notes := recordingNotifier()
 	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
@@ -115,8 +112,7 @@ func TestFinalizeOutbound_StaleExecutionID(t *testing.T) {
 func TestFinalizeOutbound_FailedNonSuccess(t *testing.T) {
 	db := testsupport.NewTestStore(t, "finalize_failed")
 	const orgID = int64(1)
-	accID := seedCrawlAccount(t, db, orgID)
-	id, execID := seedClaimedOutbound(t, db, orgID, accID)
+	id, execID := seedClaimedOutbound(t, db, orgID)
 
 	notify, notes := recordingNotifier()
 	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}

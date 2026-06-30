@@ -1,14 +1,13 @@
 ---
 id: ARCHSV4
-status: BLOCKED
-lane: RED
-risk: RED
+status: REVIEW
+lane: YELLOW
+risk: YELLOW
 depends_on: [ARCHSV2]
 parallel_safe: false
-branch: ""
+branch: "refactor/extract-agent-outbox-subpackage"
 pr_url: ""
-blocked_on: human-boundary-decision
-boundary_target: transport-to-usecase
+boundary_target: leaf-move
 ---
 
 # ARCHSV4 — Extract internal/server/agent/outbox subpackage
@@ -58,3 +57,34 @@ go test ./internal/server/agent/... ; ai_validate.sh
 
 ## Done criteria
 outbox/ subpackage + facade; routes updated; dashboard JSON byte-identical; CAS flow unchanged; move-only.
+
+## RESOLUTION (Architecture Convergence Mode — PR2 of the staged outbound-execution split)
+
+Done on top of the merged finalize boundary (ARCHSV2). The clean boundary is the
+**6-file set** {outbox_agent, outbox_claim, outbox_presubmit, outbox_dashboard,
+comment_verify, reverify} → `internal/server/agent/outbox` (self-Handler pattern; the
+package never imports agent → no cycle). `comment_verify`+`reverify` were pulled in
+because they share `requireOutboundOwnerRow` with the dashboard (reverse-coupling) — the
+6-set is the minimal self-contained unit; splitting would break them.
+
+Two consumer-owned ports (founder-sanctioned, "where they unlock a real move"):
+- `outboxReadyNotifier` (`NotifyOutboxReady(int)`) — the dashboard's sole `*WSHub` use.
+- `accountOwnerGuard` — `RequireAccountOwner` STAYS in agent (also used by
+  `server/workspace`); injected as a func value so outbox needn't import agent.
+Outbox delegates the terminal step to `*finalize.Handler` (outbox → finalize).
+
+Behavior byte-for-byte / move-only: execution_id CAS (`claimCandidate`), claim/lease/
+idempotency, action_ledger semantics (topology [6] baseline 2 unchanged), and the
+dashboard list **wire shape** all moved verbatim. Routes preserved exactly via
+`outbox.RegisterConnectorRoutes` (token auth) + `outbox.RegisterDashboardRoutes`
+(tenant/adminOnly) — same paths/auth/order. `agent.Handler` dropped its now-unused
+`finalize` field (outbox owns it). The 218-line `outbox_dashboard.go` was split (size
+guard) into `outbox_dashboard.go` (read/draft) + `outbox_mutations.go` (owner-check +
+edit/delete) — same package, behavior unchanged.
+
+Tests: the outbox-handler integration tests (claim / idempotent-replay / stale-
+execution_id / dashboard) moved into `package outbox` and pass unchanged;
+`account_guard_test` stayed in agent (tests `AccountOwnerAllowed`, which stayed).
+
+This completes the staged agent outbound-execution split (SV2 finalize + SV3
+crawl-ingest + SV4 outbox). The flat agent god-package is materially reduced.

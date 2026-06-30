@@ -1,10 +1,11 @@
-package agent
+package outbox
 
 import (
 	"bytes"
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,8 +21,7 @@ import (
 // only db + the existing notifier func seam. tgEvents stays nil — finalizeOutbound
 // guards it (`if h.tgEvents != nil`). NotifyOutboundStatus[Detail] call the
 // notifier synchronously, so reads after app.Test return are race-free.
-// No production signature or seam is added. Reuses recordingNotifier /
-// seedCrawlAccount from crawl_ingest_characterization_test.go.
+// No production signature or seam is added.
 
 // newOutboxApp mounts the terminal-callback handlers with the agent_org_id local
 // the real agentAuth middleware would set, so tests drive the exact HTTP edge.
@@ -36,13 +36,27 @@ func newOutboxApp(h *Handler, orgID int64) *fiber.App {
 	return app
 }
 
-// seedClaimedOutbound inserts a planned comment outbound for the account, then
-// CLAIMS it through the production path — mirroring agentGetOutbox — leaving the
-// row in `executing` with a fresh execution_id the terminal callback must echo.
-func seedClaimedOutbound(t *testing.T, db *store.Store, orgID, accountID int64) (int64, string) {
+// recordingNotifier returns a notifier func plus a pointer to the messages it
+// captured. The finalize notifiers fire synchronously, so reads after app.Test
+// returns are race-free and deterministic (no sleeps).
+func recordingNotifier() (func(string), *[]string) {
+	var msgs []string
+	return func(s string) { msgs = append(msgs, s) }, &msgs
+}
+
+// seedClaimedOutbound seeds an active account + a planned comment outbound for it,
+// then CLAIMS it through the production path — mirroring agentGetOutbox — leaving
+// the row in `executing` with a fresh execution_id the terminal callback must echo.
+func seedClaimedOutbound(t *testing.T, db *store.Store, orgID int64) (int64, string) {
 	t.Helper()
+	accID, err := db.Identities().AddAccount(&models.Account{
+		OrgID: orgID, Platform: models.PlatformFacebook, Name: "crawl-acc", Status: models.AccountActive,
+	})
+	if err != nil {
+		t.Fatalf("AddAccount(org=%d): %v", orgID, err)
+	}
 	id, err := db.Outbound().Insert(&models.OutboundMessage{
-		OrgID: orgID, Type: "comment", Platform: models.PlatformFacebook, AccountID: accountID,
+		OrgID: orgID, Type: "comment", Platform: models.PlatformFacebook, AccountID: accID,
 		TargetURL: "https://www.facebook.com/groups/1/posts/100/", Content: "đặt một bình luận thử",
 	})
 	if err != nil {
@@ -59,7 +73,7 @@ func seedClaimedOutbound(t *testing.T, db *store.Store, orgID, accountID int64) 
 // the handler's BodyParser decode path and returns status + decoded response.
 func postOutboxCallback(t *testing.T, app *fiber.App, kind string, id int64, body string) (int, map[string]any) {
 	t.Helper()
-	path := "/agent/outbox/" + itoa64(id) + "/" + kind
+	path := "/agent/outbox/" + strconv.FormatInt(id, 10) + "/" + kind
 	req := httptest.NewRequest("POST", path, bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req, -1)

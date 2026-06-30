@@ -1,4 +1,4 @@
-package agent
+package outbox
 
 import (
 	"github.com/thg/scraper/internal/models"

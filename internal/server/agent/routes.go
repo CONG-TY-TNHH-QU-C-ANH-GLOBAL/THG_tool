@@ -6,7 +6,7 @@ import (
 	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/server/agent/account"
 	"github.com/thg/scraper/internal/server/agent/crawlingest"
-	"github.com/thg/scraper/internal/server/agent/finalize"
+	"github.com/thg/scraper/internal/server/agent/outbox"
 	"github.com/thg/scraper/internal/server/agent/presence"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
@@ -33,7 +33,6 @@ type Handler struct {
 	notifier func(string)
 	tgEvents *control.Service
 	baseURL  string
-	finalize *finalize.Handler
 }
 
 func NewHandler(deps Deps) *Handler {
@@ -45,9 +44,6 @@ func NewHandler(deps Deps) *Handler {
 		notifier: deps.Notifier,
 		tgEvents: deps.TgEvents,
 		baseURL:  deps.BaseURL,
-		finalize: finalize.NewHandler(finalize.Deps{
-			DB: deps.DB, Notifier: deps.Notifier, TgEvents: deps.TgEvents, BaseURL: deps.BaseURL,
-		}),
 	}
 }
 
@@ -61,10 +57,6 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	group.Post("/connectors/screenshot", h.agentAuth, h.agentScreenshot)
 	group.Get("/connectors/commands", h.agentAuth, h.agentConnectorCommands)
 	group.Post("/connectors/commands/:id/done", h.agentAuth, h.agentConnectorCommandDone)
-	group.Get("/connectors/outbox", h.agentAuth, h.agentGetOutbox)
-	group.Post("/connectors/outbox/:id/sent", h.agentAuth, h.agentOutboxSent)
-	group.Post("/connectors/outbox/:id/failed", h.agentAuth, h.agentOutboxFailed)
-	group.Post("/connectors/outbox/:id/pre-submit-verify", h.agentAuth, h.agentOutboxPreSubmitVerify) // Layer C (P1.3C)
 	// Forget Device: the extension releases its own binding before wiping
 	// local storage, so the Chrome profile becomes re-pairable by anyone.
 	group.Post("/connectors/self/disconnect", h.agentAuth, h.agentSelfDisconnect)
@@ -76,21 +68,19 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	agentGrp.Post("/screenshot", h.agentScreenshot)
 	agentGrp.Get("/commands", h.agentConnectorCommands)
 	agentGrp.Post("/commands/:id/done", h.agentConnectorCommandDone)
-	agentGrp.Get("/outbox", h.agentGetOutbox)
-	agentGrp.Post("/outbox/:id/sent", h.agentOutboxSent)
-	agentGrp.Post("/outbox/:id/failed", h.agentOutboxFailed)
-	agentGrp.Post("/outbox/:id/pre-submit-verify", h.agentOutboxPreSubmitVerify) // Layer C (P1.3C)
-	// Async comment reverify (spec: specs/COMMENT_ASYNC_REVERIFY.md).
-	agentGrp.Get("/reverify/claim", h.agentReverifyClaim)
-	agentGrp.Post("/reverify/result", h.agentReverifyResult)
 	agentGrp.Get("/images", h.agentServeImage)
 
-	// Connector crawl-result ingestion (crawl-result/crawl-progress on both the
-	// /connectors and /agent groups) lives in the crawlingest subpackage — same
-	// effective paths + token auth; the cluster owns its own Handler.
+	// Connector crawl-result ingestion lives in the crawlingest subpackage.
 	crawlingest.RegisterRoutes(group, agentGrp, crawlingest.Deps{
 		DB: deps.DB, AIClass: deps.AIClass, Notifier: deps.Notifier,
 		TgEvents: deps.TgEvents, BaseURL: deps.BaseURL,
+	}, h.agentAuth)
+	// Outbound execution (outbox claim/sent/failed/pre-submit + comment reverify)
+	// lives in the outbox subpackage — same effective paths + token auth; it owns
+	// its own Handler and delegates the terminal step to finalize.
+	outbox.RegisterConnectorRoutes(group, agentGrp, outbox.Deps{
+		DB: deps.DB, Notifier: deps.Notifier, TgEvents: deps.TgEvents,
+		BaseURL: deps.BaseURL, WSReady: deps.WSHub, RequireAccount: RequireAccountOwner,
 	}, h.agentAuth)
 }
 
@@ -118,22 +108,12 @@ func DashboardRoutes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 	group.Delete("/ai/history", h.aiDeleteHistory)
 	group.Delete("/ai/history/:id", h.aiDeleteHistoryItem)
 
-	group.Get("/outbox", h.getOutbox)
-	group.Post("/outbox/draft", h.draftOutbound)
-	// Manual human verification + retry + outcome metrics (spec: COMMENT_ASYNC_REVERIFY.md).
-	group.Post("/comments/:id/human-verify", h.humanVerifyComment)
-	group.Post("/comments/:id/retry", h.retryComment)
-	group.Get("/comments/metrics", h.commentOutcomeMetrics)
-	group.Delete("/outbox/comments/all", adminOnly, h.deleteAllOutboundComments)
-	group.Delete("/outbox/posts/all", adminOnly, h.deleteAllOutboundPosts)
-	// /outbox/:id/approve and /outbox/:id/reject were removed in the
-	// autonomous-first refactor (May-2026). The system no longer has
-	// a human-approval gate — every queued outbound is planned and
-	// executes when an account is available.
-	group.Put("/outbox/:id/content", h.editOutbound)
-	group.Delete("/outbox/:id", h.deleteOutbound)
-
-	// Verified Actor (P1b): operator override to lift an actor-mismatch block
-	// on an account so it can auto-execute again. Admin-only.
-	group.Post("/accounts/:id/clear-actor-block", adminOnly, h.clearActorBlock)
+	// Outbound dashboard (outbox draft/edit/delete + the byte-exact list response)
+	// and comment human-verify/retry/metrics live in the outbox subpackage — same
+	// effective paths + the same adminOnly gates. (/outbox/:id/approve+reject were
+	// removed in the autonomous-first refactor; no human-approval gate remains.)
+	outbox.RegisterDashboardRoutes(group, outbox.Deps{
+		DB: deps.DB, Notifier: deps.Notifier, TgEvents: deps.TgEvents,
+		BaseURL: deps.BaseURL, WSReady: deps.WSHub, RequireAccount: RequireAccountOwner,
+	}, adminOnly)
 }
