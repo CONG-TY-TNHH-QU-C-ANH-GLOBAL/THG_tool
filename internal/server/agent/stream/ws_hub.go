@@ -1,4 +1,4 @@
-package agent
+package stream
 
 import (
 	"encoding/json"
