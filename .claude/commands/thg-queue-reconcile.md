@@ -20,9 +20,10 @@ bash scripts/queue_reconcile_pr.sh --push
 4. Stages ONLY `docs/ai/queue/items/**/*.md` (the worktree is a clean `origin/main`
    checkout, so only the reconcile's own writes are staged; it never runs `git add -A`).
 5. Commits with message `chore(queue): reconcile merged architecture items`.
-6. Pushes a dedup'd `chore/queue-reconcile-<date>` branch — **reusing an existing open
-   reconcile branch** (force-with-lease) instead of opening a duplicate PR; if that
-   branch already reflects the merged state it reports "nothing new to push".
+6. Pushes a dedup'd `chore/queue-reconcile-<date>` branch — **reusing an existing remote
+   reconcile branch** matched by name (force-with-lease) instead of creating a duplicate
+   reconcile branch; if that branch already reflects the merged state it reports "nothing
+   new to push". (It dedups by branch name, not by querying GitHub PR state.)
 7. Prints the PR/compare link, removes the worktree, and **never merges**.
 
 Rules:

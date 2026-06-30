@@ -222,9 +222,10 @@ treated as DONE when computing `depends_on` for the next slice — but its `.md`
 owned by the `chore/queue-reconcile-*` branch and MUST NOT be staged/committed in the
 code PR.
 
-**Duplicate avoidance:** `--push` reuses an existing open `chore/queue-reconcile-*`
-branch (force-with-lease) rather than opening a second queue PR; if that branch already
-reflects the merged state it reports "nothing new to push".
+**Duplicate avoidance:** `--push` reuses an existing remote `chore/queue-reconcile-*`
+branch matched by name (force-with-lease) rather than creating a second reconcile branch;
+if that branch already reflects the merged state it reports "nothing new to push". (Dedup
+is by branch name, not by querying GitHub PR state.)
 
 **Code-PR staging hygiene (binding):** a code PR stages ONLY (a) production/test files
 the selected item needs, (b) the selected item's own `.md`, (c) `.md` of direct child
