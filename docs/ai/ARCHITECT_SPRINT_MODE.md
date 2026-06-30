@@ -198,6 +198,40 @@ S3776 / S107 / duplication / security finding). Then run the §9 validation guar
 Otherwise the lockless-queue rule (`AUTOPILOT_QUEUE.md`) and one-branch-one-PR
 still hold: each PR updates only its own item file.
 
+## 5a. Non-Blocking Queue Reconcile + git hygiene
+
+After merges, queue item metadata goes stale (`status: REVIEW → DONE`, `pr_url`
+backfill). That update is correct but must NEVER dirty the primary working tree or
+ride along in a code PR. Authority: `scripts/queue_reconcile_pr.sh` (the only
+mechanism that writes reconciled metadata to a branch) + `/thg-queue-reconcile`.
+
+**At sprint start (step 1), after sync/preflight:**
+1. `bash scripts/queue_reconcile_pr.sh --check` — READ-ONLY stale detection. Reports
+   which `REVIEW` items the verifier (`ai_queue_reconcile.sh`, GitHub `merged_at`-driven)
+   would flip to DONE. Writes nothing; never marks an open/unmerged PR item DONE.
+2. If stale items exist: `bash scripts/queue_reconcile_pr.sh --push`. It applies the
+   updates inside a throwaway `git worktree` off `origin/main`, commits ONLY
+   `docs/ai/queue/items/**/*.md` onto a dedup'd `chore/queue-reconcile-<date>` branch,
+   pushes, prints the PR/compare link, removes the worktree, and **never merges**. The
+   primary working tree is never touched (worktree isolation — no `git reset --hard`
+   on the primary; if worktree is unavailable it bails safely).
+3. **Continue the sprint immediately** — do NOT wait for the queue PR to merge.
+
+**Effective queue state for selection:** an item the reconcile *proved* merged may be
+treated as DONE when computing `depends_on` for the next slice — but its `.md` file is
+owned by the `chore/queue-reconcile-*` branch and MUST NOT be staged/committed in the
+code PR.
+
+**Duplicate avoidance:** `--push` reuses an existing open `chore/queue-reconcile-*`
+branch (force-with-lease) rather than opening a second queue PR; if that branch already
+reflects the merged state it reports "nothing new to push".
+
+**Code-PR staging hygiene (binding):** a code PR stages ONLY (a) production/test files
+the selected item needs, (b) the selected item's own `.md`, (c) `.md` of direct child
+items it creates. **Never** stage unrelated `docs/ai/queue/items/**/*.md`; **never**
+`git add -A` — stage explicit paths. A stale queue `.md` dirty at push time is a step-1
+miss: `git checkout -- <path>` and let the reconcile flow own it.
+
 ## 6. Sonar policy
 
 - **New Code Sonar must be 0 before merge.**

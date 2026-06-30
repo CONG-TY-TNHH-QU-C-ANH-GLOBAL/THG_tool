@@ -18,7 +18,17 @@ Use:
 - `scripts/ai_preflight.sh`, `scripts/ai_validate.sh`, `scripts/go_cognitive_check.sh`, `scripts/check_file_size.py`
 
 Steps:
-1. Sync `origin/main`; run `scripts/ai_preflight.sh`.
+1. Sync `origin/main`; run `scripts/ai_preflight.sh`. **Non-Blocking Queue Reconcile
+   (git hygiene):** then run `bash scripts/queue_reconcile_pr.sh --check` to detect stale
+   merged queue items (`status: REVIEW` + merged PR) in READ-ONLY mode. If any are stale,
+   run `bash scripts/queue_reconcile_pr.sh --push` — it isolates the metadata writes in a
+   throwaway `git worktree`, commits ONLY `docs/ai/queue/items/**/*.md` onto a dedup'd
+   `chore/queue-reconcile-<date>` branch, pushes it, prints the link, and NEVER merges (see
+   `/thg-queue-reconcile`). This keeps the primary working tree clean and queue metadata
+   OUT of your code PR. Then CONTINUE the sprint immediately — do NOT wait for the queue PR
+   to merge. For dependency selection use the **effective queue state**: an item the
+   reconcile proved merged may be treated as DONE, but its `.md` file MUST NOT be staged or
+   committed in your code PR.
 2. **Skill discovery (§4a.A):** inventory `.claude/skills/**/SKILL.md`,
    `.claude/commands/*.md`, the bundled skills list, and Agent subagent types
    (Ponytail, code-review, senior-architect, code-reviewer, senior-backend,
@@ -44,3 +54,12 @@ Steps:
 
 Controlled parallelism: max 2 open PRs, disjoint roots, never the same item file,
 never parallel RED/migration work. Push when clean. **Never merge.**
+
+Code-PR staging hygiene (binding): a code PR may stage ONLY (a) the production/test files
+the selected item needs, (b) the selected queue item's own `.md`, and (c) `.md` files of
+direct child items the selected item creates. It must NEVER stage unrelated
+`docs/ai/queue/items/**/*.md` — reconciled metadata for OTHER items rides only on the
+`chore/queue-reconcile-*` branch from step 1, never on a code branch. **Never `git add -A`**
+— stage explicit paths. If a stale queue `.md` is dirty in the working tree at push time,
+that is a step-1 miss: restore it (`git checkout -- <path>`) and let the queue-reconcile
+flow own it; do not commit it here.
