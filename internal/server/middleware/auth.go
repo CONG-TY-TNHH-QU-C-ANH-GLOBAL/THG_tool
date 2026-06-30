@@ -2,17 +2,8 @@ package middleware
 
 import (
 	"github.com/gofiber/fiber/v2"
-	authpkg "github.com/thg/scraper/internal/auth"
 	"github.com/thg/scraper/internal/models"
 )
-
-func RequireRole(role string) fiber.Handler {
-	return authpkg.RequireRole(role)
-}
-
-func AdminOnly() fiber.Handler {
-	return RequireRole("admin")
-}
 
 // TenantReady blocks tenant APIs until a user has a valid org context.
 func TenantReady() fiber.Handler {
