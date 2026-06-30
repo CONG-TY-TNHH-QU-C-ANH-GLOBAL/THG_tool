@@ -1,12 +1,12 @@
 ---
 id: ARCHCM2d
-status: REVIEW
+status: DONE
 lane: YELLOW
 risk: YELLOW
 depends_on: [ARCHCM2b, ARCHCM2c]
 parallel_safe: false
 branch: "chore/archcm2d-facade-queue-port"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/182
 blocked_on: ""
 boundary_target: transport-to-usecase
 ---
