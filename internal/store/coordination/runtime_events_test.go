@@ -4,11 +4,39 @@ package coordination_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/coordination"
 )
+
+// recentRuntimeEvents reads back persisted rows via raw SQL (the typed
+// ListRecentRuntimeEvents reader was removed as dead production code when the
+// runtime-feed dashboard handler was deleted). Tests here exercise the LIVE
+// write path (RecordRuntimeEvent + the boot sink); this helper is just their
+// read-back assertion tool, newest-first.
+func recentRuntimeEvents(t *testing.T, coord *coordination.Store, limit int) []coordination.RuntimeEvent {
+	t.Helper()
+	rows, err := coord.DB().QueryContext(context.Background(),
+		`SELECT id, org_id, account_id, event, level, outbound_id, attempt_id, target_url, attrs_json
+		   FROM runtime_events ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		t.Fatalf("read runtime_events: %v", err)
+	}
+	defer rows.Close()
+	var out []coordination.RuntimeEvent
+	for rows.Next() {
+		var r coordination.RuntimeEvent
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.AccountID, &r.Event, &r.Level,
+			&r.OutboundID, &r.AttemptID, &r.TargetURL, &r.AttrsJSON); err != nil {
+			t.Fatalf("scan runtime_event: %v", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	return out
+}
 
 // TestRecordRuntimeEvent_RoundTrip pins the structural-field extraction
 // from the slog attribute stream. Known keys land in typed columns;
@@ -28,10 +56,7 @@ func TestRecordRuntimeEvent_RoundTrip(t *testing.T) {
 		t.Fatalf("RecordRuntimeEvent: %v", err)
 	}
 
-	rows, err := coord.ListRecentRuntimeEvents(ctx, 7, time.Now().Add(-time.Minute), 10)
-	if err != nil {
-		t.Fatalf("ListRecentRuntimeEvents: %v", err)
-	}
+	rows := recentRuntimeEvents(t, coord, 10)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
@@ -65,39 +90,9 @@ func TestRecordRuntimeEvent_LevelDefault(t *testing.T) {
 	if err := coord.RecordRuntimeEvent(ctx, "", events.EngagementReconcile, nil); err != nil {
 		t.Fatalf("record: %v", err)
 	}
-	rows, _ := coord.ListRecentRuntimeEvents(ctx, 0, time.Now().Add(-time.Minute), 10)
+	rows := recentRuntimeEvents(t, coord, 10)
 	if len(rows) != 1 || rows[0].Level != "info" {
 		t.Fatalf("expected level=info default, got %+v", rows)
-	}
-}
-
-// TestRecordRuntimeEvent_OrgScoping pins the read scoping rule: a
-// non-superadmin query (orgID > 0) returns rows for that org plus
-// system-wide (org_id=0) events; never another org's rows.
-func TestRecordRuntimeEvent_OrgScoping(t *testing.T) {
-	_, coord := newCoordinationStore(t, "runtime_events_org.db")
-	ctx := context.Background()
-
-	_ = coord.RecordRuntimeEvent(ctx, "info", events.OutboundQueued, []any{events.FieldOrgID, int64(1)})
-	_ = coord.RecordRuntimeEvent(ctx, "info", events.OutboundQueued, []any{events.FieldOrgID, int64(2)})
-	_ = coord.RecordRuntimeEvent(ctx, "info", events.EngagementReconcile, []any{events.FieldOrgID, int64(0)})
-
-	rows, err := coord.ListRecentRuntimeEvents(ctx, 1, time.Now().Add(-time.Minute), 10)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	gotByOrg := map[int64]int{}
-	for _, r := range rows {
-		gotByOrg[r.OrgID]++
-	}
-	if gotByOrg[1] != 1 {
-		t.Errorf("expected 1 row for org=1, got %d", gotByOrg[1])
-	}
-	if gotByOrg[0] != 1 {
-		t.Errorf("expected 1 system-wide (org=0) row visible, got %d", gotByOrg[0])
-	}
-	if gotByOrg[2] != 0 {
-		t.Errorf("org=2 row leaked into org=1 view: %d", gotByOrg[2])
 	}
 }
 
@@ -119,10 +114,7 @@ func TestSinkDualWrite(t *testing.T) {
 		"signal", "RiskSignalFailure",
 	)
 
-	rows, err := coord.ListRecentRuntimeEvents(ctx, 99, time.Now().Add(-time.Minute), 10)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
+	rows := recentRuntimeEvents(t, coord, 10)
 	if len(rows) != 1 {
 		t.Fatalf("dual-write did not persist: got %d rows", len(rows))
 	}
