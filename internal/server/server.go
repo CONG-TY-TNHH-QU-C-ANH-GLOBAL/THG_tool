@@ -11,7 +11,7 @@ import (
 	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/mailer"
-	serveragent "github.com/thg/scraper/internal/server/agent"
+	agentstream "github.com/thg/scraper/internal/server/agent/stream"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/workspace"
@@ -53,7 +53,7 @@ type Server struct {
 	jobStore     *jobs.Store
 	agent        *copilot.Agent
 	aiClass      *ai.MessageGenerator
-	wsHub        *serveragent.WSHub
+	wsHub        *agentstream.WSHub
 	workspace    *workspace.Manager
 	sessionReg   *session.Registry
 	agentHandler *agentloop.Handler
@@ -86,7 +86,7 @@ func New(db *store.Store, jobStore *jobs.Store, agent *copilot.Agent, wm *worksp
 		agent:     agent,
 		port:      cfg.Port,
 		cfg:       cfg,
-		wsHub:     serveragent.NewWSHub(),
+		wsHub:     agentstream.NewWSHub(),
 		workspace: wm,
 	}
 	s.registerRoutes()

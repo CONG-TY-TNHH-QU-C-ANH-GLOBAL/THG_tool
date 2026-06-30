@@ -8,6 +8,7 @@ import (
 	"github.com/thg/scraper/internal/server/agent/crawlingest"
 	"github.com/thg/scraper/internal/server/agent/outbox"
 	"github.com/thg/scraper/internal/server/agent/presence"
+	"github.com/thg/scraper/internal/server/agent/stream"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
 )
@@ -16,7 +17,7 @@ type Deps struct {
 	DB       *store.Store
 	Agent    *copilot.Agent
 	AIClass  func() *ai.MessageGenerator
-	WSHub    *WSHub
+	WSHub    *stream.WSHub
 	Notifier func(string)
 	// TgEvents emits per-org Telegram CHANNEL notifications (lead_created, comment_*). Optional;
 	// nil = no channel notifications. Shared with the integrations/webhook control service.
@@ -29,7 +30,6 @@ type Handler struct {
 	db       *store.Store
 	agent    *copilot.Agent
 	aiClass  func() *ai.MessageGenerator
-	wsHub    *WSHub
 	notifier func(string)
 	tgEvents *control.Service
 	baseURL  string
@@ -40,7 +40,6 @@ func NewHandler(deps Deps) *Handler {
 		db:       deps.DB,
 		agent:    deps.Agent,
 		aiClass:  deps.AIClass,
-		wsHub:    deps.WSHub,
 		notifier: deps.Notifier,
 		tgEvents: deps.TgEvents,
 		baseURL:  deps.BaseURL,
