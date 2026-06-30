@@ -1,13 +1,12 @@
 ---
 id: ARCHSV-R2
-status: BLOCKED
+status: REVIEW
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
-branch: ""
+branch: "arch/archsv-r2-delete-dead-runtime-feed"
 pr_url: ""
-blocked_on: human-decision
 boundary_target: blocked-decision
 ---
 
@@ -49,3 +48,30 @@ go build ./... ; go vet ./internal/server/observability/... ; ai_validate.sh
 ## Done criteria
 runtime_feed.go is either removed or its route is registered + S3776 resolved; no
 unreferenced handler remains; ai_validate green.
+
+## Resolution (architect-sprint — Option A: delete, self-approved §4.1)
+
+Re-verified the evidence against HEAD before acting:
+- `runtimeFeed`, `buildRuntimeFeedRow`, `runtimeFeedRow` are referenced ONLY inside
+  `runtime_feed.go`; no route registers `runtime-feed` (grep in `routes.go` empty);
+  no test references them. The whole file is dead.
+- `coordination.ListRecentRuntimeEvents` has exactly ONE production consumer — the dead
+  handler (otherwise only its own definition + test). After this delete it is
+  consumer-less.
+
+**Decision: Option A (delete `runtime_feed.go`).** This is the only option self-approvable
+under Autonomy v2 §4.1 because it **preserves current behavior** — the handler is
+unreachable today (no route), so removing it changes no runtime behavior and clears the
+OPEN go:S3776 on `runtimeFeed`. **Option B (wire the route) was NOT taken**: registering a
+new reachable `GET /api/observability/runtime-feed` endpoint *adds* product-visible
+behavior (a new data path), which §4.3 reserves for a founder decision. If the runtime-feed
+dashboard is wanted, re-open as a behavior-adding feature item.
+
+**`ListRecentRuntimeEvents` left in place (noted, not deleted):** it sits in
+`internal/store/coordination` (RED-adjacent store layer) and still has passing tests, so it
+does not trip the unused-code guard. Deleting it would expand this single-root GREEN PR into
+the store layer for no behavior gain. Tracked follow-up (GREEN): remove
+`ListRecentRuntimeEvents` + `runtime_events_test.go`'s coverage of it, OR keep it as
+coordination read-API surface — a deliberate keep-vs-remove call, not bundled here.
+
+Item stays `REVIEW` until the PR merges; DONE is set only by queue reconcile.
