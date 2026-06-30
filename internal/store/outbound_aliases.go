@@ -233,27 +233,11 @@ func (s *Store) QueueOutboundForOrg(msg *models.OutboundMessage, cooldown time.D
 	return s.outbound.Queue(msg, cooldown)
 }
 
-// InsertOutboundMessage delegates to [outbound.Store.Insert].
-//
-// Deprecated: call s.Outbound().Insert(msg) directly in new code.
-func (s *Store) InsertOutboundMessage(msg *models.OutboundMessage) (int64, error) {
-	return s.outbound.Insert(msg)
-}
-
 // IsAutoOutboundEnabledForOrg delegates to [outbound.Store.IsAutoEnabledForOrg].
 //
 // Deprecated: call s.Outbound().IsAutoEnabledForOrg(orgID) directly.
 func (s *Store) IsAutoOutboundEnabledForOrg(orgID int64) bool {
 	return s.outbound.IsAutoEnabledForOrg(orgID)
-}
-
-// CanQueueOutboundForOrg delegates to [outbound.Store.PreflightCheck].
-//
-// Deprecated: call s.Outbound().PreflightCheck(orgID, ...) directly.
-// The `cooldown` parameter is no longer consulted (policy-driven).
-func (s *Store) CanQueueOutboundForOrg(orgID int64, msgType, targetURL, profileURL string, cooldown time.Duration) (OutboundGuardDecision, error) {
-	_ = cooldown
-	return s.outbound.PreflightCheck(orgID, msgType, targetURL, profileURL)
 }
 
 // ClaimPlannedOutboundForOrg delegates to [outbound.Store.Claim].
@@ -297,28 +281,6 @@ func (s *Store) GetOutboundByExecutionStateForOrg(orgID int64, execState models.
 	return s.outbound.ListByState(orgID, execState, msgType, limit)
 }
 
-// GetOutboundByFilterForOrg delegates to [outbound.Store.ListByLegacyStatus].
-//
-// Deprecated: call s.Outbound().ListByLegacyStatus(...) directly.
-func (s *Store) GetOutboundByFilterForOrg(orgID int64, legacyStatus, msgType string, limit int) ([]models.OutboundMessage, error) {
-	return s.outbound.ListByLegacyStatus(orgID, legacyStatus, msgType, limit)
-}
-
-// GetOutboundByStatusForOrg delegates to [outbound.Store.ListByLegacyStatus]
-// with empty type filter.
-//
-// Deprecated: call s.Outbound().ListByLegacyStatus(orgID, status, "", limit) directly.
-func (s *Store) GetOutboundByStatusForOrg(orgID int64, status string, limit int) ([]models.OutboundMessage, error) {
-	return s.outbound.ListByLegacyStatus(orgID, status, "", limit)
-}
-
-// GetSentGroupPostsForOrg delegates to [outbound.Store.VerifiedGroupPostsWithin].
-//
-// Deprecated: call s.Outbound().VerifiedGroupPostsWithin(orgID, days) directly.
-func (s *Store) GetSentGroupPostsForOrg(orgID int64, withinDays int) ([]models.OutboundMessage, error) {
-	return s.outbound.VerifiedGroupPostsWithin(orgID, withinDays)
-}
-
 // CountOutboundByStatusForOrg delegates to [outbound.Store.CountByState].
 //
 // Deprecated: call s.Outbound().CountByState(orgID) directly.
@@ -347,30 +309,9 @@ func (s *Store) GetActionPolicy(ctx context.Context, orgID int64, actionType str
 	return s.outbound.GetPolicy(ctx, orgID, actionType)
 }
 
-// GetActionPolicyTx delegates to [outbound.Store.GetPolicyTx].
-//
-// Deprecated: call s.Outbound().GetPolicyTx(ctx, tx, orgID, actionType) directly.
-func (s *Store) GetActionPolicyTx(ctx context.Context, tx *sql.Tx, orgID int64, actionType string) (*ActionPolicy, error) {
-	return s.outbound.GetPolicyTx(ctx, tx, orgID, actionType)
-}
-
 // UpsertActionPolicy delegates to [outbound.Store.UpsertPolicy].
 //
 // Deprecated: call s.Outbound().UpsertPolicy(ctx, p) directly.
 func (s *Store) UpsertActionPolicy(ctx context.Context, p ActionPolicy) error {
 	return s.outbound.UpsertPolicy(ctx, p)
-}
-
-// ListActionPoliciesForOrg delegates to [outbound.Store.ListPoliciesForOrg].
-//
-// Deprecated: call s.Outbound().ListPoliciesForOrg(ctx, orgID) directly.
-func (s *Store) ListActionPoliciesForOrg(ctx context.Context, orgID int64) ([]ActionPolicy, error) {
-	return s.outbound.ListPoliciesForOrg(ctx, orgID)
-}
-
-// CheckDedupTx delegates to [outbound.Store.CheckDedup].
-//
-// Deprecated: call s.Outbound().CheckDedup(ctx, tx, ...) directly.
-func (s *Store) CheckDedupTx(ctx context.Context, tx *sql.Tx, orgID, accountID int64, actionType, targetURL, profileURL string) (OutboundGuardDecision, error) {
-	return s.outbound.CheckDedup(ctx, tx, orgID, accountID, actionType, targetURL, profileURL)
 }
