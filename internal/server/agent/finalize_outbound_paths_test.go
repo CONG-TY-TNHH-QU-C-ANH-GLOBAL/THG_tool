@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/server/agent/finalize"
 	"github.com/thg/scraper/internal/server/testsupport"
 )
 
@@ -20,7 +21,7 @@ func TestFinalizeOutbound_VerifiedSentSuccess(t *testing.T) {
 	id, execID := seedClaimedOutbound(t, db, orgID, accID)
 
 	notify, notes := recordingNotifier()
-	h := &Handler{db: db, notifier: notify}
+	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
 	app := newOutboxApp(h, orgID)
 
 	// Pre-state: the claim left it executing, not yet terminal.
@@ -59,7 +60,7 @@ func TestFinalizeOutbound_IdempotentReplay(t *testing.T) {
 	id, execID := seedClaimedOutbound(t, db, orgID, accID)
 
 	notify, notes := recordingNotifier()
-	h := &Handler{db: db, notifier: notify}
+	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
 	app := newOutboxApp(h, orgID)
 	body := `{"success":true,"execution_id":"` + execID + `"}`
 
@@ -91,7 +92,7 @@ func TestFinalizeOutbound_StaleExecutionID(t *testing.T) {
 	id, _ := seedClaimedOutbound(t, db, orgID, accID) // real execID discarded; send a wrong one
 
 	notify, notes := recordingNotifier()
-	h := &Handler{db: db, notifier: notify}
+	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
 	app := newOutboxApp(h, orgID)
 
 	code, out := postOutboxCallback(t, app, "sent", id, `{"success":true,"execution_id":"stale-mismatch-token"}`)
@@ -118,7 +119,7 @@ func TestFinalizeOutbound_FailedNonSuccess(t *testing.T) {
 	id, execID := seedClaimedOutbound(t, db, orgID, accID)
 
 	notify, notes := recordingNotifier()
-	h := &Handler{db: db, notifier: notify}
+	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
 	app := newOutboxApp(h, orgID)
 
 	code, out := postOutboxCallback(t, app, "failed", id, `{"success":false,"failure_reason":"blocked","execution_id":"`+execID+`"}`)
@@ -144,7 +145,7 @@ func TestFinalizeOutbound_FailedNonSuccess(t *testing.T) {
 func TestFinalizeOutbound_InvalidID(t *testing.T) {
 	db := testsupport.NewTestStore(t, "finalize_badid")
 	notify, notes := recordingNotifier()
-	h := &Handler{db: db, notifier: notify}
+	h := &Handler{db: db, notifier: notify, finalize: finalize.NewHandler(finalize.Deps{DB: db, Notifier: notify})}
 	app := newOutboxApp(h, 1)
 
 	req := httptest.NewRequest("POST", "/agent/outbox/not-a-number/sent", strings.NewReader(`{"success":true}`))

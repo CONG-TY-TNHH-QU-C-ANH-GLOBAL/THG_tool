@@ -1,4 +1,4 @@
-package agent
+package finalize
 
 import (
 	"path/filepath"

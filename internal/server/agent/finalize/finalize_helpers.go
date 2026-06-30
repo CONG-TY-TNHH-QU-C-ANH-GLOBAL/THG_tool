@@ -1,4 +1,4 @@
-package agent
+package finalize
 
 import (
 	"encoding/base64"
@@ -25,8 +25,8 @@ import (
 
 // buildResponse is the FIRST-WIN terminal response: the (state, outcome) pair the
 // dashboard consumes, plus the attempt id (0 when BeginExecutionAttempt failed).
-func (f *outboundFinalizer) buildResponse() *finalizeResolution {
-	return &finalizeResolution{
+func (f *outboundFinalizer) buildResponse() *FinalizeResolution {
+	return &FinalizeResolution{
 		HTTPStatus: 200,
 		Body: fiber.Map{
 			"execution_state":      string(f.terminalState),

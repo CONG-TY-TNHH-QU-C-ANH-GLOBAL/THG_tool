@@ -1,4 +1,4 @@
-package agent
+package finalize
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // CAS). The FIRST-WIN side effects live in finalize_side_effects.go; the terminal
 // response, notifications, and evidence/proof adapters in finalize_helpers.go.
 
-// finalizeOutbound is the single write-point for terminal outbound
+// FinalizeOutbound is the single write-point for terminal outbound
 // callbacks. It encodes three invariants:
 //
 //  1. EXECUTION IDENTITY (post-hoc defense for wrong-post bug class):
@@ -41,13 +41,13 @@ import (
 //
 // Errors from the side-effect writes are logged but never propagated
 // — they are verification telemetry, not the load-bearing path.
-func (h *Handler) finalizeOutbound(
+func (h *Handler) FinalizeOutbound(
 	c *fiber.Ctx,
 	orgID, id int64,
 	report runtime.ExtensionExecutionReport,
 	outcome models.ExecutionOutcome,
 	proof runtime.VerifierProof,
-) (*finalizeResolution, error) {
+) (*FinalizeResolution, error) {
 	ctx := c.UserContext()
 	f := &outboundFinalizer{
 		h:       h,
@@ -74,7 +74,7 @@ func (h *Handler) finalizeOutbound(
 }
 
 // outboundFinalizer carries the per-callback state for one terminal /sent or
-// /failed finalization. It is created and used once per finalizeOutbound call and
+// /failed finalization. It is created and used once per FinalizeOutbound call and
 // never reused/stored; mutating methods use a pointer receiver (notably proof is
 // mutated by persistFailureEvidence before it rides into evidence/notification).
 // The request context is NOT stored on the struct — it is passed explicitly to
@@ -95,10 +95,10 @@ type outboundFinalizer struct {
 
 // loadOutbound fetches the outbound row. A missing row yields the 404 resolution
 // the caller returns verbatim; otherwise it caches the row and returns nil.
-func (f *outboundFinalizer) loadOutbound() *finalizeResolution {
+func (f *outboundFinalizer) loadOutbound() *FinalizeResolution {
 	msg, msgErr := f.h.db.GetOutboundForOrg(f.orgID, f.id)
 	if msgErr != nil {
-		return &finalizeResolution{
+		return &FinalizeResolution{
 			HTTPStatus: 404,
 			Body:       fiber.Map{"error": "outbound message not found"},
 		}
@@ -139,7 +139,7 @@ func (f *outboundFinalizer) enforceTargetIdentity(ctx context.Context) {
 // runs the execution_id-gated CAS. It returns a non-nil resolution for the two
 // non-first-win terminals (stale 409 / idempotent replay 200), a non-nil error for
 // a CAS failure, or (nil, nil) when THIS callback won the terminal transition.
-func (f *outboundFinalizer) attemptFinalization(ctx context.Context) (*finalizeResolution, error) {
+func (f *outboundFinalizer) attemptFinalization(ctx context.Context) (*FinalizeResolution, error) {
 	f.terminalState, f.terminalOutcome = models.TerminalFromOutcome(f.outcome)
 
 	finalized, currentState, currentOutcome, currentExecID, err := f.h.db.FinalizeOutboundAttempt(ctx, f.orgID, f.id, f.report.ExecutionID, f.terminalState, f.terminalOutcome)
@@ -161,7 +161,7 @@ func (f *outboundFinalizer) attemptFinalization(ctx context.Context) (*finalizeR
 			"current_state", currentState,
 			"current_outcome", currentOutcome,
 		)
-		return &finalizeResolution{
+		return &FinalizeResolution{
 			HTTPStatus: 409,
 			Body: fiber.Map{
 				"error":                "stale execution_id",
@@ -178,7 +178,7 @@ func (f *outboundFinalizer) attemptFinalization(ctx context.Context) (*finalizeR
 		"execution_id", f.report.ExecutionID,
 		"current_state", currentState, "current_outcome", currentOutcome,
 	)
-	return &finalizeResolution{
+	return &FinalizeResolution{
 		HTTPStatus: 200,
 		Body: fiber.Map{
 			"execution_state":      string(currentState),

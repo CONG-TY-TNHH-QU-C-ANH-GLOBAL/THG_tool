@@ -6,6 +6,7 @@ import (
 	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/server/agent/account"
 	"github.com/thg/scraper/internal/server/agent/crawlingest"
+	"github.com/thg/scraper/internal/server/agent/finalize"
 	"github.com/thg/scraper/internal/server/agent/presence"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
@@ -32,6 +33,7 @@ type Handler struct {
 	notifier func(string)
 	tgEvents *control.Service
 	baseURL  string
+	finalize *finalize.Handler
 }
 
 func NewHandler(deps Deps) *Handler {
@@ -43,6 +45,9 @@ func NewHandler(deps Deps) *Handler {
 		notifier: deps.Notifier,
 		tgEvents: deps.TgEvents,
 		baseURL:  deps.BaseURL,
+		finalize: finalize.NewHandler(finalize.Deps{
+			DB: deps.DB, Notifier: deps.Notifier, TgEvents: deps.TgEvents, BaseURL: deps.BaseURL,
+		}),
 	}
 }
 

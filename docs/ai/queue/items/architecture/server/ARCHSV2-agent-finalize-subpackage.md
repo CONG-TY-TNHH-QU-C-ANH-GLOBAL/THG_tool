@@ -1,14 +1,13 @@
 ---
 id: ARCHSV2
-status: BLOCKED
-lane: RED
-risk: RED
+status: REVIEW
+lane: YELLOW
+risk: YELLOW
 depends_on: []
 parallel_safe: false
-branch: ""
+branch: "refactor/extract-agent-finalize-subpackage"
 pr_url: ""
-blocked_on: human-boundary-decision
-boundary_target: transport-to-usecase
+boundary_target: leaf-move
 ---
 
 # ARCHSV2 — Extract internal/server/agent/finalize subpackage
@@ -74,3 +73,33 @@ finalize/ subpackage with package doc + facade; callers updated; no import cycle
 idempotency tests green; move-only diff. NOTE: "move-only diff / no import cycle" is
 NOT achievable as written — see Feasibility; the done criteria must be re-stated per
 the chosen option before any implementation.
+
+## RESOLUTION (Architecture Convergence Mode — PR1 of the staged outbound-execution split)
+
+The "no import cycle" obstacle is resolved by the **self-Handler pattern** (proven by
+`presence`/`account`/`crawlingest`): `finalize` holds its OWN
+`Handler{db, notifier, tgEvents, baseURL}` and never imports `agent`. The one real
+coupling — `finalizeOutbound` returned `finalizeResolution`, a type defined in
+`outbox_agent.go` — was broken by **relocating** that type into `finalize` and exporting
+it (`FinalizeResolution` + `Write`). `agent.Handler` now holds an injected
+`*finalize.Handler` and the outbox handlers call `h.finalize.FinalizeOutbound(...)`.
+Direction: **agent → finalize** only; no cycle.
+
+Verified before coding: finalize uses no `wsHub`/`agent`/`aiClass` (so NO port needed in
+PR1); its only external helpers (`agentName`/`orgName`/`failureReasonText` in
+`notify_helpers.go`) are used exclusively by finalize → moved in too; `outboundFinalizer`
+and the side-effect/free funcs (`agentEventType`, `notificationDetail`,
+`persistEvidenceScreenshot`, `proofToEvidence`) have no external production users.
+
+Behavior byte-for-byte: **no routes touched** (finalize has none; outbox routes stay in
+agent), the **action_ledger / execution_id CAS logic moved verbatim** (topology [6]
+baseline 2 unchanged), the **HTTP wire shape** is `FinalizeResolution.Write` moved
+verbatim. The finalize/ledger integration tests (`finalize_outbound_paths_test`,
+`finalize_outbound_characterization_test`) stay in `package agent` (they drive the outbox
+HTTP handler) and now wire `h.finalize`; the moved free-func unit tests
+(`agent_event_type_test`, `notification_detail_test`) live in `finalize`.
+
+**PR2 (next, on top of this):** extract the outbox subpackage — it now depends on the
+settled `finalize` boundary; introduce the tiny `outboxReadyNotifier` port (the only
+`*WSHub` use) and preserve execution_id CAS / claim-lease / dashboard wire shape / route
+auth+order.
