@@ -70,7 +70,7 @@ internal/store/identities/accounts.go  # 449 lines
 internal/jobhandlers/facebook_crawl/handler.go  # 440 lines
 internal/workspace/workspace.go  # 432 lines
 internal/store/leads/leads.go  # 431 lines
-internal/server/agent/local_connector.go  # 425 lines
+internal/server/agent/connector/local_connector.go  # 425 lines
 internal/server/org/handlers.go  # 425 lines
 internal/store/users.go  # 423 lines
 internal/store/prompts/prompt_routing.go  # 422 lines
@@ -91,7 +91,7 @@ internal/server/auth/login_session.go  # 356 lines
 internal/store/connectors/agent_tokens.go  # 352 lines
 internal/server/workspace/screen_proxy.go  # 350 lines
 internal/agentloop/loop.go  # 347 lines
-internal/server/agent/heartbeat.go  # 344 lines
+internal/server/agent/connector/heartbeat.go  # 344 lines
 internal/server/system/notifications.go  # 338 lines
 internal/store/knowledge/embeddings.go  # 336 lines
 cmd/scraper/main.go  # 335 lines

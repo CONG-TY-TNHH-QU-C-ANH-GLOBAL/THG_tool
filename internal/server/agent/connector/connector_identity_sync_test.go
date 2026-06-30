@@ -1,4 +1,4 @@
-package agent
+package connector
 
 import (
 	"encoding/json"
@@ -87,6 +87,13 @@ func insertConnector(t *testing.T, db *store.Store, orgID, createdBy int64, hash
 // the account to its owner+workspace (idempotently); a different member reporting
 // the same fb_user_id is rejected as an ownership conflict. This is the bug where
 // the popup showed an FB session but the dashboard stayed at 0 accounts.
+func requireFBAccountCount(t *testing.T, db *store.Store, orgID int64, want int, when string) {
+	t.Helper()
+	if n := fbAccountCount(t, db, orgID); n != want {
+		t.Fatalf("%s: got %d FB accounts, want %d", when, n, want)
+	}
+}
+
 func TestHeartbeatBindsFacebookAccount(t *testing.T) {
 	dst := storetest.CopyTemplate(t, bootstrapInputRBACStore, "hb_bind.db")
 	db, err := store.New(dst)
@@ -108,9 +115,7 @@ func TestHeartbeatBindsFacebookAccount(t *testing.T) {
 	proof := `{"fb_user_id":"` + fbUID + `","fb_display_name":"Seller A FB","stream_status":"facebook_logged_in"}`
 
 	// 1. Pairing alone (connector exists, no session proof) → ZERO Facebook accounts.
-	if n := fbAccountCount(t, db, orgID); n != 0 {
-		t.Fatalf("pairing alone must not create an account, got %d", n)
-	}
+	requireFBAccountCount(t, db, orgID, 0, "pairing alone must not create an account")
 
 	// 2. Heartbeat with a logged-in fb_user_id → account created + bound to owner A.
 	if code, out := heartbeatProof(t, h, connA, orgID, ownerA, 0, proof); code != 200 {
@@ -123,9 +128,7 @@ func TestHeartbeatBindsFacebookAccount(t *testing.T) {
 	if acc.AssignedUserID != ownerA {
 		t.Fatalf("account owner = %d, want %d", acc.AssignedUserID, ownerA)
 	}
-	if n := fbAccountCount(t, db, orgID); n != 1 {
-		t.Fatalf("want 1 FB account after proof, got %d", n)
-	}
+	requireFBAccountCount(t, db, orgID, 1, "after session proof")
 
 	// 5 + 6. Dashboard readiness matrix now returns the connected account (8: a
 	// 'detected' verification corresponds to a really-persisted account).
@@ -138,9 +141,7 @@ func TestHeartbeatBindsFacebookAccount(t *testing.T) {
 	if code, _ := heartbeatProof(t, h, connA, orgID, ownerA, acc.ID, proof); code != 200 {
 		t.Fatalf("re-proof status=%d", code)
 	}
-	if n := fbAccountCount(t, db, orgID); n != 1 {
-		t.Fatalf("re-proof must not duplicate, got %d FB accounts", n)
-	}
+	requireFBAccountCount(t, db, orgID, 1, "re-proof must not duplicate")
 
 	// 4. A DIFFERENT member reporting the SAME fb_user_id → ownership conflict.
 	connB := insertConnector(t, db, orgID, memberB, "hashB")

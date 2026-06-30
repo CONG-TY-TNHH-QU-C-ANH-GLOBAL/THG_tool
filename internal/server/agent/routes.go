@@ -5,6 +5,7 @@ import (
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/drivers/copilot"
 	"github.com/thg/scraper/internal/server/agent/account"
+	"github.com/thg/scraper/internal/server/agent/connector"
 	"github.com/thg/scraper/internal/server/agent/crawlingest"
 	"github.com/thg/scraper/internal/server/agent/outbox"
 	"github.com/thg/scraper/internal/server/agent/presence"
@@ -50,24 +51,15 @@ func NewHandler(deps Deps) *Handler {
 func ConnectorRoutes(group fiber.Router, deps Deps) {
 	h := NewHandler(deps)
 
-	group.Post("/connectors/heartbeat", h.agentAuth, h.agentHeartbeat)
-	group.Post("/connectors/chrome-status", h.agentAuth, h.agentChromeStatus)
-	group.Get("/connectors/browser-targets", h.agentAuth, h.agentBrowserTargets)
-	group.Post("/connectors/screenshot", h.agentAuth, h.agentScreenshot)
-	group.Get("/connectors/commands", h.agentAuth, h.agentConnectorCommands)
-	group.Post("/connectors/commands/:id/done", h.agentAuth, h.agentConnectorCommandDone)
-	// Forget Device: the extension releases its own binding before wiping
-	// local storage, so the Chrome profile becomes re-pairable by anyone.
-	group.Post("/connectors/self/disconnect", h.agentAuth, h.agentSelfDisconnect)
-
 	agentGrp := group.Group("/agent", h.agentAuth)
-	agentGrp.Post("/heartbeat", h.agentHeartbeat)
-	agentGrp.Post("/chrome-status", h.agentChromeStatus)
-	agentGrp.Get("/browser-targets", h.agentBrowserTargets)
-	agentGrp.Post("/screenshot", h.agentScreenshot)
-	agentGrp.Get("/commands", h.agentConnectorCommands)
-	agentGrp.Post("/commands/:id/done", h.agentConnectorCommandDone)
 	agentGrp.Get("/images", h.agentServeImage)
+
+	// Connector lifecycle callbacks (heartbeat / chrome-status / browser-targets /
+	// screenshot / commands / self-disconnect) live in the connector subpackage —
+	// same effective paths + token auth; it owns its own Handler.
+	connector.RegisterCallbackRoutes(group, agentGrp, connector.Deps{
+		DB: deps.DB, TgEvents: deps.TgEvents,
+	}, h.agentAuth)
 
 	// Connector crawl-result ingestion lives in the crawlingest subpackage.
 	crawlingest.RegisterRoutes(group, agentGrp, crawlingest.Deps{
@@ -83,12 +75,10 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	}, h.agentAuth)
 }
 
-// AdminTokenRoutes registers JWT/admin-authenticated agent token management.
+// AdminTokenRoutes registers JWT/admin-authenticated agent token management
+// (lives in the connector subpackage).
 func AdminTokenRoutes(group fiber.Router, deps Deps) {
-	h := NewHandler(deps)
-	group.Post("/agent-tokens", h.agentCreateToken)
-	group.Get("/agent-tokens", h.agentListTokens)
-	group.Delete("/agent-tokens/:id", h.agentRevokeToken)
+	connector.RegisterAdminTokenRoutes(group, connector.Deps{DB: deps.DB, TgEvents: deps.TgEvents})
 }
 
 // DashboardRoutes registers tenant-authenticated AI prompt and outbox routes.
