@@ -9,13 +9,17 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
+// errOutboundNotFound is the 404 message for an outbound row the caller may not
+// act on (missing or not owned). Shared by the owner-check + edit/delete handlers.
+const errOutboundNotFound = "outbound message not found"
+
 // requireOutboundOwnerRow loads an outbound message and verifies the caller
 // owns its target account. Admin / platform roles pass. Returns the message
 // on success or writes a response and returns a non-nil error on failure.
 func (h *Handler) requireOutboundOwnerRow(c *fiber.Ctx, orgID, userID int64, role string, id int64) (*models.OutboundMessage, error) {
 	msg, err := h.db.GetOutboundForOrg(orgID, id)
 	if err != nil || msg == nil {
-		return nil, c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
+		return nil, c.Status(404).JSON(fiber.Map{"error": errOutboundNotFound})
 	}
 	if msg.AccountID <= 0 {
 		// Legacy row with no account_id — only admin / platform may act.
@@ -49,7 +53,7 @@ func (h *Handler) editOutbound(c *fiber.Ctx) error {
 		return err
 	}
 	if err := h.db.UpdateOutboundContentForOrg(orgID, id, req.Content); err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errOutboundNotFound})
 	}
 	return c.JSON(fiber.Map{"status": "updated"})
 }
@@ -66,7 +70,7 @@ func (h *Handler) deleteOutbound(c *fiber.Ctx) error {
 		return err
 	}
 	if err := h.db.DeleteOutboundForOrg(orgID, id); err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "outbound message not found"})
+		return c.Status(404).JSON(fiber.Map{"error": errOutboundNotFound})
 	}
 	return c.JSON(fiber.Map{"status": "deleted"})
 }
