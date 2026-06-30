@@ -1,12 +1,12 @@
 ---
 id: ARCHST-R2
-status: REVIEW
+status: DONE
 lane: RED
 risk: RED
 depends_on: []
 parallel_safe: false
 branch: "audit/archst-r2-lease-cas-decision"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/191
 ---
 
 # ARCHST-R2 — AUDIT: connector pairing lease / CAS consistency

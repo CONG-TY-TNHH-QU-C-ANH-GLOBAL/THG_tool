@@ -1,12 +1,12 @@
 ---
 id: ARCHST-R1
-status: REVIEW
+status: DONE
 lane: RED
 risk: RED
 depends_on: []
 parallel_safe: false
 branch: "audit/archst-r1-append-only-ledger-decision"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/192
 ---
 
 # ARCHST-R1 — AUDIT: append-only ledger UPDATE violations

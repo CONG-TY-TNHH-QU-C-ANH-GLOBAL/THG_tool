@@ -1,12 +1,12 @@
 ---
 id: ARCHSV-R2
-status: REVIEW
+status: DONE
 lane: GREEN
 risk: GREEN
 depends_on: []
 parallel_safe: false
 branch: "arch/archsv-r2-delete-dead-runtime-feed"
-pr_url: ""
+pr_url: https://github.com/CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool/pull/190
 boundary_target: blocked-decision
 ---
 
