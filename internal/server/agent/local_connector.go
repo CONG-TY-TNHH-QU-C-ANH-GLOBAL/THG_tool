@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
+	servermw "github.com/thg/scraper/internal/server/middleware"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
 )
@@ -141,35 +142,47 @@ func (h *LocalConnectorHandler) createConnectorInputCommand(c *fiber.Ctx) error 
 		return c.Status(413).JSON(fiber.Map{"error": "input payload is too large"})
 	}
 
-	screen, err := h.db.Connectors().GetLatestConnectorScreenshot(orgID, req.AccountID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	agentID, ok := h.resolveInputRelayAgent(c, orgID, req.AccountID)
+	if !ok {
+		return nil // resolveInputRelayAgent already wrote the 409/500 response
 	}
-	if screen == nil || screen.AgentID <= 0 {
-		return c.Status(409).JSON(fiber.Map{"error": "local browser stream is not ready for this Facebook account"})
-	}
-	conns, err := h.db.Connectors().ListLocalConnectors(orgID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-	inputRelayReady := false
-	for _, connector := range conns {
-		if connector.ID == screen.AgentID && connector.Active && localConnectorSupportsInputRelay(connector.CapabilitiesJSON) {
-			inputRelayReady = true
-			break
-		}
-	}
-	if !inputRelayReady {
-		return c.Status(409).JSON(fiber.Map{
-			"error": "THG Chrome Extension on this browser is streaming video but does not support remote input yet",
-			"hint":  "reload the latest THG Chrome Extension package, then open the Facebook tab again",
-		})
-	}
-	id, err := h.db.Connectors().CreateConnectorCommand(orgID, req.AccountID, screen.AgentID, userID, req.Type, string(req.Payload))
+	id, err := h.db.Connectors().CreateConnectorCommand(orgID, req.AccountID, agentID, userID, req.Type, string(req.Payload))
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(202).JSON(fiber.Map{"status": "queued", "id": id})
+}
+
+// resolveInputRelayAgent returns the connector agent_id currently streaming the
+// account and ready for remote input. On any not-ready / error condition it writes
+// the 409/500 response and returns ok=false (the caller returns nil). Behavior is
+// identical to the inline block it replaced — same checks, order, status codes, and
+// bodies; extracted only to keep createConnectorInputCommand under the complexity gate.
+func (h *LocalConnectorHandler) resolveInputRelayAgent(c *fiber.Ctx, orgID, accountID int64) (int64, bool) {
+	screen, err := h.db.Connectors().GetLatestConnectorScreenshot(orgID, accountID)
+	if err != nil {
+		_ = c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return 0, false
+	}
+	if screen == nil || screen.AgentID <= 0 {
+		_ = c.Status(409).JSON(fiber.Map{"error": "local browser stream is not ready for this Facebook account"})
+		return 0, false
+	}
+	conns, err := h.db.Connectors().ListLocalConnectors(orgID)
+	if err != nil {
+		_ = c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return 0, false
+	}
+	for _, connector := range conns {
+		if connector.ID == screen.AgentID && connector.Active && localConnectorSupportsInputRelay(connector.CapabilitiesJSON) {
+			return screen.AgentID, true
+		}
+	}
+	_ = c.Status(409).JSON(fiber.Map{
+		"error": "THG Chrome Extension on this browser is streaming video but does not support remote input yet",
+		"hint":  "reload the latest THG Chrome Extension package, then open the Facebook tab again",
+	})
+	return 0, false
 }
 
 // createLocalConnectorPairingCode creates a short-lived code for first-time Chrome Extension pairing.
@@ -280,7 +293,7 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 	}
 	// Same clamps as the heartbeat path — claim is unauthenticated and now
 	// persists browser_profile_id into a UNIQUE-indexed column.
-	clampPresenceFields(&presence)
+	servermw.ClampPresenceFields(&presence)
 	claimed, err := h.db.Connectors().ClaimConnectorPairingCode(req.Code, presence)
 	if err != nil {
 		log.Printf("[ConnectorPair] rejected code_fp=%s kind=%s transport=%s ip=%s err=%v", pairingCodeFingerprint(req.Code), kind, transport, c.IP(), err)
@@ -291,7 +304,7 @@ func (h *LocalConnectorHandler) claimLocalConnectorPairingCode(c *fiber.Ctx) err
 	// ClaimConnectorPairingCode rejects empty ids with ErrBrowserProfileRequired
 	// (mapped to 426) so a new pairing can never bypass the ownership guard.
 	log.Printf("[ConnectorPair] claimed connector_id=%d org_id=%d kind=%s transport=%s account_id=%d ip=%s token_fp=%s",
-		tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID, c.IP(), agentTokenFingerprint(deviceToken))
+		tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID, c.IP(), servermw.AgentTokenFingerprint(deviceToken))
 	_ = h.db.InsertAuditLog(tok.CreatedBy, "local_connector_pairing_claimed", c.IP(),
 		fmt.Sprintf(`{"connector_id":%d,"org_id":%d,"kind":%q,"transport":%q,"account_id":%d}`,
 			tok.ID, tok.OrgID, tok.Kind, tok.Transport, tok.AssignedAccountID))

@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/browsergateway"
 	"github.com/thg/scraper/internal/models"
+	servermw "github.com/thg/scraper/internal/server/middleware"
 	serverorg "github.com/thg/scraper/internal/server/org"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
@@ -95,7 +96,7 @@ func (h *Handler) agentHeartbeat(c *fiber.Ctx) error {
 		BuildNumber:              body.BuildNumber,
 		ReleaseChannel:           body.ReleaseChannel,
 	}
-	clampPresenceFields(&presence)
+	servermw.ClampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 	// PR-8: blocked extension builds raise a rate-limited alert
 	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
@@ -176,7 +177,7 @@ func (h *Handler) agentChromeStatus(c *fiber.Ctx) error {
 		BuildNumber:              body.BuildNumber,
 		ReleaseChannel:           body.ReleaseChannel,
 	}
-	clampPresenceFields(&presence)
+	servermw.ClampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 	// PR-8: blocked extension builds raise a rate-limited alert
 	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
@@ -356,7 +357,7 @@ func (h *Handler) agentScreenshot(c *fiber.Ctx) error {
 		StreamStatus:  streamStatus,
 		ChromeError:   body.ChromeError,
 	}
-	clampPresenceFields(&presence)
+	servermw.ClampPresenceFields(&presence)
 	_ = h.db.Connectors().UpdateAgentPresence(agentID, presence)
 	// PR-8: blocked extension builds raise a rate-limited alert
 	// (staff + admin in-app, optional Telegram). Never per-heartbeat.
