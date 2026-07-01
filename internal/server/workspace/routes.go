@@ -50,7 +50,3 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 func ScreenProxyHandler(deps Deps) func(*fiberws.Conn) {
 	return NewHandler(deps).screenProxyHandler()
 }
-
-func PerAccountVNCProxyHandler(deps Deps) func(*fiberws.Conn) {
-	return NewHandler(deps).perAccountVNCProxyHandler()
-}

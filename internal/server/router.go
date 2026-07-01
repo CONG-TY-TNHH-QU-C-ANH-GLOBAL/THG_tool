@@ -299,23 +299,15 @@ func (s *Server) registerRoutes() {
 		log.Println("[Auth] WS query-token fallback DISABLED (WS_AUTH_ALLOW_QUERY_TOKEN=0)")
 	}
 
-	// Logs SSE — Phase 4b/4c: same precedence as wsJWTAuth so the SPA,
+	// Logs SSE -- Phase 4b/4c: same precedence as wsJWTAuth so the SPA,
 	// programmatic clients, and the (browser) EventSource API can all
 	// authenticate consistently.
 	//
 	//   1. access_token HttpOnly cookie
-	//   2. Authorization: Bearer …      (server-to-server callers)
-	//   3. ?token=… query                (legacy / EventSource fallback)
+	//   2. Authorization: Bearer ...      (server-to-server callers)
+	//   3. ?token=... query                (legacy / EventSource fallback)
 	app.Get("/api/logs/stream", func(c *fiber.Ctx) error {
-		token := c.Cookies("access_token")
-		if token == "" {
-			if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-				token = strings.TrimPrefix(h, "Bearer ")
-			}
-		}
-		if token == "" && wsAllowQueryToken {
-			token = c.Query("token")
-		}
+		token := extractAuthToken(c, wsAllowQueryToken)
 		if token == "" {
 			return c.Status(401).JSON(fiber.Map{"error": "token required"})
 		}
@@ -325,7 +317,7 @@ func (s *Server) registerRoutes() {
 		return system.StreamLogs(c)
 	})
 
-	// WebSocket auth helper — validates the JWT in this order so the
+	// WebSocket auth helper -- validates the JWT in this order so the
 	// SPA can stop putting the access token in the URL (Phase 4b/4c):
 	//
 	//   1. access_token HttpOnly cookie  (set by Phase 4b login/refresh)
@@ -334,37 +326,9 @@ func (s *Server) registerRoutes() {
 	//
 	// The query-param path stays so older connectors / Telegram bots that
 	// haven't migrated keep working, but the SPA should rely on the
-	// cookie alone — browsers send cookies on the WS upgrade request, so
+	// cookie alone -- browsers send cookies on the WS upgrade request, so
 	// the access token never has to land in URL access logs.
-	wsJWTAuth := func(c *fiber.Ctx) error {
-		if !fiberws.IsWebSocketUpgrade(c) {
-			return fiber.ErrUpgradeRequired
-		}
-		token := c.Cookies("access_token")
-		if token == "" {
-			if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-				token = strings.TrimPrefix(h, "Bearer ")
-			}
-		}
-		if token == "" && wsAllowQueryToken {
-			token = c.Query("token")
-		}
-		if token == "" {
-			return c.Status(401).JSON(fiber.Map{"error": "token required"})
-		}
-		claims, err := authpkg.ValidateAccessToken(token, cfg.JWTSecret)
-		if err != nil {
-			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
-		}
-		c.Locals("user_id", claims.UserID)
-		c.Locals("org_id", claims.OrgID)
-		c.Locals("user_role", claims.Role)
-		return c.Next()
-	}
-
-	// WebSocket: per-account noVNC proxy (Docker/VNC mode — primary browser view)
-	app.Use("/ws/vnc/:id", wsJWTAuth)
-	app.Get("/ws/vnc/:id", fiberws.New(serverworkspace.PerAccountVNCProxyHandler(workspaceDeps)))
+	wsJWTAuth := wsJWTAuthMiddleware(cfg.JWTSecret, wsAllowQueryToken)
 
 	// WebSocket: per-account CDP screen proxy (JPEG screencast + input forwarding)
 	app.Use("/ws/screen/:id", wsJWTAuth)
@@ -389,4 +353,44 @@ func (s *Server) registerRoutes() {
 			"frontend": "nextjs",
 		})
 	})
+}
+
+// extractAuthToken reads the access token in the shared precedence order —
+// access_token HttpOnly cookie, then Authorization: Bearer header, then (if
+// allowQueryToken) the legacy ?token=... query param — used by both the logs
+// SSE handler and the WebSocket JWT auth middleware below.
+func extractAuthToken(c *fiber.Ctx, allowQueryToken bool) string {
+	token := c.Cookies("access_token")
+	if token == "" {
+		if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+			token = strings.TrimPrefix(h, "Bearer ")
+		}
+	}
+	if token == "" && allowQueryToken {
+		token = c.Query("token")
+	}
+	return token
+}
+
+// wsJWTAuthMiddleware validates the JWT for a WebSocket upgrade using
+// extractAuthToken's precedence order, then propagates the claims into
+// c.Locals for downstream handlers.
+func wsJWTAuthMiddleware(jwtSecret string, allowQueryToken bool) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if !fiberws.IsWebSocketUpgrade(c) {
+			return fiber.ErrUpgradeRequired
+		}
+		token := extractAuthToken(c, allowQueryToken)
+		if token == "" {
+			return c.Status(401).JSON(fiber.Map{"error": "token required"})
+		}
+		claims, err := authpkg.ValidateAccessToken(token, jwtSecret)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
+		}
+		c.Locals("user_id", claims.UserID)
+		c.Locals("org_id", claims.OrgID)
+		c.Locals("user_role", claims.Role)
+		return c.Next()
+	}
 }
