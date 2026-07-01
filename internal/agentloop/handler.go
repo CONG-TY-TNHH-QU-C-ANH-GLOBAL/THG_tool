@@ -18,7 +18,6 @@ type RunRequest struct {
 	DomainHint     string   `json:"domain_hint,omitempty"`
 	// VerifyConfig overrides (optional — server defaults are used if omitted).
 	CDPPort       int    `json:"cdp_port,omitempty"`
-	VNCPort       int    `json:"vnc_port,omitempty"`
 	FrontendURL   string `json:"frontend_url,omitempty"`
 	ContainerName string `json:"container_name,omitempty"`
 }
@@ -61,9 +60,6 @@ func (h *Handler) Handle(c *fiber.Ctx) error {
 	verifyCfg := h.loop.verifier.cfg
 	if req.CDPPort > 0 {
 		verifyCfg.CDPPort = req.CDPPort
-	}
-	if req.VNCPort > 0 {
-		verifyCfg.VNCPort = req.VNCPort
 	}
 	if req.FrontendURL != "" {
 		verifyCfg.FrontendURL = req.FrontendURL
@@ -118,7 +114,6 @@ func (h *Handler) HandleStatus(c *fiber.Ctx) error {
 		"poison_threshold":  PoisonThreshold,
 		"verify_config": fiber.Map{
 			"cdp_port":       h.loop.verifier.cfg.CDPPort,
-			"vnc_port":       h.loop.verifier.cfg.VNCPort,
 			"frontend_url":   h.loop.verifier.cfg.FrontendURL,
 			"container_name": h.loop.verifier.cfg.ContainerName,
 		},

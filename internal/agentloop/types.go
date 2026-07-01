@@ -130,7 +130,6 @@ type RunResult struct {
 type VerifyConfig struct {
 	// Browser / infra
 	CDPPort int
-	VNCPort int
 	// ExpectedFBUserID is the Facebook numeric user ID (c_user cookie value)
 	// of the account that should be logged in. When set, the browser verifier
 	// will reject a session that belongs to a different account.

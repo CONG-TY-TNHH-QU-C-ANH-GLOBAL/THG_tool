@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -98,7 +97,7 @@ func (v *Verifier) checkOnce(ctx context.Context, domain Domain) VerifyResult {
 //
 // 5-signal model — infra health + Facebook session validity:
 //
-//	Signal 1 (0.15): VNC TCP reachable         — container running
+//	Signal 1 (0.15): retired (VNC removed 2026-07-01) — always baseline-pass
 //	Signal 2 (0.15): CDP /json/version responds — Chrome alive
 //	Signal 3 (0.15): CDP has ≥1 page tab       — Chrome has a tab open
 //	Signal 4 (0.35): Facebook session alive     — not checkpoint/login page (CRITICAL)
@@ -111,32 +110,16 @@ func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 	signals := VerifySignals{}
 	var reasons []string
 
-	// Signal 1 (0.15): VNC TCP reachable
-	if v.cfg.VNCPort > 0 {
-		if tcpReachable("127.0.0.1", v.cfg.VNCPort, 2*time.Second) {
-			signals.Stream = 0.15
-		} else {
-			reasons = append(reasons, fmt.Sprintf("VNC port %d unreachable", v.cfg.VNCPort))
-		}
-	} else {
-		signals.Stream = 0.15 // not configured — skip
-	}
+	// Signal 1 (0.15): retired (VNC removed) — always baseline-pass, same
+	// value the "not configured" path always produced.
+	signals.Stream = 0.15
 
 	// Signal 2 (0.15): CDP /json/version responds
-	var cdpAlive bool
-	if v.cfg.CDPPort > 0 {
-		versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", v.cfg.CDPPort)
-		if httpOK(ctx, v.client, versionURL) {
-			signals.API = 0.15
-			cdpAlive = true
-		} else {
-			reasons = append(reasons, fmt.Sprintf("CDP port %d /json/version failed", v.cfg.CDPPort))
-		}
-	} else {
-		signals.API = 0.15
-		cdpAlive = true // not configured — assume up
+	cdpAlive, apiScore, cdpReason := v.checkCDPAlive(ctx)
+	signals.API = apiScore
+	if cdpReason != "" {
+		reasons = append(reasons, cdpReason)
 	}
-
 	if !cdpAlive {
 		// CDP is down — Signals 3, 4, 5 are impossible
 		return VerifyResult{
@@ -149,52 +132,16 @@ func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 
 	// Signal 3 (0.15): CDP has ≥1 page tab — quick HTTP check before WebSocket eval.
 	tabs := v.fetchCDPTabs(ctx)
-	hasPageTab := false
-	for _, t := range tabs {
-		if t.Type == "page" {
-			hasPageTab = true
-			break
-		}
-	}
-	if hasPageTab {
+	if hasPageTab(tabs) {
 		signals.DOM = 0.15
 	} else {
 		reasons = append(reasons, "CDP has no page tab open")
 	}
 
-	// Signals 4 + 5: real Facebook session via CDP WebSocket JS evaluation.
-	// CDPSessionChecker connects to the live tab and evaluates JS to read DOM state —
-	// stronger than URL parsing because it catches expired cookies and overlays.
-	var fbScore float64
-	if v.cfg.CDPPort > 0 {
-		cdpChecker := NewCDPSessionChecker(v.cfg.CDPPort)
-		state, cdpErr := cdpChecker.Check(ctx)
-		if cdpErr != nil {
-			reasons = append(reasons, "CDP session eval failed: "+cdpErr.Error())
-		} else {
-			ok, reason := state.IsSessionHealthy(v.cfg.ExpectedFBUserID)
-			if ok {
-				// Session alive + determine if on a target page (Signal 5 = +0.20)
-				if strings.Contains(state.URL, "/groups/") ||
-					strings.Contains(state.URL, "/marketplace/") ||
-					strings.Contains(state.URL, "/home.php") ||
-					strings.Contains(state.URL, "/feed/") ||
-					strings.Contains(state.URL, "/profile.php") ||
-					strings.Contains(state.URL, "/messages/") {
-					fbScore = 0.55 // Signal 4 (0.35) + Signal 5 (0.20)
-				} else {
-					fbScore = 0.35 // Signal 4 only — session alive but not on target page
-				}
-			} else {
-				reasons = append(reasons, reason)
-			}
-		}
-	} else {
-		// CDP port not configured — fall back to HTTP tab URL heuristic.
-		var fbReasons []string
-		fbScore, fbReasons = v.checkFacebookSession(tabs)
-		reasons = append(reasons, fbReasons...)
-	}
+	// Signals 4 + 5: real Facebook session via CDP WebSocket JS evaluation
+	// (or the HTTP tab URL heuristic when CDP isn't configured).
+	fbScore, fbReasons := v.facebookSessionScore(ctx, tabs)
+	reasons = append(reasons, fbReasons...)
 	signals.Stream += fbScore
 
 	score := signals.Stream + signals.API + signals.DOM
@@ -204,6 +151,59 @@ func (v *Verifier) verifyBrowser(ctx context.Context) VerifyResult {
 		Signals: signals,
 		Reason:  strings.Join(reasons, "; "),
 	}
+}
+
+// checkCDPAlive is Signal 2: CDP /json/version responds. Returns
+// alive=true with no reason when CDPPort isn't configured (assume up).
+func (v *Verifier) checkCDPAlive(ctx context.Context) (alive bool, score float64, reason string) {
+	if v.cfg.CDPPort <= 0 {
+		return true, 0.15, ""
+	}
+	versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", v.cfg.CDPPort)
+	if httpOK(ctx, v.client, versionURL) {
+		return true, 0.15, ""
+	}
+	return false, 0, fmt.Sprintf("CDP port %d /json/version failed", v.cfg.CDPPort)
+}
+
+// hasPageTab reports whether any tab in the CDP tab list is a page (not a
+// background/service-worker/extension target).
+func hasPageTab(tabs []fbTab) bool {
+	for _, t := range tabs {
+		if t.Type == "page" {
+			return true
+		}
+	}
+	return false
+}
+
+// facebookSessionScore is Signals 4+5: real Facebook session via CDP
+// WebSocket JS evaluation (stronger than URL parsing — catches expired
+// cookies and overlays), falling back to the HTTP tab URL heuristic when
+// CDP isn't configured.
+func (v *Verifier) facebookSessionScore(ctx context.Context, tabs []fbTab) (float64, []string) {
+	if v.cfg.CDPPort <= 0 {
+		return v.checkFacebookSession(tabs)
+	}
+	cdpChecker := NewCDPSessionChecker(v.cfg.CDPPort)
+	state, cdpErr := cdpChecker.Check(ctx)
+	if cdpErr != nil {
+		return 0, []string{"CDP session eval failed: " + cdpErr.Error()}
+	}
+	ok, reason := state.IsSessionHealthy(v.cfg.ExpectedFBUserID)
+	if !ok {
+		return 0, []string{reason}
+	}
+	// Session alive + determine if on a target page (Signal 5 = +0.20)
+	if strings.Contains(state.URL, "/groups/") ||
+		strings.Contains(state.URL, "/marketplace/") ||
+		strings.Contains(state.URL, "/home.php") ||
+		strings.Contains(state.URL, "/feed/") ||
+		strings.Contains(state.URL, "/profile.php") ||
+		strings.Contains(state.URL, "/messages/") {
+		return 0.55, nil // Signal 4 (0.35) + Signal 5 (0.20)
+	}
+	return 0.35, nil // Signal 4 only — session alive but not on target page
 }
 
 // fbTab is one entry from CDP /json/list.
@@ -247,54 +247,70 @@ func (v *Verifier) fetchCDPTabs(ctx context.Context) []fbTab {
 //	0.35 = logged in to Facebook (any page, not checkpoint/login) (Signal 4 only)
 //	0.00 = checkpoint detected, logged out, or no FB tab
 func (v *Verifier) checkFacebookSession(tabs []fbTab) (float64, []string) {
-	var reasons []string
-
 	for _, tab := range tabs {
-		if tab.Type != "page" {
+		score, reason, isFBTab := classifyFacebookTab(tab)
+		if !isFBTab {
 			continue
 		}
-		u := strings.ToLower(tab.URL)
-
-		if !strings.Contains(u, "facebook.com") {
-			continue // not a Facebook tab
+		if reason != "" {
+			return score, []string{reason}
 		}
+		return score, nil
+	}
+	return 0, []string{"no active Facebook tab found in browser"}
+}
 
-		// ⚠️ Ban signal: checkpoint page — session blocked by Facebook
-		if strings.Contains(u, "checkpoint") || strings.Contains(u, "/checkpoint/") {
-			return 0, []string{"CRITICAL: Facebook checkpoint detected — account requires human verification"}
-		}
-
-		// ⚠️ Logged out
-		if strings.Contains(u, "facebook.com/login") ||
-			strings.Contains(u, "facebook.com/r.php") ||
-			strings.Contains(u, "facebook.com/?next=") {
-			return 0, []string{"Facebook login page detected — session expired or logged out"}
-		}
-
-		// ⚠️ Anti-bot soft block
-		if strings.Contains(u, "/sorry/") || strings.Contains(u, "checkpoint") ||
-			strings.Contains(tab.Title, "You're Temporarily Blocked") ||
-			strings.Contains(tab.Title, "Blocked") {
-			return 0, []string{"Facebook anti-bot block detected in tab title/URL"}
-		}
-
-		// ✅ Session alive — check if we're on the right target page (Signal 5)
-		targetPages := []string{
-			"/groups/", "/marketplace/", "/home.php", "facebook.com/",
-			"/feed/", "/profile.php", "/messages/",
-		}
-		for _, tgt := range targetPages {
-			if strings.Contains(u, tgt) {
-				return 0.55, nil // Signal 4 (0.35) + Signal 5 (0.20)
-			}
-		}
-
-		// Logged in but not on target page
-		return 0.35, nil // Signal 4 only — session alive but wrong page context
+// classifyFacebookTab inspects one CDP tab and, if it is a Facebook page
+// tab, settles the session verdict (checkpoint/logged-out/blocked/alive).
+// isFBTab=false means "not a Facebook page tab" — the caller keeps scanning.
+func classifyFacebookTab(tab fbTab) (score float64, reason string, isFBTab bool) {
+	if tab.Type != "page" {
+		return 0, "", false
+	}
+	u := strings.ToLower(tab.URL)
+	if !strings.Contains(u, "facebook.com") {
+		return 0, "", false
 	}
 
-	reasons = append(reasons, "no active Facebook tab found in browser")
-	return 0, reasons
+	// ⚠️ Ban signal: checkpoint page — session blocked by Facebook
+	if strings.Contains(u, "checkpoint") || strings.Contains(u, "/checkpoint/") {
+		return 0, "CRITICAL: Facebook checkpoint detected — account requires human verification", true
+	}
+
+	// ⚠️ Logged out
+	if strings.Contains(u, "facebook.com/login") ||
+		strings.Contains(u, "facebook.com/r.php") ||
+		strings.Contains(u, "facebook.com/?next=") {
+		return 0, "Facebook login page detected — session expired or logged out", true
+	}
+
+	// ⚠️ Anti-bot soft block
+	if strings.Contains(u, "/sorry/") || strings.Contains(u, "checkpoint") ||
+		strings.Contains(tab.Title, "You're Temporarily Blocked") ||
+		strings.Contains(tab.Title, "Blocked") {
+		return 0, "Facebook anti-bot block detected in tab title/URL", true
+	}
+
+	// ✅ Session alive — check if we're on the right target page (Signal 5)
+	if onFacebookTargetPage(u) {
+		return 0.55, "", true // Signal 4 (0.35) + Signal 5 (0.20)
+	}
+	return 0.35, "", true // Signal 4 only — session alive but wrong page context
+}
+
+// onFacebookTargetPage reports whether the URL matches a known Facebook
+// target-page pattern (feed/group/marketplace/profile/messages).
+func onFacebookTargetPage(u string) bool {
+	targetPages := []string{
+		"/groups/", "/marketplace/", "/home.php", "facebook.com/",
+		"/feed/", "/profile.php", "/messages/",
+	}
+	for _, tgt := range targetPages {
+		if strings.Contains(u, tgt) {
+			return true
+		}
+	}
+	return false
 }
 
 func min1(f float64) float64 {
@@ -346,37 +362,24 @@ func (v *Verifier) verifyInfra(ctx context.Context) VerifyResult {
 	var reasons []string
 
 	// Signal 1 (0.40): container is running
-	if v.cfg.ContainerName != "" {
-		if containerRunning(ctx, v.cfg.ContainerName) {
-			signals.Container = 0.40
-		} else {
-			reasons = append(reasons, fmt.Sprintf("container %q is not running", v.cfg.ContainerName))
-		}
-	} else {
-		signals.Container = 0.40 // not configured — skip
+	containerScore, containerReason := v.checkContainerRunning(ctx)
+	signals.Container = containerScore
+	if containerReason != "" {
+		reasons = append(reasons, containerReason)
 	}
 
 	// Signal 2 (0.30): nginx / API health endpoint
-	if v.cfg.FrontendURL != "" {
-		if httpOK(ctx, v.client, v.cfg.FrontendURL+"/health") ||
-			httpOK(ctx, v.client, v.cfg.FrontendURL) {
-			signals.API = 0.30
-		} else {
-			reasons = append(reasons, "backend health check failed")
-		}
-	} else {
-		signals.API = 0.30
+	apiScore, apiReason := v.checkBackendHealth(ctx)
+	signals.API = apiScore
+	if apiReason != "" {
+		reasons = append(reasons, apiReason)
 	}
 
 	// Signal 3 (0.30): container logs do not contain crash markers in last 20 lines
-	if v.cfg.ContainerName != "" {
-		if !containerLogContains(ctx, v.cfg.ContainerName, []string{"panic:", "fatal error:", "OOM"}) {
-			signals.Stream = 0.30
-		} else {
-			reasons = append(reasons, "container logs contain crash signal")
-		}
-	} else {
-		signals.Stream = 0.30
+	streamScore, streamReason := v.checkContainerLogsClean(ctx)
+	signals.Stream = streamScore
+	if streamReason != "" {
+		reasons = append(reasons, streamReason)
 	}
 
 	score := signals.Container + signals.API + signals.Stream
@@ -386,6 +389,41 @@ func (v *Verifier) verifyInfra(ctx context.Context) VerifyResult {
 		Signals: signals,
 		Reason:  strings.Join(reasons, "; "),
 	}
+}
+
+// checkContainerRunning is Signal 1 (0.40): container is running. Returns
+// (0.40, "") when ContainerName isn't configured (assume up).
+func (v *Verifier) checkContainerRunning(ctx context.Context) (float64, string) {
+	if v.cfg.ContainerName == "" {
+		return 0.40, ""
+	}
+	if containerRunning(ctx, v.cfg.ContainerName) {
+		return 0.40, ""
+	}
+	return 0, fmt.Sprintf("container %q is not running", v.cfg.ContainerName)
+}
+
+// checkBackendHealth is Signal 2 (0.30): nginx / API health endpoint.
+func (v *Verifier) checkBackendHealth(ctx context.Context) (float64, string) {
+	if v.cfg.FrontendURL == "" {
+		return 0.30, ""
+	}
+	if httpOK(ctx, v.client, v.cfg.FrontendURL+"/health") || httpOK(ctx, v.client, v.cfg.FrontendURL) {
+		return 0.30, ""
+	}
+	return 0, "backend health check failed"
+}
+
+// checkContainerLogsClean is Signal 3 (0.30): container logs do not contain
+// crash markers in the last 20 lines.
+func (v *Verifier) checkContainerLogsClean(ctx context.Context) (float64, string) {
+	if v.cfg.ContainerName == "" {
+		return 0.30, ""
+	}
+	if !containerLogContains(ctx, v.cfg.ContainerName, []string{"panic:", "fatal error:", "OOM"}) {
+		return 0.30, ""
+	}
+	return 0, "container logs contain crash signal"
 }
 
 // ── Job domain ────────────────────────────────────────────────────────────────
@@ -449,15 +487,6 @@ func (v *Verifier) verifyGeneric(ctx context.Context) VerifyResult {
 }
 
 // ── Low-level helpers ─────────────────────────────────────────────────────────
-
-func tcpReachable(host string, port int, timeout time.Duration) bool {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
-	if err != nil {
-		return false
-	}
-	conn.Close()
-	return true
-}
 
 func httpOK(ctx context.Context, client *http.Client, url string) bool {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
