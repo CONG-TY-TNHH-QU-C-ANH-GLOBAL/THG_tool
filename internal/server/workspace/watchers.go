@@ -240,42 +240,24 @@ func (h *Handler) pollWorkspaceLogin(accountID, orgID int64, inst *browserworksp
 	return false
 }
 
+// watchWorkspaceReadiness waits for Chrome's CDP endpoint to come up after a
+// container start and records the outcome. CDP is the sole readiness gate
+// (2026-07-01 product decision: VNC is not the live-viewer surface and must
+// not gate readiness) — a container goes straight from "initializing" (set
+// by the caller) to "ready" once CDP responds, or "error" if it times out.
 func (h *Handler) watchWorkspaceReadiness(accountID, orgID int64, inst *browserworkspace.Instance) {
 	if inst == nil {
 		return
 	}
 
-	vncCh := make(chan bool, 1)
-	cdpCh := make(chan bool, 1)
-	go func() { vncCh <- browserworkspace.WaitForVNC(inst.VNCPort, 60*time.Second) }()
-	go func() { cdpCh <- browserworkspace.WaitForCDP(inst.CDPPort, 90*time.Second) }()
-
-	vncReady := <-vncCh
-	if vncReady {
-		// VNC is the operator-facing live browser session. Mark it separately so the
-		// dashboard can render the browser even while CDP is still warming up.
-		h.recordBrowserSession(accountID, orgID, inst, "display_ready", "")
-		log.Printf("[Workspace] Account %d browser display ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
-	} else {
-		cdpReady := <-cdpCh
-		msg := "VNC did not become ready; check x11vnc/Xvfb in docker logs"
-		if !cdpReady {
-			msg = "VNC and Chrome CDP did not become ready; rebuild thg-browser and check docker logs"
-		}
-		h.recordBrowserSession(accountID, orgID, inst, "error", msg)
-		log.Printf("[Workspace] Account %d browser startup warning: %s", accountID, msg)
-		return
-	}
-
-	cdpReady := <-cdpCh
-	if cdpReady {
+	if browserworkspace.WaitForCDP(inst.CDPPort, 90*time.Second) {
 		h.recordBrowserSession(accountID, orgID, inst, "ready", "")
 		log.Printf("[Workspace] Account %d browser ready, vnc=%d cdp=%d", accountID, inst.VNCPort, inst.CDPPort)
 		return
 	}
 
-	msg := "Browser display is visible, but Chrome CDP did not become ready; automation/login verification may wait. Check Chromium startup in docker logs"
-	h.recordBrowserSession(accountID, orgID, inst, "display_ready", msg)
+	msg := "Chrome CDP did not become ready; rebuild thg-browser and check docker logs"
+	h.recordBrowserSession(accountID, orgID, inst, "error", msg)
 	log.Printf("[Workspace] Account %d browser startup warning: %s", accountID, msg)
 }
 

@@ -3,7 +3,7 @@ import type { LocalConnector, LocalConnectorAction } from '../../types';
 export function stateLabel(state?: string): string {
   switch (state) {
     case 'initializing': return 'đang khởi động';
-    case 'display_ready': return 'Extension ready';
+    case 'display_ready': return 'browser ready';
     case 'ready': return 'ready';
     case 'idle': return 'idle';
     case 'active': return 'active';

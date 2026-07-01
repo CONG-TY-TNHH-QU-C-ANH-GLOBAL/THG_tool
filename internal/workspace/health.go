@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/thg/scraper/internal/observability"
@@ -41,29 +42,33 @@ func NewHealthChecker() *HealthChecker {
 	}
 }
 
-// Check performs a 4-layer health probe on the given instance.
+// Check performs a 4-layer health probe on the given instance. VNC
+// reachability (Layer 1) is informational only (2026-07-01 product
+// decision: VNC is not the live-viewer surface and must not gate
+// readiness/restart decisions) — it never marks a container unhealthy on
+// its own. CDP (Layer 2) is the source of truth for "is the browser alive."
 func (h *HealthChecker) Check(ctx context.Context, inst *Instance) HealthStatus {
 	result := HealthStatus{}
+	var reasons []string
 
-	// Layer 1: VNC TCP reachability
+	// Layer 1: VNC TCP reachability — informational only, does not gate.
 	dialCtx, cancel := context.WithTimeout(ctx, h.timeout)
-	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", fmt.Sprintf("127.0.0.1:%d", inst.VNCPort))
+	cancel()
 	if err == nil {
 		conn.Close()
 		result.VNCReachable = true
 	} else {
-		result.Reason = fmt.Sprintf("VNC port %d unreachable: %v", inst.VNCPort, err)
-		return result
+		reasons = append(reasons, fmt.Sprintf("VNC port %d unreachable: %v", inst.VNCPort, err))
 	}
 
-	// Layer 2: CDP /json/version responds
+	// Layer 2: CDP /json/version responds — the only layer that gates Healthy.
 	versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", inst.CDPPort)
 	body, err := h.httpGet(ctx, versionURL)
 	if err != nil {
-		result.Reason = fmt.Sprintf("CDP /json/version failed: %v", err)
-		result.Healthy = true
-		return result
+		reasons = append(reasons, fmt.Sprintf("CDP /json/version failed: %v", err))
+		result.Reason = strings.Join(reasons, "; ")
+		return result // Healthy stays false
 	}
 	result.CDPAlive = true
 
@@ -87,9 +92,7 @@ func (h *HealthChecker) Check(ctx context.Context, inst *Instance) HealthStatus 
 		}
 	}
 	if !result.HasTabs {
-		result.Reason = "CDP alive but Chrome has no open tabs (may be frozen)"
-		result.Healthy = true
-		return result
+		reasons = append(reasons, "CDP alive but Chrome has no open tabs (may be frozen)")
 	}
 
 	// Layer 4: heartbeat age check (session row in DB)
@@ -101,6 +104,7 @@ func (h *HealthChecker) Check(ctx context.Context, inst *Instance) HealthStatus 
 	_ = body // used above
 
 	result.Healthy = true
+	result.Reason = strings.Join(reasons, "; ")
 	return result
 }
 
