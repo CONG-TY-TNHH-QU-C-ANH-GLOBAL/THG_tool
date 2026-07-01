@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // RegistryEntry is the in-memory view of a browser session.
@@ -33,14 +34,14 @@ type RegistryStats struct {
 type Registry struct {
 	mu      sync.RWMutex
 	entries map[int64]*RegistryEntry // keyed by account_id
-	store   *store.AppStore
+	store   *sessions.Store
 }
 
 // NewRegistry creates an empty registry.
-func NewRegistry(appStore *store.AppStore) *Registry {
+func NewRegistry(sessionsStore *sessions.Store) *Registry {
 	return &Registry{
 		entries: make(map[int64]*RegistryEntry),
-		store:   appStore,
+		store:   sessionsStore,
 	}
 }
 
