@@ -21,6 +21,7 @@ import (
 	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
+	"github.com/thg/scraper/internal/store/sessions"
 	"github.com/thg/scraper/internal/store/telegram"
 	"github.com/thg/scraper/internal/store/threads"
 
@@ -119,6 +120,14 @@ type Store struct {
 	// channel-neutral, zero cross-domain writes. See
 	// specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md.
 	telegram *telegram.Store
+
+	// sessions owns the browser_sessions table (Chrome/Docker browser
+	// lifecycle + LocalSessionStatus enum). PR1 of the *AppStore
+	// dissolution (2026-07-01) — mechanical move from the legacy
+	// *AppStore-receiver sessions.go/session_status.go. Top-level type
+	// aliases + *AppStore bridge methods keep existing callers compiling
+	// unchanged; see internal/store/sessions.go for the bridge.
+	sessions *sessions.Store
 }
 
 // Telegram exposes the telegram-domain subpackage handle (integration
@@ -170,6 +179,12 @@ func (s *Store) Threads() *threads.Store { return s.threads }
 // Leads exposes the leads-domain subpackage handle. Phase 8b clean-cut
 // extraction (2026-05-22).
 func (s *Store) Leads() *leads.Store { return s.leads }
+
+// Sessions exposes the sessions-domain subpackage handle. PR1 of the
+// *AppStore dissolution (2026-07-01) — new code should call this directly;
+// existing *AppStore callers keep working via the bridge in
+// internal/store/sessions.go.
+func (s *Store) Sessions() *sessions.Store { return s.sessions }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -259,6 +274,7 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
+	s.sessions = sessions.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
 }
@@ -308,6 +324,7 @@ func newPostgres(dsn string) (*Store, error) {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
+	s.sessions = sessions.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
 }

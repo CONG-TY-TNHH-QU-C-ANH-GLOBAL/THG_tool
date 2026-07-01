@@ -77,9 +77,7 @@ func RejectIfFacebookProfileMismatch(db *store.Store, c *fiber.Ctx, ctx context.
 	if incoming == "" || acc == nil || strings.TrimSpace(acc.FBUserID) == "" || acc.FBUserID == incoming {
 		return nil
 	}
-	if appStore, err := store.NewAppStore(db); err == nil {
-		_ = appStore.RecordLocalSession(ctx, acc.ID, orgID, store.SessionError,
-			"Facebook profile mismatch; create a separate account slot for this Facebook user")
-	}
+	_ = db.Sessions().RecordLocalSession(ctx, acc.ID, orgID, store.SessionError,
+		"Facebook profile mismatch; create a separate account slot for this Facebook user")
 	return c.Status(409).JSON(fiber.Map{"error": "facebook profile mismatch for this account slot"})
 }
