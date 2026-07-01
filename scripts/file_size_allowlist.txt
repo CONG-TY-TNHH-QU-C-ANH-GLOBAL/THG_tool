@@ -94,7 +94,7 @@ internal/agentloop/loop.go  # 347 lines
 internal/server/agent/connector/heartbeat.go  # 344 lines
 internal/server/system/notifications.go  # 338 lines
 internal/store/knowledge/embeddings.go  # 336 lines
-cmd/scraper/main.go  # 335 lines
+cmd/scraper/main.go  # 215 lines
 ai/architect/executor.ts  # 334 lines
 internal/models/execution_outcome.go  # 332 lines
 internal/server/router.go  # 332 lines
