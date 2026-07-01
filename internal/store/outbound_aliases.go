@@ -222,18 +222,28 @@ func (s *Store) conversationGateForOutbound(_ context.Context, orgID int64, targ
 	return outbound.GuardDecision{Allowed: true, Reason: "ok"}, nil
 }
 
-// --- Bridge wrappers (all Deprecated per L2) ---
-
-// ClaimPlannedOutboundForOrg delegates to [outbound.Store.Claim].
+// --- Port-compatibility wrappers ---
 //
-// Deprecated: call s.Outbound().Claim(orgID, id, workerID, lease) directly.
+// These 4 methods are NOT deprecated bridge shims (PR3, 2026-07-01): every
+// real caller now goes through s.Outbound() directly (see git blame for the
+// migration). They stay ONLY because internal/server/agent.
+// OutboundLifecycleRepository pins these exact method names in its
+// compile-time assertion (var _ OutboundLifecycleRepository = (*Store)(nil)
+// in outbound_repository.go), and internal/store/postgres/outbound.
+// OutboundStore already implements the same port under the same names for a
+// future Postgres backend. Retiring them requires renaming the port + the
+// Postgres implementation + the parity test harness together in one YELLOW
+// PR with characterization tests — not a caller-only migration. Do not
+// delete without that separate interface-rename decision.
+
+// ClaimPlannedOutboundForOrg satisfies agent.OutboundLifecycleRepository by
+// delegating to [outbound.Store.Claim].
 func (s *Store) ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*ClaimResult, error) {
 	return s.outbound.Claim(orgID, id, workerID, leaseDuration)
 }
 
-// FinalizeOutboundAttempt delegates to [outbound.Store.Finalize].
-//
-// Deprecated: call s.Outbound().Finalize(...) directly.
+// FinalizeOutboundAttempt satisfies agent.OutboundLifecycleRepository by
+// delegating to [outbound.Store.Finalize].
 func (s *Store) FinalizeOutboundAttempt(
 	ctx context.Context,
 	orgID, id int64,
@@ -244,16 +254,14 @@ func (s *Store) FinalizeOutboundAttempt(
 	return s.outbound.Finalize(ctx, orgID, id, executionID, terminalState, verificationOutcome)
 }
 
-// ResetStaleExecutingForOrg delegates to [outbound.Store.ResetStaleExecuting].
-//
-// Deprecated: call s.Outbound().ResetStaleExecuting(orgID, after) directly.
+// ResetStaleExecutingForOrg satisfies agent.OutboundLifecycleRepository by
+// delegating to [outbound.Store.ResetStaleExecuting].
 func (s *Store) ResetStaleExecutingForOrg(orgID int64, staleAfter time.Duration) error {
 	return s.outbound.ResetStaleExecuting(orgID, staleAfter)
 }
 
-// GetOutboundByExecutionStateForOrg delegates to [outbound.Store.ListByState].
-//
-// Deprecated: call s.Outbound().ListByState(...) directly.
+// GetOutboundByExecutionStateForOrg satisfies agent.OutboundLifecycleRepository
+// by delegating to [outbound.Store.ListByState].
 func (s *Store) GetOutboundByExecutionStateForOrg(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error) {
 	return s.outbound.ListByState(orgID, execState, msgType, limit)
 }

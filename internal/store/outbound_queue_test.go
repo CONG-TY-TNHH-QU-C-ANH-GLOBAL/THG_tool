@@ -88,7 +88,7 @@ func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("queue failed: %v", err)
 	}
-	claim, err := db.ClaimPlannedOutboundForOrg(1, res.ID, "worker-a", 0)
+	claim, err := db.Outbound().Claim(1, res.ID, "worker-a", 0)
 	if err != nil {
 		t.Fatalf("claim failed: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	if msg.ExecutionID != claim.ExecutionID {
 		t.Fatalf("stored execution_id %q != issued %q", msg.ExecutionID, claim.ExecutionID)
 	}
-	if _, err := db.ClaimPlannedOutboundForOrg(1, res.ID, "worker-b", 0); err == nil {
+	if _, err := db.Outbound().Claim(1, res.ID, "worker-b", 0); err == nil {
 		t.Fatal("expected second claim to fail")
 	}
 	dup, err := db.Outbound().Queue(&models.OutboundMessage{
@@ -200,11 +200,11 @@ func TestQueueOutbound_VerifiedSuccessTriggersCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claim, err := db.ClaimPlannedOutboundForOrg(org, first.ID, "worker-a", 0)
+	claim, err := db.Outbound().Claim(org, first.ID, "worker-a", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if finalized, _, _, _, err := db.FinalizeOutboundAttempt(context.Background(), org, first.ID, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess); err != nil || !finalized {
+	if finalized, _, _, _, err := db.Outbound().Finalize(context.Background(), org, first.ID, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess); err != nil || !finalized {
 		t.Fatalf("finalize verified_success: finalized=%v err=%v", finalized, err)
 	}
 
@@ -245,11 +245,11 @@ func TestQueueOutbound_FailedFinishedIsRetryable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		claim, err := db.ClaimPlannedOutboundForOrg(org, first.ID, "worker-a", 0)
+		claim, err := db.Outbound().Claim(org, first.ID, "worker-a", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if finalized, _, _, _, err := db.FinalizeOutboundAttempt(context.Background(), org, first.ID, claim.ExecutionID, models.ExecFinished, outcome); err != nil || !finalized {
+		if finalized, _, _, _, err := db.Outbound().Finalize(context.Background(), org, first.ID, claim.ExecutionID, models.ExecFinished, outcome); err != nil || !finalized {
 			t.Fatalf("finalize %s: finalized=%v err=%v", outcome, finalized, err)
 		}
 
@@ -332,11 +332,11 @@ func TestClaimIssuesUniqueExecutionIDAndLease(t *testing.T) {
 	id1 := queueApprovedRow(t, db, 11, "https://facebook.com/p/idem-1")
 	id2 := queueApprovedRow(t, db, 11, "https://facebook.com/p/idem-2")
 
-	c1, err := db.ClaimPlannedOutboundForOrg(11, id1, "worker", 0)
+	c1, err := db.Outbound().Claim(11, id1, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim id1: %v", err)
 	}
-	c2, err := db.ClaimPlannedOutboundForOrg(11, id2, "worker", 0)
+	c2, err := db.Outbound().Claim(11, id2, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim id2: %v", err)
 	}
@@ -355,11 +355,11 @@ func TestFinalizeOutboundAttempt_FirstWin(t *testing.T) {
 	db := newSharedStore(t, "outbound_finalize_firstwin.db")
 	id := queueApprovedRow(t, db, 12, "https://facebook.com/p/win")
 
-	claim, err := db.ClaimPlannedOutboundForOrg(12, id, "worker", 0)
+	claim, err := db.Outbound().Claim(12, id, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	finalized, state, outcome, execID, err := db.FinalizeOutboundAttempt(context.Background(), 12, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
+	finalized, state, outcome, execID, err := db.Outbound().Finalize(context.Background(), 12, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
@@ -379,17 +379,17 @@ func TestFinalizeOutboundAttempt_IdempotentReplay(t *testing.T) {
 	db := newSharedStore(t, "outbound_finalize_replay.db")
 	id := queueApprovedRow(t, db, 13, "https://facebook.com/p/replay")
 
-	claim, err := db.ClaimPlannedOutboundForOrg(13, id, "worker", 0)
+	claim, err := db.Outbound().Claim(13, id, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	// First win.
-	finalized, _, _, _, err := db.FinalizeOutboundAttempt(context.Background(), 13, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
+	finalized, _, _, _, err := db.Outbound().Finalize(context.Background(), 13, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil || !finalized {
 		t.Fatalf("first finalize must succeed (finalized=%v err=%v)", finalized, err)
 	}
 	// Replay with SAME execution_id.
-	finalized, state, outcome, execID, err := db.FinalizeOutboundAttempt(context.Background(), 13, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
+	finalized, state, outcome, execID, err := db.Outbound().Finalize(context.Background(), 13, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("replay finalize: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestFinalizeOutboundAttempt_StaleExecutionID(t *testing.T) {
 	db := newSharedStore(t, "outbound_finalize_stale.db")
 	id := queueApprovedRow(t, db, 14, "https://facebook.com/p/stale")
 
-	claim1, err := db.ClaimPlannedOutboundForOrg(14, id, "worker-a", 0)
+	claim1, err := db.Outbound().Claim(14, id, "worker-a", 0)
 	if err != nil {
 		t.Fatalf("first claim: %v", err)
 	}
@@ -419,11 +419,11 @@ func TestFinalizeOutboundAttempt_StaleExecutionID(t *testing.T) {
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET lease_expiry = datetime('now', '-1 minute') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force lease expiry: %v", err)
 	}
-	if err := db.ResetStaleExecutingForOrg(14, time.Minute); err != nil {
+	if err := db.Outbound().ResetStaleExecuting(14, time.Minute); err != nil {
 		t.Fatalf("reset stale: %v", err)
 	}
 	// Re-claim — issues a NEW execution_id.
-	claim2, err := db.ClaimPlannedOutboundForOrg(14, id, "worker-b", 0)
+	claim2, err := db.Outbound().Claim(14, id, "worker-b", 0)
 	if err != nil {
 		t.Fatalf("re-claim: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestFinalizeOutboundAttempt_StaleExecutionID(t *testing.T) {
 	}
 	// Now the FIRST executor (worker-a) finally reports — but its
 	// execution_id is the OLD one. Must NOT finalize.
-	finalized, _, _, execIDNow, err := db.FinalizeOutboundAttempt(context.Background(), 14, id, claim1.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
+	finalized, _, _, execIDNow, err := db.Outbound().Finalize(context.Background(), 14, id, claim1.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("stale finalize: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestFinalizeOutboundAttempt_LegacyEmptyToken(t *testing.T) {
 
 	// Simulate a legacy-shaped sending row (claimed before execution_id
 	// existed): claim through the new path then strip the token.
-	if _, err := db.ClaimPlannedOutboundForOrg(15, id, "legacy", 0); err != nil {
+	if _, err := db.Outbound().Claim(15, id, "legacy", 0); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET execution_id = '' WHERE id = ?`, id); err != nil {
@@ -463,7 +463,7 @@ func TestFinalizeOutboundAttempt_LegacyEmptyToken(t *testing.T) {
 
 	// Extension reports with NO execution_id (legacy build). CAS treats
 	// empty + empty as a state-only check.
-	finalized, state, outcome, _, err := db.FinalizeOutboundAttempt(context.Background(), 15, id, "", models.ExecFinished, models.VerifVerifiedSuccess)
+	finalized, state, outcome, _, err := db.Outbound().Finalize(context.Background(), 15, id, "", models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("legacy finalize: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	db := newSharedStore(t, "outbound_reset_lease.db")
 	id := queueApprovedRow(t, db, 16, "https://facebook.com/p/lease")
 
-	if _, err := db.ClaimPlannedOutboundForOrg(16, id, "worker", time.Hour); err != nil {
+	if _, err := db.Outbound().Claim(16, id, "worker", time.Hour); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	// Push claimed_at WAY into the past — under legacy semantics this
@@ -490,7 +490,7 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET claimed_at = datetime('now', '-1 hour') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force old claimed_at: %v", err)
 	}
-	if err := db.ResetStaleExecutingForOrg(16, time.Minute); err != nil {
+	if err := db.Outbound().ResetStaleExecuting(16, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	row, err := db.Outbound().Get(16, id)
@@ -505,7 +505,7 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET lease_expiry = datetime('now', '-1 minute') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force lease expiry: %v", err)
 	}
-	if err := db.ResetStaleExecutingForOrg(16, time.Minute); err != nil {
+	if err := db.Outbound().ResetStaleExecuting(16, time.Minute); err != nil {
 		t.Fatalf("reset 2: %v", err)
 	}
 	row, err = db.Outbound().Get(16, id)
