@@ -43,6 +43,7 @@ Map of the agentic-development workflow docs. See
 |---|---|
 | [AUTOPILOT_QUEUE.md](AUTOPILOT_QUEUE.md) | Stable queue index + operating policy (lanes, lifecycle, sprint mode). |
 | [ARCHITECT_SPRINT_MODE.md](ARCHITECT_SPRINT_MODE.md) | Senior-architect mission mode (`/thg-architect`): higher-leverage slices, combined GREEN batches, throughput/autonomy/PR-size rules over the existing safety guards. |
+| [ACCELERATED_ARCHITECTURE_CONVERGENCE_LOOP.md](ACCELERATED_ARCHITECTURE_CONVERGENCE_LOOP.md) | Survey-driven convergence mode (`/thg-converge`): scans hotspots each run, picks the top convergence batch, implements/validates/reports one coherent PR without a pre-existing queue item. |
 | [ESCALATION_PLAYBOOK.md](ESCALATION_PLAYBOOK.md) | Hard-case protocol + decision-record format. |
 | [AGENT_REPORT_TEMPLATE.md](AGENT_REPORT_TEMPLATE.md) | Required completion-report shape. |
 | [COGNITIVE_COMPLEXITY_GUARD.md](COGNITIVE_COMPLEXITY_GUARD.md) | Local S3776 approximation (`scripts/go_cognitive_check.sh`) — fails on >15 cognitive complexity in changed Go files. |
