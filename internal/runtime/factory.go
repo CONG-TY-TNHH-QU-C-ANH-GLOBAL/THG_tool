@@ -5,14 +5,14 @@ import (
 	"log"
 	"os"
 
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // NewFromSession returns a CDPRuntime if there is an active browser session
 // with a reachable CDP port. Mock data is opt-in via ALLOW_MOCK_RUNTIME=true.
-func NewFromSession(ctx context.Context, appStore *store.AppStore) Runtime {
-	if appStore != nil {
-		sess, err := appStore.GetFirstActiveCDPSession(ctx)
+func NewFromSession(ctx context.Context, sessionsStore *sessions.Store) Runtime {
+	if sessionsStore != nil {
+		sess, err := sessionsStore.GetFirstActiveCDPSession(ctx)
 		if err == nil && sess != nil && sess.CDPPort > 0 {
 			rt, err := NewCDPRuntime(sess.CDPPort)
 			if err == nil {

@@ -27,6 +27,25 @@ const (
 	errInvalidID           = "invalid id"
 )
 
+// workspaceEntry is one row of the /api/browser/workspaces response.
+type workspaceEntry struct {
+	AccountID     int64      `json:"account_id"`
+	AccountName   string     `json:"account_name"`
+	Email         string     `json:"email,omitempty"`
+	Status        string     `json:"account_status"`
+	LoggedIn      bool       `json:"logged_in"`
+	FBUserID      string     `json:"fb_user_id,omitempty"`
+	FBDisplayName string     `json:"fb_display_name,omitempty"`
+	FBUsername    string     `json:"fb_username,omitempty"`
+	FBProfileURL  string     `json:"fb_profile_url,omitempty"`
+	Running       bool       `json:"running"`
+	CDPPort       int        `json:"cdp_port,omitempty"`
+	VNCPort       int        `json:"vnc_port,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	BrowserState  string     `json:"browser_state,omitempty"`
+	ErrorMsg      string     `json:"error_msg,omitempty"`
+}
+
 // workspaceList returns all Facebook accounts with their live browser status.
 // GET /api/browser/workspaces
 //
@@ -37,10 +56,6 @@ func (h *Handler) workspaceList(c *fiber.Ctx) error {
 	orgID, _ := c.Locals("org_id").(int64)
 	userID, _ := c.Locals("user_id").(int64)
 	role, _ := c.Locals("user_role").(string)
-	var (
-		accounts []models.Account
-		err      error
-	)
 	// PR-M5 account privacy: a Facebook account/device is private to its owning
 	// member. Even admin no longer sees a staff member's account in the session
 	// list — only their own (+ unassigned for admin). Admin oversight of staff is
@@ -49,76 +64,67 @@ func (h *Handler) workspaceList(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	var accounts []models.Account
 	for i := range all {
 		if models.CanViewAccountDevice(&all[i], userID, role) {
 			accounts = append(accounts, all[i])
 		}
 	}
 
-	type entry struct {
-		AccountID     int64      `json:"account_id"`
-		AccountName   string     `json:"account_name"`
-		Email         string     `json:"email,omitempty"`
-		Status        string     `json:"account_status"`
-		LoggedIn      bool       `json:"logged_in"`
-		FBUserID      string     `json:"fb_user_id,omitempty"`
-		FBDisplayName string     `json:"fb_display_name,omitempty"`
-		FBUsername    string     `json:"fb_username,omitempty"`
-		FBProfileURL  string     `json:"fb_profile_url,omitempty"`
-		Running       bool       `json:"running"`
-		CDPPort       int        `json:"cdp_port,omitempty"`
-		VNCPort       int        `json:"vnc_port,omitempty"`
-		StartedAt     *time.Time `json:"started_at,omitempty"`
-		BrowserState  string     `json:"browser_state,omitempty"`
-		ErrorMsg      string     `json:"error_msg,omitempty"`
-	}
-
-	appStore, _ := store.NewAppStore(h.db)
 	_, localConnectorOnline := h.localConnectorAvailability(orgID)
-	result := make([]entry, 0, len(accounts))
+	result := make([]workspaceEntry, 0, len(accounts))
 	for _, acc := range accounts {
-		e := entry{
-			AccountID:     acc.ID,
-			AccountName:   acc.Name,
-			Email:         acc.Email,
-			Status:        string(acc.Status),
-			LoggedIn:      acc.BrowserLoggedIn,
-			FBUserID:      acc.FBUserID,
-			FBDisplayName: acc.FBDisplayName,
-			FBUsername:    acc.FBUsername,
-			FBProfileURL:  acc.FBProfileURL,
-		}
-		if h.workspace != nil {
-			if inst := h.workspaceInstanceForAccount(acc.ID, acc.Name); inst != nil {
-				e.Running = true
-				e.CDPPort = inst.CDPPort
-				e.VNCPort = inst.VNCPort
-				t := inst.StartedAt
-				e.StartedAt = &t
-			}
-		}
-		if appStore != nil {
-			if sess, err := appStore.GetSession(c.Context(), acc.ID); err == nil && sess != nil && sess.Status != "terminated" {
-				e.BrowserState = sess.Status
-				e.ErrorMsg = sess.ErrorMsg
-				if strings.HasPrefix(sess.Status, "local_") {
-					e.Running = localConnectorOnline && sess.Status != "local_stopped" && sess.Status != "local_error"
-				}
-				if e.CDPPort == 0 {
-					e.CDPPort = sess.CDPPort
-				}
-				if e.VNCPort == 0 {
-					e.VNCPort = sess.VNCPort
-				}
-				if e.StartedAt == nil {
-					t := sess.StartedAt
-					e.StartedAt = &t
-				}
-			}
-		}
-		result = append(result, e)
+		result = append(result, h.buildWorkspaceEntry(c.Context(), acc, localConnectorOnline))
 	}
 	return c.JSON(fiber.Map{"workspaces": result, "count": len(result)})
+}
+
+// buildWorkspaceEntry enriches one account with its live workspace instance
+// (CDP/VNC ports, running state) and its persisted browser_sessions row
+// (status, error, fallback ports/started-at). Split out of workspaceList so
+// the per-account enrichment reads as one flat pass instead of two nested
+// branches inside a loop.
+func (h *Handler) buildWorkspaceEntry(ctx context.Context, acc models.Account, localConnectorOnline bool) workspaceEntry {
+	e := workspaceEntry{
+		AccountID:     acc.ID,
+		AccountName:   acc.Name,
+		Email:         acc.Email,
+		Status:        string(acc.Status),
+		LoggedIn:      acc.BrowserLoggedIn,
+		FBUserID:      acc.FBUserID,
+		FBDisplayName: acc.FBDisplayName,
+		FBUsername:    acc.FBUsername,
+		FBProfileURL:  acc.FBProfileURL,
+	}
+	if h.workspace != nil {
+		if inst := h.workspaceInstanceForAccount(acc.ID, acc.Name); inst != nil {
+			e.Running = true
+			e.CDPPort = inst.CDPPort
+			e.VNCPort = inst.VNCPort
+			t := inst.StartedAt
+			e.StartedAt = &t
+		}
+	}
+	sess, err := h.db.Sessions().GetSession(ctx, acc.ID)
+	if err != nil || sess == nil || sess.Status == "terminated" {
+		return e
+	}
+	e.BrowserState = sess.Status
+	e.ErrorMsg = sess.ErrorMsg
+	if strings.HasPrefix(sess.Status, "local_") {
+		e.Running = localConnectorOnline && sess.Status != "local_stopped" && sess.Status != "local_error"
+	}
+	if e.CDPPort == 0 {
+		e.CDPPort = sess.CDPPort
+	}
+	if e.VNCPort == 0 {
+		e.VNCPort = sess.VNCPort
+	}
+	if e.StartedAt == nil {
+		t := sess.StartedAt
+		e.StartedAt = &t
+	}
+	return e
 }
 
 // workspaceStart launches a Docker browser for a specific account.
@@ -205,9 +211,7 @@ func (h *Handler) workspaceStop(c *fiber.Ctx) error {
 	if h.workspace != nil {
 		h.workspace.Stop(id)
 	}
-	if appStore, err := store.NewAppStore(h.db); err == nil {
-		_ = appStore.TerminateSession(context.Background(), id)
-	}
+	_ = h.db.Sessions().TerminateSession(context.Background(), id)
 	return c.JSON(fiber.Map{"status": "stopped"})
 }
 
@@ -261,14 +265,10 @@ func isDashboardStreamConnector(conn connectors.AgentToken) bool {
 	return false
 }
 
-// recordLocalBrowserSession is kept as a thin wrapper around AppStore.RecordLocalSession
-// so legacy call sites continue to compile. New code should call AppStore directly.
+// recordLocalBrowserSession is a thin wrapper around Sessions().RecordLocalSession
+// kept so the several call sites in this file share one background-context call.
 func (h *Handler) recordLocalBrowserSession(accountID, orgID int64, status store.LocalSessionStatus, errorMsg string) error {
-	appStore, err := store.NewAppStore(h.db)
-	if err != nil {
-		return err
-	}
-	return appStore.RecordLocalSession(context.Background(), accountID, orgID, status, errorMsg)
+	return h.db.Sessions().RecordLocalSession(context.Background(), accountID, orgID, status, errorMsg)
 }
 
 // workspaceNew creates a fresh Facebook account and starts its browser.
@@ -403,6 +403,42 @@ func (h *Handler) workspaceSyncSession(c *fiber.Ctx) error {
 	return c.JSON(snap)
 }
 
+// resolveLoginCookies extracts the Facebook session cookies from the
+// account's running browser instance. handled=true means the caller must
+// return resp immediately (an error response was already written to c);
+// handled=false means fbUserID/cookiesJSON are ready to use.
+func (h *Handler) resolveLoginCookies(c *fiber.Ctx, id int64, acc *models.Account) (fbUserID, cookiesJSON string, handled bool, resp error) {
+	if h.workspace == nil {
+		return "", "", true, c.Status(503).JSON(fiber.Map{"error": errWorkspaceMgrNotInit})
+	}
+	inst := h.workspaceInstanceForAccount(id, acc.Name)
+	if inst == nil || inst.CDPPort == 0 {
+		return "", "", true, c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
+	}
+	var cookieCount int
+	var err error
+	fbUserID, cookiesJSON, cookieCount, err = facebookCookiesFromInstance(inst)
+	if err != nil {
+		if isCDPUnavailable(err) {
+			msg := "CDP endpoint is not reachable from the API host; restart this browser session after the thg-browser image is rebuilt"
+			h.recordBrowserSession(id, acc.OrgID, inst, "display_ready", msg+": "+err.Error())
+			return "", "", true, c.Status(503).JSON(fiber.Map{
+				"error": "browser CDP is not ready: " + err.Error(),
+				"code":  "CDP_UNAVAILABLE",
+				"hint":  msg,
+			})
+		}
+		return "", "", true, c.Status(400).JSON(fiber.Map{"error": "not logged in to Facebook yet: " + err.Error()})
+	}
+	_ = cookieCount
+	if acc.FBUserID != "" && acc.FBUserID != fbUserID {
+		return "", "", true, c.Status(409).JSON(fiber.Map{
+			"error": "this account profile is logged into a different Facebook user; create another Facebook account slot for multi-account automation, or clear this profile before reusing it",
+		})
+	}
+	return fbUserID, cookiesJSON, false, nil
+}
+
 func (h *Handler) workspaceSetLoggedIn(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	orgID, _ := c.Locals("org_id").(int64)
@@ -417,36 +453,13 @@ func (h *Handler) workspaceSetLoggedIn(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
 
-	var fbUserID string
-	var cookiesJSON string
+	var fbUserID, cookiesJSON string
 	if body.LoggedIn {
-		if h.workspace == nil {
-			return c.Status(503).JSON(fiber.Map{"error": errWorkspaceMgrNotInit})
-		}
-		inst := h.workspaceInstanceForAccount(id, acc.Name)
-		if inst == nil || inst.CDPPort == 0 {
-			return c.Status(400).JSON(fiber.Map{"error": "browser is not running"})
-		}
-		var cookieCount int
-		var err error
-		fbUserID, cookiesJSON, cookieCount, err = facebookCookiesFromInstance(inst)
-		if err != nil {
-			if isCDPUnavailable(err) {
-				msg := "CDP endpoint is not reachable from the API host; restart this browser session after the thg-browser image is rebuilt"
-				h.recordBrowserSession(id, acc.OrgID, inst, "display_ready", msg+": "+err.Error())
-				return c.Status(503).JSON(fiber.Map{
-					"error": "browser CDP is not ready: " + err.Error(),
-					"code":  "CDP_UNAVAILABLE",
-					"hint":  msg,
-				})
-			}
-			return c.Status(400).JSON(fiber.Map{"error": "not logged in to Facebook yet: " + err.Error()})
-		}
-		_ = cookieCount
-		if acc.FBUserID != "" && acc.FBUserID != fbUserID {
-			return c.Status(409).JSON(fiber.Map{
-				"error": "this account profile is logged into a different Facebook user; create another Facebook account slot for multi-account automation, or clear this profile before reusing it",
-			})
+		var handled bool
+		var resp error
+		fbUserID, cookiesJSON, handled, resp = h.resolveLoginCookies(c, id, acc)
+		if handled {
+			return resp
 		}
 	}
 

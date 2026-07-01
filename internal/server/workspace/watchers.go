@@ -31,17 +31,12 @@ func (h *Handler) recordBrowserSession(accountID, orgID int64, inst *browserwork
 	if inst == nil {
 		return
 	}
-	appStore, err := store.NewAppStore(h.db)
-	if err != nil {
-		log.Printf("[Workspace] session store unavailable for account %d: %v", accountID, err)
-		return
-	}
 	if status != "checkpoint" && status != "idle" && status != "terminated" && status != "error" {
-		if existing, err := appStore.GetSession(context.Background(), accountID); err == nil && existing != nil && existing.Status == "checkpoint" {
+		if existing, err := h.db.Sessions().GetSession(context.Background(), accountID); err == nil && existing != nil && existing.Status == "checkpoint" {
 			return
 		}
 	}
-	_ = appStore.UpsertSession(context.Background(), store.BrowserSession{
+	_ = h.db.Sessions().UpsertSession(context.Background(), store.BrowserSession{
 		AccountID:    accountID,
 		OrgID:        orgID,
 		Status:       status,
@@ -61,11 +56,7 @@ func (h *Handler) workspaceInstanceForAccount(accountID int64, accountName strin
 		return inst
 	}
 
-	appStore, err := store.NewAppStore(h.db)
-	if err != nil {
-		return nil
-	}
-	sess, err := appStore.GetSession(context.Background(), accountID)
+	sess, err := h.db.Sessions().GetSession(context.Background(), accountID)
 	if err != nil || sess == nil || sess.Status == "terminated" {
 		return nil
 	}
@@ -124,10 +115,8 @@ func (h *Handler) recordWorkspaceHumanRequired(accountID, orgID int64, inst *bro
 	}
 
 	wasCheckpoint := false
-	if appStore, err := store.NewAppStore(h.db); err == nil {
-		if sess, err := appStore.GetSession(context.Background(), accountID); err == nil && sess != nil && sess.Status == "checkpoint" {
-			wasCheckpoint = true
-		}
+	if sess, err := h.db.Sessions().GetSession(context.Background(), accountID); err == nil && sess != nil && sess.Status == "checkpoint" {
+		wasCheckpoint = true
 	}
 	h.recordBrowserSession(accountID, orgID, inst, "checkpoint", reason)
 	checkpointURL := ""
@@ -162,20 +151,18 @@ func (h *Handler) persistFacebookBrowserSession(accountID, orgID int64, inst *br
 		}
 	}
 	_ = h.db.Identities().UpdateAccountStatus(accountID, models.AccountActive)
-	if appStore, err := store.NewAppStore(h.db); err == nil {
-		sess, err := appStore.GetSession(context.Background(), accountID)
-		if err == nil && sess != nil && sess.Status != "terminated" {
-			sess.Status = "idle"
-			sess.LastActiveAt = time.Now().UTC()
-			sess.ErrorMsg = ""
-			if inst != nil {
-				sess.CDPPort = inst.CDPPort
-				sess.VNCPort = inst.VNCPort
-			}
-			_ = appStore.UpsertSession(context.Background(), *sess)
-		} else if inst != nil {
-			h.recordBrowserSession(accountID, orgID, inst, "idle", "")
+	sess, err := h.db.Sessions().GetSession(context.Background(), accountID)
+	if err == nil && sess != nil && sess.Status != "terminated" {
+		sess.Status = "idle"
+		sess.LastActiveAt = time.Now().UTC()
+		sess.ErrorMsg = ""
+		if inst != nil {
+			sess.CDPPort = inst.CDPPort
+			sess.VNCPort = inst.VNCPort
 		}
+		_ = h.db.Sessions().UpsertSession(context.Background(), *sess)
+	} else if inst != nil {
+		h.recordBrowserSession(accountID, orgID, inst, "idle", "")
 	}
 	_, _ = h.db.DB().ExecContext(context.Background(),
 		`UPDATE browser_sessions SET checkpoint_url = '', checkpoint_at = NULL WHERE account_id = ?`,
@@ -198,49 +185,59 @@ func (h *Handler) watchWorkspaceLogin(accountID, orgID int64, inst *browserworks
 		case <-deadline.C:
 			return
 		case <-ticker.C:
-			if h.workspace == nil {
+			if !h.pollWorkspaceLogin(accountID, orgID, inst) {
 				return
 			}
-			current := h.workspace.Get(accountID)
-			if current == nil || current.ContainerID != inst.ContainerID {
-				return
-			}
-			acc, err := h.db.Identities().GetAccountForOrg(accountID, orgID)
-			if err != nil || acc == nil {
-				return
-			}
-			if acc.BrowserLoggedIn && acc.FBUserID != "" {
-				return
-			}
-			snap, err := facebookSessionSnapshotFromInstance(inst)
-			if err != nil {
-				continue
-			}
-			if snap.FBUserID == "" {
-				if snap.HumanRequired {
-					h.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
-				}
-				continue
-			}
-			fbUserID, cookiesJSON := snap.FBUserID, snap.cookiesJSON
-			if acc.FBUserID != "" && acc.FBUserID != fbUserID {
-				msg := "Facebook profile mismatch; create a separate account slot for this Facebook user"
-				h.recordBrowserSession(accountID, orgID, inst, "error", msg)
-				log.Printf("[Workspace] Account %d login mismatch stored=%s current=%s", accountID, acc.FBUserID, fbUserID)
-				return
-			}
-			if err := h.persistFacebookBrowserSession(accountID, orgID, inst, fbUserID, cookiesJSON); err != nil {
-				log.Printf("[Workspace] Account %d auto session persist failed: %v", accountID, err)
-				continue
-			}
-			if snap.HumanRequired {
-				h.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
-				continue
-			}
-			log.Printf("[Workspace] Account %d Facebook session auto-saved (fb_user_id=%s)", accountID, fbUserID)
-			return
 		}
 	}
+}
+
+// pollWorkspaceLogin runs one tick of the login watcher's ticker loop.
+// Returns false when the watcher should stop entirely (browser gone, account
+// gone/already logged in, profile mismatch, or a session was just saved);
+// true to keep polling on the next tick.
+func (h *Handler) pollWorkspaceLogin(accountID, orgID int64, inst *browserworkspace.Instance) bool {
+	if h.workspace == nil {
+		return false
+	}
+	current := h.workspace.Get(accountID)
+	if current == nil || current.ContainerID != inst.ContainerID {
+		return false
+	}
+	acc, err := h.db.Identities().GetAccountForOrg(accountID, orgID)
+	if err != nil || acc == nil {
+		return false
+	}
+	if acc.BrowserLoggedIn && acc.FBUserID != "" {
+		return false
+	}
+	snap, err := facebookSessionSnapshotFromInstance(inst)
+	if err != nil {
+		return true
+	}
+	if snap.FBUserID == "" {
+		if snap.HumanRequired {
+			h.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
+		}
+		return true
+	}
+	fbUserID, cookiesJSON := snap.FBUserID, snap.cookiesJSON
+	if acc.FBUserID != "" && acc.FBUserID != fbUserID {
+		msg := "Facebook profile mismatch; create a separate account slot for this Facebook user"
+		h.recordBrowserSession(accountID, orgID, inst, "error", msg)
+		log.Printf("[Workspace] Account %d login mismatch stored=%s current=%s", accountID, acc.FBUserID, fbUserID)
+		return false
+	}
+	if err := h.persistFacebookBrowserSession(accountID, orgID, inst, fbUserID, cookiesJSON); err != nil {
+		log.Printf("[Workspace] Account %d auto session persist failed: %v", accountID, err)
+		return true
+	}
+	if snap.HumanRequired {
+		h.recordWorkspaceHumanRequired(accountID, orgID, inst, snap)
+		return true
+	}
+	log.Printf("[Workspace] Account %d Facebook session auto-saved (fb_user_id=%s)", accountID, fbUserID)
+	return false
 }
 
 func (h *Handler) watchWorkspaceReadiness(accountID, orgID int64, inst *browserworkspace.Instance) {

@@ -51,9 +51,9 @@ frontend/src/modules/autoflow/services/settingsService.ts  # 201 lines
 
 # --- backend legacy (Go; extract modules when touched) ---
 internal/ai/msggen.go  # 712 lines
-internal/server/workspace/watchers.go  # 656 lines
+internal/server/workspace/watchers.go  # 652 lines
 internal/telegram/bot.go  # 634 lines
-internal/server/workspace/handlers.go  # 633 lines
+internal/server/workspace/handlers.go  # 657 lines
 internal/store/crawl/intents.go  # 622 lines
 internal/store/coordination/execution_attempts.go  # 612 lines
 internal/server/leads/handlers.go  # 585 lines

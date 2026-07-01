@@ -41,11 +41,7 @@ func submitConnectorCrawl(ctx context.Context, db *store.Store, task *jobs.Task,
 		log.Printf("[ConnectorCrawl] no heartbeat-routable connector org=%d account=%d: %s", task.OrgID, task.AccountID, reason)
 	}
 
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		return "", true, err
-	}
-	sess, _ := appStore.GetSession(ctx, task.AccountID)
+	sess, _ := db.Sessions().GetSession(ctx, task.AccountID)
 	if sess != nil && sess.CDPPort > 0 && (sess.Status == "idle" || sess.Status == "ready" || sess.Status == "active") {
 		return "", false, nil
 	}
