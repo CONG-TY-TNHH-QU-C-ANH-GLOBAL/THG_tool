@@ -31,7 +31,7 @@ func (h *Handler) claimCandidate(orgID, agentID, assignedAccountID int64, worker
 	if !ownsStream {
 		return msg, false, nil
 	}
-	claim, err := h.db.ClaimPlannedOutboundForOrg(orgID, msg.ID, workerID, 0)
+	claim, err := h.db.Outbound().Claim(orgID, msg.ID, workerID, 0)
 	if err != nil || claim == nil {
 		return msg, false, nil
 	}

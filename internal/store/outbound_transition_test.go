@@ -89,7 +89,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 		t.Fatalf("plan: expected 1, got %d", got)
 	}
 
-	claim, err := db.ClaimPlannedOutboundForOrg(2, id, "worker", 0)
+	claim, err := db.Outbound().Claim(2, id, "worker", 0)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 		t.Fatalf("claim: expected 1, got %d", got)
 	}
 
-	finalized, _, _, _, err := db.FinalizeOutboundAttempt(
+	finalized, _, _, _, err := db.Outbound().Finalize(
 		context.Background(), 2, id, claim.ExecutionID,
 		models.ExecFinished, models.VerifVerifiedSuccess,
 	)
@@ -109,7 +109,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 	}
 
 	// Idempotent replay must NOT append a second finalize row.
-	finalized2, _, _, _, err := db.FinalizeOutboundAttempt(
+	finalized2, _, _, _, err := db.Outbound().Finalize(
 		context.Background(), 2, id, claim.ExecutionID,
 		models.ExecFinished, models.VerifVerifiedSuccess,
 	)
@@ -144,14 +144,14 @@ func TestTransitionLedger_ResetAppendsRow(t *testing.T) {
 	db := newSharedStore(t, "tx_ledger_reset.db")
 	id := queueOnePlanned(t, db, 3, 12, "https://facebook.com/p/reset-ledger")
 
-	if _, err := db.ClaimPlannedOutboundForOrg(3, id, "worker", 0); err != nil {
+	if _, err := db.Outbound().Claim(3, id, "worker", 0); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	// Force the lease into the past so ResetStaleSending evicts.
 	if _, err := db.db.Exec(`UPDATE outbound_messages SET lease_expiry = datetime('now', '-1 minute') WHERE id = ?`, id); err != nil {
 		t.Fatalf("force lease expiry: %v", err)
 	}
-	if err := db.ResetStaleExecutingForOrg(3, time.Minute); err != nil {
+	if err := db.Outbound().ResetStaleExecuting(3, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	if got := countTransitions(t, db, id, TransitionReset); got != 1 {

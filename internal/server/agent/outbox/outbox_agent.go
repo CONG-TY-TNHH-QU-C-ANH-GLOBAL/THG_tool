@@ -42,8 +42,8 @@ func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {
 	// 10-min fallback only applies to legacy rows (lease_expiry IS
 	// NULL). New claims get a per-row lease so this global window is
 	// no longer the primary stale-detection knob.
-	_ = h.db.ResetStaleExecutingForOrg(orgID, 10*time.Minute)
-	candidates, err := h.db.GetOutboundByExecutionStateForOrg(orgID, models.ExecPlanned, "", limit*4)
+	_ = h.db.Outbound().ResetStaleExecuting(orgID, 10*time.Minute)
+	candidates, err := h.db.Outbound().ListByState(orgID, models.ExecPlanned, "", limit*4)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

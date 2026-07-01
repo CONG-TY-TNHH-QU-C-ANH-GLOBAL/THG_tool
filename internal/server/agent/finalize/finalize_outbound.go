@@ -142,7 +142,7 @@ func (f *outboundFinalizer) enforceTargetIdentity(ctx context.Context) {
 func (f *outboundFinalizer) attemptFinalization(ctx context.Context) (*FinalizeResolution, error) {
 	f.terminalState, f.terminalOutcome = models.TerminalFromOutcome(f.outcome)
 
-	finalized, currentState, currentOutcome, currentExecID, err := f.h.db.FinalizeOutboundAttempt(ctx, f.orgID, f.id, f.report.ExecutionID, f.terminalState, f.terminalOutcome)
+	finalized, currentState, currentOutcome, currentExecID, err := f.h.db.Outbound().Finalize(ctx, f.orgID, f.id, f.report.ExecutionID, f.terminalState, f.terminalOutcome)
 	if err != nil {
 		return nil, err
 	}
