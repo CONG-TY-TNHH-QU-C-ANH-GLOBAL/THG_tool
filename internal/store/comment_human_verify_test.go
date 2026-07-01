@@ -13,7 +13,7 @@ import (
 // seedComment queues a comment and forces a terminal verification_outcome (like finalize).
 func seedComment(t *testing.T, db *Store, orgID, accountID int64, postURL, content, vo string) int64 {
 	t.Helper()
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: orgID, Type: "comment", Platform: "facebook",
 		AccountID: accountID, TargetURL: postURL, Content: content,
 	}, 24*time.Hour)

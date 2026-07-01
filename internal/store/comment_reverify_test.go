@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/coordination"
 )
 
 // seedSubmittedUnverified queues a comment and forces it to the submitted_unverified
@@ -14,7 +15,7 @@ import (
 func seedSubmittedUnverified(t *testing.T, db *Store, orgID, accountID int64, postURL, content string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: orgID, Type: "comment", Platform: "facebook",
 		AccountID: accountID, TargetURL: postURL, Content: content,
 	}, 24*time.Hour)
@@ -45,6 +46,39 @@ func ledgerOutcomes(t *testing.T, db *Store, orgID int64, url string) []string {
 	return out
 }
 
+// assertReverifyEligibility fails the test unless wantID is present in jobs
+// and excludeID is absent.
+func assertReverifyEligibility(t *testing.T, jobs []coordination.ReverifyJob, wantID, excludeID int64) {
+	t.Helper()
+	var got, sawExcluded bool
+	for _, j := range jobs {
+		if j.OutboundID == wantID {
+			got = true
+		}
+		if j.OutboundID == excludeID {
+			sawExcluded = true
+		}
+	}
+	if !got {
+		t.Fatalf("submitted_unverified outbound %d should be eligible", wantID)
+	}
+	if sawExcluded {
+		t.Errorf("failed_before_submit outbound %d must NOT be eligible", excludeID)
+	}
+}
+
+// scheduleReverifyJob schedules the job matching outboundID, if present.
+func scheduleReverifyJob(t *testing.T, ctx context.Context, co *coordination.Store, jobs []coordination.ReverifyJob, outboundID int64) {
+	t.Helper()
+	for _, j := range jobs {
+		if j.OutboundID == outboundID {
+			if err := co.ScheduleReverify(ctx, j, time.Now()); err != nil {
+				t.Fatalf("ScheduleReverify: %v", err)
+			}
+		}
+	}
+}
+
 // #1 + #4: an eligible submitted_unverified is found + schedulable + claimable; a
 // failed_before_submit (target_not_reached) is NOT eligible.
 func TestReverify_EligibilityAndClaim(t *testing.T) {
@@ -56,7 +90,7 @@ func TestReverify_EligibilityAndClaim(t *testing.T) {
 
 	// A failed-before-submit comment must be ignored.
 	failURL := "https://facebook.com/groups/1/posts/RVFAIL"
-	failID, _ := db.QueueOutboundForOrg(&models.OutboundMessage{
+	failID, _ := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 10, TargetURL: failURL, Content: "x",
 	}, 24*time.Hour)
 	_, _ = db.db.Exec(`UPDATE outbound_messages SET verification_outcome='target_not_reached', execution_state='finished' WHERE id=?`, failID.ID)
@@ -66,30 +100,8 @@ func TestReverify_EligibilityAndClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindReverifyEligible: %v", err)
 	}
-	var got, sawFail bool
-	for _, j := range jobs {
-		if j.OutboundID == outboundID {
-			got = true
-		}
-		if j.OutboundID == failID.ID {
-			sawFail = true
-		}
-	}
-	if !got {
-		t.Fatalf("submitted_unverified outbound %d should be eligible", outboundID)
-	}
-	if sawFail {
-		t.Errorf("failed_before_submit outbound %d must NOT be eligible", failID.ID)
-	}
-
-	// Schedule + claim.
-	for _, j := range jobs {
-		if j.OutboundID == outboundID {
-			if err := co.ScheduleReverify(ctx, j, time.Now()); err != nil {
-				t.Fatalf("ScheduleReverify: %v", err)
-			}
-		}
-	}
+	assertReverifyEligibility(t, jobs, outboundID, failID.ID)
+	scheduleReverifyJob(t, ctx, co, jobs, outboundID)
 	claimed, err := co.ClaimDueReverifies(ctx, 1, 10, 7, time.Now(), 10)
 	if err != nil {
 		t.Fatalf("ClaimDueReverifies: %v", err)

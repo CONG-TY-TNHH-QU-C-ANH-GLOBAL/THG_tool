@@ -16,7 +16,7 @@ import (
 // below can stay focused on the transition-ledger invariants.
 func queueOnePlanned(t *testing.T, db *Store, orgID, accountID int64, target string) int64 {
 	t.Helper()
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     orgID,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -186,11 +186,11 @@ func TestActionPolicy_CommentBlocksSameAccountSameTarget(t *testing.T) {
 		TargetURL: target,
 		Content:   "first",
 	}
-	if _, err := db.QueueOutboundForOrg(first, time.Hour); err != nil {
+	if _, err := db.Outbound().Queue(first, time.Hour); err != nil {
 		t.Fatalf("first queue: %v", err)
 	}
 
-	second, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	second, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     10,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -224,11 +224,11 @@ func TestActionPolicy_InboxCrossAccountBlocks(t *testing.T) {
 		TargetURL: leadURL,
 		Content:   "alice",
 	}
-	if _, err := db.QueueOutboundForOrg(alice, time.Hour); err != nil {
+	if _, err := db.Outbound().Queue(alice, time.Hour); err != nil {
 		t.Fatalf("alice queue: %v", err)
 	}
 
-	bob, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	bob, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     11,
 		Type:      "inbox",
 		Platform:  models.PlatformFacebook,
@@ -262,11 +262,11 @@ func TestActionPolicy_CommentCrossAccountAmplificationAllowed(t *testing.T) {
 		TargetURL: postURL,
 		Content:   "alice's take",
 	}
-	if r, err := db.QueueOutboundForOrg(alice, time.Hour); err != nil || !r.Decision.Allowed {
+	if r, err := db.Outbound().Queue(alice, time.Hour); err != nil || !r.Decision.Allowed {
 		t.Fatalf("alice queue failed: err=%v decision=%+v", err, r.Decision)
 	}
 
-	bob, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	bob, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     12,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -289,7 +289,7 @@ func TestActionPolicy_CommentCrossAccountAmplificationAllowed(t *testing.T) {
 // back to permissive defaults.
 func TestActionPolicy_UnknownActionTypeRefused(t *testing.T) {
 	db := newSharedStore(t, "policy_unknown_action.db")
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     13,
 		Type:      "shouting", // no seed for this type
 		Platform:  models.PlatformFacebook,
@@ -317,7 +317,7 @@ func TestActionPolicy_OrgOverrideShadowsGlobalDefault(t *testing.T) {
 	const orgID = int64(14)
 
 	// Admin upserts an override that loosens dedup to 'none' for comment.
-	if err := db.UpsertActionPolicy(context.Background(), ActionPolicy{
+	if err := db.Outbound().UpsertPolicy(context.Background(), ActionPolicy{
 		OrgID:             orgID,
 		ActionType:        "comment",
 		DedupScope:        DedupScopeNone,
@@ -329,7 +329,7 @@ func TestActionPolicy_OrgOverrideShadowsGlobalDefault(t *testing.T) {
 		t.Fatalf("upsert override: %v", err)
 	}
 
-	resolved, err := db.GetActionPolicy(context.Background(), orgID, "comment")
+	resolved, err := db.Outbound().GetPolicy(context.Background(), orgID, "comment")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestActionPolicy_OrgOverrideShadowsGlobalDefault(t *testing.T) {
 	}
 
 	// Verify a different org still sees the global default.
-	def, err := db.GetActionPolicy(context.Background(), 999, "comment")
+	def, err := db.Outbound().GetPolicy(context.Background(), 999, "comment")
 	if err != nil {
 		t.Fatalf("default resolve: %v", err)
 	}

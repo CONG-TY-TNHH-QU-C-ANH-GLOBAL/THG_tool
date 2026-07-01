@@ -17,7 +17,7 @@ const errOutboundNotFound = "outbound message not found"
 // owns its target account. Admin / platform roles pass. Returns the message
 // on success or writes a response and returns a non-nil error on failure.
 func (h *Handler) requireOutboundOwnerRow(c *fiber.Ctx, orgID, userID int64, role string, id int64) (*models.OutboundMessage, error) {
-	msg, err := h.db.GetOutboundForOrg(orgID, id)
+	msg, err := h.db.Outbound().Get(orgID, id)
 	if err != nil || msg == nil {
 		return nil, c.Status(404).JSON(fiber.Map{"error": errOutboundNotFound})
 	}
@@ -52,7 +52,7 @@ func (h *Handler) editOutbound(c *fiber.Ctx) error {
 	if _, err := h.requireOutboundOwnerRow(c, orgID, userID, role, id); err != nil {
 		return err
 	}
-	if err := h.db.UpdateOutboundContentForOrg(orgID, id, req.Content); err != nil {
+	if err := h.db.Outbound().EditContent(orgID, id, req.Content); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": errOutboundNotFound})
 	}
 	return c.JSON(fiber.Map{"status": "updated"})
@@ -69,7 +69,7 @@ func (h *Handler) deleteOutbound(c *fiber.Ctx) error {
 	if _, err := h.requireOutboundOwnerRow(c, orgID, userID, role, id); err != nil {
 		return err
 	}
-	if err := h.db.DeleteOutboundForOrg(orgID, id); err != nil {
+	if err := h.db.Outbound().Delete(orgID, id); err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": errOutboundNotFound})
 	}
 	return c.JSON(fiber.Map{"status": "deleted"})

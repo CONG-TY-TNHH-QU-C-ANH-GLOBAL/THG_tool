@@ -33,7 +33,7 @@ func TestActionLedgerEventType_FreshMigrationAndWriterUnchanged(t *testing.T) {
 	// Existing writer path unchanged: queueing an outbound still inserts a
 	// ledger row with the legacy outcome 'queued' AND the new column defaulted
 	// to 'action_attempted' (the writer SQL never names event_type).
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: "https://facebook.com/groups/1/posts/100", Content: "x",
 	}, 24*time.Hour)

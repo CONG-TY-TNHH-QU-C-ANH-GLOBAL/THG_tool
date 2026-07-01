@@ -33,7 +33,7 @@ func TestGetLeadsFiltered_CommentedFromVerifiedLedger(t *testing.T) {
 	}
 
 	// Queue only → ledger outcome 'queued' → NOT a verified touch → commented stays false.
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: postURL, Content: "hi",
 	}, 24*time.Hour)

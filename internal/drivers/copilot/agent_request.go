@@ -35,7 +35,7 @@ func (a *Agent) shouldAutoOutbound(prompt string, orgID int64) bool {
 	if wantsAutoOutbound(prompt) {
 		return true
 	}
-	if a.db != nil && orgID > 0 && a.db.IsAutoOutboundEnabledForOrg(orgID) {
+	if a.db != nil && orgID > 0 && a.db.Outbound().IsAutoEnabledForOrg(orgID) {
 		return true
 	}
 	return false

@@ -14,7 +14,7 @@ import (
 func markLedger(t *testing.T, db *Store, orgID, accountID int64, postURL, outcome string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: orgID, Type: "comment", Platform: "facebook",
 		AccountID: accountID, TargetURL: postURL, Content: "hi",
 	}, 24*time.Hour)

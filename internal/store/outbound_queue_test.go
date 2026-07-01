@@ -24,7 +24,7 @@ func newTestStore(t *testing.T) *Store {
 // no-op.
 func TestQueueOutboundForOrgGoesStraightToApproved(t *testing.T) {
 	db := newTestStore(t)
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     1,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -54,7 +54,7 @@ func TestQueueOutboundForOrgIgnoresLegacyOptInPolicy(t *testing.T) {
 	if err := db.Leads().SetContext("org:1:outbound_mode", "draft"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     1,
 		Type:      "inbox",
 		Platform:  models.PlatformFacebook,
@@ -76,7 +76,7 @@ func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	if err := db.Leads().SetContext("org:1:outbound_mode", "auto"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     1,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -98,7 +98,7 @@ func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	if claim.LeaseExpiry.IsZero() {
 		t.Fatalf("claim must set lease_expiry; got %+v", claim)
 	}
-	msg, err := db.GetOutboundForOrg(1, res.ID)
+	msg, err := db.Outbound().Get(1, res.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestClaimPlannedOutboundForOrgMovesToSendingOnce(t *testing.T) {
 	if _, err := db.ClaimPlannedOutboundForOrg(1, res.ID, "worker-b", 0); err == nil {
 		t.Fatal("expected second claim to fail")
 	}
-	dup, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	dup, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     1,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -138,7 +138,7 @@ func TestQueueOutboundForOrgIgnoresGlobalAutoCommentMode(t *testing.T) {
 	_ = db.Leads().SetContext("auto_comment_mode", "true")
 	_ = db.Leads().SetContext("org:1:auto_comment_mode", "true")
 
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:     1,
 		Type:      "comment",
 		Platform:  models.PlatformFacebook,
@@ -161,11 +161,11 @@ func TestQueueOutboundForOrgBlocksDuplicateActiveTarget(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: 7, TargetURL: "https://facebook.com/p/dup", Content: "x",
 	}
-	if _, err := db.QueueOutboundForOrg(first, time.Hour); err != nil {
+	if _, err := db.Outbound().Queue(first, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: 7, TargetURL: "https://facebook.com/p/dup", Content: "y",
 	}, time.Hour)
@@ -193,7 +193,7 @@ func TestQueueOutbound_VerifiedSuccessTriggersCooldown(t *testing.T) {
 	const org, acct = int64(41), int64(7)
 	target := "https://facebook.com/p/cooldown-success"
 
-	first, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	first, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: acct, TargetURL: target, Content: "x",
 	}, time.Hour)
@@ -208,7 +208,7 @@ func TestQueueOutbound_VerifiedSuccessTriggersCooldown(t *testing.T) {
 		t.Fatalf("finalize verified_success: finalized=%v err=%v", finalized, err)
 	}
 
-	dup, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	dup, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: acct, TargetURL: target, Content: "y",
 	}, time.Hour)
@@ -238,7 +238,7 @@ func TestQueueOutbound_FailedFinishedIsRetryable(t *testing.T) {
 		models.VerifExecutionFailed,
 	} {
 		target := fmt.Sprintf("https://facebook.com/p/retryable-%d", i)
-		first, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		first, err := db.Outbound().Queue(&models.OutboundMessage{
 			OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
 			AccountID: acct, TargetURL: target, Content: "x",
 		}, time.Hour)
@@ -253,7 +253,7 @@ func TestQueueOutbound_FailedFinishedIsRetryable(t *testing.T) {
 			t.Fatalf("finalize %s: finalized=%v err=%v", outcome, finalized, err)
 		}
 
-		retry, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		retry, err := db.Outbound().Queue(&models.OutboundMessage{
 			OrgID: org, Type: "comment", Platform: models.PlatformFacebook,
 			AccountID: acct, TargetURL: target, Content: "y",
 		}, time.Hour)
@@ -281,7 +281,7 @@ func TestQueueOutboundForOrgConcurrentRaceLastResortUnique(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func(idx int) {
 			defer wg.Done()
-			results[idx], errs[idx] = db.QueueOutboundForOrg(&models.OutboundMessage{
+			results[idx], errs[idx] = db.Outbound().Queue(&models.OutboundMessage{
 				OrgID: 2, Type: "comment", Platform: models.PlatformFacebook,
 				AccountID: 9, TargetURL: target, Content: "race",
 			}, time.Hour)
@@ -314,7 +314,7 @@ func queueApprovedRow(t *testing.T, db *Store, orgID int64, target string) int64
 	if err := db.Leads().SetContext(fmt.Sprintf("org:%d:outbound_mode", orgID), "auto"); err != nil {
 		t.Fatalf("set auto mode: %v", err)
 	}
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: orgID, Type: "comment", Platform: models.PlatformFacebook,
 		AccountID: 7, TargetURL: target, Content: "hi", AIModel: "agent",
 	}, time.Hour)
@@ -493,7 +493,7 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	if err := db.ResetStaleExecutingForOrg(16, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	row, err := db.GetOutboundForOrg(16, id)
+	row, err := db.Outbound().Get(16, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestResetStaleSending_LeaseAware(t *testing.T) {
 	if err := db.ResetStaleExecutingForOrg(16, time.Minute); err != nil {
 		t.Fatalf("reset 2: %v", err)
 	}
-	row, err = db.GetOutboundForOrg(16, id)
+	row, err = db.Outbound().Get(16, id)
 	if err != nil {
 		t.Fatalf("get 2: %v", err)
 	}

@@ -48,7 +48,7 @@ func TestClaim_ConcurrentDoubleClaimExactlyOnce(t *testing.T) {
 		t.Fatalf("exactly one worker must win the claim CAS, got %d winners", won)
 	}
 	// The single winner's execution_id is the one stamped on the row.
-	msg, err := db.GetOutboundForOrg(org, id)
+	msg, err := db.Outbound().Get(org, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestClaim_WrongOrgRejected(t *testing.T) {
 	if c, err := db.ClaimPlannedOutboundForOrg(otherOrg, id, "intruder", 0); err == nil || c != nil {
 		t.Fatalf("cross-tenant claim must fail; got claim=%+v err=%v", c, err)
 	}
-	msg, err := db.GetOutboundForOrg(ownerOrg, id)
+	msg, err := db.Outbound().Get(ownerOrg, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestResetStale_LegacyNullLeaseFallback(t *testing.T) {
 	if err := db.ResetStaleExecutingForOrg(org, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	msg, err := db.GetOutboundForOrg(org, id)
+	msg, err := db.Outbound().Get(org, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestFinalize_InvalidTerminalStateRejected(t *testing.T) {
 		})
 	}
 	// The row must be untouched (still executing) after the rejected calls.
-	msg, err := db.GetOutboundForOrg(org, id)
+	msg, err := db.Outbound().Get(org, id)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}

@@ -257,7 +257,7 @@ func (h *Handler) billingSummary(c *fiber.Ctx) error {
 	accountCount, _ := h.deps.DB.CountAccountsByOrg(orgID)
 	staff, _ := h.deps.DB.App().GetStaffWithKPI(orgID)
 	fb := h.deps.DB.Identities().GetFacebookStatusForOrg(orgID)
-	outboxCounts, _ := h.deps.DB.CountOutboundByStatusForOrg(orgID)
+	outboxCounts, _ := h.deps.DB.Outbound().CountByState(orgID)
 	return c.JSON(fiber.Map{
 		"plan_tier":      org.PlanTier,
 		"max_accounts":   org.MaxAccounts,

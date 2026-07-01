@@ -18,7 +18,7 @@ func TestCommentForensics_ReturnsFieldsAndClassification(t *testing.T) {
 	postURL := "https://facebook.com/groups/1312868109620530/posts/2040011516906182/"
 
 	// Real queue path → outbound + ledger row.
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 10, TargetURL: postURL, Content: "Bên mình nhận sourcing leather notebook",
 	}, 24*time.Hour)

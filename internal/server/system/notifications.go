@@ -179,7 +179,7 @@ func NotifyOutboundStatusDetail(db *store.Store, notifier func(string), orgID, i
 	if db == nil {
 		return
 	}
-	msg, err := db.GetOutboundForOrg(orgID, id)
+	msg, err := db.Outbound().Get(orgID, id)
 	if err != nil || msg == nil {
 		return
 	}

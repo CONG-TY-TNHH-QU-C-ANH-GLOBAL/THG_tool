@@ -96,7 +96,7 @@ type outboundFinalizer struct {
 // loadOutbound fetches the outbound row. A missing row yields the 404 resolution
 // the caller returns verbatim; otherwise it caches the row and returns nil.
 func (f *outboundFinalizer) loadOutbound() *FinalizeResolution {
-	msg, msgErr := f.h.db.GetOutboundForOrg(f.orgID, f.id)
+	msg, msgErr := f.h.db.Outbound().Get(f.orgID, f.id)
 	if msgErr != nil {
 		return &FinalizeResolution{
 			HTTPStatus: 404,
