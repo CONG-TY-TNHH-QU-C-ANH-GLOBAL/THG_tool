@@ -8,13 +8,20 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // AppStore manages multi-tenant task execution records and task-derived leads.
 // It reuses the existing Store's DB connection; call NewAppStore(existing *Store).
 // Tables are prefixed app_ / task_ to avoid collision with the legacy schema.
+//
+// sessions holds the sessions-domain subpackage handle so the *AppStore
+// session bridge methods (sessions.go, session_status.go) can delegate to it
+// — PR1 of the *AppStore dissolution (2026-07-01), zero semantic change.
 type AppStore struct {
-	db *sql.DB
+	db       *sql.DB
+	sessions *sessions.Store
 }
 
 // AppTask is the application-level task record (distinct from the jobs queue row).
@@ -53,7 +60,7 @@ func (a *AppStore) DB() *sql.DB { return a.db }
 // NewAppStore wraps the existing Store's database connection,
 // ensuring the app_tasks and task_leads tables exist.
 func NewAppStore(s *Store) (*AppStore, error) {
-	a := &AppStore{db: s.db}
+	a := &AppStore{db: s.db, sessions: s.Sessions()}
 	if err := a.migrate(); err != nil {
 		return nil, fmt.Errorf("app store migrate: %w", err)
 	}
