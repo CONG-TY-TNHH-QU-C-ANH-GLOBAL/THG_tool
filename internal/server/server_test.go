@@ -3,24 +3,24 @@ package server
 import (
 	"testing"
 
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 func TestLocalSessionStatusFromStreamDoesNotTreatTransientChromeAsHardError(t *testing.T) {
-	if got := store.LocalSessionStatusFromStream("chrome_not_connected"); got != store.SessionStarting {
-		t.Fatalf("chrome_not_connected mapped to %q, want %q", got, store.SessionStarting)
+	if got := sessions.LocalSessionStatusFromStream("chrome_not_connected"); got != sessions.SessionStarting {
+		t.Fatalf("chrome_not_connected mapped to %q, want %q", got, sessions.SessionStarting)
 	}
 }
 
 func TestLocalSessionStatusFromStreamKeepsHardAndReadyStates(t *testing.T) {
-	cases := map[string]store.LocalSessionStatus{
-		"facebook_logged_in":      store.SessionReady,
-		"facebook_login_required": store.SessionLoginReq,
-		"facebook_human_required": store.SessionHumanReq,
-		"unknown":                 store.SessionActive,
+	cases := map[string]sessions.LocalSessionStatus{
+		"facebook_logged_in":      sessions.SessionReady,
+		"facebook_login_required": sessions.SessionLoginReq,
+		"facebook_human_required": sessions.SessionHumanReq,
+		"unknown":                 sessions.SessionActive,
 	}
 	for input, want := range cases {
-		if got := store.LocalSessionStatusFromStream(input); got != want {
+		if got := sessions.LocalSessionStatusFromStream(input); got != want {
 			t.Fatalf("%s mapped to %q, want %q", input, got, want)
 		}
 	}

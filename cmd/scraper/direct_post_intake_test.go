@@ -21,11 +21,7 @@ const intakePostFBID = "4504452536547584"
 // action account is online; here we seed an idle CDP session per account.
 func seedDispatchableSession(t *testing.T, db *store.Store, orgID, accountID int64) {
 	t.Helper()
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := appStore.UpsertSession(context.Background(), store.BrowserSession{
+	if err := db.Sessions().UpsertSession(context.Background(), store.BrowserSession{
 		AccountID: accountID, OrgID: orgID, Status: "idle", CDPPort: 9222,
 		StartedAt: time.Now().UTC(), LastActiveAt: time.Now().UTC(),
 	}); err != nil {

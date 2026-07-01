@@ -274,6 +274,9 @@ func newSQLite(dbPath string) (*Store, error) {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
+	if err := sessions.Migrate(s.db); err != nil {
+		return nil, fmt.Errorf("sessions migrate: %w", err)
+	}
 	s.sessions = sessions.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil
@@ -324,6 +327,9 @@ func newPostgres(dsn string) (*Store, error) {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
+	if err := sessions.Migrate(s.db); err != nil {
+		return nil, fmt.Errorf("sessions migrate: %w", err)
+	}
 	s.sessions = sessions.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return s, nil

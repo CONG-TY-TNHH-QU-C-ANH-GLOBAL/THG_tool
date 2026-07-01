@@ -426,17 +426,13 @@ func EnsureAssignedLocalBrowserTarget(db *store.Store, ctx context.Context, orgI
 	if acc.Platform != models.PlatformFacebook {
 		return fmt.Errorf("account %d is not a Facebook account", accountID)
 	}
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		return err
-	}
-	if sess, err := appStore.GetSession(ctx, accountID); err == nil && sess != nil {
+	if sess, err := db.Sessions().GetSession(ctx, accountID); err == nil && sess != nil {
 		status := strings.ToLower(strings.TrimSpace(sess.Status))
 		if strings.HasPrefix(status, "local_") && status != "local_stopped" && status != "local_terminated" && status != "terminated" {
 			return nil
 		}
 	}
-	return appStore.RecordLocalSession(ctx, accountID, orgID, store.SessionStarting, "")
+	return db.Sessions().RecordLocalSession(ctx, accountID, orgID, store.SessionStarting, "")
 }
 
 func pairingCodeFingerprint(code string) string {

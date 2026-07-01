@@ -8,6 +8,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/identities"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // ConnectorIdentitySnapshot captures everything the connector knows about the
@@ -51,42 +52,57 @@ func ResolveConnectorIdentity(db *store.Store, ctx context.Context, agentID, cre
 	if db == nil || snap.OrgID <= 0 {
 		return res, nil
 	}
-	loggedIn := strings.EqualFold(strings.TrimSpace(snap.StreamStatus), browsergateway.StreamFacebookLoggedIn) &&
-		strings.TrimSpace(snap.FBUserID) != ""
-	if loggedIn {
-		acc, created, err := db.Identities().ResolveOrCreateAccountForFacebookIdentity(
-			snap.OrgID, createdBy, snap.FBUserID,
-			identities.FacebookIdentityMeta{DisplayName: snap.FBDisplayName, Username: snap.FBUsername, ProfileURL: snap.FBProfileURL},
-			snap.LoginEmail,
-		)
-		if err != nil {
-			return res, err
-		}
-		if acc.AssignedUserID != 0 && createdBy != 0 && acc.AssignedUserID != createdBy {
-			// No-steal: belongs to another member. Mutate nothing.
-			return ResolvedConnectorIdentity{AccountID: acc.ID, Conflict: true, ConflictOwnerID: acc.AssignedUserID}, nil
-		}
-		res.AccountID = acc.ID
-		res.Created = created
-		if agentID > 0 && acc.ID != currentAssignedAccountID {
-			if err := db.Connectors().AssignAgentAccount(agentID, snap.OrgID, acc.ID); err == nil {
-				res.Rebound = true
-				res.PreviousAccount = currentAssignedAccountID
-			}
-		}
-		snap.AccountID = acc.ID
-	} else if snap.AccountID > 0 {
-		// Not logged in: only act on a slot that genuinely belongs to this org.
-		if acc, err := db.Identities().GetAccountForOrg(snap.AccountID, snap.OrgID); err != nil || acc == nil {
-			return res, nil
-		}
+	resolved, accountID, done, err := resolveAccountForSnapshot(db, agentID, createdBy, currentAssignedAccountID, snap)
+	if done || err != nil {
+		return resolved, err
 	}
+	res, snap.AccountID = resolved, accountID
 	if snap.AccountID > 0 {
 		if err := ApplyConnectorIdentity(db, ctx, snap); err != nil {
 			return res, err
 		}
 	}
 	return res, nil
+}
+
+// resolveAccountForSnapshot resolves (when logged in) or verifies (when not)
+// the FB account identity for snap. done=true means the caller must return
+// immediately with (res, err) as-is — covers the no-steal conflict and the
+// not-in-this-org guard.
+func resolveAccountForSnapshot(db *store.Store, agentID, createdBy, currentAssignedAccountID int64, snap ConnectorIdentitySnapshot) (res ResolvedConnectorIdentity, accountID int64, done bool, err error) {
+	res = ResolvedConnectorIdentity{AccountID: snap.AccountID}
+	loggedIn := strings.EqualFold(strings.TrimSpace(snap.StreamStatus), browsergateway.StreamFacebookLoggedIn) &&
+		strings.TrimSpace(snap.FBUserID) != ""
+	if !loggedIn {
+		if snap.AccountID > 0 {
+			// Not logged in: only act on a slot that genuinely belongs to this org.
+			if acc, err := db.Identities().GetAccountForOrg(snap.AccountID, snap.OrgID); err != nil || acc == nil {
+				return res, snap.AccountID, true, nil
+			}
+		}
+		return res, snap.AccountID, false, nil
+	}
+	acc, created, err := db.Identities().ResolveOrCreateAccountForFacebookIdentity(
+		snap.OrgID, createdBy, snap.FBUserID,
+		identities.FacebookIdentityMeta{DisplayName: snap.FBDisplayName, Username: snap.FBUsername, ProfileURL: snap.FBProfileURL},
+		snap.LoginEmail,
+	)
+	if err != nil {
+		return res, snap.AccountID, true, err
+	}
+	if acc.AssignedUserID != 0 && createdBy != 0 && acc.AssignedUserID != createdBy {
+		// No-steal: belongs to another member. Mutate nothing.
+		return ResolvedConnectorIdentity{AccountID: acc.ID, Conflict: true, ConflictOwnerID: acc.AssignedUserID}, snap.AccountID, true, nil
+	}
+	res.AccountID = acc.ID
+	res.Created = created
+	if agentID > 0 && acc.ID != currentAssignedAccountID {
+		if err := db.Connectors().AssignAgentAccount(agentID, snap.OrgID, acc.ID); err == nil {
+			res.Rebound = true
+			res.PreviousAccount = currentAssignedAccountID
+		}
+	}
+	return res, acc.ID, false, nil
 }
 
 // ApplyConnectorIdentity persists the session row and, when the snapshot
@@ -99,11 +115,9 @@ func ApplyConnectorIdentity(db *store.Store, ctx context.Context, snap Connector
 	if stream == "" {
 		stream = browsergateway.StreamConnectorOnline
 	}
-	sessionStatus := store.LocalSessionStatusFromStream(stream)
+	sessionStatus := sessions.LocalSessionStatusFromStream(stream)
 
-	if appStore, err := store.NewAppStore(db); err == nil {
-		_ = appStore.RecordLocalSession(ctx, snap.AccountID, snap.OrgID, sessionStatus, strings.TrimSpace(snap.ChromeError))
-	}
+	_ = db.Sessions().RecordLocalSession(ctx, snap.AccountID, snap.OrgID, sessionStatus, strings.TrimSpace(snap.ChromeError))
 
 	loggedIn := strings.EqualFold(stream, browsergateway.StreamFacebookLoggedIn) && strings.TrimSpace(snap.FBUserID) != ""
 	if loggedIn {
@@ -118,7 +132,7 @@ func ApplyConnectorIdentity(db *store.Store, ctx context.Context, snap Connector
 		_ = db.Identities().UpdateAccountStatus(snap.AccountID, models.AccountActive)
 		return nil
 	}
-	if store.LocalFacebookNotReady(stream) {
+	if sessions.LocalFacebookNotReady(stream) {
 		_ = db.Identities().SetBrowserLoggedInState(snap.AccountID, false)
 	}
 	return nil
