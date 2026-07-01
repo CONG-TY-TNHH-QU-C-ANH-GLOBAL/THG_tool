@@ -29,7 +29,7 @@ func TestLeadEngagement_FacebookActorAttribution(t *testing.T) {
 	}
 
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/X", "https://facebook.com/profile/X", "")
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: accID, CreatedBy: alice, TargetURL: "https://facebook.com/post/X", Content: "hi",
 	}, 24*time.Hour)
@@ -80,7 +80,7 @@ func TestLeadEngagement_SubmittedUnverifiedExcluded(t *testing.T) {
 	user := seedUser(t, db, 1, "Alice")
 	accID := seedAccount(t, db, 1, "Sales FB", user)
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/Z", "https://facebook.com/profile/Z", "")
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: accID, CreatedBy: user, TargetURL: "https://facebook.com/post/Z", Content: "submitted",
 	}, 24*time.Hour)
@@ -112,7 +112,7 @@ func TestLeadEngagement_FacebookActor_SystemCreatedByGraceful(t *testing.T) {
 
 	accID := seedAccount(t, db, 1, "Agent FB", 0)
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/Y", "https://facebook.com/profile/Y", "")
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: accID, CreatedBy: 0, TargetURL: "https://facebook.com/post/Y", Content: "agent auto",
 	}, 24*time.Hour)

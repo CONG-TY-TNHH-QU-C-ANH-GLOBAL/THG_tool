@@ -18,7 +18,7 @@ func (h *Handler) getOutbox(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	counts, _ := h.db.CountOutboundByStatusForOrg(orgID)
+	counts, _ := h.db.Outbound().CountByState(orgID)
 	// Executor attribution projection: resolve each row's account_id to its
 	// Facebook identity so the operator sees "đăng bởi <FB actor>", not a bare
 	// #account_id. Distinct from CreatedBy (the initiating principal). Best
@@ -102,7 +102,7 @@ func (h *Handler) draftOutbound(c *fiber.Ctx) error {
 	// action ledger (Coordination Plane PR-1) apply. Previously called
 	// InsertOutboundMessage directly — that was the HTTP-bypass gap flagged
 	// in project_outbound_audit_findings.md Critical #1.
-	queueRes, err := h.db.QueueOutboundForOrg(&models.OutboundMessage{
+	queueRes, err := h.db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:      orgID,
 		Type:       req.Type,
 		Platform:   models.PlatformFacebook,

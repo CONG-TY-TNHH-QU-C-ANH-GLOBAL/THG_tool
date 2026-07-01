@@ -105,7 +105,7 @@ func TestQueueOutbound_IncrementsRuntimeCounter(t *testing.T) {
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: 7, TargetURL: "https://facebook.com/post/1", Content: "hi",
 	}
-	res, err := db.QueueOutboundForOrg(msg, 24*time.Hour)
+	res, err := db.Outbound().Queue(msg, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("queue: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 	// Fill up the cap. Each comment must target a different post so the
 	// per-account dedup index does not fire.
 	for i := 0; i < cap; i++ {
-		res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+		res, err := db.Outbound().Queue(&models.OutboundMessage{
 			OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 9,
 			TargetURL: postURL(i), Content: "n",
 		}, 24*time.Hour)
@@ -159,7 +159,7 @@ func TestQueueOutbound_DailyCapBlocks(t *testing.T) {
 	}
 
 	// The (cap+1)-th comment must be blocked.
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 9,
 		TargetURL: postURL(cap + 1), Content: "n",
 	}, 24*time.Hour)
@@ -191,7 +191,7 @@ func reserveOneComment(t *testing.T, db *Store, accountID int64, target string) 
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: accountID,
 		TargetURL: target, Content: "hi",
 	}, 24*time.Hour)
@@ -297,7 +297,7 @@ func TestIncrementCounter_StaleDayRollsOverOnQueue(t *testing.T) {
 	}
 
 	// Queue a comment today → slow-path upsert (fast-path misses on stale day).
-	if _, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	if _, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 61,
 		TargetURL: "https://facebook.com/post/rollover1", Content: "hi",
 	}, 24*time.Hour); err != nil {
@@ -330,7 +330,7 @@ func TestQueueOutbound_AccountCooldownBlocks(t *testing.T) {
 	if err := db.Coordination().SetAccountCooldown(ctx, 1, 11, time.Now().Add(2*time.Hour)); err != nil {
 		t.Fatalf("set cooldown: %v", err)
 	}
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 11,
 		TargetURL: "https://facebook.com/post/cooldown", Content: "x",
 	}, 24*time.Hour)
@@ -361,7 +361,7 @@ func TestQueueOutbound_RiskCeilingBlocks(t *testing.T) {
 			t.Fatalf("signal %d: %v", i, err)
 		}
 	}
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook", AccountID: 13,
 		TargetURL: "https://facebook.com/post/risky", Content: "x",
 	}, 24*time.Hour)

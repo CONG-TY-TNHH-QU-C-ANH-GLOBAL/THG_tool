@@ -48,7 +48,7 @@ func TestLeadEngagement_ResolvesUserViaCreatedBy(t *testing.T) {
 
 	// Use the canonical queue path so the ledger row is real. CreatedBy is the
 	// member attribution (independent of who the account is assigned to).
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, CreatedBy: aliceUserID, TargetURL: "https://facebook.com/post/B", Content: "alice was here",
 	}, 24*time.Hour)
@@ -106,7 +106,7 @@ func TestLeadEngagement_AttributionImmutableOnAccountReassign(t *testing.T) {
 	acc := seedAccount(t, db, 1, "Shared FB", alice)
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/imm", "https://facebook.com/profile/imm", "")
 
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: acc, CreatedBy: alice, TargetURL: "https://facebook.com/post/imm", Content: "alice acted",
 	}, 24*time.Hour)
@@ -145,7 +145,7 @@ func TestLeadEngagement_FailedAttemptsAreNotTouches(t *testing.T) {
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/fail-target", "https://facebook.com/profile/X", "")
 
 	// 1) Queue the action — ledger row lands at outcome='queued'.
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: acc, TargetURL: "https://facebook.com/post/fail-target", Content: "anybody home",
 	}, 24*time.Hour)
@@ -202,7 +202,7 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 		"https://facebook.com/post/C?cmt=42")
 
 	// Inbox on the author_url.
-	inboxRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	inboxRes, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: bobAccID, TargetURL: "https://facebook.com/profile/C", Content: "hi",
 	}, 24*time.Hour)
@@ -210,7 +210,7 @@ func TestLeadEngagement_ProjectsAcrossAllLeadURLs(t *testing.T) {
 		t.Fatalf("inbox queue: %v", err)
 	}
 	// Comment on the secondary_url (rare but supported).
-	commentRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	commentRes, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: bobAccID, TargetURL: "https://facebook.com/post/C?cmt=42", Content: "reply",
 	}, 24*time.Hour)
@@ -249,7 +249,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 	leadID := seedLead(t, db, 1, "https://facebook.com/post/D", "https://facebook.com/profile/D", "")
 
 	// Org 2 engages the same URL — must NOT bleed into org 1's view.
-	otherRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	otherRes, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 2, Type: "comment", Platform: "facebook",
 		AccountID: otherAccID, CreatedBy: otherUserID, TargetURL: "https://facebook.com/post/D", Content: "other org",
 	}, 24*time.Hour)
@@ -257,7 +257,7 @@ func TestLeadEngagement_OrgScopedProjection(t *testing.T) {
 		t.Fatalf("other org queue: %v", err)
 	}
 	// Org 1 also engages.
-	aliceRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	aliceRes, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, CreatedBy: aliceUserID, TargetURL: "https://facebook.com/post/D", Content: "alice org1",
 	}, 24*time.Hour)
@@ -299,7 +299,7 @@ func TestLeadEngagement_Batch(t *testing.T) {
 	leadBeta := seedLead(t, db, 1, "https://facebook.com/post/Beta", "https://facebook.com/profile/Beta", "")
 	leadGamma := seedLead(t, db, 1, "https://facebook.com/post/Gamma", "https://facebook.com/profile/Gamma", "")
 
-	alphaRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	alphaRes, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/Alpha", Content: "x",
 	}, 24*time.Hour)
@@ -307,7 +307,7 @@ func TestLeadEngagement_Batch(t *testing.T) {
 		t.Fatalf("queue alpha: %v", err)
 	}
 	// Beta has TWO actions; Gamma has zero.
-	betaRes, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	betaRes, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "inbox", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/profile/Beta", Content: "y",
 	}, 24*time.Hour)
@@ -352,7 +352,7 @@ func TestLeadEngagement_BatchNoCrossLeadBleed(t *testing.T) {
 	leadOne := seedLead(t, db, 1, "https://facebook.com/post/100", "https://facebook.com/profile/100", "")
 	leadTwo := seedLead(t, db, 1, "https://facebook.com/post/200", "https://facebook.com/profile/200", "")
 
-	res, err := db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := db.Outbound().Queue(&models.OutboundMessage{
 		OrgID: 1, Type: "comment", Platform: "facebook",
 		AccountID: aliceAccID, TargetURL: "https://facebook.com/post/100", Content: "for 100",
 	}, 24*time.Hour)

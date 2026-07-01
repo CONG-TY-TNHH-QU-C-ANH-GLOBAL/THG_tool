@@ -86,7 +86,7 @@ func (h *Handler) retryComment(c *fiber.Ctx) error {
 		})
 	}
 	// Re-queue through the canonical write path — same target/content/account, new attempt.
-	res, err := h.db.QueueOutboundForOrg(&models.OutboundMessage{
+	res, err := h.db.Outbound().Queue(&models.OutboundMessage{
 		OrgID:      orgID,
 		Type:       "comment",
 		Platform:   models.PlatformFacebook,

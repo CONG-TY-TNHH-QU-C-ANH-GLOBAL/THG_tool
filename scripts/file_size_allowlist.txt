@@ -82,7 +82,7 @@ internal/store/leads/lead_engagement.go  # 393 lines
 internal/runtime/cdp_runtime.go  # 391 lines
 internal/ai/universal.go  # 387 lines
 internal/server/auth/handlers.go  # 371 lines
-internal/store/outbound_aliases.go  # 366 lines
+internal/store/outbound_aliases.go  # 259 lines
 internal/server/knowledge/handlers.go  # 363 lines
 internal/store/knowledge/events.go  # 358 lines
 internal/store/store.go  # 357 lines

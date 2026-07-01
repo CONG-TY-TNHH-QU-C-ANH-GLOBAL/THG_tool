@@ -224,22 +224,6 @@ func (s *Store) conversationGateForOutbound(_ context.Context, orgID int64, targ
 
 // --- Bridge wrappers (all Deprecated per L2) ---
 
-// QueueOutboundForOrg delegates to [outbound.Store.Queue].
-//
-// Deprecated: call s.Outbound().Queue(msg, cooldown) directly in
-// new code. L2 forbids adding new wrappers — this one exists only
-// until existing callers migrate.
-func (s *Store) QueueOutboundForOrg(msg *models.OutboundMessage, cooldown time.Duration) (OutboundQueueResult, error) {
-	return s.outbound.Queue(msg, cooldown)
-}
-
-// IsAutoOutboundEnabledForOrg delegates to [outbound.Store.IsAutoEnabledForOrg].
-//
-// Deprecated: call s.Outbound().IsAutoEnabledForOrg(orgID) directly.
-func (s *Store) IsAutoOutboundEnabledForOrg(orgID int64) bool {
-	return s.outbound.IsAutoEnabledForOrg(orgID)
-}
-
 // ClaimPlannedOutboundForOrg delegates to [outbound.Store.Claim].
 //
 // Deprecated: call s.Outbound().Claim(orgID, id, workerID, lease) directly.
@@ -267,51 +251,9 @@ func (s *Store) ResetStaleExecutingForOrg(orgID int64, staleAfter time.Duration)
 	return s.outbound.ResetStaleExecuting(orgID, staleAfter)
 }
 
-// GetOutboundForOrg delegates to [outbound.Store.Get].
-//
-// Deprecated: call s.Outbound().Get(orgID, id) directly.
-func (s *Store) GetOutboundForOrg(orgID, id int64) (*models.OutboundMessage, error) {
-	return s.outbound.Get(orgID, id)
-}
-
 // GetOutboundByExecutionStateForOrg delegates to [outbound.Store.ListByState].
 //
 // Deprecated: call s.Outbound().ListByState(...) directly.
 func (s *Store) GetOutboundByExecutionStateForOrg(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error) {
 	return s.outbound.ListByState(orgID, execState, msgType, limit)
-}
-
-// CountOutboundByStatusForOrg delegates to [outbound.Store.CountByState].
-//
-// Deprecated: call s.Outbound().CountByState(orgID) directly.
-func (s *Store) CountOutboundByStatusForOrg(orgID int64) (map[string]int, error) {
-	return s.outbound.CountByState(orgID)
-}
-
-// UpdateOutboundContentForOrg delegates to [outbound.Store.EditContent].
-//
-// Deprecated: call s.Outbound().EditContent(orgID, id, content) directly.
-func (s *Store) UpdateOutboundContentForOrg(orgID, id int64, content string) error {
-	return s.outbound.EditContent(orgID, id, content)
-}
-
-// DeleteOutboundForOrg delegates to [outbound.Store.Delete].
-//
-// Deprecated: call s.Outbound().Delete(orgID, id) directly.
-func (s *Store) DeleteOutboundForOrg(orgID, id int64) error {
-	return s.outbound.Delete(orgID, id)
-}
-
-// GetActionPolicy delegates to [outbound.Store.GetPolicy].
-//
-// Deprecated: call s.Outbound().GetPolicy(ctx, orgID, actionType) directly.
-func (s *Store) GetActionPolicy(ctx context.Context, orgID int64, actionType string) (*ActionPolicy, error) {
-	return s.outbound.GetPolicy(ctx, orgID, actionType)
-}
-
-// UpsertActionPolicy delegates to [outbound.Store.UpsertPolicy].
-//
-// Deprecated: call s.Outbound().UpsertPolicy(ctx, p) directly.
-func (s *Store) UpsertActionPolicy(ctx context.Context, p ActionPolicy) error {
-	return s.outbound.UpsertPolicy(ctx, p)
 }
