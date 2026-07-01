@@ -182,11 +182,11 @@ Lead CRUD + classification + engagement projection + niches. Has cross-domain SQ
 
 Files: `classification_log.go`, `context_niches.go`, `lead_engagement.go`, `leads.go` (+ tests).
 
-### **identities** — FB account lifecycle (top-level)
+### **identities** — FB account lifecycle (`internal/store/identities/`)
 
-FB accounts, sessions, agent tokens, browser identity. Foundational for outbound (behaviour caps require account state).
+FB accounts + Facebook-status summary. Foundational for outbound (behaviour caps require account state). **Corrected 2026-07-01** (this section pre-dated Phases 6/7 and had drifted from the table above): `accounts.go` and `facebook_status.go` are the only two files here — both already live in the `internal/store/identities/` subpackage (Phase 6, *Store-receiver). `agent_tokens.go` was reclassified to **connectors** in Phase 7 (every type/method on it was already connector-domain) and physically lives in `internal/store/connectors/`. `session_status.go` and `sessions.go` still sit at top-level but use the legacy `*AppStore` receiver, not `*Store` — see the **app** section below; they do NOT belong here despite the "FB account lifecycle" framing.
 
-Files: `accounts.go`, `agent_tokens.go`, `facebook_status.go`, `session_status.go`, `sessions.go` (+ tests).
+Files: `accounts.go`, `facebook_status.go` (+ tests) — in `internal/store/identities/`.
 
 ### **connectors** — Chrome extension bridge (top-level)
 
@@ -206,11 +206,11 @@ Prompt memory, routing analysis, skill executions.
 
 Files: `prompt_memory.go`, `prompt_routing.go`, `skills.go` (+ tests).
 
-### **app** — Misc application concerns (top-level, heterogeneous)
+### **app** — Misc application concerns (heterogeneous; split across `internal/store/app/` and legacy top-level)
 
-Tasks, KPI, learning, media, pricing, careers, stats, browser fingerprints. Last extraction candidate; will likely split rather than extract whole.
+Tasks, KPI, learning, media, pricing, careers, stats, browser fingerprints, browser sessions. Last extraction candidate; will likely split rather than extract whole. **Corrected 2026-07-01**: `career_jobs.go`, `kpi.go`, `media_assets.go`, `price_items.go`, `stats.go` already moved into `internal/store/app/` (Phase 11 narrow, *Store-receiver — see table above). The remaining `*AppStore`-receiver files stay top-level and form ONE coherent (not-yet-split) cluster — do not treat any single one of them as belonging to a different domain (confirmed by grep: all five use `func (a *AppStore) ...`):
 
-Files: `app_store.go`, `career_jobs.go`, `identities.go` (NOTE: different from `identities/`-domain `accounts.go` — browser fingerprints lift here for now), `kpi.go`, `learning.go`, `media_assets.go`, `price_items.go`, `stats.go`.
+Files (top-level, `*AppStore`-receiver): `app_store.go` (task/lead tracking), `identities.go` (browser fingerprints — NOTE: different from `identities/`-subpackage's `accounts.go`), `learning.go` (learning profile/outcomes), `session_status.go` + `sessions.go` (browser session lifecycle — moved here from a stale "identities" listing; see the **identities** section above).
 
 ### Legacy / cross-domain residue
 
