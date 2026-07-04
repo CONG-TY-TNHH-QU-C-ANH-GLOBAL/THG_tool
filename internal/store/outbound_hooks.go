@@ -63,19 +63,21 @@ func (s *Store) installOutboundHooks() {
 		ConversationGate: func(ctx context.Context, orgID int64, targetURL, profileURL string, cooldown time.Duration) (outbound.GuardDecision, error) {
 			return s.conversationGateForOutbound(ctx, orgID, targetURL, profileURL, cooldown)
 		},
-		RecordActionLedger: func(tx *sql.Tx, orgID, accountID, createdBy int64, msgType, targetURL string, outboundID int64, cooldown time.Duration) {
+		RecordActionLedger: func(tx *sql.Tx, in outbound.RecordLedgerInput) {
 			// Best-effort, errors swallowed (the outbound row is the
 			// source of truth). Failures are emitted as typed events
 			// (events.ExecutionHookFailed) so the Control Plane can
 			// surface them — see specs/RUNTIME_TOPOLOGY.md §5 failure
-			// surface gap fixed by this emission.
-			if err := coordination.RecordLedgerTx(tx, orgID, accountID, createdBy, msgType, targetURL, outboundID, cooldown); err != nil {
+			// surface gap fixed by this emission. The carrier struct is
+			// unpacked to primitives here so coordination stays free of
+			// any outbound import (same pattern as RecordTransition).
+			if err := coordination.RecordLedgerTx(tx, in.OrgID, in.AccountID, in.CreatedBy, in.MsgType, in.TargetURL, in.OutboundID, in.Cooldown); err != nil {
 				events.Warn(context.Background(), events.ExecutionHookFailed,
 					events.FieldHook, "RecordLedgerTx",
-					events.FieldOrgID, orgID,
-					events.FieldAccountID, accountID,
-					events.FieldActionType, msgType,
-					events.FieldOutboundID, outboundID,
+					events.FieldOrgID, in.OrgID,
+					events.FieldAccountID, in.AccountID,
+					events.FieldActionType, in.MsgType,
+					events.FieldOutboundID, in.OutboundID,
 					events.FieldErr, err,
 				)
 			}

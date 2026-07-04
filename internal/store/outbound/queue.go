@@ -128,7 +128,11 @@ func (s *Store) queueOnce(msg *models.OutboundMessage, cooldown time.Duration) (
 	// Cross-domain side effects via Hooks (best-effort).
 	// tenant-ok: cross-domain projection (outbound -> coordination).
 	if s.hooks.RecordActionLedger != nil {
-		s.hooks.RecordActionLedger(tx, msg.OrgID, msg.AccountID, msg.CreatedBy, string(msg.Type), msg.TargetURL, id, cooldown)
+		s.hooks.RecordActionLedger(tx, RecordLedgerInput{
+			OrgID: msg.OrgID, AccountID: msg.AccountID, CreatedBy: msg.CreatedBy,
+			MsgType: string(msg.Type), TargetURL: msg.TargetURL,
+			OutboundID: id, Cooldown: cooldown,
+		})
 	}
 	if s.hooks.IncrementCounter != nil {
 		s.hooks.IncrementCounter(tx, msg.OrgID, msg.AccountID, string(msg.Type))

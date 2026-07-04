@@ -97,6 +97,20 @@ const (
 	TransitionReset    TransitionType = "reset"
 )
 
+// RecordLedgerInput is the carrier shape for [Hooks.RecordActionLedger].
+// Same pattern as [RecordTransitionInput]: outbound owns the input shape;
+// the hook owner receives it at the wiring point and unpacks to
+// primitives, so coordination takes no peer-domain types.
+type RecordLedgerInput struct {
+	OrgID      int64
+	AccountID  int64
+	CreatedBy  int64
+	MsgType    string
+	TargetURL  string
+	OutboundID int64
+	Cooldown   time.Duration
+}
+
 // RecordTransitionInput is the carrier shape for [Hooks.RecordTransition].
 // Outbound builds this from its internal transitionInput at the hook
 // boundary; the hook owner (coordination domain, today wired in
