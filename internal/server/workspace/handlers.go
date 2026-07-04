@@ -14,8 +14,8 @@ import (
 	"github.com/thg/scraper/internal/models"
 	serveragent "github.com/thg/scraper/internal/server/agent"
 	"github.com/thg/scraper/internal/session"
-	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // Transport-layer error messages, factored out to avoid duplicated string
@@ -144,7 +144,7 @@ func (h *Handler) workspaceStart(c *fiber.Ctx) error {
 	hasOrgLocalConnector, _ := h.localConnectorAvailability(orgID)
 	hasLocalConnector, hasOnlineLocalConnector := h.localConnectorAvailabilityForUser(orgID, userID, id)
 	if hasOnlineLocalConnector {
-		if err := h.recordLocalBrowserSession(id, orgID, store.SessionStarting, ""); err != nil {
+		if err := h.recordLocalBrowserSession(id, orgID, sessions.SessionStarting, ""); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		_ = h.db.Identities().UpdateAccountStatus(id, models.AccountActive)
@@ -267,7 +267,7 @@ func isDashboardStreamConnector(conn connectors.AgentToken) bool {
 
 // recordLocalBrowserSession is a thin wrapper around Sessions().RecordLocalSession
 // kept so the several call sites in this file share one background-context call.
-func (h *Handler) recordLocalBrowserSession(accountID, orgID int64, status store.LocalSessionStatus, errorMsg string) error {
+func (h *Handler) recordLocalBrowserSession(accountID, orgID int64, status sessions.LocalSessionStatus, errorMsg string) error {
 	return h.db.Sessions().RecordLocalSession(context.Background(), accountID, orgID, status, errorMsg)
 }
 
@@ -305,7 +305,7 @@ func (h *Handler) workspaceNew(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "create account: " + err.Error()})
 	}
 	if hasOnlineLocalConnector {
-		if err := h.recordLocalBrowserSession(id, orgID, store.SessionStarting, ""); err != nil {
+		if err := h.recordLocalBrowserSession(id, orgID, sessions.SessionStarting, ""); err != nil {
 			_ = h.db.Identities().DeleteAccount(id)
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

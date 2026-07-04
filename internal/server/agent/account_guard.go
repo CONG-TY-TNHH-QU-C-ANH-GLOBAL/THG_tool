@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // RequireAccountForOrg fetches an account scoped to the caller's organization.
@@ -77,7 +78,7 @@ func RejectIfFacebookProfileMismatch(db *store.Store, c *fiber.Ctx, ctx context.
 	if incoming == "" || acc == nil || strings.TrimSpace(acc.FBUserID) == "" || acc.FBUserID == incoming {
 		return nil
 	}
-	_ = db.Sessions().RecordLocalSession(ctx, acc.ID, orgID, store.SessionError,
+	_ = db.Sessions().RecordLocalSession(ctx, acc.ID, orgID, sessions.SessionError,
 		"Facebook profile mismatch; create a separate account slot for this Facebook user")
 	return c.Status(409).JSON(fiber.Map{"error": "facebook profile mismatch for this account slot"})
 }

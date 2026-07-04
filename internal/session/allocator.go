@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/observability"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // AllocationPolicy controls which session is selected when multiple are idle.
@@ -46,7 +46,7 @@ func (a *Allocator) Acquire(
 	accountID int64,
 	policy AllocationPolicy,
 	workerID string,
-) (*store.BrowserSession, error) {
+) (*sessions.BrowserSession, error) {
 
 	// Up to 3 retries to handle the narrow window between SELECT and UPDATE.
 	for attempt := 0; attempt < 3; attempt++ {
@@ -78,7 +78,7 @@ func (a *Allocator) tryAcquire(
 	accountID int64,
 	policy AllocationPolicy,
 	workerID string,
-) (*store.BrowserSession, error) {
+) (*sessions.BrowserSession, error) {
 
 	// Step 1: find the candidate row
 	q := `SELECT id, account_id, version, cdp_port, vnc_port, org_id
@@ -135,7 +135,7 @@ func (a *Allocator) tryAcquire(
 		"cdp_port", cdpPort,
 	)
 
-	return &store.BrowserSession{
+	return &sessions.BrowserSession{
 		ID:        id,
 		AccountID: acctID,
 		OrgID:     orgID,

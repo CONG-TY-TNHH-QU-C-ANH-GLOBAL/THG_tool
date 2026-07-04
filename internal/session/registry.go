@@ -6,13 +6,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // RegistryEntry is the in-memory view of a browser session.
 type RegistryEntry struct {
-	Session    store.BrowserSession
+	Session    sessions.BrowserSession
 	ActiveJobs int32 // atomically incremented by worker goroutines
 	HealthOK   bool
 	LastCheck  time.Time
@@ -62,7 +61,7 @@ func (r *Registry) LoadAll(ctx context.Context) error {
 
 // Upsert inserts or updates the registry entry for a session.
 // Called by the workspace manager after start/stop/health events.
-func (r *Registry) Upsert(s store.BrowserSession) {
+func (r *Registry) Upsert(s sessions.BrowserSession) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.entries[s.AccountID]
