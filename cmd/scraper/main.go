@@ -63,7 +63,7 @@ func main() {
 	// hook was removed. In the autonomous-first model, planned rows must
 	// RESUME after a restart, not be marked failed. Stale executing rows
 	// are reclaimed per-org via the lease mechanism in
-	// Store.ResetStaleExecutingForOrg, called during normal runtime
+	// outbound.Store.ResetStaleExecuting, called during normal runtime
 	// (not at startup).
 
 	// Initialize job store (scheduler_jobs table — idempotent, replaces chan-based queue)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/outbound"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -276,7 +277,7 @@ func TestQueueOutboundForOrgConcurrentRaceLastResortUnique(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	results := make([]OutboundQueueResult, goroutines)
+	results := make([]outbound.QueueResult, goroutines)
 	errs := make([]error, goroutines)
 	for i := 0; i < goroutines; i++ {
 		go func(idx int) {

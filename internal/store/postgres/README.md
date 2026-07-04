@@ -16,8 +16,8 @@ data-platform ADR (`docs/architecture/ADR-PR9-DATA-PLATFORM.md`) and
   runtime migrator (which embeds only `internal/store/migrations`).
 - `outbound/` — package `outbound`: `OutboundStore`, a pgx/pgxpool adapter
   implementing the PR10 seam `internal/server/agent.OutboundLifecycleRepository`
-  (`GetOutboundByExecutionStateForOrg`, `ClaimPlannedOutboundForOrg`,
-  `FinalizeOutboundAttempt`, `ResetStaleExecutingForOrg`) plus the SQLite/Postgres
+  (`ListByState`, `Claim`, `Finalize`, `ResetStaleExecuting` — the
+  exact `internal/store/outbound.Store` method set) plus the SQLite/Postgres
   parity tests. Future domain adapters land as sibling subpackages.
 
 ## Running the integration tests locally

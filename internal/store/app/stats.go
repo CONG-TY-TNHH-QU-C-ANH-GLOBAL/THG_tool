@@ -8,7 +8,7 @@ import "github.com/thg/scraper/internal/models"
 // (V2 staged refactor 2026-05-20) removed it: under the autonomous-
 // first model, planned rows must RESUME after restart, not be marked
 // failed. Stale executing rows are reclaimed per-org via the lease
-// mechanism in [Store.ResetStaleExecutingForOrg].
+// mechanism in [outbound.Store.ResetStaleExecuting].
 
 // GetStats returns dashboard statistics in a single read transaction for consistency.
 func (s *Store) GetStats() (*models.Stats, error) {

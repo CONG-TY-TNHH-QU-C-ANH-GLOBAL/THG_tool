@@ -87,7 +87,7 @@ type Hooks struct {
 	// source of truth).
 	//
 	// tenant-ok: cross-domain projection (outbound -> coordination).
-	RecordActionLedger func(tx *sql.Tx, orgID, accountID, createdBy int64, msgType, targetURL string, outboundID int64, cooldown time.Duration)
+	RecordActionLedger func(tx *sql.Tx, in RecordLedgerInput)
 
 	// IncrementCounter bumps the per-account *_today counter for the
 	// action type in account_runtime_state. Coordination domain.

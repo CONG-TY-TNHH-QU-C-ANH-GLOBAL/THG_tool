@@ -24,7 +24,7 @@ import (
 //
 // Phase 2 of STORE_SUBPACKAGE_REFACTOR: this function lives at the
 // top-level store package and is wired into [outbound.Hooks.BehaviourCheck]
-// at construction time (see outbound_aliases.go::installOutboundHooks).
+// at construction time (see outbound_hooks.go::installOutboundHooks).
 // When coordination is extracted as its own subpackage (Phase 5B), this
 // function moves into `internal/store/coordination/` and the hook
 // continues to point at it via the same closure indirection. The

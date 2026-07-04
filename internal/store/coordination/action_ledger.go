@@ -59,7 +59,7 @@ func targetTypeFromAction(actionType string) string {
 
 // RecordLedgerTx writes a ledger row inside an open transaction. Used by
 // outbound's queue path via the Hooks closure (see
-// `installOutboundHooks` in `internal/store/outbound_aliases.go`) so the
+// `installOutboundHooks` in `internal/store/outbound_hooks.go`) so the
 // outbound row and its ledger entry land in the same transaction. Cooldown
 // <= 0 leaves cooldown_until NULL (planner uses defaults).
 //

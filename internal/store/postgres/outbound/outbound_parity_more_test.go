@@ -11,7 +11,7 @@ import (
 func parityFinalize(t *testing.T, h parityHarness) {
 	const org = int64(1103)
 	id := h.seedPlanned(t, org, 11, "comment", "https://fb.com/f1")
-	claim, err := h.repo.ClaimPlannedOutboundForOrg(org, id, "worker-a", time.Minute)
+	claim, err := h.repo.Claim(org, id, "worker-a", time.Minute)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -29,7 +29,7 @@ func parityFinalize(t *testing.T, h parityHarness) {
 // row is untouched: finalized=false, the real execID is returned, still executing.
 func assertFinalizeRejectsWrongToken(t *testing.T, h parityHarness, org, id int64, realExecID string) {
 	t.Helper()
-	ok, _, _, curExec, err := h.repo.FinalizeOutboundAttempt(
+	ok, _, _, curExec, err := h.repo.Finalize(
 		context.Background(), org, id, "wrong-token", models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("finalize wrong-token: %v", err)
@@ -49,7 +49,7 @@ func assertFinalizeRejectsWrongToken(t *testing.T, h parityHarness, org, id int6
 // tuple (finalized, finished, verified_success, same execID).
 func assertFinalizeSucceeds(t *testing.T, h parityHarness, org, id int64, execID string) {
 	t.Helper()
-	ok, state, outcome, gotExec, err := h.repo.FinalizeOutboundAttempt(
+	ok, state, outcome, gotExec, err := h.repo.Finalize(
 		context.Background(), org, id, execID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
@@ -79,7 +79,7 @@ func assertSentAtStamped(t *testing.T, h parityHarness, org int64, before, after
 // (finalized=false, state still finished).
 func assertReplayIdempotent(t *testing.T, h parityHarness, org, id int64, execID string) {
 	t.Helper()
-	ok, st, _, _, err := h.repo.FinalizeOutboundAttempt(
+	ok, st, _, _, err := h.repo.Finalize(
 		context.Background(), org, id, execID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("replay: %v", err)
@@ -95,19 +95,19 @@ func parityResetStale(t *testing.T, h parityHarness) {
 	fresh := h.seedPlanned(t, org, 11, "comment", "https://fb.com/rs2")
 	term := h.seedPlanned(t, org, 11, "comment", "https://fb.com/rs3")
 
-	if _, err := h.repo.ClaimPlannedOutboundForOrg(org, stale, "worker-a", time.Minute); err != nil {
+	if _, err := h.repo.Claim(org, stale, "worker-a", time.Minute); err != nil {
 		t.Fatalf("claim stale: %v", err)
 	}
-	freshClaim, err := h.repo.ClaimPlannedOutboundForOrg(org, fresh, "worker-b", 10*time.Minute)
+	freshClaim, err := h.repo.Claim(org, fresh, "worker-b", 10*time.Minute)
 	if err != nil {
 		t.Fatalf("claim fresh: %v", err)
 	}
 	// Terminal row: claimed then finalized — must NOT be reset.
-	termClaim, err := h.repo.ClaimPlannedOutboundForOrg(org, term, "worker-c", time.Minute)
+	termClaim, err := h.repo.Claim(org, term, "worker-c", time.Minute)
 	if err != nil {
 		t.Fatalf("claim term: %v", err)
 	}
-	if ok, _, _, _, err := h.repo.FinalizeOutboundAttempt(
+	if ok, _, _, _, err := h.repo.Finalize(
 		context.Background(), org, term, termClaim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess); err != nil || !ok {
 		t.Fatalf("finalize term: ok=%v err=%v", ok, err)
 	}
@@ -115,11 +115,11 @@ func parityResetStale(t *testing.T, h parityHarness) {
 	// Deterministically expire only the stale row's lease (backend SQL).
 	h.makeStale(t, org, stale)
 
-	if err := h.repo.ResetStaleExecutingForOrg(org, time.Minute); err != nil {
+	if err := h.repo.ResetStaleExecuting(org, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 
-	planned, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecPlanned, "", 10)
+	planned, err := h.repo.ListByState(org, models.ExecPlanned, "", 10)
 	if err != nil {
 		t.Fatalf("read planned: %v", err)
 	}
@@ -130,7 +130,7 @@ func parityResetStale(t *testing.T, h parityHarness) {
 		t.Fatalf("reset must clear execution_id, got %q", planned[0].ExecutionID)
 	}
 
-	executing, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecExecuting, "", 10)
+	executing, err := h.repo.ListByState(org, models.ExecExecuting, "", 10)
 	if err != nil {
 		t.Fatalf("read executing: %v", err)
 	}
@@ -138,7 +138,7 @@ func parityResetStale(t *testing.T, h parityHarness) {
 		t.Fatalf("non-stale row must stay executing, got %+v", executing)
 	}
 
-	if fin, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecFinished, "", 10); err != nil || len(fin) != 1 || fin[0].ID != term {
+	if fin, err := h.repo.ListByState(org, models.ExecFinished, "", 10); err != nil || len(fin) != 1 || fin[0].ID != term {
 		t.Fatalf("terminal row must not be reset, got %+v err=%v", fin, err)
 	}
 }
@@ -148,24 +148,24 @@ func parityOrgIsolation(t *testing.T, h parityHarness) {
 	idA := h.seedPlanned(t, orgA, 11, "comment", "https://fb.com/iso")
 
 	// orgB cannot see orgA's row.
-	if rows, err := h.repo.GetOutboundByExecutionStateForOrg(orgB, models.ExecPlanned, "", 10); err != nil || len(rows) != 0 {
+	if rows, err := h.repo.ListByState(orgB, models.ExecPlanned, "", 10); err != nil || len(rows) != 0 {
 		t.Fatalf("orgB must see no rows, got %d err=%v", len(rows), err)
 	}
 	// orgB cannot claim orgA's row (cross-tenant CAS miss).
-	if _, err := h.repo.ClaimPlannedOutboundForOrg(orgB, idA, "worker-b", time.Minute); err == nil {
+	if _, err := h.repo.Claim(orgB, idA, "worker-b", time.Minute); err == nil {
 		t.Fatalf("orgB claim of orgA row must fail")
 	}
 
 	// A reset scoped to orgB must not touch orgA's stale executing row.
-	claimA, err := h.repo.ClaimPlannedOutboundForOrg(orgA, idA, "worker-a", time.Minute)
+	claimA, err := h.repo.Claim(orgA, idA, "worker-a", time.Minute)
 	if err != nil {
 		t.Fatalf("claim orgA: %v", err)
 	}
 	h.makeStale(t, orgA, idA)
-	if err := h.repo.ResetStaleExecutingForOrg(orgB, time.Minute); err != nil {
+	if err := h.repo.ResetStaleExecuting(orgB, time.Minute); err != nil {
 		t.Fatalf("reset orgB: %v", err)
 	}
-	ex, err := h.repo.GetOutboundByExecutionStateForOrg(orgA, models.ExecExecuting, "", 10)
+	ex, err := h.repo.ListByState(orgA, models.ExecExecuting, "", 10)
 	if err != nil {
 		t.Fatalf("read orgA executing: %v", err)
 	}

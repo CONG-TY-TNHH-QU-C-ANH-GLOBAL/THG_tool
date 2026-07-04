@@ -62,12 +62,12 @@ func scanOutboundRow(rows pgx.Rows) (*models.OutboundMessage, error) {
 	return &m, nil
 }
 
-// GetOutboundByExecutionStateForOrg lists tenant-scoped tasks, optionally
+// ListByState lists tenant-scoped tasks, optionally
 // filtered by execution state and message type, newest first. Empty execState
 // or msgType skips that filter (the ($n = ” OR col = $n) form keeps the SQL
 // fully static and parameterized — no dynamic SQL construction). Mirrors
 // internal/store/outbound.Store.ListByState.
-func (s *OutboundStore) GetOutboundByExecutionStateForOrg(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error) {
+func (s *OutboundStore) ListByState(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error) {
 	ctx := context.Background()
 	rows, err := s.pool.Query(ctx,
 		`SELECT `+outboundReadColumns+`

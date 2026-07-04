@@ -39,7 +39,7 @@ type transitionInput struct {
 
 // appendTransition routes the transition row through the
 // [Hooks.RecordTransition] callback. The hook owner (coordination
-// domain — today wired in outbound_aliases.go::installOutboundHooks)
+// domain — today wired in outbound_hooks.go::installOutboundHooks)
 // performs the actual INSERT into execution_attempts.
 //
 // Decouple-2 (2026-05-21) moved the SQL out of outbound to satisfy

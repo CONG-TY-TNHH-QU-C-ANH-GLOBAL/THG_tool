@@ -18,10 +18,10 @@ import (
 // GET /api/agent/outbox
 //
 // Each successful claim issues a fresh execution_id and stamps a
-// per-row lease_expiry (see store.DefaultOutboundLease). Both fields
+// per-row lease_expiry (see outbound.DefaultLease). Both fields
 // flow back in the response so the executor can echo execution_id
 // on its /sent or /failed callback — that token gates the terminal
-// CAS in store.FinalizeOutboundAttempt and is what prevents
+// CAS in outbound.Store.Finalize and is what prevents
 // duplicate-comment when the extension's service worker restarts
 // mid-execution or a flaky network triggers a retry.
 func (h *Handler) agentGetOutbox(c *fiber.Ctx) error {

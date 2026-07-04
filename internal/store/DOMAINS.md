@@ -21,7 +21,7 @@ For the **runtime topology** view (same packages, grouped by runtime role, with 
 | **infra** | `internal/store/` | `store.New(...)` | always top-level (composition root) |
 | **dbutil** | `internal/store/dbutil/` | `dbutil.NewSQLiteDialect()` | extracted (Phase 1, 2026-05-21) |
 | **storetest** | `internal/store/storetest/` | `storetest.CopyTemplate(...)` | extracted 2026-05-21 (test infra) |
-| **outbound** | `internal/store/outbound/` | `s.Outbound()` | extracted (Phase 2, 2026-05-21) — bridge wrappers in `outbound_aliases.go` (L2 expiry: no new wrappers) |
+| **outbound** | `internal/store/outbound/` | `s.Outbound()` | extracted (Phase 2, 2026-05-21) — clean-cut since 2026-07-05: alias/wrapper bridge dissolved, hooks wiring lives in `outbound_hooks.go` |
 | **crawl** | `internal/store/crawl/` | `s.Crawl()` | extracted (Phase 3, 2026-05-21) — clean-cut, no wrappers |
 | **knowledge** | `internal/store/knowledge/` | `s.Knowledge()` | extracted (Phase 4, 2026-05-21) — clean-cut, no wrappers, tests in subpackage |
 | **coordination** | `internal/store/coordination/` | `s.Coordination()` | extracted (Phase 5B, 2026-05-21) — clean-cut, no wrappers. Cross-package writes from outbound flow via Hooks closure pattern. |
@@ -148,7 +148,7 @@ Schema-template trick (sync.Once compile + per-test copy). Consumed by every sub
 
 V2 outbound state taxonomy (execution_state ⊥ verification_outcome). Action policies, queue/claim/finalize/lease/dedup state machine, transition audit. Tests in `internal/store/outbound_*_test.go` (top-level, internal access) — Phase 2 fallback.
 
-Bridge wrappers in `outbound_aliases.go` exist as L2 transition shims. **No new wrappers per L2 lock.** New code calls `s.Outbound().Foo()` directly.
+The `outbound_aliases.go` bridge was dissolved (2026-07-05): the agent lifecycle port anchors at `outbound.Store` directly, and cross-domain hooks wiring lives in `outbound_hooks.go`. **No new wrappers per L2 lock.** All code calls `s.Outbound().Foo()` directly.
 
 ### **crawl** — Crawl pipeline (`internal/store/crawl/`)
 
@@ -170,7 +170,7 @@ Files: `organization.go`, `users.go`.
 
 action_ledger + execution_attempts + behaviour_profile + engagement_reconcile + behaviour_caps + execution_transition_writer. The runtime-truth substrate.
 
-**Extracted Phase 5B 2026-05-21**. Clean-cut, no bridge wrappers. Cross-package writes from outbound flow through the Hooks closure pattern wired in `installOutboundHooks` (`internal/store/outbound_aliases.go`). Per L1 + [[feedback_no_bidirectional_domain_knowledge]] coordination imports no peer domain — outbound types are unpacked to primitives at the wiring point.
+**Extracted Phase 5B 2026-05-21**. Clean-cut, no bridge wrappers. Cross-package writes from outbound flow through the Hooks closure pattern wired in `installOutboundHooks` (`internal/store/outbound_hooks.go`). Per L1 + [[feedback_no_bidirectional_domain_knowledge]] coordination imports no peer domain — outbound types are unpacked to primitives at the wiring point.
 
 Pre-existing append-only violations (MarkActionLedgerOutcome* + engagement_reconcile UPDATEs) carried as documented debt; the append-only enforcement fix is a follow-up PR per [[feedback_append_only_correction_events]].
 

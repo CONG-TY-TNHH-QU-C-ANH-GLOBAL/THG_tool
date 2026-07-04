@@ -330,7 +330,7 @@ type ExtensionExecutionReport struct {
 	EvidenceScreenshotB64 string `json:"evidence_screenshot_b64,omitempty"`
 	// ExecutionID is the per-attempt idempotency token the server
 	// issued at claim time and the executor MUST echo back. The
-	// terminal-state CAS in store.FinalizeOutboundAttempt requires
+	// terminal-state CAS in outbound.Store.Finalize requires
 	// this to match the row's stored execution_id; mismatches return
 	// 409 Conflict so a stale callback (e.g. SW restart + content-
 	// script-side replay) cannot finalize a row that has been
