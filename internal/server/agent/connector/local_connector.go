@@ -16,6 +16,7 @@ import (
 	servermw "github.com/thg/scraper/internal/server/middleware"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 type LocalConnectorDeps struct {
@@ -432,7 +433,7 @@ func EnsureAssignedLocalBrowserTarget(db *store.Store, ctx context.Context, orgI
 			return nil
 		}
 	}
-	return db.Sessions().RecordLocalSession(ctx, accountID, orgID, store.SessionStarting, "")
+	return db.Sessions().RecordLocalSession(ctx, accountID, orgID, sessions.SessionStarting, "")
 }
 
 func pairingCodeFingerprint(code string) string {

@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/coordination"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 const intakeCanonical = "https://www.facebook.com/groups/ship.viet.my/permalink/4504452536547584/"
@@ -21,7 +22,7 @@ const intakePostFBID = "4504452536547584"
 // action account is online; here we seed an idle CDP session per account.
 func seedDispatchableSession(t *testing.T, db *store.Store, orgID, accountID int64) {
 	t.Helper()
-	if err := db.Sessions().UpsertSession(context.Background(), store.BrowserSession{
+	if err := db.Sessions().UpsertSession(context.Background(), sessions.BrowserSession{
 		AccountID: accountID, OrgID: orgID, Status: "idle", CDPPort: 9222,
 		StartedAt: time.Now().UTC(), LastActiveAt: time.Now().UTC(),
 	}); err != nil {

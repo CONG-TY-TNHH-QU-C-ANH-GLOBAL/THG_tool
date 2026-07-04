@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/runtime"
 	"github.com/thg/scraper/internal/session"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 )
 
 // DockerLiveSession is the concrete LiveSession implementation for Docker-based
@@ -36,7 +37,7 @@ type Releaser interface {
 // NewDockerLiveSession creates a LiveSession wrapping an active browser session.
 // The CDPRuntime is connected eagerly; VNCVideoSource is lazy (only started when subscribed).
 func NewDockerLiveSession(
-	sess store.BrowserSession,
+	sess sessions.BrowserSession,
 	workerID string,
 	sm *session.StateMachine,
 	appStore *store.AppStore,
@@ -151,7 +152,7 @@ func NewLiveSessionFactory(
 
 // Wrap creates a LiveSession from an already-acquired BrowserSession.
 func (f *LiveSessionFactory) Wrap(
-	sess store.BrowserSession,
+	sess sessions.BrowserSession,
 	workerID string,
 ) (*DockerLiveSession, error) {
 	return NewDockerLiveSession(sess, workerID, f.sm, f.appStore, f.allocator)

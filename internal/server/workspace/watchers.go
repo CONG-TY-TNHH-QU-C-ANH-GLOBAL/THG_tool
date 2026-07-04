@@ -19,7 +19,7 @@ import (
 	"github.com/thg/scraper/internal/cdpclient"
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/session"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/sessions"
 	"github.com/thg/scraper/internal/textutil"
 	browserworkspace "github.com/thg/scraper/internal/workspace"
 )
@@ -36,7 +36,7 @@ func (h *Handler) recordBrowserSession(accountID, orgID int64, inst *browserwork
 			return
 		}
 	}
-	_ = h.db.Sessions().UpsertSession(context.Background(), store.BrowserSession{
+	_ = h.db.Sessions().UpsertSession(context.Background(), sessions.BrowserSession{
 		AccountID:    accountID,
 		OrgID:        orgID,
 		Status:       status,
