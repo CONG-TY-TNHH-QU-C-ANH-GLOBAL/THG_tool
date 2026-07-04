@@ -77,7 +77,7 @@ func TestPostgresOutboundReadScans(t *testing.T) {
 	const org = int64(7)
 	id := insertPlanned(t, pool, org, 11, "https://fb.com/p/1")
 
-	msgs, err := store.GetOutboundByExecutionStateForOrg(org, models.ExecPlanned, "", 10)
+	msgs, err := store.ListByState(org, models.ExecPlanned, "", 10)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestPostgresClaimIsSingleWinner(t *testing.T) {
 	const org = int64(7)
 	id := insertPlanned(t, pool, org, 11, "https://fb.com/p/2")
 
-	claim, err := store.ClaimPlannedOutboundForOrg(org, id, "worker-a", time.Minute)
+	claim, err := store.Claim(org, id, "worker-a", time.Minute)
 	if err != nil {
 		t.Fatalf("first claim: %v", err)
 	}
@@ -119,13 +119,13 @@ func TestPostgresClaimIsSingleWinner(t *testing.T) {
 	}
 
 	// Second claim of the same row must fail — it is no longer planned.
-	if _, err := store.ClaimPlannedOutboundForOrg(org, id, "worker-b", time.Minute); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.Claim(org, id, "worker-b", time.Minute); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second claim should return sql.ErrNoRows, got %v", err)
 	}
 
 	// The pool is still usable after the no-op claim (proves the failed
 	// claim's transaction was released, not leaked).
-	executing, err := store.GetOutboundByExecutionStateForOrg(org, models.ExecExecuting, "", 10)
+	executing, err := store.ListByState(org, models.ExecExecuting, "", 10)
 	if err != nil {
 		t.Fatalf("read after claim: %v", err)
 	}

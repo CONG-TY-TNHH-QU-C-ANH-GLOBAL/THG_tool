@@ -81,7 +81,7 @@ func parityClaim(t *testing.T, h parityHarness) {
 
 	before := time.Now()
 	const lease = 2 * time.Minute
-	claim, err := h.repo.ClaimPlannedOutboundForOrg(org, id, "worker-a", lease)
+	claim, err := h.repo.Claim(org, id, "worker-a", lease)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -96,11 +96,11 @@ func parityClaim(t *testing.T, h parityHarness) {
 
 	// Sequential double-claim → single winner (no goroutine storm). Both
 	// backends return sql.ErrNoRows for a row that is no longer planned.
-	if _, err := h.repo.ClaimPlannedOutboundForOrg(org, id, "worker-b", lease); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := h.repo.Claim(org, id, "worker-b", lease); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second claim must return sql.ErrNoRows, got %v", err)
 	}
 
-	ex, err := h.repo.GetOutboundByExecutionStateForOrg(org, models.ExecExecuting, "", 10)
+	ex, err := h.repo.ListByState(org, models.ExecExecuting, "", 10)
 	if err != nil {
 		t.Fatalf("read executing: %v", err)
 	}

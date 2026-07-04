@@ -27,7 +27,7 @@ func newExecutionID() string {
 	return "exec_" + hex.EncodeToString(b[:])
 }
 
-// ClaimPlannedOutboundForOrg atomically moves one planned row to executing,
+// Claim atomically moves one planned row to executing,
 // stamping a fresh execution_id + lease_expiry under a row-level CAS gated on
 // (id, org_id, execution_state='planned'). Returns sql.ErrNoRows when no
 // planned row matched (already claimed / wrong tenant / missing), preserving
@@ -39,7 +39,7 @@ func newExecutionID() string {
 // SQLite path (PR12 parity). The best-effort execution_attempts 'claim' audit
 // row is NOT written here — that table is coordination-owned and hook-wired at
 // the composition root, not the outbound storage layer (see package doc).
-func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*coreoutbound.ClaimResult, error) {
+func (s *OutboundStore) Claim(orgID, id int64, workerID string, leaseDuration time.Duration) (*coreoutbound.ClaimResult, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
 		workerID = "chrome-extension"
@@ -109,13 +109,13 @@ func (s *OutboundStore) ClaimPlannedOutboundForOrg(orgID, id int64, workerID str
 	return &coreoutbound.ClaimResult{ExecutionID: execID, LeaseExpiry: leaseExpiry}, nil
 }
 
-// FinalizeOutboundAttempt is the terminal-state CAS gated on the execution_id
+// Finalize is the terminal-state CAS gated on the execution_id
 // token. Mirrors internal/store/outbound.Store.Finalize exactly: first report
 // with the current execution_id (or legacy empty token) flips the row to
 // terminal and stamps verification_outcome (clearing the lease); a replayed or
 // stale report returns finalized=false plus the current state read back in the
 // same transaction.
-func (s *OutboundStore) FinalizeOutboundAttempt(
+func (s *OutboundStore) Finalize(
 	ctx context.Context,
 	orgID, id int64,
 	executionID string,
@@ -123,7 +123,7 @@ func (s *OutboundStore) FinalizeOutboundAttempt(
 	verificationOutcome models.VerificationOutcome,
 ) (finalized bool, currentState models.ExecutionState, currentOutcome models.VerificationOutcome, currentExecID string, err error) {
 	if terminalState != models.ExecFinished && terminalState != models.ExecExpired {
-		return false, "", "", "", fmt.Errorf("postgres.FinalizeOutboundAttempt: terminalState must be finished or expired, got %q", terminalState)
+		return false, "", "", "", fmt.Errorf("postgres.Finalize: terminalState must be finished or expired, got %q", terminalState)
 	}
 	// Expired rows never observed anything — NULL is the truthful outcome.
 	if terminalState == models.ExecExpired {

@@ -19,10 +19,10 @@ import (
 // *outbound.OutboundStore already satisfy the real seam (asserted in
 // outbound_test.go and internal/server/agent).
 type outboundLifecycle interface {
-	GetOutboundByExecutionStateForOrg(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error)
-	ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*outbound.ClaimResult, error)
-	FinalizeOutboundAttempt(ctx context.Context, orgID, id int64, executionID string, terminalState models.ExecutionState, verificationOutcome models.VerificationOutcome) (bool, models.ExecutionState, models.VerificationOutcome, string, error)
-	ResetStaleExecutingForOrg(orgID int64, staleAfter time.Duration) error
+	ListByState(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error)
+	Claim(orgID, id int64, workerID string, leaseDuration time.Duration) (*outbound.ClaimResult, error)
+	Finalize(ctx context.Context, orgID, id int64, executionID string, terminalState models.ExecutionState, verificationOutcome models.VerificationOutcome) (bool, models.ExecutionState, models.VerificationOutcome, string, error)
+	ResetStaleExecuting(orgID int64, staleAfter time.Duration) error
 }
 
 // parityHarness wires one backend into the shared lifecycle suite. Only the
@@ -48,7 +48,7 @@ func setupSQLiteHarness(t *testing.T) parityHarness {
 	t.Cleanup(func() { _ = db.Close() })
 	return parityHarness{
 		name: "sqlite",
-		repo: db,
+		repo: db.Outbound(),
 		seedPlanned: func(t *testing.T, orgID, accountID int64, msgType, targetURL string) int64 {
 			t.Helper()
 			id, err := db.Outbound().Insert(&models.OutboundMessage{
@@ -144,7 +144,7 @@ func isCreatedAtDesc(msgs []models.OutboundMessage) bool {
 // (keeps caller cognitive complexity low without weakening any check).
 func readExpect(t *testing.T, h parityHarness, org int64, state models.ExecutionState, msgType string, limit, want int) []models.OutboundMessage {
 	t.Helper()
-	rows, err := h.repo.GetOutboundByExecutionStateForOrg(org, state, msgType, limit)
+	rows, err := h.repo.ListByState(org, state, msgType, limit)
 	if err != nil {
 		t.Fatalf("read %s/%q: %v", state, msgType, err)
 	}

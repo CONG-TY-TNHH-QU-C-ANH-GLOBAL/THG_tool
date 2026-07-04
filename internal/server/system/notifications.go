@@ -139,7 +139,7 @@ func NotifyOutboundQueued(db *store.Store, notifier func(string), orgID, account
 // execution_planned: planned == "intent recorded"; started ==
 // "extension is now mutating the live DOM".
 //
-// callers: agentGetOutbox right after ClaimPlannedOutboundForOrg
+// callers: agentGetOutbox right after outbound.Store.Claim
 // succeeds.
 func NotifyExecutionStarted(db *store.Store, orgID, accountID, outboundID int64, executionID string, typ string) {
 	if db == nil {

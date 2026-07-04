@@ -8,9 +8,7 @@ import (
 )
 
 // QueueResult carries the queue-level outcome back to the caller
-// alongside the new row ID. The legacy top-level store package exports
-// this as `store.OutboundQueueResult` via a type alias for call-site
-// back-compat — see internal/store/outbound_aliases.go.
+// alongside the new row ID.
 type QueueResult struct {
 	ID             int64
 	ExecutionState models.ExecutionState
@@ -102,7 +100,7 @@ const (
 // RecordTransitionInput is the carrier shape for [Hooks.RecordTransition].
 // Outbound builds this from its internal transitionInput at the hook
 // boundary; the hook owner (coordination domain, today wired in
-// outbound_aliases.go) translates these fields into the cross-dialect
+// outbound_hooks.go) translates these fields into the cross-dialect
 // INSERT against execution_attempts.
 //
 // Fields are pre-converted to primitive/string form so the receiving

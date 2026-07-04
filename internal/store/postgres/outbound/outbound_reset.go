@@ -7,14 +7,14 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// ResetStaleExecutingForOrg returns abandoned executing rows to planned and
+// ResetStaleExecuting returns abandoned executing rows to planned and
 // clears their execution_id (so a stale in-flight report later fails its CAS).
 // Two paths, matching internal/store/outbound.Store.ResetStaleExecuting:
 // expired non-NULL lease, or legacy NULL-lease rows older than staleAfter.
 // The best-effort per-row execution_attempts 'reset' audit append is NOT done
 // here — that table is coordination-owned (see package doc); the UPDATE is the
 // authoritative state change.
-func (s *OutboundStore) ResetStaleExecutingForOrg(orgID int64, staleAfter time.Duration) error {
+func (s *OutboundStore) ResetStaleExecuting(orgID int64, staleAfter time.Duration) error {
 	if orgID <= 0 {
 		return nil
 	}

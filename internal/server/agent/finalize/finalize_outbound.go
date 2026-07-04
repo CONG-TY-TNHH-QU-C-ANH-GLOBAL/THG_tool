@@ -23,11 +23,11 @@ import (
 //     not address the same Facebook entity as the queued target_url.
 //
 //  2. TERMINAL CAS (lease + execution_id idempotency):
-//     FinalizeOutboundAttempt requires (status='sending', execution_id
+//     outbound.Store.Finalize requires (status='sending', execution_id
 //     matches OR row's execution_id is empty for legacy rows). A
 //     replayed callback hitting an already-terminal row returns
 //     idempotent-OK; a callback whose execution_id no longer matches
-//     the row (because ResetStaleExecutingForOrg lease-evicted
+//     the row (because outbound.Store.ResetStaleExecuting lease-evicted
 //     it and a new claim issued a fresh token) returns 409 stale.
 //
 //  3. SIDE EFFECTS ARE COMMITTED ONLY ON FIRST-WIN:

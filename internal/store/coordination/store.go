@@ -10,7 +10,7 @@
 // import outbound or leads. The cross-package writes that outbound's
 // queue/finalize paths perform reach coordination via the
 // outbound.Hooks closure pattern wired in
-// `installOutboundHooks` (internal/store/outbound_aliases.go).
+// `installOutboundHooks` (internal/store/outbound_hooks.go).
 //
 // Phase 5B extraction (2026-05-21): moved from top-level store/ as a
 // mechanical clean-cut migration. Pre-existing append-only violations

@@ -13,12 +13,12 @@ func TestPostgresFinalizeTerminalCAS(t *testing.T) {
 	const org = int64(7)
 	id := insertPlanned(t, pool, org, 11, "https://fb.com/p/3")
 
-	claim, err := store.ClaimPlannedOutboundForOrg(org, id, "worker-a", time.Minute)
+	claim, err := store.Claim(org, id, "worker-a", time.Minute)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 
-	finalized, state, outcome, execID, err := store.FinalizeOutboundAttempt(
+	finalized, state, outcome, execID, err := store.Finalize(
 		context.Background(), org, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
@@ -28,7 +28,7 @@ func TestPostgresFinalizeTerminalCAS(t *testing.T) {
 	}
 
 	// sent_at must be stamped for verified_success (timestamptz round-trip).
-	finished, err := store.GetOutboundByExecutionStateForOrg(org, models.ExecFinished, "", 10)
+	finished, err := store.ListByState(org, models.ExecFinished, "", 10)
 	if err != nil {
 		t.Fatalf("read finished: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestPostgresFinalizeTerminalCAS(t *testing.T) {
 	}
 
 	// Replay with the same token is idempotent: finalized=false, current state.
-	replayed, curState, _, _, err := store.FinalizeOutboundAttempt(
+	replayed, curState, _, _, err := store.Finalize(
 		context.Background(), org, id, claim.ExecutionID, models.ExecFinished, models.VerifVerifiedSuccess)
 	if err != nil {
 		t.Fatalf("replay finalize: %v", err)
@@ -56,17 +56,17 @@ func TestPostgresResetStaleExecuting(t *testing.T) {
 	id := insertPlanned(t, pool, org, 11, "https://fb.com/p/4")
 
 	// Claim with a tiny lease so it is immediately past.
-	claim, err := store.ClaimPlannedOutboundForOrg(org, id, "worker-a", time.Millisecond)
+	claim, err := store.Claim(org, id, "worker-a", time.Millisecond)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	time.Sleep(20 * time.Millisecond)
 
-	if err := store.ResetStaleExecutingForOrg(org, time.Minute); err != nil {
+	if err := store.ResetStaleExecuting(org, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 
-	planned, err := store.GetOutboundByExecutionStateForOrg(org, models.ExecPlanned, "", 10)
+	planned, err := store.ListByState(org, models.ExecPlanned, "", 10)
 	if err != nil {
 		t.Fatalf("read planned: %v", err)
 	}
@@ -85,11 +85,11 @@ func TestPostgresOrgIsolation(t *testing.T) {
 	id := insertPlanned(t, pool, orgA, 11, "https://fb.com/p/5")
 
 	// orgB cannot see orgA's row.
-	if rows, err := store.GetOutboundByExecutionStateForOrg(orgB, models.ExecPlanned, "", 10); err != nil || len(rows) != 0 {
+	if rows, err := store.ListByState(orgB, models.ExecPlanned, "", 10); err != nil || len(rows) != 0 {
 		t.Fatalf("orgB must see no rows, got rows=%d err=%v", len(rows), err)
 	}
 	// orgB cannot claim orgA's row (cross-tenant CAS miss).
-	if _, err := store.ClaimPlannedOutboundForOrg(orgB, id, "worker-b", time.Minute); err == nil {
+	if _, err := store.Claim(orgB, id, "worker-b", time.Minute); err == nil {
 		t.Fatalf("orgB claim of orgA row must fail")
 	}
 }

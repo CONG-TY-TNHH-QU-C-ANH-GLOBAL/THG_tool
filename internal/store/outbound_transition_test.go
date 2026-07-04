@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/store/outbound"
 )
 
 // Helpers ---------------------------------------------------------------
@@ -37,7 +38,7 @@ func queueOnePlanned(t *testing.T, db *Store, orgID, accountID int64, target str
 // countTransitions reports how many ledger rows of a given transition_type
 // exist for an outbound id. The test uses this as the spec for
 // "additive ledger writes succeeded".
-func countTransitions(t *testing.T, db *Store, outboundID int64, transitionType TransitionType) int {
+func countTransitions(t *testing.T, db *Store, outboundID int64, transitionType outbound.TransitionType) int {
 	t.Helper()
 	var n int
 	if err := db.db.QueryRow(
@@ -60,7 +61,7 @@ func TestTransitionLedger_PlanRowEmittedOnQueue(t *testing.T) {
 	db := newSharedStore(t, "tx_ledger_plan.db")
 	id := queueOnePlanned(t, db, 1, 7, "https://facebook.com/p/plan-ledger")
 
-	if got := countTransitions(t, db, id, TransitionPlan); got != 1 {
+	if got := countTransitions(t, db, id, outbound.TransitionPlan); got != 1 {
 		t.Fatalf("expected 1 plan transition, got %d", got)
 	}
 	// Verify the denormalized state was written.
@@ -85,7 +86,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 	id := queueOnePlanned(t, db, 2, 11, "https://facebook.com/p/chain-ledger")
 
 	// Plan row already present from queue.
-	if got := countTransitions(t, db, id, TransitionPlan); got != 1 {
+	if got := countTransitions(t, db, id, outbound.TransitionPlan); got != 1 {
 		t.Fatalf("plan: expected 1, got %d", got)
 	}
 
@@ -93,7 +94,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	if got := countTransitions(t, db, id, TransitionClaim); got != 1 {
+	if got := countTransitions(t, db, id, outbound.TransitionClaim); got != 1 {
 		t.Fatalf("claim: expected 1, got %d", got)
 	}
 
@@ -104,7 +105,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 	if err != nil || !finalized {
 		t.Fatalf("finalize: finalized=%v err=%v", finalized, err)
 	}
-	if got := countTransitions(t, db, id, TransitionFinalize); got != 1 {
+	if got := countTransitions(t, db, id, outbound.TransitionFinalize); got != 1 {
 		t.Fatalf("finalize: expected 1, got %d", got)
 	}
 
@@ -119,7 +120,7 @@ func TestTransitionLedger_ClaimAndFinalizeAppendRows(t *testing.T) {
 	if finalized2 {
 		t.Fatal("replay must NOT re-finalize")
 	}
-	if got := countTransitions(t, db, id, TransitionFinalize); got != 1 {
+	if got := countTransitions(t, db, id, outbound.TransitionFinalize); got != 1 {
 		t.Fatalf("replay must not append a 2nd finalize row; got %d", got)
 	}
 
@@ -154,7 +155,7 @@ func TestTransitionLedger_ResetAppendsRow(t *testing.T) {
 	if err := db.Outbound().ResetStaleExecuting(3, time.Minute); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if got := countTransitions(t, db, id, TransitionReset); got != 1 {
+	if got := countTransitions(t, db, id, outbound.TransitionReset); got != 1 {
 		t.Fatalf("reset: expected 1, got %d", got)
 	}
 	// Verify the reset row's resulting_state is 'planned' (the projection
@@ -317,10 +318,10 @@ func TestActionPolicy_OrgOverrideShadowsGlobalDefault(t *testing.T) {
 	const orgID = int64(14)
 
 	// Admin upserts an override that loosens dedup to 'none' for comment.
-	if err := db.Outbound().UpsertPolicy(context.Background(), ActionPolicy{
+	if err := db.Outbound().UpsertPolicy(context.Background(), outbound.ActionPolicy{
 		OrgID:             orgID,
 		ActionType:        "comment",
-		DedupScope:        DedupScopeNone,
+		DedupScope:        outbound.DedupScopeNone,
 		BlockOnPlanned:    false,
 		BlockOnExecuting:  false,
 		CooldownSeconds:   0,
@@ -336,7 +337,7 @@ func TestActionPolicy_OrgOverrideShadowsGlobalDefault(t *testing.T) {
 	if resolved.OrgID != orgID {
 		t.Fatalf("resolver picked wrong row: got org_id=%d want %d", resolved.OrgID, orgID)
 	}
-	if resolved.DedupScope != DedupScopeNone {
+	if resolved.DedupScope != outbound.DedupScopeNone {
 		t.Fatalf("override dedup_scope not applied: got %q", resolved.DedupScope)
 	}
 
@@ -345,7 +346,7 @@ func TestActionPolicy_OrgOverrideShadowsGlobalDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default resolve: %v", err)
 	}
-	if def.OrgID != 0 || def.DedupScope != DedupScopePerAccount {
+	if def.OrgID != 0 || def.DedupScope != outbound.DedupScopePerAccount {
 		t.Fatalf("unrelated org must see global default; got org_id=%d scope=%q", def.OrgID, def.DedupScope)
 	}
 }

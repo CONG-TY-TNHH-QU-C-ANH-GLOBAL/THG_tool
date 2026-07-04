@@ -6,83 +6,18 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/runtime/events"
 	"github.com/thg/scraper/internal/store/coordination"
 	"github.com/thg/scraper/internal/store/outbound"
 )
 
-// outbound_aliases.go — the bridge layer between the legacy
-// top-level *Store API and the [outbound] subpackage. Created by
-// Phase 2 of STORE_SUBPACKAGE_REFACTOR (2026-05-21).
-//
-// Purpose: zero caller migration. Existing call sites
-// (`s.QueueOutboundForOrg(...)`, `s.ClaimPlannedOutboundForOrg(...)`,
-// `store.OutboundQueueResult{}`, etc.) keep working unchanged because
-// type aliases re-export the subpackage types and the methods below
-// delegate.
-//
-// L2 invariant (binding): these wrappers are deprecated compatibility
-// shims. NEW code MUST import [outbound] directly via [Store.Outbound()].
-// No new bridge methods may be added — if a subpackage method exists,
-// its callers either use it via Outbound() or migrate. The wrappers
-// here are scheduled for deletion when the last caller migrates.
-
-// --- Type aliases (zero-cost source compatibility) ---
-
-// OutboundQueueResult is an alias of [outbound.QueueResult].
-//
-// Deprecated: import "internal/store/outbound" and use
-// [outbound.QueueResult] directly in new code.
-type OutboundQueueResult = outbound.QueueResult
-
-// OutboundGuardDecision is an alias of [outbound.GuardDecision].
-//
-// Deprecated: import "internal/store/outbound" and use
-// [outbound.GuardDecision] directly in new code.
-type OutboundGuardDecision = outbound.GuardDecision
-
-// ClaimResult is an alias of [outbound.ClaimResult].
-//
-// Deprecated: import "internal/store/outbound" and use
-// [outbound.ClaimResult] directly in new code.
-type ClaimResult = outbound.ClaimResult
-
-// ActionPolicy is an alias of [outbound.ActionPolicy].
-//
-// Deprecated: import "internal/store/outbound" and use
-// [outbound.ActionPolicy] directly in new code.
-type ActionPolicy = outbound.ActionPolicy
-
-// DefaultOutboundLease re-exports [outbound.DefaultLease] for
-// source compatibility.
-//
-// Deprecated: use [outbound.DefaultLease].
-const DefaultOutboundLease = outbound.DefaultLease
-
-// Dedup scope constants — re-exports for source compatibility.
-//
-// Deprecated: use the outbound package constants directly.
-const (
-	DedupScopePerAccount = outbound.DedupScopePerAccount
-	DedupScopeWorkspace  = outbound.DedupScopeWorkspace
-	DedupScopeNone       = outbound.DedupScopeNone
-)
-
-// TransitionType is an alias of [outbound.TransitionType].
-//
-// Deprecated: use [outbound.TransitionType] directly.
-type TransitionType = outbound.TransitionType
-
-// Transition type constants — re-exports.
-//
-// Deprecated: use the outbound package constants directly.
-const (
-	TransitionPlan     = outbound.TransitionPlan
-	TransitionClaim    = outbound.TransitionClaim
-	TransitionFinalize = outbound.TransitionFinalize
-	TransitionReset    = outbound.TransitionReset
-)
+// outbound_hooks.go — the composition point where the top-level *Store
+// wires the [outbound] subpackage to its sibling domains (coordination,
+// threads, extension gate). This is real cross-domain wiring, not a
+// compatibility layer: the deprecated alias/wrapper bridge that used to
+// live here (outbound_aliases.go) was dissolved once the last caller
+// migrated to [Store.Outbound()] and the agent lifecycle port re-anchored
+// at [outbound.Store] directly.
 
 // installOutboundHooks constructs the outbound subpackage Store with
 // cross-domain hooks pointing at the legacy top-level helpers. Called
@@ -220,48 +155,4 @@ func (s *Store) conversationGateForOutbound(_ context.Context, orgID int64, targ
 		}, nil
 	}
 	return outbound.GuardDecision{Allowed: true, Reason: "ok"}, nil
-}
-
-// --- Port-compatibility wrappers ---
-//
-// These 4 methods are NOT deprecated bridge shims (PR3, 2026-07-01): every
-// real caller now goes through s.Outbound() directly (see git blame for the
-// migration). They stay ONLY because internal/server/agent.
-// OutboundLifecycleRepository pins these exact method names in its
-// compile-time assertion (var _ OutboundLifecycleRepository = (*Store)(nil)
-// in outbound_repository.go), and internal/store/postgres/outbound.
-// OutboundStore already implements the same port under the same names for a
-// future Postgres backend. Retiring them requires renaming the port + the
-// Postgres implementation + the parity test harness together in one YELLOW
-// PR with characterization tests — not a caller-only migration. Do not
-// delete without that separate interface-rename decision.
-
-// ClaimPlannedOutboundForOrg satisfies agent.OutboundLifecycleRepository by
-// delegating to [outbound.Store.Claim].
-func (s *Store) ClaimPlannedOutboundForOrg(orgID, id int64, workerID string, leaseDuration time.Duration) (*ClaimResult, error) {
-	return s.outbound.Claim(orgID, id, workerID, leaseDuration)
-}
-
-// FinalizeOutboundAttempt satisfies agent.OutboundLifecycleRepository by
-// delegating to [outbound.Store.Finalize].
-func (s *Store) FinalizeOutboundAttempt(
-	ctx context.Context,
-	orgID, id int64,
-	executionID string,
-	terminalState models.ExecutionState,
-	verificationOutcome models.VerificationOutcome,
-) (finalized bool, currentState models.ExecutionState, currentOutcome models.VerificationOutcome, currentExecID string, err error) {
-	return s.outbound.Finalize(ctx, orgID, id, executionID, terminalState, verificationOutcome)
-}
-
-// ResetStaleExecutingForOrg satisfies agent.OutboundLifecycleRepository by
-// delegating to [outbound.Store.ResetStaleExecuting].
-func (s *Store) ResetStaleExecutingForOrg(orgID int64, staleAfter time.Duration) error {
-	return s.outbound.ResetStaleExecuting(orgID, staleAfter)
-}
-
-// GetOutboundByExecutionStateForOrg satisfies agent.OutboundLifecycleRepository
-// by delegating to [outbound.Store.ListByState].
-func (s *Store) GetOutboundByExecutionStateForOrg(orgID int64, execState models.ExecutionState, msgType string, limit int) ([]models.OutboundMessage, error) {
-	return s.outbound.ListByState(orgID, execState, msgType, limit)
 }
