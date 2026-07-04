@@ -495,3 +495,12 @@ do NOT fix autonomously. Produce a decision record (use the `Escalation:` block 
 Report: changed files, risk lane, forbidden-zone touches, noisy diff, test
 coverage, validation result, Sonar expectation, queue state. Return one verdict:
 **APPROVE / NEEDS FIX-UP / HOLD / VETO**.
+
+### `/thg-boundary-sprint` — large architecture boundary sprint
+
+Canonical contract: **`.claude/commands/thg-boundary-sprint.md`** (self-contained,
+not mirrored here). For accelerated move-boundary/refactor work: batch 2–4
+related safe architecture moves in one sprint PR. No docs-only work; no tiny
+cleanup unless it unlocks a larger boundary move. Observes RED-zone stop
+conditions. Default target order: finish the `sessions` domain boundary, then
+continue `*AppStore` dissolution.
