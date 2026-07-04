@@ -73,15 +73,9 @@ func main() {
 	}
 	log.Println("✅ Job store initialized")
 
-	// Initialize AppStore (app_tasks, task_leads, browser infra tables)
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		log.Fatalf("❌ AppStore init failed: %v", err)
-	}
-	log.Println("✅ AppStore initialized")
-
 	// Initialize workspace manager (per-account live Chrome for dashboard browser view)
-	workspaceMgr := initPortRegistry(ctx, cfg, appStore)
+	// (app_tasks/task_leads/browser-infra bootstrap now runs inside store.New — app.Migrate)
+	workspaceMgr := initPortRegistry(ctx, cfg, db.DB())
 
 	workspaceMgr.ReconcileRunning() // re-attach containers that survived a server restart
 	if os.Getenv("WORKSPACE_STOP_ON_SHUTDOWN") == "1" {
@@ -92,7 +86,7 @@ func main() {
 	log.Println("✅ Workspace manager initialized")
 
 	// Circuit breaker + health checker — prevent restart storms
-	startHealthMonitoring(ctx, workspaceMgr, appStore)
+	startHealthMonitoring(ctx, workspaceMgr, db.DB())
 
 	// Keep login/checkpoint sessions untouched unless ops explicitly enables
 	// the watchdog. HealthChecker still keeps the container observable via VNC.

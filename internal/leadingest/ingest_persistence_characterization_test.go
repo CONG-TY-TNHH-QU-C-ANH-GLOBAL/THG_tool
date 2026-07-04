@@ -7,28 +7,25 @@ import (
 
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 // DB-backed characterization for IngestPost's persist + notify side effects
 // (specs/lead_ingestion_behavior.md §4/§5/§7). Each test uses a FRESH SQLite store
 // under t.TempDir() (auto-cleaned, no shared state, no ordering dependency) and the
-// existing public constructors store.New / store.NewAppStore — NO production seam is
+// existing public constructors store.New / db.App() — NO production seam is
 // added. These pin CURRENT behavior before the PR23C refactor.
 
-// newIngestStores opens an isolated *store.Store + *store.AppStore backed by one fresh
+// newIngestStores opens an isolated *store.Store + *app.Store backed by one fresh
 // on-disk SQLite file for the duration of a single test.
-func newIngestStores(t *testing.T) (*store.Store, *store.AppStore) {
+func newIngestStores(t *testing.T) (*store.Store, *app.Store) {
 	t.Helper()
 	db, err := store.New(filepath.Join(t.TempDir(), "leadingest.db"))
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		t.Fatalf("store.NewAppStore: %v", err)
-	}
-	return db, appStore
+	return db, db.App()
 }
 
 // qualifyingInput is the proven deterministic hot/warm post (mirrors the content used by
@@ -47,7 +44,7 @@ func qualifyingInput(taskID, primaryURL string) Input {
 	}
 }
 
-func qualifyingDeps(db *store.Store, appStore *store.AppStore, onLead func(LeadEvent)) Deps {
+func qualifyingDeps(db *store.Store, appStore *app.Store, onLead func(LeadEvent)) Deps {
 	return Deps{
 		AppStore: appStore,
 		LegacyDB: db,

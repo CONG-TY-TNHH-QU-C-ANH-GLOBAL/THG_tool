@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/thg/scraper/internal/leadingest"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
@@ -27,7 +27,7 @@ type connectorCrawlItemOutcome struct {
 // to the former inline loop body: skip empty/short content (no fetched), count fetched, resolve
 // the source URL, apply direct-post zero-trust validation when this is a direct-post intake,
 // dedupe by source URL, then IngestPost (log-and-continue on error). Fiber-free.
-func (h *Handler) processConnectorCrawlItem(ctx context.Context, orgID int64, taskID string, item connectorCrawlItem, baseDeps leadingest.Deps, appStore *store.AppStore, directPost *coordination.DirectPostCommentWorkflow) connectorCrawlItemOutcome {
+func (h *Handler) processConnectorCrawlItem(ctx context.Context, orgID int64, taskID string, item connectorCrawlItem, baseDeps leadingest.Deps, appStore *app.Store, directPost *coordination.DirectPostCommentWorkflow) connectorCrawlItemOutcome {
 	content := strings.TrimSpace(item.Content)
 	if content == "" || len([]rune(content)) < 20 {
 		return connectorCrawlItemOutcome{}

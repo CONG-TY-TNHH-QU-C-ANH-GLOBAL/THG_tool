@@ -34,15 +34,11 @@ func TestHandle_NoIdleSessionFailsLoud(t *testing.T) {
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	appStore, err := store.NewAppStore(db) // creates the (empty) browser_sessions table
-	if err != nil {
-		t.Fatalf("NewAppStore: %v", err)
-	}
-
+	// store.New already bootstrapped the (empty) browser_sessions table via app.Migrate
 	sqlDB := db.DB()
 	sm := session.NewStateMachine(sqlDB)
 	alloc := session.NewAllocator(sqlDB, sm)
-	factory := livesession.NewLiveSessionFactory(sqlDB, appStore, alloc)
+	factory := livesession.NewLiveSessionFactory(sqlDB, alloc)
 
 	h := New(nil, scoring.New(scoring.DefaultConfig()), nil, nil)
 	h.SetAllocator(alloc, factory) // wired, but the sessions table is empty

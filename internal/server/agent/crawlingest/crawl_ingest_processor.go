@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/thg/scraper/internal/leadingest"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
@@ -17,7 +17,7 @@ import (
 // is passed explicitly to the methods, never stored on the struct.
 type crawlResultProcessor struct {
 	h          *Handler
-	appStore   *store.AppStore
+	appStore   *app.Store
 	deps       leadingest.Deps
 	directPost *coordination.DirectPostCommentWorkflow
 	orgID      int64

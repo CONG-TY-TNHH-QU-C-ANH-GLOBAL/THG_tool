@@ -17,13 +17,14 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 // Deps captures the per-run dependencies that the ingest function needs.
 // Zero-valued fields are tolerated where indicated; callers that don't have
 // AI classification configured may pass AIClass=nil and BusinessProfile=nil.
 type Deps struct {
-	AppStore        *store.AppStore
+	AppStore        *app.Store
 	LegacyDB        *store.Store
 	Scorer          *scoring.Scorer
 	Guidance        scoring.Guidance

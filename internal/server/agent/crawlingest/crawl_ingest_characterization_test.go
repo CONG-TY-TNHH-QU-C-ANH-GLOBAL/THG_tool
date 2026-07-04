@@ -13,6 +13,7 @@ import (
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 // Characterization-test support for processConnectorCrawlResult (crawl_ingest.go).
@@ -92,19 +93,15 @@ func seedOwningConnector(t *testing.T, db *store.Store, orgID, accID int64) int6
 	return id
 }
 
-// crawlAppStore opens an AppStore for reading task/lead side effects.
-func crawlAppStore(t *testing.T, db *store.Store) *store.AppStore {
+// crawlAppStore returns the app-domain store for reading task/lead side effects.
+func crawlAppStore(t *testing.T, db *store.Store) *app.Store {
 	t.Helper()
-	as, err := store.NewAppStore(db)
-	if err != nil {
-		t.Fatalf("NewAppStore: %v", err)
-	}
-	return as
+	return db.App()
 }
 
 // requireNoTask asserts no app_task row exists for taskID (a rejected ingest must
 // not have created/started a task).
-func requireNoTask(t *testing.T, as *store.AppStore, taskID string) {
+func requireNoTask(t *testing.T, as *app.Store, taskID string) {
 	t.Helper()
 	if task, err := as.GetTask(context.Background(), taskID); err == nil {
 		t.Fatalf("expected no task for %q, but found one: %+v", taskID, task)
@@ -113,7 +110,7 @@ func requireNoTask(t *testing.T, as *store.AppStore, taskID string) {
 
 // requireLeadCount asserts the number of stored leads for orgID (filters by org —
 // never a global table count).
-func requireLeadCount(t *testing.T, as *store.AppStore, orgID int64, want int) {
+func requireLeadCount(t *testing.T, as *app.Store, orgID int64, want int) {
 	t.Helper()
 	leads, err := as.ListLeads(context.Background(), orgID, "", "", 0, 1000, 0)
 	if err != nil {

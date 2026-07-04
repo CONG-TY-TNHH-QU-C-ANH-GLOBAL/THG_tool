@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/thg/scraper/internal/server/testsupport"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 )
 
 // seedDedupeLead pre-inserts a task_lead so processConnectorCrawlItem's source-URL
@@ -13,13 +13,13 @@ import (
 // ingest pipeline — so the multi-item path stays deterministic and never reaches
 // the OnLeadCreated / tgEvents notification (the lead-creating branch PR19A
 // leaves uncovered, which would need a notification seam to characterize).
-func seedDedupeLead(t *testing.T, as *store.AppStore, orgID int64, sourceURL string) {
+func seedDedupeLead(t *testing.T, as *app.Store, orgID int64, sourceURL string) {
 	t.Helper()
 	ctx := context.Background()
 	if err := as.CreateTask(ctx, "seed-task", orgID, "seed"); err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
-	if err := as.InsertLead(ctx, "seed-task", orgID, store.TaskLead{
+	if err := as.InsertLead(ctx, "seed-task", orgID, app.TaskLead{
 		OrgID: orgID, SourceURL: sourceURL, AuthorName: "seed", Content: "seed", Category: "warm",
 	}); err != nil {
 		t.Fatalf("seed lead %q: %v", sourceURL, err)
