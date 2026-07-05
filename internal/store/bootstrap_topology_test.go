@@ -14,16 +14,23 @@ import (
 //
 //   layer 1: versioned migrations (migrator.go + migrations/*.up.sql)
 //            own the platform-plane schema — run-once, atomic;
-//   layer 2: the local-runtime bootstrap (sessions.Migrate, app.Migrate,
-//            run by initDomains) owns the local-runtime-plane tables —
-//            idempotent, every boot.
+//   layer 2: the MVP every-boot domain bootstrap (sessions.Migrate,
+//            app.Migrate, run by initDomains) owns the current
+//            bootstrap-owned tables — idempotent, every boot.
+//
+// Bootstrap location is NOT final data-plane ownership. Target ownership
+// stays governed by DATABASE_OWNERSHIP.md §Data planes: tables that are
+// SaaS/business source of truth may later move to versioned platform
+// migrations. Future boundary sprints must classify each table by
+// doctrine before moving it.
 //
 // See internal/store/migrations/README.md "Bootstrap layers" and
 // docs/architecture/DATABASE_OWNERSHIP.md §Data planes.
 
-// localRuntimeTables are created ONLY by the layer-2 bootstrap — they are
-// deliberately absent from the versioned baseline.
-var localRuntimeTables = []string{
+// bootstrapOwnedTables are created ONLY by the layer-2 domain bootstrap —
+// they are absent from the versioned baseline. This lists their CURRENT
+// bootstrap location, not their final data-plane classification.
+var bootstrapOwnedTables = []string{
 	"browser_sessions", "app_tasks", "task_leads", "browser_identities",
 	"port_registry", "account_rate_limits", "circuit_breaker_state",
 	"session_audit_log", "post_seen_cache",
@@ -32,7 +39,7 @@ var localRuntimeTables = []string{
 // TestBootstrap_DoubleBootIdempotent pins that opening the SAME database
 // twice is safe: layer 1 is run-once (schema_migrations) and layer 2 is
 // idempotent, so a second store.New must succeed with no error and all
-// local-runtime tables present.
+// bootstrap-owned tables present.
 func TestBootstrap_DoubleBootIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "boot.db")
 
@@ -51,9 +58,9 @@ func TestBootstrap_DoubleBootIdempotent(t *testing.T) {
 	t.Cleanup(func() { _ = second.Close() })
 
 	ctx := context.Background()
-	for _, table := range localRuntimeTables {
+	for _, table := range bootstrapOwnedTables {
 		if !second.tableExists(ctx, table) {
-			t.Errorf("local-runtime table %q missing after double boot", table)
+			t.Errorf("bootstrap-owned table %q missing after double boot", table)
 		}
 	}
 	// The sessions-domain ALTERs must have applied (pins that removing the
@@ -74,9 +81,9 @@ func TestBootstrap_DoubleBootIdempotent(t *testing.T) {
 // see docs/architecture/DATABASE_OWNERSHIP.md §Data planes.
 var sanctionedBootstrapFiles = map[string]bool{
 	"internal/store/migrator.go":         true, // schema_migrations registry itself
-	"internal/store/sessions/migrate.go": true, // local-runtime plane: browser_sessions
-	"internal/store/app/migrate.go":      true, // local-runtime plane: app/browser-infra tables
-	"internal/jobs/store.go":             true, // local-runtime plane: scheduler_jobs
+	"internal/store/sessions/migrate.go": true, // domain bootstrap: browser_sessions
+	"internal/store/app/migrate.go":      true, // domain bootstrap: app/browser-infra tables
+	"internal/jobs/store.go":             true, // domain bootstrap: scheduler_jobs
 }
 
 // TestNoHiddenCreateTableBootstrap fails when a production .go file under

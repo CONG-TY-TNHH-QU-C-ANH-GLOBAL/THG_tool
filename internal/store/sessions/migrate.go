@@ -10,9 +10,10 @@ import "database/sql"
 //
 // This is the SINGLE owner of the browser_sessions bootstrap (the
 // byte-identical duplicate in app.Migrate was removed 2026-07-05, once
-// the *AppStore wrapper was gone). browser_sessions is a local-runtime
-// plane table: it is deliberately NOT in the versioned migrations —
-// see internal/store/migrations/README.md "Bootstrap layers".
+// the *AppStore wrapper was gone). browser_sessions is browser/session
+// runtime state (local-runtime plane by doctrine) and is deliberately
+// NOT in the versioned migrations — see
+// internal/store/migrations/README.md "Bootstrap layers".
 func Migrate(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS browser_sessions (
 		id             INTEGER PRIMARY KEY AUTOINCREMENT,

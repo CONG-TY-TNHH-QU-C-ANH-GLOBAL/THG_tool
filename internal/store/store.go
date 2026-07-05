@@ -308,13 +308,13 @@ func newPostgres(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// initDomains wires every domain subpackage and runs the local-runtime
-// bootstrap layer in ONE deterministic order. Called by both dialect
+// initDomains wires every domain subpackage and runs the MVP every-boot
+// domain bootstrap layer in ONE deterministic order. Called by both dialect
 // constructors AFTER runMigrations: the versioned migrations own the
 // platform-plane schema; sessions.Migrate + app.Migrate own only the
-// local-runtime-plane tables (browser_sessions, app_tasks/task_leads,
-// browser infra) — see internal/store/migrations/README.md "Bootstrap
-// layers". Extracted verbatim from the previously duplicated
+// current bootstrap-owned tables (browser_sessions, app_tasks/task_leads,
+// browser infra) — CURRENT location, not final data-plane ownership; see
+// internal/store/migrations/README.md "Bootstrap layers". Extracted verbatim from the previously duplicated
 // newSQLite/newPostgres blocks (2026-07-05): same calls, same order,
 // same error wrapping — the single source of bootstrap determinism.
 func (s *Store) initDomains() error {

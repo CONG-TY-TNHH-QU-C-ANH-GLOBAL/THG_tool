@@ -39,14 +39,23 @@ doctrine (`docs/architecture/DATABASE_OWNERSHIP.md` §Data planes):
    run-once source of truth for every platform table (orgs, users, leads,
    ledger, knowledge metadata, ...). The `__postgres` knowledge/pgvector
    files are the staged RAG-plane schema.
-2. **Local-runtime bootstrap — Local Runtime plane.** `sessions.Migrate`
-   and `app.Migrate`, run by `store.initDomains()` on every boot
-   (idempotent, deterministic order), own ONLY the local runtime tables:
+2. **MVP every-boot domain bootstrap — current bootstrap-owned tables.**
+   `sessions.Migrate` and `app.Migrate`, run by `store.initDomains()` on
+   every boot (idempotent, deterministic order), own ONLY:
    `browser_sessions`, `app_tasks`/`task_leads`, `browser_identities`,
    `port_registry`, `account_rate_limits`, `circuit_breaker_state`,
    `session_audit_log`, `post_seen_cache`. `internal/jobs` bootstraps
    `scheduler_jobs` the same way (its own connection today). These tables
    are deliberately NOT in the versioned baseline.
+
+   **Bootstrap location is NOT final data-plane ownership.** Target
+   ownership stays governed by `DATABASE_OWNERSHIP.md` §Data planes:
+   clearly-local runtime state (e.g. `browser_sessions`) stays local,
+   but a bootstrap-owned table that turns out to be SaaS/business source
+   of truth (candidates: `app_tasks`/`task_leads`) moves to the versioned
+   platform migrations in a later sprint. Classify each table by doctrine
+   BEFORE moving it — never move a table just because of where it is
+   bootstrapped today.
 
 `TestNoHiddenCreateTableBootstrap` (internal/store/bootstrap_topology_test.go)
 enforces the split: a production `.go` file outside the sanctioned bootstrap

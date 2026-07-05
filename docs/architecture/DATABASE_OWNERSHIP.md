@@ -82,16 +82,24 @@ STOP and report the boundary before refactoring.
 > The plane doctrine is the *target contract* every migration step must
 > move toward — it does not retroactively bless the MVP colocation.
 
-**In code today (bootstrap topology PR1, 2026-07-05):** the plane split is
-expressed in the schema bootstrap. Versioned migrations
-(`internal/store/migrations/`) own the platform-plane tables; the
-local-runtime plane is bootstrapped by `sessions.Migrate` + `app.Migrate`
-(via `store.initDomains()`) and `internal/jobs` (`scheduler_jobs`), all
-idempotent every-boot and absent from the versioned baseline. The
-sanctioned bootstrap file list is enforced by
-`TestNoHiddenCreateTableBootstrap` — new schema outside it must be a
-numbered migration. See `internal/store/migrations/README.md`
+**In code today (bootstrap topology PR1, 2026-07-05):** versioned
+migrations (`internal/store/migrations/`) own the platform-plane tables;
+the remaining tables are created by the **MVP every-boot domain bootstrap
+layer** — `sessions.Migrate` + `app.Migrate` (via `store.initDomains()`)
+and `internal/jobs` (`scheduler_jobs`) — all idempotent every-boot and
+absent from the versioned baseline. The sanctioned bootstrap file list is
+enforced by `TestNoHiddenCreateTableBootstrap` — new schema outside it
+must be a numbered migration. See `internal/store/migrations/README.md`
 "Bootstrap layers".
+
+**Bootstrap location is NOT final data-plane ownership.** Where a table is
+bootstrapped today records the MVP status quo, not its doctrine
+classification — that remains governed by this document. A bootstrap-owned
+table that is SaaS/business source of truth (candidates:
+`app_tasks`/`task_leads`) moves to the PostgreSQL platform migrations in a
+later sprint; clearly-local runtime state (e.g. `browser_sessions`) stays
+local. Future boundary sprints must classify each table against the
+doctrine BEFORE moving it.
 
 ---
 
