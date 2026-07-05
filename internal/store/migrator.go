@@ -76,49 +76,77 @@ var migrationFS embed.FS
 // lets the runner pick the right variant; files without a suffix are
 // considered dialect-portable.
 //
+// Files may live directly in migrations/ or in domain/plane
+// subdirectories (e.g. migrations/platform/) — the directory is purely
+// organizational; ordering is ALWAYS global by NNNN, and a (version,
+// dialect) collision anywhere in the tree is a load error, never a
+// nondeterministic apply order.
+//
 // This is the entire migration-file format. No metadata header, no
 // `BEGIN/COMMIT` ceremony — the script writes the SQL it needs to run.
 func loadMigrations(dialectName string) ([]Migration, error) {
-	entries, err := fs.ReadDir(migrationFS, "migrations")
-	if err != nil {
-		// No migrations directory is acceptable in dev — there are no
-		// non-baseline migrations yet.
-		return nil, nil
-	}
-	out := make([]Migration, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".up.sql") {
-			continue
-		}
-		// Filter by dialect: if the filename includes __<other-dialect>,
-		// skip; if it includes __<this-dialect>, take; if no suffix,
-		// take as portable.
-		base := strings.TrimSuffix(e.Name(), ".up.sql")
-		if strings.Contains(base, "__sqlite") && dialectName != "sqlite" {
-			continue
-		}
-		if strings.Contains(base, "__postgres") && dialectName != "postgres" {
-			continue
-		}
-		// Strip the dialect suffix to get the canonical name.
-		canonical := strings.NewReplacer("__sqlite", "", "__postgres", "").Replace(base)
+	return loadMigrationsFrom(migrationFS, "migrations", dialectName)
+}
 
-		parts := strings.SplitN(canonical, "_", 2)
-		if len(parts) < 2 {
-			return nil, fmt.Errorf("migration filename %q must be NNNN_name.up.sql", e.Name())
+// loadMigrationsFrom is loadMigrations over an explicit fs.FS root, so
+// the discovery/ordering/collision rules are unit-testable with fstest.
+func loadMigrationsFrom(fsys fs.FS, root, dialectName string) ([]Migration, error) {
+	var out []Migration
+	walkErr := fs.WalkDir(fsys, root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".up.sql") {
+			return err
 		}
-		var v int
-		if _, err := fmt.Sscanf(parts[0], "%d", &v); err != nil {
-			return nil, fmt.Errorf("migration filename %q has non-numeric version", e.Name())
+		m, take, parseErr := parseMigrationFilename(d.Name(), dialectName)
+		if parseErr != nil || !take {
+			return parseErr
 		}
-		body, err := fs.ReadFile(migrationFS, "migrations/"+e.Name())
-		if err != nil {
-			return nil, err
+		body, readErr := fs.ReadFile(fsys, path)
+		if readErr != nil {
+			return readErr
 		}
-		out = append(out, Migration{Version: v, Name: parts[1], SQL: string(body)})
+		m.SQL = string(body)
+		out = append(out, m)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Version < out[j].Version })
+	// Reject (version, dialect) collisions: with an unstable sort the apply
+	// order would be nondeterministic and the second version-record INSERT
+	// would fail mid-boot on the schema_migrations primary key. Fail the
+	// load with a clear message instead.
+	for i := 1; i < len(out); i++ {
+		if out[i].Version == out[i-1].Version {
+			return nil, fmt.Errorf("duplicate migration version %04d for dialect %s: %q and %q",
+				out[i].Version, dialectName, out[i-1].Name, out[i].Name)
+		}
+	}
 	return out, nil
+}
+
+// parseMigrationFilename applies the naming + dialect-filter rules to one
+// file name. take=false means the file belongs to another dialect.
+func parseMigrationFilename(name, dialectName string) (m Migration, take bool, err error) {
+	base := strings.TrimSuffix(name, ".up.sql")
+	if strings.Contains(base, "__sqlite") && dialectName != "sqlite" {
+		return Migration{}, false, nil
+	}
+	if strings.Contains(base, "__postgres") && dialectName != "postgres" {
+		return Migration{}, false, nil
+	}
+	// Strip the dialect suffix to get the canonical name.
+	canonical := strings.NewReplacer("__sqlite", "", "__postgres", "").Replace(base)
+
+	parts := strings.SplitN(canonical, "_", 2)
+	if len(parts) < 2 {
+		return Migration{}, false, fmt.Errorf("migration filename %q must be NNNN_name.up.sql", name)
+	}
+	var v int
+	if _, err := fmt.Sscanf(parts[0], "%d", &v); err != nil {
+		return Migration{}, false, fmt.Errorf("migration filename %q has non-numeric version", name)
+	}
+	return Migration{Version: v, Name: parts[1]}, true, nil
 }
 
 // runMigrations is the top-level entry point called by store.New
