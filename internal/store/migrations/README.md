@@ -91,7 +91,7 @@ Landing zones:
 
 - `platform/` — SaaS Platform plane (PostgreSQL source-of-truth schema).
   The modular PG platform baseline lives here (database boundary sprint
-  PR4): versions **0100-0108**, one domain per file (identity/tenancy,
+  PR4): versions **0100-0110**, one domain per file (identity/tenancy,
   accounts+connectors, leads+crawl, outbound spine, coordination,
   threads+messaging, prompts+app workflow, knowledge metadata), each
   `__postgres`-only and translated from the frozen SQLite baseline with

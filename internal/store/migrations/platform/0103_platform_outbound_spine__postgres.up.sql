@@ -121,10 +121,15 @@ CREATE TABLE IF NOT EXISTS action_policies (
     UNIQUE(org_id, action_type)
 );
 
--- Seeds (mirror the SQLite baseline defaults).
+-- Seeds (mirror the SQLite baseline defaults). The comment/group_post/
+-- profile_post rows take dedup_scope from the column DEFAULT
+-- ('per_account'); only inbox overrides it — same seeded values as the
+-- SQLite baseline, without repeating the default literal.
+INSERT INTO action_policies (org_id, action_type, block_on_planned, block_on_executing, cooldown_seconds, conversation_aware) VALUES
+    (0, 'comment',      1, 1, 86400, 0),
+    (0, 'group_post',   1, 1, 86400, 0),
+    (0, 'profile_post', 1, 1, 86400, 0)
+    ON CONFLICT (org_id, action_type) DO NOTHING;
 INSERT INTO action_policies (org_id, action_type, dedup_scope, block_on_planned, block_on_executing, cooldown_seconds, conversation_aware) VALUES
-    (0, 'comment',      'per_account', 1, 1, 86400, 0),
-    (0, 'inbox',        'workspace',   1, 1, 86400, 1),
-    (0, 'group_post',   'per_account', 1, 1, 86400, 0),
-    (0, 'profile_post', 'per_account', 1, 1, 86400, 0)
+    (0, 'inbox', 'workspace', 1, 1, 86400, 1)
     ON CONFLICT (org_id, action_type) DO NOTHING;

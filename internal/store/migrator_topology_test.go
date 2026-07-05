@@ -125,7 +125,7 @@ func TestEmbeddedMigrations_LoadCleanBothDialects(t *testing.T) {
 // loader, postgres-only, and contiguous from version 100 — a missing or
 // mis-suffixed platform file fails here, not at a production PG boot.
 func TestEmbeddedMigrations_PlatformBaselineDiscovered(t *testing.T) {
-	const first, last = 100, 108
+	const first, last = 100, 110
 	pg, err := loadMigrations("postgres")
 	if err != nil {
 		t.Fatalf("postgres load: %v", err)
