@@ -55,6 +55,16 @@ Org-scoped documents, chunks, embeddings, retrieval policies, and AI
 context. Must enforce org/workspace/source ACLs. AI retrieves through a
 policy/ACL/retrieval layer — never direct unrestricted database access.
 
+*Clarification — knowledge has two layers; do not over-move:*
+platform-owned **source metadata** (source registry, upload records,
+ACL/ownership rows) may remain in the SaaS Platform PostgreSQL plane;
+the RAG plane owns the **retrieval runtime data** — chunks, embeddings,
+vector index, retrieval cache/context. The RAG plane must not become the
+business system of record. Cross-plane references use stable source IDs,
+org/workspace scope, ACL checks, and explicit sync/indexing events.
+Boundary sprints must NOT move metadata blindly because it is
+"knowledge" — classify metadata vs retrieval data first.
+
 **Source-of-truth rule.**
 SQLite is local cache/outbox/runtime state only. The PostgreSQL platform DB
 is the SaaS system of record. The RAG DB is retrieval memory, not the
