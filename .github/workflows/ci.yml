@@ -339,12 +339,16 @@ jobs:
       # migration chain includes 0003_add_pgvector_and_embedding__postgres,
       # which needs `CREATE EXTENSION vector` to be available at the OS
       # level. Otherwise a drop-in postgres:16-compatible image.
+      #
+      # POSTGRES_PASSWORD is generated per-run (github.run_id/run_attempt) —
+      # not a literal. This container only ever exists for this job's
+      # lifetime, on the runner's private network.
       postgres:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: thg_ci
           POSTGRES_USER: thg
-          POSTGRES_PASSWORD: thg_ci
+          POSTGRES_PASSWORD: ${{ format('pg_ci_{0}_{1}', github.run_id, github.run_attempt) }}
         ports:
           - 5432:5432
         options: >-
@@ -352,17 +356,27 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-    env:
-      # Used by internal/store/postgres/... (drops/recreates outbound_messages
-      # via its own ad-hoc migration file — see that package's README).
-      POSTGRES_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_ci?sslmode=disable
-      # Used by internal/store's TestRealPostgresApply — a SEPARATE database so
-      # its versioned-migration-owned outbound_messages table (created via
-      # store.New's normal boot path) never collides with the ad-hoc harness
-      # above running against the same Postgres service.
-      POSTGRES_PLATFORM_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_platform_ci?sslmode=disable
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - name: Generate ephemeral CI Postgres password + DSNs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same formula as services.postgres.env.POSTGRES_PASSWORD above —
+          # deterministic from github.run_id/run_attempt, so it matches the
+          # password the service container was actually started with.
+          PW="pg_ci_${{ github.run_id }}_${{ github.run_attempt }}"
+          echo "::add-mask::$PW"
+          {
+            echo "CI_POSTGRES_PASSWORD=$PW"
+            # internal/store/postgres/... (drops/recreates outbound_messages
+            # via its own ad-hoc migration file — see that package's README).
+            echo "POSTGRES_TEST_DSN=postgres://thg:$PW@localhost:5432/thg_ci?sslmode=disable"
+            # internal/store's TestRealPostgresApply — a SEPARATE database so
+            # its versioned-migration-owned outbound_messages table never
+            # collides with the ad-hoc harness above on the same service.
+            echo "POSTGRES_PLATFORM_TEST_DSN=postgres://thg:$PW@localhost:5432/thg_platform_ci?sslmode=disable"
+          } >> "$GITHUB_ENV"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go v5
         with:
           go-version-file: go.mod
@@ -371,7 +385,7 @@ jobs:
         run: go mod download
       - name: Provision thg_platform_ci database
         shell: bash
-        run: PGPASSWORD=thg_ci psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
+        run: PGPASSWORD="$CI_POSTGRES_PASSWORD" psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
       - name: go vet
         run: go vet ./...
       - name: Build production Go binaries
@@ -464,12 +478,16 @@ jobs:
       # migration chain includes 0003_add_pgvector_and_embedding__postgres,
       # which needs `CREATE EXTENSION vector` to be available at the OS
       # level. Otherwise a drop-in postgres:16-compatible image.
+      #
+      # POSTGRES_PASSWORD is generated per-run (github.run_id/run_attempt) —
+      # not a literal. This container only ever exists for this job's
+      # lifetime, on the runner's private network.
       postgres:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: thg_ci
           POSTGRES_USER: thg
-          POSTGRES_PASSWORD: thg_ci
+          POSTGRES_PASSWORD: ${{ format('pg_ci_{0}_{1}', github.run_id, github.run_attempt) }}
         ports:
           - 5432:5432
         options: >-
@@ -477,11 +495,28 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-    env:
-      POSTGRES_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_ci?sslmode=disable
-      POSTGRES_PLATFORM_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_platform_ci?sslmode=disable
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+
+      - name: Generate ephemeral CI Postgres password + DSNs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same formula as services.postgres.env.POSTGRES_PASSWORD above —
+          # deterministic from github.run_id/run_attempt, so it matches the
+          # password the service container was actually started with.
+          PW="pg_ci_${{ github.run_id }}_${{ github.run_attempt }}"
+          echo "::add-mask::$PW"
+          {
+            echo "CI_POSTGRES_PASSWORD=$PW"
+            # internal/store/postgres/... (drops/recreates outbound_messages
+            # via its own ad-hoc migration file — see that package's README).
+            echo "POSTGRES_TEST_DSN=postgres://thg:$PW@localhost:5432/thg_ci?sslmode=disable"
+            # internal/store's TestRealPostgresApply — a SEPARATE database so
+            # its versioned-migration-owned outbound_messages table never
+            # collides with the ad-hoc harness above on the same service.
+            echo "POSTGRES_PLATFORM_TEST_DSN=postgres://thg:$PW@localhost:5432/thg_platform_ci?sslmode=disable"
+          } >> "$GITHUB_ENV"
 
       - name: File-size guardrail (200-line rule, baseline-aware)
         run: python3 scripts/check_file_size.py
@@ -496,7 +531,7 @@ jobs:
 
       - name: Provision thg_platform_ci database
         shell: bash
-        run: PGPASSWORD=thg_ci psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
+        run: PGPASSWORD="$CI_POSTGRES_PASSWORD" psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
 
       - name: Runtime topology contract (specs/RUNTIME_TOPOLOGY.md §6)
         run: bash scripts/check_topology.sh
