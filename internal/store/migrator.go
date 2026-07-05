@@ -149,32 +149,15 @@ func parseMigrationFilename(name, dialectName string) (m Migration, take bool, e
 	return Migration{Version: v, Name: parts[1]}, true, nil
 }
 
-// runMigrations is the top-level entry point called by store.New
-// AFTER the legacy [Store.migrate] has bootstrapped (or, on a brand-
-// new PG database, has done nothing). It:
-//
-//  1. Ensures schema_migrations exists.
-//  2. Records the baseline (version 1) if we detect existing tables
-//     without a corresponding migration record.
-//  3. Loads embedded migrations and applies any not yet recorded.
-//
-// Failures here abort store boot. Boot-time migration failures are
-// production incidents — we deliberately do NOT swallow them.
-//
-// TODO(postgres-compat, multi-server): when more than one app instance can
-// boot against the SAME Postgres concurrently, wrap this whole body in a
-// session-level advisory lock (pg_advisory_lock(<const key>)) so only one
-// instance applies migrations while the others wait, then proceed no-op.
-// SQLite is single-writer (file-locked) and single-process here, so no lock
-// is needed today; the per-migration transaction already prevents a torn
-// apply, but two PG instances could still RACE to run the same version and
-// one would fail the unique version insert. The advisory lock makes that
-// boot deterministic instead of a fail-one-retry. Add it with the PG baseline.
-func (s *Store) runMigrations(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, migrationSchema); err != nil {
+// runMigrationsOn is runMigrations' actual body (see migrator_postgres_lock.go
+// for the Postgres advisory-lock dispatcher), parameterized over the
+// executor so the Postgres path can pin it to one locked connection while
+// SQLite keeps using the pool exactly as before.
+func (s *Store) runMigrationsOn(ctx context.Context, ex dbExecer) error {
+	if _, err := ex.ExecContext(ctx, migrationSchema); err != nil {
 		return fmt.Errorf("ensure schema_migrations: %w", err)
 	}
-	if err := s.recordBaselineIfNeeded(ctx); err != nil {
+	if err := s.recordBaselineIfNeeded(ctx, ex); err != nil {
 		return fmt.Errorf("baseline: %w", err)
 	}
 
@@ -182,7 +165,7 @@ func (s *Store) runMigrations(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load migrations: %w", err)
 	}
-	applied, err := s.appliedMigrationVersions(ctx)
+	applied, err := s.appliedMigrationVersions(ctx, ex)
 	if err != nil {
 		return err
 	}
@@ -190,7 +173,7 @@ func (s *Store) runMigrations(ctx context.Context) error {
 		if _, done := applied[m.Version]; done {
 			continue
 		}
-		if err := s.applyMigration(ctx, m); err != nil {
+		if err := s.applyMigration(ctx, ex, m); err != nil {
 			return fmt.Errorf("apply migration %04d_%s: %w", m.Version, m.Name, err)
 		}
 	}
@@ -210,10 +193,10 @@ func (s *Store) runMigrations(ctx context.Context) error {
 // Risk addressed: R11 in POSTGRES_COMPAT_PLAN.md (existing prod
 // SQLite installs MUST NOT have the baseline migration re-run, or
 // CREATE TABLE statements would fail on duplicate-table errors).
-func (s *Store) recordBaselineIfNeeded(ctx context.Context) error {
+func (s *Store) recordBaselineIfNeeded(ctx context.Context, ex dbExecer) error {
 	// Are there any rows in schema_migrations already?
 	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
+	if err := ex.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
@@ -222,31 +205,39 @@ func (s *Store) recordBaselineIfNeeded(ctx context.Context) error {
 	// Does the legacy schema exist? Probe via a known table. If the
 	// table doesn't exist we're on a fresh DB — no baseline to record;
 	// the 0001 migration (if present) will create the schema.
-	if !s.tableExists(ctx, "knowledge_sources") {
+	if !s.tableExistsOn(ctx, ex, "knowledge_sources") {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx,
+	_, err := ex.ExecContext(ctx,
 		`INSERT INTO schema_migrations (version, name) VALUES (1, 'baseline_legacy_schema')`,
 	)
 	return err
 }
 
-// tableExists tries a portable existence probe. SQLite and Postgres
-// both implement the standard `information_schema.tables` view; we
-// use it instead of dialect-specific catalog queries.
+// tableExists tries a portable existence probe against the store's pool.
+// Safe for post-boot introspection (tests, health checks) — NOT used inside
+// the locked Postgres migration path, which must stay on one connection;
+// see tableExistsOn.
 func (s *Store) tableExists(ctx context.Context, name string) bool {
+	return s.tableExistsOn(ctx, s.db, name)
+}
+
+// tableExistsOn is tableExists parameterized over the executor, so the
+// locked Postgres migration path (runMigrationsOn) can probe on the SAME
+// connection that holds the advisory lock instead of the pool.
+func (s *Store) tableExistsOn(ctx context.Context, ex dbExecer, name string) bool {
 	q := s.dialect.Rebind(`
 		SELECT COUNT(*) FROM information_schema.tables
 		 WHERE table_name = ?`)
 	var n int
-	if err := s.db.QueryRowContext(ctx, q, name).Scan(&n); err == nil {
+	if err := ex.QueryRowContext(ctx, q, name).Scan(&n); err == nil {
 		return n > 0
 	}
 	// Fallback for SQLite older than the version that supports
 	// information_schema (rarely encountered with modernc/sqlite, but
 	// belt-and-braces). sqlite_master is the SQLite-native catalog.
 	if s.dialect.Name() == "sqlite" {
-		row := s.db.QueryRowContext(ctx,
+		row := ex.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name)
 		if err := row.Scan(&n); err == nil {
 			return n > 0
@@ -255,8 +246,8 @@ func (s *Store) tableExists(ctx context.Context, name string) bool {
 	return false
 }
 
-func (s *Store) appliedMigrationVersions(ctx context.Context) (map[int]struct{}, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+func (s *Store) appliedMigrationVersions(ctx context.Context, ex dbExecer) (map[int]struct{}, error) {
+	rows, err := ex.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return nil, err
 	}
@@ -291,14 +282,14 @@ type execer interface {
 // transaction (e.g. Postgres `CREATE INDEX CONCURRENTLY`). modernc/sqlite
 // supports multi-statement Exec and DDL-in-transaction (verified), so SQLite
 // migrations default to transactional.
-func (s *Store) applyMigration(ctx context.Context, m Migration) error {
+func (s *Store) applyMigration(ctx context.Context, ex dbExecer, m Migration) error {
 	if migrationOptsOutOfTx(m.SQL) {
-		if _, err := s.db.ExecContext(ctx, m.SQL); err != nil {
+		if _, err := ex.ExecContext(ctx, m.SQL); err != nil {
 			return err
 		}
-		return s.recordMigrationVersion(ctx, s.db, m)
+		return s.recordMigrationVersion(ctx, ex, m)
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := ex.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}

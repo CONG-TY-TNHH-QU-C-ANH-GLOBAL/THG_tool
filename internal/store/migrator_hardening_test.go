@@ -19,13 +19,13 @@ func TestApplyMigration_Atomic(t *testing.T) {
 	ctx := context.Background()
 
 	// Good migration → table created AND version recorded.
-	if err := db.applyMigration(ctx, Migration{Version: 9001, Name: "good", SQL: `CREATE TABLE tx_probe (x INT)`}); err != nil {
+	if err := db.applyMigration(ctx, db.db, Migration{Version: 9001, Name: "good", SQL: `CREATE TABLE tx_probe (x INT)`}); err != nil {
 		t.Fatalf("good migration: %v", err)
 	}
 	if !db.tableExists(ctx, "tx_probe") {
 		t.Fatal("good migration did not create tx_probe")
 	}
-	applied, _ := db.appliedMigrationVersions(ctx)
+	applied, _ := db.appliedMigrationVersions(ctx, db.db)
 	if _, ok := applied[9001]; !ok {
 		t.Fatal("good migration version 9001 not recorded")
 	}
@@ -33,13 +33,13 @@ func TestApplyMigration_Atomic(t *testing.T) {
 	// Failing migration (2nd statement is invalid) → whole tx rolls back: the
 	// first statement's table must NOT persist and the version must NOT record.
 	failSQL := `CREATE TABLE should_not_persist (x INT); THIS IS NOT VALID SQL;`
-	if err := db.applyMigration(ctx, Migration{Version: 9002, Name: "bad", SQL: failSQL}); err == nil {
+	if err := db.applyMigration(ctx, db.db, Migration{Version: 9002, Name: "bad", SQL: failSQL}); err == nil {
 		t.Fatal("failing migration should return an error")
 	}
 	if db.tableExists(ctx, "should_not_persist") {
 		t.Fatal("failing migration was NOT rolled back (partial table persisted)")
 	}
-	applied, _ = db.appliedMigrationVersions(ctx)
+	applied, _ = db.appliedMigrationVersions(ctx, db.db)
 	if _, ok := applied[9002]; ok {
 		t.Fatal("failing migration version must NOT be recorded")
 	}

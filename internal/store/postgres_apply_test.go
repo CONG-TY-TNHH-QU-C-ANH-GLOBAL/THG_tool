@@ -38,7 +38,7 @@ func TestRealPostgresApply(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	applied, err := s.appliedMigrationVersions(ctx)
+	applied, err := s.appliedMigrationVersions(ctx, s.db)
 	if err != nil {
 		t.Fatalf("appliedMigrationVersions: %v", err)
 	}
