@@ -56,19 +56,14 @@ func main() {
 	}
 	mainStore.SetEncryptionKey(encKey)
 
-	appStore, err := store.NewAppStore(mainStore)
-	if err != nil {
-		log.Fatalf("❌ app store: %v", err)
-	}
-	log.Println("✅ App store opened (app_tasks, task_leads)")
-
 	// ── Session allocator + live session factory ─────────────────────────────
 	// The allocator atomically claims idle browser sessions per job.
 	// When no session is idle, jobs fail loudly unless ALLOW_MOCK_RUNTIME=true.
-	rawDB := appStore.DB()
+	// (app_tasks/task_leads bootstrap now runs inside store.New — app.Migrate)
+	rawDB := mainStore.DB()
 	sm := session.NewStateMachine(rawDB)
 	allocator := session.NewAllocator(rawDB, sm)
-	lsFactory := livesession.NewLiveSessionFactory(rawDB, appStore, allocator)
+	lsFactory := livesession.NewLiveSessionFactory(rawDB, allocator)
 	log.Println("✅ Session allocator initialized")
 
 	// ── Handler ──────────────────────────────────────────────────────────────
@@ -80,7 +75,7 @@ func main() {
 		log.Println("⚠️  ALLOW_MOCK_RUNTIME=true — worker may emit mock crawl data")
 	}
 	scorer := scoring.New(scoring.DefaultConfig())
-	h := facebookcrawl.New(fallback, scorer, jobStore, appStore)
+	h := facebookcrawl.New(fallback, scorer, jobStore, mainStore.App())
 	h.SetAllocator(allocator, lsFactory)
 
 	// Per-ORG Telegram channel notification on each NEW lead (uses the org's own bot token). The

@@ -11,7 +11,7 @@ import (
 	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/scoring"
 	"github.com/thg/scraper/internal/server/system"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/telegram/control"
 )
 
@@ -32,10 +32,7 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 		return connectorCrawlProcessResult{}, err
 	}
 
-	appStore, err := store.NewAppStore(h.db)
-	if err != nil {
-		return connectorCrawlProcessResult{}, err
-	}
+	appStore := h.db.App()
 	intent := strings.TrimSpace(req.Intent)
 	if intent == "" {
 		intent = "facebook_crawl"
@@ -93,7 +90,7 @@ func (h *Handler) resolveCrawlOwnership(orgID, agentID int64, req connectorCrawl
 // typed extension-error code, surfaced to the requester) or emits the admin
 // crawl-failure notice. No lead / no outbound / no comment. Behavior-identical to
 // the former inline failed-status branch.
-func (h *Handler) handleFailedCrawl(ctx context.Context, orgID int64, req connectorCrawlResultRequest, appStore *store.AppStore) connectorCrawlProcessResult {
+func (h *Handler) handleFailedCrawl(ctx context.Context, orgID int64, req connectorCrawlResultRequest, appStore *app.Store) connectorCrawlProcessResult {
 	errMsg := strings.TrimSpace(req.Error)
 	if errMsg == "" {
 		errMsg = "Chrome Extension crawl failed"
@@ -117,7 +114,7 @@ func (h *Handler) handleFailedCrawl(ctx context.Context, orgID int64, req connec
 // buildConnectorCrawlIngestDeps assembles the leadingest dependencies (scoring guidance,
 // keywords, business profile, AI classifier, market signal gate, OnLeadCreated Telegram
 // notification). Behavior-identical to the former inline block in the handler.
-func (h *Handler) buildConnectorCrawlIngestDeps(orgID int64, req connectorCrawlResultRequest, appStore *store.AppStore) leadingest.Deps {
+func (h *Handler) buildConnectorCrawlIngestDeps(orgID int64, req connectorCrawlResultRequest, appStore *app.Store) leadingest.Deps {
 	var aiClass *ai.MessageGenerator
 	if h.aiClass != nil {
 		aiClass = h.aiClass()

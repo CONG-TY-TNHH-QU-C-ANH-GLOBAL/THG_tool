@@ -11,7 +11,6 @@ import (
 	"github.com/thg/scraper/internal/models"
 	servermw "github.com/thg/scraper/internal/server/middleware"
 	serverorg "github.com/thg/scraper/internal/server/org"
-	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/connectors"
 )
 
@@ -218,9 +217,6 @@ func (h *Handler) agentBrowserTargets(c *fiber.Ctx) error {
 	assignedAccountID, _ := c.Locals("agent_assigned_account_id").(int64)
 	if orgID <= 0 {
 		return c.Status(403).JSON(fiber.Map{"error": "agent is not scoped to an organization"})
-	}
-	if _, err := store.NewAppStore(h.db); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	targets, err := h.db.Connectors().ListLocalBrowserTargetsForConnector(orgID, agentID, createdBy, assignedAccountID)
 	if err != nil {

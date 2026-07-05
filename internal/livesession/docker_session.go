@@ -9,7 +9,6 @@ import (
 
 	"github.com/thg/scraper/internal/runtime"
 	"github.com/thg/scraper/internal/session"
-	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/store/sessions"
 )
 
@@ -17,16 +16,16 @@ import (
 // browser containers. It wraps a CDPRuntime for the worker and a VNCVideoSource
 // for the dashboard.
 type DockerLiveSession struct {
-	accountID  int64
-	sessionID  int64
-	cdpPort    int
-	vncPort    int
-	workerID   string
-	sm         *session.StateMachine
-	rt         *runtime.CDPRuntime
-	vncSource  *VNCVideoSource
-	appStore   *store.AppStore
-	allocator  Releaser
+	accountID int64
+	sessionID int64
+	cdpPort   int
+	vncPort   int
+	workerID  string
+	sm        *session.StateMachine
+	rt        *runtime.CDPRuntime
+	vncSource *VNCVideoSource
+	db        *sql.DB
+	allocator Releaser
 }
 
 // Releaser is the minimal interface the session needs from the allocator.
@@ -40,7 +39,7 @@ func NewDockerLiveSession(
 	sess sessions.BrowserSession,
 	workerID string,
 	sm *session.StateMachine,
-	appStore *store.AppStore,
+	db *sql.DB,
 	allocator Releaser,
 ) (*DockerLiveSession, error) {
 	rt, err := runtime.NewCDPRuntime(sess.CDPPort)
@@ -57,13 +56,13 @@ func NewDockerLiveSession(
 		sm:        sm,
 		rt:        rt,
 		vncSource: &VNCVideoSource{vncPort: sess.VNCPort},
-		appStore:  appStore,
+		db:        db,
 		allocator: allocator,
 	}, nil
 }
 
-func (s *DockerLiveSession) AccountID() int64 { return s.accountID }
-func (s *DockerLiveSession) SessionID() int64 { return s.sessionID }
+func (s *DockerLiveSession) AccountID() int64         { return s.accountID }
+func (s *DockerLiveSession) SessionID() int64         { return s.sessionID }
 func (s *DockerLiveSession) Runtime() runtime.Runtime { return s.rt }
 func (s *DockerLiveSession) VideoStream() VideoSource { return s.vncSource }
 func (s *DockerLiveSession) Control() ControlChannel  { return &cdpControlChannel{cdpPort: s.cdpPort} }
@@ -81,7 +80,7 @@ func (s *DockerLiveSession) State(ctx context.Context) (SessionState, error) {
 // Heartbeat updates the heartbeat_at timestamp so the health checker knows
 // this session is being actively used.
 func (s *DockerLiveSession) Heartbeat(ctx context.Context) error {
-	_, err := s.appStore.DB().ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`UPDATE browser_sessions SET heartbeat_at = CURRENT_TIMESTAMP WHERE account_id = ?`,
 		s.accountID,
 	)
@@ -124,28 +123,27 @@ type cdpControlChannel struct {
 	cdpPort int
 }
 
-func (c *cdpControlChannel) MouseMove(_ context.Context, _, _ int) error { return nil }
+func (c *cdpControlChannel) MouseMove(_ context.Context, _, _ int) error            { return nil }
 func (c *cdpControlChannel) MouseClick(_ context.Context, _, _ int, _ string) error { return nil }
 func (c *cdpControlChannel) KeyPress(_ context.Context, _ string, _ []string) error { return nil }
-func (c *cdpControlChannel) Scroll(_ context.Context, _, _, _, _ int) error { return nil }
-func (c *cdpControlChannel) TypeText(_ context.Context, _ string) error { return nil }
+func (c *cdpControlChannel) Scroll(_ context.Context, _, _, _, _ int) error         { return nil }
+func (c *cdpControlChannel) TypeText(_ context.Context, _ string) error             { return nil }
 
 // LiveSessionFactory creates DockerLiveSession instances from allocated sessions.
 type LiveSessionFactory struct {
 	sm        *session.StateMachine
-	appStore  *store.AppStore
+	db        *sql.DB
 	allocator Releaser
 }
 
 // NewLiveSessionFactory creates a factory wired to the session infrastructure.
 func NewLiveSessionFactory(
 	db *sql.DB,
-	appStore *store.AppStore,
 	allocator Releaser,
 ) *LiveSessionFactory {
 	return &LiveSessionFactory{
-		sm:       session.NewStateMachine(db),
-		appStore: appStore,
+		sm:        session.NewStateMachine(db),
+		db:        db,
 		allocator: allocator,
 	}
 }
@@ -155,5 +153,5 @@ func (f *LiveSessionFactory) Wrap(
 	sess sessions.BrowserSession,
 	workerID string,
 ) (*DockerLiveSession, error) {
-	return NewDockerLiveSession(sess, workerID, f.sm, f.appStore, f.allocator)
+	return NewDockerLiveSession(sess, workerID, f.sm, f.db, f.allocator)
 }

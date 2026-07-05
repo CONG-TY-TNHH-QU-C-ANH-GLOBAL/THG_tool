@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/textutil"
 )
 
@@ -22,7 +22,7 @@ import (
 // with both stores nil this is a no-op and the caller still marks the lead Inserted.
 func persistLead(ctx context.Context, deps Deps, in Input, content, sourceType, threadRole string, out *Outcome) error {
 	if deps.AppStore != nil {
-		taskLead := store.TaskLead{
+		taskLead := app.TaskLead{
 			TaskID:           in.TaskID,
 			OrgID:            in.OrgID,
 			SourceURL:        in.PrimaryURL,

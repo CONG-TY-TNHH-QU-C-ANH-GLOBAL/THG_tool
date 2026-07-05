@@ -108,10 +108,7 @@ func enqueueConnectorCrawlCommand(ctx context.Context, db *store.Store, task *jo
 	if agentID <= 0 {
 		return "", fmt.Errorf("Chrome Extension connector id is required")
 	}
-	appStore, err := store.NewAppStore(db)
-	if err != nil {
-		return "", err
-	}
+	appStore := db.App()
 	_ = appStore.CreateTask(ctx, task.TaskID, task.OrgID, task.Intent)
 	_ = appStore.StartTask(ctx, task.TaskID)
 

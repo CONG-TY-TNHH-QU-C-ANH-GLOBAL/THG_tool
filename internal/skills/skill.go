@@ -42,7 +42,6 @@ const (
 // internal/skills stays free of an internal/ai import cycle.
 type Env struct {
 	DB       *store.Store
-	AppStore *store.AppStore
 	JobStore *jobs.Store
 	Notify   func(string)
 

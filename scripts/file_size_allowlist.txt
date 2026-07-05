@@ -74,7 +74,6 @@ internal/server/agent/connector/local_connector.go  # 425 lines
 internal/server/org/handlers.go  # 425 lines
 internal/store/users.go  # 423 lines
 internal/store/prompts/prompt_routing.go  # 422 lines
-internal/store/app_store.go  # 416 lines
 internal/server/org/superadmin.go  # 413 lines
 services/agent-brain/brain.py  # 411 lines
 cmd/scraper/skills_register.go  # 408 lines

@@ -97,11 +97,10 @@ type Store struct {
 	// top-level Store at construction + via SetEncryptionKey.
 	identities *identities.Store
 
-	// app owns the heterogeneous *Store-receiver application tables
-	// (career_jobs, kpi, learning, media_assets, price_items, stats).
-	// Phase 11 narrow-scope extraction (2026-05-22) — the legacy
-	// AppStore wrapper at top-level (app_store.go) and its
-	// *AppStore-receiver files stay where they are.
+	// app owns the heterogeneous application tables (career_jobs, kpi,
+	// media_assets, price_items, stats) plus, since the AppStore
+	// dissolution (PR6, 2026-07-05), the app_tasks/task_leads cluster
+	// and its app.Migrate bootstrap. The legacy *AppStore wrapper is gone.
 	app *app.Store
 
 	// threads owns conversation_threads + conversation_messages.
@@ -278,6 +277,9 @@ func newSQLite(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("sessions migrate: %w", err)
 	}
 	s.sessions = sessions.NewStore(s.db, s.dialect)
+	if err := app.Migrate(s.db); err != nil {
+		return nil, fmt.Errorf("app migrate: %w", err)
+	}
 	s.installRuntimeEventSink()
 	return s, nil
 }
@@ -331,6 +333,9 @@ func newPostgres(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("sessions migrate: %w", err)
 	}
 	s.sessions = sessions.NewStore(s.db, s.dialect)
+	if err := app.Migrate(s.db); err != nil {
+		return nil, fmt.Errorf("app migrate: %w", err)
+	}
 	s.installRuntimeEventSink()
 	return s, nil
 }

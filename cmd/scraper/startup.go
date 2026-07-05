@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"os"
 
@@ -82,10 +83,10 @@ func bootstrapSuperadmin(db *store.Store) {
 // PortRegistry so containers get deterministic host ports across restarts.
 // Does not call ReconcileRunning or decide the shutdown-stop policy — those
 // stay in main() next to the defer that depends on them.
-func initPortRegistry(ctx context.Context, cfg *config.Config, appStore *store.AppStore) *workspace.Manager {
+func initPortRegistry(ctx context.Context, cfg *config.Config, sqlDB *sql.DB) *workspace.Manager {
 	workspaceMgr := workspace.NewManager(cfg.ChromePath, cfg.ProfileDir)
 
-	portRegistry := workspace.NewPortRegistry(appStore.DB())
+	portRegistry := workspace.NewPortRegistry(sqlDB)
 	if err := portRegistry.LoadFromDB(ctx); err != nil {
 		log.Printf("⚠️  PortRegistry DB load failed: %v", err)
 	}
@@ -100,8 +101,8 @@ func initPortRegistry(ctx context.Context, cfg *config.Config, appStore *store.A
 // version started it, so the `go healthChecker.Run(...)` goroutine begins
 // at the same moment in the startup sequence — only where the statement is
 // written changed, not when it executes.
-func startHealthMonitoring(ctx context.Context, workspaceMgr *workspace.Manager, appStore *store.AppStore) {
-	cb := workspace.NewCircuitBreaker(appStore.DB(), func(msg string) {
+func startHealthMonitoring(ctx context.Context, workspaceMgr *workspace.Manager, sqlDB *sql.DB) {
+	cb := workspace.NewCircuitBreaker(sqlDB, func(msg string) {
 		log.Printf("[CircuitBreaker] ALERT: %s", msg)
 	})
 	restartCtrl := workspace.NewRestartController(workspaceMgr, cb)
