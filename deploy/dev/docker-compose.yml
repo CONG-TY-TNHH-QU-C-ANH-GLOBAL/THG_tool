@@ -18,7 +18,11 @@
 
 services:
   postgres:
-    image: postgres:16
+    # pgvector/pgvector:pg16 (not plain postgres:16): the versioned migration
+    # chain includes 0003_add_pgvector_and_embedding__postgres, which needs
+    # `CREATE EXTENSION vector` available at the OS level. Otherwise a
+    # drop-in postgres:16-compatible image.
+    image: pgvector/pgvector:pg16
     container_name: thg-dev-postgres
     restart: unless-stopped
     environment:

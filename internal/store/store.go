@@ -27,6 +27,12 @@ import (
 
 	// Pure-Go SQLite driver; registers itself with database/sql via its init().
 	_ "modernc.org/sqlite"
+	// pgx stdlib driver; registers itself under the "pgx" database/sql driver
+	// name via its init(). Both drivers are always linked — this codebase has
+	// no build-tag split (see dbutil.PostgresDriverName), so a DATABASE_URL
+	// pointed at Postgres works out of the box instead of failing at
+	// sql.Open with "unknown driver pgx".
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // Store provides database access for the scraper system.
@@ -277,8 +283,8 @@ func newSQLite(dbPath string) (*Store, error) {
 //   - ConnMaxLifetime 5m: refresh connections regularly so cloud-PG
 //     proxies (e.g. RDS Proxy) can rebalance.
 //
-// Driver registration happens via a build tag in postgres_driver.go
-// — keeps the standard build from depending on pgx unless PG is wanted.
+// Driver registration is the unconditional pgx/v5/stdlib blank import above
+// (both drivers are always linked; see that import's comment).
 func newPostgres(dsn string) (*Store, error) {
 	db, err := sql.Open(dbutil.PostgresDriverName, dsn)
 	if err != nil {
@@ -329,11 +335,11 @@ func (s *Store) initDomains() error {
 	s.threads = threads.NewStore(s.db, s.dialect)
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
-	if err := sessions.Migrate(s.db); err != nil {
+	if err := sessions.Migrate(s.db, s.dialect); err != nil {
 		return fmt.Errorf("sessions migrate: %w", err)
 	}
 	s.sessions = sessions.NewStore(s.db, s.dialect)
-	if err := app.Migrate(s.db); err != nil {
+	if err := app.Migrate(s.db, s.dialect); err != nil {
 		return fmt.Errorf("app migrate: %w", err)
 	}
 	s.installRuntimeEventSink()

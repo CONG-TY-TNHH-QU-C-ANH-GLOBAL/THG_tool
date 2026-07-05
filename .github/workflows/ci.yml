@@ -330,6 +330,37 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Real PostgreSQL for the platform-baseline apply validation
+    # (internal/store TestRealPostgresApply) + the existing gated
+    # internal/store/postgres/... parity tests. See "Provision..." step below
+    # for why a SECOND database is created in this same service.
+    services:
+      # pgvector/pgvector:pg16 (not plain postgres:16): the versioned
+      # migration chain includes 0003_add_pgvector_and_embedding__postgres,
+      # which needs `CREATE EXTENSION vector` to be available at the OS
+      # level. Otherwise a drop-in postgres:16-compatible image.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: thg_ci
+          POSTGRES_USER: thg
+          POSTGRES_PASSWORD: thg_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      # Used by internal/store/postgres/... (drops/recreates outbound_messages
+      # via its own ad-hoc migration file — see that package's README).
+      POSTGRES_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_ci?sslmode=disable
+      # Used by internal/store's TestRealPostgresApply — a SEPARATE database so
+      # its versioned-migration-owned outbound_messages table (created via
+      # store.New's normal boot path) never collides with the ad-hoc harness
+      # above running against the same Postgres service.
+      POSTGRES_PLATFORM_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_platform_ci?sslmode=disable
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # actions/setup-go v5
@@ -338,6 +369,9 @@ jobs:
           cache: true
       - name: Download dependencies
         run: go mod download
+      - name: Provision thg_platform_ci database
+        shell: bash
+        run: PGPASSWORD=thg_ci psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
       - name: go vet
         run: go vet ./...
       - name: Build production Go binaries
@@ -422,6 +456,30 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # See the backend job above for why two databases are provisioned in one
+    # Postgres service (platform-baseline apply validation vs. the existing
+    # ad-hoc outbound_messages parity harness).
+    services:
+      # pgvector/pgvector:pg16 (not plain postgres:16): the versioned
+      # migration chain includes 0003_add_pgvector_and_embedding__postgres,
+      # which needs `CREATE EXTENSION vector` to be available at the OS
+      # level. Otherwise a drop-in postgres:16-compatible image.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: thg_ci
+          POSTGRES_USER: thg
+          POSTGRES_PASSWORD: thg_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      POSTGRES_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_ci?sslmode=disable
+      POSTGRES_PLATFORM_TEST_DSN: postgres://thg:thg_ci@localhost:5432/thg_platform_ci?sslmode=disable
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
 
@@ -435,6 +493,10 @@ jobs:
 
       - name: Download dependencies
         run: go mod download
+
+      - name: Provision thg_platform_ci database
+        shell: bash
+        run: PGPASSWORD=thg_ci psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
 
       - name: Runtime topology contract (specs/RUNTIME_TOPOLOGY.md §6)
         run: bash scripts/check_topology.sh

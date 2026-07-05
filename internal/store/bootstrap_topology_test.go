@@ -80,10 +80,11 @@ func TestBootstrap_DoubleBootIdempotent(t *testing.T) {
 // architecture decision (data-plane classification), not convenience —
 // see docs/architecture/DATABASE_OWNERSHIP.md §Data planes.
 var sanctionedBootstrapFiles = map[string]bool{
-	"internal/store/migrator.go":         true, // schema_migrations registry itself
-	"internal/store/sessions/migrate.go": true, // domain bootstrap: browser_sessions
-	"internal/store/app/migrate.go":      true, // domain bootstrap: app/browser-infra tables
-	"internal/jobs/store.go":             true, // domain bootstrap: scheduler_jobs
+	"internal/store/migrator.go":             true, // schema_migrations registry itself
+	"internal/store/sessions/migrate.go":     true, // domain bootstrap: browser_sessions
+	"internal/store/app/migrate.go":          true, // domain bootstrap: app/browser-infra tables (SQLite)
+	"internal/store/app/migrate_postgres.go": true, // domain bootstrap: app/browser-infra tables (Postgres)
+	"internal/jobs/store.go":                 true, // domain bootstrap: scheduler_jobs
 }
 
 // TestNoHiddenCreateTableBootstrap fails when a production .go file under
