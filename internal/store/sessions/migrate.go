@@ -8,15 +8,12 @@ import "database/sql"
 // InitSelectorCache pre-construction bootstrap pattern. Idempotent — safe to
 // run on every boot.
 //
-// PR2 fix (2026-07-01): browser_sessions was never in the versioned SQL
-// migrations (internal/store/migrations/*.sql) — it only existed as a side
-// effect of the legacy *AppStore.migrate() bootstrap, which PR1 (2026-07-01)
-// wired sessions.Store independently of. Once PR2 migrates callers off
-// *AppStore, nothing guarantees AppStore.migrate() ran first, so
-// sessions.Store needs its own copy of this bootstrap. The SQL is byte-
-// identical to AppStore.migrate()'s browser_sessions statements (still left
-// in place there, unmodified — both are idempotent, so running both is
-// harmless while *AppStore still exists).
+// This is the SINGLE owner of the browser_sessions bootstrap (the
+// byte-identical duplicate in app.Migrate was removed 2026-07-05, once
+// the *AppStore wrapper was gone). browser_sessions is browser/session
+// runtime state (local-runtime plane by doctrine) and is deliberately
+// NOT in the versioned migrations — see
+// internal/store/migrations/README.md "Bootstrap layers".
 func Migrate(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS browser_sessions (
 		id             INTEGER PRIMARY KEY AUTOINCREMENT,

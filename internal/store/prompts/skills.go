@@ -11,55 +11,6 @@ import (
 	"github.com/thg/scraper/internal/store/dbutil"
 )
 
-// Migrate creates the org_skills + skill_executions tables. Called
-// from the parent store's schema bootstrap BEFORE the prompts.Store
-// instance is constructed (NewStore happens after migrate), so this
-// is a package-level helper that takes a raw *sql.DB rather than a
-// method on Store. Idempotent — safe to run on every boot.
-//
-// Phase 9: exported (was unexported `migrateSkills` method) for the
-// cross-package boundary.
-func Migrate(db *sql.DB) error {
-	stmts := []string{
-		// Per-org enablement of skills. A row's absence means "use the
-		// skill's DefaultEnabled value"; an explicit row overrides.
-		`CREATE TABLE IF NOT EXISTS org_skills (
-			org_id     INTEGER NOT NULL,
-			skill_id   TEXT    NOT NULL,
-			enabled    INTEGER NOT NULL DEFAULT 1,
-			config     TEXT    NOT NULL DEFAULT '{}',
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_by INTEGER NOT NULL DEFAULT 0,
-			PRIMARY KEY (org_id, skill_id)
-		)`,
-		// Audit trail. Every prompt → resolver → skill execution lands
-		// here so operators can answer "why did the bot send X?" without
-		// reading code.
-		`CREATE TABLE IF NOT EXISTS skill_executions (
-			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			org_id      INTEGER NOT NULL,
-			user_id     INTEGER NOT NULL DEFAULT 0,
-			source      TEXT    NOT NULL,
-			skill_id    TEXT    NOT NULL,
-			args_json   TEXT    NOT NULL DEFAULT '{}',
-			summary     TEXT    NOT NULL DEFAULT '',
-			success     INTEGER NOT NULL DEFAULT 0,
-			error       TEXT    NOT NULL DEFAULT '',
-			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_skill_executions_org
-			ON skill_executions(org_id, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_skill_executions_skill
-			ON skill_executions(skill_id, created_at DESC)`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
-			return fmt.Errorf("skills migrate: %w (stmt: %s)", err, stmt)
-		}
-	}
-	return nil
-}
-
 // LoadOrgSkillOverrides returns the explicit enable/disable overrides
 // stored for orgID. Map key = skill ID, value = enabled flag. Missing
 // keys mean "use the skill's DefaultEnabled value".
