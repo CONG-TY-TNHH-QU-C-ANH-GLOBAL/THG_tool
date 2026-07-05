@@ -27,9 +27,13 @@ import (
 // See internal/store/migrations/README.md "Bootstrap layers" and
 // docs/architecture/DATABASE_OWNERSHIP.md §Data planes.
 
-// bootstrapOwnedTables are created ONLY by the layer-2 domain bootstrap —
-// they are absent from the versioned baseline. This lists their CURRENT
-// bootstrap location, not their final data-plane classification.
+// bootstrapOwnedTables are created by the layer-2 domain bootstrap on
+// SQLite. This lists their CURRENT bootstrap location, not their final
+// data-plane classification. As of database boundary sprint PR7, app_tasks
+// and task_leads are the one exception on Postgres — see
+// internal/store/migrations/README.md's classification table — but this
+// list still holds for the tableExists assertions below since both tables
+// exist on Postgres too (created by 0106 instead of app.Migrate).
 var bootstrapOwnedTables = []string{
 	"browser_sessions", "app_tasks", "task_leads", "browser_identities",
 	"port_registry", "account_rate_limits", "circuit_breaker_state",

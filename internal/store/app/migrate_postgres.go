@@ -17,37 +17,21 @@ import (
 // versioned platform migration 0101_platform_accounts_connectors__postgres —
 // the additive ALTERs below are therefore no-ops on Postgres (`IF NOT
 // EXISTS` skips them cleanly) rather than duplicate ownership.
+//
+// app_tasks/task_leads are likewise already created by the versioned
+// platform migration 0106_platform_prompts_app__postgres (database boundary
+// sprint PR7 — see internal/store/migrations/README.md "Bootstrap-owned
+// table classification"). This function does NOT create them on Postgres;
+// assertAppTasksAndTaskLeadsExist below asserts that instead of silently
+// trusting boot order, so a regressed/renamed 0106 fails loudly here rather
+// than as an opaque "relation does not exist" on the first leads query.
+// SQLite is unaffected: app_tasks/task_leads remain migrateSQLite-owned
+// there (0106 is a `__postgres`-only file).
 func migratePostgres(db *sql.DB) error {
+	if err := assertAppTasksAndTaskLeadsExist(db); err != nil {
+		return err
+	}
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS app_tasks (
-			id             BIGSERIAL PRIMARY KEY,
-			task_id        TEXT    NOT NULL UNIQUE,
-			org_id         BIGINT  NOT NULL DEFAULT 0,
-			intent         TEXT    NOT NULL,
-			status         TEXT    NOT NULL DEFAULT 'pending',
-			total_fetched  INTEGER NOT NULL DEFAULT 0,
-			total_returned INTEGER NOT NULL DEFAULT 0,
-			error          TEXT    NOT NULL DEFAULT '',
-			created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_app_tasks_org ON app_tasks(org_id, intent, status, created_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS task_leads (
-			id                  BIGSERIAL PRIMARY KEY,
-			task_id             TEXT   NOT NULL,
-			org_id              BIGINT NOT NULL DEFAULT 0,
-			source_url          TEXT   NOT NULL,
-			author_profile_url  TEXT   NOT NULL DEFAULT '',
-			author_name         TEXT   NOT NULL DEFAULT '',
-			content             TEXT   NOT NULL DEFAULT '',
-			lead_score          DOUBLE PRECISION NOT NULL DEFAULT 0,
-			category            TEXT   NOT NULL DEFAULT 'cold',
-			signals_json        TEXT   NOT NULL DEFAULT '[]',
-			thread_role         TEXT   NOT NULL DEFAULT 'intent_originator',
-			created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE(task_id, source_url)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_task_leads_org ON task_leads(org_id, category, lead_score DESC)`,
 		// browser_sessions is OWNED by the sessions domain (sessions.Migrate).
 		`CREATE TABLE IF NOT EXISTS browser_identities (
 			id             BIGSERIAL PRIMARY KEY,
@@ -163,5 +147,26 @@ func migratePostgres(db *sql.DB) error {
 	// are owned by migration 0006_add_actor_verification (SQLite) / the
 	// equivalent platform migration (Postgres) — NOT here, same reasoning as
 	// migrateSQLite.
+	return nil
+}
+
+// assertAppTasksAndTaskLeadsExist fails loudly if app_tasks/task_leads are
+// missing on Postgres boot. Both are created by the versioned platform
+// migration 0106_platform_prompts_app__postgres, which store.New's
+// runMigrations always applies BEFORE app.Migrate runs — so under normal
+// operation this never fires. It exists as the one runnable check against
+// that ordering invariant silently breaking (e.g. 0106 renamed/reverted).
+func assertAppTasksAndTaskLeadsExist(db *sql.DB) error {
+	for _, table := range [...]string{"app_tasks", "task_leads"} {
+		var exists bool
+		q := `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`
+		if err := db.QueryRow(q, table).Scan(&exists); err != nil {
+			return fmt.Errorf("check %s exists: %w", table, err)
+		}
+		if !exists {
+			return fmt.Errorf("%s missing — expected platform migration "+
+				"0106_platform_prompts_app__postgres to have created it before app.Migrate runs", table)
+		}
+	}
 	return nil
 }

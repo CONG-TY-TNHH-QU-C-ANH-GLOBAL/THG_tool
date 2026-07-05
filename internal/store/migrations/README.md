@@ -120,7 +120,7 @@ Current layer-2 bootstrap tables, classified per
 | Table | Classification |
 |---|---|
 | `browser_sessions`, `browser_identities`, `port_registry`, `account_rate_limits`, `circuit_breaker_state`, `session_audit_log`, `post_seen_cache`, `scheduler_jobs` | **local runtime** — stays bootstrap/SQLite |
-| `app_tasks`, `task_leads` | **platform source-of-truth candidates** — move to versioned platform migrations in a later approved sprint (their errors-ignored ALTERs cannot ride a transactional run-once migration byte-identically; needs a designed migration) |
+| `app_tasks`, `task_leads` | **split by dialect** (database boundary sprint PR7): Postgres source-of-truth is `0106_platform_prompts_app__postgres` — `app.Migrate`'s Postgres path no longer creates them, it only asserts they exist (`assertAppTasksAndTaskLeadsExist` in `internal/store/app/migrate_postgres.go`). SQLite is unchanged: `app.Migrate`'s SQLite path (`migrateSQLite`) remains the sole owner there, since 0106 is a `__postgres`-only file. |
 | `learning_profiles`, `outcome_events`, `learning_history` | **ambiguous** — schema exists, feature unwired; do NOT move until the outcome-learning feature is designed |
 
 ## Authoring rules
