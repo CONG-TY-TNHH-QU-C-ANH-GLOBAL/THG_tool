@@ -4,19 +4,30 @@ package app
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/thg/scraper/internal/store/dbutil"
 )
 
 // Migrate is the idempotent bootstrap for the app-domain and legacy
 // browser-infra tables (app_tasks, task_leads, browser_sessions,
 // browser_identities, learning_*, port_registry, account_rate_limits,
 // circuit_breaker_state, session_audit_log, post_seen_cache) plus the
-// additive column ALTERs. Moved verbatim from the retired
-// *AppStore.migrate() (AppStore dissolution PR6, 2026-07-05) — same
-// statements, same order. Called by store.New (both dialect paths)
+// additive column ALTERs, for the given boot dialect. Moved verbatim from
+// the retired *AppStore.migrate() (AppStore dissolution PR6, 2026-07-05) —
+// same statements, same order. Called by store.New (both dialect paths)
 // right after sessions.Migrate, so every process that opens the store
 // gets the tables strictly earlier than the old NewAppStore-time
 // bootstrap.
-func Migrate(db *sql.DB) error {
+func Migrate(db *sql.DB, dialect dbutil.Dialect) error {
+	if dialect.Name() == "postgres" {
+		return migratePostgres(db)
+	}
+	return migrateSQLite(db)
+}
+
+// migrateSQLite is byte-identical to the pre-dialect-split Migrate body —
+// SQLite behavior must not change.
+func migrateSQLite(db *sql.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS app_tasks (
 			id             INTEGER PRIMARY KEY AUTOINCREMENT,

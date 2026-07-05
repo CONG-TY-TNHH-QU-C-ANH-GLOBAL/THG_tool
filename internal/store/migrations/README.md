@@ -99,9 +99,16 @@ Landing zones:
   ambiguous `learning_*` cluster are deliberately absent. Discovery,
   ordering, dialect isolation, and sizes are pinned by
   `TestEmbeddedMigrations_PlatformBaselineDiscovered` + the guards below.
-  NOTE: these files are statically validated only — CI has no Postgres
-  service yet, so a real PG boot remains gated on PG validation infra
-  (which must also address the SQLite-flavored layer-2 bootstrap).
+  Real-Postgres-apply validated (database boundary sprint PR5):
+  `internal/store/postgres_apply_test.go`'s `TestRealPostgresApply` boots
+  `store.New` against an actual PostgreSQL database (gated on
+  `POSTGRES_PLATFORM_TEST_DSN`, wired into CI's `backend` / `main-full-gate`
+  jobs via a `pgvector/pgvector:pg16` service — plain `postgres:16` lacks
+  the extension `0003_add_pgvector_and_embedding__postgres` needs) and
+  asserts migrations 0100-0110 are all recorded in `schema_migrations` plus
+  every bootstrap-owned table exists. This also proved the layer-2
+  bootstrap (`sessions.Migrate` / `app.Migrate`) needed dialect-aware DDL —
+  see those files' `migratePostgres` counterparts.
 - `rag/` — AI Knowledge / RAG plane (today's knowledge `__postgres` files
   are its seed). Create when the first file lands.
 
