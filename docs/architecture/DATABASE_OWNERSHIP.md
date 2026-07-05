@@ -2,8 +2,8 @@
 doc_type: architecture
 status: active
 owner: platform
-last_reviewed: 2026-06-28
-related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
+last_reviewed: 2026-07-05
+related_pr_or_issue: docs/data-plane-doctrine
 ---
 
 # Database Table Ownership
@@ -27,6 +27,50 @@ owner's API or a documented `// tenant-ok` cross-domain projection.
 
 Owner names are the *logical modules* from `MODULE_BOUNDARIES.md`; the parenthetical
 is the current store subpackage (`internal/store/<x>`).
+
+---
+
+## Data planes (BINDING doctrine, 2026-07-05)
+
+Above table-level ownership sits plane-level ownership. THG has **three
+separate data planes**; store/refactor work must not blur them.
+
+**1. Local Runtime / Client Data Plane — SQLite.**
+Used by the local runtime / Chrome extension / browser automation client.
+Stores only *local operational state*: local job cache, browser/session
+runtime state, pending action queue, local outbox, retry/checkpoint state,
+sync cursor, account readiness cache. It is NOT the source of truth for
+SaaS customer/org/payment/business records.
+
+**2. SaaS Platform Data Plane — PostgreSQL.**
+Source of truth for organizations, workspaces, users, memberships, roles,
+customers/leads, billing/payment/subscriptions, audit/action ledger,
+approval policy, server-side jobs, integration config. All platform data
+must be tenant-scoped by org/workspace and must preserve tenant filtering
+(rule 3 above).
+
+**3. AI Knowledge / RAG Data Plane — separate knowledge/RAG database,
+schema, or namespace.**
+Org-scoped documents, chunks, embeddings, retrieval policies, and AI
+context. Must enforce org/workspace/source ACLs. AI retrieves through a
+policy/ACL/retrieval layer — never direct unrestricted database access.
+
+**Source-of-truth rule.**
+SQLite is local cache/outbox/runtime state only. The PostgreSQL platform DB
+is the SaaS system of record. The RAG DB is retrieval memory, not the
+business system of record. Cross-plane sync must use explicit
+events/outbox/idempotency (see `TRANSACTIONAL_OUTBOX.md`), never hidden
+shared tables.
+
+**Boundary sprint rule.**
+Future store/refactor work must not blur these planes. If code mixes local
+runtime SQLite concerns with platform PostgreSQL or RAG knowledge storage,
+STOP and report the boundary before refactoring.
+
+> Current-state note: today's MVP runs the platform on SQLite with a
+> Postgres path staged behind parity tests (`internal/store/postgres/`).
+> The plane doctrine is the *target contract* every migration step must
+> move toward — it does not retroactively bless the MVP colocation.
 
 ---
 

@@ -291,6 +291,16 @@ Classify each candidate before touching it:
   schema/migrations, DTO/wire contracts. **Do not change semantics.** Characterize
   only; never "make it movable" by inventing abstractions.
 
+### Data planes
+
+Binding doctrine: `docs/architecture/DATABASE_OWNERSHIP.md` §Data planes.
+THG has three separate data planes — Local Runtime (SQLite: local
+cache/outbox/runtime state only), SaaS Platform (PostgreSQL: the tenant-scoped
+system of record), and AI Knowledge/RAG (separate DB/schema/namespace behind a
+policy/ACL retrieval layer). Cross-plane sync uses explicit
+events/outbox/idempotency, never hidden shared tables. Refactors must not blur
+the planes; code that mixes them is a stop-and-report boundary.
+
 ### Boundary laws
 
 - `internal/services/facebook` must not import `internal/store`, `internal/server`,

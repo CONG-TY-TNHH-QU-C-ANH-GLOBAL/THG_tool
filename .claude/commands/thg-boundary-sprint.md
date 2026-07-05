@@ -131,9 +131,32 @@ You MUST stop and ask before:
 * public API/DTO/wire behavior change;
 * product-visible behavior change;
 * irreversible deletion without zero-caller proof;
-* changing workspace readiness/VNC/CDP behavior unless explicitly requested.
+* changing workspace readiness/VNC/CDP behavior unless explicitly requested;
+* any change that moves data across the three data planes (local SQLite /
+  platform PostgreSQL / RAG knowledge) or blurs their source-of-truth
+  boundaries.
 
 ## Boundary standards
+
+Data planes (BINDING — full doctrine in
+`docs/architecture/DATABASE_OWNERSHIP.md` §Data planes):
+
+* THG has three separate data planes: **Local Runtime (SQLite)** — local
+  job cache, browser/session runtime state, pending action queue, local
+  outbox, retry/checkpoint state, sync cursor, readiness cache;
+  **SaaS Platform (PostgreSQL)** — system of record for orgs, workspaces,
+  users, memberships, roles, customers/leads, billing, audit/action
+  ledger, approval policy, server-side jobs, integration config, always
+  tenant-scoped; **AI Knowledge / RAG** (separate DB/schema/namespace) —
+  org-scoped documents, chunks, embeddings, retrieval policies, behind a
+  policy/ACL retrieval layer.
+* SQLite is local cache/outbox/runtime state only — never the SaaS system
+  of record. The RAG DB is retrieval memory, not business records.
+* Cross-plane sync uses explicit events/outbox/idempotency, never hidden
+  shared tables.
+* Refactor work must not blur the planes. If code mixes local runtime
+  SQLite concerns with platform PostgreSQL or RAG knowledge storage,
+  STOP and report the boundary before refactoring.
 
 Composition root:
 
