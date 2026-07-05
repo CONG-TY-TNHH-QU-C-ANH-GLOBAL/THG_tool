@@ -119,6 +119,37 @@ func TestEmbeddedMigrations_LoadCleanBothDialects(t *testing.T) {
 	}
 }
 
+// TestEmbeddedMigrations_PlatformBaselineDiscovered pins the modular
+// PostgreSQL platform baseline (database boundary sprint PR4): the
+// migrations/platform/ pieces are discovered through the subdirectory
+// loader, postgres-only, and contiguous from version 100 — a missing or
+// mis-suffixed platform file fails here, not at a production PG boot.
+func TestEmbeddedMigrations_PlatformBaselineDiscovered(t *testing.T) {
+	const first, last = 100, 108
+	pg, err := loadMigrations("postgres")
+	if err != nil {
+		t.Fatalf("postgres load: %v", err)
+	}
+	got := map[int]bool{}
+	for _, m := range pg {
+		got[m.Version] = true
+	}
+	for v := first; v <= last; v++ {
+		if !got[v] {
+			t.Errorf("platform baseline version %04d missing from postgres load", v)
+		}
+	}
+	sqlite, err := loadMigrations("sqlite")
+	if err != nil {
+		t.Fatalf("sqlite load: %v", err)
+	}
+	for _, m := range sqlite {
+		if m.Version >= first && m.Version <= last {
+			t.Errorf("platform baseline version %04d leaked into the sqlite dialect (%s)", m.Version, m.Name)
+		}
+	}
+}
+
 // TestEmbeddedMigrations_NoMegaSchemaFile is the anti-blob guard: every
 // migration EXCEPT the two frozen 0001 baselines must stay a small,
 // domain-sized piece. If a migration legitimately needs more than the

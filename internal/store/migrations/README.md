@@ -87,15 +87,23 @@ ordering, collision rejection, and the anti-blob guard: every non-baseline
 migration stays <= 300 lines — split big changes into numbered domain-owned
 pieces, never one schema dump).
 
-Planned landing zones (create when the first file lands, not before):
+Landing zones:
 
 - `platform/` — SaaS Platform plane (PostgreSQL source-of-truth schema).
-  The Postgres platform baseline will be authored HERE as domain-owned
-  numbered pieces (identity/tenancy, leads, outbound spine, ...) — GATED on
-  Postgres validation infra (CI has no PG service today; do not author
-  unverifiable DDL).
+  The modular PG platform baseline lives here (database boundary sprint
+  PR4): versions **0100-0108**, one domain per file (identity/tenancy,
+  accounts+connectors, leads+crawl, outbound spine, coordination,
+  threads+messaging, prompts+app workflow, knowledge metadata), each
+  `__postgres`-only and translated from the frozen SQLite baseline with
+  all later `__sqlite` ALTERs folded in. Local-runtime tables and the
+  ambiguous `learning_*` cluster are deliberately absent. Discovery,
+  ordering, dialect isolation, and sizes are pinned by
+  `TestEmbeddedMigrations_PlatformBaselineDiscovered` + the guards below.
+  NOTE: these files are statically validated only — CI has no Postgres
+  service yet, so a real PG boot remains gated on PG validation infra
+  (which must also address the SQLite-flavored layer-2 bootstrap).
 - `rag/` — AI Knowledge / RAG plane (today's knowledge `__postgres` files
-  are its seed).
+  are its seed). Create when the first file lands.
 
 ## Bootstrap-owned table classification (doctrine)
 
