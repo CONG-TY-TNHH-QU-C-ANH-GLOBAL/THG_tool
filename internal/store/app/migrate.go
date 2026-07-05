@@ -47,17 +47,11 @@ func Migrate(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_leads_org ON task_leads(org_id, category, lead_score DESC)`,
 		// ── Browser intelligence tables ──────────────────────────────────────────
-		`CREATE TABLE IF NOT EXISTS browser_sessions (
-			id             INTEGER PRIMARY KEY AUTOINCREMENT,
-			account_id     INTEGER NOT NULL UNIQUE,
-			org_id         INTEGER NOT NULL DEFAULT 0,
-			status         TEXT    NOT NULL DEFAULT 'idle',
-			cdp_port       INTEGER NOT NULL DEFAULT 0,
-			vnc_port       INTEGER NOT NULL DEFAULT 0,
-			started_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			error_msg      TEXT    NOT NULL DEFAULT ''
-		)`,
+		// browser_sessions is OWNED by the sessions domain: created + ALTERed
+		// by sessions.Migrate, which store.initDomains always runs BEFORE this
+		// function. The byte-identical duplicate block that lived here (a
+		// tolerated no-op "while *AppStore still exists") was removed 2026-07-05
+		// with the AppStore wrapper gone.
 		`CREATE TABLE IF NOT EXISTS browser_identities (
 			id             INTEGER PRIMARY KEY AUTOINCREMENT,
 			account_id     INTEGER NOT NULL UNIQUE,
@@ -154,13 +148,6 @@ func Migrate(db *sql.DB) error {
 	// Coordination Plane Phase B: thread role axis on the connector lead
 	// table. See project_thread_role_architecture.md.
 	db.Exec(`ALTER TABLE task_leads ADD COLUMN thread_role TEXT NOT NULL DEFAULT 'intent_originator'`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN version        INTEGER NOT NULL DEFAULT 0`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN worker_id      TEXT    NOT NULL DEFAULT ''`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN retry_count    INTEGER NOT NULL DEFAULT 0`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN heartbeat_at   DATETIME`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN status_prev    TEXT    NOT NULL DEFAULT ''`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN checkpoint_url TEXT    NOT NULL DEFAULT ''`)
-	db.Exec(`ALTER TABLE browser_sessions ADD COLUMN checkpoint_at  DATETIME`)
 	db.Exec(`ALTER TABLE selector_cache ADD COLUMN version    INTEGER NOT NULL DEFAULT 1`)
 	db.Exec(`ALTER TABLE selector_cache ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE selector_cache ADD COLUMN deprecated INTEGER NOT NULL DEFAULT 0`)

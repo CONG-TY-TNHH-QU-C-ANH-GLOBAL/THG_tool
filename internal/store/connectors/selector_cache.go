@@ -18,25 +18,6 @@ type SelectorCache struct {
 	UpdatedAt time.Time
 }
 
-// InitSelectorCache creates the selector_cache table. Called from the
-// parent store's schema bootstrap BEFORE the connectors.Store is
-// constructed, so this is a package-level helper taking *sql.DB.
-// Idempotent.
-//
-// Phase 7: exported (was unexported `initSelectorCache` method) for the
-// cross-package boundary.
-func InitSelectorCache(db *sql.DB) {
-	db.Exec(`CREATE TABLE IF NOT EXISTS selector_cache (
-		id          INTEGER PRIMARY KEY AUTOINCREMENT,
-		action      TEXT NOT NULL,
-		platform    TEXT NOT NULL,
-		selectors   TEXT NOT NULL DEFAULT '{}',
-		hit_count   INTEGER NOT NULL DEFAULT 0,
-		updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(action, platform)
-	)`)
-}
-
 // GetSelectors returns cached selectors for action+platform, or nil if not found.
 func (s *Store) GetSelectors(action, platform string) (map[string]string, error) {
 	var raw string

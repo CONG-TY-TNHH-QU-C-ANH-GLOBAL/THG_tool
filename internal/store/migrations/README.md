@@ -30,6 +30,29 @@ SQLite and Postgres — go in THIS directory as new numbered `.up.sql` files
 starting at `0002`. (The Postgres baseline, `0001_*__postgres.up.sql`, is the
 dialect-split sibling for the POSTGRES_COMPAT path.)
 
+## Bootstrap layers (data planes)
+
+The full boot-time schema story has TWO layers, split along the data-plane
+doctrine (`docs/architecture/DATABASE_OWNERSHIP.md` §Data planes):
+
+1. **Versioned migrations (this directory) — SaaS Platform plane.** The
+   run-once source of truth for every platform table (orgs, users, leads,
+   ledger, knowledge metadata, ...). The `__postgres` knowledge/pgvector
+   files are the staged RAG-plane schema.
+2. **Local-runtime bootstrap — Local Runtime plane.** `sessions.Migrate`
+   and `app.Migrate`, run by `store.initDomains()` on every boot
+   (idempotent, deterministic order), own ONLY the local runtime tables:
+   `browser_sessions`, `app_tasks`/`task_leads`, `browser_identities`,
+   `port_registry`, `account_rate_limits`, `circuit_breaker_state`,
+   `session_audit_log`, `post_seen_cache`. `internal/jobs` bootstraps
+   `scheduler_jobs` the same way (its own connection today). These tables
+   are deliberately NOT in the versioned baseline.
+
+`TestNoHiddenCreateTableBootstrap` (internal/store/bootstrap_topology_test.go)
+enforces the split: a production `.go` file outside the sanctioned bootstrap
+list may not contain `CREATE TABLE` — new schema goes HERE as a numbered
+migration. `TestBootstrap_DoubleBootIdempotent` pins layer-2 idempotency.
+
 ## File naming
 
 ```

@@ -82,6 +82,17 @@ STOP and report the boundary before refactoring.
 > The plane doctrine is the *target contract* every migration step must
 > move toward — it does not retroactively bless the MVP colocation.
 
+**In code today (bootstrap topology PR1, 2026-07-05):** the plane split is
+expressed in the schema bootstrap. Versioned migrations
+(`internal/store/migrations/`) own the platform-plane tables; the
+local-runtime plane is bootstrapped by `sessions.Migrate` + `app.Migrate`
+(via `store.initDomains()`) and `internal/jobs` (`scheduler_jobs`), all
+idempotent every-boot and absent from the versioned baseline. The
+sanctioned bootstrap file list is enforced by
+`TestNoHiddenCreateTableBootstrap` — new schema outside it must be a
+numbered migration. See `internal/store/migrations/README.md`
+"Bootstrap layers".
+
 ---
 
 ## Identity & tenancy

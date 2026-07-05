@@ -262,25 +262,9 @@ func newSQLite(dbPath string) (*Store, error) {
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
-	s.coordination = coordination.NewStore(s.db, s.dialect)
-	s.installOutboundHooks()
-	s.crawl = crawl.NewStore(s.db, s.dialect)
-	s.knowledge = knowledge.NewStore(s.db, s.dialect)
-	s.prompts = prompts.NewStore(s.db, s.dialect)
-	s.connectors = connectors.NewStore(s.db, s.dialect)
-	s.identities = identities.NewStore(s.db, s.dialect, s.encKey)
-	s.app = app.NewStore(s.db, s.dialect)
-	s.threads = threads.NewStore(s.db, s.dialect)
-	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
-	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
-	if err := sessions.Migrate(s.db); err != nil {
-		return nil, fmt.Errorf("sessions migrate: %w", err)
+	if err := s.initDomains(); err != nil {
+		return nil, err
 	}
-	s.sessions = sessions.NewStore(s.db, s.dialect)
-	if err := app.Migrate(s.db); err != nil {
-		return nil, fmt.Errorf("app migrate: %w", err)
-	}
-	s.installRuntimeEventSink()
 	return s, nil
 }
 
@@ -318,6 +302,22 @@ func newPostgres(dsn string) (*Store, error) {
 	if err := s.runMigrations(context.Background()); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
+	if err := s.initDomains(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// initDomains wires every domain subpackage and runs the local-runtime
+// bootstrap layer in ONE deterministic order. Called by both dialect
+// constructors AFTER runMigrations: the versioned migrations own the
+// platform-plane schema; sessions.Migrate + app.Migrate own only the
+// local-runtime-plane tables (browser_sessions, app_tasks/task_leads,
+// browser infra) — see internal/store/migrations/README.md "Bootstrap
+// layers". Extracted verbatim from the previously duplicated
+// newSQLite/newPostgres blocks (2026-07-05): same calls, same order,
+// same error wrapping — the single source of bootstrap determinism.
+func (s *Store) initDomains() error {
 	s.coordination = coordination.NewStore(s.db, s.dialect)
 	s.installOutboundHooks()
 	s.crawl = crawl.NewStore(s.db, s.dialect)
@@ -330,14 +330,14 @@ func newPostgres(dsn string) (*Store, error) {
 	s.leads = leads.NewStore(s.db, s.dialect, s.threads)
 	s.telegram = telegram.NewStore(s.db, s.dialect, s.encKey)
 	if err := sessions.Migrate(s.db); err != nil {
-		return nil, fmt.Errorf("sessions migrate: %w", err)
+		return fmt.Errorf("sessions migrate: %w", err)
 	}
 	s.sessions = sessions.NewStore(s.db, s.dialect)
 	if err := app.Migrate(s.db); err != nil {
-		return nil, fmt.Errorf("app migrate: %w", err)
+		return fmt.Errorf("app migrate: %w", err)
 	}
 	s.installRuntimeEventSink()
-	return s, nil
+	return nil
 }
 
 // installRuntimeEventSink wires the events.Sink hook to persist every

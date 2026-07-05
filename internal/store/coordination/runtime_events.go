@@ -3,9 +3,7 @@ package coordination
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -35,41 +33,6 @@ type RuntimeEvent struct {
 	TargetURL  string
 	AttrsJSON  string
 	CreatedAt  time.Time
-}
-
-// InitRuntimeEvents creates the runtime_events table + indexes. Called
-// from the parent store's schema bootstrap BEFORE the coordination
-// subpackage instance is constructed — package-level helper taking
-// *sql.DB (same pattern as prompts.Migrate, connectors.InitSelectorCache).
-// Idempotent.
-func InitRuntimeEvents(db *sql.DB) error {
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS runtime_events (
-			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			org_id      INTEGER NOT NULL DEFAULT 0,
-			account_id  INTEGER NOT NULL DEFAULT 0,
-			event       TEXT NOT NULL,
-			level       TEXT NOT NULL DEFAULT 'info',
-			outbound_id INTEGER NOT NULL DEFAULT 0,
-			attempt_id  INTEGER NOT NULL DEFAULT 0,
-			target_url  TEXT NOT NULL DEFAULT '',
-			attrs_json  TEXT NOT NULL DEFAULT '{}',
-			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_runtime_events_org_time
-			ON runtime_events(org_id, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_runtime_events_event_time
-			ON runtime_events(event, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_runtime_events_outbound
-			ON runtime_events(outbound_id, created_at DESC)
-			WHERE outbound_id > 0`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
-			return fmt.Errorf("runtime_events migrate: %w (stmt: %s)", err, stmt)
-		}
-	}
-	return nil
 }
 
 // recordRuntimeEvent is called from the events sink hook. Best-effort —
