@@ -76,6 +76,38 @@ NNNN_short_description[__sqlite|__postgres].up.sql
   suffix, the migration runs on both dialects. With a suffix, the
   runner picks the appropriate file for the boot dialect.
 
+## Modular layout (domain/plane subdirectories)
+
+Migrations may live directly in this directory or in domain/plane
+subdirectories — the directory is purely organizational; ordering is ALWAYS
+global by `NNNN`, and a `(version, dialect)` collision anywhere in the tree
+fails the load with a clear error (never a nondeterministic apply order).
+Enforced by `migrator_topology_test.go` (subdirectory discovery, global
+ordering, collision rejection, and the anti-blob guard: every non-baseline
+migration stays <= 300 lines — split big changes into numbered domain-owned
+pieces, never one schema dump).
+
+Planned landing zones (create when the first file lands, not before):
+
+- `platform/` — SaaS Platform plane (PostgreSQL source-of-truth schema).
+  The Postgres platform baseline will be authored HERE as domain-owned
+  numbered pieces (identity/tenancy, leads, outbound spine, ...) — GATED on
+  Postgres validation infra (CI has no PG service today; do not author
+  unverifiable DDL).
+- `rag/` — AI Knowledge / RAG plane (today's knowledge `__postgres` files
+  are its seed).
+
+## Bootstrap-owned table classification (doctrine)
+
+Current layer-2 bootstrap tables, classified per
+`docs/architecture/DATABASE_OWNERSHIP.md` §Data planes:
+
+| Table | Classification |
+|---|---|
+| `browser_sessions`, `browser_identities`, `port_registry`, `account_rate_limits`, `circuit_breaker_state`, `session_audit_log`, `post_seen_cache`, `scheduler_jobs` | **local runtime** — stays bootstrap/SQLite |
+| `app_tasks`, `task_leads` | **platform source-of-truth candidates** — move to versioned platform migrations in a later approved sprint (their errors-ignored ALTERs cannot ride a transactional run-once migration byte-identically; needs a designed migration) |
+| `learning_profiles`, `outcome_events`, `learning_history` | **ambiguous** — schema exists, feature unwired; do NOT move until the outcome-learning feature is designed |
+
 ## Authoring rules
 
 1. **Idempotent where cheap.** Prefer `IF NOT EXISTS`. Migrations are

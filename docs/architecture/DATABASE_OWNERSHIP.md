@@ -99,7 +99,11 @@ table that is SaaS/business source of truth (candidates:
 `app_tasks`/`task_leads`) moves to the PostgreSQL platform migrations in a
 later sprint; clearly-local runtime state (e.g. `browser_sessions`) stays
 local. Future boundary sprints must classify each table against the
-doctrine BEFORE moving it.
+doctrine BEFORE moving it. The per-table classification of the current
+bootstrap-owned tables lives in `internal/store/migrations/README.md`
+"Bootstrap-owned table classification" (kept next to the enforcement
+tests); migrations may be organized in domain/plane subdirectories with
+global deterministic `NNNN` ordering (database boundary sprint PR2).
 
 ---
 
