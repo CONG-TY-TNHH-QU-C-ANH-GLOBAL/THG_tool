@@ -31,6 +31,7 @@ For the **runtime topology** view (same packages, grouped by runtime role, with 
 | **app** | `internal/store/app/` | `s.App()` | extracted (Phase 11 narrow, 2026-05-22; completed PR6, 2026-07-05) — career_jobs, kpi, media_assets, price_items, stats + app_tasks/task_leads (tasks.go, task_leads.go) + app.Migrate bootstrap. The legacy *AppStore wrapper is dissolved. |
 | **threads** | `internal/store/threads/` | `s.Threads()` | extracted (Phase 8a, 2026-05-22) — single-file clean-cut. conversation_threads + conversation_messages. The conversationGateForOutbound adapter stays at parent store level (top-level) because it composes threads + outbound. |
 | **leads** | `internal/store/leads/` | `s.Leads()` | extracted (Phase 8b, 2026-05-22) — clean-cut. 4 files (leads, lead_engagement, classification_log, context_niches). leads.Store holds a *threads.Store handle for the engagement-projection cross-domain reads (per DOMAINS.md §2.2 cross-domain projections via tenant-ok annotations). |
+| **reel** | `internal/store/reel/` | `s.Reel()` | greenfield (PR-R1, 2026-07-06) — Reel Studio foundation. Postgres-platform-only (no SQLite schema); reels + reel_scripts. See docs/architecture/decisions/ADR-reel-studio-platform-module.md. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |
