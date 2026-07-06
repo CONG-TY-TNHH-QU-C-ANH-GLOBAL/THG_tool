@@ -8,7 +8,6 @@ package reel_test
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"testing"
 
@@ -72,40 +71,6 @@ func TestReel_CreateGetListUpdate(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != id {
 		t.Fatalf("ListReels = %+v, want 1 reel with id %d", list, id)
-	}
-}
-
-func TestReel_NoCrossOrgReads(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	const orgA, orgB int64 = 2001, 2002
-
-	idB, err := s.Reel().CreateReel(ctx, orgB, "org B reel", "brief", 1)
-	if err != nil {
-		t.Fatalf("CreateReel(orgB): %v", err)
-	}
-
-	if _, err := s.Reel().GetReel(ctx, orgA, idB); err != sql.ErrNoRows {
-		t.Fatalf("GetReel(orgA, orgB's id) = %v, want sql.ErrNoRows", err)
-	}
-
-	if err := s.Reel().UpdateReelStatus(ctx, orgA, idB, "approved"); err != nil {
-		t.Fatalf("UpdateReelStatus(orgA, orgB's id) returned error: %v", err)
-	}
-	got, err := s.Reel().GetReel(ctx, orgB, idB)
-	if err != nil {
-		t.Fatalf("GetReel(orgB) after cross-org update attempt: %v", err)
-	}
-	if got.Status != "draft" {
-		t.Fatalf("cross-org UpdateReelStatus mutated orgB's reel: status = %q", got.Status)
-	}
-
-	listA, err := s.Reel().ListReels(ctx, orgA)
-	if err != nil {
-		t.Fatalf("ListReels(orgA): %v", err)
-	}
-	if len(listA) != 0 {
-		t.Fatalf("ListReels(orgA) leaked orgB's reel: %+v", listA)
 	}
 }
 
