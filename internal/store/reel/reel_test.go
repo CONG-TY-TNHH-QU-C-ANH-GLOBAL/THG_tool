@@ -25,6 +25,10 @@ func newTestStore(t *testing.T) *store.Store {
 		t.Fatalf("store.New(postgres dsn): %v", err)
 	}
 	t.Cleanup(func() {
+		// Best-effort teardown: a failure here would only leak test rows
+		// into the next run (harmless — every test uses org IDs scoped to
+		// its own test), never mask a real assertion, so it's safe to
+		// ignore rather than fail an otherwise-passing test on cleanup.
 		ctx := context.Background()
 		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reel_scripts`)
 		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reels`)
@@ -111,7 +115,10 @@ func TestReelScript_CreateGetListApprove(t *testing.T) {
 	if err := s.Reel().ApproveScript(ctx, orgID, v1); err != nil {
 		t.Fatalf("ApproveScript: %v", err)
 	}
-	list, _ = s.Reel().ListScripts(ctx, orgID, reelID)
+	list, err = s.Reel().ListScripts(ctx, orgID, reelID)
+	if err != nil {
+		t.Fatalf("ListScripts after approve: %v", err)
+	}
 	if !list[0].Approved {
 		t.Fatalf("ApproveScript did not persist: %+v", list[0])
 	}
