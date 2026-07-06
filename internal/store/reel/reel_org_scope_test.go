@@ -1,19 +1,21 @@
 // Tenant-isolation regression tests for the reel subpackage (mirrors
 // internal/store/crawl/crawl_org_scope_test.go's split: CRUD behavior in
-// reel_test.go, cross-org isolation proofs here). newTestStore is shared
-// from reel_test.go.
+// reel_test.go, cross-org isolation proofs here).
 package reel_test
 
 import (
 	"context"
 	"database/sql"
 	"testing"
+
+	"github.com/thg/scraper/internal/store/reel/reeltest"
 )
 
 func TestReel_NoCrossOrgReads(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
+	s := reeltest.OpenStore(t)
 	const orgA, orgB int64 = 2001, 2002
+	reeltest.CleanupOrgs(t, s, orgA, orgB)
+	ctx := context.Background()
 
 	idB, err := s.Reel().CreateReel(ctx, orgB, "org B reel", "brief", 1)
 	if err != nil {
@@ -49,9 +51,10 @@ func TestReel_NoCrossOrgReads(t *testing.T) {
 // association a schema-level constraint violation, not just an
 // application-level convention.
 func TestReelScript_CrossOrgAssociationImpossible(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
+	s := reeltest.OpenStore(t)
 	const orgA, orgB int64 = 4001, 4002
+	reeltest.CleanupOrgs(t, s, orgA, orgB)
+	ctx := context.Background()
 
 	reelA, err := s.Reel().CreateReel(ctx, orgA, "org A reel", "brief", 1)
 	if err != nil {

@@ -8,35 +8,16 @@ package reel_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/reel/reeltest"
 )
 
-func newTestStore(t *testing.T) *store.Store {
-	t.Helper()
-	dsn := os.Getenv("POSTGRES_PLATFORM_TEST_DSN")
-	if dsn == "" {
-		t.Skip("POSTGRES_PLATFORM_TEST_DSN not set; skipping reel store Postgres tests")
-	}
-	s, err := store.New(dsn)
-	if err != nil {
-		t.Fatalf("store.New(postgres dsn): %v", err)
-	}
-	t.Cleanup(func() {
-		ctx := context.Background()
-		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reel_scripts`)
-		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reels`)
-		_ = s.Close()
-	})
-	return s
-}
-
 func TestReel_CreateGetListUpdate(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
+	s := reeltest.OpenStore(t)
 	const orgID, userID int64 = 1001, 7
+	reeltest.CleanupOrgs(t, s, orgID)
+	ctx := context.Background()
 
 	id, err := s.Reel().CreateReel(ctx, orgID, "Summer promo", "30s product reel", userID)
 	if err != nil {
@@ -75,9 +56,10 @@ func TestReel_CreateGetListUpdate(t *testing.T) {
 }
 
 func TestReelScript_CreateGetListApprove(t *testing.T) {
-	s := newTestStore(t)
+	s := reeltest.OpenStore(t)
+	const orgID, otherOrg int64 = 3001, 3002
+	reeltest.CleanupOrgs(t, s, orgID, otherOrg)
 	ctx := context.Background()
-	const orgID int64 = 3001
 
 	reelID, err := s.Reel().CreateReel(ctx, orgID, "reel", "brief", 1)
 	if err != nil {
@@ -111,13 +93,15 @@ func TestReelScript_CreateGetListApprove(t *testing.T) {
 	if err := s.Reel().ApproveScript(ctx, orgID, v1); err != nil {
 		t.Fatalf("ApproveScript: %v", err)
 	}
-	list, _ = s.Reel().ListScripts(ctx, orgID, reelID)
+	list, err = s.Reel().ListScripts(ctx, orgID, reelID)
+	if err != nil {
+		t.Fatalf("ListScripts after approve: %v", err)
+	}
 	if !list[0].Approved {
 		t.Fatalf("ApproveScript did not persist: %+v", list[0])
 	}
 
 	// Cross-org approve is a silent no-op.
-	const otherOrg int64 = 3002
 	if err := s.Reel().ApproveScript(ctx, otherOrg, v1); err != nil {
 		t.Fatalf("cross-org ApproveScript returned error: %v", err)
 	}
