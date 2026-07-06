@@ -29,24 +29,14 @@ func NewStore(db *sql.DB, dialect dbutil.Dialect) *Store {
 	return &Store{db: db, dialect: dialect}
 }
 
-// --- Dialect wrappers (mirrors internal/store/knowledge, the reference
-// subpackage shape per internal/store/DOMAINS.md §3) — rebind `?`
-// placeholders for the active dialect before handing the query to *sql.DB.
-
-func (s *Store) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return s.db.QueryContext(ctx, s.dialect.Rebind(query), args...)
-}
-
-func (s *Store) queryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return s.db.QueryRowContext(ctx, s.dialect.Rebind(query), args...)
-}
-
-func (s *Store) execContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return s.db.ExecContext(ctx, s.dialect.Rebind(query), args...)
-}
-
 // insertReturningID is the cross-dialect alternative to ExecContext +
-// LastInsertId. The query MUST end with `RETURNING <id_col>`.
+// LastInsertId. query MUST already be a static, dialect-correct SQL literal
+// — see reels.go/scripts.go's per-statement *Query(dialect) functions —
+// ending in `RETURNING <id_col>`. Unlike internal/store/knowledge (which
+// runs on both dialects and rebinds a single `?`-templated query at
+// runtime), reel is Postgres-only: each statement is written once per
+// dialect as a source-literal switch, so no runtime query rewriting
+// (Rebind/Sprintf/concatenation) ever touches a SQL string here.
 func (s *Store) insertReturningID(ctx context.Context, query string, args ...any) (int64, error) {
-	return s.dialect.InsertReturningID(ctx, s.db, s.dialect.Rebind(query), args...)
+	return s.dialect.InsertReturningID(ctx, s.db, query, args...)
 }
