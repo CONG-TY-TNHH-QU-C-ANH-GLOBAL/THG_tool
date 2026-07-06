@@ -15,8 +15,9 @@ import (
 
 func TestReel_CreateGetListUpdate(t *testing.T) {
 	s := reeltest.OpenStore(t)
-	ctx := context.Background()
 	const orgID, userID int64 = 1001, 7
+	reeltest.CleanupOrgs(t, s, orgID)
+	ctx := context.Background()
 
 	id, err := s.Reel().CreateReel(ctx, orgID, "Summer promo", "30s product reel", userID)
 	if err != nil {
@@ -56,8 +57,9 @@ func TestReel_CreateGetListUpdate(t *testing.T) {
 
 func TestReelScript_CreateGetListApprove(t *testing.T) {
 	s := reeltest.OpenStore(t)
+	const orgID, otherOrg int64 = 3001, 3002
+	reeltest.CleanupOrgs(t, s, orgID, otherOrg)
 	ctx := context.Background()
-	const orgID int64 = 3001
 
 	reelID, err := s.Reel().CreateReel(ctx, orgID, "reel", "brief", 1)
 	if err != nil {
@@ -100,7 +102,6 @@ func TestReelScript_CreateGetListApprove(t *testing.T) {
 	}
 
 	// Cross-org approve is a silent no-op.
-	const otherOrg int64 = 3002
 	if err := s.Reel().ApproveScript(ctx, otherOrg, v1); err != nil {
 		t.Fatalf("cross-org ApproveScript returned error: %v", err)
 	}

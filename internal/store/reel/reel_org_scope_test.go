@@ -13,8 +13,9 @@ import (
 
 func TestReel_NoCrossOrgReads(t *testing.T) {
 	s := reeltest.OpenStore(t)
-	ctx := context.Background()
 	const orgA, orgB int64 = 2001, 2002
+	reeltest.CleanupOrgs(t, s, orgA, orgB)
+	ctx := context.Background()
 
 	idB, err := s.Reel().CreateReel(ctx, orgB, "org B reel", "brief", 1)
 	if err != nil {
@@ -51,8 +52,9 @@ func TestReel_NoCrossOrgReads(t *testing.T) {
 // application-level convention.
 func TestReelScript_CrossOrgAssociationImpossible(t *testing.T) {
 	s := reeltest.OpenStore(t)
-	ctx := context.Background()
 	const orgA, orgB int64 = 4001, 4002
+	reeltest.CleanupOrgs(t, s, orgA, orgB)
+	ctx := context.Background()
 
 	reelA, err := s.Reel().CreateReel(ctx, orgA, "org A reel", "brief", 1)
 	if err != nil {

@@ -11,6 +11,20 @@ import (
 // reel.Store.GetLatestScript already returns sql.ErrNoRows for a reel_id
 // owned by a different org — tenant isolation is PR-R1's guarantee, not
 // reimplemented here.
+//
+// ponytail: ApproveScript and UpdateReelStatus below are two separate
+// statements, not one transaction — reel.Store has no transaction-spanning
+// primitive today (the one BeginTx example in the store layer,
+// internal/store/knowledge/sources.go, is a single Store method's own
+// intra-domain cascade, not a cross-call seam a Service could reuse; adding
+// one would be new infrastructure, out of scope for this PR). If
+// ApproveScript succeeds but UpdateReelStatus fails, the script is
+// genuinely approved and reels.status just lags — harmless, because
+// RenderFake below gates on the script's own Approved flag, never on
+// reels.status. Same reasoning applies to GenerateScript's GetReel ->
+// CreateScript -> UpdateReelStatus sequence. Revisit before PR-R3 exposes
+// this over a public API (where a caller can no longer just retry), or in
+// a dedicated store/service transactionality PR.
 func (s *Service) ApproveLatestScript(ctx context.Context, orgID, reelID int64) error {
 	latest, err := s.store.GetLatestScript(ctx, orgID, reelID)
 	if err != nil {
@@ -43,5 +57,8 @@ func (s *Service) RenderFake(ctx context.Context, orgID, reelID int64) error {
 		return renderErr
 	}
 
-	return s.store.UpdateReelStatus(ctx, orgID, reelID, StatusDone)
+	if err := s.store.UpdateReelStatus(ctx, orgID, reelID, StatusDone); err != nil {
+		return errors.Join(ErrRenderBookkeepingFailed, err)
+	}
+	return nil
 }

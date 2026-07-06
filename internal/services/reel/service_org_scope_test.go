@@ -12,9 +12,9 @@ import (
 )
 
 func TestReelService_CrossOrgWorkflow_DoesNotMutateOtherOrg(t *testing.T) {
-	svc, store := newTestService(t)
-	ctx := context.Background()
 	const orgA, orgB, userID int64 = 6001, 6002, 1
+	svc, store := newTestService(t, orgA, orgB)
+	ctx := context.Background()
 
 	reelA := createDraft(t, svc, orgA, userID, "org A reel", "brief")
 	if _, err := svc.GenerateScript(ctx, orgA, reelA); err != nil {

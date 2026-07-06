@@ -3,6 +3,7 @@ package reel
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -75,12 +76,34 @@ func (s *Service) nextScriptVersion(ctx context.Context, orgID, reelID int64) (i
 	return latest.Version + 1, nil
 }
 
+// fakeShot is one entry in fakeScript.Shots.
+type fakeShot struct {
+	Scene int    `json:"scene"`
+	Kind  string `json:"kind"`
+}
+
+// fakeScript is the deterministic fake script payload GenerateScript
+// persists as reel_scripts.content.
+type fakeScript struct {
+	Dialogue string     `json:"dialogue"`
+	Shots    []fakeShot `json:"shots"`
+}
+
 // fakeScriptContent produces deterministic (non-random, non-time-based)
 // fake script JSON for a given title/brief/version — the same inputs
 // always produce the same output.
 func fakeScriptContent(title, brief string, version int) string {
-	return fmt.Sprintf(
-		`{"dialogue":"Fake script for %q (brief: %q), v%d","shots":[{"scene":1,"kind":"broll"}]}`,
-		title, brief, version,
-	)
+	payload := fakeScript{
+		Dialogue: fmt.Sprintf("Fake script for %q (brief: %q), v%d", title, brief, version),
+		Shots:    []fakeShot{{Scene: 1, Kind: "broll"}},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		// fakeScript holds only strings/ints/a slice of the same — Marshal
+		// cannot actually fail on this shape. Kept as a deterministic,
+		// non-panicking fallback rather than assuming that guarantee holds
+		// forever.
+		return fmt.Sprintf(`{"dialogue":"fake script v%d"}`, version)
+	}
+	return string(b)
 }

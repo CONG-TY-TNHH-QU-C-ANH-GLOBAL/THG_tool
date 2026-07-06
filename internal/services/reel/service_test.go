@@ -17,10 +17,14 @@ import (
 // newTestService returns a service under test plus the underlying store
 // handle, so tests can assert persisted state directly — the service
 // deliberately has no Get/Load passthrough (see service.go's design note).
-func newTestService(t *testing.T) (*reel.Service, *reelstore.Store) {
+// orgIDs registers org-scoped cleanup for every org the caller's test will
+// create rows under (never a table-wide DELETE — see reeltest.CleanupOrgs).
+func newTestService(t *testing.T, orgIDs ...int64) (*reel.Service, *reelstore.Store) {
 	t.Helper()
 	s := reeltest.OpenStore(t)
-	return reel.NewService(s.Reel(), reel.FakeRenderer{}), s.Reel()
+	reeltest.CleanupOrgs(t, s, orgIDs...)
+	rs := s.Reel()
+	return reel.NewService(rs, reel.FakeRenderer{}), rs
 }
 
 // createDraft creates a reel and fails the test on error, collapsing the
@@ -64,9 +68,9 @@ func assertReelStatus(t *testing.T, ctx context.Context, store *reelstore.Store,
 }
 
 func TestReelService_HappyPath_DraftToDone(t *testing.T) {
-	svc, store := newTestService(t)
-	ctx := context.Background()
 	const orgID, userID int64 = 5001, 1
+	svc, store := newTestService(t, orgID)
+	ctx := context.Background()
 
 	reelID := createDraft(t, svc, orgID, userID, "Summer promo", "30s product reel")
 	assertReelStatus(t, ctx, store, orgID, reelID, reel.StatusDraft)
@@ -92,8 +96,8 @@ func TestReelService_HappyPath_DraftToDone(t *testing.T) {
 }
 
 func TestReelService_ApproveWithNoScript_Fails(t *testing.T) {
-	svc, _ := newTestService(t)
 	const orgID, userID int64 = 5002, 1
+	svc, _ := newTestService(t, orgID)
 
 	reelID := createDraft(t, svc, orgID, userID, "no script yet", "brief")
 
@@ -103,9 +107,9 @@ func TestReelService_ApproveWithNoScript_Fails(t *testing.T) {
 }
 
 func TestReelService_RenderBeforeApproval_Fails(t *testing.T) {
-	svc, _ := newTestService(t)
-	ctx := context.Background()
 	const orgID, userID int64 = 5003, 1
+	svc, _ := newTestService(t, orgID)
+	ctx := context.Background()
 
 	reelID := createDraft(t, svc, orgID, userID, "not approved", "brief")
 	if _, err := svc.GenerateScript(ctx, orgID, reelID); err != nil {

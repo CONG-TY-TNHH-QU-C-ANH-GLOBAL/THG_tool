@@ -21,10 +21,10 @@ func (failingRenderer) Render(context.Context, reel.RenderRequest) error {
 }
 
 func TestReelService_RenderFailure_MarksReelFailed(t *testing.T) {
-	_, store := newTestService(t)
+	const orgID, userID int64 = 5004, 1
+	_, store := newTestService(t, orgID)
 	svc := reel.NewService(store, failingRenderer{})
 	ctx := context.Background()
-	const orgID, userID int64 = 5004, 1
 
 	reelID := createApprovedDraft(t, svc, orgID, userID, "will fail", "brief")
 

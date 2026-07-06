@@ -12,6 +12,13 @@ var (
 	ErrReelNotFound      = errors.New("reel: not found")
 	ErrNoScript          = errors.New("reel: no script exists")
 	ErrScriptNotApproved = errors.New("reel: script must be approved before rendering")
+
+	// ErrRenderBookkeepingFailed marks the specific case where the video
+	// actually rendered but persisting that fact (UpdateReelStatus) failed —
+	// distinguishable via errors.Is from a genuine render failure, since
+	// callers may want to alert on it differently (the render already
+	// happened; only the status write needs a retry).
+	ErrRenderBookkeepingFailed = errors.New("reel: render succeeded but status bookkeeping failed")
 )
 
 // notFoundAs translates a store sql.ErrNoRows into domainErr; any other
