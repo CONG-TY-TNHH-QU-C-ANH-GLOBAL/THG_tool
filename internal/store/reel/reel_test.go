@@ -8,37 +8,13 @@ package reel_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
-	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/reel/reeltest"
 )
 
-func newTestStore(t *testing.T) *store.Store {
-	t.Helper()
-	dsn := os.Getenv("POSTGRES_PLATFORM_TEST_DSN")
-	if dsn == "" {
-		t.Skip("POSTGRES_PLATFORM_TEST_DSN not set; skipping reel store Postgres tests")
-	}
-	s, err := store.New(dsn)
-	if err != nil {
-		t.Fatalf("store.New(postgres dsn): %v", err)
-	}
-	t.Cleanup(func() {
-		// Best-effort teardown: a failure here would only leak test rows
-		// into the next run (harmless — every test uses org IDs scoped to
-		// its own test), never mask a real assertion, so it's safe to
-		// ignore rather than fail an otherwise-passing test on cleanup.
-		ctx := context.Background()
-		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reel_scripts`)
-		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reels`)
-		_ = s.Close()
-	})
-	return s
-}
-
 func TestReel_CreateGetListUpdate(t *testing.T) {
-	s := newTestStore(t)
+	s := reeltest.OpenStore(t)
 	ctx := context.Background()
 	const orgID, userID int64 = 1001, 7
 
@@ -79,7 +55,7 @@ func TestReel_CreateGetListUpdate(t *testing.T) {
 }
 
 func TestReelScript_CreateGetListApprove(t *testing.T) {
-	s := newTestStore(t)
+	s := reeltest.OpenStore(t)
 	ctx := context.Background()
 	const orgID int64 = 3001
 

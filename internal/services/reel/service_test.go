@@ -1,19 +1,17 @@
 // Reel service tests. The underlying store is Postgres-platform-only (see
-// internal/store/reel), so these run against a REAL PostgreSQL database,
-// gated on POSTGRES_PLATFORM_TEST_DSN (same convention as
-// internal/store.TestRealPostgresApply), so `go test ./...` stays green
-// without a database.
+// internal/store/reel), so these run against a REAL PostgreSQL database via
+// reeltest.OpenStore, gated on POSTGRES_PLATFORM_TEST_DSN, so `go test
+// ./...` stays green without a database.
 package reel_test
 
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/thg/scraper/internal/services/reel"
-	"github.com/thg/scraper/internal/store"
 	reelstore "github.com/thg/scraper/internal/store/reel"
+	"github.com/thg/scraper/internal/store/reel/reeltest"
 )
 
 // newTestService returns a service under test plus the underlying store
@@ -21,24 +19,48 @@ import (
 // deliberately has no Get/Load passthrough (see service.go's design note).
 func newTestService(t *testing.T) (*reel.Service, *reelstore.Store) {
 	t.Helper()
-	dsn := os.Getenv("POSTGRES_PLATFORM_TEST_DSN")
-	if dsn == "" {
-		t.Skip("POSTGRES_PLATFORM_TEST_DSN not set; skipping reel service Postgres tests")
-	}
-	s, err := store.New(dsn)
-	if err != nil {
-		t.Fatalf("store.New(postgres dsn): %v", err)
-	}
-	t.Cleanup(func() {
-		// Best-effort teardown: a failure here would only leak test rows
-		// into the next run (harmless — every test uses org IDs scoped to
-		// its own test), never mask a real assertion.
-		ctx := context.Background()
-		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reel_scripts`)
-		_, _ = s.DB().ExecContext(ctx, `DELETE FROM reels`)
-		_ = s.Close()
-	})
+	s := reeltest.OpenStore(t)
 	return reel.NewService(s.Reel(), reel.FakeRenderer{}), s.Reel()
+}
+
+// createDraft creates a reel and fails the test on error, collapsing the
+// CreateDraft-then-check-error boilerplate every test needs before its own
+// scenario starts.
+func createDraft(t *testing.T, svc *reel.Service, orgID, userID int64, title, brief string) int64 {
+	t.Helper()
+	reelID, err := svc.CreateDraft(context.Background(), orgID, userID, title, brief)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	return reelID
+}
+
+// createApprovedDraft creates a reel, generates its script, and approves
+// it — the "already approved" starting state a render test needs, with the
+// three setup steps collapsed so the render call under test stays the
+// visible point of interest.
+func createApprovedDraft(t *testing.T, svc *reel.Service, orgID, userID int64, title, brief string) int64 {
+	t.Helper()
+	ctx := context.Background()
+	reelID := createDraft(t, svc, orgID, userID, title, brief)
+	if _, err := svc.GenerateScript(ctx, orgID, reelID); err != nil {
+		t.Fatalf("GenerateScript: %v", err)
+	}
+	if err := svc.ApproveLatestScript(ctx, orgID, reelID); err != nil {
+		t.Fatalf("ApproveLatestScript: %v", err)
+	}
+	return reelID
+}
+
+func assertReelStatus(t *testing.T, ctx context.Context, store *reelstore.Store, orgID, reelID int64, want string) {
+	t.Helper()
+	got, err := store.GetReel(ctx, orgID, reelID)
+	if err != nil {
+		t.Fatalf("GetReel: %v", err)
+	}
+	if got.Status != want {
+		t.Fatalf("reel status = %q, want %q", got.Status, want)
+	}
 }
 
 func TestReelService_HappyPath_DraftToDone(t *testing.T) {
@@ -46,10 +68,7 @@ func TestReelService_HappyPath_DraftToDone(t *testing.T) {
 	ctx := context.Background()
 	const orgID, userID int64 = 5001, 1
 
-	reelID, err := svc.CreateDraft(ctx, orgID, userID, "Summer promo", "30s product reel")
-	if err != nil {
-		t.Fatalf("CreateDraft: %v", err)
-	}
+	reelID := createDraft(t, svc, orgID, userID, "Summer promo", "30s product reel")
 	assertReelStatus(t, ctx, store, orgID, reelID, reel.StatusDraft)
 
 	script, err := svc.GenerateScript(ctx, orgID, reelID)
@@ -72,28 +91,13 @@ func TestReelService_HappyPath_DraftToDone(t *testing.T) {
 	assertReelStatus(t, ctx, store, orgID, reelID, reel.StatusDone)
 }
 
-func assertReelStatus(t *testing.T, ctx context.Context, store *reelstore.Store, orgID, reelID int64, want string) {
-	t.Helper()
-	got, err := store.GetReel(ctx, orgID, reelID)
-	if err != nil {
-		t.Fatalf("GetReel: %v", err)
-	}
-	if got.Status != want {
-		t.Fatalf("reel status = %q, want %q", got.Status, want)
-	}
-}
-
 func TestReelService_ApproveWithNoScript_Fails(t *testing.T) {
 	svc, _ := newTestService(t)
-	ctx := context.Background()
 	const orgID, userID int64 = 5002, 1
 
-	reelID, err := svc.CreateDraft(ctx, orgID, userID, "no script yet", "brief")
-	if err != nil {
-		t.Fatalf("CreateDraft: %v", err)
-	}
+	reelID := createDraft(t, svc, orgID, userID, "no script yet", "brief")
 
-	if err := svc.ApproveLatestScript(ctx, orgID, reelID); !errors.Is(err, reel.ErrNoScript) {
+	if err := svc.ApproveLatestScript(context.Background(), orgID, reelID); !errors.Is(err, reel.ErrNoScript) {
 		t.Fatalf("ApproveLatestScript = %v, want ErrNoScript", err)
 	}
 }
@@ -103,10 +107,7 @@ func TestReelService_RenderBeforeApproval_Fails(t *testing.T) {
 	ctx := context.Background()
 	const orgID, userID int64 = 5003, 1
 
-	reelID, err := svc.CreateDraft(ctx, orgID, userID, "not approved", "brief")
-	if err != nil {
-		t.Fatalf("CreateDraft: %v", err)
-	}
+	reelID := createDraft(t, svc, orgID, userID, "not approved", "brief")
 	if _, err := svc.GenerateScript(ctx, orgID, reelID); err != nil {
 		t.Fatalf("GenerateScript: %v", err)
 	}

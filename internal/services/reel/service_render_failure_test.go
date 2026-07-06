@@ -26,16 +26,7 @@ func TestReelService_RenderFailure_MarksReelFailed(t *testing.T) {
 	ctx := context.Background()
 	const orgID, userID int64 = 5004, 1
 
-	reelID, err := svc.CreateDraft(ctx, orgID, userID, "will fail", "brief")
-	if err != nil {
-		t.Fatalf("CreateDraft: %v", err)
-	}
-	if _, err := svc.GenerateScript(ctx, orgID, reelID); err != nil {
-		t.Fatalf("GenerateScript: %v", err)
-	}
-	if err := svc.ApproveLatestScript(ctx, orgID, reelID); err != nil {
-		t.Fatalf("ApproveLatestScript: %v", err)
-	}
+	reelID := createApprovedDraft(t, svc, orgID, userID, "will fail", "brief")
 
 	if err := svc.RenderFake(ctx, orgID, reelID); !errors.Is(err, errFakeRenderBoom) {
 		t.Fatalf("RenderFake = %v, want it to wrap errFakeRenderBoom", err)
