@@ -21,6 +21,7 @@ import (
 	"github.com/thg/scraper/internal/store/leads"
 	"github.com/thg/scraper/internal/store/outbound"
 	"github.com/thg/scraper/internal/store/prompts"
+	"github.com/thg/scraper/internal/store/reel"
 	"github.com/thg/scraper/internal/store/sessions"
 	"github.com/thg/scraper/internal/store/telegram"
 	"github.com/thg/scraper/internal/store/threads"
@@ -133,6 +134,12 @@ type Store struct {
 	// aliases + *AppStore bridge methods keep existing callers compiling
 	// unchanged; see internal/store/sessions.go for the bridge.
 	sessions *sessions.Store
+
+	// reel owns the Reel Studio foundation tables (reels, reel_scripts).
+	// Platform-plane (PostgreSQL) only — PR-R1 of the Reel Studio module,
+	// see docs/architecture/decisions/ADR-reel-studio-platform-module.md.
+	// No Hooks — zero cross-domain writes.
+	reel *reel.Store
 }
 
 // Telegram exposes the telegram-domain subpackage handle (integration
@@ -190,6 +197,11 @@ func (s *Store) Leads() *leads.Store { return s.leads }
 // existing *AppStore callers keep working via the bridge in
 // internal/store/sessions.go.
 func (s *Store) Sessions() *sessions.Store { return s.sessions }
+
+// Reel exposes the reel-domain subpackage handle (Reel Studio foundation).
+// PR-R1 (2026-07-06) — no bridge wrappers; this is a greenfield domain per
+// internal/store/DOMAINS.md §5.
+func (s *Store) Reel() *reel.Store { return s.reel }
 
 // New creates a new Store, initializing the database and running
 // migrations. dbPath is interpreted as follows:
@@ -342,6 +354,7 @@ func (s *Store) initDomains() error {
 	if err := app.Migrate(s.db, s.dialect); err != nil {
 		return fmt.Errorf("app migrate: %w", err)
 	}
+	s.reel = reel.NewStore(s.db, s.dialect)
 	s.installRuntimeEventSink()
 	return nil
 }
