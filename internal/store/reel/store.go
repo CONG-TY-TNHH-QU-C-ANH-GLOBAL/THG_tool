@@ -12,9 +12,17 @@ package reel
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/thg/scraper/internal/store/dbutil"
 )
+
+// ErrUnsupportedDialect is returned by every public Store method when the
+// store was constructed against a non-Postgres dialect. There is no SQLite
+// (or other) schema for the reel tables — see the package doc — so this is
+// a configuration error, not a "not found" result; callers must not confuse
+// it with sql.ErrNoRows.
+var ErrUnsupportedDialect = errors.New("reel: postgres-only store; no schema exists for this dialect")
 
 // Store is the reel-domain handle. Construct via [NewStore].
 type Store struct {
@@ -29,14 +37,20 @@ func NewStore(db *sql.DB, dialect dbutil.Dialect) *Store {
 	return &Store{db: db, dialect: dialect}
 }
 
-// insertReturningID is the cross-dialect alternative to ExecContext +
-// LastInsertId. query MUST already be a static, dialect-correct SQL literal
-// — see reels.go/scripts.go's per-statement *Query(dialect) functions —
-// ending in `RETURNING <id_col>`. Unlike internal/store/knowledge (which
-// runs on both dialects and rebinds a single `?`-templated query at
-// runtime), reel is Postgres-only: each statement is written once per
-// dialect as a source-literal switch, so no runtime query rewriting
-// (Rebind/Sprintf/concatenation) ever touches a SQL string here.
+// requirePostgres is called first by every public method, before any query
+// runs. Every reel SQL statement is a Postgres-only const literal (see
+// reels.go/scripts.go) — this guard is what makes that safe: a non-Postgres
+// dialect never reaches a query at all, it fails here with a clear error.
+func (s *Store) requirePostgres() error {
+	if s.dialect.Name() != "postgres" {
+		return ErrUnsupportedDialect
+	}
+	return nil
+}
+
+// insertReturningID runs an INSERT ... RETURNING <id_col> and returns the
+// new row's id. query MUST be one of the const SQL literals declared in
+// reels.go/scripts.go — never a computed or formatted string.
 func (s *Store) insertReturningID(ctx context.Context, query string, args ...any) (int64, error) {
 	return s.dialect.InsertReturningID(ctx, s.db, query, args...)
 }
