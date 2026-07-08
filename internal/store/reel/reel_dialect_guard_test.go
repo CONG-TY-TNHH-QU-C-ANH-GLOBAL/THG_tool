@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/store/reel"
@@ -43,4 +44,37 @@ func TestReel_NonPostgresDialect_FailsBeforeQuerying(t *testing.T) {
 	}
 	// Every call above returned before touching s.db (which is nil) — no
 	// panic reaching this line is the proof.
+}
+
+// TestReelEnriched_NonPostgresDialect_FailsBeforeQuerying pins the same
+// guard for the enriched-format accessors (migration 0112): all must fail
+// with ErrUnsupportedDialect before touching the nil db.
+func TestReelEnriched_NonPostgresDialect_FailsBeforeQuerying(t *testing.T) {
+	s := reel.NewStore(nil, dbutil.NewSQLiteDialect())
+	ctx := context.Background()
+
+	if _, err := s.GetEnriched(ctx, 1, 1); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("GetEnriched: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if err := s.SetSource(ctx, 1, 1, "k", "audio"); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("SetSource: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if err := s.SetAvatarKey(ctx, 1, 1, "k"); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("SetAvatarKey: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if err := s.SetFinalOutput(ctx, 1, 1, "k"); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("SetFinalOutput: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if err := s.AddCost(ctx, 1, 1, 0.3); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("AddCost: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if _, err := s.ClaimRender(ctx, 1, 1, "idem", time.Now()); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("ClaimRender: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if _, err := s.CreateTranscript(ctx, 1, 1, "[]", "vi", "en", "whisper", 0.01); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("CreateTranscript: err = %v, want ErrUnsupportedDialect", err)
+	}
+	if _, err := s.GetLatestTranscript(ctx, 1, 1); !errors.Is(err, reel.ErrUnsupportedDialect) {
+		t.Errorf("GetLatestTranscript: err = %v, want ErrUnsupportedDialect", err)
+	}
 }

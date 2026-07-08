@@ -47,6 +47,7 @@ func CleanupOrgs(t *testing.T, s *store.Store, orgIDs ...int64) {
 		// scoped to itself), never mask a real assertion.
 		ctx := context.Background()
 		for _, orgID := range orgIDs {
+			_, _ = s.DB().ExecContext(ctx, `DELETE FROM reel_transcripts WHERE org_id = $1`, orgID)
 			_, _ = s.DB().ExecContext(ctx, `DELETE FROM reel_scripts WHERE org_id = $1`, orgID)
 			_, _ = s.DB().ExecContext(ctx, `DELETE FROM reels WHERE org_id = $1`, orgID)
 		}
