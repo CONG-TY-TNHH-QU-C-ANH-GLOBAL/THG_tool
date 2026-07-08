@@ -7,33 +7,26 @@ import (
 )
 
 // ApproveLatestScript approves a reel's latest script version and moves the
-// reel to 'approved'. Cross-org calls fail with ErrNoScript because
-// reel.Store.GetLatestScript already returns sql.ErrNoRows for a reel_id
-// owned by a different org — tenant isolation is PR-R1's guarantee, not
-// reimplemented here.
+// reel to 'approved' in one atomic store call. Cross-org calls fail with
+// ErrNoScript because reel.Store.GetLatestScript already returns
+// sql.ErrNoRows for a reel_id owned by a different org — tenant isolation is
+// PR-R1's guarantee, not reimplemented here.
 //
-// ponytail: ApproveScript and UpdateReelStatus below are two separate
-// statements, not one transaction — reel.Store has no transaction-spanning
-// primitive today (the one BeginTx example in the store layer,
-// internal/store/knowledge/sources.go, is a single Store method's own
-// intra-domain cascade, not a cross-call seam a Service could reuse; adding
-// one would be new infrastructure, out of scope for this PR). If
-// ApproveScript succeeds but UpdateReelStatus fails, the script is
-// genuinely approved and reels.status just lags — harmless, because
-// RenderFake below gates on the script's own Approved flag, never on
-// reels.status. Same reasoning applies to GenerateScript's GetReel ->
-// CreateScript -> UpdateReelStatus sequence. Revisit before PR-R3 exposes
-// this over a public API (where a caller can no longer just retry), or in
-// a dedicated store/service transactionality PR.
+// Approval gates RenderFake, so the approve write and the reel status write
+// must be atomic: ApproveScriptAndSetReelStatus wraps them in one Postgres
+// transaction (see internal/store/reel/workflow.go), removing the partial
+// "script approved but reel un-approved" state before PR-R3 exposes this
+// over a public API where a caller cannot just retry in-process.
 func (s *Service) ApproveLatestScript(ctx context.Context, orgID, reelID int64) error {
 	latest, err := s.store.GetLatestScript(ctx, orgID, reelID)
 	if err != nil {
 		return notFoundAs(err, ErrNoScript)
 	}
-	if err := s.store.ApproveScript(ctx, orgID, latest.ID); err != nil {
-		return err
-	}
-	return s.store.UpdateReelStatus(ctx, orgID, reelID, StatusApproved)
+	// latest.ID belongs to reelID by construction, so the store's
+	// script/reel-mismatch guard (sql.ErrNoRows) is unreachable here — but
+	// translate it anyway so a store contract change can never leak
+	// database/sql past this boundary.
+	return notFoundAs(s.store.ApproveScriptAndSetReelStatus(ctx, orgID, reelID, latest.ID, StatusApproved), ErrNoScript)
 }
 
 // RenderFake requires the reel's latest script to be approved, runs it
