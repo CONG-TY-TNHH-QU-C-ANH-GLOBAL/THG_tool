@@ -96,9 +96,11 @@ func TestReel_ApproveScriptAndSetReelStatus_Atomic(t *testing.T) {
 		t.Fatalf("after approve: status=%q approved=%v, want approved/true", got.Status, latest.Approved)
 	}
 
-	// Cross-org call matches zero rows in both statements: no error, no change.
-	if err := s.Reel().ApproveScriptAndSetReelStatus(ctx, otherOrg, reelID, scriptID, "done"); err != nil {
-		t.Fatalf("cross-org ApproveScriptAndSetReelStatus returned error: %v", err)
+	// Cross-org call matches zero rows (the reel_id/script_id belong to
+	// another org): the RowsAffected guard rejects with sql.ErrNoRows and
+	// nothing is mutated.
+	if err := s.Reel().ApproveScriptAndSetReelStatus(ctx, otherOrg, reelID, scriptID, "done"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cross-org ApproveScriptAndSetReelStatus err = %v, want sql.ErrNoRows", err)
 	}
 	got, err = s.Reel().GetReel(ctx, orgID, reelID)
 	if err != nil {
