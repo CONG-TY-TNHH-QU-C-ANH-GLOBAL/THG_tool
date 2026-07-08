@@ -22,7 +22,11 @@ func (s *Service) ApproveLatestScript(ctx context.Context, orgID, reelID int64) 
 	if err != nil {
 		return notFoundAs(err, ErrNoScript)
 	}
-	return s.store.ApproveScriptAndSetReelStatus(ctx, orgID, reelID, latest.ID, StatusApproved)
+	// latest.ID belongs to reelID by construction, so the store's
+	// script/reel-mismatch guard (sql.ErrNoRows) is unreachable here — but
+	// translate it anyway so a store contract change can never leak
+	// database/sql past this boundary.
+	return notFoundAs(s.store.ApproveScriptAndSetReelStatus(ctx, orgID, reelID, latest.ID, StatusApproved), ErrNoScript)
 }
 
 // RenderFake requires the reel's latest script to be approved, runs it

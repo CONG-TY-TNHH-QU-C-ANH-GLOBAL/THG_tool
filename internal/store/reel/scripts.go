@@ -16,6 +16,14 @@ const (
 	listScriptsSQL = `SELECT id, org_id, reel_id, version, content, approved, created_at FROM reel_scripts WHERE reel_id = $1 AND org_id = $2 ORDER BY version ASC`
 
 	approveScriptSQL = `UPDATE reel_scripts SET approved = 1 WHERE id = $1 AND org_id = $2`
+
+	// approveScriptForReelSQL is approveScriptSQL plus a reel_id predicate, so
+	// the atomic ApproveScriptAndSetReelStatus can only approve a script that
+	// actually belongs to the reel whose status it is about to advance —
+	// matching a script_id to the wrong reel_id is 0 rows, never a
+	// cross-reel status change. Separate const so the older ApproveScript
+	// (script_id + org_id only) keeps its shape.
+	approveScriptForReelSQL = `UPDATE reel_scripts SET approved = 1 WHERE id = $1 AND org_id = $2 AND reel_id = $3`
 )
 
 func scanScript(row rowScanner) (*Script, error) {

@@ -6,6 +6,8 @@ package reel_test
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/thg/scraper/internal/store/reel/reeltest"
@@ -104,5 +106,51 @@ func TestReel_ApproveScriptAndSetReelStatus_Atomic(t *testing.T) {
 	}
 	if got.Status != "approved" {
 		t.Fatalf("cross-org call mutated owner status to %q, want approved", got.Status)
+	}
+}
+
+// TestReel_ApproveScriptAndSetReelStatus_ScriptReelMismatch pins the
+// data-integrity fix: approving a scriptID that belongs to a DIFFERENT reel
+// (same org) must reject and touch nothing — the approval is scoped by
+// reel_id, so a mismatch is 0 rows (sql.ErrNoRows) and the target reel's
+// status is never advanced off the wrong script.
+func TestReel_ApproveScriptAndSetReelStatus_ScriptReelMismatch(t *testing.T) {
+	s := reeltest.OpenStore(t)
+	const orgID int64 = 3301
+	reeltest.CleanupOrgs(t, s, orgID)
+	ctx := context.Background()
+
+	reelA, err := s.Reel().CreateReel(ctx, orgID, "reel A", "brief", 1)
+	if err != nil {
+		t.Fatalf("CreateReel A: %v", err)
+	}
+	scriptA, err := s.Reel().CreateScript(ctx, orgID, reelA, 1, `{"dialogue":"A"}`)
+	if err != nil {
+		t.Fatalf("CreateScript A: %v", err)
+	}
+	reelB, err := s.Reel().CreateReel(ctx, orgID, "reel B", "brief", 1)
+	if err != nil {
+		t.Fatalf("CreateReel B: %v", err)
+	}
+
+	// script A does not belong to reel B → reject, nothing changes.
+	err = s.Reel().ApproveScriptAndSetReelStatus(ctx, orgID, reelB, scriptA, "approved")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("mismatched script/reel: err = %v, want sql.ErrNoRows", err)
+	}
+
+	latestA, err := s.Reel().GetLatestScript(ctx, orgID, reelA)
+	if err != nil {
+		t.Fatalf("GetLatestScript A: %v", err)
+	}
+	if latestA.Approved {
+		t.Fatalf("script A approved via wrong reel — must stay unapproved")
+	}
+	gotB, err := s.Reel().GetReel(ctx, orgID, reelB)
+	if err != nil {
+		t.Fatalf("GetReel B: %v", err)
+	}
+	if gotB.Status != "draft" {
+		t.Fatalf("reel B status = %q after rejected mismatch, want draft (unchanged)", gotB.Status)
 	}
 }
