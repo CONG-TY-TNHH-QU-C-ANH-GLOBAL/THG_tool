@@ -1622,6 +1622,44 @@
         "prc0"
       ],
       "notes": "PR-C0 audit-only investigation of facebook_crawl extension-path stall (slow scroll pacing + missing live checkpoint-signal surfacing). Maps flow, gives measured hypothesis table, ranks safe PR-C1 follow-ups. No runtime change."
+    },
+    {
+      "id": "crawler-account-safety-spec",
+      "path": "specs/facebook/CRAWLER_ACCOUNT_SAFETY_SPEC.md",
+      "title": "CRAWLER ACCOUNT SAFETY SPEC",
+      "domain": "facebook",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "snapshot",
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-09",
+      "verified_against": [
+        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
+        "session.StateMachine + CheckpointManager own browser-session checkpoint lifecycle (NO_AUTOMATED_CAPTCHA_BYPASS)",
+        "existing checkpoint/login classifiers: proof.js:87, facebook-state.js:50, outbox.js:228",
+        "org_crawl_intents mid-migration to platform postgres 0108 (data-plane doctrine)"
+      ],
+      "related_code": [
+        "internal/session/allocator.go",
+        "internal/session/checkpoint.go",
+        "internal/session/statemachine.go",
+        "local-connector-extension/content/crawl.js",
+        "internal/server/system/notifications.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "account-safety",
+        "concurrency",
+        "cooldown",
+        "spec",
+        "prc0.5"
+      ],
+      "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change."
     }
   ]
 }
