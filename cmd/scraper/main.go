@@ -168,6 +168,7 @@ func main() {
 		TelegramActionsEnabled:      cfg.TelegramActionsEnabled,
 		TelegramWebhookSecret:       cfg.TelegramWebhookSecret,
 		TelegramAllowGlobalFallback: cfg.TelegramAllowGlobalFallback,
+		ReelStudioEnabled:           cfg.ReelStudioEnabled,
 		Mailer: mailer.Config{
 			Host:               cfg.SMTPHost,
 			Port:               cfg.SMTPPort,

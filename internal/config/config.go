@@ -26,6 +26,12 @@ type Config struct {
 	// tenants connect their OWN bot (the token is a customer secret).
 	TelegramAllowGlobalFallback bool
 
+	// REEL_STUDIO_ENABLED gates the Reel Studio HTTP API (internal/server/reel).
+	// Default false: the workflow is backend/fake-renderer-only and not yet
+	// exposed. When false the routes are not mounted (404). Postgres-only —
+	// the reel store has no SQLite schema.
+	ReelStudioEnabled bool
+
 	// AI (OpenAI only).
 	//
 	// Two-model split: classifier runs on every crawled post (high volume,
@@ -116,6 +122,7 @@ func Load() *Config {
 		TelegramActionsEnabled:      getEnvBool("TELEGRAM_ACTIONS_ENABLED", false),
 		TelegramWebhookSecret:       getEnv("TELEGRAM_WEBHOOK_SECRET", ""),
 		TelegramAllowGlobalFallback: getEnvBool("TELEGRAM_ALLOW_GLOBAL_FALLBACK", false),
+		ReelStudioEnabled:           getEnvBool("REEL_STUDIO_ENABLED", false),
 		OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS
