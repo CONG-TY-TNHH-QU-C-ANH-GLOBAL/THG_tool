@@ -30,6 +30,7 @@ import (
 	serverorg "github.com/thg/scraper/internal/server/org"
 	serversuperadmin "github.com/thg/scraper/internal/server/superadmin"
 	serverplatform "github.com/thg/scraper/internal/server/platform"
+	serverreel "github.com/thg/scraper/internal/server/reel"
 	serverskills "github.com/thg/scraper/internal/server/skills"
 	"github.com/thg/scraper/internal/server/system"
 	servertelegram "github.com/thg/scraper/internal/server/telegram"
@@ -228,6 +229,10 @@ func (s *Server) registerRoutes() {
 	// Platform service registry — backend authority for which services exist.
 	// GET /api/platform/services returns the resolved PlatformService contracts.
 	serverplatform.Routes(r, serverplatform.Deps{DB: s.db})
+
+	// Reel Studio (PR-R3) — org-scoped workflow API behind REEL_STUDIO_ENABLED.
+	// Backend + fake-renderer only; routes are not mounted when the flag is off.
+	serverreel.Routes(r, serverreel.Deps{DB: s.db, Enabled: cfg.ReelStudioEnabled})
 
 	// Step 4a — Verified Execution Observability + Watchpoint B — Prompt
 	// Routing Observability. Read-only surfaces over execution_attempts +
