@@ -31,15 +31,18 @@ func (s *Service) CreateDraft(ctx context.Context, orgID, createdBy int64, title
 }
 
 // GenerateScript creates the next version of a reel's script draft with
-// deterministic fake content and moves the reel to 'scripting'.
+// deterministic fake content and moves the reel to 'scripting'. The script
+// insert and the status update are one atomic store call
+// (CreateScriptAndSetReelStatus) — no partial "script exists but status
+// lags" state.
 //
-// ponytail: nextScriptVersion reads the latest version then CreateScript
-// inserts it in a separate statement — a race window between two concurrent
-// calls for the same reel. UNIQUE(org_id, reel_id, version) guarantees no
-// duplicate/corrupt row can land, just an unhandled unique-violation error
-// on the loser. Upgrade path if concurrent generation becomes real: compute
-// the version inside CreateScript's own INSERT (e.g. a subquery) or retry
-// once on conflict.
+// ponytail: nextScriptVersion still reads the latest version before the
+// atomic insert — a race window between two concurrent calls for the same
+// reel. UNIQUE(org_id, reel_id, version) guarantees no duplicate/corrupt row
+// can land; the loser's whole transaction rolls back (status included), just
+// with an unhandled unique-violation error. Upgrade path if concurrent
+// generation becomes real: compute the version inside the INSERT (subquery)
+// or retry once on conflict.
 func (s *Service) GenerateScript(ctx context.Context, orgID, reelID int64) (*reelstore.Script, error) {
 	r, err := s.store.GetReel(ctx, orgID, reelID)
 	if err != nil {
@@ -52,14 +55,10 @@ func (s *Service) GenerateScript(ctx context.Context, orgID, reelID int64) (*ree
 	}
 	content := fakeScriptContent(r.Title, r.Brief, version)
 
-	scriptID, err := s.store.CreateScript(ctx, orgID, reelID, version, content)
+	scriptID, err := s.store.CreateScriptAndSetReelStatus(ctx, orgID, reelID, version, content, StatusScripting)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.UpdateReelStatus(ctx, orgID, reelID, StatusScripting); err != nil {
-		return nil, err
-	}
-
 	return &reelstore.Script{ID: scriptID, OrgID: orgID, ReelID: reelID, Version: version, Content: content}, nil
 }
 
