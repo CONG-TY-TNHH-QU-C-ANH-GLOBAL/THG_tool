@@ -36,7 +36,10 @@ globalThis.THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
     const risk = crawlRiskToReason(s.risk);
     if (risk) return risk;
     if (s.done && s.reachedMax) return 'completed';
-    if (s.scrollCount > 0 && !s.scrollMovedEver) return 'scroll_not_moving';
+    // Active collection wins over "not moving": only report scroll_not_moving
+    // when nothing new is coming in, else a productive pass on a virtualized feed
+    // (scrollY flat but posts still loading) would be mislabelled as stalled.
+    if (s.newCount === 0 && s.scrollCount > 0 && !s.scrollMovedEver) return 'scroll_not_moving';
     if (s.newCount === 0 && s.duplicateCount >= 3) return 'duplicate_heavy';
     if (s.newCount === 0 && s.noProgressRounds > 0) return 'no_new_posts';
     return 'scrolling';

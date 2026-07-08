@@ -133,10 +133,21 @@ test('classifyCrawlProgress: a risk signal always wins and maps to blocked phase
 
 test('classifyCrawlProgress: non-risk states', () => {
   assert.deepStrictEqual(C.classifyCrawlProgress({ done: true, reachedMax: true }), { phase: 'completed', safe_reason_code: 'completed' });
-  assert.deepStrictEqual(C.classifyCrawlProgress({ scrollCount: 3, scrollMovedEver: false }), { phase: 'stalled', safe_reason_code: 'scroll_not_moving' });
+  assert.deepStrictEqual(C.classifyCrawlProgress({ newCount: 0, scrollCount: 3, scrollMovedEver: false }), { phase: 'stalled', safe_reason_code: 'scroll_not_moving' });
   assert.deepStrictEqual(C.classifyCrawlProgress({ newCount: 0, duplicateCount: 5, scrollCount: 2, scrollMovedEver: true }), { phase: 'stalled', safe_reason_code: 'duplicate_heavy' });
   assert.deepStrictEqual(C.classifyCrawlProgress({ newCount: 0, duplicateCount: 0, noProgressRounds: 4, scrollCount: 2, scrollMovedEver: true }), { phase: 'stalled', safe_reason_code: 'no_new_posts' });
   assert.deepStrictEqual(C.classifyCrawlProgress({ newCount: 3, scrollCount: 2, scrollMovedEver: true }), { phase: 'scrolling', safe_reason_code: 'scrolling' });
+});
+
+// Regression (CodeRabbit): active collection must win over "not moving". On a
+// virtualized feed scrollY can stay flat (scroll_moved_ever=false) while posts
+// are still being collected — that pass is scrolling, NOT scroll_not_moving.
+test('classifyCrawlProgress: collecting posts is never mislabelled scroll_not_moving', () => {
+  const s = { newCount: 3, scrollCount: 1, scrollMovedEver: false, noProgressRounds: 0, duplicateCount: 0, risk: '', done: false, reachedMax: false };
+  const got = C.classifyCrawlProgress(s);
+  assert.notStrictEqual(got.safe_reason_code, 'scroll_not_moving', 'must not be scroll_not_moving while collecting');
+  assert.notStrictEqual(got.phase, 'stalled', 'must not be stalled while collecting');
+  assert.deepStrictEqual(got, { phase: 'scrolling', safe_reason_code: 'scrolling' });
 });
 
 test('crawlRiskToReason maps raw classifier signals to stable codes', () => {
