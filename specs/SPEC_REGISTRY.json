@@ -58,7 +58,7 @@
         "migration",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24D. Self-labelled 'design (no code)' \u2014 the migration to an event-sourced action_ledger is NOT yet implemented; the 3 UPDATE violations it targets are real and tracked by scripts/check_topology.sh. Kept draft until the implementation PR."
+      "notes": "Reviewed in PR24D. Self-labelled 'design (no code)' — the migration to an event-sourced action_ledger is NOT yet implemented; the 3 UPDATE violations it targets are real and tracked by scripts/check_topology.sh. Kept draft until the implementation PR."
     },
     {
       "id": "autocomment-redirect-investigation",
@@ -104,7 +104,7 @@
         "PR24C specs audit (2026-06-23)",
         "local-connector-extension/automation + channels/facebook modules exist",
         "test/automation_core.test.js + test/facebook_adapter.test.js",
-        "PR24C: JS tests executed and PASS \u2014 `node local-connector-extension/test/automation_core.test.js` + `facebook_adapter.test.js`"
+        "PR24C: JS tests executed and PASS — `node local-connector-extension/test/automation_core.test.js` + `facebook_adapter.test.js`"
       ],
       "related_code": [
         "local-connector-extension/automation",
@@ -198,7 +198,7 @@
         "internal/models/comment_forensics.go (ClassifyCommentForensics)",
         "internal/store/coordination/comment_forensics.go",
         "internal/store/comment_forensics_test.go + comment_reverify_lease_test.go",
-        "PR24C: targeted tests executed and PASS \u2014 `go test ./internal/store/ -run 'CommentForensics|Reverify'` (9 tests incl. TestClassifyCommentForensics_Buckets)"
+        "PR24C: targeted tests executed and PASS — `go test ./internal/store/ -run 'CommentForensics|Reverify'` (9 tests incl. TestClassifyCommentForensics_Buckets)"
       ],
       "related_code": [
         "internal/models/comment_forensics.go",
@@ -273,7 +273,7 @@
         "design-doc",
         "knowledge-first"
       ],
-      "notes": "Reviewed in PR24C. Self-labelled DESIGN (rev 3) \u2014 forward-looking knowledge-first autonomous-agent comment pipeline (P1-P4). Underlying ai/comment + workspace_knowledge stacks exist and parts have shipped via the comment-intelligence track, but the doc remains design guidance, so kept as draft rather than active."
+      "notes": "Reviewed in PR24C. Self-labelled DESIGN (rev 3) — forward-looking knowledge-first autonomous-agent comment pipeline (P1-P4). Underlying ai/comment + workspace_knowledge stacks exist and parts have shipped via the comment-intelligence track, but the doc remains design guidance, so kept as draft rather than active."
     },
     {
       "id": "component-hotspots",
@@ -389,7 +389,7 @@
         "GetPostLeadByRef in internal/store/leads/lookup.go",
         "migration 0022_direct_post_comment_workflows",
         "direct_post_intake tests pass",
-        "PR24C: targeted tests executed and PASS \u2014 `go test ./cmd/scraper/ -run DirectPostIntake` (5) + `go test ./internal/store/leads/ -run 'PostLeadByRef'` (2)"
+        "PR24C: targeted tests executed and PASS — `go test ./cmd/scraper/ -run DirectPostIntake` (5) + `go test ./internal/store/leads/ -run 'PostLeadByRef'` (2)"
       ],
       "related_code": [
         "cmd/scraper/agent_actions.go",
@@ -1373,7 +1373,7 @@
         "event-wiring",
         "notifications"
       ],
-      "notes": "Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go \u2014 minor path drift.) Active and implementation-backed."
+      "notes": "Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go — minor path drift.) Active and implementation-backed."
     },
     {
       "id": "telegram-integration-ui",
@@ -1585,6 +1585,43 @@
         "design-doc"
       ],
       "notes": "Reviewed in PR24H. High-level system-principles spec (Retrieval+Reasoning+Memory, No-Blind-Crawling, Planner-first, cross-domain generalization). Aligns with the current product direction but is vision-level, not an implementation contract -> draft."
+    },
+    {
+      "id": "crawl-speed-checkpoint-audit",
+      "path": "specs/facebook/CRAWL_SPEED_CHECKPOINT_AUDIT.md",
+      "title": "CRAWL SPEED CHECKPOINT AUDIT",
+      "domain": "facebook",
+      "type": "investigation",
+      "status": "active",
+      "maturity": "snapshot",
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-08",
+      "verified_against": [
+        "extension crawl path is crawl.js crawlVisibleFacebookPosts (not the no-scroll CDPRuntime.FetchBatch)",
+        "in-flight heartbeat carries only {stage,fetched,max,source_url} (notifications.go NotifyCrawlProgress)",
+        "crawl.js live loop does not consume proof.js/facebook-state.js/outbox.js checkpoint classification",
+        "org_crawl_intents cursor exists in both sqlite baseline and platform postgres 0108 (dialect-aware store)"
+      ],
+      "related_code": [
+        "local-connector-extension/content/crawl.js",
+        "local-connector-extension/content/bridge.js",
+        "internal/jobhandlers/facebook_crawl/handler.go",
+        "internal/runtime/cdp_runtime.go",
+        "internal/server/system/notifications.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "investigation",
+        "crawl",
+        "reliability",
+        "observability",
+        "checkpoint",
+        "prc0"
+      ],
+      "notes": "PR-C0 audit-only investigation of facebook_crawl extension-path stall (slow scroll pacing + missing live checkpoint-signal surfacing). Maps flow, gives measured hypothesis table, ranks safe PR-C1 follow-ups. No runtime change."
     }
   ]
 }

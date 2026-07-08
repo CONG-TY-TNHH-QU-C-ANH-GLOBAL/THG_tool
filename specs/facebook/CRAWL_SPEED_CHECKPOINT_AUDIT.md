@@ -23,7 +23,7 @@ the **extension path**, not the Go CDP path.
 | Runtime | `runtime.CDPRuntime.FetchBatch` (Docker Chrome) | `THGContentCrawl.crawlVisibleFacebookPosts` |
 | Scrolls? | **No** — single `extractPostsJS`, `offset>0`→nil | **Yes** — up to 150 scroll passes |
 | Progress | job % (`UpdateProgress`) | `thg_crawl_progress` heartbeats `fetched/max` |
-| Checkpoint | `ErrFacebookCheckpoint` → `human_required` | **none** |
+| Checkpoint | `ErrFacebookCheckpoint` → `human_required` | classifiers exist (proof/state/outbox) but **not consumed by the live crawl loop** |
 
 Proof the incident is the extension path: the user-visible message
 `Stage: scraping. Progress: 5/50 posts` is produced by
@@ -33,7 +33,7 @@ percentage, never `X/N`.
 
 ### Flow map (extension path)
 
-```
+```text
 recurring intent (org_crawl_intents) ──dispatch──▶ connector command {type:"crawl", payload.task}
   └▶ content/bridge.js  thgExecuteCommand()            [content/bridge.js:29-56]
        └▶ THGContentCrawl.crawlVisibleFacebookPosts(task, expectedUrl, accountId)
@@ -85,7 +85,7 @@ progress per unit time.
 | **H1** | **Background-tab throttling starves lazy-load.** Hidden/minimized FB tab → `requestAnimationFrame` + `behavior:'smooth'` scroll + `setTimeout` are throttled by Chrome; scroll barely moves, so FB never fetches the next page → posts trickle in over minutes. | Authors already suspected this: `scroll_diag.scroll_moved_ever` + comment `crawl.js:563-567` ("window minimized → rAF throttled, wrong scroll target"). 21 min ≫ 9.6 min ceiling ⇒ timer stretch. | Med — fixing properly means changing how scroll is driven. | **PR-C1**: surface `scroll_moved_ever` in the *in-flight* heartbeat so the operator sees "scroll not moving"; longer term drive scroll via CDP `Input.dispatchMouseWheel` on the worker path (no timer/visibility dependency). | Compare `scroll_moved_ever` true vs false against posts/min on a foreground vs background tab. |
 | **H2** | **Fixed long waits regardless of load result.** Every pass sleeps 2.2–3.6s even when new posts already rendered; no adaptive shortening. | `crawl.js:695-696` — `waitMs` depends only on `pass`, never on whether the last scroll produced new posts. | Low — pure timing; must stay ≥ a safe floor (no speed-*increase* past current cadence on barren passes). | **PR-C1**: adaptive wait — keep 3.6s after a *barren* pass, drop to a floor (e.g. 1.2s) after a *productive* pass. Net effect on happy path only; barren pacing unchanged. | Unit test on a pure `nextWait(newItems, pass)` fn; soak on a live feed. |
 | **H3** | **Lenient no-progress cutoff → ~1 min of dead scrolling before giving up.** | `no_progress` needs 10 stagnant passes (~39s) *and* `pass≥35`; `no_new_items_after_scroll` needs 16 barren passes (~62s). | Low-Med — earlier stop changes yield on slow-but-live feeds. | **PR-C1**: expose `no_progress_rounds` in status first (C0-spirit), then tune cutoff with tests. Improves *graceful stop*, not speed. | Characterization test pinning current exit reasons before tuning. |
-| **H4** | **No checkpoint/interstitial detection in the extension loop.** A soft-checkpoint / "going too fast" / login-wall interstitial yields 0 articles; the loop grinds all 150 passes then exits `pass_exhausted`/`no_progress` — never signalling risk. | `crawl.js` has only `locationMatchesExpected` (`wrong_page`). No checkpoint URL/text probe. Checkpoint detection lives only in the Go CDP/`session` path, which this route bypasses. | Med — must be detect-and-stop only (no solving). | **PR-C1**: light DOM/URL probe (`/checkpoint`, `/login`, known challenge text) → stop early, return typed `exit_reason:"checkpoint_suspected"`; server maps to `human_required` + notify (reusing `CheckpointManager` semantics). | Fixture HTML for checkpoint page → probe returns true; behavior test that loop stops. |
+| **H4** | **Live crawl loop does not consume the extension's existing checkpoint/login classifiers.** A soft-checkpoint / "going too fast" / login-wall interstitial yields 0 articles; the loop grinds all 150 passes then exits `pass_exhausted`/`no_progress` — never signalling risk. | The extension already classifies checkpoint/login elsewhere — `content/proof.js:87` (rate-limit/blocked/checkpoint banner text), `src/facebook-state.js:50` (`checkpoint`/`two_step` → `facebook_human_required`), `src/outbox.js:228` (`isLoginOrCheckpointUrl` → `human_required`). But `crawl.js` `crawlVisibleFacebookPosts` never reads any of them; its only guard is `locationMatchesExpected` (`wrong_page`), and the Go CDP `ErrFacebookCheckpoint` path is bypassed on this route. | Med — must be detect-and-stop only (no solving). | **PR-C2**: have the crawl loop consume the existing classifier signal (or a shared probe) → stop early, return typed `exit_reason:"checkpoint_suspected"`; server maps to `human_required` + notify (reusing `CheckpointManager` semantics). No new detection heuristic invented — reuse what proof/state/outbox already do. | Fixture HTML for checkpoint page → shared classifier returns true; behavior test that loop stops. |
 | **H5** | **Per-pass full-document scan forces reflow.** `collectPostCandidates()` runs several document-wide `querySelectorAll` + `getBoundingClientRect` every pass. | `crawl.js:271-287` — unscoped `document.querySelectorAll` + rect reads each of 150 passes. | Low. | **PR-C1** (minor): scope candidate scan to the resolved scroll target / only newly-added nodes. | Micro-benchmark; result-parity test. |
 
 **Primary suspect: H1** (throttled scroll starves lazy-load), amplified by **H2**
@@ -100,14 +100,20 @@ progress per unit time.
   ban/logout → `aborted`, context drift → `aborted`. `session.CheckpointManager`
   transitions the session `active→checkpoint`, persists the URL, alerts via VNC, and
   **never retries or auto-solves** (`NO_AUTOMATED_CAPTCHA_BYPASS`). This is sound.
-- **Extension path (the incident path)**: **weak**. `crawlVisibleFacebookPosts` has
-  **no** checkpoint/login/challenge detection — only the `wrong_page` location guard.
-  A checkpoint interstitial is indistinguishable from a slow feed: the loop scrolls
-  for ~9.6 min and exits with a generic reason. The operator's "not convincing"
-  complaint is accurate — the extension path cannot currently say `checkpoint_suspected`.
-- **Recommended (PR-C1)**, staying inside the safety boundary: detect → **stop** →
-  report `checkpoint_suspected` / `risk_blocked` → notify. No auto-click, no solving,
-  no rotation.
+- **Extension path (the incident path)**: **classifiers exist but the crawl loop
+  doesn't use them.** The extension already detects checkpoint/login/rate-limit signals
+  in `content/proof.js:87`, `src/facebook-state.js:50` (`checkpoint`/`two_step` →
+  `facebook_human_required`), and `src/outbox.js:228` (`isLoginOrCheckpointUrl` →
+  `human_required`). But `crawlVisibleFacebookPosts` consumes **none** of them during a
+  live crawl — its only guard is the `wrong_page` location check. So a checkpoint
+  interstitial is indistinguishable from a slow feed: the loop scrolls for ~9.6 min and
+  exits with a generic reason. The operator's "not convincing" complaint is accurate —
+  the gap is specifically that the live crawl progress path never surfaces the
+  already-classified signal as `checkpoint_suspected`.
+- **Recommended (PR-C2)**, staying inside the safety boundary: have the crawl loop
+  **consume the existing proof/state/outbox classifier** → **stop** → report
+  `checkpoint_suspected` / `risk_blocked` → notify. No new heuristic, no auto-click, no
+  solving, no rotation.
 
 ---
 
@@ -152,9 +158,10 @@ The rich `scroll_diag` (`passes`, `max_articles_seen`, `scroll_moved_ever`,
    background body + Go `agentConnectorCrawlProgress` struct + `NotifyCrawlProgress`
    text), so it needs a small, additive, tested wire change — **not** a C0 edit.
    *(Highest impact, low behavior risk; directly answers the operator complaint.)*
-2. **`checkpoint_suspected` detection + graceful stop** in the extension loop (H4).
-   Detect-and-stop only; reuse `CheckpointManager` server semantics. Tests: checkpoint
-   fixture + loop-stops behavior test.
+2. **Consume the existing checkpoint/login classifier + graceful stop** in the crawl
+   loop (H4) — **PR-C2**. Reuse `proof.js`/`facebook-state.js`/`outbox.js` classification
+   (no new heuristic); stop-only; reuse `CheckpointManager` server semantics. Tests:
+   checkpoint fixture + loop-stops behavior test.
 3. **Adaptive wait after productive passes** (H2). Pure `nextWait(newItems, pass)`
    helper + unit test; barren-pass pacing unchanged (no speed increase on risk paths).
 4. **Tune no-progress cutoff** (H3) *after* #1 makes `no_progress_rounds` visible;
