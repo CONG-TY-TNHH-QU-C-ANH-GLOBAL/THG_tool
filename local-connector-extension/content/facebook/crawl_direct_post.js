@@ -10,18 +10,27 @@ globalThis.THGCrawlDirectPost = globalThis.THGCrawlDirectPost || (() => {
   const DP_CHROME_TOKENS = new Set(['facebook', 'like', 'comment', 'comments', 'share', 'shares',
     'follow', 'following', 'reply', 'replies', 'reactions', 'react']);
 
-  // Edge-punctuation stripping split into two anchored patterns (leading /
-  // trailing) instead of one alternation of two `+` groups — avoids the
-  // backtracking Sonar flags, same result as the prior `/^…+|…+$/g`.
+  // Leading edge-punctuation uses a start-anchored pattern (linear, no
+  // backtracking). Trailing punctuation is stripped WITHOUT a regex: an
+  // end-anchored `/[…]+$/` has super-linear backtracking, so we scan the same
+  // character set from the end instead. Same net result as the prior
+  // `.replace(/^…+/,'').replace(/…+$/,'')`.
   const DP_EDGE_PUNCT_LEAD = /^[·.,:;!?()[\]{}"'…]+/;
-  const DP_EDGE_PUNCT_TRAIL = /[·.,:;!?()[\]{}"'…]+$/;
+  const DP_EDGE_PUNCT = new Set(['·', '.', ',', ':', ';', '!', '?', '(', ')', '[', ']', '{', '}', '"', "'", '…']);
   const DP_GROUP_REF_RE = /\/groups\/([^/?#]+)/;
+
+  // Remove the maximal run of DP_EDGE_PUNCT characters from the END of value.
+  function stripTrailingPunct(value) {
+    let end = value.length;
+    while (end > 0 && DP_EDGE_PUNCT.has(value[end - 1])) end--;
+    return value.slice(0, end);
+  }
 
   function directPostMeaningful(content) {
     const out = [];
     let prev = '';
     for (const f of String(content || '').split(/\s+/)) {
-      const norm = f.toLowerCase().replace(DP_EDGE_PUNCT_LEAD, '').replace(DP_EDGE_PUNCT_TRAIL, '');
+      const norm = stripTrailingPunct(f.toLowerCase().replace(DP_EDGE_PUNCT_LEAD, ''));
       if (!norm || DP_CHROME_TOKENS.has(norm)) continue;
       if (norm === prev) continue; // collapse the scraped-chrome repetition signature
       out.push(f);
