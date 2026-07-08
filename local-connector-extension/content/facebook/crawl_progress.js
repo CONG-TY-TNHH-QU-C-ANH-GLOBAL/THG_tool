@@ -8,7 +8,10 @@
 //     is unit-testable in node without stubbing globals.
 // It introduces NO new detection heuristics — it only reuses the classifiers
 // the caller injects (THGNavReport.classifyLanding / THGContentProof.detectPlatformReject).
-var THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
+// Top-level assignment (not a `var`/`const` declaration) so a re-injected
+// content script never hits a redeclaration error; the `|| existing` guard keeps
+// it a singleton. crawl.js reads it as globalThis.THGCrawlProgress exactly as before.
+globalThis.THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
   // Coarse activity bucket for each safe reason code — lets the operator glance
   // "scrolling / stalled / blocked / done" without parsing the finer code.
   const CRAWL_PHASE_OF = {
@@ -63,7 +66,7 @@ var THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
   // (single source of truth stays in crawl.js). Diagnostics are projected FIELD
   // BY FIELD (whitelist by construction) so no raw page text / DOM / secret can
   // ever leak. Omit diag → byte-identical to the pre-diagnostics shape.
-  function buildCrawlProgressMessage(crawlerVersion, task, accountId, stage, fetched, max, sourceUrl, diag) {
+  function buildCrawlProgressMessage({ crawlerVersion, task, accountId, stage, fetched, max, sourceUrl, diag }) {
     const msg = {
       type: 'thg_crawl_progress',
       crawler_version: crawlerVersion,
@@ -114,6 +117,5 @@ var THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
     zeroCrawlDiag, buildCrawlProgressMessage, detectCrawlRisk, detectCrawlBanner,
   };
 })();
-globalThis.THGCrawlProgress = THGCrawlProgress;
 // CommonJS export for the node test harness. No-op in the extension.
-if (typeof module !== 'undefined' && module.exports) module.exports = THGCrawlProgress;
+if (typeof module !== 'undefined' && module.exports) module.exports = globalThis.THGCrawlProgress;

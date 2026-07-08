@@ -24,7 +24,7 @@ const REASON_ALLOW = [
 // intent + account_id + stage + fetched + max + source_url. Nothing else.
 test('buildCrawlProgressMessage keeps the byte-identical base payload shape', () => {
   const task = { task_id: 'autocrawl-27-495423', intent: 'facebook_crawl' };
-  const msg = C.buildCrawlProgressMessage(VER, task, 50, 'scraping', 5, 50, SRC);
+  const msg = C.buildCrawlProgressMessage({ crawlerVersion: VER, task, accountId: 50, stage: 'scraping', fetched: 5, max: 50, sourceUrl: SRC });
   assert.deepStrictEqual(msg, {
     type: 'thg_crawl_progress',
     crawler_version: VER,
@@ -39,7 +39,7 @@ test('buildCrawlProgressMessage keeps the byte-identical base payload shape', ()
 });
 
 test('buildCrawlProgressMessage exposes no unexpected keys when no diag passed', () => {
-  const msg = C.buildCrawlProgressMessage(VER, { task_id: 't' }, 50, 'scraping', 5, 50, SRC);
+  const msg = C.buildCrawlProgressMessage({ crawlerVersion: VER, task: { task_id: 't' }, accountId: 50, stage: 'scraping', fetched: 5, max: 50, sourceUrl: SRC });
   assert.deepStrictEqual(Object.keys(msg).sort(), [
     'account_id', 'crawler_version', 'fetched', 'intent', 'max', 'source_url', 'stage', 'task_id', 'type',
   ], 'no diagnostics keys unless a diag is provided');
@@ -47,7 +47,7 @@ test('buildCrawlProgressMessage exposes no unexpected keys when no diag passed',
 
 test('buildCrawlProgressMessage falls back to the same defaults as the old literal', () => {
   assert.deepStrictEqual(
-    C.buildCrawlProgressMessage(VER, null, 0, 'started', 0, 20, ''),
+    C.buildCrawlProgressMessage({ crawlerVersion: VER, task: null, accountId: 0, stage: 'started', fetched: 0, max: 20, sourceUrl: '' }),
     {
       type: 'thg_crawl_progress',
       crawler_version: VER,
@@ -71,7 +71,7 @@ const DIAG = {
 };
 
 test('buildCrawlProgressMessage includes diagnostics only when a diag is passed', () => {
-  const msg = C.buildCrawlProgressMessage(VER, { task_id: 't1', intent: 'facebook_crawl' }, 50, 'scraping', 5, 50, SRC, DIAG);
+  const msg = C.buildCrawlProgressMessage({ crawlerVersion: VER, task: { task_id: 't1', intent: 'facebook_crawl' }, accountId: 50, stage: 'scraping', fetched: 5, max: 50, sourceUrl: SRC, diag: DIAG });
   assert.strictEqual(msg.phase, 'stalled');
   assert.strictEqual(msg.new_count, 5);
   assert.strictEqual(msg.duplicate_count, 12);
@@ -87,9 +87,9 @@ test('buildCrawlProgressMessage includes diagnostics only when a diag is passed'
 });
 
 test('progress payload never exposes raw page text / DOM / secrets (key names)', () => {
-  const msg = C.buildCrawlProgressMessage(VER, { task_id: 't1' }, 50, 'finished', 0, 0, SRC, {
+  const msg = C.buildCrawlProgressMessage({ crawlerVersion: VER, task: { task_id: 't1' }, accountId: 50, stage: 'finished', fetched: 0, max: 0, sourceUrl: SRC, diag: {
     ...DIAG, safe_reason_code: 'checkpoint_suspected', phase: 'blocked',
-  });
+  } });
   const forbidden = ['text', 'html', 'dom', 'body', 'innertext', 'cookie', 'session', 'content', 'token'];
   for (const k of Object.keys(msg)) {
     for (const bad of forbidden) {
@@ -115,7 +115,7 @@ test('diagnostics values are constrained: enums allowlisted, counters typed', ()
     assert.ok(REASON_ALLOW.includes(safe_reason_code), `code ${safe_reason_code} must be allowlisted`);
   }
   // Numeric / boolean fields on the built payload.
-  const msg = C.buildCrawlProgressMessage(VER, { task_id: 't' }, 1, 'scraping', 1, 50, SRC, DIAG);
+  const msg = C.buildCrawlProgressMessage({ crawlerVersion: VER, task: { task_id: 't' }, accountId: 1, stage: 'scraping', fetched: 1, max: 50, sourceUrl: SRC, diag: DIAG });
   for (const k of ['found_count', 'new_count', 'duplicate_count', 'scroll_count', 'no_progress_rounds', 'seconds_since_last_new']) {
     assert.strictEqual(typeof msg[k], 'number', `${k} must be a number`);
   }

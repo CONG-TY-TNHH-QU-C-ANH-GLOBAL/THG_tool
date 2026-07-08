@@ -229,7 +229,7 @@ var THGContentCrawl = (() => {
   function emitProgress(task, accountId, stage, fetched, max, diag) {
     try {
       chrome.runtime.sendMessage(
-        CP().buildCrawlProgressMessage(CRAWLER_VERSION, task, accountId, stage, fetched, max, location.href, diag)
+        CP().buildCrawlProgressMessage({ crawlerVersion: CRAWLER_VERSION, task, accountId, stage, fetched, max, sourceUrl: location.href, diag })
       ).catch(() => { /* background not listening */ });
     } catch { /* runtime gone */ }
   }
