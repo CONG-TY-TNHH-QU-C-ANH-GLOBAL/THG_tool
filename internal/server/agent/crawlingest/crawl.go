@@ -98,6 +98,18 @@ func (h *Handler) agentConnectorCrawlProgress(c *fiber.Ctx) error {
 		Max       int    `json:"max"`
 		SourceURL string `json:"source_url"`
 		Done      bool   `json:"done"`
+		// PR-C1B additive live-crawl diagnostics. All optional / zero-value
+		// safe: an older extension that omits them decodes to zeros and the
+		// notification falls back to the pre-C1B text verbatim.
+		Phase               string `json:"phase"`
+		FoundCount          int    `json:"found_count"`
+		NewCount            int    `json:"new_count"`
+		DuplicateCount      int    `json:"duplicate_count"`
+		ScrollCount         int    `json:"scroll_count"`
+		NoProgressRounds    int    `json:"no_progress_rounds"`
+		ScrollMovedEver     bool   `json:"scroll_moved_ever"`
+		SecondsSinceLastNew int    `json:"seconds_since_last_new"`
+		SafeReasonCode      string `json:"safe_reason_code"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
@@ -112,7 +124,14 @@ func (h *Handler) agentConnectorCrawlProgress(c *fiber.Ctx) error {
 		}
 	}
 	if system.ShouldEmitCrawlProgress(body.TaskID, body.Fetched, body.Done) {
-		system.NotifyCrawlProgress(h.db, h.notifier, orgID, body.AccountID, body.TaskID, body.Intent, body.Stage, body.Fetched, body.Max, body.SourceURL)
+		system.NotifyCrawlProgress(h.db, h.notifier, system.CrawlProgressNotice{
+			OrgID: orgID, AccountID: body.AccountID, TaskID: body.TaskID, Intent: body.Intent,
+			Stage: body.Stage, Fetched: body.Fetched, Max: body.Max, SourceURL: body.SourceURL,
+			Phase: body.Phase, FoundCount: body.FoundCount, NewCount: body.NewCount,
+			DuplicateCount: body.DuplicateCount, ScrollCount: body.ScrollCount,
+			NoProgressRounds: body.NoProgressRounds, ScrollMovedEver: body.ScrollMovedEver,
+			SecondsSinceLastNew: body.SecondsSinceLastNew, SafeReasonCode: body.SafeReasonCode,
+		})
 	}
 	return c.JSON(fiber.Map{"status": "ok"})
 }

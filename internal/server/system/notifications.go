@@ -1,6 +1,7 @@
 package system
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -379,32 +380,95 @@ func NotifyCrawlSummary(db *store.Store, notifier func(string), orgID, accountID
 	}
 }
 
-func NotifyCrawlProgress(db *store.Store, notifier func(string), orgID, accountID int64, taskID, intent, stage string, fetched, max int, sourceURL string) {
-	label := strings.TrimSpace(intent)
+// CrawlProgressNotice is one crawl-progress heartbeat. The identity fields are
+// required; the PR-C1B diagnostics are optional and zero-value safe — an older
+// extension that omits them yields the pre-C1B message verbatim.
+type CrawlProgressNotice struct {
+	OrgID, AccountID      int64
+	TaskID, Intent, Stage string
+	Fetched, Max          int
+	SourceURL             string
+	// diagnostics (optional)
+	Phase               string
+	FoundCount          int
+	NewCount            int
+	DuplicateCount      int
+	ScrollCount         int
+	NoProgressRounds    int
+	ScrollMovedEver     bool
+	SecondsSinceLastNew int
+	SafeReasonCode      string
+}
+
+// crawlRiskCodes are the safe_reason_code values that mean "stopped on a wall —
+// a human must look". They never trigger any automated resolution/bypass.
+var crawlRiskCodes = map[string]bool{
+	"login_required":       true,
+	"checkpoint_suspected": true,
+	"risk_blocked":         true,
+}
+
+// crawlProgressArgsJSON safely marshals the durable automation-log args for a
+// crawl-progress event via encoding/json (correct escaping for any URL/text).
+// Never fails the caller: a marshal error logs and degrades to "{}".
+func crawlProgressArgsJSON(n CrawlProgressNotice, intent, stage, source string) string {
+	b, err := json.Marshal(struct {
+		TaskID         string `json:"task_id"`
+		Intent         string `json:"intent"`
+		Stage          string `json:"stage"`
+		Fetched        int    `json:"fetched"`
+		Max            int    `json:"max"`
+		SourceURL      string `json:"source_url"`
+		SafeReasonCode string `json:"safe_reason_code"`
+		Phase          string `json:"phase"`
+	}{n.TaskID, intent, stage, n.Fetched, n.Max, source, n.SafeReasonCode, n.Phase})
+	if err != nil {
+		log.Printf("[ConnectorCrawl] marshal progress args: %v", err)
+		return "{}"
+	}
+	return string(b)
+}
+
+// crawlProgressDiagVN renders the compact Vietnamese diagnostic suffix for a
+// heartbeat. Empty for a pre-C1B payload (no phase / reason reported). Pure.
+func crawlProgressDiagVN(n CrawlProgressNotice) string {
+	if crawlRiskCodes[n.SafeReasonCode] {
+		return " Đã tạm dừng: cần kiểm tra đăng nhập/checkpoint. Không tự xử lý checkpoint."
+	}
+	if n.Phase == "" && n.SafeReasonCode == "" {
+		return ""
+	}
+	return fmt.Sprintf(" Pha: %s. Không có bài mới: %d vòng. Trùng: %d.",
+		n.Phase, n.NoProgressRounds, n.DuplicateCount)
+}
+
+func NotifyCrawlProgress(db *store.Store, notifier func(string), n CrawlProgressNotice) {
+	label := strings.TrimSpace(n.Intent)
 	if label == "" {
 		label = "facebook_crawl"
 	}
-	stage = strings.TrimSpace(stage)
+	stage := strings.TrimSpace(n.Stage)
 	if stage == "" {
 		stage = "scraping"
 	}
-	progress := fmt.Sprintf("%d", fetched)
-	if max > 0 {
-		progress = fmt.Sprintf("%d/%d", fetched, max)
+	progress := fmt.Sprintf("%d", n.Fetched)
+	if n.Max > 0 {
+		progress = fmt.Sprintf("%d/%d", n.Fetched, n.Max)
 	}
-	source := strings.TrimSpace(sourceURL)
+	source := strings.TrimSpace(n.SourceURL)
 	sourceVN := source
 	if source == "" {
 		source = "(source not reported)"
 		sourceVN = "(không báo cáo nguồn)"
 	}
-	logText := fmt.Sprintf("[THG Agent] Crawl %s in progress. Task %s. Org #%d, account #%d. Stage: %s. Progress: %s posts. Source: %s",
-		label, taskID, orgID, accountID, stage, progress, source)
-	userText := fmt.Sprintf("%s Crawl %s đang chạy. Tác vụ %s. Org #%d, account #%d. Trạng thái: %s. Tiến độ: %s bài. Nguồn: %s",
-		notifierPrefix, label, taskID, orgID, accountID, stageLabelVN(stage), progress, sourceVN)
+	diagVN := crawlProgressDiagVN(n)
+	logText := fmt.Sprintf("[THG Agent] Crawl %s in progress. Task %s. Org #%d, account #%d. Stage: %s. Progress: %s posts. Source: %s. Reason: %s",
+		label, n.TaskID, n.OrgID, n.AccountID, stage, progress, source, n.SafeReasonCode)
+	userText := fmt.Sprintf("%s Crawl %s đang chạy. Tác vụ %s. Org #%d, account #%d. Trạng thái: %s. Tiến độ: %s bài. Nguồn: %s%s",
+		notifierPrefix, label, n.TaskID, n.OrgID, n.AccountID, stageLabelVN(stage), progress, sourceVN, diagVN)
 	log.Printf("[ConnectorCrawl] %s", logText)
-	recordAutomationForAccount(db, orgID, accountID, userText, "system_crawl_progress",
-		fmt.Sprintf(`{"task_id":%q,"intent":%q,"stage":%q,"fetched":%d,"max":%d,"source_url":%q}`, taskID, label, stage, fetched, max, source), true)
+	recordAutomationForAccount(db, n.OrgID, n.AccountID, userText, "system_crawl_progress",
+		crawlProgressArgsJSON(n, label, stage, source), true)
 	if notifier != nil {
 		notifier(userText)
 	}

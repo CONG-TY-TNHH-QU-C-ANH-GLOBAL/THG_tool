@@ -87,7 +87,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               fetched: Number(message.fetched) || 0,
               max: Number(message.max) || 0,
               source_url: message.source_url || '',
-              done: message.stage === 'finished'
+              done: message.stage === 'finished',
+              // PR-C1B additive diagnostics — zero-value safe. Older crawl.js
+              // builds omit these; the server DTO fields are all optional so an
+              // old payload (all zeros / empty) behaves exactly as before.
+              phase: message.phase || '',
+              found_count: Number(message.found_count) || 0,
+              new_count: Number(message.new_count) || 0,
+              duplicate_count: Number(message.duplicate_count) || 0,
+              scroll_count: Number(message.scroll_count) || 0,
+              no_progress_rounds: Number(message.no_progress_rounds) || 0,
+              scroll_moved_ever: !!message.scroll_moved_ever,
+              seconds_since_last_new: Number(message.seconds_since_last_new) || 0,
+              safe_reason_code: message.safe_reason_code || ''
             })
           });
         } catch { /* ignore */ }
