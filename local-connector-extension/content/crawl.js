@@ -217,22 +217,35 @@ var THGContentCrawl = (() => {
     return got === want || got.startsWith(want + '/');
   }
 
+  // Pure builder for the thg_crawl_progress payload. Extracted as the single
+  // seam future telemetry (PR-C1B fields) and checkpoint state (PR-C2 phase)
+  // attach to, so they land in one unit-tested place instead of the emitter's
+  // I/O path. All inputs are explicit args (sourceUrl passed in) so this stays
+  // side-effect free; the impure location.href read lives in emitProgress.
+  // PR-C1A invariant: the returned shape is byte-identical to the prior inline
+  // literal — no new fields in this PR.
+  function buildCrawlProgressMessage(task, accountId, stage, fetched, max, sourceUrl) {
+    return {
+      type: 'thg_crawl_progress',
+      crawler_version: CRAWLER_VERSION,
+      task_id: task?.task_id || '',
+      intent: task?.intent || 'facebook_crawl',
+      account_id: accountId || 0,
+      stage,
+      fetched,
+      max,
+      source_url: sourceUrl
+    };
+  }
+
   // Best-effort heartbeat to the background page so users on Telegram can
   // follow the crawl in real time. Failures are intentionally swallowed;
   // missing a heartbeat must never block the crawl itself.
   function emitProgress(task, accountId, stage, fetched, max) {
     try {
-      chrome.runtime.sendMessage({
-        type: 'thg_crawl_progress',
-        crawler_version: CRAWLER_VERSION,
-        task_id: task?.task_id || '',
-        intent: task?.intent || 'facebook_crawl',
-        account_id: accountId || 0,
-        stage,
-        fetched,
-        max,
-        source_url: location.href
-      }).catch(() => { /* background not listening */ });
+      chrome.runtime.sendMessage(
+        buildCrawlProgressMessage(task, accountId, stage, fetched, max, location.href)
+      ).catch(() => { /* background not listening */ });
     } catch { /* runtime gone */ }
   }
 
@@ -720,7 +733,7 @@ var THGContentCrawl = (() => {
     };
   }
 
-  return { crawlVisibleFacebookPosts, directPostBoilerplate, directPostMeaningful, directPostVerdict, directPostGroupRef, selectDirectPostTargetItem };
+  return { crawlVisibleFacebookPosts, buildCrawlProgressMessage, directPostBoilerplate, directPostMeaningful, directPostVerdict, directPostGroupRef, selectDirectPostTargetItem };
 })();
 globalThis.THGContentCrawl = THGContentCrawl;
 // CommonJS export for the node test harness (content/*.test.mjs). No-op in the extension.
