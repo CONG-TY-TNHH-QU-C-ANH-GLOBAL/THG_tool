@@ -1,89 +1,15 @@
 var THGContentCrawl = (() => {
   const CRAWLER_VERSION = 'scroll-target-v3-cursor';
 
-  // Extracts the Facebook-side post id from a permalink. Mirror of the Go
-  // helper ExtractFacebookPostID; the JS side runs first and emits the id so
-  // the server does not need URL fallback parsing. Empty when no canonical
-  // id pattern matches.
-  //
-  // /permalink/ FIRST because that form always carries the URL-resolvable
-  // story_fbid. /posts/ LAST because Facebook sometimes renders the
-  // FB-internal top_level_post_id there which doesn't resolve as a URL
-  // (the "content isn't available" production bug). When both forms exist
-  // on the same article, this ordering picks the working one.
-  function extractPostFBID(url) {
-    if (!url) return '';
-    // Photo viewer URLs (`/photo/?fbid=X` modern, `/photo.php?fbid=X` legacy)
-    // carry the PHOTO's fbid, NOT the parent post's. Matching `?fbid=` on
-    // these URLs poisons lead.post_fbid with a photo id that does not
-    // resolve back to any post — repair pipelines synthesize invalid
-    // canonical permalinks and the server rejects them at comment time.
-    // Skip the `?fbid=` extraction step when the path is photo-shaped.
-    const isPhotoURL = /\/photo(\/|\.|\?|$)/.test(url);
-    let m = url.match(/\/permalink\/(\d+)/);
-    if (m) return m[1];
-    m = url.match(/story_fbid=(\d+)/);
-    if (m) return m[1];
-    // `set=gm.X` — Facebook's group-media link parameter. The `gm.` prefix
-    // marks the value as the PARENT POST fbid attached to a photo viewer
-    // URL. This is how photo-only article anchors still surface a real
-    // post id — without this clause, photo URLs leave post_fbid empty and
-    // the inbound source_url falls back to the group shell.
-    m = url.match(/[?&]set=gm\.(\d+)/);
-    if (m) return m[1];
-    if (!isPhotoURL) {
-      m = url.match(/[?&]fbid=(\d+)/);
-      if (m) return m[1];
-    }
-    m = url.match(/\/posts\/(\d+)/);
-    if (m) return m[1];
-    return '';
-  }
-
-  function extractGroupFBID(url) {
-    if (!url) return '';
-    // Path form `/groups/{id}/...` — canonical when navigation is on a
-    // group surface.
-    let m = url.match(/\/groups\/(\d+)/);
-    if (m) return m[1];
-    // `idorvanity={id}` — Facebook's group id query param on photo viewer
-    // URLs (paired with `set=gm.X` for the post fbid). Lets us reconstruct
-    // the canonical permalink even when the crawler only saw a photo anchor.
-    m = url.match(/[?&]idorvanity=(\d+)/);
-    if (m) return m[1];
-    return '';
-  }
-
-  // Build a canonical post permalink from the IDs we already extracted.
-  // Mirror of the Go side fburl.CanonicalPostPermalink — so a lead whose
-  // anchor was lazy-rendered still gets a real post URL on the dashboard's
-  // "Mở bài viết" button.
-  //
-  // Uses the /permalink/ URL form (NOT /posts/). /permalink/ is Facebook's
-  // canonical group-navigation path and reliably resolves regardless of
-  // which internal id (story_fbid vs top_level_post_id) the caller passed.
-  // The legacy /posts/ form rejects top_level_post_id post-2026 and was
-  // the source of the "content isn't available" production bug.
-  function canonicalPostPermalink(groupFBID, postFBID) {
-    if (!postFBID) return '';
-    if (groupFBID) return `https://www.facebook.com/groups/${groupFBID}/permalink/${postFBID}/`;
-    return `https://www.facebook.com/permalink.php?story_fbid=${postFBID}`;
-  }
-
-  // True when the URL carries an identifier the dashboard can open as a
-  // specific post (not just the group/page feed shell).
-  //
-  // Photo viewer URLs (/photo/?fbid=X, /photo.php?fbid=X) are EXCLUDED
-  // even though they have `?fbid=`. The fbid in those URLs identifies
-  // the photo, not the post; the comment system's identity gates check
-  // article canonical permalink which on a photo viewer page is the
-  // PARENT POST URL (different fbid) → identity_gate failure even if
-  // the URL otherwise looked commentable. Reject upstream instead.
-  function looksLikePostURL(u) {
-    if (!u) return false;
-    if (/\/photo(\/|\.|\?|$)/.test(u)) return false;
-    return /\/posts\/|\/permalink\/|story_fbid=|multi_permalinks=|[?&]fbid=/.test(u);
-  }
+  // Pure post-identity helpers (extractPostFBID / extractGroupFBID /
+  // canonicalPostPermalink / looksLikePostURL / hashKey / stripPostQueryParams)
+  // live in content/facebook/crawl_post_identity.js (THGCrawlIdentity).
+  // Direct-post gate → THGCrawlDirectPost; result shaping → THGCrawlResult;
+  // telemetry → THGCrawlProgress. crawl.js is the DOM bridge/orchestrator.
+  const CP = () => globalThis.THGCrawlProgress;
+  const ID = () => globalThis.THGCrawlIdentity;
+  const DP = () => globalThis.THGCrawlDirectPost;
+  const RES = () => globalThis.THGCrawlResult;
 
   // Multi-pass scan preferring URL forms whose post id is guaranteed to
   // be URL-resolvable. /permalink/ and story_fbid= carry the working
@@ -134,31 +60,10 @@ var THGContentCrawl = (() => {
         const txt = THGContentShared.textOf(a);
         return txt.length > 0 && txt.length < 15 && /\d/.test(txt) && !txt.includes('like') && !txt.includes('comment');
       });
-      if (timeLink) return stripPostQueryParams(THGContentShared.normalizeHref(timeLink.getAttribute('href')));
+      if (timeLink) return ID().stripPostQueryParams(THGContentShared.normalizeHref(timeLink.getAttribute('href')), location.origin);
     }
 
-    return stripPostQueryParams(THGContentShared.normalizeHref(match?.getAttribute('href') || location.href));
-  }
-
-  // Drop comment_id and tracking params from a candidate post URL so the
-  // returned link opens at the top of the post, not on a specific comment.
-  // The path (/permalink/{id}/ or /posts/{id}/) is preserved verbatim.
-  function stripPostQueryParams(raw) {
-    if (!raw) return raw;
-    try {
-      const u = new URL(raw, location.origin);
-      const drop = [];
-      u.searchParams.forEach((_v, k) => {
-        if (k === 'comment_id' || k === 'reply_comment_id' || k === 'notif_id' ||
-            k === 'notif_t' || k === 'ref' || k.indexOf('__') === 0) {
-          drop.push(k);
-        }
-      });
-      drop.forEach(k => u.searchParams.delete(k));
-      return u.toString();
-    } catch (e) {
-      return raw;
-    }
+    return ID().stripPostQueryParams(THGContentShared.normalizeHref(match?.getAttribute('href') || location.href), location.origin);
   }
 
   function authorFromArticle(article) {
@@ -217,11 +122,6 @@ var THGContentCrawl = (() => {
     return got === want || got.startsWith(want + '/');
   }
 
-  // Crawl telemetry/policy helpers (classifiers, payload builder, risk probes)
-  // live in content/facebook/crawl_progress.js (THGCrawlProgress) so this file
-  // stays a thin bridge. crawl.js only wires runtime state + globals into them.
-  const CP = () => globalThis.THGCrawlProgress;
-
   // Best-effort heartbeat to the background page so users on Telegram can
   // follow the crawl in real time. Failures are intentionally swallowed;
   // missing a heartbeat must never block the crawl itself. This bridge supplies
@@ -234,22 +134,11 @@ var THGContentCrawl = (() => {
     } catch { /* runtime gone */ }
   }
 
-  // Stable hash for content+author when Facebook hasn't rendered the permalink
-  // yet. Using location.href as a fallback dedup key (the prior bug) caused
-  // every post on the same group page to share one key, so the loop only ever
-  // captured the first 1-3 unique items. djb2 is fine here: collision-resilient
-  // enough for one crawl session.
-  function hashKey(s) {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-    return h.toString(16);
-  }
-
   function dedupKey(article, expectedUrl, content, author) {
     const url = postPermalink(article);
     const isPagePermalink = !url || url === location.href || url === expectedUrl;
     if (!isPagePermalink) return url;
-    return `c:${hashKey((author?.author_profile_url || '') + '|' + content.slice(0, 240))}`;
+    return `c:${ID().hashKey((author?.author_profile_url || '') + '|' + content.slice(0, 240))}`;
   }
 
   function climbPostContainer(node) {
@@ -380,58 +269,10 @@ var THGContentCrawl = (() => {
   // return a TYPED failure (in crawl_result.error) when the target is not rendered — never a
   // fake analyzable item. The backend directpost.Validate remains the authoritative second line.
 
-  // UI-chrome tokens dropped before measuring "real" post text — mirror of the Go
-  // directpost.MeaningfulText so "Facebook Facebook…" / "Like Comment Share" reduce to nothing.
-  const DP_CHROME_TOKENS = new Set(['facebook', 'like', 'comment', 'comments', 'share', 'shares',
-    'follow', 'following', 'reply', 'replies', 'reactions', 'react']);
-
-  function directPostMeaningful(content) {
-    const out = [];
-    let prev = '';
-    for (const f of String(content || '').split(/\s+/)) {
-      const norm = f.toLowerCase().replace(/^[·.,:;!?()[\]{}"'…]+|[·.,:;!?()[\]{}"'…]+$/g, '');
-      if (!norm || DP_CHROME_TOKENS.has(norm)) continue;
-      if (norm === prev) continue; // collapse the scraped-chrome repetition signature
-      out.push(f);
-      prev = norm;
-    }
-    return out.join(' ');
-  }
-
-  // True when content has < 12 meaningful code points after chrome stripping (boilerplate).
-  function directPostBoilerplate(content) {
-    return Array.from(directPostMeaningful(content).trim()).length < 12;
-  }
-
-  function directPostGroupRef(url) {
-    const m = String(url || '').match(/\/groups\/([^/?#]+)/);
-    return m ? m[1] : '';
-  }
-
-  // directPostVerdict is the PURE per-item gate (mirror of the backend invariants, run here as a
-  // pre-filter so a poisoned candidate never even leaves the browser). match=false means "not the
-  // requested post id" (keep scanning); match=true+ok=false means "the requested post came back
-  // poisoned" with a typed reason; match=true+ok=true means emit it.
-  function directPostVerdict(item, target) {
-    const tPost = String(target?.post_fbid || '').trim();
-    const tGroup = String(target?.group_ref || '').trim();
-    const obsPost = String(item?.post_fbid || '').trim() || extractPostFBID(item?.source_url || '');
-    if (tPost) {
-      if (obsPost !== tPost) return { match: false };
-    } else if (!obsPost) {
-      return { match: false };
-    }
-    if (tGroup) {
-      const ag = directPostGroupRef(item?.author_profile_url || '');
-      if (ag && ag !== tGroup) return { match: true, ok: false, reason: 'direct_post_group_mismatch' };
-      const sg = directPostGroupRef(item?.source_url || '');
-      if (sg && /^\D/.test(sg) && sg !== tGroup) return { match: true, ok: false, reason: 'direct_post_group_mismatch' };
-    }
-    if (directPostBoilerplate(item?.content || '')) {
-      return { match: true, ok: false, reason: 'direct_post_boilerplate_content' };
-    }
-    return { match: true, ok: true };
-  }
+  // The PURE direct-post gate (directPostMeaningful / directPostBoilerplate /
+  // directPostGroupRef / directPostVerdict) lives in
+  // content/facebook/crawl_direct_post.js (THGCrawlDirectPost). The impure scan
+  // below stays here because it walks the DOM via postPermalink/authorFromArticle.
 
   // buildTargetCandidate extracts one article into the item shape (same helpers the broad loop
   // uses), scoped to a single container so foreign-group anchors elsewhere on the page cannot leak.
@@ -440,16 +281,16 @@ var THGContentCrawl = (() => {
     if (content.length < 20) return null;
     const author = authorFromArticle(article);
     const url = postPermalink(article);
-    let postFBID = extractPostFBID(url);
+    let postFBID = ID().extractPostFBID(url);
     if (!postFBID) {
       for (const a of article.querySelectorAll('a[href]')) {
-        const id = extractPostFBID(a.getAttribute('href') || '');
+        const id = ID().extractPostFBID(a.getAttribute('href') || '');
         if (id) { postFBID = id; break; }
       }
     }
     let sourceURL = '';
-    if (url && looksLikePostURL(url) && url !== location.href) sourceURL = url;
-    else if (postFBID) sourceURL = canonicalPostPermalink(groupFBID, postFBID);
+    if (url && ID().looksLikePostURL(url) && url !== location.href) sourceURL = url;
+    else if (postFBID) sourceURL = ID().canonicalPostPermalink(groupFBID, postFBID);
     if (!sourceURL) sourceURL = expectedUrl || location.href;
     return {
       id: `dp:${postFBID || sourceURL}`, source_url: sourceURL,
@@ -466,7 +307,7 @@ var THGContentCrawl = (() => {
     for (const article of articles) {
       const item = buildTargetCandidate(article, expectedUrl, groupFBID);
       if (!item) continue;
-      const v = directPostVerdict(item, target);
+      const v = DP().directPostVerdict(item, target);
       if (!v.match) continue;
       if (v.ok) return { item };
       if (!poison) poison = v.reason;
@@ -474,28 +315,19 @@ var THGContentCrawl = (() => {
     return { reason: poison };
   }
 
+  // directPostResult builds the typed direct-post crawl_result via the shared
+  // THGCrawlResult builder (landed_url + crawler version injected here).
   function directPostResult(task, items, exitReason, error, passes, maxArticles) {
-    const cr = {
-      crawler_version: CRAWLER_VERSION,
-      task_id: task?.task_id || '',
-      intent: task?.intent || 'facebook_crawl',
-      keywords: [],
-      items,
-      exit_reason: exitReason,
-      direct_post: true,
-      scroll_diag: {
-        passes, max_articles_seen: maxArticles, max_scroll_y: 0, max_doc_height: 0,
-        scroll_moved_ever: false, final_scroll_target: '', landed_url: location.href || '',
-      },
-    };
-    if (error) cr.error = error; // a non-empty error drives the backend's typed direct-post failure
-    return { ok: true, crawl_result: cr };
+    return RES().buildDirectPostResult({
+      crawlerVersion: CRAWLER_VERSION, task, items, exitReason, error,
+      passes, maxArticles, landedUrl: location.href || '',
+    });
   }
 
   // crawlDirectPostTarget: bounded, target-only loop. Waits (with small nudges) for the target
   // post container to render, emits ONLY it, and returns a typed failure if it never appears.
   async function crawlDirectPostTarget(task, expectedUrl, accountId, target) {
-    const groupFBID = extractGroupFBID(expectedUrl || location.href);
+    const groupFBID = ID().extractGroupFBID(expectedUrl || location.href);
     const MAX_ATTEMPTS = 12; // ~12s bounded; the target is one post, not a feed
     let maxArticles = 0;
     emitProgress(task, accountId, 'started', 0, 1);
@@ -552,7 +384,7 @@ var THGContentCrawl = (() => {
     // reorders/pins/async-injects too aggressively for timestamp-only logic.
     // See project_scheduled_intelligence.md cursor design mandate.
     const cursorPostID = String(task?.crawl_plan?.cursor_last_post_id || '').trim();
-    const groupFBID = extractGroupFBID(expectedUrl || location.href);
+    const groupFBID = ID().extractGroupFBID(expectedUrl || location.href);
     // Facebook often loads only a few posts per scroll, especially in groups.
     // Give 50+ post crawls enough passes before deciding the feed is exhausted.
     const maxPasses = Math.max(70, Math.min(260, Math.ceil(maxItems * 3)));
@@ -630,10 +462,10 @@ var THGContentCrawl = (() => {
         // Try every anchor in the article for a post id — postPermalink may
         // have fallen back to a timestamp or the page URL, both of which
         // can lack /posts/N. The wider scan catches lazy-rendered anchors.
-        let postFBID = extractPostFBID(url);
+        let postFBID = ID().extractPostFBID(url);
         if (!postFBID) {
           for (const a of article.querySelectorAll('a[href]')) {
-            const id = extractPostFBID(a.getAttribute('href') || '');
+            const id = ID().extractPostFBID(a.getAttribute('href') || '');
             if (id) { postFBID = id; break; }
           }
         }
@@ -652,10 +484,10 @@ var THGContentCrawl = (() => {
         //   3. The crawler's expected URL (the group/page shell) — last resort,
         //      will be rejected by the server-side validator unless rescued.
         let sourceURL = '';
-        if (url && looksLikePostURL(url) && url !== location.href) {
+        if (url && ID().looksLikePostURL(url) && url !== location.href) {
           sourceURL = url;
         } else if (postFBID) {
-          sourceURL = canonicalPostPermalink(groupFBID, postFBID);
+          sourceURL = ID().canonicalPostPermalink(groupFBID, postFBID);
         }
         if (!sourceURL) {
           sourceURL = expectedUrl || location.href;
@@ -742,30 +574,21 @@ var THGContentCrawl = (() => {
     }
     console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems, cursor_reached: cursorReached });
     emitProgress(task, accountId, 'finished', items.length, maxItems, buildLoopDiag(true));
-    return {
-      ok: true,
-      crawl_result: {
-        crawler_version: CRAWLER_VERSION,
-        task_id: task?.task_id || '',
-        intent: task?.intent || 'facebook_crawl',
-        keywords: Array.isArray(task?.keywords) ? task.keywords : [],
-        items,
-        exit_reason: exitReason,
-        cursor_reached: cursorReached,
-        scroll_diag: {
-          passes: passesRun,
-          max_articles_seen: maxArticles,
-          max_scroll_y: maxScrollY,
-          max_doc_height: maxDocHeight,
-          scroll_moved_ever: scrollMovedEver,
-          final_scroll_target: prevScrollTarget,
-          landed_url: location.href || '',
-        }
-      }
-    };
+    return RES().buildBroadCrawlResult({
+      crawlerVersion: CRAWLER_VERSION, task, items, exitReason, cursorReached,
+      scrollDiag: {
+        passes: passesRun,
+        maxArticlesSeen: maxArticles,
+        maxScrollY,
+        maxDocHeight,
+        scrollMovedEver,
+        finalScrollTarget: prevScrollTarget,
+        landedUrl: location.href || '',
+      },
+    });
   }
 
-  return { crawlVisibleFacebookPosts, directPostBoilerplate, directPostMeaningful, directPostVerdict, directPostGroupRef, selectDirectPostTargetItem };
+  return { crawlVisibleFacebookPosts, selectDirectPostTargetItem };
 })();
 globalThis.THGContentCrawl = THGContentCrawl;
 // CommonJS export for the node test harness (content/*.test.mjs). No-op in the extension.
