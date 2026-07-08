@@ -175,12 +175,17 @@ must ship with tests protecting the new reason codes.
 
 ## 7. Validation run (PR-C0)
 
-Audit-only; **zero production diff**. Confirmed baseline green on branch:
+Audit-only: **zero production diff** — no runtime (JS/Go), schema, or wire-contract code
+is changed. This PR touches only two governance-managed files: this doc and its
+`specs/SPEC_REGISTRY.json` entry (registering a spec is part of docs governance, not a
+runtime change). Confirmed green on branch:
 
-- `git status --short` → clean · `git diff --check` → clean
+- `python scripts/check_spec_registry.py` → PASS (53 entries, in sync; this doc registered)
+- `bash scripts/check_docs_governance.sh` → OK
 - `python scripts/check_file_size.py` → PASS (crawl.js unchanged at 727, allowlisted)
+- `git status --short` → clean · `git diff --check` → clean
 - `go build ./internal/jobhandlers/facebook_crawl/... ./internal/runtime/...
-  ./internal/server/agent/crawlingest/... ./internal/session/...` → OK
+  ./internal/server/agent/crawlingest/... ./internal/session/...` → OK (no Go changed)
 
 Sonar / CodeRabbit expectation: **no new code** in this PR beyond this doc → no new
 issues; a docs-only change. The follow-up PR-C1 items carry their own tests + reason
