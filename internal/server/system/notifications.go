@@ -1,6 +1,7 @@
 package system
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -407,6 +408,27 @@ var crawlRiskCodes = map[string]bool{
 	"risk_blocked":         true,
 }
 
+// crawlProgressArgsJSON safely marshals the durable automation-log args for a
+// crawl-progress event via encoding/json (correct escaping for any URL/text).
+// Never fails the caller: a marshal error logs and degrades to "{}".
+func crawlProgressArgsJSON(n CrawlProgressNotice, intent, stage, source string) string {
+	b, err := json.Marshal(struct {
+		TaskID         string `json:"task_id"`
+		Intent         string `json:"intent"`
+		Stage          string `json:"stage"`
+		Fetched        int    `json:"fetched"`
+		Max            int    `json:"max"`
+		SourceURL      string `json:"source_url"`
+		SafeReasonCode string `json:"safe_reason_code"`
+		Phase          string `json:"phase"`
+	}{n.TaskID, intent, stage, n.Fetched, n.Max, source, n.SafeReasonCode, n.Phase})
+	if err != nil {
+		log.Printf("[ConnectorCrawl] marshal progress args: %v", err)
+		return "{}"
+	}
+	return string(b)
+}
+
 // crawlProgressDiagVN renders the compact Vietnamese diagnostic suffix for a
 // heartbeat. Empty for a pre-C1B payload (no phase / reason reported). Pure.
 func crawlProgressDiagVN(n CrawlProgressNotice) string {
@@ -446,8 +468,7 @@ func NotifyCrawlProgress(db *store.Store, notifier func(string), n CrawlProgress
 		notifierPrefix, label, n.TaskID, n.OrgID, n.AccountID, stageLabelVN(stage), progress, sourceVN, diagVN)
 	log.Printf("[ConnectorCrawl] %s", logText)
 	recordAutomationForAccount(db, n.OrgID, n.AccountID, userText, "system_crawl_progress",
-		fmt.Sprintf(`{"task_id":%q,"intent":%q,"stage":%q,"fetched":%d,"max":%d,"source_url":%q,"safe_reason_code":%q,"phase":%q}`,
-			n.TaskID, label, stage, n.Fetched, n.Max, source, n.SafeReasonCode, n.Phase), true)
+		crawlProgressArgsJSON(n, label, stage, source), true)
 	if notifier != nil {
 		notifier(userText)
 	}

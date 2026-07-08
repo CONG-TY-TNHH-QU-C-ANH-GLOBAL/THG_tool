@@ -217,122 +217,19 @@ var THGContentCrawl = (() => {
     return got === want || got.startsWith(want + '/');
   }
 
-  // Coarse activity bucket for each safe reason code — lets the operator glance
-  // "scrolling / stalled / blocked / done" without parsing the finer code.
-  const CRAWL_PHASE_OF = {
-    scrolling: 'scrolling',
-    no_new_posts: 'stalled', duplicate_heavy: 'stalled', scroll_not_moving: 'stalled',
-    login_required: 'blocked', checkpoint_suspected: 'blocked', risk_blocked: 'blocked',
-    wrong_page: 'blocked', completed: 'completed', unknown: 'unknown',
-  };
-
-  // Maps a raw risk signal from the reused classifiers to its stable reason
-  // code. '' when no risk. Kept separate so both the loop's graceful-stop and
-  // the progress classifier share ONE mapping.
-  function crawlRiskToReason(risk) {
-    if (risk === 'login') return 'login_required';
-    if (risk === 'checkpoint') return 'checkpoint_suspected';
-    if (risk === 'rate_limited' || risk === 'blocked') return 'risk_blocked';
-    return '';
-  }
-
-  // Flat reason picker (Sonar-friendly early returns). Risk always wins so a
-  // checkpoint/login/block is never masked by a "scrolling" label.
-  function pickCrawlReasonCode(s) {
-    const risk = crawlRiskToReason(s.risk);
-    if (risk) return risk;
-    if (s.done && s.reachedMax) return 'completed';
-    if (s.scrollCount > 0 && !s.scrollMovedEver) return 'scroll_not_moving';
-    if (s.newCount === 0 && s.duplicateCount >= 3) return 'duplicate_heavy';
-    if (s.newCount === 0 && s.noProgressRounds > 0) return 'no_new_posts';
-    return 'scrolling';
-  }
-
-  // Pure classifier: given the loop's already-computed counters + a risk signal,
-  // name WHAT is happening as a stable {phase, safe_reason_code} (never raw page
-  // text). Observability only — it does NOT decide when the loop stops; the risk
-  // codes are set by detectCrawlRisk/detectCrawlBanner in the loop.
-  // s: { risk, newCount, duplicateCount, scrollCount, noProgressRounds,
-  //      scrollMovedEver, done, reachedMax }
-  function classifyCrawlProgress(s) {
-    const code = pickCrawlReasonCode(s);
-    return { phase: CRAWL_PHASE_OF[code] || 'unknown', safe_reason_code: code };
-  }
-
-  // Zero-counter diagnostics for a stop that happens before any scanning
-  // (entry-time login/checkpoint wall).
-  function zeroCrawlDiag(risk) {
-    const c = classifyCrawlProgress({ risk, newCount: 0, duplicateCount: 0, scrollCount: 0, noProgressRounds: 0, scrollMovedEver: false, done: true, reachedMax: false });
-    return {
-      phase: c.phase, found_count: 0, new_count: 0, duplicate_count: 0,
-      scroll_count: 0, no_progress_rounds: 0, scroll_moved_ever: false,
-      seconds_since_last_new: 0, safe_reason_code: c.safe_reason_code,
-    };
-  }
-
-  // Cheap, per-pass URL risk probe (no DOM scan). Reuses the content-script
-  // classifier THGNavReport.classifyLanding so we DON'T reinvent detection.
-  // Returns '' | 'login' | 'checkpoint'. Defensive: absent classifier → ''.
-  function detectCrawlRisk() {
-    const nav = globalThis.THGNavReport;
-    if (nav && typeof nav.classifyLanding === 'function') {
-      const cls = nav.classifyLanding(location.href);
-      if (cls === 'login' || cls === 'checkpoint') return cls;
-    }
-    return '';
-  }
-
-  // Text-banner risk probe. Reads body text (via the reused proof.js classifier),
-  // so it is ONLY called when a pass yielded zero posts — the checkpoint/block
-  // interstitial signature — keeping the steady state free of extra DOM scans.
-  // Returns '' | 'rate_limited' | 'blocked' | 'checkpoint'.
-  function detectCrawlBanner() {
-    const proof = globalThis.THGContentProof;
-    if (proof && typeof proof.detectPlatformReject === 'function') {
-      return proof.detectPlatformReject() || '';
-    }
-    return '';
-  }
-
-  // Pure builder for the thg_crawl_progress payload. The single seam telemetry
-  // (PR-C1B) and checkpoint phase attach to. All inputs are explicit args so
-  // this stays side-effect free; the impure location.href read lives in
-  // emitProgress. Diagnostics are projected FIELD BY FIELD (whitelist by
-  // construction) so no raw page text / DOM / secret can ever leak into a
-  // heartbeat. Backward-compatible: omit diag → byte-identical to the C1A shape.
-  function buildCrawlProgressMessage(task, accountId, stage, fetched, max, sourceUrl, diag) {
-    const msg = {
-      type: 'thg_crawl_progress',
-      crawler_version: CRAWLER_VERSION,
-      task_id: task?.task_id || '',
-      intent: task?.intent || 'facebook_crawl',
-      account_id: accountId || 0,
-      stage,
-      fetched,
-      max,
-      source_url: sourceUrl
-    };
-    if (diag) {
-      msg.phase = diag.phase;
-      msg.found_count = diag.found_count;
-      msg.new_count = diag.new_count;
-      msg.duplicate_count = diag.duplicate_count;
-      msg.scroll_count = diag.scroll_count;
-      msg.no_progress_rounds = diag.no_progress_rounds;
-      msg.scroll_moved_ever = diag.scroll_moved_ever;
-      msg.seconds_since_last_new = diag.seconds_since_last_new;
-      msg.safe_reason_code = diag.safe_reason_code;
-    }
-    return msg;
-  }
+  // Crawl telemetry/policy helpers (classifiers, payload builder, risk probes)
+  // live in content/facebook/crawl_progress.js (THGCrawlProgress) so this file
+  // stays a thin bridge. crawl.js only wires runtime state + globals into them.
+  const CP = () => globalThis.THGCrawlProgress;
 
   // Best-effort heartbeat to the background page so users on Telegram can
   // follow the crawl in real time. Failures are intentionally swallowed;
-  // missing a heartbeat must never block the crawl itself.
+  // missing a heartbeat must never block the crawl itself. This bridge supplies
+  // the two impure inputs the pure builder needs: CRAWLER_VERSION and location.href.
   function emitProgress(task, accountId, stage, fetched, max, diag) {
     try {
       chrome.runtime.sendMessage(
-        buildCrawlProgressMessage(task, accountId, stage, fetched, max, location.href, diag)
+        CP().buildCrawlProgressMessage(CRAWLER_VERSION, task, accountId, stage, fetched, max, location.href, diag)
       ).catch(() => { /* background not listening */ });
     } catch { /* runtime gone */ }
   }
@@ -627,10 +524,10 @@ var THGContentCrawl = (() => {
     // instead of scraping the verification page or grinding out the full pass
     // budget. Reuses the shared URL classifier — no bypass, no auto-resolve.
     // Runs before the wrong_page guard so a checkpoint reads as checkpoint.
-    const entryRisk = detectCrawlRisk();
+    const entryRisk = CP().detectCrawlRisk(globalThis.THGNavReport, location.href);
     if (entryRisk) {
-      emitProgress(task, accountId, 'finished', 0, 0, zeroCrawlDiag(entryRisk));
-      return { ok: false, error: crawlRiskToReason(entryRisk) };
+      emitProgress(task, accountId, 'finished', 0, 0, CP().zeroCrawlDiag(entryRisk));
+      return { ok: false, error: CP().crawlRiskToReason(entryRisk) };
     }
     // Refuse to scrape if Facebook redirected us off the requested page (e.g.
     // newsfeed). Without this guard the extension silently scraped the wrong
@@ -690,7 +587,7 @@ var THGContentCrawl = (() => {
     // Single place the heartbeat diagnostics are assembled, from the counters
     // above. Field-by-field so nothing but these typed values reaches the wire.
     const buildLoopDiag = (done) => {
-      const c = classifyCrawlProgress({
+      const c = CP().classifyCrawlProgress({
         risk: riskSignal, newCount: items.length, duplicateCount,
         scrollCount: passesRun, noProgressRounds: stagnantPasses,
         scrollMovedEver, done, reachedMax: items.length >= maxItems,
@@ -714,11 +611,11 @@ var THGContentCrawl = (() => {
       // check runs ONLY when a pass yielded zero posts (the checkpoint/block
       // interstitial signature), so the steady state adds no DOM scan. On a
       // detected wall, stop gracefully with a typed reason — never bypass.
-      const urlRisk = detectCrawlRisk();
-      const risk = urlRisk || (articles.length === 0 ? detectCrawlBanner() : '');
+      const urlRisk = CP().detectCrawlRisk(globalThis.THGNavReport, location.href);
+      const risk = urlRisk || (articles.length === 0 ? CP().detectCrawlBanner(globalThis.THGContentProof) : '');
       if (risk) {
         riskSignal = risk;
-        exitReason = crawlRiskToReason(risk);
+        exitReason = CP().crawlRiskToReason(risk);
         break;
       }
       for (const article of articles) {
@@ -794,9 +691,6 @@ var THGContentCrawl = (() => {
         doc_height: docHeight,
         scroll_target: scrollInfo.label
       });
-      // After each scroll pass send a heartbeat. Backend rate-limits these so
-      // even an aggressive cadence here won't spam Telegram.
-      emitProgress(task, accountId, 'scraping', items.length, maxItems, buildLoopDiag(false));
       if (items.length >= maxItems) {
         exitReason = 'maxItems';
         break;
@@ -826,6 +720,12 @@ var THGContentCrawl = (() => {
         exitReason = 'no_new_items_after_scroll';
         break;
       }
+      // One heartbeat per continuing pass, emitted AFTER this pass's diagnostics
+      // (passesRun, scrollMovedEver, stagnantPasses) are refreshed so telemetry
+      // reflects the just-completed pass, not the previous one. Passes that broke
+      // early above are covered by the single 'finished' emit below. Backend
+      // rate-limits these so the cadence won't spam Telegram.
+      emitProgress(task, accountId, 'scraping', items.length, maxItems, buildLoopDiag(false));
       prevHeight = docHeight;
       prevArticles = articlesSeen;
       prevItemsLength = items.length;
@@ -865,7 +765,7 @@ var THGContentCrawl = (() => {
     };
   }
 
-  return { crawlVisibleFacebookPosts, buildCrawlProgressMessage, classifyCrawlProgress, crawlRiskToReason, directPostBoilerplate, directPostMeaningful, directPostVerdict, directPostGroupRef, selectDirectPostTargetItem };
+  return { crawlVisibleFacebookPosts, directPostBoilerplate, directPostMeaningful, directPostVerdict, directPostGroupRef, selectDirectPostTargetItem };
 })();
 globalThis.THGContentCrawl = THGContentCrawl;
 // CommonJS export for the node test harness (content/*.test.mjs). No-op in the extension.

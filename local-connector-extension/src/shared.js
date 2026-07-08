@@ -20,6 +20,7 @@ var THGShared = globalThis.THGShared || (() => {
     'content/shared.js',
     'content/meta.js',
     'content/commands.js',
+    'content/facebook/crawl_progress.js',
     'content/crawl.js',
     'content/proof.js',
     'content/navreport.js',
