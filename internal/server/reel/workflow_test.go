@@ -22,7 +22,7 @@ func postJSON(t *testing.T, app *fiber.App, path, body string) (int, map[string]
 	t.Helper()
 	req := httptest.NewRequest("POST", path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1: disable the default 1s test timeout (real Postgres round-trips)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}

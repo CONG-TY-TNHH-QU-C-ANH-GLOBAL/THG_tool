@@ -3,6 +3,7 @@ package reel
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"strconv"
 	"strings"
 
@@ -17,6 +18,7 @@ const (
 	errInvalidReel = "invalid reel_id"
 	errBadRequest  = "invalid request"
 	errInternal    = "internal error"
+	errNotFound    = "not found"
 )
 
 // orgID returns the authenticated org from context, or 0 if absent.
@@ -31,18 +33,23 @@ func reelIDParam(c *fiber.Ctx) int64 {
 	return id
 }
 
-// mapErr translates a service/store error to a stable HTTP status. Unknown
-// errors return a generic 500 message — internal error strings are never
-// leaked to the client.
+// mapErr translates a service/store error to a stable HTTP status. Only the
+// safe domain-error messages (ErrReelNotFound/ErrNoScript/ErrScriptNotApproved)
+// reach the client; sql.ErrNoRows and any unexpected error return a generic
+// message, never their raw .Error() string (which can leak internal detail).
 func mapErr(c *fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, reelsvc.ErrReelNotFound),
-		errors.Is(err, reelsvc.ErrNoScript),
-		errors.Is(err, sql.ErrNoRows):
+		errors.Is(err, reelsvc.ErrNoScript):
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+	case errors.Is(err, sql.ErrNoRows):
+		// A store not-found that wasn't already translated to a domain error.
+		return c.Status(404).JSON(fiber.Map{"error": errNotFound})
 	case errors.Is(err, reelsvc.ErrScriptNotApproved):
 		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 	default:
+		// Log the real cause server-side; the client only sees a generic 500.
+		log.Printf("[reel] unexpected error: %v", err)
 		return c.Status(500).JSON(fiber.Map{"error": errInternal})
 	}
 }
