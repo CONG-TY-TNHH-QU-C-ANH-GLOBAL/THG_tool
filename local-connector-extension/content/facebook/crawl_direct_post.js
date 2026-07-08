@@ -10,11 +10,18 @@ globalThis.THGCrawlDirectPost = globalThis.THGCrawlDirectPost || (() => {
   const DP_CHROME_TOKENS = new Set(['facebook', 'like', 'comment', 'comments', 'share', 'shares',
     'follow', 'following', 'reply', 'replies', 'reactions', 'react']);
 
+  // Edge-punctuation stripping split into two anchored patterns (leading /
+  // trailing) instead of one alternation of two `+` groups — avoids the
+  // backtracking Sonar flags, same result as the prior `/^…+|…+$/g`.
+  const DP_EDGE_PUNCT_LEAD = /^[·.,:;!?()[\]{}"'…]+/;
+  const DP_EDGE_PUNCT_TRAIL = /[·.,:;!?()[\]{}"'…]+$/;
+  const DP_GROUP_REF_RE = /\/groups\/([^/?#]+)/;
+
   function directPostMeaningful(content) {
     const out = [];
     let prev = '';
     for (const f of String(content || '').split(/\s+/)) {
-      const norm = f.toLowerCase().replace(/^[·.,:;!?()[\]{}"'…]+|[·.,:;!?()[\]{}"'…]+$/g, '');
+      const norm = f.toLowerCase().replace(DP_EDGE_PUNCT_LEAD, '').replace(DP_EDGE_PUNCT_TRAIL, '');
       if (!norm || DP_CHROME_TOKENS.has(norm)) continue;
       if (norm === prev) continue; // collapse the scraped-chrome repetition signature
       out.push(f);
@@ -29,7 +36,7 @@ globalThis.THGCrawlDirectPost = globalThis.THGCrawlDirectPost || (() => {
   }
 
   function directPostGroupRef(url) {
-    const m = String(url || '').match(/\/groups\/([^/?#]+)/);
+    const m = DP_GROUP_REF_RE.exec(String(url || ''));
     return m ? m[1] : '';
   }
 

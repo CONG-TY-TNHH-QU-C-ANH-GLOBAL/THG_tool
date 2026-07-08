@@ -1,24 +1,7 @@
-// THG Facebook crawl — post identity helpers. Pure URL/ID/string functions
-// extracted from content/crawl.js (PR-C1C) so the crawl entrypoint stays a
-// bridge. No DOM / window / location access here: `location.origin` is injected
-// into stripPostQueryParams. Behavior copied verbatim from crawl.js.
+
 globalThis.THGCrawlIdentity = globalThis.THGCrawlIdentity || (() => {
-  // Extracts the Facebook-side post id from a permalink. Mirror of the Go
-  // helper ExtractFacebookPostID. Empty when no canonical id pattern matches.
-  //
-  // /permalink/ FIRST because that form always carries the URL-resolvable
-  // story_fbid. /posts/ LAST because Facebook sometimes renders the
-  // FB-internal top_level_post_id there which doesn't resolve as a URL
-  // (the "content isn't available" production bug). When both forms exist
-  // on the same article, this ordering picks the working one.
   function extractPostFBID(url) {
     if (!url) return '';
-    // Photo viewer URLs (`/photo/?fbid=X` modern, `/photo.php?fbid=X` legacy)
-    // carry the PHOTO's fbid, NOT the parent post's. Matching `?fbid=` on
-    // these URLs poisons lead.post_fbid with a photo id that does not
-    // resolve back to any post — repair pipelines synthesize invalid
-    // canonical permalinks and the server rejects them at comment time.
-    // Skip the `?fbid=` extraction step when the path is photo-shaped.
     const isPhotoURL = /\/photo(\/|\.|\?|$)/.test(url);
     let m = url.match(/\/permalink\/(\d+)/);
     if (m) return m[1];
@@ -80,7 +63,7 @@ globalThis.THGCrawlIdentity = globalThis.THGCrawlIdentity || (() => {
   // yet. djb2 — collision-resilient enough for one crawl session.
   function hashKey(s) {
     let h = 5381;
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + (s.codePointAt(i) || 0)) >>> 0;
     return h.toString(16);
   }
 
@@ -95,13 +78,16 @@ globalThis.THGCrawlIdentity = globalThis.THGCrawlIdentity || (() => {
       const drop = [];
       u.searchParams.forEach((_v, k) => {
         if (k === 'comment_id' || k === 'reply_comment_id' || k === 'notif_id' ||
-            k === 'notif_t' || k === 'ref' || k.indexOf('__') === 0) {
+            k === 'notif_t' || k === 'ref' || k.startsWith('__')) {
           drop.push(k);
         }
       });
       drop.forEach(k => u.searchParams.delete(k));
       return u.toString();
-    } catch (e) {
+    } catch (error) {
+      // new URL() throws TypeError on an unparseable href — that's the expected
+      // fallback (return the raw string). Anything else is unexpected; rethrow.
+      if (!(error instanceof TypeError)) throw error;
       return raw;
     }
   }
