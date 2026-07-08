@@ -11,6 +11,7 @@ import (
 var (
 	ErrReelNotFound      = errors.New("reel: not found")
 	ErrNoScript          = errors.New("reel: no script exists")
+	ErrNoSource          = errors.New("reel: no source video uploaded")
 	ErrScriptNotApproved = errors.New("reel: script must be approved before rendering")
 
 	// ErrRenderBookkeepingFailed marks the specific case where the video
@@ -31,6 +32,11 @@ func notFoundAs(err, domainErr error) error {
 	return err
 }
 
+// isNoRows reports whether err is the store's "no such row" sentinel.
+func isNoRows(err error) bool {
+	return errors.Is(err, sql.ErrNoRows)
+}
+
 // Reel lifecycle states. Matches the comment on reel.Reel.Status
 // (internal/store/reel/models.go): draft|scripting|approved|rendering|
 // done|failed. "rendering" is not used yet — RenderFake is synchronous, so
@@ -39,6 +45,7 @@ const (
 	StatusDraft     = "draft"
 	StatusScripting = "scripting"
 	StatusApproved  = "approved"
+	StatusRendering = "rendering"
 	StatusDone      = "done"
 	StatusFailed    = "failed"
 )

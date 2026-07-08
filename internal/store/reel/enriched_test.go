@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thg/scraper/internal/store/reel"
 	"github.com/thg/scraper/internal/store/reel/reeltest"
 )
 
@@ -139,7 +140,8 @@ func TestReelTranscript_RoundTripAndCrossOrg(t *testing.T) {
 		t.Fatalf("CreateReel(orgA): %v", err)
 	}
 	seg := `[{"text":"xin chao","from_ms":0,"to_ms":800}]`
-	if _, err := s.Reel().CreateTranscript(ctx, orgA, reelA, seg, "vi", "en", "whisper", 0.006); err != nil {
+	in := reel.TranscriptInput{Segments: seg, LangSrc: "vi", LangTgt: "en", Source: "whisper", CostUSD: 0.006}
+	if _, err := s.Reel().CreateTranscript(ctx, orgA, reelA, in); err != nil {
 		t.Fatalf("CreateTranscript(orgA): %v", err)
 	}
 
@@ -152,7 +154,7 @@ func TestReelTranscript_RoundTripAndCrossOrg(t *testing.T) {
 	}
 
 	// orgB cannot attach a transcript to orgA's reel (composite FK).
-	if _, err := s.Reel().CreateTranscript(ctx, orgB, reelA, seg, "vi", "en", "whisper", 0.006); err == nil {
+	if _, err := s.Reel().CreateTranscript(ctx, orgB, reelA, in); err == nil {
 		t.Fatalf("CreateTranscript(orgB, orgA's reel) succeeded, want FK violation")
 	}
 	if _, err := s.Reel().GetLatestTranscript(ctx, orgB, reelA); err != sql.ErrNoRows {

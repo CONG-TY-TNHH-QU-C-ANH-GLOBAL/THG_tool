@@ -71,7 +71,7 @@ func TestReelEnriched_NonPostgresDialect_FailsBeforeQuerying(t *testing.T) {
 	if _, err := s.ClaimRender(ctx, 1, 1, "idem", time.Now()); !errors.Is(err, reel.ErrUnsupportedDialect) {
 		t.Errorf("ClaimRender: err = %v, want ErrUnsupportedDialect", err)
 	}
-	if _, err := s.CreateTranscript(ctx, 1, 1, "[]", "vi", "en", "whisper", 0.01); !errors.Is(err, reel.ErrUnsupportedDialect) {
+	if _, err := s.CreateTranscript(ctx, 1, 1, reel.TranscriptInput{Segments: "[]", LangSrc: "vi", LangTgt: "en", Source: "whisper", CostUSD: 0.01}); !errors.Is(err, reel.ErrUnsupportedDialect) {
 		t.Errorf("CreateTranscript: err = %v, want ErrUnsupportedDialect", err)
 	}
 	if _, err := s.GetLatestTranscript(ctx, 1, 1); !errors.Is(err, reel.ErrUnsupportedDialect) {

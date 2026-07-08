@@ -18,14 +18,14 @@ const (
 // and returns its id. The composite FK (org_id, reel_id) -> reels(org_id,
 // id) rejects a reel_id that does not belong to orgID, so a cross-org write
 // fails at INSERT time rather than by application convention.
-func (s *Store) CreateTranscript(ctx context.Context, orgID, reelID int64, segments, langSrc, langTgt, source string, costUSD float64) (int64, error) {
+func (s *Store) CreateTranscript(ctx context.Context, orgID, reelID int64, in TranscriptInput) (int64, error) {
 	if err := s.requirePostgres(); err != nil {
 		return 0, err
 	}
 	if orgID <= 0 || reelID <= 0 {
 		return 0, fmt.Errorf("reel: org_id and reel_id are required")
 	}
-	return s.insertReturningID(ctx, createTranscriptSQL, orgID, reelID, segments, langSrc, langTgt, source, costUSD)
+	return s.insertReturningID(ctx, createTranscriptSQL, orgID, reelID, in.Segments, in.LangSrc, in.LangTgt, in.Source, in.CostUSD)
 }
 
 // GetLatestTranscript returns the most recent transcript for a reel, or

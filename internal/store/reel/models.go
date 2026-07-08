@@ -42,6 +42,17 @@ type Enriched struct {
 	RenderIdempotencyKey string  `json:"render_idempotency_key"`
 }
 
+// TranscriptInput is the field bundle for CreateTranscript — grouped into a
+// struct (rather than positional args) to keep the call under the max-param
+// limit and make call sites self-documenting.
+type TranscriptInput struct {
+	Segments string
+	LangSrc  string
+	LangTgt  string
+	Source   string
+	CostUSD  float64
+}
+
 // Transcript is the understood content of a reel's source video plus the
 // timing cues that let Remotion sync subtitles to speech. Segments is
 // opaque JSON ([{text, from_ms, to_ms}]); the transcriber adapter owns its
