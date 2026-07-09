@@ -435,6 +435,9 @@ func crawlProgressArgsJSON(n CrawlProgressNotice, intent, stage, source string) 
 
 // crawlProgressDiagVN renders the compact Vietnamese diagnostic suffix for a
 // heartbeat. Empty for a pre-C1B payload (no phase / reason reported). Pure.
+// Wording note: NoProgressRounds counts SCROLL rounds that moved nothing (not
+// "no new posts"), so the label says exactly that — the old "Không có bài mới:
+// 0 vòng" read as a contradiction next to a large duplicate count.
 func crawlProgressDiagVN(n CrawlProgressNotice) string {
 	if crawlRiskCodes[n.SafeReasonCode] {
 		return " Đã tạm dừng: cần kiểm tra đăng nhập/checkpoint. Không tự xử lý checkpoint."
@@ -442,8 +445,12 @@ func crawlProgressDiagVN(n CrawlProgressNotice) string {
 	if n.Phase == "" && n.SafeReasonCode == "" {
 		return ""
 	}
-	return fmt.Sprintf(" Pha: %s. Không có bài mới: %d vòng. Trùng: %d.",
+	diag := fmt.Sprintf(" Pha: %s. Vòng không tăng tiến độ: %d. Bài trùng: %d.",
 		n.Phase, n.NoProgressRounds, n.DuplicateCount)
+	if n.SafeReasonCode == "duplicate_heavy" {
+		diag += " Tín hiệu: nhiều bài trùng, có thể đã hết bài mới."
+	}
+	return diag
 }
 
 func NotifyCrawlProgress(db *store.Store, notifier func(string), n CrawlProgressNotice) {

@@ -43,6 +43,14 @@ globalThis.THGCrawlPacing = globalThis.THGCrawlPacing || (() => {
     //   no-new window. Requires items already in hand (never a zero-yield stop).
     DUP_HEAVY_NO_NEW_STOP: 12,   // < NO_NEW_AFTER_SCROLL_STOP (16)
     DUP_HEAVY_MIN_DUPES: 40,     // strong "we've re-seen this feed" evidence
+    // - VERY heavy duplicate evidence (PR crawl-UX): the feed re-served several
+    //   times more posts than we collected AND nothing new for the full dup-heavy
+    //   window. Exhaustion beyond doubt — waiting for the fraction-based min
+    //   guard (0.7 × max_items passes) only buys minutes of duplicate churn, so
+    //   this branch respects the absolute MIN_STOP_FLOOR instead. Non-risk path
+    //   only; both duplicate gates must hold (absolute AND relative-to-yield).
+    DUP_VERY_HEAVY_MIN_DUPES: 60,
+    DUP_VERY_HEAVY_YIELD_RATIO: 3, // duplicates ≥ 3× collected items
 
     // Pass-budget shape.
     MAX_PASSES_MIN: 70,
@@ -107,6 +115,18 @@ globalThis.THGCrawlPacing = globalThis.THGCrawlPacing || (() => {
     if (s.pass >= s.minPassesBeforeStop && s.itemsLength > 0 &&
         passesSinceNew >= PACING.DUP_HEAVY_NO_NEW_STOP &&
         s.duplicateCount >= PACING.DUP_HEAVY_MIN_DUPES) {
+      return 'duplicate_heavy';
+    }
+    // VERY heavy duplicates (see PACING comment): same no-new window, but the
+    // duplicate evidence is overwhelming (absolute floor AND ≥3× collected), so
+    // only the absolute MIN_STOP_FLOOR applies — not the fraction-based guard
+    // that made a 50-item crawl churn duplicates for extra minutes. Never fires
+    // on zero yield and never touches the risk/checkpoint path (handled above
+    // the pacing layer in crawl.js).
+    if (s.pass >= PACING.MIN_STOP_FLOOR && s.itemsLength > 0 &&
+        passesSinceNew >= PACING.DUP_HEAVY_NO_NEW_STOP &&
+        s.duplicateCount >= PACING.DUP_VERY_HEAVY_MIN_DUPES &&
+        s.duplicateCount >= s.itemsLength * PACING.DUP_VERY_HEAVY_YIELD_RATIO) {
       return 'duplicate_heavy';
     }
     // Generic: scrolled but no new items for the full window (unchanged).

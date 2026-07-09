@@ -87,10 +87,30 @@ test('C2 #2: duplicate-heavy stops earlier than no-new, only on strong evidence'
   assert.strictEqual(P.crawlStopReason({ ...base, lastNewItemPass: 40 - 16, duplicateCount: 0 }), 'no_new_items_after_scroll');
 });
 
-test('C2 #6: min-pass guard respected for duplicate_heavy / no_new (not scroll-stuck)', () => {
+test('C2 #6: fraction min-pass guard respected unless duplicate evidence is VERY heavy', () => {
   const early = { stagnantPasses: 0, pass: 20, minPassesBeforeStop: 35, itemsLength: 5, lastNewItemPass: 0, scrollMovedEver: true, duplicateCount: 100 };
-  // pass 20 < min 35 → neither duplicate_heavy nor no_new fires
-  assert.strictEqual(P.crawlStopReason(early), '');
+  // VERY heavy evidence (100 dupes = 20× the 5 collected, 20 no-new passes, past
+  // the absolute floor of 18) → duplicate_heavy without the fraction-based guard.
+  assert.strictEqual(P.crawlStopReason(early), 'duplicate_heavy');
+  // Below the absolute MIN_STOP_FLOOR nothing fires even with the same evidence.
+  assert.strictEqual(P.crawlStopReason({ ...early, pass: 17 }), '');
+  // Moderate duplicates (< very-heavy floor 60) still wait for the fraction guard.
+  assert.strictEqual(P.crawlStopReason({ ...early, duplicateCount: 59 }), '');
+  // High absolute count but NOT high relative to yield (70 < 3×25) → still waits.
+  assert.strictEqual(P.crawlStopReason({ ...early, itemsLength: 25, duplicateCount: 70 }), '');
+});
+
+// The observed production run this tunes for: 20/50 collected, duplicates 78 and
+// climbing, nothing new for the full dup-heavy window — the old policy waited
+// for pass 35 (0.7 × 50) and churned duplicates for ~6 more minutes.
+test('UX: very-heavy duplicates stop at the absolute floor, not the 0.7×max guard', () => {
+  const observed = { stagnantPasses: 0, pass: 30, minPassesBeforeStop: 35, itemsLength: 20, lastNewItemPass: 30 - 12, scrollMovedEver: true, duplicateCount: 78 };
+  assert.strictEqual(P.crawlStopReason(observed), 'duplicate_heavy');
+  // Same evidence but the no-new window not yet met → keep crawling (a feed that
+  // is still producing occasionally is never cut by the very-heavy branch).
+  assert.strictEqual(P.crawlStopReason({ ...observed, lastNewItemPass: 30 - 11 }), '');
+  // Zero yield is never a duplicate_heavy stop (belongs to scroll/no-progress paths).
+  assert.strictEqual(P.crawlStopReason({ ...observed, itemsLength: 0, duplicateCount: 100, lastNewItemPass: 0 }), '');
 });
 
 test('C2 #7: every returned exit reason is in the safe, stable set', () => {

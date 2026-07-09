@@ -45,12 +45,22 @@ func TestCrawlProgressDiagVN(t *testing.T) {
 		}
 	}
 
-	// Normal progress diagnostics → compact phase/no-progress/duplicate suffix.
+	// Normal progress diagnostics → compact phase/stagnant-round/duplicate suffix.
+	// "Vòng không tăng tiến độ" (scroll rounds that moved nothing) replaces the
+	// old "Không có bài mới: 0 vòng", which contradicted a high duplicate count.
 	got := crawlProgressDiagVN(CrawlProgressNotice{Phase: "stalled", NoProgressRounds: 6, DuplicateCount: 12, SafeReasonCode: "no_new_posts"})
-	for _, want := range []string{"Pha: stalled", "6 vòng", "Trùng: 12"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("diag suffix missing %q, got %q", want, got)
-		}
+	want := " Pha: stalled. Vòng không tăng tiến độ: 6. Bài trùng: 12."
+	if got != want {
+		t.Errorf("diag suffix = %q, want %q", got, want)
+	}
+
+	// duplicate_heavy adds the explicit signal sentence so the operator reads
+	// "likely out of new posts" instead of guessing from raw counters.
+	got = crawlProgressDiagVN(CrawlProgressNotice{Phase: "stalled", NoProgressRounds: 0, DuplicateCount: 78, SafeReasonCode: "duplicate_heavy"})
+	want = " Pha: stalled. Vòng không tăng tiến độ: 0. Bài trùng: 78." +
+		" Tín hiệu: nhiều bài trùng, có thể đã hết bài mới."
+	if got != want {
+		t.Errorf("duplicate_heavy diag suffix = %q, want %q", got, want)
 	}
 }
 

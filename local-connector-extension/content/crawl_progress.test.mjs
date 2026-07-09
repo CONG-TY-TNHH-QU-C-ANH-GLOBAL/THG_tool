@@ -150,6 +150,59 @@ test('classifyCrawlProgress: collecting posts is never mislabelled scroll_not_mo
   assert.deepStrictEqual(got, { phase: 'scrolling', safe_reason_code: 'scrolling' });
 });
 
+// UX fix: newCount is CUMULATIVE, so the old `newCount === 0` gate could never
+// label duplicate_heavy after the first post was collected — the phase said
+// "scrolling" right up to a duplicate_heavy exit. Recent-progress evidence
+// (passesSinceNew) now drives the mid-crawl duplicate-heavy signal.
+test('classifyCrawlProgress: mid-crawl duplicate-heavy shows once recent progress dies', () => {
+  // Observed run shape: 20 collected, 78 duplicates, nothing new for 8 passes.
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ newCount: 20, duplicateCount: 78, passesSinceNew: 8, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'stalled', safe_reason_code: 'duplicate_heavy' },
+  );
+  // Exactly at the signal thresholds (6 passes since new, 20 duplicates).
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({
+      newCount: 20, duplicateCount: C.DUP_SIGNAL_MIN_DUPES,
+      passesSinceNew: C.DUP_SIGNAL_PASSES_SINCE_NEW, scrollCount: 40, scrollMovedEver: true,
+    }),
+    { phase: 'stalled', safe_reason_code: 'duplicate_heavy' },
+  );
+});
+
+test('classifyCrawlProgress: productive passes still report scrolling despite duplicates', () => {
+  // New posts arrived this pass (passesSinceNew 0) → scrolling, however many dupes.
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ newCount: 20, duplicateCount: 78, passesSinceNew: 0, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'scrolling', safe_reason_code: 'scrolling' },
+  );
+  // One short of either signal threshold → still scrolling (signal needs BOTH).
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ newCount: 20, duplicateCount: 78, passesSinceNew: C.DUP_SIGNAL_PASSES_SINCE_NEW - 1, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'scrolling', safe_reason_code: 'scrolling' },
+  );
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ newCount: 20, duplicateCount: C.DUP_SIGNAL_MIN_DUPES - 1, passesSinceNew: 9, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'scrolling', safe_reason_code: 'scrolling' },
+  );
+  // Old callers without passesSinceNew keep the pre-fix behavior exactly.
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ newCount: 20, duplicateCount: 96, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'scrolling', safe_reason_code: 'scrolling' },
+  );
+});
+
+test('classifyCrawlProgress: risk always beats the duplicate-heavy signal', () => {
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ risk: 'checkpoint', newCount: 20, duplicateCount: 96, passesSinceNew: 10, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'blocked', safe_reason_code: 'checkpoint_suspected' },
+  );
+  assert.deepStrictEqual(
+    C.classifyCrawlProgress({ risk: 'login', newCount: 20, duplicateCount: 96, passesSinceNew: 10, scrollCount: 40, scrollMovedEver: true }),
+    { phase: 'blocked', safe_reason_code: 'login_required' },
+  );
+});
+
 test('crawlRiskToReason maps raw classifier signals to stable codes', () => {
   assert.strictEqual(C.crawlRiskToReason('login'), 'login_required');
   assert.strictEqual(C.crawlRiskToReason('checkpoint'), 'checkpoint_suspected');
