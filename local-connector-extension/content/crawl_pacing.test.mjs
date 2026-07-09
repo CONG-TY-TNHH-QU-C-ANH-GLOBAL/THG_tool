@@ -1,4 +1,4 @@
-// PR-C2 crawl pacing policy tests. THGCrawlPacing (content/facebook/crawl_pacing.js)
+// PR-C2 crawl pacing policy tests. THGCrawlPacing (platforms/facebook/crawl_pacing.js)
 // owns waits / scroll step / stop decisions as pure functions.
 //   Run: node --test content/crawl_pacing.test.mjs
 import { test } from 'node:test';
@@ -6,7 +6,7 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const P = require('./facebook/crawl_pacing.js');
+const P = require('../platforms/facebook/crawl_pacing.js');
 
 // ── commit 1: behavior-IDENTICAL extraction (pins the pre-PR-C2 constants) ──
 test('crawlPacingBounds matches the original clamp math', () => {

@@ -9,8 +9,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 // crawl_post_identity sets globalThis.THGCrawlIdentity, which directPostVerdict
 // uses (extractPostFBID) — load it before the direct-post gate module.
-require('./facebook/crawl_post_identity.js');
-const C = require('./facebook/crawl_direct_post.js');
+require('../platforms/facebook/crawl_post_identity.js');
+const C = require('../platforms/facebook/crawl_direct_post.js');
 
 const TARGET = { post_fbid: '2047168032857197', group_ref: '1312868109620530' };
 

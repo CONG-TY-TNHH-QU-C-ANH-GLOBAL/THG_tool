@@ -3,7 +3,7 @@ var THGContentCrawl = (() => {
 
   // Pure post-identity helpers (extractPostFBID / extractGroupFBID /
   // canonicalPostPermalink / looksLikePostURL / hashKey / stripPostQueryParams)
-  // live in content/facebook/crawl_post_identity.js (THGCrawlIdentity).
+  // live in platforms/facebook/crawl_post_identity.js (THGCrawlIdentity).
   // Direct-post gate → THGCrawlDirectPost; result shaping → THGCrawlResult;
   // telemetry → THGCrawlProgress. crawl.js is the DOM bridge/orchestrator.
   const CP = () => globalThis.THGCrawlProgress;
@@ -272,7 +272,7 @@ var THGContentCrawl = (() => {
 
   // The PURE direct-post gate (directPostMeaningful / directPostBoilerplate /
   // directPostGroupRef / directPostVerdict) lives in
-  // content/facebook/crawl_direct_post.js (THGCrawlDirectPost). The impure scan
+  // platforms/facebook/crawl_direct_post.js (THGCrawlDirectPost). The impure scan
   // below stays here because it walks the DOM via postPermalink/authorFromArticle.
 
   // buildTargetCandidate extracts one article into the item shape (same helpers the broad loop
