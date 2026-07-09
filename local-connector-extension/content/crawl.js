@@ -10,6 +10,7 @@ var THGContentCrawl = (() => {
   const ID = () => globalThis.THGCrawlIdentity;
   const DP = () => globalThis.THGCrawlDirectPost;
   const RES = () => globalThis.THGCrawlResult;
+  const PACE = () => globalThis.THGCrawlPacing;
 
   // Multi-pass scan preferring URL forms whose post id is guaranteed to
   // be URL-resolvable. /permalink/ and story_fbid= carry the working
@@ -387,8 +388,7 @@ var THGContentCrawl = (() => {
     const groupFBID = ID().extractGroupFBID(expectedUrl || location.href);
     // Facebook often loads only a few posts per scroll, especially in groups.
     // Give 50+ post crawls enough passes before deciding the feed is exhausted.
-    const maxPasses = Math.max(70, Math.min(260, Math.ceil(maxItems * 3)));
-    const minPassesBeforeStop = Math.min(maxPasses - 1, Math.max(18, Math.ceil(maxItems * 0.7)));
+    const { maxPasses, minPassesBeforeStop } = PACE().crawlPacingBounds(maxItems);
     const seen = new Set();
     const items = [];
     let stagnantPasses = 0;
@@ -435,7 +435,7 @@ var THGContentCrawl = (() => {
     emitProgress(task, accountId, 'started', 0, maxItems);
     for (let pass = 0; pass < maxPasses && items.length < maxItems; pass++) {
       // Small pause before grabbing elements, giving UI a moment to react to the previous scroll
-      if (pass > 0) await new Promise(r => setTimeout(r, 300));
+      if (pass > 0) await new Promise(r => setTimeout(r, PACE().PACING.PRE_GRAB_PAUSE_MS));
       const itemsBeforePass = items.length;
       
       const articles = collectPostCandidates();
@@ -539,19 +539,14 @@ var THGContentCrawl = (() => {
       if (docHeight > maxDocHeight) maxDocHeight = docHeight;
       const targetChanged = prevScrollTarget && prevScrollTarget !== scrollInfo.label;
       const pageMoved = docHeight !== prevHeight || articlesSeen !== prevArticles || items.length !== prevItemsLength || scrollMoved || targetChanged;
-      if (pass > 0 && !pageMoved) {
-        stagnantPasses++;
-        if (stagnantPasses >= 10 && pass >= minPassesBeforeStop) {
-          exitReason = 'no_progress';
-          break;
-        }
-      } else {
-        stagnantPasses = 0;
-      }
-      if (pass >= minPassesBeforeStop && items.length > 0 && pass - lastNewItemPass >= 16) {
-        exitReason = 'no_new_items_after_scroll';
-        break;
-      }
+      if (pass > 0 && !pageMoved) stagnantPasses++;
+      else stagnantPasses = 0;
+      const stopReason = PACE().crawlStopReason({
+        stagnantPasses, pass, minPassesBeforeStop,
+        itemsLength: items.length, lastNewItemPass,
+        scrollMovedEver, duplicateCount,
+      });
+      if (stopReason) { exitReason = stopReason; break; }
       // One heartbeat per continuing pass, emitted AFTER this pass's diagnostics
       // (passesRun, scrollMovedEver, stagnantPasses) are refreshed so telemetry
       // reflects the just-completed pass, not the previous one. Passes that broke
@@ -566,10 +561,11 @@ var THGContentCrawl = (() => {
       
       // Facebook's infinite scroll is more reliable with steady viewport-sized
       // movement and an occasional larger push to wake lazy loading.
-      const viewportStep = Math.max(Math.floor(window.innerHeight * 0.95), 700);
-      scrollByTarget(scrollTarget, pass % 6 === 5 ? viewportStep * 2 : viewportStep, articles, pass);
-      // Lazy-load gets slower deeper into a feed
-      const waitMs = pass < 8 ? 2200 : 3600;
+      scrollByTarget(scrollTarget, PACE().crawlScrollDeltaY({ pass, innerHeight: window.innerHeight }), articles, pass);
+      // Wait for FB lazy-load. Productive safe passes wait less (PR-C2 commit 2);
+      // barren/uncertain passes keep the cautious tiered wait. riskSignal is ''
+      // here (a risk break happens earlier in the pass, before pacing).
+      const waitMs = PACE().nextCrawlWaitMs({ pass, producedNewItems: newItemsThisPass, risk: riskSignal });
       await new Promise(resolve => setTimeout(resolve, waitMs));
     }
     console.log('[THG crawl] exit', { reason: exitReason, items: items.length, max: maxItems, cursor_reached: cursorReached });

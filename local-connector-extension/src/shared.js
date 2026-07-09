@@ -24,6 +24,7 @@ var THGShared = globalThis.THGShared || (() => {
     'content/facebook/crawl_post_identity.js',
     'content/facebook/crawl_direct_post.js',
     'content/facebook/crawl_result.js',
+    'content/facebook/crawl_pacing.js',
     'content/crawl.js',
     'content/proof.js',
     'content/navreport.js',
