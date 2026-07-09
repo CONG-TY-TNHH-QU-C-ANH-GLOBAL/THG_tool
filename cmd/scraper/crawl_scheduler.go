@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/jobs"
 	"github.com/thg/scraper/internal/session/accountsafety"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/store/crawl"
 	"github.com/thg/scraper/internal/textutil"
 )
 
@@ -53,72 +54,86 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 	if err != nil {
 		return err
 	}
+	d := crawlIntentDispatcher{db: db, jobStore: jobStore, coord: coord}
 	for _, intent := range intents {
-		taskID := recurringCrawlTaskID(intent.ID, now, intent.IntervalMinutes)
-		// Reliability Track invariant: NEVER silently fall back to a "first ready"
-		// account. A mission without an explicit account_id is a misconfiguration
-		// (e.g. legacy intents 7/9 created before PR-A required account selection)
-		// — skip it with a typed reason so the operator fixes the mission, instead
-		// of piling every account-less mission onto one connector.
-		accountID := intent.AccountID
-		if accountID <= 0 {
-			// account_not_selected is a PERMANENT misconfiguration (not a
-			// transient run failure) — stop the intent IMMEDIATELY rather than
-			// re-firing every interval. Record the reason, then fail the intent
-			// so ClaimDueIntents (WHERE status='active') never picks it again.
-			// The user fixes it by deleting + recreating with an account (PR-A
-			// makes the form require one).
-			errMsg := "account_not_selected: mission has no account_id — delete and recreate the mission, choosing the account that should run it"
-			_ = db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg)
-			_ = db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, "failed")
-			log.Printf("[CrawlIntent] failed intent=%d org=%d: account_not_selected (stopped)", intent.ID, intent.OrgID)
-			continue
-		}
-		// Account Safety eligibility gate (PR-C4): a parked account
-		// (checkpoint/login/risk — human-required, operator resolution only) or one
-		// still cooling down must not be dispatched. Skip WITHOUT MarkIntentRunResult:
-		// its 2-strike failure semantics would permanently stop a resolvable mission.
-		// The claim already advanced next_run_at, so the intent re-fires next interval.
-		if !coord.IsAccountEligible(accountID, now) {
-			log.Printf("[CrawlIntent] skipped intent=%d account=%d: account_safety status=%s — not eligible until resolved/cooled",
-				intent.ID, accountID, coord.Snapshot(now).Accounts[accountID])
-			continue
-		}
-		args := map[string]any{
-			"org_id":         intent.OrgID,
-			"account_id":     accountID,
-			"keywords":       strings.Join(intent.Keywords, ", "),
-			"max_items":      intent.MaxItems,
-			"user_prompt":    intent.Prompt,
-			"_recurring_run": true,
-			"_task_id":       taskID,
-			// Soft cursor: crawler may skip content older than the previous
-			// run / the explicit cursor when honoring this. See
-			// project_scheduled_intelligence.md gap #2.
-			"_intent_id":           intent.ID,
-			"_since_run_at":        formatRFC3339OrEmpty(intent.LastRunAt),
-			"_cursor_last_post_id": intent.CursorLastPostID,
-			"_cursor_last_post_at": formatRFC3339OrEmpty(intent.CursorLastPostAt),
-		}
-		source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: textutil.FirstNonEmpty(intent.SourceLabel, "recurring_intent")}
-		result, submitErr := submitOpenCrawl(ctx, db, jobStore, intent.Intent, []jobs.Source{source}, args)
-		errMsg := ""
-		if submitErr != nil {
-			errMsg = submitErr.Error()
-		}
-		if err := db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg); err != nil {
-			log.Printf("[CrawlIntent] mark result failed intent=%d: %v", intent.ID, err)
-		}
-		if submitErr != nil {
-			log.Printf("[CrawlIntent] run failed intent=%d task=%s: %v", intent.ID, taskID, submitErr)
-			continue
-		}
-		// Consume a machine slot until the crawl result frees it (PR-C4B
-		// result-feedback) or the coordinator's stale-running fallback does.
-		coord.MarkRunning(accountID, now)
-		log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s (safety: active=%d)", intent.ID, taskID, result, coord.Snapshot(now).Active)
+		d.dispatch(ctx, intent, now)
 	}
 	return nil
+}
+
+// crawlIntentDispatcher owns the per-intent dispatch flow of one scheduler tick:
+// account misconfiguration, the account-safety eligibility gate, the submit, its
+// DB bookkeeping, and the running mark. The tick loop above stays budget-only.
+type crawlIntentDispatcher struct {
+	db       *store.Store
+	jobStore *jobs.Store
+	coord    *accountsafety.Coordinator
+}
+
+func (d crawlIntentDispatcher) dispatch(ctx context.Context, intent crawl.Intent, now time.Time) {
+	taskID := recurringCrawlTaskID(intent.ID, now, intent.IntervalMinutes)
+	// Reliability Track invariant: NEVER silently fall back to a "first ready"
+	// account. A mission without an explicit account_id is a misconfiguration
+	// (e.g. legacy intents 7/9 created before PR-A required account selection)
+	// — skip it with a typed reason so the operator fixes the mission, instead
+	// of piling every account-less mission onto one connector.
+	accountID := intent.AccountID
+	if accountID <= 0 {
+		// account_not_selected is a PERMANENT misconfiguration (not a
+		// transient run failure) — stop the intent IMMEDIATELY rather than
+		// re-firing every interval. Record the reason, then fail the intent
+		// so ClaimDueIntents (WHERE status='active') never picks it again.
+		// The user fixes it by deleting + recreating with an account (PR-A
+		// makes the form require one).
+		errMsg := "account_not_selected: mission has no account_id — delete and recreate the mission, choosing the account that should run it"
+		_ = d.db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg)
+		_ = d.db.Crawl().SetIntentStatus(ctx, intent.OrgID, intent.ID, "failed")
+		log.Printf("[CrawlIntent] failed intent=%d org=%d: account_not_selected (stopped)", intent.ID, intent.OrgID)
+		return
+	}
+	// Account Safety eligibility gate (PR-C4): a parked account
+	// (checkpoint/login/risk — human-required, operator resolution only) or one
+	// still cooling down must not be dispatched. Skip WITHOUT MarkIntentRunResult:
+	// its 2-strike failure semantics would permanently stop a resolvable mission.
+	// The claim already advanced next_run_at, so the intent re-fires next interval.
+	if !d.coord.IsAccountEligible(accountID, now) {
+		log.Printf("[CrawlIntent] skipped intent=%d account=%d: account_safety status=%s — not eligible until resolved/cooled",
+			intent.ID, accountID, d.coord.Snapshot(now).Accounts[accountID])
+		return
+	}
+	args := map[string]any{
+		"org_id":         intent.OrgID,
+		"account_id":     accountID,
+		"keywords":       strings.Join(intent.Keywords, ", "),
+		"max_items":      intent.MaxItems,
+		"user_prompt":    intent.Prompt,
+		"_recurring_run": true,
+		"_task_id":       taskID,
+		// Soft cursor: crawler may skip content older than the previous
+		// run / the explicit cursor when honoring this. See
+		// project_scheduled_intelligence.md gap #2.
+		"_intent_id":           intent.ID,
+		"_since_run_at":        formatRFC3339OrEmpty(intent.LastRunAt),
+		"_cursor_last_post_id": intent.CursorLastPostID,
+		"_cursor_last_post_at": formatRFC3339OrEmpty(intent.CursorLastPostAt),
+	}
+	source := jobs.Source{Type: intent.SourceType, URL: intent.SourceURL, Label: textutil.FirstNonEmpty(intent.SourceLabel, "recurring_intent")}
+	result, submitErr := submitOpenCrawl(ctx, d.db, d.jobStore, intent.Intent, []jobs.Source{source}, args)
+	errMsg := ""
+	if submitErr != nil {
+		errMsg = submitErr.Error()
+	}
+	if err := d.db.Crawl().MarkIntentRunResult(ctx, intent.ID, taskID, errMsg); err != nil {
+		log.Printf("[CrawlIntent] mark result failed intent=%d: %v", intent.ID, err)
+	}
+	if submitErr != nil {
+		log.Printf("[CrawlIntent] run failed intent=%d task=%s: %v", intent.ID, taskID, submitErr)
+		return
+	}
+	// Consume a machine slot until the crawl result frees it (PR-C4B
+	// result-feedback) or the coordinator's stale-running fallback does.
+	d.coord.MarkRunning(accountID, now)
+	log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s (safety: active=%d)", intent.ID, taskID, result, d.coord.Snapshot(now).Active)
 }
 
 func formatRFC3339OrEmpty(t time.Time) string {

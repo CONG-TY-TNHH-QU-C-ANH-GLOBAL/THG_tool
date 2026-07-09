@@ -85,23 +85,6 @@ func (c *Coordinator) MarkRunning(accountID int64, now time.Time) {
 	c.runningSince[accountID] = now
 }
 
-// CanStart reports whether accountID may start now: budget free AND eligible AND
-// not parked in a human-required state.
-func (c *Coordinator) CanStart(accountID int64, now time.Time) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.releaseStale(now)
-	return CanStartAccount(accountID, c.machineLocked(), now)
-}
-
-// NextToRun returns the FIFO-earliest eligible account, honoring the budget.
-func (c *Coordinator) NextToRun(now time.Time) (int64, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.releaseStale(now)
-	return NextAccountToRun(c.machineLocked(), now)
-}
-
 // Finish applies a crawl result to accountID (PR-C4B result-feedback): risk exits
 // park the account (human-required, no auto-clear); stalled → stalled_no_progress;
 // clean → ready. Always clears the running timer, freeing the machine slot
