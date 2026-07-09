@@ -176,6 +176,9 @@ func main() {
 		TelegramWebhookSecret:       cfg.TelegramWebhookSecret,
 		TelegramAllowGlobalFallback: cfg.TelegramAllowGlobalFallback,
 		ReelStudioEnabled:           cfg.ReelStudioEnabled,
+		// SAME coordinator instance as the crawl scheduler above: the crawl-result
+		// ingest frees the slot the scheduler consumed (PR-C4 result feedback).
+		AccountSafety: accountSafety,
 		Mailer: mailer.Config{
 			Host:               cfg.SMTPHost,
 			Port:               cfg.SMTPPort,

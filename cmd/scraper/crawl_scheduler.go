@@ -74,6 +74,16 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 			log.Printf("[CrawlIntent] failed intent=%d org=%d: account_not_selected (stopped)", intent.ID, intent.OrgID)
 			continue
 		}
+		// Account Safety eligibility gate (PR-C4): a parked account
+		// (checkpoint/login/risk — human-required, operator resolution only) or one
+		// still cooling down must not be dispatched. Skip WITHOUT MarkIntentRunResult:
+		// its 2-strike failure semantics would permanently stop a resolvable mission.
+		// The claim already advanced next_run_at, so the intent re-fires next interval.
+		if !coord.IsAccountEligible(accountID, now) {
+			log.Printf("[CrawlIntent] skipped intent=%d account=%d: account_safety status=%s — not eligible until resolved/cooled",
+				intent.ID, accountID, coord.Snapshot(now).Accounts[accountID])
+			continue
+		}
 		args := map[string]any{
 			"org_id":         intent.OrgID,
 			"account_id":     accountID,

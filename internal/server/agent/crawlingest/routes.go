@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/thg/scraper/internal/ai"
+	"github.com/thg/scraper/internal/session/accountsafety"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
 )
@@ -28,26 +29,33 @@ type Deps struct {
 	Notifier func(string)
 	TgEvents *control.Service
 	BaseURL  string
+	// AccountSafety is the process-local coordinator shared with the crawl
+	// scheduler (PR-C4): every terminal crawl result reports its exit_reason so
+	// the machine slot frees immediately and risk exits park the account.
+	// Optional; nil = no result feedback.
+	AccountSafety *accountsafety.Coordinator
 }
 
 // Handler hosts the crawl-result ingestion endpoints. Field names/types match
 // the former agent.Handler fields so the relocated methods compile unchanged.
 type Handler struct {
-	db       *store.Store
-	aiClass  func() *ai.MessageGenerator
-	notifier func(string)
-	tgEvents *control.Service
-	baseURL  string
+	db            *store.Store
+	aiClass       func() *ai.MessageGenerator
+	notifier      func(string)
+	tgEvents      *control.Service
+	baseURL       string
+	accountSafety *accountsafety.Coordinator
 }
 
 // NewHandler builds a crawl-ingest Handler from Deps.
 func NewHandler(deps Deps) *Handler {
 	return &Handler{
-		db:       deps.DB,
-		aiClass:  deps.AIClass,
-		notifier: deps.Notifier,
-		tgEvents: deps.TgEvents,
-		baseURL:  deps.BaseURL,
+		db:            deps.DB,
+		aiClass:       deps.AIClass,
+		notifier:      deps.Notifier,
+		tgEvents:      deps.TgEvents,
+		baseURL:       deps.BaseURL,
+		accountSafety: deps.AccountSafety,
 	}
 }
 

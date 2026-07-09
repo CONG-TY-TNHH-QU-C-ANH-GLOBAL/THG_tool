@@ -104,14 +104,33 @@ func (c *Coordinator) NextToRun(now time.Time) (int64, bool) {
 
 // Finish applies a crawl result to accountID (PR-C4B result-feedback): risk exits
 // park the account (human-required, no auto-clear); stalled → stalled_no_progress;
-// clean → ready. Always clears the running timer.
-func (c *Coordinator) Finish(accountID int64, exitReason string, now time.Time) {
+// clean → ready. Always clears the running timer, freeing the machine slot
+// immediately — the stale timeout is never needed for a reported result. Returns
+// the resulting status for the caller's log line.
+func (c *Coordinator) Finish(accountID int64, exitReason string, now time.Time) Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.runningSince, accountID)
 	prev := c.states[accountID]
 	prev.AccountID = accountID
-	c.states[accountID] = ApplyStop(prev, exitReason, now, c.cfg)
+	next := ApplyStop(prev, exitReason, now, c.cfg)
+	c.states[accountID] = next
+	return next.Status
+}
+
+// IsAccountEligible reports whether accountID may be dispatched now, ignoring the
+// machine budget (the scheduler checks FreeSlots separately). Accounts the
+// coordinator has never seen are eligible — a fresh process defaults to ready;
+// only a recorded parked/cooling state blocks dispatch.
+func (c *Coordinator) IsAccountEligible(accountID int64, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.releaseStale(now)
+	st, ok := c.states[accountID]
+	if !ok {
+		return true
+	}
+	return IsEligible(st, now)
 }
 
 // Resolve is the operator/verifier path out of a human-required-class state

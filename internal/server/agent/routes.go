@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/server/agent/outbox"
 	"github.com/thg/scraper/internal/server/agent/presence"
 	"github.com/thg/scraper/internal/server/agent/stream"
+	"github.com/thg/scraper/internal/session/accountsafety"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/telegram/control"
 )
@@ -25,6 +26,9 @@ type Deps struct {
 	TgEvents *control.Service
 	// BaseURL is the public app URL used to build dashboard/post links in notifications.
 	BaseURL string
+	// AccountSafety receives terminal crawl results so machine crawl slots free
+	// immediately (PR-C4). Optional; nil = no result feedback.
+	AccountSafety *accountsafety.Coordinator
 }
 
 type Handler struct {
@@ -64,7 +68,7 @@ func ConnectorRoutes(group fiber.Router, deps Deps) {
 	// Connector crawl-result ingestion lives in the crawlingest subpackage.
 	crawlingest.RegisterRoutes(group, agentGrp, crawlingest.Deps{
 		DB: deps.DB, AIClass: deps.AIClass, Notifier: deps.Notifier,
-		TgEvents: deps.TgEvents, BaseURL: deps.BaseURL,
+		TgEvents: deps.TgEvents, BaseURL: deps.BaseURL, AccountSafety: deps.AccountSafety,
 	}, h.agentAuth)
 	// Outbound execution (outbox claim/sent/failed/pre-submit + comment reverify)
 	// lives in the outbox subpackage — same effective paths + token auth; it owns
