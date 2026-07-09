@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+// PR-C2 added two safe exit reasons (scroll_not_moving, duplicate_heavy). They
+// must render as operator-friendly Vietnamese, existing labels must be unchanged,
+// and an unknown code must still fall back to the raw string (no leak/crash).
+func TestCrawlExitReasonLabel(t *testing.T) {
+	cases := map[string]string{
+		"scroll_not_moving":         "không cuộn thêm được bài mới",
+		"duplicate_heavy":           "gặp nhiều bài trùng, không thấy bài mới",
+		"no_new_items_after_scroll": "đã cuộn tiếp nhưng không thấy bài mới", // unchanged
+		"no_progress":               "Facebook không tải thêm bài sau nhiều lần cuộn", // unchanged
+		"MaxItems":                  "đã đạt số bài yêu cầu",                          // exercises case-insensitive matching
+		"something_unknown":         "something_unknown",                               // default → raw code
+	}
+	for reason, want := range cases {
+		if got := crawlExitReasonLabel(reason); got != want {
+			t.Errorf("crawlExitReasonLabel(%q) = %q, want %q", reason, got, want)
+		}
+	}
+}
+
 // PR-C1B: the compact diagnostic suffix must (1) stay empty for a pre-C1B
 // payload so old extensions read exactly as before, (2) render a human-safe
 // pause message for risk codes WITHOUT leaking raw page text, and (3) show the
