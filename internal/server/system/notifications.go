@@ -323,6 +323,10 @@ func crawlExitReasonLabel(reason string) string {
 		return "Facebook không tải thêm bài sau nhiều lần cuộn"
 	case "no_new_items_after_scroll":
 		return "đã cuộn tiếp nhưng không thấy bài mới"
+	case "scroll_not_moving":
+		return "không cuộn thêm được bài mới"
+	case "duplicate_heavy":
+		return "gặp nhiều bài trùng, không thấy bài mới"
 	case "pass_exhausted":
 		return "đã hết số vòng cuộn an toàn"
 	case "time_budget_exhausted":
