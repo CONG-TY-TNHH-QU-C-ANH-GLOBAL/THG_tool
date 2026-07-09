@@ -8,19 +8,20 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/jobs"
+	"github.com/thg/scraper/internal/session/accountsafety"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/textutil"
 )
 
-func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *jobs.Store, tickEvery time.Duration) {
-	if db == nil || jobStore == nil {
+func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *jobs.Store, coord *accountsafety.Coordinator, tickEvery time.Duration) {
+	if db == nil || jobStore == nil || coord == nil {
 		return
 	}
 	if tickEvery <= 0 {
 		tickEvery = time.Minute
 	}
 	run := func() {
-		if err := scheduleDueCrawlIntents(ctx, db, jobStore); err != nil {
+		if err := scheduleDueCrawlIntents(ctx, db, jobStore, coord); err != nil {
 			log.Printf("[CrawlIntent] scheduler error: %v", err)
 		}
 	}
@@ -37,9 +38,18 @@ func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *job
 	}
 }
 
-func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *jobs.Store) error {
+func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *jobs.Store, coord *accountsafety.Coordinator) error {
 	now := time.Now().UTC()
-	intents, err := db.Crawl().ClaimDueIntents(ctx, now, 10)
+	// Account Safety Coordinator (PR-C4): claim only as many due intents as the
+	// machine can safely run now (default budget = 1). Un-claimed due intents keep
+	// their next_run_at and are re-picked on a later tick — a clean cross-tick
+	// queue that needs NO change to ClaimDueIntents semantics. This never raises
+	// concurrency; it only lowers it.
+	free := coord.FreeSlots(now)
+	if free <= 0 {
+		return nil
+	}
+	intents, err := db.Crawl().ClaimDueIntents(ctx, now, free)
 	if err != nil {
 		return err
 	}
@@ -93,7 +103,10 @@ func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *job
 			log.Printf("[CrawlIntent] run failed intent=%d task=%s: %v", intent.ID, taskID, submitErr)
 			continue
 		}
-		log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s", intent.ID, taskID, result)
+		// Consume a machine slot until the crawl result frees it (PR-C4B
+		// result-feedback) or the coordinator's stale-running fallback does.
+		coord.MarkRunning(accountID, now)
+		log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s (safety: active=%d)", intent.ID, taskID, result, coord.Snapshot(now).Active)
 	}
 	return nil
 }

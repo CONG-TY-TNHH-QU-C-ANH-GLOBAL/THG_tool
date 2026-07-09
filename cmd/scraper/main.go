@@ -16,6 +16,7 @@ import (
 	"github.com/thg/scraper/internal/mailer"
 	"github.com/thg/scraper/internal/server"
 	session_pkg "github.com/thg/scraper/internal/session"
+	"github.com/thg/scraper/internal/session/accountsafety"
 	"github.com/thg/scraper/internal/store"
 )
 
@@ -135,8 +136,14 @@ func main() {
 	// configured admin chat via the thin Telegram client.
 	telegramNotify = setupTelegramNotifier(cfg)
 
-	go runCrawlIntentScheduler(ctx, db, jobStore, time.Minute)
-	log.Println("✅ Recurring crawl intent scheduler started (org plans → 30m+ automation)")
+	// Account Safety Coordinator (PR-C4): in-memory per-machine crawl budget
+	// (default 1). Gates the scheduler so multiple due accounts never launch
+	// concurrent crawls on this host. Running accounts auto-free after 15m
+	// (> the worst-case crawl) so a lost result can't wedge the budget. State
+	// is in-memory only and resets on restart (durable state is a later PR).
+	accountSafety := accountsafety.NewCoordinator(accountsafety.DefaultConfig(), 15*time.Minute)
+	go runCrawlIntentScheduler(ctx, db, jobStore, accountSafety, time.Minute)
+	log.Println("✅ Recurring crawl intent scheduler started (org plans → 30m+ automation; per-machine crawl budget = 1)")
 
 	go runAutoArchiveScheduler(ctx, db, cfg)
 	log.Println("✅ Auto-archive scheduler started (lead lifecycle retention)")
