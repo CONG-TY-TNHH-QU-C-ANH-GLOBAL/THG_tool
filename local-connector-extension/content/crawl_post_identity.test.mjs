@@ -6,7 +6,7 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const ID = require('./facebook/crawl_post_identity.js');
+const ID = require('../platforms/facebook/crawl_post_identity.js');
 const ORIGIN = 'https://www.facebook.com';
 
 test('extractPostFBID: permalink wins, photo fbid rejected, posts last', () => {

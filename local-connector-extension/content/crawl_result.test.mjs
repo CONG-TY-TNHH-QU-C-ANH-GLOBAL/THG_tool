@@ -8,7 +8,7 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const RES = require('./facebook/crawl_result.js');
+const RES = require('../platforms/facebook/crawl_result.js');
 
 const VER = 'scroll-target-v3-cursor';
 const LANDED = 'https://www.facebook.com/groups/1312868109620530';

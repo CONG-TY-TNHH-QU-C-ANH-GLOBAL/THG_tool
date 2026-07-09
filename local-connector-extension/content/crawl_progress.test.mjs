@@ -1,5 +1,5 @@
 // Crawl telemetry/policy unit tests. The helpers under test live in
-// content/facebook/crawl_progress.js (THGCrawlProgress) — pure, dependency-
+// platforms/facebook/crawl_progress.js (THGCrawlProgress) — pure, dependency-
 // injected, so they test in node without stubbing page globals.
 //   Run: node --test content/crawl_progress.test.mjs
 import { test } from 'node:test';
@@ -7,7 +7,7 @@ import assert from 'node:assert';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const C = require('./facebook/crawl_progress.js');
+const C = require('../platforms/facebook/crawl_progress.js');
 
 const VER = 'scroll-target-v3-cursor'; // crawl.js CRAWLER_VERSION, injected in prod
 const SRC = 'https://www.facebook.com/groups/1312868109620530';
