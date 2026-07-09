@@ -28,47 +28,55 @@ func newRunningSafetyEnv(t *testing.T, name string) (h *Handler, accID, connID i
 	return h, accID, connID, coord
 }
 
-// A clean result frees the slot immediately and returns the account to ready.
-func TestCrawlResultCompletedFreesSlotImmediately(t *testing.T) {
-	h, accID, connID, coord := newRunningSafetyEnv(t, "crawl_safety_free")
-	app := newCrawlApp(h, connID, 1)
-	if coord.FreeSlots(time.Now().UTC()) != 0 {
-		t.Fatal("precondition: the running crawl must consume the only slot")
-	}
+// safetyCrawlBody builds the minimal crawl-result payload for an exit_reason.
+func safetyCrawlBody(accountID int64, taskID, exitReason string) string {
+	return `{"task_id":"` + taskID + `","account_id":` + itoa64(accountID) + `,"exit_reason":"` + exitReason + `","items":[]}`
+}
 
-	body := `{"task_id":"t-safety-free","account_id":` + itoa64(accID) + `,"exit_reason":"completed","items":[]}`
+// postSafetyCrawlResult posts body as the env's connector and asserts the exact
+// HTTP outcome. wantStatus "" skips the JSON status check (error responses).
+func postSafetyCrawlResult(t *testing.T, h *Handler, connID int64, body string, wantCode int, wantStatus string) {
+	t.Helper()
+	app := newCrawlApp(h, connID, 1)
 	code, out := postCrawl(t, app, body)
-	if code != 200 || out["status"] != "stored" {
-		t.Fatalf("result = %d %v, want 200 stored", code, out)
+	if code != wantCode || (wantStatus != "" && out["status"] != wantStatus) {
+		t.Fatalf("result = %d %v, want %d %s", code, out, wantCode, wantStatus)
 	}
+}
+
+// assertSlotFreeAndStatus asserts the PR-C4 post-condition at the CURRENT
+// instant: the machine slot is already free (no stale timeout involved) and the
+// account landed on exactly the expected safety status.
+func assertSlotFreeAndStatus(t *testing.T, coord *accountsafety.Coordinator, accID int64, want accountsafety.Status) {
+	t.Helper()
 	now := time.Now().UTC()
 	if got := coord.FreeSlots(now); got != 1 {
 		t.Errorf("free slots after ingest = %d, want 1 immediately (no stale timeout)", got)
 	}
-	if got := coord.Snapshot(now).Accounts[accID]; got != accountsafety.StatusReady {
-		t.Errorf("account status = %s, want ready", got)
+	if got := coord.Snapshot(now).Accounts[accID]; got != want {
+		t.Errorf("account status = %s, want %s", got, want)
 	}
+}
+
+// A clean result frees the slot immediately and returns the account to ready.
+func TestCrawlResultCompletedFreesSlotImmediately(t *testing.T) {
+	h, accID, connID, coord := newRunningSafetyEnv(t, "crawl_safety_free")
+	if coord.FreeSlots(time.Now().UTC()) != 0 {
+		t.Fatal("precondition: the running crawl must consume the only slot")
+	}
+
+	postSafetyCrawlResult(t, h, connID, safetyCrawlBody(accID, "t-safety-free", "completed"), 200, "stored")
+	assertSlotFreeAndStatus(t, coord, accID, accountsafety.StatusReady)
 }
 
 // checkpoint_suspected frees the slot but parks the account: not eligible for
 // future scheduler ticks until an operator resolves it.
 func TestCrawlResultCheckpointParksAccount(t *testing.T) {
 	h, accID, connID, coord := newRunningSafetyEnv(t, "crawl_safety_park")
-	app := newCrawlApp(h, connID, 1)
 
-	body := `{"task_id":"t-safety-park","account_id":` + itoa64(accID) + `,"exit_reason":"checkpoint_suspected","items":[]}`
-	code, out := postCrawl(t, app, body)
-	if code != 200 || out["status"] != "stored" {
-		t.Fatalf("result = %d %v, want 200 stored", code, out)
-	}
-	now := time.Now().UTC()
-	if got := coord.FreeSlots(now); got != 1 {
-		t.Errorf("free slots = %d, want 1 (slot freed for other accounts)", got)
-	}
-	if got := coord.Snapshot(now).Accounts[accID]; got != accountsafety.StatusCheckpointRequired {
-		t.Errorf("account status = %s, want checkpoint_required", got)
-	}
-	if coord.IsAccountEligible(accID, now.Add(1000*time.Hour)) {
+	postSafetyCrawlResult(t, h, connID, safetyCrawlBody(accID, "t-safety-park", "checkpoint_suspected"), 200, "stored")
+	assertSlotFreeAndStatus(t, coord, accID, accountsafety.StatusCheckpointRequired)
+	if coord.IsAccountEligible(accID, time.Now().UTC().Add(1000*time.Hour)) {
 		t.Error("parked account must stay ineligible until operator resolution")
 	}
 }
@@ -77,33 +85,18 @@ func TestCrawlResultCheckpointParksAccount(t *testing.T) {
 // empty exit_reason follows the clean policy default.
 func TestCrawlResultFailedStatusFreesSlot(t *testing.T) {
 	h, accID, connID, coord := newRunningSafetyEnv(t, "crawl_safety_failed")
-	app := newCrawlApp(h, connID, 1)
 
 	body := `{"task_id":"t-safety-fail","account_id":` + itoa64(accID) + `,"status":"failed","error":"chrome_crash","items":[]}`
-	code, out := postCrawl(t, app, body)
-	if code != 200 || out["status"] != "failed" {
-		t.Fatalf("result = %d %v, want 200 failed", code, out)
-	}
-	now := time.Now().UTC()
-	if got := coord.FreeSlots(now); got != 1 {
-		t.Errorf("free slots after failed crawl = %d, want 1", got)
-	}
-	if got := coord.Snapshot(now).Accounts[accID]; got != accountsafety.StatusReady {
-		t.Errorf("account status = %s, want ready (empty exit_reason = policy default)", got)
-	}
+	postSafetyCrawlResult(t, h, connID, body, 200, "failed")
+	assertSlotFreeAndStatus(t, coord, accID, accountsafety.StatusReady)
 }
 
 // Ownership gates run BEFORE the coordinator update: a result for an account the
 // org does not own is rejected and must not touch slot state.
 func TestCrawlResultForbiddenDoesNotTouchCoordinator(t *testing.T) {
 	h, accID, connID, coord := newRunningSafetyEnv(t, "crawl_safety_forbidden")
-	app := newCrawlApp(h, connID, 1)
 
-	body := `{"task_id":"t-safety-forbidden","account_id":999999,"exit_reason":"completed","items":[]}`
-	code, _ := postCrawl(t, app, body)
-	if code != 403 {
-		t.Fatalf("foreign account result = %d, want 403", code)
-	}
+	postSafetyCrawlResult(t, h, connID, safetyCrawlBody(999999, "t-safety-forbidden", "completed"), 403, "")
 	now := time.Now().UTC()
 	if got := coord.FreeSlots(now); got != 0 {
 		t.Errorf("free slots = %d, want 0 — a rejected result must not free the slot", got)
