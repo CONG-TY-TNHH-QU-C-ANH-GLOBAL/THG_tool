@@ -65,7 +65,7 @@ func TestCooldownExpiry(t *testing.T) {
 // #5 checkpoint_suspected/login_required/risk_blocked do not auto-clear by time.
 func TestRiskStatesDoNotAutoClear(t *testing.T) {
 	farFuture := testNow.Add(1000 * time.Hour)
-	for _, reason := range []string{"checkpoint_suspected", "login_required", "risk_blocked"} {
+	for _, reason := range []string{ReasonCheckpointSuspected, ReasonLoginRequired, ReasonRiskBlocked} {
 		st := ApplyStop(AccountState{AccountID: 1}, reason, testNow, DefaultConfig())
 		if !IsHumanRequired(st.Status) {
 			t.Errorf("%s must map to a human-required-class status, got %s", reason, st.Status)
@@ -96,14 +96,14 @@ func TestHumanRequiredNeverTimeCleared(t *testing.T) {
 
 // #7 a risk exit reason triggers a non-auto-clearing human-required state.
 func TestRiskExitTriggersBlock(t *testing.T) {
-	st := ApplyStop(AccountState{AccountID: 1, Status: StatusRunning}, "risk_blocked", testNow, DefaultConfig())
+	st := ApplyStop(AccountState{AccountID: 1, Status: StatusRunning}, ReasonRiskBlocked, testNow, DefaultConfig())
 	if st.Status != StatusRiskBlocked {
 		t.Errorf("risk_blocked exit → risk_blocked status, got %s", st.Status)
 	}
-	if st.LastSafeStopReason != "risk_blocked" {
+	if st.LastSafeStopReason != ReasonRiskBlocked {
 		t.Errorf("last stop reason must be recorded, got %q", st.LastSafeStopReason)
 	}
-	if _, isRisk := EvaluateRisk("risk_blocked"); !isRisk {
+	if _, isRisk := EvaluateRisk(ReasonRiskBlocked); !isRisk {
 		t.Error("risk_blocked must classify as risk")
 	}
 }
@@ -126,8 +126,10 @@ func TestCleanFinishAllowsNextQueued(t *testing.T) {
 	if !ok {
 		t.Fatal("with a free slot, a queued account must be selectable")
 	}
-	if got != 1 { // account 1 ready (zero QueuedAt) sorts earliest; either is a valid start
-		t.Logf("selected account %d (ready sorts before queued) — acceptable", got)
+	// Deterministic: account 1 is ready with a zero QueuedAt, which sorts before
+	// account 2's real QueuedAt, so FIFO selection must pick account 1.
+	if got != 1 {
+		t.Errorf("account 1 (ready, zero QueuedAt) sorts earliest → must be selected, got %d", got)
 	}
 }
 

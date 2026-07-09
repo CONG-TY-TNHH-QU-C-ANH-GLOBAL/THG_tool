@@ -82,27 +82,28 @@ func addOrZero(now time.Time, d time.Duration) time.Time {
 //   - stalled → stalled_no_progress with the (optional) stalled cooldown;
 //   - clean   → cooling_down (if a pacing gap is configured) else ready.
 func ApplyStop(st AccountState, exitReason string, now time.Time, cfg Config) AccountState {
+	// Risk first: human-required-class, NO cooldown timer, never auto-clears.
 	if status, isRisk := EvaluateRisk(exitReason); isRisk {
 		st.Status = status
-		st.CooldownUntil = time.Time{} // human-required: never auto-clears
+		st.CooldownUntil = time.Time{}
 		st.LastSafeStopReason = exitReason
 		return st
 	}
+	// Non-risk stops share the centralized cooldown selection.
+	dur := CooldownDuration(exitReason, cfg)
+	st.CooldownUntil = addOrZero(now, dur)
 	if IsStalledReason(exitReason) {
 		st.Status = StatusStalledNoProgress
-		st.CooldownUntil = addOrZero(now, cfg.StalledNoProgressCooldown)
 		st.LastSafeStopReason = exitReason
 		return st
 	}
 	// Clean / success finish.
 	st.LastSafeStopReason = ""
-	if cfg.CleanRunCooldown > 0 {
+	if dur > 0 {
 		st.Status = StatusCoolingDown
-		st.CooldownUntil = now.Add(cfg.CleanRunCooldown)
-		return st
+	} else {
+		st.Status = StatusReady
 	}
-	st.Status = StatusReady
-	st.CooldownUntil = time.Time{}
 	return st
 }
 
