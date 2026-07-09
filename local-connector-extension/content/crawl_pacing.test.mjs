@@ -49,11 +49,14 @@ test('crawlStopReason: original no_progress / no_new thresholds', () => {
 
 // ── commit 2: conservative safe tuning ──
 test('C2 #1: a productive safe pass waits less than the old baseline', () => {
+  // Productive waits are exact, AND strictly shorter than the barren wait at the
+  // same pass (compare against the actual function output, not a literal).
   assert.strictEqual(P.nextCrawlWaitMs({ pass: 3, producedNewItems: true }), 1500);
-  assert.ok(1500 < 2200, 'productive early wait is shorter than the old early wait');
+  assert.ok(P.nextCrawlWaitMs({ pass: 3, producedNewItems: true }) < P.nextCrawlWaitMs({ pass: 3 }),
+    'productive early wait must be shorter than the barren early wait');
   assert.strictEqual(P.nextCrawlWaitMs({ pass: 20, producedNewItems: true }), 1500);
-  assert.ok(1500 < 3600, 'productive deep wait is shorter than the old deep wait');
-  assert.ok(P.nextCrawlWaitMs({ pass: 3, producedNewItems: true }) > 0, 'never zero');
+  assert.ok(P.nextCrawlWaitMs({ pass: 20, producedNewItems: true }) < P.nextCrawlWaitMs({ pass: 20 }),
+    'productive deep wait must be shorter than the barren deep wait');
 });
 
 test('C2 #5: risk state never gets the speed-up (checkpoint/login/risk)', () => {
@@ -68,8 +71,8 @@ test('C2 #3/#4: scroll_not_moving requires zero collected; never when items>0', 
   assert.strictEqual(P.crawlStopReason(stuck), 'scroll_not_moving'); // items===0, no scroll, pass>=8
   assert.strictEqual(P.crawlStopReason({ ...stuck, pass: 7 }), '');   // before SCROLL_STUCK_STOP_PASSES
   assert.strictEqual(P.crawlStopReason({ ...stuck, scrollMovedEver: true }), ''); // scroll did move
-  // new_count > 0 must NEVER be scroll_not_moving
-  assert.notStrictEqual(P.crawlStopReason({ ...stuck, itemsLength: 3 }), 'scroll_not_moving');
+  // new_count > 0 → no scroll_not_moving, and (pass 8 < min) no other stop → ''
+  assert.strictEqual(P.crawlStopReason({ ...stuck, itemsLength: 3 }), '');
 });
 
 test('C2 #2: duplicate-heavy stops earlier than no-new, only on strong evidence', () => {
@@ -99,5 +102,8 @@ test('C2 #7: every returned exit reason is in the safe, stable set', () => {
     { stagnantPasses: 0, pass: 40, minPassesBeforeStop: 35, itemsLength: 5, lastNewItemPass: 24, scrollMovedEver: true, duplicateCount: 0 },
     { stagnantPasses: 0, pass: 5, minPassesBeforeStop: 35, itemsLength: 3, lastNewItemPass: 5, scrollMovedEver: true, duplicateCount: 0 },
   ];
-  for (const s of samples) assert.ok(allowed.has(P.crawlStopReason(s)), `reason must be in the safe set: got ${P.crawlStopReason(s)}`);
+  for (const s of samples) {
+    const reason = P.crawlStopReason(s);
+    assert.ok(allowed.has(reason), `reason must be in the safe set: got ${reason}`);
+  }
 });

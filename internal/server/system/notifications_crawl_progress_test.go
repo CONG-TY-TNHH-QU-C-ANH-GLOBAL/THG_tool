@@ -14,7 +14,7 @@ func TestCrawlExitReasonLabel(t *testing.T) {
 		"duplicate_heavy":           "gặp nhiều bài trùng, không thấy bài mới",
 		"no_new_items_after_scroll": "đã cuộn tiếp nhưng không thấy bài mới", // unchanged
 		"no_progress":               "Facebook không tải thêm bài sau nhiều lần cuộn", // unchanged
-		"maxitems":                  "đã đạt số bài yêu cầu",                          // unchanged (case-insensitive)
+		"MaxItems":                  "đã đạt số bài yêu cầu",                          // exercises case-insensitive matching
 		"something_unknown":         "something_unknown",                               // default → raw code
 	}
 	for reason, want := range cases {
