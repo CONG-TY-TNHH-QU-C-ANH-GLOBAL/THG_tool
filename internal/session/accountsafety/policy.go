@@ -2,20 +2,49 @@ package accountsafety
 
 import "time"
 
+// Crawl exit_reason constants (mirror the values the crawler emits — risk codes
+// from platforms/facebook/crawl_progress.js, stall/exhaustion codes from
+// crawl_pacing.js / crawl.js). Centralized here so the classifier has no magic
+// strings. Clean/success reasons (maxItems, completed, cursor_match, "") are the
+// default branch — no constant needed.
+const (
+	ReasonCheckpointSuspected   = "checkpoint_suspected"
+	ReasonLoginRequired         = "login_required"
+	ReasonRiskBlocked           = "risk_blocked"
+	ReasonNoProgress            = "no_progress"
+	ReasonNoNewItemsAfterScroll = "no_new_items_after_scroll"
+	ReasonDuplicateHeavy        = "duplicate_heavy"
+	ReasonScrollNotMoving       = "scroll_not_moving"
+	ReasonPassExhausted         = "pass_exhausted"
+)
+
 // EvaluateRisk maps a crawl exit_reason to the resulting account Status and
 // whether it is a risk stop. Only the three explicit risk reasons are
-// human-required-class; every other (clean / stall / exhaustion) reason is
-// benign and lets the account be scheduled again on its normal interval.
+// human-required-class. Non-risk reasons return (StatusReady, false) here; the
+// stalled vs clean distinction is drawn by IsStalledReason / ApplyStop.
 func EvaluateRisk(exitReason string) (Status, bool) {
 	switch exitReason {
-	case "checkpoint_suspected":
+	case ReasonCheckpointSuspected:
 		return StatusCheckpointRequired, true
-	case "login_required":
+	case ReasonLoginRequired:
 		return StatusLoginRequired, true
-	case "risk_blocked":
+	case ReasonRiskBlocked:
 		return StatusRiskBlocked, true
 	default:
 		return StatusReady, false
+	}
+}
+
+// IsStalledReason reports a non-risk stop where the crawl made no real progress
+// (feed not loading, only duplicates, scroll stuck, or pass budget spent). These
+// are distinct from a clean/success finish and map to StatusStalledNoProgress.
+func IsStalledReason(exitReason string) bool {
+	switch exitReason {
+	case ReasonNoProgress, ReasonNoNewItemsAfterScroll, ReasonDuplicateHeavy,
+		ReasonScrollNotMoving, ReasonPassExhausted:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -28,27 +57,48 @@ func ShouldEnterCooldown(exitReason string) bool {
 }
 
 // CooldownDuration is the timed pause for a stop. Risk stops return 0 — they do
-// NOT time-clear (human-required). Clean stops use the configured pacing gap.
+// NOT time-clear (human-required). Stalled stops use StalledNoProgressCooldown;
+// clean stops use CleanRunCooldown.
 func CooldownDuration(exitReason string, cfg Config) time.Duration {
-	if !ShouldEnterCooldown(exitReason) {
+	if _, isRisk := EvaluateRisk(exitReason); isRisk {
 		return 0
+	}
+	if IsStalledReason(exitReason) {
+		return cfg.StalledNoProgressCooldown
 	}
 	return cfg.CleanRunCooldown
 }
 
-// ApplyStop is the pure transition of an account after a crawl run finishes.
-// Risk → the matching human-required-class state with NO cooldown timer. Clean →
-// cooling_down (if a pacing gap is configured) else ready.
+// addOrZero returns now+d for a positive d, else the zero time (no timer).
+func addOrZero(now time.Time, d time.Duration) time.Time {
+	if d > 0 {
+		return now.Add(d)
+	}
+	return time.Time{}
+}
+
+// ApplyStop is the pure transition of an account after a crawl run finishes:
+//   - risk    → the matching human-required-class state, NO cooldown timer;
+//   - stalled → stalled_no_progress with the (optional) stalled cooldown;
+//   - clean   → cooling_down (if a pacing gap is configured) else ready.
 func ApplyStop(st AccountState, exitReason string, now time.Time, cfg Config) AccountState {
-	st.LastSafeStopReason = exitReason
 	if status, isRisk := EvaluateRisk(exitReason); isRisk {
 		st.Status = status
 		st.CooldownUntil = time.Time{} // human-required: never auto-clears
+		st.LastSafeStopReason = exitReason
 		return st
 	}
-	if d := CooldownDuration(exitReason, cfg); d > 0 {
+	if IsStalledReason(exitReason) {
+		st.Status = StatusStalledNoProgress
+		st.CooldownUntil = addOrZero(now, cfg.StalledNoProgressCooldown)
+		st.LastSafeStopReason = exitReason
+		return st
+	}
+	// Clean / success finish.
+	st.LastSafeStopReason = ""
+	if cfg.CleanRunCooldown > 0 {
 		st.Status = StatusCoolingDown
-		st.CooldownUntil = now.Add(d)
+		st.CooldownUntil = now.Add(cfg.CleanRunCooldown)
 		return st
 	}
 	st.Status = StatusReady
@@ -75,7 +125,8 @@ func IsEligible(st AccountState, now time.Time) bool {
 	switch st.Status {
 	case StatusReady, StatusQueued:
 		return true
-	case StatusCoolingDown:
+	case StatusCoolingDown, StatusStalledNoProgress:
+		// Time-based states: eligible once the (possibly zero) cooldown elapses.
 		return !now.Before(st.CooldownUntil)
 	default:
 		return false

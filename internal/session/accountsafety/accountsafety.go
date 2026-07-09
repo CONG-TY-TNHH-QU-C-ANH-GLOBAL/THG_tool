@@ -26,6 +26,7 @@ const (
 	StatusQueued             Status = "queued"
 	StatusRunning            Status = "running"
 	StatusCoolingDown        Status = "cooling_down"
+	StatusStalledNoProgress  Status = "stalled_no_progress"
 	StatusCheckpointRequired Status = "checkpoint_required"
 	StatusLoginRequired      Status = "login_required"
 	StatusRiskBlocked        Status = "risk_blocked"
@@ -36,7 +37,7 @@ const (
 type AccountState struct {
 	AccountID          int64
 	Status             Status
-	CooldownUntil      time.Time // meaningful only for StatusCoolingDown
+	CooldownUntil      time.Time // meaningful for StatusCoolingDown / StatusStalledNoProgress
 	LastSafeStopReason string    // the exit_reason of the last non-clean stop
 	QueuedAt           time.Time // FIFO ordering key for queued/ready accounts
 }
@@ -46,11 +47,20 @@ type AccountState struct {
 type Config struct {
 	MaxActiveCrawlsPerMachine int           // hard cap on concurrent crawls on this host
 	CleanRunCooldown          time.Duration // optional pacing gap after a clean run (0 = none)
+	// StalledNoProgressCooldown is the optional machine-level backoff after a
+	// stalled/no-progress stop. Default 0: the coordinator adds no artificial
+	// backoff beyond the recurring-intent interval (which already gates re-runs)
+	// and the FIFO queue (which stops a stalled account starving others) — so no
+	// retry storm. Eligibility semantics are identical to cooling_down (skipped
+	// until cooldown_until), so setting a positive value later — once telemetry
+	// justifies it — yields machine-level stall backoff with no other change.
+	StalledNoProgressCooldown time.Duration
 }
 
-// DefaultConfig is the binding safe default: exactly one active crawl per machine.
+// DefaultConfig is the binding safe default: exactly one active crawl per machine,
+// no artificial post-run backoff (see StalledNoProgressCooldown).
 func DefaultConfig() Config {
-	return Config{MaxActiveCrawlsPerMachine: 1, CleanRunCooldown: 0}
+	return Config{MaxActiveCrawlsPerMachine: 1, CleanRunCooldown: 0, StalledNoProgressCooldown: 0}
 }
 
 // MachineState is the host-scoped view the policy reads (a value, never mutated).

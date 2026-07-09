@@ -111,7 +111,7 @@ func TestRiskExitTriggersBlock(t *testing.T) {
 // #8 a clean/completed crawl releases the account (→ ready) so the next queued
 // account can run once the running one finishes.
 func TestCleanFinishAllowsNextQueued(t *testing.T) {
-	for _, reason := range []string{"maxItems", "completed", "no_new_items_after_scroll", "duplicate_heavy", "scroll_not_moving", ""} {
+	for _, reason := range []string{"maxItems", "maxitems", "completed", "cursor_match", ""} {
 		st := ApplyStop(AccountState{AccountID: 1, Status: StatusRunning}, reason, testNow, DefaultConfig())
 		if st.Status != StatusReady {
 			t.Errorf("clean stop %q → ready, got %s", reason, st.Status)
@@ -128,6 +128,53 @@ func TestCleanFinishAllowsNextQueued(t *testing.T) {
 	}
 	if got != 1 { // account 1 ready (zero QueuedAt) sorts earliest; either is a valid start
 		t.Logf("selected account %d (ready sorts before queued) — acceptable", got)
+	}
+}
+
+// Stall/exhaustion exits map to stalled_no_progress (distinct from ready), and
+// are NOT human-required (they may run again once eligible).
+func TestStalledReasonsMapToStalled(t *testing.T) {
+	for _, reason := range []string{
+		ReasonNoProgress, ReasonNoNewItemsAfterScroll, ReasonDuplicateHeavy,
+		ReasonScrollNotMoving, ReasonPassExhausted,
+	} {
+		st := ApplyStop(AccountState{AccountID: 1, Status: StatusRunning}, reason, testNow, DefaultConfig())
+		if st.Status != StatusStalledNoProgress {
+			t.Errorf("%s → stalled_no_progress, got %s", reason, st.Status)
+		}
+		if IsHumanRequired(st.Status) {
+			t.Errorf("%s must NOT be human-required", reason)
+		}
+		if st.LastSafeStopReason != reason {
+			t.Errorf("%s must record last stop reason, got %q", reason, st.LastSafeStopReason)
+		}
+	}
+}
+
+// stalled_no_progress eligibility: with the default 0 cooldown it is immediately
+// eligible (no artificial backoff — the recurring interval + FIFO gate re-runs);
+// with a positive cooldown it is skipped until cooldown_until, exactly like
+// cooling_down.
+func TestStalledEligibilitySemantics(t *testing.T) {
+	// Default 0 cooldown → CooldownUntil zero → eligible now.
+	zero := ApplyStop(AccountState{AccountID: 1, Status: StatusRunning}, ReasonNoProgress, testNow, DefaultConfig())
+	if !zero.CooldownUntil.IsZero() {
+		t.Errorf("default 0 stalled cooldown → zero CooldownUntil, got %v", zero.CooldownUntil)
+	}
+	if !IsEligible(zero, testNow) {
+		t.Error("stalled with 0 cooldown must be immediately eligible")
+	}
+	// Positive cooldown → skipped until it elapses.
+	cfg := Config{MaxActiveCrawlsPerMachine: 1, StalledNoProgressCooldown: 4 * time.Minute}
+	backoff := ApplyStop(AccountState{AccountID: 1, Status: StatusRunning}, ReasonDuplicateHeavy, testNow, cfg)
+	if backoff.Status != StatusStalledNoProgress {
+		t.Fatalf("expected stalled_no_progress, got %s", backoff.Status)
+	}
+	if IsEligible(backoff, testNow) {
+		t.Error("stalled with a positive cooldown must be skipped before cooldown_until")
+	}
+	if !IsEligible(backoff, testNow.Add(4*time.Minute)) {
+		t.Error("stalled must become eligible at cooldown_until")
 	}
 }
 
