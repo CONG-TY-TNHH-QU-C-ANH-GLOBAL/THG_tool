@@ -110,12 +110,13 @@ func (s *Server) registerRoutes() {
 	pairingLimiter := servermw.ConnectorPairingRateLimit()
 	serveragent.LocalConnectorPairingRoutes(api, serveragent.LocalConnectorDeps{DB: s.db}, pairingLimiter)
 	serveragent.ConnectorRoutes(api, serveragent.Deps{
-		DB:       s.db,
-		AIClass:  func() *ai.MessageGenerator { return s.aiClass },
-		WSHub:    s.wsHub,
-		Notifier: s.cfg.Notifier,
-		TgEvents: tgControl, // comment/inbox/post outcome + crawl-result → per-org channel
-		BaseURL:  tgBaseURL,
+		DB:            s.db,
+		AIClass:       func() *ai.MessageGenerator { return s.aiClass },
+		WSHub:         s.wsHub,
+		Notifier:      s.cfg.Notifier,
+		TgEvents:      tgControl, // comment/inbox/post outcome + crawl-result → per-org channel
+		BaseURL:       tgBaseURL,
+		AccountSafety: s.cfg.AccountSafety, // crawl-result → free machine slot / park account
 	})
 
 	authDeps := serverauth.Deps{

@@ -13,6 +13,7 @@ import (
 	"github.com/thg/scraper/internal/mailer"
 	agentstream "github.com/thg/scraper/internal/server/agent/stream"
 	"github.com/thg/scraper/internal/session"
+	"github.com/thg/scraper/internal/session/accountsafety"
 	"github.com/thg/scraper/internal/store"
 	"github.com/thg/scraper/internal/workspace"
 )
@@ -35,6 +36,12 @@ type Config struct {
 	Mailer mailer.Config
 
 	Notifier func(string)
+
+	// AccountSafety is the process-local Account Safety Coordinator shared with the
+	// crawl scheduler (PR-C4). The crawl-result ingest reports terminal results to
+	// it so machine crawl slots free immediately instead of waiting for the stale
+	// timeout. Optional: nil disables result feedback (tests, worker composition).
+	AccountSafety *accountsafety.Coordinator
 
 	// Telegram integration feature flags + bot identity, surfaced to the integrations
 	// control-plane handlers (default-safe; actions off by default).

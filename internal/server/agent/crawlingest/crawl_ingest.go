@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/leadingest"
@@ -31,6 +32,10 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 	if err := h.resolveCrawlOwnership(orgID, agentID, req); err != nil {
 		return connectorCrawlProcessResult{}, err
 	}
+	// Any terminal result (stored OR failed) ends the crawl: free the machine slot
+	// now — never wait for the stale timeout — and let risk exits park the account.
+	// After the ownership gates so an unowned connector cannot touch slot state.
+	h.finishAccountSafety(req.AccountID, req.ExitReason)
 
 	appStore := h.db.App()
 	intent := strings.TrimSpace(req.Intent)
@@ -66,6 +71,18 @@ func (h *Handler) processConnectorCrawlResult(ctx context.Context, agentID, orgI
 	scrollNote := logConnectorCrawlForensics(ctx, orgID, req)
 	system.NotifyCrawlSummary(h.db, h.notifier, orgID, req.AccountID, req.TaskID, intent, len(req.Items), p.fetched, p.inserted, p.primarySourceURL, req.ExitReason, scrollNote)
 	return connectorCrawlProcessResult{Status: "stored", TaskID: req.TaskID, Fetched: p.fetched, Inserted: p.inserted}, nil
+}
+
+// finishAccountSafety reports a terminal crawl result to the Account Safety
+// Coordinator (PR-C4 result feedback): the machine slot frees immediately;
+// checkpoint_suspected / login_required / risk_blocked park the account until an
+// operator resolves it. Nil-safe — compositions without a coordinator skip it.
+func (h *Handler) finishAccountSafety(accountID int64, exitReason string) {
+	if h.accountSafety == nil {
+		return
+	}
+	status := h.accountSafety.Finish(accountID, exitReason, time.Now().UTC())
+	log.Printf("[AccountSafety] crawl finished account=%d exit_reason=%q → status=%s", accountID, exitReason, status)
 }
 
 // resolveCrawlOwnership enforces the two ownership gates before any task/lead
