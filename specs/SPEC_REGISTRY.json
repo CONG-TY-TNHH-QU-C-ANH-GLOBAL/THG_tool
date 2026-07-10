@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-06-23",
+  "updated_at": "2026-07-10",
   "entries": [
     {
       "id": "api-spec",
@@ -1660,6 +1660,46 @@
         "prc0.5"
       ],
       "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change."
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-spec",
+      "path": "specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md",
+      "title": "MULTI GROUP FRESH LEAD CRAWL SPEC",
+      "domain": "facebook",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "snapshot",
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-10",
+      "verified_against": [
+        "crawl.js emits posted_at:'' — post timestamps not extracted today (content/crawl.js)",
+        "dedup layers exist: crawl.js dedupKey/seen Set + posts.dedup_hash UNIQUE insert-or-ignore (internal/store/crawl/posts.go)",
+        "org_crawl_intents cursor/next_run_at exists on platform postgres 0108; no multi-group campaign grouping",
+        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
+        "layers on CRAWLER_ACCOUNT_SAFETY_SPEC (PR-C0.5) state machine/budgets/cooldown"
+      ],
+      "related_code": [
+        "local-connector-extension/content/crawl.js",
+        "internal/store/crawl/posts.go",
+        "internal/store/crawl/intents.go",
+        "internal/store/migrations/platform/0108_platform_crawl__postgres.up.sql",
+        "internal/session/allocator.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "campaign",
+        "fresh-lead",
+        "queue",
+        "scheduling",
+        "spec",
+        "prm0"
+      ],
+      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, DB partial-unique-index enforced), server-defined fresh_cutoff_at, timestamp parser confidence model, temporal frontier stop, 3-layer dedupe, additive PostgreSQL platform data model, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change."
     }
   ]
 }
