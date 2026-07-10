@@ -122,7 +122,7 @@ function fakeNode({ dataUtime = null, datetime = null, texts = [] } = {}) {
   return {
     querySelector: (sel) => {
       if (sel.includes('data-utime') && dataUtime != null) {
-        return { getAttribute: () => String(dataUtime) };
+        return { dataset: { utime: String(dataUtime) } };
       }
       if (sel.includes('time') && datetime != null) {
         return { getAttribute: () => datetime };

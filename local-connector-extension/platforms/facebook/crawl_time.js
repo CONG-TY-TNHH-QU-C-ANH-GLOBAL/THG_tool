@@ -99,7 +99,7 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
         latest_utc: at, raw_unit: 'date', parser_version: PARSER_VERSION,
       };
     }
-    return parseRelativeAge(signal && signal.relativeText, nowMs) || unknown();
+    return parseRelativeAge(signal?.relativeText, nowMs) || unknown();
   }
 
   // Machine-readable datetime on the node, if any. FB classic: <abbr
@@ -108,7 +108,7 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
     if (!node || typeof node.querySelector !== 'function') return null;
     const stamped = node.querySelector('[data-utime]');
     if (stamped) {
-      const secs = Number(stamped.getAttribute('data-utime'));
+      const secs = Number(stamped.dataset.utime);
       if (Number.isFinite(secs) && secs > 0) return iso(secs * 1000);
     }
     const timeEl = node.querySelector('time[datetime]');
@@ -133,7 +133,7 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
     for (const el of Array.from(node.querySelectorAll('a[href], abbr, span'))) {
       const txt = String((el.textContent || '')).trim();
       if (txt && looksLikeAge(txt)) return txt;
-      const ariaTxt = String((el.getAttribute && el.getAttribute('aria-label')) || '').trim();
+      const ariaTxt = String(el.getAttribute?.('aria-label') || '').trim();
       if (ariaTxt && looksLikeAge(ariaTxt)) return ariaTxt;
     }
     return '';
