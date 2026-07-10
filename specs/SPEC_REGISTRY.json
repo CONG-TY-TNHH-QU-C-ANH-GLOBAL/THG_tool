@@ -1699,7 +1699,7 @@
         "spec",
         "prm0"
       ],
-      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at, strict provably-fresh window rule (earliest_utc >= cutoff), timestamp parser confidence model in platforms/facebook/crawl_time.js, temporal frontier stop, 3-layer dedupe, connector version gate (waiting_for_connector_upgrade), additive PostgreSQL platform data model, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change."
+      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at/now_utc, canonical TimestampParse DTO (posted_at/confidence/earliest_utc/latest_utc) parser->wire->gate, strict provably-fresh window rule (earliest_utc >= cutoff), frontier streak reset on ambiguous/unknown, 3-layer dedupe incl. additive facebook_crawl_lead_index (leads table untouched), composite FKs against cross-tenant/cross-campaign rows, waiting_for_connector_upgrade as open run status, attempt-based write fencing, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change."
     }
   ]
 }
