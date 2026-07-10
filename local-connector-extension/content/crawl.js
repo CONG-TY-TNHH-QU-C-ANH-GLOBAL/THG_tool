@@ -11,6 +11,7 @@ var THGContentCrawl = (() => {
   const DP = () => globalThis.THGCrawlDirectPost;
   const RES = () => globalThis.THGCrawlResult;
   const PACE = () => globalThis.THGCrawlPacing;
+  const TIME = () => globalThis.THGCrawlTime;
 
   // Multi-pass scan preferring URL forms whose post id is guaranteed to
   // be URL-resolvable. /permalink/ and story_fbid= carry the working
@@ -379,6 +380,12 @@ var THGContentCrawl = (() => {
       return await crawlDirectPostTarget(task, expectedUrl, accountId, dpTarget);
     }
     const maxItems = Math.max(1, Math.min(200, Number(task?.crawl_plan?.max_items || 20)));
+    // Server clock is the authority for lead eligibility (spec §4); a later PR
+    // wires now_utc into the task payload. Until then the per-item timestamp
+    // DTO is additive telemetry only, so a server-sent now is used when present
+    // and the local clock is a non-authoritative fallback. The parser never
+    // reads a clock — now is passed in.
+    const serverNow = task?.crawl_plan?.now_utc || task?.now_utc || Date.now();
     // Recurring crawl cursor — when present, stop traversal as soon as we
     // re-encounter the post id from the previous run. The post id (not the
     // timestamp) is the dedup decision per the design mandate; FB feed
@@ -497,6 +504,10 @@ var THGContentCrawl = (() => {
         if (!sourceURL) {
           sourceURL = expectedUrl || location.href;
         }
+        // Canonical TimestampParse DTO (spec §4). Additive telemetry: fills the
+        // previously-empty posted_at plus the confidence + interval bounds.
+        // Best-effort — `unknown` is fine and never drops the post here.
+        const ts = TIME().parsePostTimestamp(article, serverNow);
         items.push({
           id: key,
           source_url: sourceURL,
@@ -508,7 +519,12 @@ var THGContentCrawl = (() => {
           shares: 0,
           post_fbid: postFBID,
           group_fbid: groupFBID,
-          posted_at: ''
+          posted_at: ts.posted_at,
+          confidence: ts.confidence,
+          earliest_utc: ts.earliest_utc,
+          latest_utc: ts.latest_utc,
+          raw_unit: ts.raw_unit,
+          parser_version: ts.parser_version
         });
         if (items.length >= maxItems) break;
       }
