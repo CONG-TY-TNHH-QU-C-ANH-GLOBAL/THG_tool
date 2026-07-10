@@ -154,11 +154,12 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
   const selectedStatus = accountId === '' ? undefined : statusByAccount.get(Number(accountId));
 
   const appendSystemMessage = useCallback(
-    (text: string) => {
+    // Default 'error': most local system messages are client-side failures.
+    // Informational notices (e.g. auto account-switch) pass 'info' explicitly.
+    (text: string, severity: SystemSeverity = 'error') => {
       setMessages((prev) => [
         ...prev,
-        // Locally-appended system messages are client-side failures → error-red.
-        { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: false, severity: 'error' },
+        { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: severity !== 'error', severity },
       ]);
     },
     [locale],
@@ -228,6 +229,7 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
       setAccountId(live.account_id);
       appendSystemMessage(
         `Đã chuyển sang tài khoản đang đăng nhập trong Chrome: ${live.account_fb_display_name || live.account_name}.`,
+        'info',
       );
     }
   }, [accountId, liveMatches, statusByAccount]);

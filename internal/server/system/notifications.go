@@ -433,6 +433,10 @@ func crawlProgressArgsJSON(n CrawlProgressNotice, intent, stage, source string) 
 	return string(b)
 }
 
+// crawlNoProgressLabelVN is the shared label for every "nothing is advancing"
+// reason/phase (no_progress, no_new_posts, scroll_not_moving, stalled).
+const crawlNoProgressLabelVN = "không tăng tiến độ"
+
 // crawlPhaseVN maps the machine phase/reason vocabulary to the compact
 // Vietnamese label shown after "Pha:". Reason codes (precise) and coarse phase
 // buckets share one table — the vocabularies don't collide. English log lines
@@ -441,21 +445,22 @@ var crawlPhaseVN = map[string]string{
 	// safe_reason_code values (precise, preferred)
 	"scrolling":            "đang quét",
 	"duplicate_heavy":      "nhiều bài trùng",
-	"no_progress":          "không tăng tiến độ",
-	"no_new_posts":         "không tăng tiến độ",
-	"scroll_not_moving":    "không tăng tiến độ",
+	"no_progress":          crawlNoProgressLabelVN,
+	"no_new_posts":         crawlNoProgressLabelVN,
+	"scroll_not_moving":    crawlNoProgressLabelVN,
 	"checkpoint_suspected": "cần kiểm tra checkpoint",
 	"login_required":       "cần đăng nhập lại",
 	"risk_blocked":         "tạm dừng vì rủi ro",
 	"completed":            "hoàn tất",
 	// coarse phase buckets (fallback when no precise reason was reported)
-	"stalled": "không tăng tiến độ",
+	"stalled": crawlNoProgressLabelVN,
 	"blocked": "tạm dừng vì rủi ro",
 }
 
 // crawlPhaseLabelVN picks the Vietnamese phase label: the precise reason code
-// wins over the coarse phase; an unknown pair falls back to the raw phase so a
-// future code is visible instead of silently dropped.
+// wins over the coarse phase; an unknown pair falls back to the raw phase, and
+// to the raw reason when the phase is empty — a future code stays visible
+// instead of rendering as "Pha: .".
 func crawlPhaseLabelVN(phase, reason string) string {
 	if label, ok := crawlPhaseVN[reason]; ok {
 		return label
@@ -463,7 +468,10 @@ func crawlPhaseLabelVN(phase, reason string) string {
 	if label, ok := crawlPhaseVN[phase]; ok {
 		return label
 	}
-	return strings.TrimSpace(phase)
+	if trimmed := strings.TrimSpace(phase); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(reason)
 }
 
 // crawlProgressDiagVN renders the compact Vietnamese diagnostic suffix for a

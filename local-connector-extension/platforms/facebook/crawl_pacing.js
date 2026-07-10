@@ -109,11 +109,13 @@ globalThis.THGCrawlPacing = globalThis.THGCrawlPacing || (() => {
     if (s.itemsLength === 0 && !s.scrollMovedEver && s.pass >= PACING.SCROLL_STUCK_STOP_PASSES) {
       return 'scroll_not_moving';
     }
+    // Shared duplicate-heavy evidence: items in hand AND the full no-new window.
+    // Both branches below add their own pass floor + duplicate thresholds.
+    const dupHeavyNoNewWindow = s.itemsLength > 0 && passesSinceNew >= PACING.DUP_HEAVY_NO_NEW_STOP;
     // PR-C2: past the min guard with items in hand, the feed is only re-serving
     // duplicates and nothing new for a while → confirm exhaustion a little
     // earlier than the generic no-new window.
-    if (s.pass >= s.minPassesBeforeStop && s.itemsLength > 0 &&
-        passesSinceNew >= PACING.DUP_HEAVY_NO_NEW_STOP &&
+    if (dupHeavyNoNewWindow && s.pass >= s.minPassesBeforeStop &&
         s.duplicateCount >= PACING.DUP_HEAVY_MIN_DUPES) {
       return 'duplicate_heavy';
     }
@@ -123,8 +125,7 @@ globalThis.THGCrawlPacing = globalThis.THGCrawlPacing || (() => {
     // that made a 50-item crawl churn duplicates for extra minutes. Never fires
     // on zero yield and never touches the risk/checkpoint path (handled above
     // the pacing layer in crawl.js).
-    if (s.pass >= PACING.MIN_STOP_FLOOR && s.itemsLength > 0 &&
-        passesSinceNew >= PACING.DUP_HEAVY_NO_NEW_STOP &&
+    if (dupHeavyNoNewWindow && s.pass >= PACING.MIN_STOP_FLOOR &&
         s.duplicateCount >= PACING.DUP_VERY_HEAVY_MIN_DUPES &&
         s.duplicateCount >= s.itemsLength * PACING.DUP_VERY_HEAVY_YIELD_RATIO) {
       return 'duplicate_heavy';

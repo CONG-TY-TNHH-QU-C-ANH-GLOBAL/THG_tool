@@ -77,6 +77,22 @@ func TestCrawlProgressDiagVN(t *testing.T) {
 	}
 }
 
+// Unknown vocabulary stays visible: an unmapped reason with an EMPTY phase
+// falls back to the raw reason (never rendering "Pha: ."), and an unmapped
+// phase falls back to itself. Future codes surface instead of vanishing.
+func TestCrawlPhaseLabelVNFallbacks(t *testing.T) {
+	if got := crawlPhaseLabelVN("", "future_reason_code"); got != "future_reason_code" {
+		t.Errorf("empty phase must fall back to the raw reason, got %q", got)
+	}
+	if got := crawlPhaseLabelVN("future_phase", "future_reason_code"); got != "future_phase" {
+		t.Errorf("unmapped pair must fall back to the raw phase, got %q", got)
+	}
+	got := crawlProgressDiagVN(CrawlProgressNotice{SafeReasonCode: "future_reason_code"})
+	if want := " Pha: future_reason_code."; got != want {
+		t.Errorf("diag with unknown reason and empty phase = %q, want %q", got, want)
+	}
+}
+
 // A risk-code suffix must not embed any raw page/DOM text — only the fixed,
 // translated safety sentence. Guards the "no raw checkpoint text" invariant.
 func TestCrawlProgressDiagVNNoRawText(t *testing.T) {
