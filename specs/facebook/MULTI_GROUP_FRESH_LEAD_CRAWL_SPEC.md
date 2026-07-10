@@ -60,10 +60,10 @@ the **temporal frontier** (feed exhausted of fresh posts) instead of grinding to
 ## 2. Orchestration model
 
 ```text
-crawl_campaign (org-scoped plan: sources, freshness window, account pool)
+facebook_crawl_campaign (org-scoped plan: sources, freshness window, account pool)
    │ compiles into
    ▼
-crawl_runs queue (one queued run per due source, FIFO by priority)
+facebook_crawl_runs queue (one queued run per due source, FIFO by priority)
    │ admitted by scheduler: free account from pool + Coordinator budget + lease
    ▼
 one run = one account × one group visit, bounded by fresh_cutoff_at + max_items
@@ -88,11 +88,18 @@ Roles:
 
 - **1 account = max 1 active crawl.** Enforced twice: in-process by the existing
   `Allocator` `PolicySticky` lease, and durably by a partial unique index on
-  `crawl_runs(account_id) WHERE status = 'running'` (§7). DB constraint over
+  `facebook_crawl_runs(org_id, account_id) WHERE status = 'running' AND
+  account_id > 0` (§7). DB constraint over
   hopeful application checks.
 - **Machine budget unchanged** — `max_active_crawls_per_machine = 1` default from
   PR-C0.5 §4. A 5-account pool does not mean 5 parallel crawls; it means the queue
-  drains through whichever single slot the machine budget grants.
+  drains through whichever single slot the machine budget grants. What the pool
+  buys today is **coverage and availability** (an account in cooldown or
+  `human_required` doesn't stall the campaign; group-membership coverage spans
+  more groups) and a foundation for future distribution across machines. Actual
+  cross-account parallelism requires an explicit machine/org budget > 1 later,
+  under the PR-C0.5 telemetry-evidence rule — never as a side effect of pool
+  size. Same-account parallelism stays forbidden regardless of any budget.
 - **Sticky source→account affinity.** A source is preferentially served by the
   account that served it before (group membership lives with the account). Affinity
   is a stable assignment for coverage, never rotation to spread risk.
@@ -148,19 +155,30 @@ function would silently guess; the contract instead is:
 ```text
 parsePostTimestamp(node, now_utc) -> {
   posted_at_utc: string | null,   // ISO, null when unknown
-  earliest_utc:  string | null,   // lower bound of the ambiguity window
-  latest_utc:    string | null,   // upper bound
+  earliest_utc:  string | null,   // OLDEST possible timestamp in the parse window
+  latest_utc:    string | null,   // NEWEST possible timestamp in the parse window
   confidence:    exact | derived_relative | ambiguous | unknown,
   raw_unit:      minute | hour | day | week | date | none,  // typed, never raw text
 }
 ```
 
+Window semantics: relative units truncate, so "23 giờ" means the post is between
+23h and 24h old — `earliest_utc = now - 24h`, `latest_utc = now - 23h`. The
+window bounds the *worst case*; eligibility judges the worst case.
+
 | Confidence | Source | Lead eligibility |
 |---|---|---|
 | `exact` | Machine-readable attribute / permalink datetime. | Eligible if `posted_at_utc ≥ fresh_cutoff_at`. |
-| `derived_relative` | Unambiguous relative text ("2 giờ" → window [2h, 3h) before now). | Eligible if `latest_utc ≥ fresh_cutoff_at` — i.e. the **whole ambiguity window is judged, freshest interpretation wins** at the margin, because relative units truncate ("23 giờ" can be 23h59m). |
-| `ambiguous` | Coarse text ("hôm qua", "1 ngày") whose window straddles the cutoff. | **Not eligible.** Excluded as `timestamp_ambiguous`. Fresh-lead-only means provably fresh, not plausibly fresh. |
+| `derived_relative` | Unambiguous relative text ("2 giờ" → post age in [2h, 3h)). | Eligible **only if the entire possible window is inside the fresh window**: `earliest_utc ≥ fresh_cutoff_at`. The oldest possible interpretation must still be fresh — provably fresh, not plausibly fresh. |
+| `ambiguous` | Coarse text ("hôm qua", "1 ngày", "yesterday") — window too wide or straddles the cutoff. | **Not eligible.** Excluded as `timestamp_ambiguous`. |
 | `unknown` | Nothing parseable. | **Not eligible.** Excluded as `timestamp_unparsed`. |
+
+Worked examples against a 24h cutoff:
+- "22 giờ" → window [22h, 23h) old; `earliest_utc` is inside 24h → **eligible**.
+- "23 giờ" → window [23h, 24h) old; the worst case touches but does not cross
+  the cutoff (`earliest_utc = fresh_cutoff_at`) → **eligible** at the boundary.
+- "24 giờ" / "1 ngày" / "hôm qua" → worst case is ≥ 24h old → **not eligible**
+  unless an `exact` timestamp proves the post is still inside the window.
 
 Rules:
 - The parser is a **pure function** (node text/attrs in, struct out, `now` passed
@@ -244,9 +262,14 @@ platform plane**, per `docs/architecture/DATABASE_OWNERSHIP.md` and the PR-C0.5
 §7 doctrine. Ephemeral in-run counters stay in the browser/connector. The
 migration ships as its **own RED-reviewed PR** (PR-M2), never smuggled in.
 
+Table names carry the `facebook_` platform prefix: the platform plane already
+holds generic crawl tables (`posts`, `groups`, `jobs`, `org_crawl_intents`),
+and this domain is Facebook-specific by design (Taobao/1688 crawling would be
+its own vertical, not rows in these tables).
+
 ```sql
 -- The plan
-CREATE TABLE crawl_campaigns (
+CREATE TABLE facebook_crawl_campaigns (
     id                       BIGSERIAL PRIMARY KEY,
     org_id                   BIGINT NOT NULL,
     name                     TEXT NOT NULL,
@@ -259,9 +282,9 @@ CREATE TABLE crawl_campaigns (
 );
 
 -- Which groups, with per-source cursor + affinity
-CREATE TABLE crawl_campaign_sources (
+CREATE TABLE facebook_crawl_campaign_sources (
     id                 BIGSERIAL PRIMARY KEY,
-    campaign_id        BIGINT NOT NULL REFERENCES crawl_campaigns(id),
+    campaign_id        BIGINT NOT NULL REFERENCES facebook_crawl_campaigns(id),
     org_id             BIGINT NOT NULL,
     source_url         TEXT NOT NULL,
     source_label       TEXT NOT NULL DEFAULT '',
@@ -274,18 +297,18 @@ CREATE TABLE crawl_campaign_sources (
 );
 
 -- Which accounts may serve the campaign
-CREATE TABLE crawl_campaign_accounts (
-    campaign_id BIGINT NOT NULL REFERENCES crawl_campaigns(id),
+CREATE TABLE facebook_crawl_campaign_accounts (
+    campaign_id BIGINT NOT NULL REFERENCES facebook_crawl_campaigns(id),
     org_id      BIGINT NOT NULL,
     account_id  BIGINT NOT NULL,
     PRIMARY KEY (campaign_id, account_id)
 );
 
 -- The queue + append-only run history (one table, status is the queue)
-CREATE TABLE crawl_runs (
+CREATE TABLE facebook_crawl_runs (
     id               BIGSERIAL PRIMARY KEY,
-    campaign_id      BIGINT NOT NULL REFERENCES crawl_campaigns(id),
-    source_id        BIGINT NOT NULL REFERENCES crawl_campaign_sources(id),
+    campaign_id      BIGINT NOT NULL REFERENCES facebook_crawl_campaigns(id),
+    source_id        BIGINT NOT NULL REFERENCES facebook_crawl_campaign_sources(id),
     org_id           BIGINT NOT NULL,
     account_id       BIGINT NOT NULL DEFAULT 0,               -- 0 until admitted
     status           TEXT NOT NULL DEFAULT 'queued',
@@ -303,13 +326,21 @@ CREATE TABLE crawl_runs (
     finished_at      TIMESTAMPTZ
 );
 
--- THE invariant: 1 account = max 1 active crawl, enforced by the database
-CREATE UNIQUE INDEX uq_crawl_runs_one_active_per_account
-    ON crawl_runs(account_id) WHERE status = 'running';
+-- THE invariant: 1 account = max 1 active crawl. Org-scoped; excludes the
+-- account_id=0 "not yet admitted" sentinel so queued rows never collide.
+CREATE UNIQUE INDEX uq_facebook_crawl_runs_one_active_per_org_account
+    ON facebook_crawl_runs(org_id, account_id)
+    WHERE status = 'running' AND account_id > 0;
 -- and: at most 1 queued/running run per source (no double-queueing a group)
-CREATE UNIQUE INDEX uq_crawl_runs_one_open_per_source
-    ON crawl_runs(source_id) WHERE status IN ('queued','running');
+CREATE UNIQUE INDEX uq_facebook_crawl_runs_one_open_per_org_source
+    ON facebook_crawl_runs(org_id, source_id)
+    WHERE status IN ('queued','running');
 ```
+
+The partial unique indexes are **safety backstops, not the scheduler**: the
+scheduler/lease logic (Allocator lease + Coordinator budget) must still enforce
+the invariant *before* dispatch, so a constraint violation is always a logic
+bug surfacing, never the normal admission path.
 
 Notes:
 - Every table carries `org_id`; every query is org-scoped (hard rule).
@@ -343,15 +374,18 @@ internal/store/crawl/
 cmd/scraper/            # composition root: wires store <-> freshlead policy <-> jobs
     (adapter files; no policy logic here)
 
-local-connector-extension/content/facebook/timestamp/
-    parse.js            # §4 pure parser + confidence model
-local-connector-extension/test/
-    timestamp_parse.test.js
+local-connector-extension/platforms/facebook/       # post-PR-C2.5 topology:
+    crawl_time.js           # §4 DOM timestamp extraction + confidence model (pure)
+    crawl_freshness.js      # §3 eligibility + §5 frontier streak policy (pure)
+    crawl_time.test.mjs
+    crawl_freshness.test.mjs
 
 local-connector-extension/content/crawl.js
-    # consumes fresh_cutoff_at from the task payload; feeds items through the
-    # frontier streak; emits posted_at/confidence per item. Already large —
-    # frontier/parse logic stays OUT of it (imported), only the wiring lands here.
+    # remains the orchestrator/wiring layer ONLY: consumes fresh_cutoff_at from
+    # the task payload, feeds items through crawl_freshness, emits per-item
+    # posted_at/confidence. DOM timestamp extraction and freshness policy live
+    # under platforms/facebook/ (beside crawl_pacing.js, crawl_progress.js,
+    # crawl_post_identity.js) — never inline in crawl.js.
 ```
 
 Every new file ≤200 lines; policy functions pure; reason codes centralized in one
@@ -377,6 +411,21 @@ Future runtime train (§11), impact per the invariants:
 - **No auth/session/cookie surface change**; the extension gains one pure parser
   module and consumes one extra task field.
 
+### Connector version compatibility gate
+
+Fresh-lead campaigns are **strict mode**: they require a connector/extension
+version that reports per-item `posted_at` + `timestamp_confidence` (PR-M1+).
+
+- Old connectors keep working — they can still submit **legacy crawl results**
+  for the existing intent path; nothing breaks for them.
+- The campaign scheduler checks the connector's reported capability/version
+  **before dispatch**. A strict fresh-lead run is **never dispatched** to a
+  connector that cannot prove freshness.
+- When every eligible connector for an account is unsupported, the run stays in
+  a visible `waiting_for_connector_upgrade` state (typed reason on the run row,
+  surfaced in telemetry/UI) — it must **not** silently dispatch and produce
+  zero leads, which would be indistinguishable from "no fresh posts exist".
+
 ---
 
 ## 10. Failure handling
@@ -391,6 +440,7 @@ sees the reason, never a silent stall.
 | Timestamp parser degrades (selector drift) | Run stops `timestamp_parser_degraded` (§4); campaign keeps serving other sources; alarm surfaces in telemetry. No guessing, no lead creation from unparsed items. |
 | Frontier never reached, `max_items` hit | Normal end: `stopped_safe` + `max_items_reached`; cursor advances; next due cycle continues coverage. |
 | One account dead, queue non-empty | Scheduler simply never picks it (state not `ready`); other pool accounts drain the rest. A campaign is never blocked by one account. |
+| Connector too old for strict mode | Run held in `waiting_for_connector_upgrade` (§9 gate); operator sees the reason. Never dispatched to a connector that cannot report `posted_at`/`timestamp_confidence`. |
 | Dispatch/DB race on admission | The two partial unique indexes (§7) make double-admission a constraint violation, not a data corruption; loser retries the scheduler decision. |
 | Server restart | Queue and run state are durable; reaper + scheduler recover from the tables alone. No in-memory-only orchestration state. |
 
@@ -407,7 +457,7 @@ and policy decisions. Sequenced to stay releasable at every step.
 | PR | Scope | Behavior change? |
 |---|---|---|
 | **PR-M0** | This spec + registry entry. | Docs only. |
-| **PR-M1** | Extension timestamp parser (`timestamp/parse.js`, pure + tested) and per-item `posted_at`/`confidence` on the existing crawl wire. | Additive telemetry; fills the currently-empty `posted_at`. No stop-logic change. |
+| **PR-M1** | Extension timestamp parser (`platforms/facebook/crawl_time.js` + `crawl_time.test.mjs`, pure + tested) and per-item `posted_at`/`confidence` on the existing crawl wire; `content/crawl.js` gains wiring only. | Additive telemetry; fills the currently-empty `posted_at`. No stop-logic change. |
 | **PR-M2** | Platform migration: §7 tables + partial unique indexes. **RED — own reviewed PR.** | Schema only; nothing reads it yet. |
 | **PR-M3** | Pure policy package `freshlead` (freshness gate, frontier, scheduler decision, reason codes) + store CRUD. | No wiring; dead code with tests. |
 | **PR-M4** | Scheduler wiring in composition root: campaign → queue → admit via Allocator lease + machine budget + DB constraint. | New orchestration path; existing intent path untouched. |
@@ -426,11 +476,15 @@ The runtime train is done when all of these hold, each pinned by a test or a
 telemetry assertion:
 
 1. Two dispatch attempts for the same account cannot both reach `running`
-   (constraint test on `uq_crawl_runs_one_active_per_account`).
+   (constraint test on `uq_facebook_crawl_runs_one_active_per_org_account`).
 2. A campaign of N sources and a 1-slot machine budget crawls sources strictly
    one at a time, FIFO by priority (scheduler decision unit tests).
-3. A post with `exact`/`derived_relative` timestamp older than `fresh_cutoff_at`
-   never creates a lead; the run's `stale_skipped` counter reflects it.
+3. A post whose worst-case age crosses the cutoff never creates a lead:
+   `exact` with `posted_at_utc < fresh_cutoff_at`, and `derived_relative` with
+   `earliest_utc < fresh_cutoff_at` (e.g. "24 giờ"), are both excluded as
+   `stale_post`; a `derived_relative` whose whole window is inside the fresh
+   window (e.g. "23 giờ" at a 24h cutoff) is eligible. Boundary cases pinned by
+   parser + gate unit tests.
 4. A post with `ambiguous`/`unknown` timestamp never creates a lead;
    `timestamp_unparsed`/`timestamp_ambiguous` counters reflect it.
 5. `fresh_cutoff_at` is set by the server at dispatch and identical in the run
@@ -450,6 +504,9 @@ telemetry assertion:
     in the pattern of `crawl_org_scope_test.go`.
 12. No raw timestamp text, page text, or DOM leaves the extension — wire carries
     typed fields only.
+13. A strict fresh-lead run facing only pre-PR-M1 connectors is held in
+    `waiting_for_connector_upgrade` and never dispatched (scheduler gate test);
+    legacy intent crawls on the same connector are unaffected.
 
 ---
 
@@ -459,13 +516,14 @@ telemetry assertion:
 |---|---|
 | **Client-computed freshness cutoff** (extension subtracts 24h from its own clock) | Client clocks skew and are user-controlled; lead eligibility would differ per machine. Cutoff is a server contract (§3). |
 | **Trusting ambiguous timestamps** ("hôm qua" counts as fresh) | Fresh-lead-only means provably fresh; plausible-but-unproven posts pollute the lead queue with stale contacts. Excluded with a typed reason instead. |
+| **Freshest-interpretation-wins at the margin** (`derived_relative` eligible when `latest_utc ≥ fresh_cutoff_at`) | Admits posts whose oldest possible age is already past the cutoff ("24 giờ" would pass) — plausibly fresh, not provably fresh. Replaced by the strict whole-window rule `earliest_utc ≥ fresh_cutoff_at` (§4). |
 | **Timestamp-based dedup** (replace content dedup with posted_at identity) | Already rejected in `crawl.js` (in-code mandate): FB reorders/pins/async-injects too aggressively; timestamps are also the *least* reliable extracted field. |
 | **First-stale-post stop** (stop the moment one old post appears) | Pinned/re-injected posts make single-post evidence worthless; would truncate runs at the first pin. Consecutive-streak frontier instead (§5). |
 | **Round-robin account rotation per source** (spread each group over many accounts for throughput) | Rotation is the coordinated-inauthentic-behaviour pattern; also destroys the membership/affinity model. Sticky affinity + single machine slot instead (§2). |
 | **Auto-handoff of a source to the next account after a checkpoint** | Rotation-to-dodge; explicitly forbidden by PR-C0.5. Source waits for operator/recovery. |
 | **Relying on Facebook's "sort by new" feed parameter as the freshness guarantee** | FB changes/ignores the parameter unpredictably; it may be used as a *hint* in the task URL but never replaces per-post timestamp proof or the frontier. |
 | **Shipping raw page HTML server-side to parse timestamps centrally** | Violates the privacy rule (no full-page DOM off the browser); parser runs client-side, typed fields only. |
-| **A separate queue service / generic scheduler framework** | A status column + two partial unique indexes on `crawl_runs` *is* the queue; no second use case justifies a framework (PR-C0.5 §8 discipline). |
+| **A separate queue service / generic scheduler framework** | A status column + two partial unique indexes on `facebook_crawl_runs` *is* the queue; no second use case justifies a framework (PR-C0.5 §8 discipline). |
 | **Extending `org_crawl_intents` in place** (add campaign columns to the intents table) | Conflates two lifecycles (a personal recurring intent vs an org campaign plan with pool + runs); would force RED changes to a live table for a new feature. Additive tables instead (§7). |
 | **Auto-clearing `human_required` after a timer to keep the campaign moving** | Forbidden by the PR-C0.5 invariant; a campaign's throughput never overrides account safety. |
 
