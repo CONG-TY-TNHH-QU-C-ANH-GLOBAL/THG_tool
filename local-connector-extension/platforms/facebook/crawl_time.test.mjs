@@ -52,6 +52,17 @@ test('24 giờ → still derived_relative; parser exposes the interval, not elig
   assert.strictEqual(p.latest_utc, new Date(NOW - 24 * H).toISOString());
 });
 
+test('just-now text → derived_relative, [now-1min, now] interval (vi + en)', () => {
+  for (const text of ['vừa xong', 'vua xong', 'just now', 'now', 'Just Now']) {
+    const p = rel(text);
+    assert.strictEqual(p.confidence, 'derived_relative', text);
+    assert.strictEqual(p.raw_unit, 'minute', text);
+    assert.strictEqual(p.posted_at, new Date(NOW).toISOString(), text);
+    assert.strictEqual(p.latest_utc, new Date(NOW).toISOString(), text);
+    assert.strictEqual(p.earliest_utc, new Date(NOW - MIN).toISOString(), text);
+  }
+});
+
 test('day-level text → ambiguous (1 ngày / hôm qua / yesterday / 1d)', () => {
   for (const text of ['1 ngày', 'hôm qua', 'yesterday', '1d']) {
     const p = rel(text);

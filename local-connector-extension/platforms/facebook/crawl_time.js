@@ -39,6 +39,9 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
 
   // Coarse day-level words carry no count → always ambiguous (spec §4).
   const COARSE_DAY_RE = /(hôm qua|hom qua|yesterday)/i;
+  // "Just now" text → the freshest possible post. Modelled as a 0-minute
+  // relative age (derived_relative), i.e. posted within the last minute.
+  const JUST_NOW_RE = /^(vừa xong|vua xong|just now|now)$/i;
 
   function toMs(now) {
     if (typeof now === 'number') return now;
@@ -73,6 +76,7 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
   function parseRelativeAge(text, nowMs) {
     const s = String(text || '').trim().toLowerCase();
     if (!s) return null;
+    if (JUST_NOW_RE.test(s)) return relativeInterval('minute', 0, 'derived_relative', nowMs);
     if (COARSE_DAY_RE.test(s)) return relativeInterval('day', 1, 'ambiguous', nowMs);
     const m = s.match(/^(\d{1,3})\s*(\p{L}+)/u);
     if (!m) return null;
