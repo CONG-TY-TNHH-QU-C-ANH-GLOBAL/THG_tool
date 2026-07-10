@@ -69,7 +69,7 @@ facebook_crawl_runs queue (one queued run per due source, FIFO by priority)
 one run = one account × one group visit, bounded by fresh_cutoff_at + max_items
    │ posts stream through existing crawl-progress path
    ▼
-fresh-lead gate at ingest (server): posted_at ≥ fresh_cutoff_at AND confidence OK
+fresh-lead gate at ingest (server): eligible under the §4 confidence gate
 ```
 
 Roles:
@@ -117,10 +117,15 @@ Roles:
 
 ## 3. Fresh-lead-only rule
 
-**Rule:** a crawled post becomes a lead **only if** its parsed
-`posted_at ≥ fresh_cutoff_at` **and** the timestamp parse confidence is
-trustworthy (§4). Everything else may still be stored as a post (dedup history)
-but is excluded from lead creation with a typed reason.
+**Rule:** a crawled post becomes a lead **only if** its canonical
+`TimestampParse` DTO is eligible under the **confidence-specific freshness gate
+in §4**: `exact` compares `posted_at ≥ fresh_cutoff_at`; `derived_relative`
+compares `earliest_utc ≥ fresh_cutoff_at` (the whole possible interval must be
+fresh — never the representative `posted_at`); `ambiguous`, `unknown`, and
+future/invalid timestamps are never eligible. There is **no generic
+posted_at-vs-cutoff comparison** anywhere in the pipeline. Everything else may
+still be stored as a post (dedup history) but is excluded from lead creation
+with a typed reason.
 
 ### Server-defined `fresh_cutoff_at`
 
@@ -427,9 +432,12 @@ CREATE TABLE facebook_crawl_lead_index (
     org_id          BIGINT NOT NULL,
     post_dedup_hash TEXT NOT NULL,
     lead_id         BIGINT,                 -- null between claim and creation
-    run_id          BIGINT REFERENCES facebook_crawl_runs(id),
+    run_id          BIGINT,                 -- provenance; NULL if run purged
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (org_id, post_dedup_hash)
+    PRIMARY KEY (org_id, post_dedup_hash),
+    -- org-scoped provenance: a claim cannot point at another org's run
+    FOREIGN KEY (org_id, run_id)
+        REFERENCES facebook_crawl_runs(org_id, id)
 );
 ```
 
