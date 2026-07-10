@@ -89,7 +89,7 @@ Roles:
 - **1 account = max 1 active crawl.** Enforced twice: in-process by the existing
   `Allocator` `PolicySticky` lease, and durably by a partial unique index on
   `facebook_crawl_runs(org_id, account_id) WHERE status = 'running' AND
-  account_id > 0` (§7). DB constraint over
+  account_id IS NOT NULL` (§7). DB constraint over
   hopeful application checks.
 - **Machine budget unchanged** — `max_active_crawls_per_machine = 1` default from
   PR-C0.5 §4. A 5-account pool does not mean 5 parallel crawls; it means the queue
@@ -108,8 +108,10 @@ Roles:
   another account. The source waits for the same account to recover (operator path,
   PR-C0.5 §3 invariant) or for an operator to reassign it explicitly. Automatic
   handoff after a wall is the rotation-to-dodge pattern and is forbidden.
-- **No retry storm.** A failed run re-enters `queued` at most once automatically,
-  after the account's cooldown, with the attempt counter carried on the run row.
+- **No retry storm.** A failed/abandoned run is retried at most once
+  automatically, after the account's cooldown — and a retry is a **new
+  appended run row** (new `run_id`, `attempt + 1`); the old row stays
+  immutable history (§10 fencing).
 
 ---
 
@@ -315,6 +317,18 @@ CREATE TABLE facebook_crawl_campaigns (
     UNIQUE (org_id, id)                     -- composite-FK anchor for children
 );
 
+-- Which accounts may serve the campaign. Declared before sources/runs:
+-- both constrain their account columns against this pool.
+CREATE TABLE facebook_crawl_campaign_accounts (
+    campaign_id BIGINT NOT NULL,
+    org_id      BIGINT NOT NULL,
+    account_id  BIGINT NOT NULL,
+    PRIMARY KEY (campaign_id, account_id),
+    UNIQUE (org_id, campaign_id, account_id),   -- composite-FK anchor
+    FOREIGN KEY (org_id, campaign_id)
+        REFERENCES facebook_crawl_campaigns(org_id, id)
+);
+
 -- Which groups, with per-source cursor + affinity
 CREATE TABLE facebook_crawl_campaign_sources (
     id                 BIGSERIAL PRIMARY KEY,
@@ -323,39 +337,34 @@ CREATE TABLE facebook_crawl_campaign_sources (
     source_url         TEXT NOT NULL,
     source_label       TEXT NOT NULL DEFAULT '',
     priority           INTEGER NOT NULL DEFAULT 0,
-    preferred_account_id BIGINT NOT NULL DEFAULT 0,           -- sticky affinity
+    preferred_account_id BIGINT,                -- sticky affinity; NULL = none
     cursor_last_post_at TIMESTAMPTZ,
     last_run_at        TIMESTAMPTZ,
     status             TEXT NOT NULL DEFAULT 'active',
     UNIQUE (campaign_id, source_url),
-    UNIQUE (campaign_id, id),               -- composite-FK anchor for runs
+    UNIQUE (org_id, campaign_id, id),           -- composite-FK anchor for runs
     FOREIGN KEY (org_id, campaign_id)
-        REFERENCES facebook_crawl_campaigns(org_id, id)
+        REFERENCES facebook_crawl_campaigns(org_id, id),
+    -- when non-NULL, affinity must point into this campaign's account pool
+    FOREIGN KEY (org_id, campaign_id, preferred_account_id)
+        REFERENCES facebook_crawl_campaign_accounts(org_id, campaign_id, account_id)
 );
 
--- Which accounts may serve the campaign
-CREATE TABLE facebook_crawl_campaign_accounts (
-    campaign_id BIGINT NOT NULL,
-    org_id      BIGINT NOT NULL,
-    account_id  BIGINT NOT NULL,
-    PRIMARY KEY (campaign_id, account_id),
-    FOREIGN KEY (org_id, campaign_id)
-        REFERENCES facebook_crawl_campaigns(org_id, id)
-);
-
--- The queue + append-only run history (one table, status is the queue)
+-- The queue + append-only run history (one table, status is the queue).
+-- Run rows are immutable once terminal; a retry APPENDS a new row (§10),
+-- it never reuses or rewrites an old one.
 CREATE TABLE facebook_crawl_runs (
     id               BIGSERIAL PRIMARY KEY,
     campaign_id      BIGINT NOT NULL,
     source_id        BIGINT NOT NULL,
     org_id           BIGINT NOT NULL,
-    account_id       BIGINT NOT NULL DEFAULT 0,               -- 0 until admitted
+    account_id       BIGINT,                    -- NULL until admitted
     status           TEXT NOT NULL DEFAULT 'queued',
         -- queued|waiting_for_connector_upgrade|running
         -- |succeeded|stopped_safe|failed|abandoned
     exit_reason_code TEXT NOT NULL DEFAULT '',
     fresh_cutoff_at  TIMESTAMPTZ,                             -- set at dispatch
-    attempt          INTEGER NOT NULL DEFAULT 1,  -- doubles as fencing token (§10)
+    attempt          INTEGER NOT NULL DEFAULT 1, -- (run_id, attempt) = fencing token (§10)
     posts_seen       INTEGER NOT NULL DEFAULT 0,
     fresh_lead_count INTEGER NOT NULL DEFAULT 0,
     stale_skipped    INTEGER NOT NULL DEFAULT 0,
@@ -364,20 +373,23 @@ CREATE TABLE facebook_crawl_runs (
     started_at       TIMESTAMPTZ,
     heartbeat_at     TIMESTAMPTZ,
     finished_at      TIMESTAMPTZ,
-    -- composite FKs: a run cannot reference another org's campaign, nor a
-    -- source belonging to a different campaign — invalid cross-tenant /
-    -- cross-campaign rows are unrepresentable, not merely unqueried
+    -- composite FKs, org_id in every one: a run cannot reference another
+    -- org's campaign, a source of a different org/campaign, or an account
+    -- outside this campaign's pool — invalid cross-tenant / cross-campaign
+    -- rows are unrepresentable, not merely unqueried
     FOREIGN KEY (org_id, campaign_id)
         REFERENCES facebook_crawl_campaigns(org_id, id),
-    FOREIGN KEY (campaign_id, source_id)
-        REFERENCES facebook_crawl_campaign_sources(campaign_id, id)
+    FOREIGN KEY (org_id, campaign_id, source_id)
+        REFERENCES facebook_crawl_campaign_sources(org_id, campaign_id, id),
+    FOREIGN KEY (org_id, campaign_id, account_id)
+        REFERENCES facebook_crawl_campaign_accounts(org_id, campaign_id, account_id)
 );
 
--- THE invariant: 1 account = max 1 active crawl. Org-scoped; excludes the
--- account_id=0 "not yet admitted" sentinel so queued rows never collide.
+-- THE invariant: 1 account = max 1 active crawl. Org-scoped; account_id is
+-- NULL until admitted, so queued rows never collide.
 CREATE UNIQUE INDEX uq_facebook_crawl_runs_one_active_per_org_account
     ON facebook_crawl_runs(org_id, account_id)
-    WHERE status = 'running' AND account_id > 0;
+    WHERE status = 'running' AND account_id IS NOT NULL;
 -- and: at most 1 OPEN run per source (no double-queueing a group).
 -- waiting_for_connector_upgrade is an open state and counts here.
 CREATE UNIQUE INDEX uq_facebook_crawl_runs_one_open_per_org_source
@@ -401,6 +413,11 @@ The partial unique indexes are **safety backstops, not the scheduler**: the
 scheduler/lease logic (Allocator lease + Coordinator budget) must still enforce
 the invariant *before* dispatch, so a constraint violation is always a logic
 bug surfacing, never the normal admission path.
+
+Nullable-column FK semantics: the account-pool FKs on `preferred_account_id`
+and `account_id` use the default `MATCH SIMPLE` — while the column is NULL the
+FK is not checked, which is exactly the contract: "when non-NULL, must be in
+this campaign's pool".
 
 Notes:
 - Every table carries `org_id`; every query is org-scoped (hard rule).
@@ -502,8 +519,8 @@ sees the reason, never a silent stall.
 | Failure | Handling |
 |---|---|
 | Checkpoint / login wall / risk signal | Stop per PR-C0.5; run → `stopped_safe` + reason; account → its safety state; source **stays with the account** (no auto-handoff, §2); `human_required` only clears via the operator path. |
-| Connector disconnects mid-run | Server reaper: `running` run with `heartbeat_at` older than a lease timeout → `abandoned`; re-queued **once** (attempt=2) after account cooldown. Never instant. |
-| Stale worker writes after requeue | `attempt` is the **fencing token**: every dispatch payload carries `(run_id, attempt)`, and every progress/result/finish write is guarded by `WHERE id = ? AND attempt = ? AND status = 'running'`. A write from a superseded attempt matches zero rows, is dropped with typed reason `stale_attempt` (telemetry-logged), and mutates nothing. |
+| Connector disconnects mid-run | Server reaper: `running` run with `heartbeat_at` older than a lease timeout → `abandoned` and that row is **immutable from then on**. The retry is a **new appended run row** (new `run_id`, `attempt = old + 1`), created **once**, after account cooldown. Never instant, never a reused/rewritten row. |
+| Stale worker writes after requeue | `(run_id, attempt)` is the **fencing token**, carried in every dispatch payload. Every heartbeat/progress/finish/lead write is guarded by `WHERE org_id = ? AND id = ? AND attempt = ? AND status = 'running'`. A reaped worker still holds the *old* run_id, whose row is `abandoned` — its writes match **zero rows**, are recorded as `stale_attempt` (telemetry-logged), and mutate nothing. Append-only retries make token reuse structurally impossible: no two dispatches ever share `(run_id, attempt)`. |
 | Timestamp parser degrades (selector drift) | Run stops `timestamp_parser_degraded` (§4); campaign keeps serving other sources; alarm surfaces in telemetry. No guessing, no lead creation from unparsed items. |
 | Frontier never reached, `max_items` hit | Normal end: `stopped_safe` + `max_items_reached`; cursor advances; next due cycle continues coverage. |
 | One account dead, queue non-empty | Scheduler simply never picks it (state not `ready`); other pool accounts drain the rest. A campaign is never blocked by one account. |
@@ -566,7 +583,8 @@ telemetry assertion:
    the same post yield exactly one lead + one `duplicate_lead` exclusion).
 8. A run ending in a checkpoint/login state leaves the source un-reassigned and
    the account in the PR-C0.5 state machine; no automatic account handoff occurs.
-9. A killed connector yields exactly one `abandoned` → re-queue (attempt 2), only
+9. A killed connector yields exactly one `abandoned` row (immutable thereafter)
+   plus exactly one **new** run row (`attempt = 2`, new `run_id`), created only
    after cooldown (reaper test with injected clock).
 10. Parser confidence ratio below the floor stops the run with
     `timestamp_parser_degraded` and creates no leads from unparsed items.
@@ -578,10 +596,11 @@ telemetry assertion:
     `waiting_for_connector_upgrade` and never dispatched (scheduler gate test);
     the held run occupies the one-open-run-per-source slot; legacy intent
     crawls on the same connector are unaffected.
-14. A progress/result write carrying a superseded `(run_id, attempt)` fencing
-    token — e.g. from a reaped worker after its run was re-queued as attempt 2 —
-    mutates nothing and is logged as `stale_attempt` (fencing test with two
-    simulated workers).
+14. A heartbeat/progress/finish/lead write carrying a superseded `(run_id,
+    attempt)` fencing token — e.g. from a reaped worker whose run was retried
+    as a new row — matches zero rows under the `WHERE org_id = ? AND id = ?
+    AND attempt = ? AND status = 'running'` guard, mutates nothing, and is
+    logged as `stale_attempt` (fencing test with two simulated workers).
 
 ---
 
