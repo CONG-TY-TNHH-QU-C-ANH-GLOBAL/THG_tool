@@ -88,6 +88,23 @@ test('no parseable timestamp → unknown, all fields null/none', () => {
   assert.strictEqual(u.raw_unit, 'none');
 });
 
+test('no-guess: an age word embedded in a sentence is NOT a timestamp', () => {
+  // Only a complete age string parses; a body sentence that merely starts
+  // with (or contains) "2 giờ" / "hôm qua" must stay unknown.
+  for (const text of [
+    '2 hours at beach', '2 giờ tại bãi biển', '2h and counting',
+    'hôm qua tôi đăng bài', 'yesterday I posted this', 'nowhere',
+  ]) {
+    assert.strictEqual(rel(text), null, `${text} must not parse as an age`);
+  }
+  // The complete forms still parse.
+  assert.strictEqual(rel('2 hours').confidence, 'derived_relative');
+  assert.strictEqual(rel('2 giờ').confidence, 'derived_relative');
+  assert.strictEqual(rel('hôm qua').confidence, 'ambiguous');
+  assert.strictEqual(rel('vừa xong').confidence, 'derived_relative');
+  assert.strictEqual(rel('just now').confidence, 'derived_relative');
+});
+
 test('exact machine datetime → confidence exact, point interval, raw_unit date', () => {
   const at = '2026-07-10T09:30:00.000Z';
   const p = T.classifyTimestampSignal({ exactUtc: at, relativeText: 'hôm qua' }, NOW);
@@ -124,7 +141,7 @@ function fakeNode({ dataUtime = null, datetime = null, texts = [] } = {}) {
       if (sel.includes('data-utime') && dataUtime != null) {
         return { dataset: { utime: String(dataUtime) } };
       }
-      if (sel.includes('time') && datetime != null) {
+      if (sel.includes('datetime') && datetime != null) {
         return { getAttribute: () => datetime };
       }
       return null;
@@ -138,6 +155,16 @@ test('parsePostTimestamp: data-utime (epoch seconds) → exact', () => {
   const p = T.parsePostTimestamp(fakeNode({ dataUtime: secs, texts: ['hôm qua'] }), NOW);
   assert.strictEqual(p.confidence, 'exact');
   assert.strictEqual(p.posted_at, new Date(secs * 1000).toISOString());
+});
+
+test('parsePostTimestamp: <time datetime> → exact, normalized ISO point interval', () => {
+  const at = '2026-07-10T09:30:00.000Z';
+  const p = T.parsePostTimestamp(fakeNode({ datetime: at, texts: ['hôm qua'] }), NOW);
+  assert.strictEqual(p.confidence, 'exact'); // machine datetime wins over text
+  assert.strictEqual(p.posted_at, at);
+  assert.strictEqual(p.earliest_utc, at);
+  assert.strictEqual(p.latest_utc, at);
+  assert.strictEqual(p.raw_unit, 'date');
 });
 
 test('parsePostTimestamp: relative anchor text when no machine datetime', () => {

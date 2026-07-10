@@ -519,7 +519,7 @@ var THGContentCrawl = (() => {
           shares: 0,
           post_fbid: postFBID,
           group_fbid: groupFBID,
-          posted_at: ts.posted_at || '',
+          posted_at: ts.posted_at,
           confidence: ts.confidence,
           earliest_utc: ts.earliest_utc,
           latest_utc: ts.latest_utc,

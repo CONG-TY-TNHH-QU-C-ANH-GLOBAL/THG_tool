@@ -37,11 +37,18 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
     { unit: 'week', confidence: 'ambiguous', re: /^(tuần|tuan|weeks?|wks?|wk|w)$/i },
   ];
 
+  // All timestamp patterns are FULLY anchored: only a complete age string
+  // parses. Body text that merely contains an age word ("2 giờ tại bãi biển",
+  // "hôm qua tôi đăng bài") must stay unknown — the parser never guesses.
+  //
   // Coarse day-level words carry no count → always ambiguous (spec §4).
-  const COARSE_DAY_RE = /(hôm qua|hom qua|yesterday)/i;
+  const COARSE_DAY_RE = /^(hôm qua|hom qua|yesterday)$/i;
   // "Just now" text → the freshest possible post. Modelled as a 0-minute
   // relative age (derived_relative), i.e. posted within the last minute.
   const JUST_NOW_RE = /^(vừa xong|vua xong|just now|now)$/i;
+  // A bare "<number><unit>" age, whole-string. The trailing $ is what rejects
+  // "2 hours at beach"; the unit token is then classified against UNITS.
+  const NUMERIC_AGE_RE = /^(\d{1,3})\s*(\p{L}+)$/u;
 
   function toMs(now) {
     if (typeof now === 'number') return now;
@@ -78,7 +85,7 @@ globalThis.THGCrawlTime = globalThis.THGCrawlTime || (() => {
     if (!s) return null;
     if (JUST_NOW_RE.test(s)) return relativeInterval('minute', 0, 'derived_relative', nowMs);
     if (COARSE_DAY_RE.test(s)) return relativeInterval('day', 1, 'ambiguous', nowMs);
-    const m = s.match(/^(\d{1,3})\s*(\p{L}+)/u);
+    const m = NUMERIC_AGE_RE.exec(s);
     if (!m) return null;
     const qty = Number(m[1]);
     const found = UNITS.find(u => u.re.test(m[2]));
