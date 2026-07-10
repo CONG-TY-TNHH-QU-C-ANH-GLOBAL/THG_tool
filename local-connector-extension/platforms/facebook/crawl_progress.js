@@ -30,8 +30,19 @@ globalThis.THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
     return '';
   }
 
+  // Duplicate-heavy TELEMETRY signal — deliberately half the pacing STOP
+  // evidence (crawl_pacing PACING.DUP_HEAVY_NO_NEW_STOP=12 / DUP_HEAVY_MIN_DUPES
+  // =40) so the operator sees "nhiều bài trùng" building BEFORE the stop fires,
+  // instead of "scrolling" right up to a duplicate_heavy exit. Signal-only:
+  // pacing/stop decisions never read these.
+  const DUP_SIGNAL_PASSES_SINCE_NEW = 6;
+  const DUP_SIGNAL_MIN_DUPES = 20;
+
   // Flat reason picker (Sonar-friendly early returns). Risk always wins so a
   // checkpoint/login/block is never masked by a "scrolling" label.
+  // s.newCount is the CUMULATIVE collected total; recent-progress evidence is
+  // s.passesSinceNew (passes since the last new post, injected by the caller;
+  // undefined on older callers → the recent-evidence branch simply never fires).
   function pickCrawlReasonCode(s) {
     const risk = crawlRiskToReason(s.risk);
     if (risk) return risk;
@@ -41,6 +52,12 @@ globalThis.THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
     // (scrollY flat but posts still loading) would be mislabelled as stalled.
     if (s.newCount === 0 && s.scrollCount > 0 && !s.scrollMovedEver) return 'scroll_not_moving';
     if (s.newCount === 0 && s.duplicateCount >= 3) return 'duplicate_heavy';
+    // Mid-crawl duplicate-heavy: posts WERE collected (cumulative newCount > 0)
+    // but the feed has re-served many duplicates and nothing new for several
+    // passes — the run is trending to a duplicate_heavy exit, say so now.
+    if (s.passesSinceNew >= DUP_SIGNAL_PASSES_SINCE_NEW && s.duplicateCount >= DUP_SIGNAL_MIN_DUPES) {
+      return 'duplicate_heavy';
+    }
     if (s.newCount === 0 && s.noProgressRounds > 0) return 'no_new_posts';
     return 'scrolling';
   }
@@ -116,7 +133,8 @@ globalThis.THGCrawlProgress = globalThis.THGCrawlProgress || (() => {
   }
 
   return {
-    CRAWL_PHASE_OF, crawlRiskToReason, pickCrawlReasonCode, classifyCrawlProgress,
+    CRAWL_PHASE_OF, DUP_SIGNAL_PASSES_SINCE_NEW, DUP_SIGNAL_MIN_DUPES,
+    crawlRiskToReason, pickCrawlReasonCode, classifyCrawlProgress,
     zeroCrawlDiag, buildCrawlProgressMessage, detectCrawlRisk, detectCrawlBanner,
   };
 })();

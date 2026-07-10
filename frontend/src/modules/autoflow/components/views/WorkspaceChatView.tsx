@@ -11,6 +11,7 @@ import {
   type AgentChatHistoryItem,
 } from '../../services/agentChatService';
 import { getCrawlIntents, type CrawlIntent } from '../../services/crawlIntentService';
+import { SEVERITY_COLOR, systemMessageSeverity, type SystemSeverity } from './chatSeverity';
 import { getConnectorStatus, type ConnectorAccountStatus } from '../../services/connectorService';
 import MissionCard from '../missions/MissionCard';
 import { useLang } from '../../i18n/useLang';
@@ -48,6 +49,9 @@ interface ChatMessage {
   time: string;
   ok?: boolean;
   historyId?: number;
+  // System messages only: drives text/avatar color (crawl progress is info,
+  // stalled/risk stops are warning, failures stay error-red).
+  severity?: SystemSeverity;
 }
 
 function nowLabel(locale: string) {
@@ -72,6 +76,7 @@ function flattenHistory(items: AgentChatHistoryItem[], locale: string): ChatMess
         text: item.aiResponse || item.userPrompt,
         time,
         ok: item.success,
+        severity: systemMessageSeverity(item.actionTaken, item.actionArgs, item.success),
       });
       continue;
     }
@@ -149,10 +154,12 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
   const selectedStatus = accountId === '' ? undefined : statusByAccount.get(Number(accountId));
 
   const appendSystemMessage = useCallback(
-    (text: string) => {
+    // Default 'error': most local system messages are client-side failures.
+    // Informational notices (e.g. auto account-switch) pass 'info' explicitly.
+    (text: string, severity: SystemSeverity = 'error') => {
       setMessages((prev) => [
         ...prev,
-        { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: false },
+        { id: `system-${Date.now()}`, role: 'system', text, time: nowLabel(locale), ok: severity !== 'error', severity },
       ]);
     },
     [locale],
@@ -222,6 +229,7 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
       setAccountId(live.account_id);
       appendSystemMessage(
         `Đã chuyển sang tài khoản đang đăng nhập trong Chrome: ${live.account_fb_display_name || live.account_name}.`,
+        'info',
       );
     }
   }, [accountId, liveMatches, statusByAccount]);
@@ -360,11 +368,14 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
               const canDelete = message.role === 'assistant' && !!message.historyId;
               const deletingThis = canDelete && deletingHistoryId === message.historyId;
               const senderLabel = isUser ? tv.senderYou : isSystem ? tv.senderSystem : tv.senderCopilot;
+              // System tone follows the message severity (crawl progress = info,
+              // stalled stop = warning, failure = error) instead of always red.
+              const systemColor = SEVERITY_COLOR[message.severity ?? 'error'];
 
               return (
                 <div key={message.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                   <span className={`avatar ${isUser ? 'avatar-sm' : ''}`}
-                    style={!isUser ? { background: isSystem ? 'var(--hot)' : 'var(--accent)', color: isSystem ? '#fff' : 'var(--accent-ink)', borderColor: isSystem ? 'var(--hot)' : 'var(--accent)' } : {}}>
+                    style={!isUser ? { background: isSystem ? systemColor : 'var(--accent)', color: isSystem ? '#fff' : 'var(--accent-ink)', borderColor: isSystem ? systemColor : 'var(--accent)' } : {}}>
                     {isUser ? 'U' : isSystem ? 'S' : 'A'}
                   </span>
                   <div style={{ flex: 1 }}>
@@ -391,7 +402,7 @@ export default function WorkspaceChatView({ orgId }: Readonly<WorkspaceChatViewP
                         </button>
                       )}
                     </div>
-                    <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: isSystem ? 'var(--hot)' : 'var(--text)' }}>
+                    <div style={{ fontSize: 14, lineHeight: 1.55, whiteSpace: 'pre-wrap', color: isSystem ? systemColor : 'var(--text)' }}>
                       {message.text}
                     </div>
                   </div>

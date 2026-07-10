@@ -422,6 +422,11 @@ var THGContentCrawl = (() => {
       const c = CP().classifyCrawlProgress({
         risk: riskSignal, newCount: items.length, duplicateCount,
         scrollCount: passesRun, noProgressRounds: stagnantPasses,
+        // Recent-progress evidence: passes since the last pass that produced a
+        // new post. Lets the classifier show duplicate_heavy mid-crawl instead
+        // of "scrolling" while the feed only re-serves known posts (newCount is
+        // cumulative, so it can never go back to 0 once posts were collected).
+        passesSinceNew: Math.max(0, passesRun - 1 - lastNewItemPass),
         scrollMovedEver, done, reachedMax: items.length >= maxItems,
       });
       return {

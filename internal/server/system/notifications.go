@@ -433,8 +433,52 @@ func crawlProgressArgsJSON(n CrawlProgressNotice, intent, stage, source string) 
 	return string(b)
 }
 
+// crawlNoProgressLabelVN is the shared label for every "nothing is advancing"
+// reason/phase (no_progress, no_new_posts, scroll_not_moving, stalled).
+const crawlNoProgressLabelVN = "không tăng tiến độ"
+
+// crawlPhaseVN maps the machine phase/reason vocabulary to the compact
+// Vietnamese label shown after "Pha:". Reason codes (precise) and coarse phase
+// buckets share one table — the vocabularies don't collide. English log lines
+// keep the raw codes so dev/ops grep pipelines are unaffected.
+var crawlPhaseVN = map[string]string{
+	// safe_reason_code values (precise, preferred)
+	"scrolling":            "đang quét",
+	"duplicate_heavy":      "nhiều bài trùng",
+	"no_progress":          crawlNoProgressLabelVN,
+	"no_new_posts":         crawlNoProgressLabelVN,
+	"scroll_not_moving":    crawlNoProgressLabelVN,
+	"checkpoint_suspected": "cần kiểm tra checkpoint",
+	"login_required":       "cần đăng nhập lại",
+	"risk_blocked":         "tạm dừng vì rủi ro",
+	"completed":            "hoàn tất",
+	// coarse phase buckets (fallback when no precise reason was reported)
+	"stalled": crawlNoProgressLabelVN,
+	"blocked": "tạm dừng vì rủi ro",
+}
+
+// crawlPhaseLabelVN picks the Vietnamese phase label: the precise reason code
+// wins over the coarse phase; an unknown pair falls back to the raw phase, and
+// to the raw reason when the phase is empty — a future code stays visible
+// instead of rendering as "Pha: .".
+func crawlPhaseLabelVN(phase, reason string) string {
+	if label, ok := crawlPhaseVN[reason]; ok {
+		return label
+	}
+	if label, ok := crawlPhaseVN[phase]; ok {
+		return label
+	}
+	if trimmed := strings.TrimSpace(phase); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(reason)
+}
+
 // crawlProgressDiagVN renders the compact Vietnamese diagnostic suffix for a
 // heartbeat. Empty for a pre-C1B payload (no phase / reason reported). Pure.
+// Counters print only when non-zero: "Vòng không tăng tiến độ: 0" next to a
+// stalled/duplicate-heavy phase read as a contradiction (NoProgressRounds
+// counts scroll rounds that moved nothing, not "no new posts").
 func crawlProgressDiagVN(n CrawlProgressNotice) string {
 	if crawlRiskCodes[n.SafeReasonCode] {
 		return " Đã tạm dừng: cần kiểm tra đăng nhập/checkpoint. Không tự xử lý checkpoint."
@@ -442,8 +486,17 @@ func crawlProgressDiagVN(n CrawlProgressNotice) string {
 	if n.Phase == "" && n.SafeReasonCode == "" {
 		return ""
 	}
-	return fmt.Sprintf(" Pha: %s. Không có bài mới: %d vòng. Trùng: %d.",
-		n.Phase, n.NoProgressRounds, n.DuplicateCount)
+	diag := " Pha: " + crawlPhaseLabelVN(n.Phase, n.SafeReasonCode) + "."
+	if n.NoProgressRounds > 0 {
+		diag += fmt.Sprintf(" Vòng không tăng tiến độ: %d.", n.NoProgressRounds)
+	}
+	if n.DuplicateCount > 0 {
+		diag += fmt.Sprintf(" Bài trùng: %d.", n.DuplicateCount)
+	}
+	if n.SafeReasonCode == "duplicate_heavy" {
+		diag += " Tín hiệu: nhiều bài trùng, có thể đã hết bài mới."
+	}
+	return diag
 }
 
 func NotifyCrawlProgress(db *store.Store, notifier func(string), n CrawlProgressNotice) {

@@ -45,12 +45,51 @@ func TestCrawlProgressDiagVN(t *testing.T) {
 		}
 	}
 
-	// Normal progress diagnostics → compact phase/no-progress/duplicate suffix.
+	// Normal progress diagnostics → Vietnamese phase + only the non-zero
+	// counters. "Vòng không tăng tiến độ" (scroll rounds that moved nothing)
+	// prints because it is 6 here; the phase label is Vietnamese, never the raw
+	// machine word.
 	got := crawlProgressDiagVN(CrawlProgressNotice{Phase: "stalled", NoProgressRounds: 6, DuplicateCount: 12, SafeReasonCode: "no_new_posts"})
-	for _, want := range []string{"Pha: stalled", "6 vòng", "Trùng: 12"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("diag suffix missing %q, got %q", want, got)
-		}
+	want := " Pha: không tăng tiến độ. Vòng không tăng tiến độ: 6. Bài trùng: 12."
+	if got != want {
+		t.Errorf("diag suffix = %q, want %q", got, want)
+	}
+
+	// duplicate_heavy: Vietnamese phase, NO contradictory zero counter, and the
+	// explicit signal sentence so the operator reads "likely out of new posts".
+	got = crawlProgressDiagVN(CrawlProgressNotice{Phase: "stalled", NoProgressRounds: 0, DuplicateCount: 78, SafeReasonCode: "duplicate_heavy"})
+	want = " Pha: nhiều bài trùng. Bài trùng: 78. Tín hiệu: nhiều bài trùng, có thể đã hết bài mới."
+	if got != want {
+		t.Errorf("duplicate_heavy diag suffix = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "stalled") {
+		t.Errorf("Vietnamese message must not leak the raw machine phase, got %q", got)
+	}
+	if strings.Contains(got, ": 0") {
+		t.Errorf("zero counters must be omitted, got %q", got)
+	}
+
+	// A healthy scrolling heartbeat keeps a compact Vietnamese phase and prints
+	// no zero counters at all.
+	got = crawlProgressDiagVN(CrawlProgressNotice{Phase: "scrolling", SafeReasonCode: "scrolling"})
+	if want = " Pha: đang quét."; got != want {
+		t.Errorf("scrolling diag suffix = %q, want %q", got, want)
+	}
+}
+
+// Unknown vocabulary stays visible: an unmapped reason with an EMPTY phase
+// falls back to the raw reason (never rendering "Pha: ."), and an unmapped
+// phase falls back to itself. Future codes surface instead of vanishing.
+func TestCrawlPhaseLabelVNFallbacks(t *testing.T) {
+	if got := crawlPhaseLabelVN("", "future_reason_code"); got != "future_reason_code" {
+		t.Errorf("empty phase must fall back to the raw reason, got %q", got)
+	}
+	if got := crawlPhaseLabelVN("future_phase", "future_reason_code"); got != "future_phase" {
+		t.Errorf("unmapped pair must fall back to the raw phase, got %q", got)
+	}
+	got := crawlProgressDiagVN(CrawlProgressNotice{SafeReasonCode: "future_reason_code"})
+	if want := " Pha: future_reason_code."; got != want {
+		t.Errorf("diag with unknown reason and empty phase = %q, want %q", got, want)
 	}
 }
 
