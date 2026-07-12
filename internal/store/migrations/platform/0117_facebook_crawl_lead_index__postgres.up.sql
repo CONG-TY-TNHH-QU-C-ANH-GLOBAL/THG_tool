@@ -1,7 +1,7 @@
 -- SaaS Platform plane — Facebook crawl: fresh-lead identity index (PR-M2B).
 -- Reserves canonical post identity before a lead is committed so concurrent or
 -- repeated crawls cannot produce duplicate leads. Runtime-inert. Depends on
--- 0114 (facebook_crawl_runs).
+-- 0115 (facebook_crawl_runs).
 
 CREATE TABLE IF NOT EXISTS facebook_crawl_lead_index (
     org_id          BIGINT NOT NULL,

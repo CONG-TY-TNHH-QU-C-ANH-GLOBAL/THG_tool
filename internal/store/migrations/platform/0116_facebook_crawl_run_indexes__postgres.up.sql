@@ -1,5 +1,5 @@
 -- SaaS Platform plane — Facebook crawl: run ledger indexes (PR-M2B).
--- Runtime-inert. Depends on 0114 (facebook_crawl_runs).
+-- Runtime-inert. Depends on 0115 (facebook_crawl_runs).
 
 -- Idempotency / concurrency invariants enforced at the database, not in app
 -- code: one running run per account, one open run per source, one automatic

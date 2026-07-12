@@ -1,6 +1,6 @@
 -- SaaS Platform plane — Facebook crawl: campaign account pool + sources
--- (PR-M2B). Runtime-inert. Depends on 0112 (facebook_crawl_campaigns, accounts
--- (org_id, id) anchor).
+-- (PR-M2B). Runtime-inert. Depends on 0112 (accounts (org_id, id) anchor) and
+-- 0113 (facebook_crawl_campaigns).
 
 -- Which canonical Facebook accounts may serve a campaign. Composite FKs pin
 -- both sides to the same org_id, so a cross-org account can never join a pool.

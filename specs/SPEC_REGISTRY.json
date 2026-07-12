@@ -1712,17 +1712,18 @@
       "owner": "unassigned",
       "last_reviewed": "2026-07-12",
       "verified_against": [
-        "PR-M2B: migrations 0112-0116 apply via store.New boot path (internal/store/migrator.go: run-once, transactional)",
+        "PR-M2B: migrations 0112-0117 apply via store.New boot path (internal/store/migrator.go: run-once; accounts anchor is a non-transactional CONCURRENTLY build)",
         "accounts(id BIGSERIAL, org_id BIGINT) had no (org_id,id) anchor pre-0112; leads(id BIGSERIAL, org_id BIGINT) has none (lead-provenance FK deferred)",
         "real-PostgreSQL constraint tests gated on POSTGRES_PLATFORM_TEST_DSN (internal/store/facebook_crawl_*_test.go)",
         "forward-only runner, no down migrations (internal/store/migrations/README.md)"
       ],
       "related_code": [
-        "internal/store/migrations/platform/0112_facebook_crawl_campaigns__postgres.up.sql",
-        "internal/store/migrations/platform/0113_facebook_crawl_campaign_sources__postgres.up.sql",
-        "internal/store/migrations/platform/0114_facebook_crawl_runs_ledger__postgres.up.sql",
-        "internal/store/migrations/platform/0115_facebook_crawl_run_indexes__postgres.up.sql",
-        "internal/store/migrations/platform/0116_facebook_crawl_lead_index__postgres.up.sql"
+        "internal/store/migrations/platform/0112_accounts_tenant_anchor__postgres.up.sql",
+        "internal/store/migrations/platform/0113_facebook_crawl_campaigns__postgres.up.sql",
+        "internal/store/migrations/platform/0114_facebook_crawl_campaign_sources__postgres.up.sql",
+        "internal/store/migrations/platform/0115_facebook_crawl_runs_ledger__postgres.up.sql",
+        "internal/store/migrations/platform/0116_facebook_crawl_run_indexes__postgres.up.sql",
+        "internal/store/migrations/platform/0117_facebook_crawl_lead_index__postgres.up.sql"
       ],
       "related_tests": [
         "internal/store/facebook_crawl_apply_test.go",

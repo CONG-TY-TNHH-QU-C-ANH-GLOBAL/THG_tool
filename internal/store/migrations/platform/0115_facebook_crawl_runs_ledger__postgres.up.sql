@@ -1,7 +1,7 @@
 -- SaaS Platform plane — Facebook crawl: append-only run ledger table (PR-M2B).
 -- Runs are immutable execution attempts; a retry is a new row, never an UPDATE
--- of a terminal one. Runtime-inert. Depends on 0112-0113. Run indexes live in
--- 0115 (kept separate so status literals are not repeated across concerns).
+-- of a terminal one. Runtime-inert. Depends on 0113-0114. Run indexes live in
+-- 0116 (kept separate so status literals are not repeated across concerns).
 
 CREATE TABLE IF NOT EXISTS facebook_crawl_runs (
     id               BIGSERIAL PRIMARY KEY,

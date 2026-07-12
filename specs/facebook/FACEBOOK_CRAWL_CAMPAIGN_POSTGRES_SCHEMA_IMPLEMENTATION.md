@@ -61,32 +61,38 @@ Do not write an assumed migration number into implementation files.
 
 ## 3. Migration ownership and split
 
-The implemented split is five dependency-ordered, domain-owned migration units.
-Each file owns one concern so no single migration repeats a status literal
+The implemented split is six dependency-ordered, domain-owned migration units.
+The accounts anchor is isolated so it can build CONCURRENTLY (see §4); the rest
+each own one concern so no single migration repeats a status literal
 (campaign/source `status`, run lifecycle statuses) enough to trip
 duplicated-literal analysis.
 
-### 0112 — campaigns
+### 0112 — accounts tenant anchor
 
-`0112_facebook_crawl_campaigns__postgres.up.sql`
+`0112_accounts_tenant_anchor__postgres.up.sql`
 
-Creates:
+Creates the `accounts (org_id, id)` tenant anchor only. Non-transactional
+(`-- migrate:notx`) so the index builds `CONCURRENTLY` without write-blocking a
+non-empty production `accounts` table (see §4).
 
-- the `accounts (org_id, id)` tenant anchor (deterministic; see §4);
-- `facebook_crawl_campaigns`.
+### 0113 — campaigns
 
-### 0113 — campaign account pool + sources
+`0113_facebook_crawl_campaigns__postgres.up.sql`
 
-`0113_facebook_crawl_campaign_sources__postgres.up.sql`
+Creates `facebook_crawl_campaigns`.
+
+### 0114 — campaign account pool + sources
+
+`0114_facebook_crawl_campaign_sources__postgres.up.sql`
 
 Creates:
 
 - `facebook_crawl_campaign_accounts`;
 - `facebook_crawl_campaign_sources`.
 
-### 0114 — run ledger table
+### 0115 — run ledger table
 
-`0114_facebook_crawl_runs_ledger__postgres.up.sql`
+`0115_facebook_crawl_runs_ledger__postgres.up.sql`
 
 Creates:
 
@@ -94,18 +100,18 @@ Creates:
 - lifecycle checks;
 - tenant-safe composite foreign keys.
 
-### 0115 — run indexes
+### 0116 — run indexes
 
-`0115_facebook_crawl_run_indexes__postgres.up.sql`
+`0116_facebook_crawl_run_indexes__postgres.up.sql`
 
 Creates:
 
 - active-account, open-source, retry-parent, and task-id partial unique indexes;
 - supporting run read indexes.
 
-### 0116 — fresh-lead identity
+### 0117 — fresh-lead identity
 
-`0116_facebook_crawl_lead_index__postgres.up.sql`
+`0117_facebook_crawl_lead_index__postgres.up.sql`
 
 Creates:
 
@@ -130,10 +136,13 @@ Do not drop a pre-existing or shared anchor.
 
 Composite foreign keys require non-partial unique anchors.
 
-For `accounts`, add the equivalent of the following only when no equivalent key/index exists:
+For `accounts`, add the anchor with a non-transactional concurrent build
+(migration `0112`, marked `-- migrate:notx`) so a non-empty production table is
+not write-blocked for the full build:
 
 ```sql
-CREATE UNIQUE INDEX uq_accounts_org_id_id
+-- migrate:notx
+CREATE UNIQUE INDEX CONCURRENTLY uq_accounts_org_id_id
     ON accounts (org_id, id);
 ```
 
@@ -156,19 +165,40 @@ HAVING COUNT(*) > 1;
 ### Accounts-anchor production apply gate
 
 The anchor is the one non-empty-table build in this train; recency of the
-platform baseline does **not** make it operationally safe. Do not apply `0112`
-to a production `accounts` table until all of the following are recorded:
+platform baseline does **not** make it operationally safe. Before applying `0112`
+to a production `accounts` table, record:
 
 1. actual `accounts` row count;
-2. the duplicate preflight above returns zero rows;
-3. an acceptable write-lock-window assessment for a plain transactional
-   `CREATE UNIQUE INDEX` (it takes a `SHARE` lock and blocks writes for the
-   build duration);
-4. a stop-and-split decision rule: if the table is too large for that window,
-   do **not** apply `0112` as-is;
-5. in that case a separately reviewed migration using `-- migrate:notx` +
-   `CREATE UNIQUE INDEX CONCURRENTLY` (which owns its own atomicity), planned
-   and approved before apply.
+2. the expected existing `accounts` indexes;
+3. the duplicate preflight above returns zero rows;
+4. production privileges to create the index;
+5. a scheduled, observed apply window.
+
+The anchor builds `CONCURRENTLY` (migration `0112` is `-- migrate:notx`), so
+normal writes are **not** blocked for the full index-build duration. The
+concurrent build still scans the table and can take a while on a large table;
+schedule and observe it rather than assuming it is instant.
+
+#### Failed concurrent build — invalid-index recovery
+
+A failed `CREATE UNIQUE INDEX CONCURRENTLY` can leave an **invalid** index
+object behind. Because the migration is fail-visible (no `IF NOT EXISTS`), a
+retry attempts the same `CREATE` and errors on the leftover name — it does not
+silently adopt a half-built index. Before retrying the migration, inspect:
+
+```sql
+SELECT
+    indexrelid::regclass AS index_name,
+    indisready,
+    indisvalid
+FROM pg_index
+WHERE indexrelid = 'uq_accounts_org_id_id'::regclass;
+```
+
+If an invalid index remains, remove it through an explicitly reviewed operator
+action (the production-safe `DROP INDEX CONCURRENTLY uq_accounts_org_id_id`)
+before retrying. The migration never drops the index automatically and never
+hides a failed/invalid index with `IF NOT EXISTS`.
 
 The same rule applies if the canonical lead table needs an `(org_id, id)` anchor. Do not assume a `leads` table or add a lead foreign key until ownership and types are verified.
 

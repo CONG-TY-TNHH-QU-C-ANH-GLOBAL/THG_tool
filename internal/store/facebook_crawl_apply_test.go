@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestFacebookCrawlSchema_Applied proves the PR-M2B migrations (0112-0116)
+// TestFacebookCrawlSchema_Applied proves the PR-M2B migrations (0112-0117)
 // apply through store.New's normal boot path and that a second boot on the same
 // database is a stable no-op (run-once layer 1). Tables and a representative
 // constraint per migration are asserted present via the catalog.
@@ -19,7 +19,7 @@ func TestFacebookCrawlSchema_Applied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("appliedMigrationVersions: %v", err)
 	}
-	for v := 112; v <= 116; v++ {
+	for v := 112; v <= 117; v++ {
 		if _, ok := applied[v]; !ok {
 			t.Errorf("crawl migration %04d missing from schema_migrations", v)
 		}
