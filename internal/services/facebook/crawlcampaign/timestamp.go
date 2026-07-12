@@ -13,11 +13,6 @@ const (
 	ConfidenceUnknown         Confidence = "unknown"
 )
 
-// IsConfident reports whether the confidence carries a usable freshness claim.
-func (c Confidence) IsConfident() bool {
-	return c == ConfidenceExact || c == ConfidenceDerivedRelative
-}
-
 // RawUnit is the typed unit a relative timestamp was derived from. Only this
 // typed unit leaves the browser; raw page text never does (PR-C0.5 privacy rule).
 type RawUnit string

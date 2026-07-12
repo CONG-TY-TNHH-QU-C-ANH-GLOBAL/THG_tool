@@ -1,21 +1,35 @@
 package crawlcampaign
 
-// ExitReasonCode is a typed reason recorded on a run or a per-item exclusion.
-// Values are the canonical wire/DB strings (facebook_crawl_runs.exit_reason_code
-// and the ingest-gate exclusion reasons, spec §3–§5).
-type ExitReasonCode string
+// FreshnessDecision is the complete typed outcome of the per-item timestamp
+// freshness gate (spec §3–§4): eligible or not, exact or derived_relative, and
+// the ineligibility cause (stale / ambiguous / unknown / malformed / future /
+// unsupported confidence). Distinct from a run's terminal RunExitReason.
+type FreshnessDecision string
 
-// Per-item freshness-gate exclusions (spec §3–§4).
 const (
-	ReasonStalePost          ExitReasonCode = "stale_post"
-	ReasonTimestampUnparsed  ExitReasonCode = "timestamp_unparsed"
-	ReasonTimestampAmbiguous ExitReasonCode = "timestamp_ambiguous"
-	ReasonTimestampInvalid   ExitReasonCode = "timestamp_invalid"
-	ReasonDuplicateLead      ExitReasonCode = "duplicate_lead"
+	FreshnessEligibleExact           FreshnessDecision = "eligible_exact"
+	FreshnessEligibleDerivedRelative FreshnessDecision = "eligible_derived_relative"
+	FreshnessStaleExact              FreshnessDecision = "stale_exact"
+	FreshnessStaleDerivedRelative    FreshnessDecision = "stale_derived_relative"
+	FreshnessAmbiguousTimestamp      FreshnessDecision = "ambiguous_timestamp"
+	FreshnessUnknownTimestamp        FreshnessDecision = "unknown_timestamp"
+	FreshnessMalformedTimestamp      FreshnessDecision = "malformed_timestamp"
+	FreshnessFutureTimestamp         FreshnessDecision = "future_timestamp"
+	FreshnessUnsupportedConfidence   FreshnessDecision = "unsupported_confidence"
 )
 
-// Run-level terminal reasons (spec §4–§5).
+// Eligible reports whether the decision is a lead-eligible outcome. The zero
+// value and any unknown decision are not eligible.
+func (d FreshnessDecision) Eligible() bool {
+	return d == FreshnessEligibleExact || d == FreshnessEligibleDerivedRelative
+}
+
+// RunExitReason is a typed terminal reason recorded on a run
+// (facebook_crawl_runs.exit_reason_code) — distinct from per-item freshness
+// decisions. The stop logic that emits these lands in later reviewed slices.
+type RunExitReason string
+
 const (
-	ReasonFrontierReached         ExitReasonCode = "frontier_reached"
-	ReasonTimestampParserDegraded ExitReasonCode = "timestamp_parser_degraded"
+	RunExitFrontierReached         RunExitReason = "frontier_reached"
+	RunExitTimestampParserDegraded RunExitReason = "timestamp_parser_degraded"
 )
