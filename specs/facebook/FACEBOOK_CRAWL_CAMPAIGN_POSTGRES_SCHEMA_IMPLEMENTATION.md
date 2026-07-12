@@ -146,6 +146,23 @@ GROUP BY org_id, id
 HAVING COUNT(*) > 1;
 ```
 
+### Accounts-anchor production apply gate
+
+The anchor is the one non-empty-table build in this train; recency of the
+platform baseline does **not** make it operationally safe. Do not apply `0112`
+to a production `accounts` table until all of the following are recorded:
+
+1. actual `accounts` row count;
+2. the duplicate preflight above returns zero rows;
+3. an acceptable write-lock-window assessment for a plain transactional
+   `CREATE UNIQUE INDEX` (it takes a `SHARE` lock and blocks writes for the
+   build duration);
+4. a stop-and-split decision rule: if the table is too large for that window,
+   do **not** apply `0112` as-is;
+5. in that case a separately reviewed migration using `-- migrate:notx` +
+   `CREATE UNIQUE INDEX CONCURRENTLY` (which owns its own atomicity), planned
+   and approved before apply.
+
 The same rule applies if the canonical lead table needs an `(org_id, id)` anchor. Do not assume a `leads` table or add a lead foreign key until ownership and types are verified.
 
 ## 5. `facebook_crawl_campaigns`
