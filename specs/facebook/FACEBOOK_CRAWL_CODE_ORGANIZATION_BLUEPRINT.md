@@ -1,9 +1,9 @@
 # Facebook Multi-Group Fresh-Lead Crawl: Code Organization Blueprint
 
-**Target:** `specs/facebook/FACEBOOK_CRAWL_CODE_ORGANIZATION_BLUEPRINT.md`  
-**Status:** Companion blueprint for PR-M3 through PR-M5; preflight-gated  
-**Track:** Facebook Automation Reliability  
-**Authoritative parent:** `specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md`  
+**Target:** `specs/facebook/FACEBOOK_CRAWL_CODE_ORGANIZATION_BLUEPRINT.md`
+**Status:** Companion blueprint for PR-M3 through PR-M5; preflight-gated
+**Track:** Facebook Automation Reliability
+**Authoritative parent:** `specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md`
 **Schema companion:** `specs/facebook/FACEBOOK_CRAWL_CAMPAIGN_POSTGRES_SCHEMA_IMPLEMENTATION.md`
 
 ## 1. Purpose

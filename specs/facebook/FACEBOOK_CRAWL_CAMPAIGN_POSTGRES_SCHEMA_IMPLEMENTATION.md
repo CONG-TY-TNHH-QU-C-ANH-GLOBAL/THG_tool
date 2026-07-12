@@ -1,8 +1,8 @@
 # Facebook Multi-Group Fresh-Lead Crawl: PostgreSQL Schema Implementation Blueprint
 
-**Target:** `specs/facebook/FACEBOOK_CRAWL_CAMPAIGN_POSTGRES_SCHEMA_IMPLEMENTATION.md`  
-**Status:** Preflight-gated implementation blueprint for PR-M2B  
-**Track:** Facebook Automation Reliability  
+**Target:** `specs/facebook/FACEBOOK_CRAWL_CAMPAIGN_POSTGRES_SCHEMA_IMPLEMENTATION.md`
+**Status:** Preflight-gated implementation blueprint for PR-M2B
+**Track:** Facebook Automation Reliability
 **Authoritative parent:** `specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md`
 
 ## 1. Purpose and scope
