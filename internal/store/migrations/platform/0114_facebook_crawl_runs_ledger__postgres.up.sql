@@ -1,6 +1,7 @@
--- SaaS Platform plane — Facebook crawl: append-only run ledger (PR-M2B).
--- Runs are immutable execution attempts; a retry is a new row, never an
--- UPDATE of a terminal one. Runtime-inert; no consumer is wired yet.
+-- SaaS Platform plane — Facebook crawl: append-only run ledger table (PR-M2B).
+-- Runs are immutable execution attempts; a retry is a new row, never an UPDATE
+-- of a terminal one. Runtime-inert. Depends on 0112-0113. Run indexes live in
+-- 0115 (kept separate so status literals are not repeated across concerns).
 
 CREATE TABLE IF NOT EXISTS facebook_crawl_runs (
     id               BIGSERIAL PRIMARY KEY,
@@ -69,32 +70,3 @@ CREATE TABLE IF NOT EXISTS facebook_crawl_runs (
         FOREIGN KEY (org_id, retry_of_run_id)
         REFERENCES facebook_crawl_runs (org_id, id)
 );
-
--- Idempotency / concurrency invariants enforced at the database, not in app
--- code: one running run per account, one open run per source, one automatic
--- retry per parent, one run per ingest task.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_fb_crawl_runs_one_active_account
-    ON facebook_crawl_runs (org_id, account_id)
-    WHERE status = 'running' AND account_id IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_fb_crawl_runs_one_open_source
-    ON facebook_crawl_runs (org_id, source_id)
-    WHERE status IN (
-        'queued',
-        'waiting_for_connector_upgrade',
-        'running'
-    );
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_fb_crawl_runs_one_retry_per_parent
-    ON facebook_crawl_runs (org_id, retry_of_run_id)
-    WHERE retry_of_run_id IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_fb_crawl_runs_org_task
-    ON facebook_crawl_runs (org_id, task_id)
-    WHERE task_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS ix_fb_crawl_runs_org_source_created
-    ON facebook_crawl_runs (org_id, source_id, queued_at DESC);
-
-CREATE INDEX IF NOT EXISTS ix_fb_crawl_runs_org_account_status
-    ON facebook_crawl_runs (org_id, account_id, status);

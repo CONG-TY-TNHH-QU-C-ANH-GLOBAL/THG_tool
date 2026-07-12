@@ -61,52 +61,59 @@ Do not write an assumed migration number into implementation files.
 
 ## 3. Migration ownership and split
 
-Prefer three dependency-ordered, domain-owned migration units using the verified next versions `N`, `N+1`, and `N+2`.
+The implemented split is five dependency-ordered, domain-owned migration units.
+Each file owns one concern so no single migration repeats a status literal
+(campaign/source `status`, run lifecycle statuses) enough to trip
+duplicated-literal analysis.
 
-### Migration A — campaign foundation
+### 0112 — campaigns
 
-Proposed logical name:
-
-```text
-[N]_facebook_crawl_campaign_foundation
-```
+`0112_facebook_crawl_campaigns__postgres.up.sql`
 
 Creates:
 
-- the accounts tenant anchor only when missing and owned safely by this migration;
-- `facebook_crawl_campaigns`;
+- the `accounts (org_id, id)` tenant anchor (deterministic; see §4);
+- `facebook_crawl_campaigns`.
+
+### 0113 — campaign account pool + sources
+
+`0113_facebook_crawl_campaign_sources__postgres.up.sql`
+
+Creates:
+
 - `facebook_crawl_campaign_accounts`;
 - `facebook_crawl_campaign_sources`.
 
-### Migration B — append-only run ledger
+### 0114 — run ledger table
 
-Proposed logical name:
-
-```text
-[N+1]_facebook_crawl_runs_ledger
-```
+`0114_facebook_crawl_runs_ledger__postgres.up.sql`
 
 Creates:
 
 - `facebook_crawl_runs`;
 - lifecycle checks;
-- tenant-safe foreign keys;
-- active/open/retry/task idempotency indexes.
+- tenant-safe composite foreign keys.
 
-### Migration C — fresh-lead identity
+### 0115 — run indexes
 
-Proposed logical name:
+`0115_facebook_crawl_run_indexes__postgres.up.sql`
 
-```text
-[N+2]_facebook_crawl_lead_index
-```
+Creates:
+
+- active-account, open-source, retry-parent, and task-id partial unique indexes;
+- supporting run read indexes.
+
+### 0116 — fresh-lead identity
+
+`0116_facebook_crawl_lead_index__postgres.up.sql`
 
 Creates:
 
 - `facebook_crawl_lead_index`;
 - org-scoped run provenance;
-- optional org-scoped lead provenance only after the canonical lead owner is verified;
-- fresh-lead identity uniqueness.
+- fresh-lead identity uniqueness;
+- canonical lead provenance deferred until the lead owner gains a reviewed
+  `(org_id, id)` anchor (see §10).
 
 Adapt only the numeric prefix and filename suffixes to the verified repository convention. Do not edit, renumber, or append objects to already-applied migration files.
 

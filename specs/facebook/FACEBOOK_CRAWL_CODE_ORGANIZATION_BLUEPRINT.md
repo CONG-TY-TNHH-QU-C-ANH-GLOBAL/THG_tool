@@ -185,9 +185,24 @@ Contract:
 - tenant-scoped;
 - determines due sources using persisted campaign/source state;
 - inserts queued run rows;
-- relies on the one-open-run-per-source index;
-- treats unique conflict as already queued, not as an error storm;
 - creates no account lease and does not mark a run running.
+
+Conflict handling — only the open-run index means "already queued":
+
+1. attempt the queued-run insert normally;
+2. treat a unique violation as an idempotent "already queued" outcome ONLY when
+   `PgError.ConstraintName == "ux_fb_crawl_runs_one_open_source"`;
+3. on that exact conflict, re-read the existing open run by `org_id`,
+   `source_id`, and open `status` in
+   (`queued`, `waiting_for_connector_upgrade`, `running`);
+4. return/reuse that existing open run;
+5. propagate everything else —
+   active-account (`ux_fb_crawl_runs_one_active_account`),
+   retry-parent (`ux_fb_crawl_runs_one_retry_per_parent`),
+   task-id (`ux_fb_crawl_runs_org_task`), any unknown unique violation, and all
+   non-unique database failures;
+6. if no open run is found after that specific conflict, return an
+   integrity/concurrency error — never a synthesized success.
 
 ### Claim an already queued run
 
@@ -221,6 +236,62 @@ Contract:
 - relies on database active/open constraints as race-condition backstops.
 
 The scheduler must acquire or reserve the existing session/account lease before dispatch. If the database claim fails, release the lease. If command dispatch fails after claim, apply the typed dispatch-failure recovery contract; do not leave a permanently wedged running row.
+
+### Recover a failed dispatch
+
+```go
+type DispatchFailureRecoverer interface {
+	RecoverDispatchFailure(
+		ctx context.Context,
+		input RecoverDispatchFailureInput,
+	) (RecoverDispatchFailureOutcome, error)
+}
+```
+
+`RecoverDispatchFailureInput` carries:
+
+- a `RunFence { OrgID, RunID, Attempt }`;
+- the expected `AccountID`;
+- server time;
+- a typed dispatch-failure reason;
+- scheduler/worker identity when the runtime already uses one.
+
+Inside one PostgreSQL transaction:
+
+1. lock/read the claimed run;
+2. verify `org_id`, `run_id`, `attempt`, `status = running`, and the expected
+   account assignment;
+3. transition the parent attempt to `status = failed`,
+   `exit_reason_code = dispatch_failed`, `finished_at = server time` — unless the
+   merged architecture contract defines another existing terminal status;
+4. after the parent leaves `running`, create one queued retry: same
+   org/campaign/source, `account_id NULL`, `attempt = parent attempt + 1`,
+   `retry_of_run_id = parent run id`;
+5. use `(org_id, retry_of_run_id)` (the `ux_fb_crawl_runs_one_retry_per_parent`
+   index) as the recovery idempotency key;
+6. repeated/concurrent recovery calls create exactly one retry or re-read the
+   existing one;
+7. commit only after both the parent transition and retry creation/reuse
+   succeed.
+
+The order — parent `running` → terminal, then insert/reuse queued retry, then
+commit — is required: it stops the one-open-source constraint from permanently
+blocking the source.
+
+Stale/repeated behavior:
+
+- a mismatched fence creates no retry and returns a typed stale-attempt outcome;
+- the same terminal dispatch failure plus an existing retry is idempotent
+  success;
+- a parent already terminal for another reason is not overwritten and gets no
+  dispatch retry.
+
+Lease ordering (integrity-critical): keep the account/session lease until the DB
+recovery commits; release only after commit. If DB recovery fails, do not release
+first and report success. After commit, release the lease and optionally nudge
+the scheduler. No browser/network/Telegram call runs inside the transaction.
+Recovery must not silently leave a permanently `running` row when the database is
+temporarily unavailable; later runtime code retries/reconciles this operation.
 
 ## 7. Account selection and safety ownership
 
@@ -392,6 +463,7 @@ Create interfaces only where they protect a real boundary or test seam. Candidat
 - `CampaignReader`;
 - `DueRunEnqueuer`;
 - `RunClaimer`;
+- `DispatchFailureRecoverer`;
 - `RunProgressStore`;
 - `RunResultStore`;
 - `ConnectorCapabilityReader`;
