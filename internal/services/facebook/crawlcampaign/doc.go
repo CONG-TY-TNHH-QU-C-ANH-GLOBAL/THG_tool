@@ -1,6 +1,6 @@
 // Package crawlcampaign holds the pure domain language and decision logic for
-// the Facebook multi-group fresh-lead crawl (spec
-// specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md): run statuses, typed exit
+// the Facebook multi-group fresh-lead crawl
+// (specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md): run statuses, typed exit
 // / freshness reason codes, the run fence, the canonical server-side timestamp
 // DTO, and the pure freshness + temporal-frontier policies.
 //
