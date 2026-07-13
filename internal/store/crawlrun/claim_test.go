@@ -81,6 +81,46 @@ func TestClaimNextRun_AccountNotInPool(t *testing.T) {
 	}
 }
 
+func TestClaimNextRun_StickySourceRequiresPreferredAccount(t *testing.T) {
+	st, db := open(t)
+	ctx := context.Background()
+	const org = 42005
+	cleanupOrg(t, db, org)
+
+	s := seedCampaign(t, db, org, 240, 1440)
+	other := addAccount(t, db, s)
+	src := seedSource(t, db, s, "sticky", nil)
+	setSourcePreferredAccount(t, db, org, src, s.account)
+	if _, err := st.EnqueueDueRuns(ctx, crawlrun.EnqueueDueRunsInput{OrgID: org, Now: fixedNow}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if _, ok, err := st.ClaimNextRun(ctx, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: other, Now: fixedNow}); err != nil || ok {
+		t.Fatalf("non-preferred account must not claim a sticky source: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := st.ClaimNextRun(ctx, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: s.account, Now: fixedNow}); err != nil || !ok {
+		t.Fatalf("preferred account must claim its sticky source: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestClaimNextRun_InactiveSourceNotClaimable(t *testing.T) {
+	st, db := open(t)
+	ctx := context.Background()
+	const org = 42006
+	cleanupOrg(t, db, org)
+
+	s := seedCampaign(t, db, org, 240, 1440)
+	src := seedSource(t, db, s, "src-a", nil)
+	if _, err := st.EnqueueDueRuns(ctx, crawlrun.EnqueueDueRunsInput{OrgID: org, Now: fixedNow}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	setSourceStatus(t, db, org, src, "paused")
+
+	if _, ok, err := st.ClaimNextRun(ctx, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: s.account, Now: fixedNow}); err != nil || ok {
+		t.Fatalf("a paused source's queued run must not be claimable: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestClaimNextRun_TwoAccountsClaimDistinctRuns(t *testing.T) {
 	st, db := open(t)
 	ctx := context.Background()

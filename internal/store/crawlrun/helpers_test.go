@@ -132,6 +132,24 @@ func runningRun(t *testing.T, st *crawlrun.Store, db *sql.DB, s seed, now time.T
 	return claimed
 }
 
+func setSourcePreferredAccount(t *testing.T, db *sql.DB, org, sourceID, account int64) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(),
+		`UPDATE facebook_crawl_campaign_sources SET preferred_account_id = $3 WHERE org_id = $1 AND id = $2`,
+		org, sourceID, account); err != nil {
+		t.Fatalf("set preferred account: %v", err)
+	}
+}
+
+func setSourceStatus(t *testing.T, db *sql.DB, org, sourceID int64, status string) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(),
+		`UPDATE facebook_crawl_campaign_sources SET status = $3 WHERE org_id = $1 AND id = $2`,
+		org, sourceID, status); err != nil {
+		t.Fatalf("set source status: %v", err)
+	}
+}
+
 func runStatus(t *testing.T, db *sql.DB, org, runID int64) (status string, account sql.NullInt64) {
 	t.Helper()
 	if err := db.QueryRowContext(context.Background(),

@@ -32,6 +32,7 @@ For the **runtime topology** view (same packages, grouped by runtime role, with 
 | **threads** | `internal/store/threads/` | `s.Threads()` | extracted (Phase 8a, 2026-05-22) — single-file clean-cut. conversation_threads + conversation_messages. The conversationGateForOutbound adapter stays at parent store level (top-level) because it composes threads + outbound. |
 | **leads** | `internal/store/leads/` | `s.Leads()` | extracted (Phase 8b, 2026-05-22) — clean-cut. 4 files (leads, lead_engagement, classification_log, context_niches). leads.Store holds a *threads.Store handle for the engagement-projection cross-domain reads (per DOMAINS.md §2.2 cross-domain projections via tenant-ok annotations). |
 | **reel** | `internal/store/reel/` | `s.Reel()` | greenfield (PR-R1, 2026-07-06) — Reel Studio foundation. Postgres-platform-only (no SQLite schema); reels + reel_scripts. See docs/architecture/decisions/ADR-reel-studio-platform-module.md. |
+| **crawlrun** | `internal/store/crawlrun/` | none — dormant | greenfield (PR-M3B, 2026-07-13) — Facebook multi-group fresh-lead crawl run queue/lifecycle store. Postgres-platform-only; `facebook_crawl_*` schema (migrations 0113–0117). **Not wired**: no `s.CrawlRun()` accessor and no runtime writer until PR-M4. See §4. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |
@@ -160,6 +161,28 @@ CrawlIntent scheduler (recurring crawl plans), groups + group_quality, posts (wi
 Layered architecture: sources (L1) → assets (L3) → embeddings (L2.5) → vector queries (L4) → events / feedback / replay / soak / cost (L7). Methods dropped the redundant `Knowledge` prefix on extraction (`GetKnowledgeAsset` → `GetAsset`). Zero cross-domain writes by audit; no Hooks struct needed.
 
 Tests in subpackage as `package knowledge_test` (external) + `pgvector_literal_test.go` as `package knowledge` (internal — tests unexported `pgVectorLiteral`).
+
+### **crawlrun** — Facebook crawl run queue/lifecycle (`internal/store/crawlrun/`)
+
+PostgreSQL-platform-only store for the Facebook multi-group fresh-lead crawl
+run ledger (`facebook_crawl_*`, migrations 0113–0117): atomic due-run enqueue,
+`FOR UPDATE SKIP LOCKED` claim, fenced heartbeat, and dispatch-failure recovery
+over `facebook_crawl_runs`. Mirrors the `reel` precedent: Postgres-only with a
+`requirePostgres` guard; SQLite carries no crawl-campaign schema.
+
+**Dormant (PR-M3B, 2026-07-13):** no `s.CrawlRun()` accessor is wired into the
+top-level `Store` and no scheduler/handler/runtime writer invokes it yet — the
+production writer arrives with PR-M4. It deliberately does **not** import
+`internal/services/facebook/crawlcampaign` (the `NEUTRAL_NO_SERVICES_FACEBOOK_IMPORT`
+reverse-dependency guard), so it owns its own persistence I/O types (`Fence`,
+enqueue/claim/recover inputs+outcomes) rather than the service's domain-policy
+types; PR-M4 maps service↔store types at the composition root. Per-item
+freshness, Account Safety, and run-state policy stay out of this package.
+
+Data-plane note: `DATABASE_OWNERSHIP.md`'s per-table writer registry tracks
+active runtime writers, so the `facebook_crawl_*` tables are added there when
+PR-M4 wires a writer, not while the store is dormant (same convention PR-M2B
+followed when the schema landed).
 
 ### **users** — Tenant root (top-level)
 
