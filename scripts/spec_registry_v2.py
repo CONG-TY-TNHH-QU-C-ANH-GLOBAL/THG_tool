@@ -62,21 +62,34 @@ def _check_ownership(entry, label: str, errors: list[str]) -> None:
         errors.append(f"{label}: 'experience' and 'technical_feature' must not both be set")
         return
     if layer in EXPERIENCE_LAYERS:
-        if not _slug_ok(experience):
-            errors.append(f"{label}: layer '{layer}' requires 'experience' as a "
-                          "lowercase kebab-case slug")
-        if feature is not None:
-            errors.append(f"{label}: layer '{layer}' must not set 'technical_feature'")
+        _check_experience_owned(layer, experience, feature, label, errors)
     elif layer in FEATURE_LAYERS:
-        if not _slug_ok(feature):
-            errors.append(f"{label}: layer '{layer}' requires 'technical_feature' as a "
-                          "lowercase kebab-case slug")
-        if experience is not None:
-            errors.append(f"{label}: layer '{layer}' must not set 'experience'")
-    else:  # roadmap: either node or neither, but any set value is a slug
-        for key, value in (("experience", experience), ("technical_feature", feature)):
-            if value is not None and not _slug_ok(value):
-                errors.append(f"{label}: '{key}' must be a lowercase kebab-case slug")
+        _check_feature_owned(layer, experience, feature, label, errors)
+    else:
+        _check_optional_ownership(experience, feature, label, errors)
+
+
+def _check_experience_owned(layer, experience, feature, label: str, errors: list[str]) -> None:
+    if not _slug_ok(experience):
+        errors.append(f"{label}: layer '{layer}' requires 'experience' as a "
+                      "lowercase kebab-case slug")
+    if feature is not None:
+        errors.append(f"{label}: layer '{layer}' must not set 'technical_feature'")
+
+
+def _check_feature_owned(layer, experience, feature, label: str, errors: list[str]) -> None:
+    if not _slug_ok(feature):
+        errors.append(f"{label}: layer '{layer}' requires 'technical_feature' as a "
+                      "lowercase kebab-case slug")
+    if experience is not None:
+        errors.append(f"{label}: layer '{layer}' must not set 'experience'")
+
+
+def _check_optional_ownership(experience, feature, label: str, errors: list[str]) -> None:
+    # roadmap: either node or neither, but any set value is a slug
+    for key, value in (("experience", experience), ("technical_feature", feature)):
+        if value is not None and not _slug_ok(value):
+            errors.append(f"{label}: '{key}' must be a lowercase kebab-case slug")
 
 
 def _check_governance(entry, label: str, errors: list[str]) -> None:
@@ -108,28 +121,37 @@ def _check_supported_experiences(entry, label: str, errors: list[str]) -> None:
         errors.append(f"{label}: duplicate supported_experiences values")
 
 
+def _authoritative_contract_key(entry):
+    """(layer, node) key when the entry is an authoritative+active+effective
+    v2 contract on an ownership node (business/experience/technical), else None."""
+    if not isinstance(entry, dict) or entry.get("metadata_version") != 2:
+        return None
+    if not (entry.get("authority") == "authoritative"
+            and entry.get("lifecycle") == "active"
+            and entry.get("effective") is True):
+        return None
+    layer = entry.get("layer")
+    if layer in EXPERIENCE_LAYERS:
+        node = entry.get("experience")
+    elif layer == "technical":
+        node = entry.get("technical_feature")
+    else:
+        return None
+    if not isinstance(node, str) or not node:
+        return None
+    return layer, node
+
+
 def check_v2_uniqueness(entries, errors: list[str]) -> None:
     """At most one authoritative+active+effective contract per ownership node
     for the business, experience, and technical layers. v2 entries only."""
     seen: dict[tuple[str, str], str] = {}
     for entry in entries:
-        if not isinstance(entry, dict) or entry.get("metadata_version") != 2:
+        key = _authoritative_contract_key(entry)
+        if key is None:
             continue
-        if not (entry.get("authority") == "authoritative"
-                and entry.get("lifecycle") == "active"
-                and entry.get("effective") is True):
-            continue
-        layer = entry.get("layer")
-        if layer in EXPERIENCE_LAYERS:
-            node = entry.get("experience")
-        elif layer == "technical":
-            node = entry.get("technical_feature")
-        else:
-            continue
-        if not isinstance(node, str) or not node:
-            continue
-        key = (layer, node)
         if key in seen:
+            layer, node = key
             errors.append(f"duplicate authoritative {layer} contract for '{node}' "
                           f"(entries '{seen[key]}' and '{entry.get('id')}')")
         else:
