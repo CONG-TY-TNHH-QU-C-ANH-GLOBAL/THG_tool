@@ -48,6 +48,17 @@ type ClaimedRun struct {
 	FreshCutoffAt time.Time
 }
 
+// HeartbeatOutcome is the typed result of a fenced heartbeat. Every non-match —
+// wrong org, wrong run, wrong attempt, or a non-running/terminal status — folds
+// into HeartbeatStaleRejected, so the store never lets a caller distinguish (and
+// thereby probe) another tenant's runs or a newer attempt.
+type HeartbeatOutcome string
+
+const (
+	HeartbeatUpdated       HeartbeatOutcome = "updated"
+	HeartbeatStaleRejected HeartbeatOutcome = "stale_rejected"
+)
+
 // dispatchFailedReason is the default exit_reason_code stamped on a run whose
 // command dispatch failed after claim.
 const dispatchFailedReason = "dispatch_failed"

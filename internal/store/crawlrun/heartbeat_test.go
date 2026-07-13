@@ -8,7 +8,17 @@ import (
 	"github.com/thg/scraper/internal/store/crawlrun"
 )
 
-func TestHeartbeat_MatchingAttemptSucceeds(t *testing.T) {
+func wantOutcome(t *testing.T, got crawlrun.HeartbeatOutcome, err error, want crawlrun.HeartbeatOutcome) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("heartbeat: unexpected error %v", err)
+	}
+	if got != want {
+		t.Fatalf("heartbeat outcome = %q, want %q", got, want)
+	}
+}
+
+func TestHeartbeat_MatchingFenceUpdated(t *testing.T) {
 	st, db := open(t)
 	ctx := context.Background()
 	const org = 43001
@@ -18,16 +28,11 @@ func TestHeartbeat_MatchingAttemptSucceeds(t *testing.T) {
 	run := runningRun(t, st, db, s, fixedNow)
 
 	fence := crawlrun.Fence{OrgID: org, RunID: run.RunID, Attempt: run.Attempt}
-	ok, err := st.Heartbeat(ctx, fence, fixedNow.Add(30*time.Second))
-	if err != nil {
-		t.Fatalf("heartbeat: %v", err)
-	}
-	if !ok {
-		t.Fatal("heartbeat on the live attempt must match")
-	}
+	got, err := st.Heartbeat(ctx, fence, fixedNow.Add(30*time.Second))
+	wantOutcome(t, got, err, crawlrun.HeartbeatUpdated)
 }
 
-func TestHeartbeat_StaleAttemptRejected(t *testing.T) {
+func TestHeartbeat_StaleFencesRejected(t *testing.T) {
 	st, db := open(t)
 	ctx := context.Background()
 	const org = 43002
@@ -36,34 +41,58 @@ func TestHeartbeat_StaleAttemptRejected(t *testing.T) {
 	s := seedCampaign(t, db, org, 240, 1440)
 	run := runningRun(t, st, db, s, fixedNow)
 
-	stale := crawlrun.Fence{OrgID: org, RunID: run.RunID, Attempt: run.Attempt + 1}
-	ok, err := st.Heartbeat(ctx, stale, fixedNow)
-	if err != nil {
-		t.Fatalf("heartbeat: %v", err)
+	cases := []struct {
+		name  string
+		fence crawlrun.Fence
+	}{
+		{"wrong org", crawlrun.Fence{OrgID: org + 1, RunID: run.RunID, Attempt: run.Attempt}},
+		{"wrong run id", crawlrun.Fence{OrgID: org, RunID: run.RunID + 99999, Attempt: run.Attempt}},
+		{"wrong attempt", crawlrun.Fence{OrgID: org, RunID: run.RunID, Attempt: run.Attempt + 1}},
 	}
-	if ok {
-		t.Fatal("heartbeat from a stale attempt must not match")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := st.Heartbeat(ctx, tc.fence, fixedNow)
+			wantOutcome(t, got, err, crawlrun.HeartbeatStaleRejected)
+		})
 	}
 }
 
-func TestHeartbeat_NonRunningRejected(t *testing.T) {
+func TestHeartbeat_TerminalRunRejected(t *testing.T) {
 	st, db := open(t)
 	ctx := context.Background()
 	const org = 43003
 	cleanupOrg(t, db, org)
 
 	s := seedCampaign(t, db, org, 240, 1440)
-	seedSource(t, db, s, "src-a", nil)
-	out, err := st.EnqueueDueRuns(ctx, crawlrun.EnqueueDueRunsInput{OrgID: org, Now: fixedNow})
-	if err != nil {
-		t.Fatalf("enqueue: %v", err)
+	run := runningRun(t, st, db, s, fixedNow)
+	if _, err := db.ExecContext(ctx,
+		`UPDATE facebook_crawl_runs SET status='succeeded', finished_at=$3 WHERE org_id=$1 AND id=$2`,
+		org, run.RunID, fixedNow); err != nil {
+		t.Fatalf("mark terminal: %v", err)
 	}
-	queued := crawlrun.Fence{OrgID: org, RunID: out.CreatedRunIDs[0], Attempt: 1}
-	ok, err := st.Heartbeat(ctx, queued, fixedNow)
-	if err != nil {
-		t.Fatalf("heartbeat: %v", err)
+
+	fence := crawlrun.Fence{OrgID: org, RunID: run.RunID, Attempt: run.Attempt}
+	got, err := st.Heartbeat(ctx, fence, fixedNow)
+	wantOutcome(t, got, err, crawlrun.HeartbeatStaleRejected)
+}
+
+func TestHeartbeat_DatabaseFailureReturnsError(t *testing.T) {
+	st, db := open(t)
+	const org = 43004
+	cleanupOrg(t, db, org)
+
+	s := seedCampaign(t, db, org, 240, 1440)
+	run := runningRun(t, st, db, s, fixedNow)
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel() // a cancelled context makes the exec fail at the database layer
+
+	fence := crawlrun.Fence{OrgID: org, RunID: run.RunID, Attempt: run.Attempt}
+	got, err := st.Heartbeat(cancelled, fence, fixedNow)
+	if err == nil {
+		t.Fatal("a database failure must surface an error")
 	}
-	if ok {
-		t.Fatal("heartbeat on a queued (not running) run must not match")
+	if got != "" {
+		t.Fatalf("outcome on error = %q, want the zero value", got)
 	}
 }
