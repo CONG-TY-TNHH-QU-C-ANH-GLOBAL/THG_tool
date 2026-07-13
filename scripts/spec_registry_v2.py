@@ -12,7 +12,7 @@ SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 V2_ENUMS = {
     "layer": {"business", "experience", "technical", "implementation",
-              "decision", "evidence", "runbook", "roadmap", "report"},
+              "decision", "evidence", "runbook", "roadmap"},
     "authority": {"authoritative", "supporting", "historical"},
     "lifecycle": {"draft", "active", "superseded", "archived"},
     "implementation_state": {"proposed", "partial", "backed", "not_applicable"},
@@ -73,7 +73,7 @@ def _check_ownership(entry, label: str, errors: list[str]) -> None:
                           "lowercase kebab-case slug")
         if experience is not None:
             errors.append(f"{label}: layer '{layer}' must not set 'experience'")
-    else:  # roadmap / report: either node or neither, but any set value is a slug
+    else:  # roadmap: either node or neither, but any set value is a slug
         for key, value in (("experience", experience), ("technical_feature", feature)):
             if value is not None and not _slug_ok(value):
                 errors.append(f"{label}: '{key}' must be a lowercase kebab-case slug")
