@@ -38,8 +38,9 @@ TYPE = {"behavior", "architecture", "contract", "migration", "investigation",
         "runbook", "report", "roadmap", "policy", "unknown"}
 MATURITY = {"snapshot", "reviewed", "test_pinned", "implementation_backed", "superseded", "unknown"}
 
-# v2 (additive) fields — validated only WHEN present, so pre-v2 entries are
-# unaffected. See the domain/experience/feature taxonomy under specs/domains/.
+# v2 metadata is a PER-ENTRY opt-in: an entry declares "metadata_version": 2
+# and must then carry the full v2 field set; entries without the declaration
+# must carry none of it. Taxonomy lives under specs/domains/.
 V2_ENUMS = {
     "layer": {"business", "experience", "technical", "implementation",
               "decision", "evidence", "runbook", "roadmap", "report"},
@@ -48,14 +49,37 @@ V2_ENUMS = {
     "implementation_state": {"proposed", "partial", "backed", "not_applicable"},
     "domain_kind": {"product", "product_platform", "platform"},
 }
+V2_REQUIRED = ["business_domain", "domain_kind", "layer", "authority",
+               "lifecycle", "implementation_state", "effective"]
+V2_OPTIONAL = {"experience", "technical_feature", "supported_experiences"}
+V2_FIELDS = set(V2_REQUIRED) | V2_OPTIONAL
 
 
 def check_v2_fields(entry, label: str, errors: list[str]) -> None:
+    version = entry.get("metadata_version")
+    if version is None:
+        stray = sorted(f for f in V2_FIELDS if f in entry)
+        if stray:
+            errors.append(f"{label}: v2 fields {stray} present without 'metadata_version': 2")
+        return
+    if version != 2:
+        errors.append(f"{label}: unsupported metadata_version '{version}'")
+        return
+    for field in V2_REQUIRED:
+        if field not in entry:
+            errors.append(f"{label}: metadata_version 2 requires field '{field}'")
     for key, allowed in V2_ENUMS.items():
         if key in entry and entry[key] not in allowed:
             errors.append(f"{label}: invalid {key} '{entry[key]}'")
     if "effective" in entry and not isinstance(entry["effective"], bool):
         errors.append(f"{label}: 'effective' must be a boolean")
+    if bool(entry.get("experience")) == bool(entry.get("technical_feature")):
+        errors.append(f"{label}: metadata_version 2 requires exactly one of "
+                      "'experience' or 'technical_feature'")
+    supported = entry.get("supported_experiences")
+    if supported is not None and (not isinstance(supported, list) or not all(
+            isinstance(x, str) and x for x in supported)):
+        errors.append(f"{label}: 'supported_experiences' must be a list of non-empty strings")
 
 
 def load_registry(errors: list[str]):
