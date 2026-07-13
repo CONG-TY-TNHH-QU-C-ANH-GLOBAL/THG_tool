@@ -1,7 +1,7 @@
 # Lead Lifecycle + Work Queue + Auto Archive
 
 **Track:** Comment Intelligence / Sales Copilot (lead read-model + planner input).
-**Status:** PR-1 implemented. PR-2..PR-5 staged below.
+**Status:** PR-1..PR-5 implemented (work_queue.go, lead_archive.go, auto_archive_scheduler.go, server/leads/lifecycle.go, LifecycleTabs.tsx, copilot_wording.go all shipped); evidence-retention compaction remains config-staged, not executing.
 **Design-doc-first** per V2 mandate (`feedback_v2_tenant_isolation_mandates`).
 
 ## Problem
@@ -157,7 +157,7 @@ thread_inactive         conversation thread inactive too long
   writing, so the flag was always false. It now reads verified `action_ledger`
   (`outcome='succeeded'`) truth. Guarded by a no-drift test.
 - **Frontend decomposition.** LeadsView (god view) is not to grow further; split plan
-  in `specs/LEADSVIEW_DECOMPOSITION.md` (refactor-only). Deferred lifecycle UI (filter
+  in `specs/domains/platform-foundation/features/workspace-ui/implementation/leadsview-decomposition.md` (refactor-only). Deferred lifecycle UI (filter
   chips, restore button) ships after the split.
 
 ## Invariants preserved

@@ -25,7 +25,7 @@ event stream — KHÔNG lưu trạng thái sở hữu/aggregate riêng có thể
 - Ghi execution → **append** một event (`ExecutionCompleted`/`CommentPosted`/...), bất biến.
 - Projection cập nhật bằng cách **subscribe** event (không gọi chéo domain). Có thể **rebuild lại từ đầu**.
 - Khớp append-only ledger hiện có (`internal/store/coordination/action_ledger.go`,
-  `specs/APPEND_ONLY_LEDGER_MIGRATION.md`) — mở rộng tự nhiên, không phải khái niệm mới.
+  `specs/domains/facebook-sales-intelligence/features/outbound-actions/implementation/append-only-ledger.md`) — mở rộng tự nhiên, không phải khái niệm mới.
 
 ## Engineering principles (áp cho mọi PR)
 Clean architecture · single responsibility · deterministic · explicit ownership · additive migrations ·

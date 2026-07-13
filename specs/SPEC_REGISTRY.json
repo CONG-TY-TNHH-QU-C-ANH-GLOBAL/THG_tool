@@ -589,7 +589,7 @@
     },
     {
       "id": "lead-lifecycle-work-queue",
-      "path": "specs/lead/LEAD_LIFECYCLE_WORK_QUEUE.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md",
       "title": "LEAD LIFECYCLE WORK QUEUE",
       "domain": "lead",
       "type": "architecture",
@@ -616,7 +616,19 @@
         "projection",
         "work-queue"
       ],
-      "notes": "Reviewed in PR24B. Core freshness_state projection DeriveLeadLifecycle exists and is unit-tested; reads leads via internal/leadingest/ingest.go as the doc states. Later retention/compaction phases may be partial/deferred."
+      "notes": "Reviewed in PR24B. Core freshness_state projection DeriveLeadLifecycle exists and is unit-tested; reads leads via internal/leadingest/ingest.go as the doc states. Mega sprint 2026-07-13: status header refreshed to reflect PR-1..PR-5 shipped evidence (work_queue.go, lead_archive.go, auto_archive_scheduler.go, server/leads/lifecycle.go, LifecycleTabs.tsx, copilot_wording.go); retention compaction remains config-staged.",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "lead-lifecycle",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "lead-management"
+      ]
     },
     {
       "id": "llm-cost-controls-phase1",
@@ -714,7 +726,7 @@
     },
     {
       "id": "multi-actor-coverage-policy",
-      "path": "specs/lead/MULTI_ACTOR_COVERAGE_POLICY.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md",
       "title": "MULTI ACTOR COVERAGE POLICY",
       "domain": "lead",
       "type": "policy",
@@ -743,7 +755,20 @@
         "coverage",
         "projection"
       ],
-      "notes": "Reviewed in PR24B. PR-0 contracts and pure rules (EvaluateCoverage, DeriveActorPersona) exist in internal/models/coverage.go and are unit-tested; coverage_text.go provides the PR-2 reason text. Later wiring phases not separately re-verified here."
+      "notes": "Reviewed in PR24B. PR-0 contracts and pure rules (EvaluateCoverage, DeriveActorPersona) exist in internal/models/coverage.go and are unit-tested; coverage_text.go provides the PR-2 reason text. Later wiring phases not separately re-verified here.",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-actor-coverage",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "lead-management",
+        "engagement-approval"
+      ]
     },
     {
       "id": "nl-direct-link-comment-smoke",
@@ -838,7 +863,7 @@
     },
     {
       "id": "organic-sales-network",
-      "path": "specs/lead/ORGANIC_SALES_NETWORK.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/lead-lifecycle/decisions/organic-sales-network.md",
       "title": "ORGANIC SALES NETWORK",
       "domain": "lead",
       "type": "architecture",
@@ -864,7 +889,16 @@
         "directive",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24D. Founder architecture directive (Lead shared / Execution owned via created_by / Contribution derived / Campaign orchestration) sourcing PR0-PR8. It extends the existing append-only action_ledger but most PRs are future-facing; kept draft as forward guidance."
+      "notes": "Reviewed in PR24D. Founder architecture directive (Lead shared / Execution owned via created_by / Contribution derived / Campaign orchestration) sourcing PR0-PR8. It extends the existing append-only action_ledger but most PRs are future-facing; kept draft as forward guidance.",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "lead-lifecycle",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true
     },
     {
       "id": "phase-5a-coordination-audit",
@@ -1533,7 +1567,7 @@
     },
     {
       "id": "lead-ingestion-behavior",
-      "path": "specs/leadingest/lead_ingestion_behavior.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md",
       "title": "Lead Ingestion Behavior Specification",
       "domain": "leadingest",
       "type": "behavior",
@@ -1558,7 +1592,20 @@
         "leadingest",
         "characterization"
       ],
-      "notes": "Active behavior contract used to guide the PR23C lead ingestion complexity refactor; pinned by characterization tests."
+      "notes": "Active behavior contract used to guide the PR23C lead ingestion complexity refactor; pinned by characterization tests.",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "lead-ingestion",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery",
+        "lead-management"
+      ]
     },
     {
       "id": "saas-automation-spec",
@@ -2036,6 +2083,77 @@
         "review-checklist"
       ],
       "notes": "Nine-item safety checklist applied to every PR-C* runtime PR (speed, concurrency, checkpoint behavior, bypass/evasion, lease, data-plane, text leakage, pure-policy testability, Sonar/CodeRabbit hygiene)."
+    },
+    {
+      "id": "lead-management-business",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/lead-management/business.md",
+      "title": "Lead Management — Business Contract",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "experience": "lead-management",
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-13): distilled from lead-lifecycle PR-1..PR-5 shipped evidence + multi-actor-coverage contracts; no invented behavior"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "lead-management",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the lead-management experience: shared-lead/owned-execution policy, no-spam channel discipline, typed archiving. Sources verified shipped behavior; engagement remains governed by engagement-approval."
+    },
+    {
+      "id": "lead-management-experience",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/lead-management/experience.md",
+      "title": "Lead Management — Operator Experience",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "experience": "lead-management",
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-13): lifecycle tabs (LifecycleTabs.tsx), queue ordering, archive/unarchive endpoints, copilot_wording.go all verified shipped; compaction flagged planned"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/leads/LifecycleTabs.tsx",
+        "internal/services/facebook/leadoutreach/copilot_wording.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "lead-management",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of lead-management: shipped lifecycle states/tabs, queue ordering, coverage skip reasons, archive/restore, copilot wording. Planned items (retention compaction) explicitly flagged."
     }
   ]
 }
