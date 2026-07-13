@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -44,7 +45,7 @@ func (s *Store) ClaimNextRun(ctx context.Context, in ClaimNextRunInput) (Claimed
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return ClaimedRun{}, false, err
+		return ClaimedRun{}, false, fmt.Errorf("crawlrun: claim begin: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -58,22 +59,24 @@ func (s *Store) ClaimNextRun(ctx context.Context, in ClaimNextRunInput) (Claimed
 		return ClaimedRun{}, false, nil
 	}
 	if err != nil {
-		return ClaimedRun{}, false, err
+		return ClaimedRun{}, false, fmt.Errorf("crawlrun: claim candidate query: %w", err)
 	}
 
 	claimed.AccountID = in.AccountID
 	claimed.FreshCutoffAt = in.Now.Add(-time.Duration(windowMinutes) * time.Minute)
 
+	// The one-active-account backstop violation surfaces here as a wrapped
+	// error (%w preserves the pgconn.PgError for errors.As), never as no-work.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE facebook_crawl_runs
 		 SET status = 'running', account_id = $2, started_at = $3,
 		     heartbeat_at = $3, fresh_cutoff_at = $4
 		 WHERE org_id = $1 AND id = $5`,
 		in.OrgID, in.AccountID, in.Now, claimed.FreshCutoffAt, claimed.RunID); err != nil {
-		return ClaimedRun{}, false, err
+		return ClaimedRun{}, false, fmt.Errorf("crawlrun: claim update: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return ClaimedRun{}, false, err
+		return ClaimedRun{}, false, fmt.Errorf("crawlrun: claim commit: %w", err)
 	}
 	return claimed, true, nil
 }

@@ -16,8 +16,13 @@ func (s *Store) RecoverDispatchFailure(ctx context.Context, in RecoverDispatchFa
 	if err := s.requirePostgres(); err != nil {
 		return RecoverDispatchFailureOutcome{}, err
 	}
-	if !in.Fence.valid() || in.ExpectedAccountID <= 0 {
-		return RecoverDispatchFailureOutcome{Result: RecoverStaleAttempt}, nil
+	// Structurally invalid input is a caller/adapter bug, not a stale durable
+	// state — surface it instead of hiding it behind RecoverStaleAttempt.
+	if !in.Fence.valid() {
+		return RecoverDispatchFailureOutcome{}, ErrInvalidFence
+	}
+	if in.ExpectedAccountID <= 0 {
+		return RecoverDispatchFailureOutcome{}, ErrInvalidAccountID
 	}
 	reason := in.ReasonCode
 	if reason == "" {

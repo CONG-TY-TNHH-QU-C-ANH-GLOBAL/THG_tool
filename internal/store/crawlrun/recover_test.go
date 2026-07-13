@@ -96,6 +96,38 @@ func TestRecoverDispatchFailure_StaleFenceNoOp(t *testing.T) {
 	}
 }
 
+func TestRecoverDispatchFailure_WrongAccountIsStale(t *testing.T) {
+	st, db := open(t)
+	ctx := context.Background()
+	const org = 44005
+	cleanupOrg(t, db, org)
+
+	s := seedCampaign(t, db, org, 240, 1440)
+	run := runningRun(t, st, db, s, fixedNow)
+
+	in := recoverInput(org, run)
+	in.ExpectedAccountID = run.AccountID + 99999 // a valid but wrong account id
+	out, err := st.RecoverDispatchFailure(ctx, in)
+	if err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+	if out.Result != crawlrun.RecoverStaleAttempt {
+		t.Fatalf("result = %q, want stale_attempt", out.Result)
+	}
+	if status, _ := runStatus(t, db, org, run.RunID); status != "running" {
+		t.Fatalf("wrong-account recovery must leave the run running; status = %q", status)
+	}
+	var retries int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM facebook_crawl_runs WHERE org_id=$1 AND retry_of_run_id IS NOT NULL`,
+		org).Scan(&retries); err != nil {
+		t.Fatalf("count retries: %v", err)
+	}
+	if retries != 0 {
+		t.Fatalf("wrong-account recovery created %d retry rows, want 0", retries)
+	}
+}
+
 func TestRecoverDispatchFailure_ParentTerminalOtherReason(t *testing.T) {
 	st, db := open(t)
 	ctx := context.Background()

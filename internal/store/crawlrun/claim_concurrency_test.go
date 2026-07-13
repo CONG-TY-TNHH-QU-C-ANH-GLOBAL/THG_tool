@@ -2,7 +2,10 @@ package crawlrun_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/thg/scraper/internal/store/crawlrun"
 )
@@ -50,5 +53,42 @@ func TestClaimNextRun_SkipsLockedCandidate(t *testing.T) {
 	}
 	if _, ok, err := st.ClaimNextRun(ctx, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: s.account, Now: fixedNow}); err != nil || !ok {
 		t.Fatalf("after release, claim must succeed: ok=%v err=%v", ok, err)
+	}
+}
+
+// TestClaimNextRun_ActiveAccountBackstop proves the database is the race
+// backstop: an account already running one run cannot claim a second. The store
+// must surface the ux_fb_crawl_runs_one_active_account violation, not swallow it
+// as no-work.
+func TestClaimNextRun_ActiveAccountBackstop(t *testing.T) {
+	st, db := open(t)
+	ctx := context.Background()
+	const org = 42009
+	cleanupOrg(t, db, org)
+
+	s := seedCampaign(t, db, org, 240, 1440)
+	seedSource(t, db, s, "src-1", nil)
+	seedSource(t, db, s, "src-2", nil)
+	if _, err := st.EnqueueDueRuns(ctx, crawlrun.EnqueueDueRunsInput{OrgID: org, Now: fixedNow}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if _, ok, err := st.ClaimNextRun(ctx, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: s.account, Now: fixedNow}); err != nil || !ok {
+		t.Fatalf("first claim must succeed: ok=%v err=%v", ok, err)
+	}
+
+	_, ok, err := st.ClaimNextRun(ctx, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: s.account, Now: fixedNow})
+	if ok {
+		t.Fatal("a busy account must not report a second claimed run")
+	}
+	if err == nil {
+		t.Fatal("second claim must surface the active-account backstop error, not (zero,false,nil)")
+	}
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		t.Fatalf("err = %v, want a pgconn.PgError", err)
+	}
+	if pgErr.ConstraintName != "ux_fb_crawl_runs_one_active_account" {
+		t.Fatalf("constraint = %q, want ux_fb_crawl_runs_one_active_account", pgErr.ConstraintName)
 	}
 }

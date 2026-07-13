@@ -2,6 +2,7 @@ package crawlrun_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -145,5 +146,25 @@ func TestClaimNextRun_TwoAccountsClaimDistinctRuns(t *testing.T) {
 	}
 	if first.RunID == second.RunID {
 		t.Fatalf("two accounts claimed the same run %d", first.RunID)
+	}
+}
+
+func TestClaimNextRun_DatabaseFailureWrapsError(t *testing.T) {
+	st, db := open(t)
+	const org = 42008
+	cleanupOrg(t, db, org)
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel() // fails at BeginTx; the wrapper must preserve the cause
+
+	_, ok, err := st.ClaimNextRun(cancelled, crawlrun.ClaimNextRunInput{OrgID: org, AccountID: 1, Now: fixedNow})
+	if err == nil {
+		t.Fatal("a database failure must surface an error, not a claim")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want it to wrap context.Canceled", err)
+	}
+	if ok {
+		t.Fatal("a database failure must not report a successful claim")
 	}
 }

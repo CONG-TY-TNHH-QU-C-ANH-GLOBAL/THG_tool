@@ -32,7 +32,7 @@ For the **runtime topology** view (same packages, grouped by runtime role, with 
 | **threads** | `internal/store/threads/` | `s.Threads()` | extracted (Phase 8a, 2026-05-22) — single-file clean-cut. conversation_threads + conversation_messages. The conversationGateForOutbound adapter stays at parent store level (top-level) because it composes threads + outbound. |
 | **leads** | `internal/store/leads/` | `s.Leads()` | extracted (Phase 8b, 2026-05-22) — clean-cut. 4 files (leads, lead_engagement, classification_log, context_niches). leads.Store holds a *threads.Store handle for the engagement-projection cross-domain reads (per DOMAINS.md §2.2 cross-domain projections via tenant-ok annotations). |
 | **reel** | `internal/store/reel/` | `s.Reel()` | greenfield (PR-R1, 2026-07-06) — Reel Studio foundation. Postgres-platform-only (no SQLite schema); reels + reel_scripts. See docs/architecture/decisions/ADR-reel-studio-platform-module.md. |
-| **crawlrun** | `internal/store/crawlrun/` | none — dormant | greenfield (PR-M3B, 2026-07-13) — Facebook multi-group fresh-lead crawl run queue/lifecycle store. Postgres-platform-only; `facebook_crawl_*` schema (migrations 0113–0117). **Not wired**: no `s.CrawlRun()` accessor and no runtime writer until PR-M4. See §4. |
+| **crawlrun** | `internal/store/crawlrun/` | none — dormant | greenfield (PR-M3B, 2026-07-13) — Facebook multi-group fresh-lead crawl run queue/lifecycle store. Postgres-platform-only; `facebook_crawl_*` schema (migrations 0113–0118). **Not wired**: no `s.CrawlRun()` accessor and no runtime writer until PR-M4. See §4. |
 | users | `internal/store/` | direct methods | top-level (foundational, may stay) |
 | leads | `internal/store/` | direct methods | top-level (Phase 8 — cross-domain SQL coupling) |
 | identities | `internal/store/` | direct methods | top-level (Phase 6) |
@@ -165,10 +165,21 @@ Tests in subpackage as `package knowledge_test` (external) + `pgvector_literal_t
 ### **crawlrun** — Facebook crawl run queue/lifecycle (`internal/store/crawlrun/`)
 
 PostgreSQL-platform-only store for the Facebook multi-group fresh-lead crawl
-run ledger (`facebook_crawl_*`, migrations 0113–0117): atomic due-run enqueue,
+run ledger (`facebook_crawl_*`, migrations 0113–0118): atomic due-run enqueue,
 `FOR UPDATE SKIP LOCKED` claim, fenced heartbeat, and dispatch-failure recovery
 over `facebook_crawl_runs`. Mirrors the `reel` precedent: Postgres-only with a
 `requirePostgres` guard; SQLite carries no crawl-campaign schema.
+
+**Policy boundary.** The service/domain layer (the PR-M4 scheduler +
+`internal/services/facebook/crawlcampaign`) owns policy: choosing the account,
+account-safety eligibility, machine/org budgets, fairness, per-item freshness
+classification, and broader scheduling. This store owns durable mechanics only:
+atomic persistence; tenant/campaign/source consistency; enforcing active
+campaign/source and preferred-account affinity at claim time; verifying a
+**preselected** account belongs to the campaign pool; computing and persisting
+`fresh_cutoff_at` from authoritative server Now and the stored campaign freshness
+window; and the DB-backed queue/fencing/idempotency invariants. It never chooses
+accounts and never decides per-item freshness.
 
 **Dormant (PR-M3B, 2026-07-13):** no `s.CrawlRun()` accessor is wired into the
 top-level `Store` and no scheduler/handler/runtime writer invokes it yet — the
