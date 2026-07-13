@@ -1,6 +1,6 @@
 // THG Facebook crawl — post timestamp parser + canonical TimestampParse DTO.
 // PR-M1 of the Multi-Group Fresh-Lead Crawl train
-// (specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md §4).
+// (specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/technical.md §4).
 //
 // Facebook renders post age as localized relative text ("2 giờ", "5 phút",
 // "hôm qua", "1d"), occasionally as a machine-readable datetime attribute, and

@@ -38,6 +38,25 @@ TYPE = {"behavior", "architecture", "contract", "migration", "investigation",
         "runbook", "report", "roadmap", "policy", "unknown"}
 MATURITY = {"snapshot", "reviewed", "test_pinned", "implementation_backed", "superseded", "unknown"}
 
+# v2 (additive) fields — validated only WHEN present, so pre-v2 entries are
+# unaffected. See the domain/experience/feature taxonomy under specs/domains/.
+V2_ENUMS = {
+    "layer": {"business", "experience", "technical", "implementation",
+              "decision", "evidence", "runbook", "roadmap", "report"},
+    "authority": {"authoritative", "supporting", "historical"},
+    "lifecycle": {"draft", "active", "superseded", "archived"},
+    "implementation_state": {"proposed", "partial", "backed", "not_applicable"},
+    "domain_kind": {"product", "product_platform", "platform"},
+}
+
+
+def check_v2_fields(entry, label: str, errors: list[str]) -> None:
+    for key, allowed in V2_ENUMS.items():
+        if key in entry and entry[key] not in allowed:
+            errors.append(f"{label}: invalid {key} '{entry[key]}'")
+    if "effective" in entry and not isinstance(entry["effective"], bool):
+        errors.append(f"{label}: 'effective' must be a boolean")
+
 
 def load_registry(errors: list[str]):
     if not REGISTRY.exists():
@@ -77,6 +96,7 @@ def check_entry(entry, idx: int, errors: list[str]) -> None:
     path = entry.get("path")
     if isinstance(path, str) and not (ROOT / path).exists():
         errors.append(f"{label}: path does not exist: {path}")
+    check_v2_fields(entry, label, errors)
 
 
 def _index_unique(entries, key: str, kind: str, errors: list[str]) -> dict[str, int]:
