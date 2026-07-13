@@ -38,6 +38,10 @@ TYPE = {"behavior", "architecture", "contract", "migration", "investigation",
         "runbook", "report", "roadmap", "policy", "unknown"}
 MATURITY = {"snapshot", "reviewed", "test_pinned", "implementation_backed", "superseded", "unknown"}
 
+# Per-entry v2 metadata opt-in ("metadata_version": 2, ownership_domain
+# taxonomy) — rules live in spec_registry_v2.py beside this script.
+from spec_registry_v2 import check_v2_entry, check_v2_uniqueness  # noqa: E402
+
 
 def load_registry(errors: list[str]):
     if not REGISTRY.exists():
@@ -77,6 +81,7 @@ def check_entry(entry, idx: int, errors: list[str]) -> None:
     path = entry.get("path")
     if isinstance(path, str) and not (ROOT / path).exists():
         errors.append(f"{label}: path does not exist: {path}")
+    check_v2_entry(entry, label, errors)
 
 
 def _index_unique(entries, key: str, kind: str, errors: list[str]) -> dict[str, int]:
@@ -111,6 +116,7 @@ def validate_superseded_refs(entries, known, errors: list[str]) -> None:
 def check_cross_entry(entries, errors: list[str]) -> None:
     ids, paths = validate_unique_ids_and_paths(entries, errors)
     validate_superseded_refs(entries, set(ids) | set(paths), errors)
+    check_v2_uniqueness(entries, errors)
 
 
 def check_coverage(entries, errors: list[str]) -> None:

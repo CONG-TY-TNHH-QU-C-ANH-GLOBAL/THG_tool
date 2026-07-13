@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-12",
+  "updated_at": "2026-07-13",
   "entries": [
     {
       "id": "api-spec",
@@ -1588,12 +1588,21 @@
     },
     {
       "id": "crawl-speed-checkpoint-audit",
-      "path": "specs/facebook/CRAWL_SPEED_CHECKPOINT_AUDIT.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/evidence/crawl-speed-checkpoint-audit.md",
       "title": "CRAWL SPEED CHECKPOINT AUDIT",
       "domain": "facebook",
       "type": "investigation",
       "status": "active",
       "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-group-fresh-lead-crawl",
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
       "owner": "unassigned",
       "last_reviewed": "2026-07-08",
       "verified_against": [
@@ -1625,12 +1634,24 @@
     },
     {
       "id": "crawler-account-safety-spec",
-      "path": "specs/facebook/CRAWLER_ACCOUNT_SAFETY_SPEC.md",
-      "title": "CRAWLER ACCOUNT SAFETY SPEC",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/technical.md",
+      "title": "Account Safety — Technical Contract",
       "domain": "facebook",
       "type": "architecture",
       "status": "draft",
       "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "account-safety",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-09",
       "verified_against": [
@@ -1659,16 +1680,28 @@
         "spec",
         "prc0.5"
       ],
-      "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change."
+      "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change. Split 2026-07-13 (spec IA sprint 1): review checklist extracted to runbooks/review-checklist.md; binding invariants (hard boundaries, data-plane ownership) remain in this technical contract, with supporting rationale in decisions/ADR-001-conservative-account-safety.md."
     },
     {
       "id": "multi-group-fresh-lead-crawl-spec",
-      "path": "specs/facebook/MULTI_GROUP_FRESH_LEAD_CRAWL_SPEC.md",
-      "title": "MULTI GROUP FRESH LEAD CRAWL SPEC",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/technical.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Technical Contract",
       "domain": "facebook",
       "type": "architecture",
       "status": "draft",
       "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-group-fresh-lead-crawl",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-10",
       "verified_against": [
@@ -1676,7 +1709,7 @@
         "dedup layers exist: crawl.js dedupKey/seen Set + posts.dedup_hash UNIQUE insert-or-ignore (internal/store/crawl/posts.go)",
         "org_crawl_intents cursor/next_run_at exists on platform postgres 0108; no multi-group campaign grouping",
         "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
-        "layers on CRAWLER_ACCOUNT_SAFETY_SPEC (PR-C0.5) state machine/budgets/cooldown"
+        "layers on crawler-account-safety-spec (PR-C0.5) state machine/budgets/cooldown"
       ],
       "related_code": [
         "local-connector-extension/content/crawl.js",
@@ -1699,16 +1732,25 @@
         "spec",
         "prm0"
       ],
-      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at/now_utc, canonical TimestampParse DTO (posted_at/confidence/earliest_utc/latest_utc) parser->wire->gate, strict provably-fresh window rule (earliest_utc >= cutoff), frontier streak reset on ambiguous/unknown, 3-layer dedupe incl. additive facebook_crawl_lead_index (leads table untouched), org-scoped composite FKs incl. account-pool membership anchored to accounts(org_id,id) (nullable account columns, no sentinel 0; running requires non-NULL account via CHECK), waiting_for_connector_upgrade as open run status, append-only idempotent retry lineage (retry_of_run_id + single-retry unique index) + (run_id, attempt) write fencing, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change."
+      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at/now_utc, canonical TimestampParse DTO (posted_at/confidence/earliest_utc/latest_utc) parser->wire->gate, strict provably-fresh window rule (earliest_utc >= cutoff), frontier streak reset on ambiguous/unknown, 3-layer dedupe incl. additive facebook_crawl_lead_index (leads table untouched), org-scoped composite FKs incl. account-pool membership anchored to accounts(org_id,id) (nullable account columns, no sentinel 0; running requires non-NULL account via CHECK), waiting_for_connector_upgrade as open run status, append-only idempotent retry lineage (retry_of_run_id + single-retry unique index) + (run_id, attempt) write fencing, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change. Split 2026-07-13 (spec IA sprint 1): business/experience layers extracted to experiences/fresh-lead-discovery/, rollout + rejected-designs extracted beside this contract, stale inline DDL replaced by a pointer to the shipped postgres-schema.md."
     },
     {
       "id": "facebook-crawl-campaign-postgres-schema-implementation",
-      "path": "specs/facebook/FACEBOOK_CRAWL_CAMPAIGN_POSTGRES_SCHEMA_IMPLEMENTATION.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/postgres-schema.md",
       "title": "FACEBOOK CRAWL CAMPAIGN POSTGRES SCHEMA IMPLEMENTATION",
       "domain": "facebook",
       "type": "migration",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-group-fresh-lead-crawl",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
       "last_reviewed": "2026-07-12",
       "verified_against": [
@@ -1747,12 +1789,21 @@
     },
     {
       "id": "facebook-crawl-code-organization-blueprint",
-      "path": "specs/facebook/FACEBOOK_CRAWL_CODE_ORGANIZATION_BLUEPRINT.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/code-organization.md",
       "title": "FACEBOOK CRAWL CODE ORGANIZATION BLUEPRINT",
       "domain": "facebook",
       "type": "architecture",
       "status": "draft",
       "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-group-fresh-lead-crawl",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
       "owner": "unassigned",
       "last_reviewed": "2026-07-12",
       "verified_against": [
@@ -1780,6 +1831,211 @@
         "prm5"
       ],
       "notes": "Companion runtime code-organization blueprint for PR-M3..PR-M5 (runtime ownership, dependency direction, atomic ports, transaction/rollout seams). Docs-only; authorizes no runtime code in PR-M2B. Planned durable store boundary internal/store/crawl. Layers on the PR-M2B schema (facebook-crawl-campaign-postgres-schema-implementation) and multi-group-fresh-lead-crawl-spec."
+    },
+    {
+      "id": "fresh-lead-discovery-business",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/fresh-lead-discovery/business.md",
+      "title": "Fresh-Lead Discovery — Business Contract",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "experience": "fresh-lead-discovery",
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §1/§9; section mapping in the PR"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "fresh-lead",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the fresh-lead-discovery experience: problem, users, value, lead-volume goals, business exclusions. Extracted verbatim from the PR-M0 spec during the spec IA sprint 1 split; inherits its draft status."
+    },
+    {
+      "id": "fresh-lead-discovery-experience",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/fresh-lead-discovery/experience.md",
+      "title": "Fresh-Lead Discovery — Operator Experience",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "experience": "fresh-lead-discovery",
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §3/§9/§10 operator surfaces + crawler-account-safety-spec §3 invariant; section mapping in the PR"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "fresh-lead",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of fresh-lead-discovery: operator flow, exclusion transparency (why 40 posts -> 3 leads), human_required behavior, waiting_for_connector_upgrade surfacing. Operator message catalog stays with the account-safety state machine (single source); this doc references it."
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-rollout",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/rollout.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Rollout PR Plan",
+      "domain": "facebook",
+      "type": "roadmap",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-group-fresh-lead-crawl",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "crawl",
+        "rollout",
+        "pr-train"
+      ],
+      "notes": "PR train M0-M6 for the fresh-lead crawl runtime. M0 (spec), M2B (schema), M3B (store mechanics) merged; M4 scheduler wiring onward not yet built."
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-rejected-designs",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/decisions/rejected-designs.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Rejected Designs",
+      "domain": "facebook",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "multi-group-fresh-lead-crawl",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §13"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "crawl",
+        "decisions",
+        "rejected-designs"
+      ],
+      "notes": "Twelve binding rejected alternatives (client-clock cutoff, ambiguous-timestamp trust, rotation patterns, queue frameworks, ...), each with the reason it must not come back."
+    },
+    {
+      "id": "account-safety-boundaries",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/decisions/ADR-001-conservative-account-safety.md",
+      "title": "ADR-001: Conservative, Fail-Safe Account Safety",
+      "domain": "facebook",
+      "type": "policy",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "account-safety",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 fix-up (2026-07-13): recast as rationale-only ADR; binding invariants restored to the account-safety technical contract"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "account-safety",
+        "boundaries",
+        "data-planes",
+        "no-evasion"
+      ],
+      "notes": "Supporting rationale ADR for the conservative fail-safe account-safety posture: alternatives considered (rotation, auto-clear, parallelism, solving/evasion, instant retries), trade-offs, consequences. The binding invariants themselves live in the account-safety technical contract (crawler-account-safety-spec §2/§7)."
+    },
+    {
+      "id": "account-safety-review-checklist",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/runbooks/review-checklist.md",
+      "title": "Account Safety — Review Checklist",
+      "domain": "facebook",
+      "type": "runbook",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "account-safety",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from crawler-account-safety-spec §10"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "account-safety",
+        "runbook",
+        "review-checklist"
+      ],
+      "notes": "Nine-item safety checklist applied to every PR-C* runtime PR (speed, concurrency, checkpoint behavior, bypass/evasion, lease, data-plane, text leakage, pure-policy testability, Sonar/CodeRabbit hygiene)."
     }
   ]
 }

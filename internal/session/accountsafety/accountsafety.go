@@ -1,5 +1,6 @@
 // Package accountsafety is the pure-policy foundation for the Facebook crawler
-// Account Safety Coordinator (spec: specs/facebook/CRAWLER_ACCOUNT_SAFETY_SPEC.md).
+// Account Safety Coordinator
+// (spec: specs/domains/facebook-sales-intelligence/features/account-safety/technical.md).
 //
 // It answers "which account may safely crawl now, and what happens after a run"
 // with side-effect-free functions over an explicit MachineState. It holds NO

@@ -1,9 +1,12 @@
-# Facebook Multi-Group Fresh-Lead Crawl Orchestration Spec (PR-M0)
+# Multi-Group Fresh-Lead Crawl — Technical Contract (PR-M0)
 
 Track: **Facebook Automation Reliability**. Type: **architecture / code-spec baseline.**
-Status: **draft — docs only, no runtime change.** Companion to
-[CRAWLER_ACCOUNT_SAFETY_SPEC.md](CRAWLER_ACCOUNT_SAFETY_SPEC.md) (PR-C0.5) and
-[CRAWL_SPEED_CHECKPOINT_AUDIT.md](CRAWL_SPEED_CHECKPOINT_AUDIT.md) (PR-C0).
+Status: **draft — docs only, no runtime change.** Layer: **technical contract** for the
+`multi-group-fresh-lead-crawl` feature (domain: facebook-sales-intelligence).
+Business/experience layers: [business.md](../../experiences/fresh-lead-discovery/business.md),
+[experience.md](../../experiences/fresh-lead-discovery/experience.md).
+Companion to [Account Safety](../account-safety/technical.md) (PR-C0.5) and the
+[Crawl Speed & Checkpoint Audit](./evidence/crawl-speed-checkpoint-audit.md) (PR-C0).
 
 This spec defines how one org crawls **many Facebook groups** with a **pool of
 accounts** to harvest **fresh leads only** (posts younger than a server-defined
@@ -33,23 +36,12 @@ Grounding (already in the codebase — reuse, do not reinvent):
 
 ## 1. Problem statement
 
-An org wants "leads from the last 24 hours across my 20 groups, every few hours".
-Today the system can only express that as 20 independent `org_crawl_intents`, each
-crawling until `max_items` regardless of post age, each dispatched with no shared
-plan. Consequences:
-
-- **Stale waste.** A group whose feed surfaces week-old posts burns the whole
-  `max_items` budget on posts that will never become leads. Crawl time is the
-  scarce, risk-carrying resource; spending it on stale content is pure loss.
-- **No freshness contract.** `posted_at` is empty on the wire, so "only fresh posts
-  become leads" cannot be enforced anywhere — not in the extension, not at ingest.
-- **No cross-group orchestration.** Nothing sequences 20 groups over a pool of 5
-  accounts under the machine budget; nothing records which group was covered when,
-  or which account is mid-crawl.
-- **Duplicate leads across runs.** Re-crawling a group re-sees recent posts; only
-  the `dedup_hash` insert guard stands between a re-seen post and a duplicate lead.
-
-The answer is a **campaign**: a durable, org-scoped plan (groups + freshness window
+Moved to the experience layer:
+[fresh-lead-discovery/business.md](../../experiences/fresh-lead-discovery/business.md)
+owns the business problem, intended users, value, and lead-volume goals. In one
+line: an org wants "leads from the last 24 hours across my 20 groups, every few
+hours", and today's independent `org_crawl_intents` cannot express that. The
+answer is a **campaign**: a durable, org-scoped plan (groups + freshness window
 + account pool) compiled into a FIFO queue of per-group **runs**, admitted one at a
 time per account through the existing safety machinery, each run stopping early at
 the **temporal frontier** (feed exhausted of fresh posts) instead of grinding to
@@ -149,7 +141,9 @@ with a typed reason.
 | `duplicate_lead` | A lead already exists for this post identity (§6). |
 
 Counters of each reason ride the existing crawl-progress telemetry (PR-C0.5 §6
-extension) so the operator can see *why* a 40-post crawl produced 3 leads.
+extension) so the operator can see *why* a 40-post crawl produced 3 leads. The
+operator-facing surfacing of these counters is specified in
+[experience.md](../../experiences/fresh-lead-discovery/experience.md).
 
 ---
 
@@ -295,151 +289,38 @@ correctness gates, so a cursor reset can never cause duplicate leads).
 
 ---
 
-## 7. Proposed data model (PostgreSQL platform plane)
+## 7. Data model (PostgreSQL platform plane)
 
 Durable queue/campaign/run/account state is **system of record → PostgreSQL
 platform plane**, per `docs/architecture/DATABASE_OWNERSHIP.md` and the PR-C0.5
-§7 doctrine. Ephemeral in-run counters stay in the browser/connector. The
-migration ships as its **own RED-reviewed PR** (PR-M2), never smuggled in.
+§7 doctrine. Ephemeral in-run counters stay in the browser/connector.
 
 Table names carry the `facebook_` platform prefix: the platform plane already
 holds generic crawl tables (`posts`, `groups`, `jobs`, `org_crawl_intents`),
 and this domain is Facebook-specific by design (Taobao/1688 crawling would be
 its own vertical, not rows in these tables).
 
-```sql
--- The plan
-CREATE TABLE facebook_crawl_campaigns (
-    id                       BIGSERIAL PRIMARY KEY,
-    org_id                   BIGINT NOT NULL,
-    name                     TEXT NOT NULL,
-    freshness_window_minutes INTEGER NOT NULL DEFAULT 1440,   -- 24h
-    cadence_minutes          INTEGER NOT NULL DEFAULT 240,
-    max_items_per_run        INTEGER NOT NULL DEFAULT 50,
-    status                   TEXT NOT NULL DEFAULT 'active',  -- active|paused|archived
-    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (org_id, id)                     -- composite-FK anchor for children
-);
+**The authoritative DDL is the shipped schema:
+[implementation/postgres-schema.md](./implementation/postgres-schema.md)
+(PR-M2B, migrations 0112–0117 as applied by the store boot path).** The draft
+DDL formerly inlined in this section had diverged from the shipped schema —
+index names (`uq_facebook_crawl_runs_*` vs the shipped `ux_fb_crawl_runs_*`),
+the `cancelled` run status, the `task_id` and `duplicate_count` run columns,
+and the `platform` column in the lead-index primary key — and was removed in
+favor of that single schema authority. The product invariants the schema must
+uphold remain owned here:
 
--- Anchor on the EXISTING accounts identity-truth table (platform 0101).
--- Additive index only — no column change to accounts.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_org_id_id ON accounts(org_id, id);
-
--- Which accounts may serve the campaign. Declared before sources/runs:
--- both constrain their account columns against this pool. Pool membership
--- is itself anchored to the canonical accounts table, org-consistently.
-CREATE TABLE facebook_crawl_campaign_accounts (
-    campaign_id BIGINT NOT NULL,
-    org_id      BIGINT NOT NULL,
-    account_id  BIGINT NOT NULL,
-    PRIMARY KEY (campaign_id, account_id),
-    UNIQUE (org_id, campaign_id, account_id),   -- composite-FK anchor
-    FOREIGN KEY (org_id, campaign_id)
-        REFERENCES facebook_crawl_campaigns(org_id, id),
-    FOREIGN KEY (org_id, account_id)
-        REFERENCES accounts(org_id, id)
-);
-
--- Which groups, with per-source cursor + affinity
-CREATE TABLE facebook_crawl_campaign_sources (
-    id                 BIGSERIAL PRIMARY KEY,
-    campaign_id        BIGINT NOT NULL,
-    org_id             BIGINT NOT NULL,
-    source_url         TEXT NOT NULL,
-    source_label       TEXT NOT NULL DEFAULT '',
-    priority           INTEGER NOT NULL DEFAULT 0,
-    preferred_account_id BIGINT,                -- sticky affinity; NULL = none
-    cursor_last_post_at TIMESTAMPTZ,
-    last_run_at        TIMESTAMPTZ,
-    status             TEXT NOT NULL DEFAULT 'active',
-    UNIQUE (campaign_id, source_url),
-    UNIQUE (org_id, campaign_id, id),           -- composite-FK anchor for runs
-    FOREIGN KEY (org_id, campaign_id)
-        REFERENCES facebook_crawl_campaigns(org_id, id),
-    -- when non-NULL, affinity must point into this campaign's account pool
-    FOREIGN KEY (org_id, campaign_id, preferred_account_id)
-        REFERENCES facebook_crawl_campaign_accounts(org_id, campaign_id, account_id)
-);
-
--- The queue + append-only run history (one table, status is the queue).
--- Run rows are immutable once terminal; a retry APPENDS a new row (§10),
--- it never reuses or rewrites an old one.
-CREATE TABLE facebook_crawl_runs (
-    id               BIGSERIAL PRIMARY KEY,
-    campaign_id      BIGINT NOT NULL,
-    source_id        BIGINT NOT NULL,
-    org_id           BIGINT NOT NULL,
-    account_id       BIGINT,                    -- NULL until admitted
-    status           TEXT NOT NULL DEFAULT 'queued',
-        -- queued|waiting_for_connector_upgrade|running
-        -- |succeeded|stopped_safe|failed|abandoned
-    exit_reason_code TEXT NOT NULL DEFAULT '',
-    fresh_cutoff_at  TIMESTAMPTZ,                             -- set at dispatch
-    attempt          INTEGER NOT NULL DEFAULT 1, -- (run_id, attempt) = fencing token (§10)
-    retry_of_run_id  BIGINT,                     -- lineage: NULL on first attempts
-    posts_seen       INTEGER NOT NULL DEFAULT 0,
-    fresh_lead_count INTEGER NOT NULL DEFAULT 0,
-    stale_skipped    INTEGER NOT NULL DEFAULT 0,
-    unparsed_count   INTEGER NOT NULL DEFAULT 0,
-    queued_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    started_at       TIMESTAMPTZ,
-    heartbeat_at     TIMESTAMPTZ,
-    finished_at      TIMESTAMPTZ,
-    -- a run may not be running without an admitted account: closes the
-    -- NULL-exclusion gap in the one-active partial index below
-    CHECK (status <> 'running' OR account_id IS NOT NULL),
-    UNIQUE (org_id, id),                        -- composite-FK anchor (lineage)
-    -- composite FKs, org_id in every one: a run cannot reference another
-    -- org's campaign, a source of a different org/campaign, an account
-    -- outside this campaign's pool, or a retry parent from another org —
-    -- invalid cross-tenant / cross-campaign rows are unrepresentable,
-    -- not merely unqueried
-    FOREIGN KEY (org_id, campaign_id)
-        REFERENCES facebook_crawl_campaigns(org_id, id),
-    FOREIGN KEY (org_id, campaign_id, source_id)
-        REFERENCES facebook_crawl_campaign_sources(org_id, campaign_id, id),
-    FOREIGN KEY (org_id, campaign_id, account_id)
-        REFERENCES facebook_crawl_campaign_accounts(org_id, campaign_id, account_id),
-    FOREIGN KEY (org_id, retry_of_run_id)
-        REFERENCES facebook_crawl_runs(org_id, id)
-);
-
--- THE invariant: 1 account = max 1 active crawl. Org-scoped; account_id is
--- NULL until admitted, so queued rows never collide. The NULL exclusion
--- cannot be abused to run account-less: the CHECK above forbids
--- status='running' with a NULL account_id.
-CREATE UNIQUE INDEX uq_facebook_crawl_runs_one_active_per_org_account
-    ON facebook_crawl_runs(org_id, account_id)
-    WHERE status = 'running' AND account_id IS NOT NULL;
--- Idempotent automatic retry: at most ONE retry row may ever point at a
--- given abandoned run. The reaper inserts the retry with
--- ON CONFLICT DO NOTHING on this index, so two racing reapers yield
--- exactly one retry — the loser is a no-op, not a duplicate.
-CREATE UNIQUE INDEX uq_facebook_crawl_runs_single_retry_per_run
-    ON facebook_crawl_runs(retry_of_run_id)
-    WHERE retry_of_run_id IS NOT NULL;
--- and: at most 1 OPEN run per source (no double-queueing a group).
--- waiting_for_connector_upgrade is an open state and counts here.
-CREATE UNIQUE INDEX uq_facebook_crawl_runs_one_open_per_org_source
-    ON facebook_crawl_runs(org_id, source_id)
-    WHERE status IN ('queued','waiting_for_connector_upgrade','running');
-
--- Lead-identity dedupe (§6 layer 3). Additive; the existing leads table is
--- NOT altered. The gate claims (org_id, post_dedup_hash) first, then creates
--- the lead and back-fills lead_id in the same transaction.
-CREATE TABLE facebook_crawl_lead_index (
-    org_id          BIGINT NOT NULL,
-    post_dedup_hash TEXT NOT NULL,
-    lead_id         BIGINT,                 -- null between claim and creation
-    run_id          BIGINT,                 -- provenance; NULL if run purged
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (org_id, post_dedup_hash),
-    -- org-scoped provenance: a claim cannot point at another org's run
-    FOREIGN KEY (org_id, run_id)
-        REFERENCES facebook_crawl_runs(org_id, id)
-);
-```
+- **One active crawl per account** — partial unique index on
+  `(org_id, account_id) WHERE status = 'running' AND account_id IS NOT NULL`,
+  plus a CHECK that a `running` run always has a non-NULL `account_id`.
+- **At most one open run per source** (`queued`, `waiting_for_connector_upgrade`,
+  and `running` are open states) — no double-queueing a group.
+- **At most one retry per abandoned run**, appended as a new row
+  (`retry_of_run_id` lineage, `attempt + 1`); run rows are immutable once
+  terminal.
+- **Org-scoped composite FKs everywhere** — a run cannot reference another
+  org's campaign, a source of a different org/campaign, an account outside this
+  campaign's pool, or a retry parent from another org.
 
 The partial unique indexes are **safety backstops, not the scheduler**: the
 scheduler/lease logic (Allocator lease + Coordinator budget) must still enforce
@@ -465,41 +346,13 @@ Notes:
 
 ## 8. Code / file structure
 
-Respecting the boundary laws (`internal/services/facebook` imports no store/server;
-adapters live in the composition root) and the 200-line file guard:
-
-```text
-internal/services/facebook/freshlead/
-    freshness.go        # §3 eligibility: pure fn (parsed ts, cutoff) -> eligible|reason
-    frontier.go         # §5 streak algorithm: pure, state in -> decision out
-    schedule.go         # §2 scheduler decision: (queue, accounts, budgets) -> pick|none
-    reasons.go          # typed exit/exclusion reason codes (single source)
-    *_test.go           # table-driven; no DB, no browser, no clock beyond passed-in now
-
-internal/store/crawl/
-    campaigns.go        # campaign + sources + accounts CRUD (org-scoped, dialect-aware)
-    runs.go             # queue ops: enqueue, admit (partial-index guarded), finish, reap
-
-cmd/scraper/            # composition root: wires store <-> freshlead policy <-> jobs
-    (adapter files; no policy logic here)
-
-local-connector-extension/platforms/facebook/       # post-PR-C2.5 topology:
-    crawl_time.js           # §4 DOM timestamp extraction + confidence model (pure)
-    crawl_freshness.js      # §3 eligibility + §5 frontier streak policy (pure)
-    crawl_time.test.mjs
-    crawl_freshness.test.mjs
-
-local-connector-extension/content/crawl.js
-    # remains the orchestrator/wiring layer ONLY: consumes fresh_cutoff_at +
-    # now_utc from the task payload, feeds items through crawl_freshness, emits
-    # the per-item §4 TimestampParse DTO on the wire.
-    # DOM timestamp extraction and freshness policy live
-    # under platforms/facebook/ (beside crawl_pacing.js, crawl_progress.js,
-    # crawl_post_identity.js) — never inline in crawl.js.
-```
-
-Every new file ≤200 lines; policy functions pure; reason codes centralized in one
-`reasons.go`, not scattered string literals.
+Owned by the implementation layer:
+[implementation/code-organization.md](./implementation/code-organization.md)
+(runtime ownership, dependency direction, package shape, port contracts, and
+transaction seams for PR-M3..PR-M5). Boundary laws recap: pure policy lives in
+`internal/services/facebook` (imports no store/server), adapters live in the
+composition root, every new file respects the 200-line guard, and reason codes
+are centralized — never scattered string literals.
 
 ---
 
@@ -508,11 +361,10 @@ Every new file ≤200 lines; policy functions pure; reason codes centralized in 
 **This PR: none.** Docs only.
 
 Future runtime train (§11), impact per the invariants:
-- **Additive schema** — new tables plus exactly one additive unique index on
-  the existing `accounts` table (`uq_accounts_org_id_id`, the org-scoped FK
-  anchor for pool membership; index only, no column change). No change to
-  `posts`, `leads`, `org_crawl_intents`, or any existing wire/DTO contract.
-  Lead-identity dedupe in particular lives in the additive
+- **Additive schema** — new tables plus the org-scoped FK anchor on the existing
+  `accounts` table (shipped as migration 0112; index only, no column change).
+  No change to `posts`, `leads`, `org_crawl_intents`, or any existing wire/DTO
+  contract. Lead-identity dedupe in particular lives in the additive
   `facebook_crawl_lead_index` table (§6, §7), not in an altered `leads` table.
 - **Existing crawls unaffected** — the single-intent path keeps its exact
   behavior until a campaign explicitly exists for the org. Campaigns default off.
@@ -553,7 +405,7 @@ sees the reason, never a silent stall.
 | Failure | Handling |
 |---|---|
 | Checkpoint / login wall / risk signal | Stop per PR-C0.5; run → `stopped_safe` + reason; account → its safety state; source **stays with the account** (no auto-handoff, §2); `human_required` only clears via the operator path. |
-| Connector disconnects mid-run | Server reaper: `running` run with `heartbeat_at` older than a lease timeout → `abandoned` and that row is **immutable from then on**. The retry is a **new appended run row** (new `run_id`, `attempt = old + 1`, `retry_of_run_id = old run_id`), created **once**, after account cooldown — never instant, never a reused/rewritten row. Retry creation is **idempotent**: mark-abandoned + insert-retry run in one transaction with `ON CONFLICT DO NOTHING` on `uq_facebook_crawl_runs_single_retry_per_run`, so two racing reapers produce exactly one retry. |
+| Connector disconnects mid-run | Server reaper: `running` run with `heartbeat_at` older than a lease timeout → `abandoned` and that row is **immutable from then on**. The retry is a **new appended run row** (new `run_id`, `attempt = old + 1`, `retry_of_run_id = old run_id`), created **once**, after account cooldown — never instant, never a reused/rewritten row. Retry creation is **idempotent**: mark-abandoned + insert-retry run in one transaction with `ON CONFLICT DO NOTHING` on the single-retry unique index (`ux_fb_crawl_runs_one_retry_per_parent`, see [implementation/postgres-schema.md](./implementation/postgres-schema.md)), so two racing reapers produce exactly one retry. |
 | Stale worker writes after requeue | `(run_id, attempt)` is the **fencing token**, carried in every dispatch payload. Every heartbeat/progress/finish/lead write is guarded by `WHERE org_id = ? AND id = ? AND attempt = ? AND status = 'running'`. A reaped worker still holds the *old* run_id, whose row is `abandoned` — its writes match **zero rows**, are recorded as `stale_attempt` (telemetry-logged), and mutate nothing. Append-only retries make token reuse structurally impossible: no two dispatches ever share `(run_id, attempt)`. |
 | Timestamp parser degrades (selector drift) | Run stops `timestamp_parser_degraded` (§4); campaign keeps serving other sources; alarm surfaces in telemetry. No guessing, no lead creation from unparsed items. |
 | Frontier never reached, `max_items` hit | Normal end: `stopped_safe` + `max_items_reached`; cursor advances; next due cycle continues coverage. |
@@ -569,22 +421,11 @@ Rollback of the whole feature (post-runtime): pause campaigns (`status='paused'`
 
 ## 11. Rollout PR plan
 
-One branch/PR each; behavior-changing PRs ship with tests protecting reason codes
-and policy decisions. Sequenced to stay releasable at every step.
-
-| PR | Scope | Behavior change? |
-|---|---|---|
-| **PR-M0** | This spec + registry entry. | Docs only. |
-| **PR-M1** | Extension timestamp parser (`platforms/facebook/crawl_time.js` + `crawl_time.test.mjs`, pure + tested) emitting the per-item §4 `TimestampParse` DTO (`posted_at`, `confidence`, `earliest_utc`/`latest_utc`) on the existing crawl wire; `content/crawl.js` gains wiring only. | Additive telemetry; fills the currently-empty `posted_at`. No stop-logic change. |
-| **PR-M2** | Platform migration: §7 tables + partial unique indexes. **RED — own reviewed PR.** | Schema only; nothing reads it yet. |
-| **PR-M3** | Pure policy package `freshlead` (freshness gate, frontier, scheduler decision, reason codes) + store CRUD. | No wiring; dead code with tests. |
-| **PR-M4** | Scheduler wiring in composition root: campaign → queue → admit via Allocator lease + machine budget + DB constraint. | New orchestration path; existing intent path untouched. |
-| **PR-M5** | Crawl task carries `fresh_cutoff_at`; crawl loop consumes frontier decision; ingest applies the fresh-lead gate + lead-identity dedup. | The fresh-lead-only behavior lands here, telemetry-visible. |
-| **PR-M6** | Operator UI: campaign CRUD, run history, exclusion counters. | UI only. |
-
-Dependency on the safety track: PR-M4/M5 assume PR-C2 (classifier stop) and
-PR-C3 (Coordinator) are in place or land together — the campaign scheduler calls
-the Coordinator, it does not reimplement it.
+Owned by the implementation layer:
+[implementation/rollout.md](./implementation/rollout.md) (PR train M0–M6,
+safety-track dependencies, and docs-only rollback). Sequenced to stay releasable
+at every step; behavior-changing PRs ship with tests protecting reason codes and
+policy decisions.
 
 ---
 
@@ -594,7 +435,8 @@ The runtime train is done when all of these hold, each pinned by a test or a
 telemetry assertion:
 
 1. Two dispatch attempts for the same account cannot both reach `running`
-   (constraint test on `uq_facebook_crawl_runs_one_active_per_org_account`).
+   (constraint test on the one-active-per-account partial unique index,
+   shipped as `ux_fb_crawl_runs_one_active_account`).
 2. A campaign of N sources and a 1-slot machine budget crawls sources strictly
    one at a time, FIFO by priority (scheduler decision unit tests).
 3. A post whose worst-case age crosses the cutoff never creates a lead:
@@ -637,8 +479,9 @@ telemetry assertion:
     AND attempt = ? AND status = 'running'` guard, mutates nothing, and is
     logged as `stale_attempt` (fencing test with two simulated workers).
 15. Two reapers racing over the same abandoned run create exactly one retry
-    row (constraint test on `uq_facebook_crawl_runs_single_retry_per_run`;
-    the losing insert is an `ON CONFLICT DO NOTHING` no-op).
+    row (constraint test on the single-retry unique index, shipped as
+    `ux_fb_crawl_runs_one_retry_per_parent`; the losing insert is an
+    `ON CONFLICT DO NOTHING` no-op).
 16. No run row can hold `status = 'running'` with a NULL `account_id`
     (CHECK constraint test); pool membership rows cannot reference an
     account of another org or a nonexistent account (FK test against
@@ -648,24 +491,8 @@ telemetry assertion:
 
 ## 13. Rejected designs
 
-| Design | Why rejected |
-|---|---|
-| **Client-computed freshness cutoff** (extension subtracts 24h from its own clock) | Client clocks skew and are user-controlled; lead eligibility would differ per machine. Cutoff is a server contract (§3). |
-| **Trusting ambiguous timestamps** ("hôm qua" counts as fresh) | Fresh-lead-only means provably fresh; plausible-but-unproven posts pollute the lead queue with stale contacts. Excluded with a typed reason instead. |
-| **Freshest-interpretation-wins at the margin** (`derived_relative` eligible when `latest_utc ≥ fresh_cutoff_at`) | Admits posts whose oldest possible age is already past the cutoff ("24 giờ" would pass) — plausibly fresh, not provably fresh. Replaced by the strict whole-window rule `earliest_utc ≥ fresh_cutoff_at` (§4). |
-| **Timestamp-based dedup** (replace content dedup with posted_at identity) | Already rejected in `crawl.js` (in-code mandate): FB reorders/pins/async-injects too aggressively; timestamps are also the *least* reliable extracted field. |
-| **First-stale-post stop** (stop the moment one old post appears) | Pinned/re-injected posts make single-post evidence worthless; would truncate runs at the first pin. Consecutive-streak frontier instead (§5). |
-| **Round-robin account rotation per source** (spread each group over many accounts for throughput) | Rotation is the coordinated-inauthentic-behaviour pattern; also destroys the membership/affinity model. Sticky affinity + single machine slot instead (§2). |
-| **Auto-handoff of a source to the next account after a checkpoint** | Rotation-to-dodge; explicitly forbidden by PR-C0.5. Source waits for operator/recovery. |
-| **Relying on Facebook's "sort by new" feed parameter as the freshness guarantee** | FB changes/ignores the parameter unpredictably; it may be used as a *hint* in the task URL but never replaces per-post timestamp proof or the frontier. |
-| **Shipping raw page HTML server-side to parse timestamps centrally** | Violates the privacy rule (no full-page DOM off the browser); parser runs client-side, typed fields only. |
-| **A separate queue service / generic scheduler framework** | A status column + two partial unique indexes on `facebook_crawl_runs` *is* the queue; no second use case justifies a framework (PR-C0.5 §8 discipline). |
-| **Extending `org_crawl_intents` in place** (add campaign columns to the intents table) | Conflates two lifecycles (a personal recurring intent vs an org campaign plan with pool + runs); would force RED changes to a live table for a new feature. Additive tables instead (§7). |
-| **Auto-clearing `human_required` after a timer to keep the campaign moving** | Forbidden by the PR-C0.5 invariant; a campaign's throughput never overrides account safety. |
-
----
-
-## Rollback
-
-Docs-only spec. Rollback = revert this file + its `SPEC_REGISTRY.json` entry. No
-runtime, schema, contract, or data-plane surface is touched by this PR.
+Owned by the decision layer:
+[decisions/rejected-designs.md](./decisions/rejected-designs.md) — twelve
+rejected alternatives (client-computed cutoff, trusting ambiguous timestamps,
+rotation patterns, queue frameworks, and more), each with the reason it must
+not come back.

@@ -1,8 +1,13 @@
-# Facebook Crawler — Account Safety Spec (PR-C0.5)
+# Account Safety — Technical Contract (PR-C0.5)
 
 Track: **Facebook Automation Reliability**. Type: **architecture / code-spec baseline.**
-Status: **draft — docs only, no runtime change.** Companion to
-[CRAWL_SPEED_CHECKPOINT_AUDIT.md](CRAWL_SPEED_CHECKPOINT_AUDIT.md) (PR-C0).
+Status: **draft — docs only, no runtime change.** Layer: **technical contract** for the
+`account-safety` feature (domain: facebook-sales-intelligence; supports the
+fresh-lead-discovery experience). This contract owns all binding safety invariants;
+supporting rationale:
+[decisions/ADR-001-conservative-account-safety.md](./decisions/ADR-001-conservative-account-safety.md).
+Companion to the
+[Crawl Speed & Checkpoint Audit](../multi-group-fresh-lead-crawl/evidence/crawl-speed-checkpoint-audit.md) (PR-C0).
 
 This spec defines the data model, state machine, algorithm boundaries, and ownership so
 the PR-C1..C5 runtime work lands as small, testable, safe changes. It designs **account
@@ -76,12 +81,16 @@ Responsibilities (owns):
 
 Must NOT own (hard boundaries):
 - Browser fingerprint spoofing / stealth / evasion of any kind.
-- Checkpoint/CAPTCHA solving or auto-clicking challenges.
+- Checkpoint/CAPTCHA solving or auto-clicking security challenges.
 - Provider bypass, proxy rotation, or account rotation intended to dodge a checkpoint.
 - The browser session lifecycle itself — that stays in `session.*`; the Coordinator only
   *reads* session state and *requests* leases.
 - Cross data-plane persistence — it writes only to its owned plane (§7); it must not reach
   into browser-secret or foreign-org state.
+
+Rationale for these boundaries (alternatives considered, trade-offs, why
+conservative fail-safe behavior won):
+[decisions/ADR-001-conservative-account-safety.md](./decisions/ADR-001-conservative-account-safety.md).
 
 ---
 
@@ -267,17 +276,13 @@ reason codes and state/budget decisions.
 
 ---
 
-## 10. Review checklist (apply to every PR-C* runtime PR)
+## 10. Review checklist
 
-- [ ] Does this PR **increase automation speed**? (Must be "no" unless C4 with telemetry.)
-- [ ] Does it **increase concurrency**? (Must be "no"; defaults only tighten.)
-- [ ] Does it **alter checkpoint behavior** beyond *detect → stop → report*?
-- [ ] Does it attempt any **bypass/evasion/rotation/solving**? (Must be "no".)
-- [ ] Does it **preserve the per-account lease** (one active workflow/account)?
-- [ ] Does it **preserve data-plane doctrine** (no browser secrets server-side, no plane move without a migration PR)?
-- [ ] Does it **avoid raw checkpoint/page-text leakage** (typed reason codes only)?
-- [ ] Are **state/budget decisions testable as pure policy** (no browser/DB/clock in the unit)?
-- [ ] Are **Sonar / CodeRabbit expected clean** (no suppressions, no config change)?
+Moved to the runbook layer:
+[runbooks/review-checklist.md](./runbooks/review-checklist.md) — the 9-item
+safety checklist applied to every PR-C* runtime PR (speed, concurrency,
+checkpoint behavior, bypass/evasion, lease, data-plane, text leakage, pure
+policy testability, Sonar/CodeRabbit hygiene).
 
 ---
 
