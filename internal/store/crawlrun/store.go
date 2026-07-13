@@ -28,6 +28,12 @@ import (
 // crawl-campaign tables, so this is a configuration error, not a "not found".
 var ErrUnsupportedDialect = errors.New("crawlrun: postgres-only store; no schema exists for this dialect")
 
+// ErrInvalidFence signals a caller-side input error: a Fence with a
+// non-positive OrgID, RunID, or Attempt. It is distinct from a valid fence that
+// simply matches no running row (a stale-worker state) so an adapter/programming
+// bug surfaces instead of hiding behind a stale result.
+var ErrInvalidFence = errors.New("crawlrun: invalid fence")
+
 // Store is the crawl-run store handle. Construct via [NewStore].
 type Store struct {
 	db      *sql.DB

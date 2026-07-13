@@ -6,17 +6,18 @@ import (
 	"time"
 )
 
-// Heartbeat records liveness for a running attempt. The fence match
-// (org_id + id + attempt + status='running') makes a stale worker's heartbeat a
-// zero-row no-op that can neither revive a terminal run nor touch a newer
-// attempt — every non-match collapses into HeartbeatStaleRejected rather than a
-// distinguishable not-found. Exactly one updated row is HeartbeatUpdated.
+// Heartbeat records liveness for a running attempt. A valid fence that matches
+// no running row (wrong org/run/attempt, or a terminal status) collapses into
+// HeartbeatStaleRejected — a stale-worker no-op that can neither revive a
+// terminal run nor touch a newer attempt. Exactly one updated row is
+// HeartbeatUpdated. An invalid fence is a caller error (ErrInvalidFence), not a
+// stale state, so PR-M4 adapter/programming bugs cannot hide as stale rejects.
 func (s *Store) Heartbeat(ctx context.Context, fence Fence, now time.Time) (HeartbeatOutcome, error) {
 	if err := s.requirePostgres(); err != nil {
 		return "", err
 	}
 	if !fence.valid() {
-		return HeartbeatStaleRejected, nil
+		return "", ErrInvalidFence
 	}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE facebook_crawl_runs SET heartbeat_at = $4

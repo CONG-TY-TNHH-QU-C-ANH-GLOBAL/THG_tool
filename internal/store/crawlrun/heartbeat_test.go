@@ -2,6 +2,7 @@ package crawlrun_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -30,6 +31,32 @@ func TestHeartbeat_MatchingFenceUpdated(t *testing.T) {
 	fence := crawlrun.Fence{OrgID: org, RunID: run.RunID, Attempt: run.Attempt}
 	got, err := st.Heartbeat(ctx, fence, fixedNow.Add(30*time.Second))
 	wantOutcome(t, got, err, crawlrun.HeartbeatUpdated)
+}
+
+func TestHeartbeat_InvalidFenceIsCallerError(t *testing.T) {
+	st, _ := open(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name  string
+		fence crawlrun.Fence
+	}{
+		{"zero org", crawlrun.Fence{OrgID: 0, RunID: 1, Attempt: 1}},
+		{"zero run", crawlrun.Fence{OrgID: 1, RunID: 0, Attempt: 1}},
+		{"zero attempt", crawlrun.Fence{OrgID: 1, RunID: 1, Attempt: 0}},
+		{"negative org", crawlrun.Fence{OrgID: -1, RunID: 1, Attempt: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := st.Heartbeat(ctx, tc.fence, fixedNow)
+			if !errors.Is(err, crawlrun.ErrInvalidFence) {
+				t.Fatalf("err = %v, want ErrInvalidFence", err)
+			}
+			if got != "" {
+				t.Fatalf("outcome on invalid fence = %q, want the zero value", got)
+			}
+		})
+	}
 }
 
 func TestHeartbeat_StaleFencesRejected(t *testing.T) {
