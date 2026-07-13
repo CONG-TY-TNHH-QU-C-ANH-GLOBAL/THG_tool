@@ -12,6 +12,10 @@ import (
 // elapsed and that have no open run yet. The NOT EXISTS only skips obviously-
 // wasted inserts; the ux_fb_crawl_runs_one_open_source partial index is the real
 // guard against a concurrent double-enqueue.
+//
+// The $2::timestamptz cast is load-bearing: without it Postgres infers the
+// untyped Now param as interval (from `Now - interval`) and the comparison
+// fails as `timestamptz < interval`, SQLSTATE 42883.
 const dueSourcesQuery = `
 SELECT s.id, s.campaign_id
 FROM facebook_crawl_campaign_sources s
@@ -21,7 +25,7 @@ WHERE s.org_id = $1
   AND s.status = 'active'
   AND c.status = 'active'
   AND (s.last_run_at IS NULL
-       OR s.last_run_at < $2 - make_interval(mins => c.cadence_minutes))
+       OR s.last_run_at <= $2::timestamptz - c.cadence_minutes * INTERVAL '1 minute')
   AND NOT EXISTS (
       SELECT 1 FROM facebook_crawl_runs r
       WHERE r.org_id = s.org_id AND r.source_id = s.id
