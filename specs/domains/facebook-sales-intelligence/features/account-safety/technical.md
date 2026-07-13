@@ -3,8 +3,10 @@
 Track: **Facebook Automation Reliability**. Type: **architecture / code-spec baseline.**
 Status: **draft — docs only, no runtime change.** Layer: **technical contract** for the
 `account-safety` feature (domain: facebook-sales-intelligence; supports the
-fresh-lead-discovery experience). Hard safety boundaries and data-plane ownership:
-[decisions/safety-boundaries.md](./decisions/safety-boundaries.md). Companion to the
+fresh-lead-discovery experience). This contract owns all binding safety invariants;
+supporting rationale:
+[decisions/ADR-001-conservative-account-safety.md](./decisions/ADR-001-conservative-account-safety.md).
+Companion to the
 [Crawl Speed & Checkpoint Audit](../multi-group-fresh-lead-crawl/evidence/crawl-speed-checkpoint-audit.md) (PR-C0).
 
 This spec defines the data model, state machine, algorithm boundaries, and ownership so
@@ -77,10 +79,18 @@ Responsibilities (owns):
 - **Safe scheduler decision** — a pure function `nextAccountToRun(state) -> accountID | none`
   over the queue + budgets; no hidden sleeps, no side effects.
 
-Hard boundaries (what the Coordinator must NOT own — no evasion, no solving, no
-rotation, no session-lifecycle ownership, no cross-plane writes) are the decision
-record [decisions/safety-boundaries.md](./decisions/safety-boundaries.md), which
-also owns the data-plane ownership doctrine formerly in §7 of this file.
+Must NOT own (hard boundaries):
+- Browser fingerprint spoofing / stealth / evasion of any kind.
+- Checkpoint/CAPTCHA solving or auto-clicking security challenges.
+- Provider bypass, proxy rotation, or account rotation intended to dodge a checkpoint.
+- The browser session lifecycle itself — that stays in `session.*`; the Coordinator only
+  *reads* session state and *requests* leases.
+- Cross data-plane persistence — it writes only to its owned plane (§7); it must not reach
+  into browser-secret or foreign-org state.
+
+Rationale for these boundaries (alternatives considered, trade-offs, why
+conservative fail-safe behavior won):
+[decisions/ADR-001-conservative-account-safety.md](./decisions/ADR-001-conservative-account-safety.md).
 
 ---
 
@@ -204,12 +214,25 @@ Reason codes are the interface; raw text is an implementation detail that must n
 
 ## 7. Data-plane ownership
 
-Moved to the decision record:
-[decisions/safety-boundaries.md](./decisions/safety-boundaries.md) owns the
-data-plane ownership doctrine (local ephemeral vs SQLite local runtime vs
-PostgreSQL platform vs RAG; no browser secrets server-side; no plane move
-without a dedicated migration PR; cross-plane flow via the explicit
-event/outbox path only).
+Per `docs/architecture/DATABASE_OWNERSHIP.md` §Data planes:
+- **Local runtime / client (browser + connector)** owns **ephemeral** browser/session/crawl
+  counters: `scroll_count`, `no_progress_rounds`, `duplicate_count`,
+  `failed_extraction_count`, current `phase`, `scroll_moved_ever`, per-crawl dedup set.
+  These live and die with the crawl; they are never a system of record.
+- **SQLite local runtime** may hold local operational cache / outbox / session telemetry
+  only (e.g. `browser_sessions` checkpoint/heartbeat/vnc state already lives here). No
+  tenant system-of-record data.
+- **PostgreSQL platform** owns **durable** org/account/workspace policy, queue/lease state,
+  and any durable account-safety state (`recent_automation_window`, `cooldown_until`,
+  `last_safe_stop_reason`, risk policy). `org_crawl_intents` (the recurring cursor) is
+  already mid-migration to this plane (`platform/0108_platform_crawl`).
+- **RAG / vector plane** is irrelevant here — the Coordinator neither reads nor writes it.
+- **No browser secrets server-side.** Cookies/session/credential material never leave the
+  local runtime.
+- **No data-plane moves without a dedicated migration PR.** If PR-C3 needs durable safety
+  state, that table/migration is its own RED-reviewed PR, not smuggled into a runtime change.
+
+Cross-plane flow uses the existing explicit event/outbox path — never a hidden shared table.
 
 ---
 

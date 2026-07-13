@@ -48,7 +48,7 @@ logged-in account workspaces.
 - Account safety is never traded for throughput: no fingerprint spoofing,
   stealth/evasion, proxy/account rotation to dodge checkpoints,
   CAPTCHA/checkpoint solving, or speed increases
-  ([account-safety boundaries](../../features/account-safety/decisions/safety-boundaries.md)).
+  ([account-safety technical contract](../../features/account-safety/technical.md)).
 - A campaign's throughput never overrides account safety: `human_required`
   states clear only through the operator path, never on a timer.
 

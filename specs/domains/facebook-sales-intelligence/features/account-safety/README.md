@@ -8,11 +8,14 @@ any future automation workflow on the
 [fresh-lead-discovery](../../experiences/fresh-lead-discovery/README.md)
 experience.
 
-- [technical.md](technical.md) — the technical contract (PR-C0.5): Account
-  Safety Coordinator, account-runtime state machine (with operator messages),
-  concurrency policy, risk budgets, telemetry contract.
-- [decisions/safety-boundaries.md](decisions/safety-boundaries.md) — binding
-  hard boundaries (no evasion/solving/rotation) and data-plane ownership.
+- [technical.md](technical.md) — the technical contract (PR-C0.5) and owner of
+  every binding invariant: Account Safety Coordinator, hard boundaries (no
+  evasion/solving/rotation), account-runtime state machine (with operator
+  messages), concurrency policy, risk budgets, telemetry contract, data-plane
+  ownership.
+- [decisions/ADR-001-conservative-account-safety.md](decisions/ADR-001-conservative-account-safety.md)
+  — supporting rationale: alternatives considered, throughput-vs-safety
+  trade-offs, consequences.
 - [runbooks/review-checklist.md](runbooks/review-checklist.md) — the checklist
   applied to every PR-C* runtime PR.
 
