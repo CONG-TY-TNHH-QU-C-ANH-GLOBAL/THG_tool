@@ -1,7 +1,7 @@
 # Facebook Multi-Group Fresh-Lead Crawl: PostgreSQL Schema Implementation Blueprint
 
 **Target:** `specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/postgres-schema.md`
-**Status:** Preflight-gated implementation blueprint for PR-M2B
+**Status:** Merged implementation-backed PostgreSQL schema authority for PR-M2B (migrations 0112–0117)
 **Track:** Facebook Automation Reliability
 **Authoritative parent:** [`../technical.md`](../technical.md) (Multi-Group Fresh-Lead Crawl — Technical Contract, PR-M0)
 
