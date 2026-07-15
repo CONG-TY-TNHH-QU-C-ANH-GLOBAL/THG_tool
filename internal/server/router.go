@@ -19,6 +19,7 @@ import (
 	serveragent "github.com/thg/scraper/internal/server/agent"
 	serverauth "github.com/thg/scraper/internal/server/auth"
 	"github.com/thg/scraper/internal/server/autoflow"
+	serverexport "github.com/thg/scraper/internal/server/export"
 	servercontactprofile "github.com/thg/scraper/internal/server/contactprofile"
 	"github.com/thg/scraper/internal/server/crawl"
 	serverintegrations "github.com/thg/scraper/internal/server/integrations"
@@ -95,6 +96,14 @@ func (s *Server) registerRoutes() {
 
 	// System subpackage: extension info + beta package (no auth required).
 	system.Routes(api.Group("/system"), cfg.Headless)
+
+	// Knowledge OS export endpoint (additive, opt-in): the THG VectorHub
+	// derived-index connector pulls assets from here (pull-only, read-only).
+	// Mounted ONLY when both env vars are configured, so a deployment that
+	// has not enabled it exposes nothing new. Service-key auth, no JWT;
+	// registered before the general rate limiter (a bulk sync must not be
+	// throttled like a dashboard poll), mirroring the public system routes.
+	serverexport.MountIfConfigured(api, s.db)
 
 	// 3. General rate limiting — dashboard APIs are realtime and poll session
 	// state, so keep the global guard high and enforce stricter limits only on
