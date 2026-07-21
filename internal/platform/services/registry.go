@@ -12,7 +12,7 @@ import (
 
 // Resolver is what a service exposes to the platform. Every method is a pure
 // function over a UserContext — deterministic, side-effect free, no IO, no DB
-// writes. See specs/DOMAIN_MODEL.md and BOUNDARIES.md § Resolver purity rule.
+// writes. See specs/domains/platform-foundation/DOMAIN.md and BOUNDARIES.md § Resolver purity rule.
 type Resolver interface {
 	Descriptor() contracts.ServiceDescriptor
 	ResolveStatus(contracts.UserContext) contracts.ServiceStatus

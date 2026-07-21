@@ -51,7 +51,7 @@ func (s *Server) registerRoutes() {
 	// (comment/inbox/post → channel), the dashboard, the REST integrations API, and the webhook
 	// runtime. Per-ORG bots: the factory builds a transport from each org's own (decrypted) token;
 	// the global TELEGRAM_BOT_TOKEN is only the platform/dev webhook bot + an optional tenant
-	// fallback behind TELEGRAM_ALLOW_GLOBAL_FALLBACK. See specs/TELEGRAM_PER_ORG_BOT.md.
+	// fallback behind TELEGRAM_ALLOW_GLOBAL_FALLBACK. See specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/per-org-bot.md.
 	tgControl := control.NewService(s.db.Telegram(), tgclient.Bot, control.Flags{
 		NotifyEnabled:       s.cfg.TelegramNotifyEnabled,
 		ActionsEnabled:      s.cfg.TelegramActionsEnabled,

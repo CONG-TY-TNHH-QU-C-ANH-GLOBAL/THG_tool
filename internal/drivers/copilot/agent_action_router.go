@@ -9,7 +9,7 @@ import (
 // deterministicFacebookAction + the entity/normalize helpers moved to the Copilot
 // intent layer: intent_router.go, intent_entities.go, intent_normalize.go,
 // intent_lexicon.go, intent_types.go. See
-// specs/COPILOT_INTENT_ROUTING_ARCHITECTURE.md.
+// specs/domains/facebook-sales-intelligence/features/sales-copilot/technical.md.
 
 func mustJSON(v any) string {
 	data, err := json.Marshal(v)

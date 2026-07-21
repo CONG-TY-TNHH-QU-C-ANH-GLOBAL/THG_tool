@@ -184,7 +184,7 @@ export default function CommentingView({ orgId, isAdmin }: Readonly<CommentingVi
   // Executor attribution (P1a). The acting Facebook identity for a row's
   // account_id — distinct from the initiating principal (created_by). Falls
   // back to the local account name, then the bare #id, when FB identity is
-  // not yet resolved. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a.
+  // not yet resolved. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7a.
   const actorOf = (accountId: number): ActorIdentity | undefined => actors[String(accountId)];
   const executorName = (accountId: number): string => {
     const a = actorOf(accountId);

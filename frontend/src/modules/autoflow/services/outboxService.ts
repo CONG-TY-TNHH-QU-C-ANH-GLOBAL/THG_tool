@@ -46,7 +46,7 @@ export interface OutboundMessage {
 // ActorIdentity is the read-only Facebook identity of the account that
 // executes an outbound action — the "đăng bởi" actor, distinct from the
 // initiating staff/system principal (created_by). Keyed by account_id in
-// OutboxResponse.actors. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a.
+// OutboxResponse.actors. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7a.
 export interface ActorIdentity {
   account_id: number;
   account_name: string;
@@ -123,7 +123,7 @@ export async function deleteAllOutboundPosts(): Promise<{ deleted: number }> {
   return del<{ deleted: number }>('/outbox/posts/all');
 }
 
-// --- Manual human verification + retry + outcome metrics (COMMENT_ASYNC_REVERIFY.md) ---
+// --- Manual human verification + retry + outcome metrics (specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md) ---
 
 // humanVerifyComment confirms a submitted_unverified comment the operator saw on Facebook.
 // Appends a 'succeeded'/'human_verified' correction (idempotent on the backend).

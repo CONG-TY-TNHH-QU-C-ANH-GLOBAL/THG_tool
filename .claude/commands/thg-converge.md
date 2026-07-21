@@ -12,7 +12,7 @@ Use:
 - `docs/ai/ACCELERATED_ARCHITECTURE_CONVERGENCE_LOOP.md` (full protocol, §1–§11)
 - `docs/architecture/BOUNDARY_MIGRATION_PLAYBOOK.md` (lane + feasibility authority)
 - `docs/ai/ESCALATION_PLAYBOOK.md` (stop conditions → decision record, A/B/C)
-- `internal/store/DOMAINS.md`, `specs/RUNTIME_TOPOLOGY.md` (truth ownership / boundaries)
+- `internal/store/DOMAINS.md`, `specs/domains/platform-foundation/features/runtime-topology/technical.md` (truth ownership / boundaries)
 - `scripts/ai_preflight.sh`, `scripts/ai_validate.sh`, `scripts/go_cognitive_check.sh`,
   `scripts/check_file_size.py`, `scripts/check_topology.sh`,
   `scripts/check_component_structure.py`
@@ -21,7 +21,7 @@ Steps:
 1. **Sync (protocol §1):** fetch/start from latest `origin/main`; check branch
    cleanliness; run `scripts/ai_preflight.sh`. Never `git add -A`; never stage
    queue-reconcile `.md` files, soak artifacts, env files, or `.mcp.json`.
-2. **Survey (§2):** scan hotspots (`specs/COMPONENT_HOTSPOTS.md`,
+2. **Survey (§2):** scan hotspots (`specs/domains/platform-foundation/decisions/component-hotspots.md`,
    `scripts/file_size_allowlist.txt`, remaining deprecated wrapper/alias
    files, `*AppStore`-style god objects). Identify the top 3 convergence
    candidates and score by leverage/risk/PR-size/Sonar-risk/behavior-risk.

@@ -48,7 +48,7 @@ func (s *Store) QueryRowContext(ctx context.Context, query string, args ...any) 
 // ExecContext runs an INSERT/UPDATE/DELETE and rebinds placeholders.
 //
 // IMPORTANT: do NOT use the returned sql.Result for LastInsertId on
-// the Postgres path — see risk R1 in POSTGRES_COMPAT_PLAN.md. Use
+// the Postgres path — see risk R1 in specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md. Use
 // [Store.InsertReturningID] when you need the generated key.
 func (s *Store) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return s.db.ExecContext(ctx, s.dialect.Rebind(query), args...)

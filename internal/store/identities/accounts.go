@@ -82,7 +82,7 @@ func (s *Store) GetAccount(id int64) (*models.Account, error) {
 // [models.ActorIdentity] for every account in the org. It is the batch
 // projection behind operator surfaces that render "which Facebook actor
 // executed this" without an N+1 GetAccount per row (CommentingView /
-// Agent Decision Inspector — see specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a).
+// Agent Decision Inspector — see specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7a).
 //
 // Secrets (cookies/proxy) are never selected. Returns an empty (non-nil)
 // map when the org has no accounts.

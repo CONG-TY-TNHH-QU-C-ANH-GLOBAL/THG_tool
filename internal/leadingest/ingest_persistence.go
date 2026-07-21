@@ -12,7 +12,7 @@ import (
 )
 
 // Persistence phase for IngestPost — behaviour-preserving extraction of the
-// persist + side-effect flow documented in specs/lead_ingestion_behavior.md §4/§5/§7.
+// persist + side-effect flow documented in specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md §4/§5/§7.
 // The fatal/best-effort split, the legacy SourceID=0 no-dedup quirk (§5), and the
 // per-call OnLeadCreated firing are all unchanged.
 

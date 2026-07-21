@@ -2,7 +2,7 @@ package models
 
 import "strings"
 
-// Soft-touch semantics (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-1 Part B). A comment
+// Soft-touch semantics (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-1 Part B). A comment
 // that was SUBMITTED but not DOM-verified (optimistic_success → ledger
 // "submitted_unverified") is NOT a hard verified touch — it must never count as
 // "succeeded" (feedback_verified_state_centric). But it IS a SOFT touch: the actor did

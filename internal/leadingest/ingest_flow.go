@@ -12,7 +12,7 @@ import (
 )
 
 // Classification phase for IngestPost — behaviour-preserving extraction of the score →
-// market-gate → AI → cold-gate state machine (specs/lead_ingestion_behavior.md §6/§9).
+// market-gate → AI → cold-gate state machine (specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md §6/§9).
 
 // classifyLead runs the full classification state machine and returns the Outcome plus
 // whether the lead should be SKIPPED. Each veto short-circuits with skip=true UNLESS

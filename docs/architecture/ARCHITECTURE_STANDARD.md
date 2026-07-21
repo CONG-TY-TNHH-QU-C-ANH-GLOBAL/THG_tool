@@ -13,7 +13,7 @@ related_pr_or_issue: chore/docs2-architecture-backlinks-frontmatter
 **Status:** OFFICIAL STANDARD (target architecture). **Created:** 2026-06-14.
 **Scope:** the whole platform — `Sale.thgfulfill.com` / THG AutoFlow.
 **Authority:** this document and its siblings in `docs/architecture/` are the
-binding architecture contract. Where an existing spec (`specs/RUNTIME_TOPOLOGY.md`,
+binding architecture contract. Where an existing spec (`specs/domains/platform-foundation/features/runtime-topology/technical.md`,
 `internal/store/DOMAINS.md`) describes the *current* code, this set describes the
 *direction* the code must converge toward. On conflict, this set wins for **new**
 work; existing code is migrated per `REFACTOR_ROADMAP.md`, never big-banged.

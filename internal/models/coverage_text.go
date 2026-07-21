@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Content-accurate coverage derivation (spec: MULTI_ACTOR_COVERAGE_POLICY). Instead
+// Content-accurate coverage derivation (spec: specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md). Instead
 // of inferring website/CTA usage from a touch count, we read the ACTUAL prior comment
 // texts: a website is "used" only if a comment actually cited it, a hard CTA only if
 // a comment actually carried one. Angle tags are classified from the text so a later

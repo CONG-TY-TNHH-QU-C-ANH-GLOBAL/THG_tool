@@ -219,7 +219,7 @@ func repairPrimaryURL(in *Input) bool {
 // so dashboard stats (which read from `leads`) always reflect connector output
 // — the legacy table is the canonical view.
 // The flow is split into three behaviour-preserving phases (see
-// specs/lead_ingestion_behavior.md §9): early validation here, classification in
+// specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md §9): early validation here, classification in
 // classifyLead (ingest_flow.go), and persistence in persistLead/advanceCrawlCursor
 // (ingest_persistence.go). The state machine and every observable Outcome.Skipped
 // value, signal string, and side effect are unchanged.

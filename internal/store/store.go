@@ -124,7 +124,7 @@ type Store struct {
 	// telegram owns the Telegram integration control-plane tables
 	// (settings, bind_codes, bindings, alert_prefs, audit). Org-scoped,
 	// channel-neutral, zero cross-domain writes. See
-	// specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md.
+	// specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/telegram-track.md.
 	telegram *telegram.Store
 
 	// sessions owns the browser_sessions table (Chrome/Docker browser
@@ -216,7 +216,7 @@ func (s *Store) Reel() *reel.Store { return s.reel }
 // lifetime of the Store. All subsequent code paths reach the dialect
 // via *Store.Dialect() — never re-detect.
 //
-// Production guidance: see specs/POSTGRES_COMPAT_PLAN.md §4 for the
+// Production guidance: see specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md §4 for the
 // rollout sequence and §3.6 for test infrastructure.
 func New(dbPath string) (*Store, error) {
 	// DATABASE_URL takes precedence when dbPath is empty. This is the
@@ -287,7 +287,7 @@ func newSQLite(dbPath string) (*Store, error) {
 }
 
 // newPostgres opens the PostgreSQL driver. Pool tuning addresses R12
-// in POSTGRES_COMPAT_PLAN.md:
+// in specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md:
 //
 //   - MaxOpenConns 25: enough for the agent runtime + 2 workers + UI
 //     without saturating a small production PG. Tunable via env later.
@@ -403,7 +403,7 @@ func (s *Store) DB() *sql.DB { return s.db }
 
 // Dialect returns the SQL flavor the store was opened against.
 // Repository code that constructs dialect-divergent SQL must read
-// this once per call — see specs/POSTGRES_COMPAT_PLAN.md §3.
+// this once per call — see specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md §3.
 func (s *Store) Dialect() Dialect { return s.dialect }
 
 // SetEncryptionKey sets the AES-256-GCM key used to encrypt sensitive DB fields

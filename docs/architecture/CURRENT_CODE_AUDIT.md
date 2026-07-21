@@ -37,7 +37,7 @@ Method: static import scan + the existing guards (`check_topology.sh`,
 
 - 🟢 Already split into a clean pipeline: `intent_types.go`, `intent_lexicon.go`,
   `intent_normalize.go`, `intent_entities.go`, `intent_router.go` — import only
-  `fburl` + stdlib (per `specs/COPILOT_INTENT_ROUTING_ARCHITECTURE.md`). Good
+  `fburl` + stdlib (per `specs/domains/facebook-sales-intelligence/features/sales-copilot/technical.md`). Good
   consumer-side shape.
 - 🟡 The driver still dispatches through `Agent.ActionHandler func(string,
   map[string]any)` injected from `cmd/scraper`, and `Agent` holds `*store.Store`. Works,

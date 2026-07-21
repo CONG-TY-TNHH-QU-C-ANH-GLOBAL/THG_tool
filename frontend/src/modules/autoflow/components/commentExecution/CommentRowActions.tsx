@@ -6,7 +6,7 @@ import type { OutboundMessage } from '../../services/outboxService';
 import { humanVerifyComment, retryComment } from '../../services/outboxService';
 import { commentActions, commentStatus, effectiveOutcome } from './statusMessages';
 
-// Per-comment manual actions (spec: specs/COMMENT_ASYNC_REVERIFY.md companion, Part A/B).
+// Per-comment manual actions (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md companion, Part A/B).
 // "Xác nhận đã đăng" appears ONLY for submitted_unverified (operator saw it on Facebook);
 // "Thử lại" ONLY for retryable pre-submit failures. Both call the backend correction/queue —
 // the FE never silently changes state. Rendered in the detail pane (the row is a <button>).

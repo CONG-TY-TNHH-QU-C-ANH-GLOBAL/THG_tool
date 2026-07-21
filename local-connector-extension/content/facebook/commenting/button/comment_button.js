@@ -1,4 +1,4 @@
-// Gate1 comment-ENTRY discovery (spec: specs/COMMENT_ASYNC_REVERIFY.md companion; PR-B + the
+// Gate1 comment-ENTRY discovery (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md companion; PR-B + the
 // gate1-robustness follow-up). Operator evidence: humans can comment most of these posts, so
 // comment_button_not_found is usually a DISCOVERY false-negative, not a non-commentable post.
 //

@@ -5,7 +5,7 @@
 //
 // This package contains the CONTRACT only. The concrete implementation
 // lands in Phase D of the roadmap and writes to the knowledge_metrics
-// table joined with prompt_logs. See [specs/WORKSPACE_KNOWLEDGE_OS.md §9].
+// table joined with prompt_logs. See [specs/domains/knowledge-platform/features/knowledge-os/technical.md §9].
 //
 // In tests and the early MVP, callers can wire [NoOp] as a stand-in.
 package observability

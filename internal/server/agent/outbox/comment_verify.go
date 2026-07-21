@@ -10,7 +10,7 @@ import (
 	"github.com/thg/scraper/internal/store/coordination"
 )
 
-// Manual human verification + retry endpoints (spec: specs/COMMENT_ASYNC_REVERIFY.md
+// Manual human verification + retry endpoints (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md
 // companion, Part A/B). JWT-authed dashboard routes; tenant + account-owner scoped via
 // requireOutboundOwnerRow. Both APPEND through the canonical paths — never mutate old rows.
 

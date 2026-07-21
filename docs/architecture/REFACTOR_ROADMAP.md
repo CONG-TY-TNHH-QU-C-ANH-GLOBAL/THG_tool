@@ -787,7 +787,7 @@ The features prototyped in the paused stack are RE-IMPLEMENTED here, correctly:
   `direct_post_comment_workflows` table + a DB-polling poller that observes the post
   lead and queues the comment, idempotent via CAS + a two-key model (`intake_key` vs
   `idempotency_key`). NO `user_context` KV, NO in-memory callback as source of truth.
-  Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`. **PR-1 (data foundation) DONE** —
+  Spec: `specs/domains/facebook-sales-intelligence/features/direct-post-intake/technical.md`. **PR-1 (data foundation) DONE** —
   migration `0022` + coordination store (CRUD + CAS/lease) + `GetPostLeadByRef`.
   **PR-2 (runtime) DONE** — the `directPostIntake` service (unknown post → import +
   async ack, replacing scan-required), the `runDirectPostIntakeScheduler` DB poller
@@ -857,4 +857,4 @@ The accelerated direct-comment sprint produced a stacked prototype. Disposition:
   stacked on P1.** Preserve tests/ideas; rebase / cherry-pick into `drivers/copilot`
   after Phase **G** (Phase **H2**).
 - **Outbound PR2B**: **remains DEFERRED** (Phase **I**, gated on the
-  `specs/V2_OUTBOUND_REFACTOR_DESIGN.md` prerequisites).
+  `specs/domains/facebook-sales-intelligence/features/outbound-actions/technical.md` prerequisites).

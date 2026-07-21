@@ -167,7 +167,7 @@ func (s *Store) GetLeadsFiltered(score, niche string, limit, offset int, orgID i
 	// Lead Lifecycle PR-1: archived leads are hidden from the default list AND
 	// excluded from planner selection (this method backs both). They stay in the
 	// table + engagement ledger for dedup/coverage history; PR-4 fetches them via a
-	// dedicated archived query. See specs/LEAD_LIFECYCLE_WORK_QUEUE.md.
+	// dedicated archived query. See specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md.
 	where = append(where, "l.archived_at IS NULL")
 	if orgID > 0 {
 		where = append(where, "(COALESCE(NULLIF(l.org_id,0), g.org_id, 0) = ?)")

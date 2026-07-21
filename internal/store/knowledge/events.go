@@ -334,7 +334,7 @@ func (s *Store) RecordEmbeddingBatch(ctx context.Context, batchSize, succeeded, 
 // gone quiet count.
 //
 // Cross-dialect: the interval expression differs between SQLite and
-// Postgres (see POSTGRES_COMPAT_PLAN.md risk R8). Routed through the
+// Postgres (see specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md risk R8). Routed through the
 // dialect helper so the same Go code compiles to either SQL form.
 func (s *Store) CountStaleAssetsForOrg(ctx context.Context, orgID int64, daysIdle int) (int, error) {
 	if orgID <= 0 {

@@ -8,7 +8,7 @@ import (
 	"github.com/thg/scraper/internal/runtime/events"
 )
 
-// Async comment reverify agent endpoints (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-A).
+// Async comment reverify agent endpoints (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-A).
 // The connector polls /reverify/claim for posts to re-check, re-opens each, searches the
 // DOM for the comment by actor + normalized text, and reports the verdict to
 // /reverify/result. A positive match makes the backend append the append-only correction.

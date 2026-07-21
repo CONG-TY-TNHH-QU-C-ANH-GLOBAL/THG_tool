@@ -10,7 +10,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Lead Lifecycle projection + archive writers (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md).
+// Lead Lifecycle projection + archive writers (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md).
 // freshness_state / next_action are DERIVED from the verified engagement ledger + the
 // conversation thread (never stored); only archived_at + archive_reason are persisted.
 // This file is the store-side wiring: it gathers the explicit signals and hands them to

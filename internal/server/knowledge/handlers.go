@@ -178,7 +178,7 @@ type seedRow struct {
 // ingestor, and optionally approve the assets. Admin-only; tenant-scoped by the
 // JWT org (no org_id parameter). Idempotent — re-seeding the same label updates
 // rather than duplicating. Never touches the catalog and never changes
-// execution/auto policy. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2b).
+// execution/auto policy. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §9 (P2b).
 func (h *handler) seedService(c *fiber.Ctx) error {
 	orgID, ok := c.Locals("org_id").(int64)
 	if !ok || orgID <= 0 {

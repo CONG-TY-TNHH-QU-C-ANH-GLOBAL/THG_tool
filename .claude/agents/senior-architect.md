@@ -19,7 +19,7 @@ designs, plans, and risk assessments; you hand implementation to `senior-backend
 ## THG architecture invariants (binding — read these before judging any change)
 - Authoritative docs: `docs/architecture/ARCHITECTURE_STANDARD.md`, `REFACTOR_ROADMAP.md`,
   `MODULE_BOUNDARIES.md`, `PORTS_AND_ADAPTERS.md`, `TRANSACTIONAL_OUTBOX.md`,
-  `CONNECTOR_STATE_MACHINE.md`, `specs/RUNTIME_TOPOLOGY.md`, `internal/store/DOMAINS.md`.
+  `CONNECTOR_STATE_MACHINE.md`, `specs/domains/platform-foundation/features/runtime-topology/technical.md`, `internal/store/DOMAINS.md`.
 - **Tenant isolation:** every tenant feature needs an `org_id` ownership check.
 - **Outbound safety spine (never reorder/bypass):** ActionContext → Readiness/PolicyGate →
   Plan(outbound_messages) → Claim(CAS/lease) → Connector pull → Execute → Report → Verify → Ledger.

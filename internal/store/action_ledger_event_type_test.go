@@ -1,5 +1,5 @@
 // Domain: coordination (append-only ledger PR1 foundation; see
-// specs/store/APPEND_ONLY_LEDGER_MIGRATION.md). Characterization tests proving
+// specs/domains/facebook-sales-intelligence/features/outbound-actions/implementation/append-only-ledger.md). Characterization tests proving
 // migration 0023 is additive-only: it changes no reader/writer behavior, the
 // new column defaults to 'action_attempted', and pre-existing rows back-fill.
 package store

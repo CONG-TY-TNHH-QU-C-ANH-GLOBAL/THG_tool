@@ -6,7 +6,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Lead Lifecycle read endpoints (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-4). Batch
+// Lead Lifecycle read endpoints (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-4). Batch
 // projection for the dashboard list view + the archived-leads read path. Split from
 // lead_lifecycle.go to keep each file under the size budget.
 

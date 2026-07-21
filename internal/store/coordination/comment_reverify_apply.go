@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Apply a reverify result (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-A). This is the
+// Apply a reverify result (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-A). This is the
 // testable core the result endpoint wraps: on a positive match it appends the append-only
 // correction; on a miss it records not_found. Idempotent — a row that already resolved is
 // left untouched.

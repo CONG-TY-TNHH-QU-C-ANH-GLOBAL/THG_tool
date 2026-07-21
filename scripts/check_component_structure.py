@@ -3,7 +3,7 @@
 
 Surfaces the flat-package smells defined in specs/domains/platform-foundation/decisions/component-structure-rules.md so
 new growth is visible in review, WITHOUT blocking CI while current hotspots are
-triaged in specs/COMPONENT_HOTSPOTS.md.
+triaged in specs/domains/platform-foundation/decisions/component-hotspots.md.
 
 Flags (warnings only — exit code is always 0 unless --strict):
   * a Go package with > MAX_FILES .go files
@@ -30,7 +30,7 @@ VAGUE = {"utils.go", "helpers.go", "misc.go", "manager.go"}
 # Keep this list SHORT and justified — it is a triage record, not a licence.
 COUNT_EXEMPT = {
     "internal/models": "data-contracts package; flatness is its correct shape",
-    "internal/store": "god-package mid-decomposition (STORE_SUBPACKAGE_REFACTOR.md)",
+    "internal/store": "god-package mid-decomposition (specs/domains/platform-foundation/features/store-architecture/technical.md)",
 }
 
 

@@ -11,7 +11,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Lead Lifecycle endpoints (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-4). Read-only
+// Lead Lifecycle endpoints (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-4). Read-only
 // projection for the dashboard's lifecycle tabs + filters, plus the manual archive/restore
 // actions. Org-scoping is the standard protected-route guard; no extra access gate
 // (battlefield model). Archiving never hard-deletes — it flips archived_at.

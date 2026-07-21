@@ -77,7 +77,7 @@ type Input struct {
 // observes; live lets a GROUNDED decision drive the comment text, falling back to
 // Fallback on knowledge_gap or any error. The decision is persisted for observation
 // in BOTH modes. Best-effort: it can never break the queue path — every failure
-// returns Fallback. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §9 (P2c).
+// returns Fallback. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §9 (P2c).
 func Apply(ctx context.Context, in Input) string {
 	rctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()

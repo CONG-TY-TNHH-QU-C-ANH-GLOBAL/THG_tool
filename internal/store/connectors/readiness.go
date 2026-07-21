@@ -9,7 +9,7 @@ import (
 // Facebook Automation Reliability Track — the SINGLE connector-eligibility
 // evaluator, shared by the create-time mission preflight (server/crawl) and the
 // run-time connector picker (cmd/scraper) so the two NEVER diverge. See
-// specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md (PR-A point 4).
+// specs/domains/facebook-sales-intelligence/features/account-safety/implementation/reliability-track.md (PR-A point 4).
 
 // MinExtensionVersion is the lowest Chrome-extension version allowed to run an
 // automation action. One source of truth; bump when an automation-breaking fix

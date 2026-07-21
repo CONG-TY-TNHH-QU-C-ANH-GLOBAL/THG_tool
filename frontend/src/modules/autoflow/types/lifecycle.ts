@@ -1,4 +1,4 @@
-// Lead Lifecycle types (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-4). Mirrors the Go
+// Lead Lifecycle types (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-4). Mirrors the Go
 // projection models.LeadLifecycleState — the backend owns the derivation; the frontend
 // only groups + renders by it (no client-side lifecycle logic, to avoid Go/TS drift).
 

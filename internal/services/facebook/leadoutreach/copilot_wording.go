@@ -8,7 +8,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Lifecycle-aware copilot wording (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-5). When
+// Lifecycle-aware copilot wording (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-5). When
 // "comment N leads" finds nothing eligible, the copilot degrades honestly: it reports what
 // the org DOES have (waiting-for-reply, follow-up-due, archived) and suggests a next step
 // (crawl more / enable follow-up / view archived) instead of a dead-end "0 queued".

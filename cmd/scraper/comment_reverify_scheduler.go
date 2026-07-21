@@ -9,7 +9,7 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// Async comment reverify scheduler (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-A). Periodic
+// Async comment reverify scheduler (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-A). Periodic
 // maintenance loop (mirrors runAutoArchiveScheduler): find submitted-unverified comments
 // older than the reverify delay and enqueue them onto the reverify queue. The extension
 // polls the queue (GET /api/agent/reverify/claim), re-opens the post, searches for the

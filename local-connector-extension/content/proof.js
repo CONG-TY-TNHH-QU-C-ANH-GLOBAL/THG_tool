@@ -66,7 +66,7 @@ var THGContentProof = globalThis.THGContentProof || (() => {
     // (expected accounts.fb_user_id vs live c_user) instead of mixing a
     // cookie-derived expected with an HTML-derived actual. c_user is NOT httpOnly,
     // so the content script can read it from document.cookie. See
-    // specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md PR-B (B2).
+    // specs/domains/facebook-sales-intelligence/features/account-safety/implementation/reliability-track.md PR-B (B2).
     const ck = (document.cookie || '').match(/(?:^|;\s*)c_user=(\d+)/);
     if (ck) return ck[1];
     // Pattern 1 (fallback): meta tags / inline scripts often carry USER_ID

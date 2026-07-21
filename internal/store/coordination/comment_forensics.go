@@ -9,7 +9,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Comment Verification Forensics (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-1 Part A).
+// Comment Verification Forensics (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-1 Part A).
 // Read-only diagnostic: for each target URL, join the latest outbound + its latest
 // execution_attempt + the action_ledger outcome, parse the persisted evidence_json, and
 // classify. Coordination owns the verification truth (action_ledger + execution_attempts);

@@ -10,7 +10,7 @@ import (
 )
 
 // Facebook Automation Reliability Track — PR-A (Mission Preflight).
-// See specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md.
+// See specs/domains/facebook-sales-intelligence/features/account-safety/implementation/reliability-track.md.
 //
 // Promoted from internal/server/crawl (PR29C): account readiness is a
 // platform-neutral primitive (connector online + live identity + supported

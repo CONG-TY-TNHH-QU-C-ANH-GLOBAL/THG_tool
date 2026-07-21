@@ -158,7 +158,7 @@ func NotifyExecutionStarted(db *store.Store, orgID, accountID, outboundID int64,
 // has been blocked from further auto-execute. Routed to the account OWNER's
 // private chat — they are the one who must re-login the correct identity; an
 // admin lifts the block from the dashboard. success=false so it renders as a
-// problem event. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b.
+// problem event. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7b.
 func NotifyActorMismatch(db *store.Store, orgID, accountID, outboundID int64, expectedFB, actualFB string) {
 	if db == nil || orgID <= 0 {
 		return

@@ -15,7 +15,7 @@ import (
 
 // Workspace Knowledge OS — Layer 3 persistence.
 //
-// Four load-bearing invariants (per [specs/WORKSPACE_KNOWLEDGE_OS.md]):
+// Four load-bearing invariants (per [specs/domains/knowledge-platform/features/knowledge-os/technical.md]):
 //
 //  1. Tenant isolation: every method gates on org_id.
 //  2. Idempotent ingest: re-syncing updates existing assets via the

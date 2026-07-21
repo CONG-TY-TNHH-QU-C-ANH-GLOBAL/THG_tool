@@ -1,4 +1,4 @@
-// Async comment reverify — connector poller (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-A).
+// Async comment reverify — connector poller (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-A).
 // Claims due reverify jobs, re-opens each target post in the existing logged-in FB tab, asks
 // the content script to search for the comment, and reports the verdict. The backend appends
 // the append-only correction on a positive match. Runs AFTER the outbox poller so the two

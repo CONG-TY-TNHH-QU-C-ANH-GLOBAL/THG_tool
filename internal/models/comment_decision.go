@@ -1,6 +1,6 @@
 package models
 
-// Knowledge Intelligence Layer contracts (P2a — specs/COMMENT_INTELLIGENCE_PIPELINE.md
+// Knowledge Intelligence Layer contracts (P2a — specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md
 // §4). These are DOMAIN CONTRACTS (feedback_contracts_not_orm), not DB rows: the
 // agent reasons over retrieved knowledge and emits a CommentDecision whose every
 // concrete claim is GROUNDED in a real ingested asset. There is no Service-Offer /

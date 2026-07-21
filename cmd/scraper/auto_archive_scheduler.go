@@ -11,7 +11,7 @@ import (
 	"github.com/thg/scraper/internal/store"
 )
 
-// Auto-archive scheduler (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-3). A periodic
+// Auto-archive scheduler (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-3). A periodic
 // maintenance loop, mirroring runCrawlIntentScheduler: tick, enumerate orgs with live
 // leads, run the org-scoped ArchiveSweep. No hard delete — it only flips archived_at;
 // the engagement ledger is preserved for dedup/coverage history.

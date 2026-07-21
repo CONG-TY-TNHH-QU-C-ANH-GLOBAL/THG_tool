@@ -1,4 +1,4 @@
-// Async comment reverify — content-script search (spec: specs/COMMENT_ASYNC_REVERIFY.md,
+// Async comment reverify — content-script search (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md,
 // PR-A). Runs on the post page AFTER the connector re-navigates there. Read-only: it never
 // types or submits — it only re-runs the comment search a few seconds later (lazy group
 // comments / "Most relevant" sort often hide a freshly-posted comment from the in-window

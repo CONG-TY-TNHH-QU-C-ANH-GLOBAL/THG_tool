@@ -83,7 +83,7 @@ func RegisterConnectorRoutes(connectorGrp, agentGrp fiber.Router, deps Deps, aut
 	agentGrp.Post("/outbox/:id/sent", h.agentOutboxSent)
 	agentGrp.Post("/outbox/:id/failed", h.agentOutboxFailed)
 	agentGrp.Post("/outbox/:id/pre-submit-verify", h.agentOutboxPreSubmitVerify) // Layer C (P1.3C)
-	// Async comment reverify (spec: specs/COMMENT_ASYNC_REVERIFY.md).
+	// Async comment reverify (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md).
 	agentGrp.Get("/reverify/claim", h.agentReverifyClaim)
 	agentGrp.Post("/reverify/result", h.agentReverifyResult)
 }

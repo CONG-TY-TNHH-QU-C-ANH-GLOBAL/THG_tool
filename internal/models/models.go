@@ -214,7 +214,7 @@ type Account struct {
 // identity, used by operator-facing surfaces (the Agent Decision
 // Inspector / CommentingView) to answer "which Facebook actor executed
 // this action" — distinct from CreatedBy (the staff/system principal
-// that initiated it). See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a.
+// that initiated it). See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7a.
 //
 // It is a contract shape, not a DB row serialization: it carries only
 // the display-relevant identity fields, never cookies/proxy/secrets.
@@ -227,7 +227,7 @@ type ActorIdentity struct {
 	FBProfileURL  string `json:"fb_profile_url"`
 	// ActorVerdict / ActorBlocked are the Verified-Actor state for the
 	// account (P1b). Folded in by the API composition layer from the
-	// coordination domain — see specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b.
+	// coordination domain — see specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7b.
 	ActorVerdict string `json:"actor_verdict,omitempty"`
 	ActorBlocked bool   `json:"actor_blocked,omitempty"`
 }
@@ -235,7 +235,7 @@ type ActorIdentity struct {
 // Actor verdict vocabulary (Verified Actor — the closed enum for the
 // expected-vs-actual Facebook identity check at execution finalize).
 // Deterministic boundary: callers branch on these exact values, never a
-// proxy. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b.
+// proxy. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7b.
 const (
 	// ActorVerdictVerified: the account's expected fb_user_id equals the
 	// live c_user the executor observed. The only verdict that permits

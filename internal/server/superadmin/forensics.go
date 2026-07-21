@@ -6,7 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Comment Verification Forensics endpoint (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-1
+// Comment Verification Forensics endpoint (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-1
 // Part A). Founder-only operational diagnostic: "for these target URLs, what does the
 // verification evidence actually say?". Read-only; the classification lives in
 // models.ClassifyCommentForensics. Registered under the superadmin group.

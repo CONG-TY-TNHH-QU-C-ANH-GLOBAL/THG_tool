@@ -1,5 +1,5 @@
 // Typed client for the Telegram integration control-plane (backend PR-1:
-// specs/TELEGRAM_INTEGRATION_UI.md). Tenant scope + role come from the auth context server-side;
+// specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/integration-ui.md). Tenant scope + role come from the auth context server-side;
 // the client never sends org/user ids. Read-only / control-plane only — there is deliberately NO
 // action-execution method here (Telegram cannot post comments).
 import * as api from './api';

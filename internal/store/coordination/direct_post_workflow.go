@@ -9,7 +9,7 @@ import (
 )
 
 // Direct-post intake → comment continuation workflow (spec:
-// specs/DIRECT_POST_INTAKE_WORKFLOW.md). PR-1 = DATA FOUNDATION ONLY: typed CRUD +
+// specs/domains/facebook-sales-intelligence/features/direct-post-intake/technical.md). PR-1 = DATA FOUNDATION ONLY: typed CRUD +
 // CAS/lease transitions over direct_post_comment_workflows. NO runtime poller, NO
 // Copilot/Telegram/comment behavior here — that is PR-2. Coordination owns this as
 // process-manager runtime state; it imports NO leads/outbound (single-table CRUD).
