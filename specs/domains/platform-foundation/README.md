@@ -26,6 +26,10 @@ vocabulary (mandatory reading — synonyms are rejected on review).
   controls: usage logs, bounded cache, token capture.
 - [workspace-ui](features/workspace-ui/README.md) — workspace frontend plans
   and mock-era evidence (no authoritative technical contract yet).
+- [store-architecture](features/store-architecture/README.md) — canonical
+  `internal/store/` subpackage decomposition and truth ownership.
+- [data-platform](features/data-platform/README.md) — SQLite/PostgreSQL
+  data-plane strategy and migration planning.
 
 ## Decisions
 

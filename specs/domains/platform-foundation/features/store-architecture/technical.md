@@ -231,7 +231,7 @@ identities, connectors, workspace (leads+threads), prompts, users, app — extra
 
 ## 6. New v2.5 features should be born as subpackages
 
-Per [TEMPLATE_TELEGRAM_COPILOT_PLAN.md](../platform/TEMPLATE_TELEGRAM_COPILOT_PLAN.md), upcoming work:
+Per [TEMPLATE_TELEGRAM_COPILOT_PLAN.md](../../../../platform/TEMPLATE_TELEGRAM_COPILOT_PLAN.md), upcoming work:
 - Template Library (PR-3 + PR-4)
 - Telegram multi-tenant (PR-5)
 - Copilot bridge (PR-6)
@@ -372,7 +372,7 @@ Trên `staged_evolution_over_big_bang` rule:
 
 ## 14. Migration log (what shipped)
 
-This section is the historical record. For current package locations + ownership see [DOMAINS.md](../../internal/store/DOMAINS.md). For binding rules, see the four locks (L1-L4) in §0 plus the memory files referenced there.
+This section is the historical record. For current package locations + ownership see [DOMAINS.md](../../../../../internal/store/DOMAINS.md). For binding rules, see the four locks (L1-L4) in §0 plus the memory files referenced there.
 
 ### Phase 0 — DOMAINS.md ownership map (2026-05-21)
 
@@ -401,7 +401,7 @@ Sub-deliverable: **`internal/store/storetest/`** created as shared test infrastr
 - **Phase 5 — coordination/** — high-risk. Core runtime substrate (action_ledger + execution_attempts + behaviour_profile + engagement_reconcile). Watch list in [[project_coordination_phase_risks]]: cross-package tx threading, hidden ownership of execution_state, no fake abstractions during extraction.
 - **Phase 6 — identities/**, **Phase 7 — connectors/**, **Phase 8 — leads + threads/**, **Phase 9 — prompts/**, **Phase 11 — app/** — defer until each domain proves needs.
 
-Subpackage contract (binding for every Phase 5+ extraction): see [DOMAINS.md §3](../../internal/store/DOMAINS.md#3-subpackage-contract).
+Subpackage contract (binding for every Phase 5+ extraction): see [DOMAINS.md §3](../../../../../internal/store/DOMAINS.md#3-subpackage-contract).
 
 ### Cross-cutting locks added on the way
 

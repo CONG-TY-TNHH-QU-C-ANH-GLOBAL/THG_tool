@@ -1092,14 +1092,23 @@
     },
     {
       "id": "phase-5a-coordination-audit",
-      "path": "specs/store/PHASE_5A_COORDINATION_AUDIT.md",
-      "title": "PHASE 5A COORDINATION AUDIT",
+      "path": "specs/domains/platform-foundation/features/store-architecture/evidence/phase-5a-coordination-audit.md",
+      "title": "Store Architecture — Phase 5A Coordination Audit",
       "domain": "store",
       "type": "investigation",
       "status": "archived",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "store-architecture",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24E specs audit (2026-06-23)",
         "audited coordination domain internal/store/coordination exists",
@@ -1117,7 +1126,7 @@
         "audit",
         "historical"
       ],
-      "notes": "Reviewed in PR24E. One-time Phase 5A extraction-readiness audit (zero code moves) that gated Phase 5B; the coordination subpackage extraction has since shipped. Historical deliverable -> archived."
+      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24E. One-time Phase 5A extraction-readiness audit (zero code moves) that gated Phase 5B; the coordination subpackage extraction has since shipped. Historical deliverable -> archived."
     },
     {
       "id": "postgres-compat-plan",
@@ -1161,14 +1170,23 @@
     },
     {
       "id": "production-database-migration-plan",
-      "path": "specs/migration/PRODUCTION_DATABASE_MIGRATION_PLAN.md",
-      "title": "PRODUCTION DATABASE MIGRATION PLAN",
+      "path": "specs/domains/platform-foundation/features/data-platform/implementation/production-database-migration.md",
+      "title": "Data Platform — Production Database Migration Plan (Draft)",
       "domain": "migration",
       "type": "migration",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "data-platform",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "only the KnowledgeOS slice is dual-target (active postgres-compat-plan); legacy domains remain SQLite"
@@ -1183,7 +1201,7 @@
         "deferred",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24H. Aspirational all-domains SQLite to Postgres production migration plan. Only the KnowledgeOS slice is realized (active postgres-compat-plan); legacy domains still run SQLite. Future-facing -> draft."
+      "notes": "Moved under data-platform/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Aspirational all-domains SQLite to Postgres production migration plan. Only the KnowledgeOS slice is realized (active postgres-compat-plan); legacy domains still run SQLite. Future-facing -> draft."
     },
     {
       "id": "production-flow",
@@ -1502,14 +1520,23 @@
     },
     {
       "id": "store-subpackage-refactor",
-      "path": "specs/store/STORE_SUBPACKAGE_REFACTOR.md",
-      "title": "STORE SUBPACKAGE REFACTOR",
+      "path": "specs/domains/platform-foundation/features/store-architecture/technical.md",
+      "title": "Store Architecture — Subpackage Decomposition",
       "domain": "store",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "store-architecture",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24B specs audit (2026-06-23)",
         "internal/store/DOMAINS.md",
@@ -1530,7 +1557,7 @@
         "store",
         "refactor-history"
       ],
-      "notes": "Reviewed in PR24B. Canonical store subpackage decomposition; the subpackages it specifies exist in the current tree and RUNTIME_TOPOLOGY references it as authoritative. Migration phases are largely shipped."
+      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Canonical store subpackage decomposition; the subpackages it specifies exist in the current tree and RUNTIME_TOPOLOGY references it as authoritative. Migration phases are largely shipped."
     },
     {
       "id": "structural-refactor-plan",

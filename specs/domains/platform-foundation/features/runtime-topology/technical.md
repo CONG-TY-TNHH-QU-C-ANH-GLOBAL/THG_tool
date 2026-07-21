@@ -1,6 +1,6 @@
 # THG Runtime Topology
 
-**Status**: living doc — describes runtime composition of the system as it actually runs in production. Pairs with the spatial decomposition in [internal/store/DOMAINS.md](../../../../../internal/store/DOMAINS.md) and the migration history in [STORE_SUBPACKAGE_REFACTOR.md](../../../../../specs/store/STORE_SUBPACKAGE_REFACTOR.md).
+**Status**: living doc — describes runtime composition of the system as it actually runs in production. Pairs with the spatial decomposition in [internal/store/DOMAINS.md](../../../../../internal/store/DOMAINS.md) and the migration history in [store-architecture technical.md](../store-architecture/technical.md).
 
 **Last verified**: 2026-05-22 (post-Phase 8b — store subpackage wave complete).
 
@@ -390,4 +390,4 @@ Stage 4 will be earned, not designed in advance.
 - **Onboarding a new engineer**: read §1 (5 min) + §2 flow 2.2 (10 min) to understand the load-bearing path. Everything else is reference.
 - **Reviewing a PR that touches multiple domains**: run `scripts/check_topology.sh` locally; surface §6 results in the PR description.
 
-Pointer hubs: [DOMAINS.md](../../../../../internal/store/DOMAINS.md), [STORE_SUBPACKAGE_REFACTOR.md](../../../../../specs/store/STORE_SUBPACKAGE_REFACTOR.md), [project_runtime_control_plane](../../../../) memory.
+Pointer hubs: [DOMAINS.md](../../../../../internal/store/DOMAINS.md), [store-architecture technical.md](../store-architecture/technical.md), [project_runtime_control_plane](../../../../) memory.

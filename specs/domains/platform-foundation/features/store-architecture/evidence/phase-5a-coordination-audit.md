@@ -13,7 +13,7 @@
 Audit the coordination domain (action_ledger, behaviour_profile, engagement_reconcile, execution_attempts, behaviour_caps_check) for extraction readiness. Produce 6 inventories. Surface blockers. Recommend pre-5B PRs.
 
 References:
-- Ownership: [DOMAINS.md §2.4](../../internal/store/DOMAINS.md#24-truth-ownership-matrix-locked-2026-05-21)
+- Ownership: [DOMAINS.md §2.4](../../../../../../internal/store/DOMAINS.md#24-truth-ownership-matrix-locked-2026-05-21)
 - Strategy: [[project_coordination_phase_risks]] §B (5A/5B/5C)
 - Subpackage contract: [[feedback_subpackage_contract]] (9 points)
 - Anti-patterns: [[feedback_no_coordination_service]], [[feedback_no_bidirectional_domain_knowledge]], [[feedback_extraction_is_not_redesign]]
