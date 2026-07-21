@@ -107,7 +107,7 @@ This is its own PR — should not bundle with the dialect work.
 
 - `newKnowledgeTestStore` etc. should accept an env var `TEST_DATABASE_URL` and, when set, run against a real PG instance. Default unset → SQLite tempdir (current behavior).
 - Add a `Makefile` target `test-pg` that spins up PG via `testcontainers-go` (or just expects a local PG) and runs the same test suite. Catches dialect mismatches.
-- CI matrix: run the full suite under both drivers. The four invariants from [WORKSPACE_KNOWLEDGE_OS.md](WORKSPACE_KNOWLEDGE_OS.md) §10 are the load-bearing assertions.
+- CI matrix: run the full suite under both drivers. The four invariants from [knowledge-os technical.md](../technical.md) §10 are the load-bearing assertions.
 
 ### 3.7 Vector support (pgvector)
 
@@ -173,17 +173,17 @@ Three PRs, each independently shippable.
 
 | Component | Status | File |
 |---|---|---|
-| `Dialect` interface | ✅ | [internal/store/dialect.go](../../internal/store/dialect.go) |
-| SQLite dialect impl | ✅ | [internal/store/dialect_sqlite.go](../internal/store/dialect_sqlite.go) |
-| Postgres dialect impl | ✅ | [internal/store/dialect_postgres.go](../internal/store/dialect_postgres.go) |
-| `*Store` auto-rebind wrappers (`Query/Exec/QueryRowContext`, `InsertReturningID`) | ✅ | [internal/store/dialect.go](../../internal/store/dialect.go) |
-| Boot-time driver detection (`DATABASE_URL` or `postgres://` DSN) | ✅ | [internal/store/store.go](../../internal/store/store.go) |
-| PG connection pool tuning (25/5/5m) | ✅ | [internal/store/store.go](../../internal/store/store.go) |
-| In-house migration runner with `schema_migrations` registry | ✅ | [internal/store/migrator.go](../../internal/store/migrator.go) |
-| Baseline-marker detection for existing SQLite installs | ✅ | [internal/store/migrator.go](../../internal/store/migrator.go) `recordBaselineIfNeeded` |
-| PG-flavour baseline migration (Knowledge OS tables) | ✅ | [internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql](../../internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql) |
+| `Dialect` interface | ✅ | [internal/store/dialect.go](../../../../../../internal/store/dialect.go) |
+| SQLite dialect impl | ✅ | [internal/store/dialect_sqlite.go](../../../../../../internal/store/dialect_sqlite.go) |
+| Postgres dialect impl | ✅ | [internal/store/dialect_postgres.go](../../../../../../internal/store/dialect_postgres.go) |
+| `*Store` auto-rebind wrappers (`Query/Exec/QueryRowContext`, `InsertReturningID`) | ✅ | [internal/store/dialect.go](../../../../../../internal/store/dialect.go) |
+| Boot-time driver detection (`DATABASE_URL` or `postgres://` DSN) | ✅ | [internal/store/store.go](../../../../../../internal/store/store.go) |
+| PG connection pool tuning (25/5/5m) | ✅ | [internal/store/store.go](../../../../../../internal/store/store.go) |
+| In-house migration runner with `schema_migrations` registry | ✅ | [internal/store/migrator.go](../../../../../../internal/store/migrator.go) |
+| Baseline-marker detection for existing SQLite installs | ✅ | [internal/store/migrator.go](../../../../../../internal/store/migrator.go) `recordBaselineIfNeeded` |
+| PG-flavour baseline migration (Knowledge OS tables) | ✅ | [internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql](../../../../../../internal/store/migrations/0001_knowledge_os_baseline__postgres.up.sql) |
 | Knowledge OS repository converted to dialect-aware (Rebind + RETURNING) | ✅ | knowledge_sources.go, knowledge_assets.go, knowledge_events.go, knowledge_replay.go |
-| Dialect unit tests | ✅ | [internal/store/dialect_test.go](../../internal/store/dialect_test.go) |
+| Dialect unit tests | ✅ | [internal/store/dialect_test.go](../../../../../../internal/store/dialect_test.go) |
 
 ### Deferred (per directive — separate work)
 
