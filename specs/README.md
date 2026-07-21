@@ -46,17 +46,18 @@ The registry remains the single source of truth for what specs exist.
 
 ## Adding a new spec
 
-1. Add the Markdown file under the correct domain folder, `specs/<domain>/`.
-2. Add a matching entry to `SPEC_REGISTRY.json` (all required fields — see
-   `SPEC_GOVERNANCE.md` §5), with `path` set to `specs/<domain>/<file>.md` and a
-   `domain` that matches the folder. New documents default to
-   `status: "unreviewed"`, `maturity: "unknown"`.
-3. Run the checker (below) and commit both files together.
+1. Add the Markdown file under its ownership node in `specs/domains/`.
+2. Add a matching entry to that node's `SPEC_MANIFEST.json` (see
+   `specs/registry/README.md` for the schema and workflow).
+3. Run `python scripts/build_spec_registry.py` to regenerate
+   `SPEC_REGISTRY.json` — it is generated output, never edited by hand.
+4. Run the checker (below) and commit the manifest and the regenerated
+   registry together.
 
 ## Updating an existing spec
 
-- When a spec's status, maturity, or domain changes, update its registry entry
-  in the **same PR**.
+- When a spec's metadata changes, update its `SPEC_MANIFEST.json` entry and
+  regenerate the registry in the **same PR**.
 - When marking a spec `superseded`, set `superseded_by` to the replacement's id.
 
 ## Running the registry checker

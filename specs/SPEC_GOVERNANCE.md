@@ -113,9 +113,13 @@ Every entry in `specs/SPEC_REGISTRY.json` must provide all of these fields:
 
 ## 7. PR workflow
 
-- Adding a new spec **requires** a registry entry.
-- Modifying a spec **requires** a registry update when its status, maturity, or
-  domain changes.
+`specs/SPEC_REGISTRY.json` is **generated** from per-node `SPEC_MANIFEST.json`
+files (see `specs/registry/README.md`) — never edit it manually.
+
+- Adding a new spec **requires** an entry in its node's `SPEC_MANIFEST.json`
+  plus a regenerated registry (`python scripts/build_spec_registry.py`).
+- Modifying a spec **requires** a manifest update (and regeneration) when its
+  status, maturity, or domain changes.
 - A behavior spec used to drive a refactor should have tests/harness backing it.
 - PRs should mention which registry entries they affect.
 

@@ -10,7 +10,8 @@
   `specs/domains/platform-foundation/features/runtime-topology/technical.md`
 - Ownership domains:
   `specs/domains/` (index: each domain `README.md`; registry:
-  `specs/SPEC_REGISTRY.json`)
+  `specs/SPEC_REGISTRY.json`, generated from node `SPEC_MANIFEST.json` files —
+  workflow: `specs/registry/README.md`)
 - Data planes:
   `docs/architecture/DATABASE_OWNERSHIP.md`
 - Component ownership:
