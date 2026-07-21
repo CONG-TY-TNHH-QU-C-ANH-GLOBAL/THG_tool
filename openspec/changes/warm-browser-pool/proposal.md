@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED. A pre-warmed hidden container pool conflicts with the merged account-safety doctrine (no hidden browser pools; visible operator-observable sessions) and would require founder re-approval before any implementation.
+
 ## Why
 
 The `browser-scheduler` change queues Docker container starts and prevents overload, but each start still takes 2–4s (Xvfb + VNC + Chrome initialization inside the container). For a Facebook automation tool where staff frequently switch accounts or open sessions, this latency is noticeable on every login. Pre-warming containers per account eliminates cold-start delay by having a ready container waiting before the request arrives.

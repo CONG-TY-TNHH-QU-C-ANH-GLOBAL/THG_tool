@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). SUPERSEDED as a proposal by `openspec/ai-crawl-orchestration-spec.md` (its header says so). The realized NL→durable-jobs path is the copilot agent/action pipeline (`internal/drivers/copilot` + `internal/jobs`), in a different shape. Tasks below unexecuted as written.
+
 ## Why
 
 The browser automation platform can start, manage, and stream isolated Chrome containers per Facebook account, but has no layer that translates staff intent ("scrape hot leads from this group and comment on them") into the sequenced browser actions that execute it. Commands arrive via Telegram or the web UI as raw text; there is no structured skill dispatch, no multi-step task sequencing, and no durable record of what was attempted and what it produced.

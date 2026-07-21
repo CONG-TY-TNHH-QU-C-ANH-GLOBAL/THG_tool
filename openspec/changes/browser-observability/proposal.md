@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED (observes the unimplemented Docker platform subsystems). Current observability lives in `internal/server/observability` + `internal/observability` for the realized runtime.
+
 ## Why
 
 The browser platform now spans four interconnected subsystems (Docker container lifecycle, scheduler queue, warm pool, and port registry), but none of them emit structured logs or metrics — operators have no way to distinguish a slow start from a crash loop, know when the queue is backing up, or understand resource consumption per container. Adding observability now, before the system reaches production scale, prevents blind spots from becoming incidents.

@@ -1,6 +1,10 @@
 # AI Crawl Orchestration — Unified System Specification
 
-> **Scope**: Defines the architecture, module boundaries, data contracts, and execution flow for the AI-driven task orchestration layer. Supersedes the skill-based `ai-task-orchestration` proposal. All existing infrastructure (job scheduler, browser runtime manager, port registry, streaming layer, control plane) is consumed unchanged.
+> **Lifecycle status (2026-07-21 spec IA reconciliation): PROPOSAL — not
+> current runtime authority** (nothing under `openspec/` is; see
+> `specs/domains/platform-foundation/features/runtime-topology/technical.md`).
+>
+> **Scope**: Defines the architecture, module boundaries, data contracts, and execution flow for the AI-driven task orchestration layer. Supersedes the skill-based `ai-task-orchestration` proposal. Its premise that the consumed infrastructure (browser runtime manager, container port registry, streaming layer, container control plane) "exists" is inaccurate for this repository — those remain unimplemented proposals; only the durable job scheduler exists (`internal/jobs`, different shape). The realized NL→jobs path is the copilot agent/action pipeline (`internal/drivers/copilot`).
 
 ---
 

@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED (depends on the unimplemented docker-browser-service). The durable queue piece it assumes exists today as `internal/jobs`; the container-start scheduling itself has no realized counterpart.
+
 ## Why
 
 The `docker-browser-service` change (previous change) routes `POST /browser/start` directly to Docker container creation, meaning 1000 simultaneous API calls would attempt to spin up 1000 containers at once — overwhelming the Docker daemon, exhausting ports, and crashing the node. A scheduler layer that queues and paces container start requests is required before the service can operate safely under real user load.

@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED as proposed. A simple mutex-map port registry persisted in the `port_registry` table EXISTS for visible workspaces (`internal/workspace/ports.go`, CDP 9300+/VNC 5910+); the sharded redesign targets the unimplemented Docker platform.
+
 ## Why
 
 The `docker-browser-service` `PortRegistry` uses a sequential scan over a `map[int]bool` under a single mutex: under 1000 concurrent allocation requests, all goroutines serialize on the lock and the scan degrades to O(n) per call. Worse, there is no expiry on allocated ports — a crashed container leaves its ports permanently leaked until the service restarts. As the system scales toward hundreds of concurrent browsers and eventually multi-node deployment, the registry must be replaced with an allocation strategy that is O(1), lease-based, and optionally distributed.

@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED as proposed. Workspace VNC streaming exists for visible workspaces (`internal/server/workspace` screen/VNC proxies); the per-container provider abstraction targets the unimplemented Docker platform.
+
 ## Why
 
 VNC is hard-coded into each Docker container (one x11vnc process per container, one noVNC WebSocket proxy per viewer), meaning every streaming session opens a persistent TCP tunnel through the server regardless of viewer count, and the VNC protocol was not designed for low-latency high-concurrency web delivery. Abstracting the streaming layer now — while the container model is still young — lets future streaming backends (WebRTC, CDP screencast relay) be swapped in without touching `BrowserService`, the warm pool, or the scheduler.

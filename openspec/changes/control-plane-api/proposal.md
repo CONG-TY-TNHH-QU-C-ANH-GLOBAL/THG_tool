@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). The tenancy premise HAS shipped platform-wide (org_id scoping on tenant records and APIs, tenant-isolation constitution), but the proposed `/browser/*` control-plane API surface targets the unimplemented Docker browser platform and was NOT built. PARTIALLY REALIZED premise; API surface not implemented.
+
 ## Why
 
 The system already seeds an `organizations` table and stamps `org_id` on users, accounts, and groups — but the browser APIs (`/browser/start`, `/browser/stop`, scheduler, warm pool) are completely org-blind. Any authenticated staff user can start a container for any account regardless of org membership. As the platform grows to serve multiple client organizations, every browser operation must be scoped to the caller's `org_id`, programmatic callers need API keys (not just browser-session JWTs), and superadmin needs a control plane to provision orgs and enforce per-org quotas.
