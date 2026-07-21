@@ -14,6 +14,10 @@ experience.
 - [implementation/refactor-plan.md](implementation/refactor-plan.md) — the
   staged PR1/PR2 plan, risks, acceptance criteria, resolved decisions,
   non-goals.
+- [decisions/v2-5-umbrella-plan.md](decisions/v2-5-umbrella-plan.md) —
+  ancestor v2.5 umbrella architecture (outbound → ledger → templates →
+  telegram → copilot); its shipped invariants live in the authoritative
+  specs, the rest stays draft.
 - [implementation/append-only-ledger.md](implementation/append-only-ledger.md)
   — design-only event-sourced action_ledger migration (PR A additive column
   shipped; writers not implemented; 2 UPDATE violations tracked by

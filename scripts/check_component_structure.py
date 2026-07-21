@@ -84,7 +84,7 @@ def main() -> int:
                     vague_warn.append(f"  {rel}/{f}  (vague catch-all; prefix it or document a single responsibility)")
 
     print("== Component structure guard (warn-only baseline) ==")
-    print("Rules: specs/domains/platform-foundation/decisions/component-structure-rules.md | Triage: specs/COMPONENT_HOTSPOTS.md\n")
+    print("Rules: specs/domains/platform-foundation/decisions/component-structure-rules.md | Triage: specs/domains/platform-foundation/decisions/component-hotspots.md\n")
 
     def section(title: str, rows: list[str]) -> None:
         print(f"[{title}] {len(rows)} flagged")

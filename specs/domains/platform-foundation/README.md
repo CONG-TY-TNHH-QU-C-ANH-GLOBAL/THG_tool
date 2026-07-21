@@ -36,11 +36,15 @@ vocabulary (mandatory reading — synonyms are rejected on review).
 - [component-structure-rules](decisions/component-structure-rules.md) —
   ACTIVE_BINDING component/package structure rules, enforced warn-only by
   `scripts/check_component_structure.py`.
+- [component-hotspots](decisions/component-hotspots.md) — triage snapshot
+  companion (stale; pending regeneration).
+- [structural-refactor-plan](decisions/structural-refactor-plan.md) — living
+  plan for deferred structural decisions (draft).
+- [monorepo-plan](decisions/monorepo-plan.md) — deferred go.work monorepo
+  plan (draft; execution not started).
+- [automation-principles](decisions/automation-principles.md) — high-level
+  system principles (vision draft).
 
-## Not yet migrated
-
-The rest of this domain's specs still live in the flat legacy folders
-(`specs/platform/`, `specs/store/`, `specs/browser/`, `specs/frontend/`,
-`specs/ai/`, `specs/migration/`) and are tracked in
-[`specs/SPEC_REGISTRY.json`](../../SPEC_REGISTRY.json). They migrate here in
-later batches.
+The only spec left outside `specs/domains/` is the test-generated
+`specs/knowledge/RETRIEVAL_SOAK_REPORT.md` (its path is hard-coded in the
+soak test; queue item DOCS-R2 owns relocation).

@@ -9,3 +9,6 @@ runs in CI and fails on new violations.
   enforced invariant list). Implementation state: **backed** (living doc,
   grep-gated in CI). This is the current runtime authority named by
   `CLAUDE.md`/`AGENTS.md`.
+- [evidence/production-flow.md](evidence/production-flow.md) — older living
+  production-pipe reference (stale; superseded in practice by technical.md,
+  kept pending refresh).

@@ -8,12 +8,12 @@
 
 This file complements (does not replace):
 
-- [`AGENTS.md`](../../AGENTS.md) — short operating instructions per topic.
-- [`specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`](../browser/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md)
+- [`AGENTS.md`](../../../../../../AGENTS.md) — short operating instructions per topic.
+- [`specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`](../../browser-connector/decisions/browser-gateway-vision.md)
   — browser provider direction and Chrome Extension production path.
-- [`facebook-sales-intelligence roadmap.md`](../domains/facebook-sales-intelligence/roadmap.md)
+- [`facebook-sales-intelligence roadmap.md`](../../../../facebook-sales-intelligence/roadmap.md)
   — long-form product / feature direction.
-- [`openspec/root-architecture.md`](../../openspec/root-architecture.md)
+- [`openspec/root-architecture.md`](../../../../../../openspec/root-architecture.md)
   — system boundaries.
 
 ## 1. North star (read first)
@@ -150,7 +150,7 @@ Before calling the helper, the handler must:
 
 ## 6. Session lifecycle (typed enum)
 
-Single source of truth: [`internal/store/session_status.go`](../../internal/store/session_status.go).
+Single source of truth: [`internal/store/session_status.go`](../../../../../../internal/store/session_status.go).
 
 ```
 local_starting   ──► local_active ──► local_ready
@@ -297,7 +297,7 @@ Ownership rule: agent's most recent `connector_screenshots` row OR
 agent currently online with assignment (`AssignedAccountID == 0` or
 == accountID).
 
-## 10. Input bounds (Phase 1, [`input_limits.go`](../internal/server/input_limits.go))
+## 10. Input bounds (Phase 1, [`input_limits.go`](../../../../../../internal/server/input_limits.go))
 
 Every connector-supplied string passes through `clampPresenceFields`
 before reaching `UpdateAgentPresence`. Limits picked to be generous

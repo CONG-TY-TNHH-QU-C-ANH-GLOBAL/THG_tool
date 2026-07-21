@@ -1,8 +1,8 @@
 # Migration Plan: Monolith → apps / services / packages
 
 **Status:** Deferred — execution not started. Revisit before Phase 0 to re-confirm assumptions (FB workflow, MQ choice, Postgres timing).
-**Owner vision source:** [.claude/structurebase.md](../../.claude/structurebase.md)
-**Related plans:** [STRUCTURAL_REFACTOR_PLAN.md](STRUCTURAL_REFACTOR_PLAN.md), [PRODUCTION_DATABASE_MIGRATION_PLAN.md](../migration/PRODUCTION_DATABASE_MIGRATION_PLAN.md), [ROOT_ARCHITECTURE.md](../frontend/ROOT_ARCHITECTURE.md)
+**Owner vision source:** [.claude/structurebase.md](../../../.claude/structurebase.md)
+**Related plans:** [STRUCTURAL_REFACTOR_PLAN.md](structural-refactor-plan.md), [PRODUCTION_DATABASE_MIGRATION_PLAN.md](../features/data-platform/implementation/production-database-migration.md), [ROOT_ARCHITECTURE.md](../features/workspace-ui/evidence/root-architecture.md)
 
 ## Confirmed defaults (2026-05-07)
 
@@ -18,11 +18,11 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 | Already in place | Still missing |
 |---|---|
-| [services/agent-brain/](../../services/agent-brain/) — Python sidecar, deployed via CI 2026-05-08, called by api-gateway over HTTP `:8091`. First real microservice in the codebase. | `apps/`, `packages/`, `infrastructure/` directories |
-| [frontend/](../frontend/) Next.js | Single flat `go.mod` — no workspace yet |
-| 30 packages under [internal/](../../internal/), 3 entrypoints under [cmd/](../../cmd/) | In-process job queue ([internal/jobs/](../../internal/jobs/) + SQLite) — no real MQ |
-| [local-connector-extension/](../../local-connector-extension/) | Facebook-only — Taobao/1688 services do not exist |
-| Ad-hoc [docker/](../../docker/), [deploy/](../../deploy/) | No IaC standard |
+| [services/agent-brain/](../../../services/agent-brain/) — Python sidecar, deployed via CI 2026-05-08, called by api-gateway over HTTP `:8091`. First real microservice in the codebase. | `apps/`, `packages/`, `infrastructure/` directories |
+| [frontend/](../../../frontend/) Next.js | Single flat `go.mod` — no workspace yet |
+| 30 packages under [internal/](../../../internal/), 3 entrypoints under [cmd/](../../../cmd/) | In-process job queue ([internal/jobs/](../../../internal/jobs/) + SQLite) — no real MQ |
+| [local-connector-extension/](../../../local-connector-extension/) | Facebook-only — Taobao/1688 services do not exist |
+| Ad-hoc [docker/](../../../docker/), [deploy/](../../../deploy/) | No IaC standard |
 
 ## Cross-cutting principles
 
@@ -44,7 +44,7 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 - Path moves:
   - `frontend/` → `apps/web-dashboard/`
   - `local-connector-extension/` → `apps/connector-extension/`
-- Update path references in: [Dockerfile](../../Dockerfile), [docker-compose.yml](../../docker-compose.yml), [Makefile](../../Makefile), `.github/workflows/*`, [package.json](../../package.json) scripts, deploy scripts.
+- Update path references in: [Dockerfile](../../../Dockerfile), [docker-compose.yml](../../../docker-compose.yml), [Makefile](../../../Makefile), `.github/workflows/*`, [package.json](../../../package.json) scripts, deploy scripts.
 
 **Risk:** Low — pure renames. Main hazard is missed `frontend/` path references in CI.
 
@@ -60,14 +60,14 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 | Package | Pulled from | Public surface |
 |---|---|---|
-| `packages/core-browser` | [internal/browser/](../../internal/browser/), [internal/runtime/fingerprint.go](../../internal/runtime/fingerprint.go), `internal/runtime/stealth*`, [internal/identity/](../../internal/identity/) | `Browser.Launch(opts)`, `Stealth(...)`, proxy rotation |
-| `packages/core-database` | [internal/store/](../../internal/store/), [internal/models/](../../internal/models/) | Store interface + SQLite implementation. Schema/migrations stay in [db/](../../db/) |
-| `packages/core-logger` | [internal/observability/](../../internal/observability/), [internal/logstream/](../../internal/logstream/) | Structured logger + Prometheus metrics |
-| `packages/core-queues` | [internal/jobs/](../../internal/jobs/), [internal/events/bus.go](../../internal/events/) | `Producer`, `Consumer` interfaces + in-process implementation (pluggable) |
+| `packages/core-browser` | [internal/browser/](../../../internal/browser/), [internal/runtime/fingerprint.go](../../../internal/runtime/fingerprint.go), `internal/runtime/stealth*`, [internal/identity/](../../../internal/identity/) | `Browser.Launch(opts)`, `Stealth(...)`, proxy rotation |
+| `packages/core-database` | [internal/store/](../../../internal/store/), [internal/models/](../../../internal/models/) | Store interface + SQLite implementation. Schema/migrations stay in [db/](../../../db/) |
+| `packages/core-logger` | [internal/observability/](../../../internal/observability/), [internal/logstream/](../../../internal/logstream/) | Structured logger + Prometheus metrics |
+| `packages/core-queues` | [internal/jobs/](../../../internal/jobs/), [internal/events/bus.go](../../../internal/events/) | `Producer`, `Consumer` interfaces + in-process implementation (pluggable) |
 
 **Critical:** `core-queues` only defines interfaces and keeps the existing in-process implementation. Real MQ backend lands in Phase 4.
 
-**Risk:** Medium — many import paths change. Some `internal/*` packages couple too tightly to concrete `*store.Store` types (e.g. [internal/leadingest/](../../internal/leadingest/)) and must be loosened to accept interfaces. This is good decoupling, not overhead.
+**Risk:** Medium — many import paths change. Some `internal/*` packages couple too tightly to concrete `*store.Store` types (e.g. [internal/leadingest/](../../../internal/leadingest/)) and must be loosened to accept interfaces. This is good decoupling, not overhead.
 
 **Verify:** Full `go test ./...` passes with no behavioral change.
 
@@ -79,9 +79,9 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 **Scope:**
 
-- `cmd/scraper/` + [internal/server/](../../internal/server/) + [internal/auth/](../../internal/auth/) + [internal/ai/](../../internal/ai/) + [internal/skills/](../../internal/skills/) + [internal/workspace/](../../internal/workspace/) → `apps/api-gateway/`
+- `cmd/scraper/` + [internal/server/](../../../internal/server/) + [internal/auth/](../../../internal/auth/) + [internal/ai/](../../../internal/ai/) + [internal/skills/](../../../internal/skills/) + [internal/workspace/](../../../internal/workspace/) → `apps/api-gateway/`
 - Becomes its own `go.mod`, importing `packages/core-*`.
-- Telegram bot ([internal/telegram/](../../internal/telegram/)) follows the gateway (same user-facing tier).
+- Telegram bot ([internal/telegram/](../../../internal/telegram/)) follows the gateway (same user-facing tier).
 
 **Risk:** Medium — `internal/ai` is imported in many places. May eventually need its own `packages/core-ai`, but **not in this phase** — keep scope tight.
 
@@ -98,7 +98,7 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 **Goal:** Worker fully separated from gateway, communicates only via queue (+ shared DB read).
 
-**Pre-condition (resolve before Phase 3 starts):** Decide the fate of `cmd/worker`. There is a latent conflict between this plan and [STRUCTURAL_REFACTOR_PLAN.md § Decision 2](STRUCTURAL_REFACTOR_PLAN.md):
+**Pre-condition (resolve before Phase 3 starts):** Decide the fate of `cmd/worker`. There is a latent conflict between this plan and [STRUCTURAL_REFACTOR_PLAN.md § Decision 2](structural-refactor-plan.md):
 
 - **Scenario A — `cmd/worker` dropped** (STRUCTURAL Decision 2 Option A executed). `services/fb-automation-worker/` then hosts only background loops: recovery, scheduler, lead ingest, outbound dispatcher — **not** CDP crawl. Actual crawling lives in `apps/connector-extension`. Phase 3 scope shrinks.
 - **Scenario B — `cmd/worker` retained.** Plan below stays as written, but document explicitly why path B is worth carrying forward.
@@ -107,7 +107,7 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 **Scope:**
 
-- `cmd/worker/` + `cmd/agent/` + [internal/jobhandlers/](../../internal/jobhandlers/) + [internal/agentloop/](../../internal/agentloop/) + [internal/leadingest/](../../internal/leadingest/) + [internal/browsergateway/](../../internal/browsergateway/) + [internal/livesession/](../../internal/livesession/) → `services/fb-automation-worker/`
+- `cmd/worker/` + `cmd/agent/` + [internal/jobhandlers/](../../../internal/jobhandlers/) + [internal/agentloop/](../../../internal/agentloop/) + [internal/leadingest/](../../../internal/leadingest/) + [internal/browsergateway/](../../../internal/browsergateway/) + [internal/livesession/](../../../internal/livesession/) → `services/fb-automation-worker/`
 - Worker subscribes via `core-queues.Consumer` (still in-process backend in this phase).
 - Gateway publishes tasks via `core-queues.Producer`. The two sides communicate **only** through queue + DB; no direct shared Go structs.
 
@@ -182,7 +182,7 @@ User confirmed these three decisions for the plan as written. Re-validate at Pha
 
 ### No-hardcoding pass
 
-Extract Facebook CSS selectors from [internal/browser/actions.go](../../internal/browser/actions.go) and [local-connector-extension/content/crawl.js](../../local-connector-extension/content/crawl.js) into a config file (YAML or JSON). Move FB endpoint URLs to env. Credentials are already in DB. This is hardening — not tied to any phase.
+Extract Facebook CSS selectors from [internal/browser/actions.go](../../../internal/browser/actions.go) and [local-connector-extension/content/crawl.js](../../../local-connector-extension/content/crawl.js) into a config file (YAML or JSON). Move FB endpoint URLs to env. Credentials are already in DB. This is hardening — not tied to any phase.
 
 ### SQLite → Postgres
 
@@ -212,9 +212,9 @@ A separate plan, not bundled with this structural refactor. Can run any time aft
 State as of 2026-05-14 revalidation:
 
 - **Q1 — Is Facebook still the highest-traffic path?** ✅ **Confirmed 2026-05-14** — yes, FB remains the top priority. Taobao/1688 stay in Phase 5 after the MQ swap. Phase order unchanged.
-- **Q2 — Has the Postgres migration already happened?** ❌ **Not yet.** `go.mod` still has only `modernc.org/sqlite`. Phase 1 `core-database` should export a Store interface with the SQLite implementation today, leaving a clean seam for a future Postgres backend (see [PRODUCTION_DATABASE_MIGRATION_PLAN.md](../migration/PRODUCTION_DATABASE_MIGRATION_PLAN.md)).
+- **Q2 — Has the Postgres migration already happened?** ❌ **Not yet.** `go.mod` still has only `modernc.org/sqlite`. Phase 1 `core-database` should export a Store interface with the SQLite implementation today, leaving a clean seam for a future Postgres backend (see [PRODUCTION_DATABASE_MIGRATION_PLAN.md](../features/data-platform/implementation/production-database-migration.md)).
 - **Q3 — Has Redis been added to the stack?** ❌ **Not yet.** Phase 4 risk does **not** drop — Redis introduction is itself part of Phase 4's work.
-- **Q4 — Will the Chrome Extension stay extension-shaped?** Open — gated on [STRUCTURAL_REFACTOR_PLAN.md § Decision 2](STRUCTURAL_REFACTOR_PLAN.md). Revisit when the 14-day stability gate is reached.
+- **Q4 — Will the Chrome Extension stay extension-shaped?** Open — gated on [STRUCTURAL_REFACTOR_PLAN.md § Decision 2](structural-refactor-plan.md). Revisit when the 14-day stability gate is reached.
 
 ## Future packages candidate (informational)
 
