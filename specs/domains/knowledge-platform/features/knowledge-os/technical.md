@@ -235,7 +235,7 @@ DeleteKnowledgeAssetsForSource(ctx, sourceID, orgID int64) (int64, error)
 **Tenant-isolation invariants:**
 
 1. **Every method takes `orgID` explicitly.** No method reads it from a shared context — the explicit parameter forces the caller to commit to a tenant.
-2. **`Get*` returns `sql.ErrNoRows` for foreign org.** Same pattern as `GetAccountForOrg` ([internal/store/accounts.go:37](internal/store/accounts.go#L37)) — a foreign row is observably indistinguishable from "not found." No data leak through "permission denied" timing.
+2. **`Get*` returns `sql.ErrNoRows` for foreign org.** Same pattern as `GetAccountForOrg` ([internal/store/identities/accounts.go](../../../../../internal/store/identities/accounts.go)) — a foreign row is observably indistinguishable from "not found." No data leak through "permission denied" timing.
 3. **`Set*` / `Update*` include `WHERE org_id = ?`** in the UPDATE clause. A misrouted update against a foreign row silently affects 0 rows; the caller checks `RowsAffected()` and returns ErrNotFound.
 4. **`Delete*ForOrg` is the only delete shape.** No `DeleteByID(id)` — the org_id is the gate. Cascade is explicit (sources delete → assets delete) inside a transaction, not via SQL FK ON DELETE CASCADE (we want to count what we deleted, log it, and return the count).
 

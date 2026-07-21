@@ -231,7 +231,7 @@ identities, connectors, workspace (leads+threads), prompts, users, app — extra
 
 ## 6. New v2.5 features should be born as subpackages
 
-Per [TEMPLATE_TELEGRAM_COPILOT_PLAN.md](../../../../facebook-sales-intelligence/features/outbound-actions/decisions/v2-5-umbrella-plan.md), upcoming work:
+Per [TEMPLATE_TELEGRAM_COPILOT_PLAN.md](../../../facebook-sales-intelligence/features/outbound-actions/decisions/v2-5-umbrella-plan.md), upcoming work:
 - Template Library (PR-3 + PR-4)
 - Telegram multi-tenant (PR-5)
 - Copilot bridge (PR-6)

@@ -135,7 +135,7 @@ const (
 Cùng PR — không split để tránh callsite trùng:
 1. Xoá `OutboundDraft`, `OutboundRejected`, `OutboundApproved`, `OutboundSending`, `OutboundSent`, `OutboundFailed` từ `internal/models/models.go`. Replace bằng helper `outboundStatusFromState(state, outcome) string` cho FE compat.
 2. Xoá routes `/outbox/:id/approve`, `/outbox/:id/reject` khỏi backend.
-3. Xoá `approveOutbox` / `rejectOutbox` từ [outboxService.ts](frontend/src/modules/autoflow/services/outboxService.ts).
+3. Xoá `approveOutbox` / `rejectOutbox` từ [outboxService.ts](../../../../../../frontend/src/modules/autoflow/services/outboxService.ts).
 4. Drop key `outbound_mode` khỏi `org_settings`.
 5. Update `agent_brain` prompts xoá "DRAFT mode".
 6. Migrate FE filters: `CommentingView/PostingView` filter theo `(execution_state, verification_outcome)` thay vì status string.
@@ -150,10 +150,10 @@ Cùng PR — không split để tránh callsite trùng:
 - `internal/runtime/verifier.go` — emit (execState, verifOutcome) pair thay vì single status
 
 **Frontend**:
-- [outboxService.ts](frontend/src/modules/autoflow/services/outboxService.ts) — drop dead exports + new types
-- [CommentingView.tsx](frontend/src/modules/autoflow/components/views/CommentingView.tsx) — filter 2-trục
-- [PostingView.tsx](frontend/src/modules/autoflow/components/views/PostingView.tsx) — filter 2-trục
-- [DataPrivateView.tsx](frontend/src/modules/autoflow/components/views/DataPrivateView.tsx) — đã xoá OutboundPolicyPanel, double-check
+- [outboxService.ts](../../../../../../frontend/src/modules/autoflow/services/outboxService.ts) — drop dead exports + new types
+- [CommentingView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/CommentingView.tsx) — filter 2-trục
+- [PostingView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/PostingView.tsx) — filter 2-trục
+- [DataPrivateView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/DataPrivateView.tsx) — đã xoá OutboundPolicyPanel, double-check
 
 ### 2.7 Verification
 
@@ -275,7 +275,7 @@ func DeriveLeadBadge(ctx context.Context, db *sql.DB, orgID, leadID int64) (*Lea
 ```
 
 **FE projection**:
-- [LeadCard.tsx](frontend/src/modules/autoflow/components/leads/LeadCard.tsx) — "ĐÃ CHẠM" badge chỉ render khi `lead.engagement.has_engagement === true`.
+- `LeadCard.tsx` — "ĐÃ CHẠM" badge chỉ render khi `lead.engagement.has_engagement === true`.
 - Remove any code path reading `lead.last_outbound_status` for badge.
 
 ### 3.5 Reconciliation — Dry-run first + Operator Replay UI
@@ -419,7 +419,7 @@ Same change — all consume engagement_events, never outbound status:
 - `internal/server/leads/list.go` — derive badge from engagement_events
 
 **Frontend MODIFY**:
-- [LeadCard.tsx](frontend/src/modules/autoflow/components/leads/LeadCard.tsx) — badge from `engagement.has_engagement`
+- `LeadCard.tsx` — badge from `engagement.has_engagement`
 - `frontend/src/modules/autoflow/services/leadsService.ts` — LeadEngagement type matches new shape
 
 ### 3.9 Verification
@@ -852,10 +852,10 @@ func BroadcastWorker(ctx context.Context) { ... }
 **Frontend NEW**: templates/ + broadcast/ folders above.
 
 **Frontend MODIFY**:
-- [CommentingView.tsx](frontend/src/modules/autoflow/components/views/CommentingView.tsx) — "Chọn mẫu" button → TemplatePicker
-- [PostingView.tsx](frontend/src/modules/autoflow/components/views/PostingView.tsx) — same
-- [SettingsPage.tsx](frontend/src/modules/autoflow/components/SettingsPage.tsx) — + Templates tab
-- [FacebookWorkspaceApp.tsx](frontend/src/modules/autoflow/components/FacebookWorkspaceApp.tsx) — + Broadcast nav entry
+- [CommentingView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/CommentingView.tsx) — "Chọn mẫu" button → TemplatePicker
+- [PostingView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/PostingView.tsx) — same
+- [SettingsPage.tsx](../../../../../../frontend/src/modules/autoflow/components/SettingsPage.tsx) — + Templates tab
+- [FacebookWorkspaceApp.tsx](../../../../../../frontend/src/modules/autoflow/components/FacebookWorkspaceApp.tsx) — + Broadcast nav entry
 
 ### 5.6 Verification
 
@@ -1051,7 +1051,7 @@ Boot path: nếu env có `TELEGRAM_BOT_TOKEN` cũ và `org_telegram_bots` rỗng
 - `frontend/src/modules/autoflow/components/telegram/TelegramLinkButton.tsx`
 
 **Frontend MODIFY**:
-- [SettingsPage.tsx](frontend/src/modules/autoflow/components/SettingsPage.tsx) — + Telegram tab
+- [SettingsPage.tsx](../../../../../../frontend/src/modules/autoflow/components/SettingsPage.tsx) — + Telegram tab
 
 ### 6.9 Verification
 
@@ -1178,7 +1178,7 @@ Notify session bus: SessionMessageEmitted(session_id)
 - `internal/ai/agent.go` — accept session_id in ctx, log to agent_messages
 
 **Frontend MODIFY**:
-- [WorkspaceChatView.tsx](frontend/src/modules/autoflow/components/views/WorkspaceChatView.tsx) — EventSource subscribe, session picker dropdown
+- [WorkspaceChatView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/WorkspaceChatView.tsx) — EventSource subscribe, session picker dropdown
 - `frontend/src/modules/autoflow/services/copilotService.ts` NEW
 - Session list sidebar (like ChatGPT history)
 
@@ -1213,7 +1213,7 @@ Sau khi bridge xong (PR-6), thêm image:
 - `internal/server/agent/images.go` — reuse existing storage
 
 **Frontend MODIFY**:
-- [WorkspaceChatView.tsx](frontend/src/modules/autoflow/components/views/WorkspaceChatView.tsx) — paperclip + file input + drag/drop + preview thumb
+- [WorkspaceChatView.tsx](../../../../../../frontend/src/modules/autoflow/components/views/WorkspaceChatView.tsx) — paperclip + file input + drag/drop + preview thumb
 - Render image inline in message bubble
 
 ### 8.3 Limits

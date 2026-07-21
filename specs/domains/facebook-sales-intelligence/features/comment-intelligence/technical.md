@@ -69,7 +69,7 @@ causes — narrower than "there is no matching layer":
 
 1. **A matching layer already exists and is wired in.** `queueLeadOutreach`
    calls `Builder.BuildForLeadWithTrace` per lead
-   ([cmd/scraper/outbound_actions.go:94](../../../../../cmd/scraper/outbound_actions.go#L94)),
+   ([cmd/scraper/outbound_lead_pipeline.go](../../../../../cmd/scraper/outbound_lead_pipeline.go)),
    running a scored `hybrid`+`pgvector` searcher with a full explainability trace
    ([context_builder.go:168](../../../../../internal/workspace_knowledge/runtime/context_builder.go#L168))
    and assembling top hits into a prompt block
@@ -90,7 +90,7 @@ causes — narrower than "there is no matching layer":
    ([context_assembly.go:150-184](../../../../../internal/workspace_knowledge/assembly/context_assembly.go#L150)).
 
 4. **Lossy, smuggled prompt contract.** The matched block is passed as the
-   `businessContext` arg ([outbound_actions.go:100](../../../../../cmd/scraper/outbound_actions.go#L100))
+   `businessContext` arg ([outbound_lead_pipeline.go](../../../../../cmd/scraper/outbound_lead_pipeline.go))
    landing under "BUSINESS PROFILE" ([msggen.go:130](../../../../../internal/ai/msggen.go#L130)),
    with only *"introduce your most relevant offering naturally"*
    ([msggen.go:142](../../../../../internal/ai/msggen.go#L142)). Output is prose, so outbound
@@ -111,7 +111,7 @@ causes — narrower than "there is no matching layer":
    without this check** — it is the single hardest precondition.
 
 7. **Extension cannot attach media.** `executeComment` only `setEditableText` +
-   submit ([outbound.js](../../../../../local-connector-extension/content/outbound.js)); no
+   submit ([outbound.js](../../../../../local-connector-extension/content/facebook/outbound/outbound.js)); no
    `uploadImage / waitPreview / submit`.
 
 8. **"Anonymous participant" leaks into copy.** That label is the *target* (a FB

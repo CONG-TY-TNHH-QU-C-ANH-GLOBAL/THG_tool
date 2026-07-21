@@ -20,8 +20,8 @@ This document is the operator-facing dashboard for the 10 production-hardening g
 | **G6** | RRF authority — semantic never overrides governance/pin | ✅ READY | [retrieval/rrf/rrf_searcher.go](../../../../../../internal/workspace_knowledge/retrieval/rrf/rrf_searcher.go) defence-in-depth gate · [rrf_authority_test.go](../../../../../../internal/workspace_knowledge/retrieval/rrf/rrf_authority_test.go) |
 | **G7** | Resource isolation — no cross-tenant starvation | 📐 DESIGNED (§G7 below) | tenant isolation under read-load proven; per-org write quota is the open PR |
 | **G8** | Security — sanitize hostile content, redact secrets | ✅ READY | [internal/workspace_knowledge/security/sanitizer.go](../../../../../../internal/workspace_knowledge/security/sanitizer.go) + [redact.go](../../../../../../internal/workspace_knowledge/security/redact.go) · hooked at `UpsertKnowledgeAsset` |
-| **G9** | Cost accounting per-org / per-source / 30d rolling | ✅ READY | [internal/store/knowledge_cost.go](../../../../../../internal/store/knowledge_cost.go) |
-| **G10** | Human feedback — immutable, no auto-train | ✅ READY | [internal/store/knowledge_feedback.go](../../../../../../internal/store/knowledge_feedback.go) · schema in `schema.go` |
+| **G9** | Cost accounting per-org / per-source / 30d rolling | ✅ READY | [internal/store/knowledge/cost.go](../../../../../../internal/store/knowledge/cost.go) |
+| **G10** | Human feedback — immutable, no auto-train | ✅ READY | [internal/store/knowledge/feedback.go](../../../../../../internal/store/knowledge/feedback.go) · schema in `schema.go` |
 
 ---
 

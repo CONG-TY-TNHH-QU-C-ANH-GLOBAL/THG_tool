@@ -41,12 +41,12 @@ The triggers we will NOT chase here:
 
 | SQLite | PostgreSQL | Affected files |
 |---|---|---|
-| `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGSERIAL PRIMARY KEY` (or `BIGINT GENERATED ALWAYS AS IDENTITY`) | [internal/store/schema.go](internal/store/schema.go) — every table |
+| `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGSERIAL PRIMARY KEY` (or `BIGINT GENERATED ALWAYS AS IDENTITY`) | `internal/store/schema.go` (historical — schema DDL now lives in `internal/store/migrations/`) — every table |
 | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | `TIMESTAMPTZ NOT NULL DEFAULT NOW()` | schema.go — every timestamp |
 | `TEXT NOT NULL DEFAULT '{}'` (JSON-as-text) | `JSONB NOT NULL DEFAULT '{}'` (where queryable) or keep TEXT (where opaque) | schema.go — `connection_config`, `payload`, `data_json`, etc. |
 | `CURRENT_TIMESTAMP` (in `ON CONFLICT DO UPDATE`) | `NOW()` | schema.go + every Upsert\* method |
-| `DATETIME('now', '-N days')` | `NOW() - INTERVAL 'N days'` | [knowledge_events.go](internal/store/knowledge_events.go) — `CountStaleKnowledgeAssetsForOrg` |
-| `CREATE UNIQUE INDEX ... WHERE expr` (partial index) | Same syntax, supported | [schema.go](internal/store/schema.go) — `uq_knowledge_assets_idem` (already PG-compatible) |
+| `DATETIME('now', '-N days')` | `NOW() - INTERVAL 'N days'` | [internal/store/knowledge/events.go](../../../../../../internal/store/knowledge/events.go) — `CountStaleAssetsForOrg` |
+| `CREATE UNIQUE INDEX ... WHERE expr` (partial index) | Same syntax, supported | `schema.go` (historical — now in `internal/store/migrations/`) — `uq_knowledge_assets_idem` (already PG-compatible) |
 | `LIKE` (binary, ASCII-case-sensitive) | `LIKE` (locale-sensitive) | knowledge_assets.go search — should explicitly `ILIKE` for case-insensitive |
 | `INTEGER NOT NULL DEFAULT 0` for booleans | `BOOLEAN NOT NULL DEFAULT FALSE` | `pinned` column in `knowledge_assets`, others |
 | `id INTEGER` | `id BIGINT` everywhere in Go (already `int64`) — schema needs `BIGINT` to match | every table with `id` |
@@ -55,7 +55,7 @@ The triggers we will NOT chase here:
 
 ### 3.2 Driver + connection
 
-- Replace `github.com/mattn/go-sqlite3` (used in [internal/store/store.go](internal/store/store.go)) with `github.com/jackc/pgx/v5/stdlib` for `database/sql` compat.
+- Replace `github.com/mattn/go-sqlite3` (used in [internal/store/store.go](../../../../../../internal/store/store.go)) with `github.com/jackc/pgx/v5/stdlib` for `database/sql` compat.
 - New env var `DATABASE_URL` decides driver. Default to SQLite in dev so the existing test pattern (`store.New(tempfile)`) still works.
 - Connection-pool sizing — PG needs explicit `db.SetMaxOpenConns` (10–30 typical); SQLite ignores this. Add a `tunePool(*sql.DB, driver string)` helper.
 
@@ -155,7 +155,7 @@ Three PRs, each independently shippable.
 
 ## 6. Re-reading the trust-first order
 
-[project_crawler_trust_phase_plan.md](C:/Users/ACER/.claude/projects/d--THG-THG-sale/memory/project_crawler_trust_phase_plan.md) locks crawler-trust before orchestration before runtime. This plan is for AFTER those ship. Executing it earlier risks pre-optimising the substrate before its workload is known. The team explicitly directed (see chat 2026-05-18) that Postgres compat is Priority 4, behind Replay backend + trace expansion + hybrid search.
+`project_crawler_trust_phase_plan.md` (local planning memory, not in-repo) locks crawler-trust before orchestration before runtime. This plan is for AFTER those ship. Executing it earlier risks pre-optimising the substrate before its workload is known. The team explicitly directed (see chat 2026-05-18) that Postgres compat is Priority 4, behind Replay backend + trace expansion + hybrid search.
 
 ---
 
@@ -174,8 +174,8 @@ Three PRs, each independently shippable.
 | Component | Status | File |
 |---|---|---|
 | `Dialect` interface | ✅ | [internal/store/dialect.go](../../../../../../internal/store/dialect.go) |
-| SQLite dialect impl | ✅ | [internal/store/dialect_sqlite.go](../../../../../../internal/store/dialect_sqlite.go) |
-| Postgres dialect impl | ✅ | [internal/store/dialect_postgres.go](../../../../../../internal/store/dialect_postgres.go) |
+| SQLite dialect impl | ✅ | [internal/store/dbutil/dialect_sqlite.go](../../../../../../internal/store/dbutil/dialect_sqlite.go) |
+| Postgres dialect impl | ✅ | [internal/store/dbutil/dialect_postgres.go](../../../../../../internal/store/dbutil/dialect_postgres.go) |
 | `*Store` auto-rebind wrappers (`Query/Exec/QueryRowContext`, `InsertReturningID`) | ✅ | [internal/store/dialect.go](../../../../../../internal/store/dialect.go) |
 | Boot-time driver detection (`DATABASE_URL` or `postgres://` DSN) | ✅ | [internal/store/store.go](../../../../../../internal/store/store.go) |
 | PG connection pool tuning (25/5/5m) | ✅ | [internal/store/store.go](../../../../../../internal/store/store.go) |

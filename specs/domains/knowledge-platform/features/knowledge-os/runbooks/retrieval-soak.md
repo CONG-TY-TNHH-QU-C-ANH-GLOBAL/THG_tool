@@ -126,7 +126,7 @@ func main() {
 go run ./cmd/soak-runner \
     -variant rrf \
     -org 7777 \
-    -out specs/RETRIEVAL_SOAK_PROD_$(date +%Y-%m-%d).md
+    -out artifacts/retrieval-soak/RETRIEVAL_SOAK_PROD_$(date +%Y-%m-%d).md
 ```
 
 Cost: ~17 embedding calls × text-embedding-3-small = ~$0.0003. Negligible.

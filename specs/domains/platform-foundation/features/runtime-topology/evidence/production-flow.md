@@ -150,7 +150,7 @@ Before calling the helper, the handler must:
 
 ## 6. Session lifecycle (typed enum)
 
-Single source of truth: [`internal/store/session_status.go`](../../../../../../internal/store/session_status.go).
+Single source of truth: [`internal/store/sessions/session_status.go`](../../../../../../internal/store/sessions/session_status.go).
 
 ```
 local_starting   ──► local_active ──► local_ready
@@ -297,7 +297,7 @@ Ownership rule: agent's most recent `connector_screenshots` row OR
 agent currently online with assignment (`AssignedAccountID == 0` or
 == accountID).
 
-## 10. Input bounds (Phase 1, [`input_limits.go`](../../../../../../internal/server/input_limits.go))
+## 10. Input bounds (Phase 1, [`input_limits.go`](../../../../../../internal/server/middleware/input_limits.go))
 
 Every connector-supplied string passes through `clampPresenceFields`
 before reaching `UpdateAgentPresence`. Limits picked to be generous
