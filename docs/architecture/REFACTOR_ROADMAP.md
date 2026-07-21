@@ -417,7 +417,7 @@ no Phase D redesign.
   test files); `-race` not runnable in this Windows env (`CGO_ENABLED=0`, no C
   compiler — leave to CI/Linux); `check_import_boundaries.sh` exit 0 (4 pre-existing
   known-gap warnings, **0 new**); `check_file_size.py` PASS (0 new oversized);
-  `git diff --check` clean. The `specs/RETRIEVAL_SOAK_REPORT.md` rewrite that
+  `git diff --check` clean. The soak-report rewrite (now gitignored under `artifacts/retrieval-soak/`) that
   `go test ./...` produces was reverted, not staged.
 - **Fix-up (new-code duplication):** the first Sonar PR scan failed the gate on
   Duplicated Lines on New Code (5.63% > 3.0%, = 4 new lines). Cause: reusing

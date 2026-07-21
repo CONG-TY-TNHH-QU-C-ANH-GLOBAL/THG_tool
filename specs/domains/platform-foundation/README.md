@@ -45,6 +45,6 @@ vocabulary (mandatory reading — synonyms are rejected on review).
 - [automation-principles](decisions/automation-principles.md) — high-level
   system principles (vision draft).
 
-The only spec left outside `specs/domains/` is the test-generated
-`specs/knowledge/RETRIEVAL_SOAK_REPORT.md` (its path is hard-coded in the
-soak test; queue item DOCS-R2 owns relocation).
+Every spec now lives under `specs/domains/`; the test-generated retrieval
+soak report writes to the gitignored `artifacts/retrieval-soak/` dir
+(DOCS-R2 resolved).

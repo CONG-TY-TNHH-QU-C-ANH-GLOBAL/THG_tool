@@ -12,6 +12,6 @@ layers, grounded context assembly, cost accounting, immutable feedback.
 - [implementation/production-hardening.md](implementation/production-hardening.md)
   — 10-goal hardening dashboard; 7 shipped, 3 designed (partial).
 - [runbooks/retrieval-soak.md](runbooks/retrieval-soak.md) — operator soak
-  runbook. Its generated report deliberately stays at
-  `specs/knowledge/RETRIEVAL_SOAK_REPORT.md` (the soak test hard-codes that
-  path; queue item DOCS-R2 owns relocation).
+  runbook. Its generated report is written to the gitignored
+  `artifacts/retrieval-soak/RETRIEVAL_SOAK_REPORT.md` (DOCS-R2: generated
+  output is not a tracked spec).

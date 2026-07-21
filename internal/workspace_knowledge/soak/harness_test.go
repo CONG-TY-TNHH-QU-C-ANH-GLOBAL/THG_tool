@@ -26,9 +26,11 @@ import (
 //     in production by swapping ClusteredEmbedder → OpenAIEmbedder
 //     and pointing at a real PG.
 //
-// The test ALWAYS writes the report to specs/knowledge/RETRIEVAL_SOAK_REPORT.md
-// so the latest run's results are committable artefact. CI can diff
-// this file across PRs to spot quality regressions before merge.
+// The test ALWAYS writes the report to
+// artifacts/retrieval-soak/RETRIEVAL_SOAK_REPORT.md (gitignored — DOCS-R2:
+// a generated artifact must not live in the canonical specs tree). Operators
+// read the report locally or from the test log; it is no longer a tracked
+// spec.
 func TestSoak_RealisticCatalog_RRF(t *testing.T) {
 	db := newSoakTestStore(t)
 	defer db.Close()
@@ -51,9 +53,9 @@ func TestSoak_RealisticCatalog_RRF(t *testing.T) {
 	// this during PR review.
 	t.Log("\n" + report.ToMarkdown())
 
-	// Write to specs/ so the most recent soak result is a tracked
-	// artefact in the repo. Writes go to a relative path; tests run
-	// from package dir, so we use a relative parent walk.
+	// Write the report to the gitignored artifacts/ dir so the most
+	// recent soak result is inspectable without dirtying the tree.
+	// Tests run from the package dir, so we use a relative parent walk.
 	if err := writeSoakArtefact(report); err != nil {
 		t.Logf("warning: could not write soak artefact: %v", err)
 	}
@@ -148,28 +150,30 @@ func newSoakTestStore(t *testing.T) *store.Store {
 	return db
 }
 
-// writeSoakArtefact persists the latest soak Markdown report under
-// specs/ so reviewers can diff it across PRs. Best-effort — failure
-// is logged at the call site, never fails the test.
+// writeSoakArtefact persists the latest soak Markdown report under the
+// gitignored artifacts/ dir (DOCS-R2: generated output stays out of the
+// canonical specs tree). Best-effort — failure is logged at the call
+// site, never fails the test.
 //
 // The path is resolved relative to the package directory because Go
-// tests run from there. We walk up to find specs/ to keep this
-// robust when the harness moves.
+// tests run from there. We walk up to find the repo root (go.mod) to
+// keep this robust when the harness moves.
 func writeSoakArtefact(r *Report) error {
-	// Best-guess specs dir relative to this package's runtime location.
-	// We're in internal/workspace_knowledge/soak; specs/ is 3 levels up.
-	candidates := []string{
-		"../../../specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
-		"../../specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
-		"specs/knowledge/RETRIEVAL_SOAK_REPORT.md",
-	}
+	// We're in internal/workspace_knowledge/soak; the repo root is 3
+	// levels up. The artifacts dir is created on demand — it is not
+	// tracked.
 	body := []byte(r.ToMarkdown())
-	for _, p := range candidates {
-		if _, err := os.Stat(filepath.Dir(p)); err == nil {
-			return os.WriteFile(p, body, 0o644)
+	for _, root := range []string{"../../..", "../..", "."} {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+			continue
 		}
+		dir := filepath.Join(root, "artifacts", "retrieval-soak")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, "RETRIEVAL_SOAK_REPORT.md"), body, 0o644)
 	}
-	return nil // no specs dir found — silent skip is fine for ad-hoc runs
+	return nil // no repo root found — silent skip is fine for ad-hoc runs
 }
 
 // Smoke test on the mock embedder: similar texts produce similar

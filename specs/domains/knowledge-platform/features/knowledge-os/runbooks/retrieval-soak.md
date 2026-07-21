@@ -10,7 +10,7 @@ caveats. NOT_READY = block.
 
 **Output:** the soak emits a [Report](../../../../../../internal/workspace_knowledge/soak/report.go)
 with seven measurement groups, an operator-trust score, and the
-auto-generated [RETRIEVAL_SOAK_REPORT.md](../../../../../knowledge/RETRIEVAL_SOAK_REPORT.md)
+auto-generated `artifacts/retrieval-soak/RETRIEVAL_SOAK_REPORT.md` (gitignored, regenerated each run)
 committed alongside this runbook. Re-run on every release.
 
 ---
@@ -38,7 +38,7 @@ deterministic vectors; CI re-runs on every PR.
 go test -v -run TestSoak ./internal/workspace_knowledge/soak/...
 ```
 
-The test writes [specs/RETRIEVAL_SOAK_REPORT.md](../../../../../knowledge/RETRIEVAL_SOAK_REPORT.md)
+The test writes `artifacts/retrieval-soak/RETRIEVAL_SOAK_REPORT.md`
 on every run so reviewers can diff retrieval-quality across PRs
 before merge. Failing tests block merge — the soak is treated as
 a quality gate.

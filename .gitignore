@@ -79,3 +79,7 @@ tsconfig.json
 frontend/tsconfig.tsbuildinfo
 **/__pycache__/
 *.pyc
+
+# Test-generated artifacts (DOCS-R2): the retrieval soak harness rewrites
+# its report on every run — generated output stays out of the specs tree.
+/artifacts/
