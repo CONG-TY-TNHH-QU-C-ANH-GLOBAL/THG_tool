@@ -63,14 +63,7 @@ func TestSoak_RealisticCatalog_RRF(t *testing.T) {
 	// --- ASSERTIONS — what makes this a useful test, not just a logger ---
 
 	// 1. Compliance: NEVER acceptable to surface a banned claim.
-	for _, p := range report.PromptOutcomes {
-		if len(p.ComplianceLeaks) > 0 {
-			t.Errorf("COMPLIANCE LEAK on prompt %q: %v", p.Prompt, p.ComplianceLeaks)
-		}
-		if len(p.HiddenLeaks) > 0 {
-			t.Errorf("HIDDEN-STATE LEAK on prompt %q: %v", p.Prompt, p.HiddenLeaks)
-		}
-	}
+	assertNoLeaks(t, report)
 
 	// 2. Replay completeness: every trace must carry SearcherImpl.
 	if report.ReplayHealth.TracesProduced > 0 {
@@ -148,6 +141,20 @@ func newSoakTestStore(t *testing.T) *store.Store {
 		t.Fatalf("soak store init: %v", err)
 	}
 	return db
+}
+
+// assertNoLeaks fails the test if any prompt outcome surfaced a banned
+// claim or hidden-state content — never acceptable, regardless of variant.
+func assertNoLeaks(t *testing.T, report *Report) {
+	t.Helper()
+	for _, p := range report.PromptOutcomes {
+		if len(p.ComplianceLeaks) > 0 {
+			t.Errorf("COMPLIANCE LEAK on prompt %q: %v", p.Prompt, p.ComplianceLeaks)
+		}
+		if len(p.HiddenLeaks) > 0 {
+			t.Errorf("HIDDEN-STATE LEAK on prompt %q: %v", p.Prompt, p.HiddenLeaks)
+		}
+	}
 }
 
 // writeSoakArtefact persists the latest soak Markdown report under the
