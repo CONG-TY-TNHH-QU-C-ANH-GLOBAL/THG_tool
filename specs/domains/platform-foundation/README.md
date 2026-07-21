@@ -20,6 +20,10 @@ vocabulary (mandatory reading — synonyms are rejected on review).
 - [runtime-topology](features/runtime-topology/README.md) — current runtime
   composition and store-domain boundaries, script-enforced by
   `scripts/check_topology.sh` (CI).
+- [browser-connector](features/browser-connector/README.md) — visible Chrome
+  extension connector, channel-neutral automation core, production workflow.
+- [ai-cost-controls](features/ai-cost-controls/README.md) — Phase-1 LLM cost
+  controls: usage logs, bounded cache, token capture.
 
 ## Decisions
 

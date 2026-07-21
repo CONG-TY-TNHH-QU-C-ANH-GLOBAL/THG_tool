@@ -60,5 +60,5 @@ the same connector keep working unchanged.
 - [multi-group-fresh-lead-crawl](../../features/multi-group-fresh-lead-crawl/technical.md)
 - [account-safety](../../features/account-safety/technical.md)
 - Platform dependency: browser-connector
-  (`specs/browser/LOCAL_CONNECTOR_PRODUCTION_WORKFLOW.md`,
-  `specs/browser/AUTOMATION_PLATFORM_CORE.md`).
+  (`specs/domains/platform-foundation/features/browser-connector/runbooks/connector-production-workflow.md`,
+  `specs/domains/platform-foundation/features/browser-connector/technical.md`).

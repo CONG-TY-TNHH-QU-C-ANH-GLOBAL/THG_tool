@@ -112,14 +112,23 @@
     },
     {
       "id": "automation-platform-core",
-      "path": "specs/browser/AUTOMATION_PLATFORM_CORE.md",
-      "title": "AUTOMATION PLATFORM CORE",
+      "path": "specs/domains/platform-foundation/features/browser-connector/technical.md",
+      "title": "Browser Connector — Automation Platform Core",
       "domain": "browser",
       "type": "architecture",
       "status": "active",
       "maturity": "test_pinned",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "browser-connector",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "local-connector-extension/automation + channels/facebook modules exist",
@@ -142,18 +151,27 @@
         "extension",
         "channel-neutral"
       ],
-      "notes": "Reviewed in PR24C. Channel-neutral automation CORE + Facebook adapter scaffolding shipped and unit-tested (code-only; not yet wired into manifest.json, zero production load by design). The hot-path executor it wraps moved to content/facebook/outbound/ since the doc cited content/outbound.js."
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24C. Channel-neutral automation CORE + Facebook adapter scaffolding shipped and unit-tested (code-only; not yet wired into manifest.json, zero production load by design). The hot-path executor it wraps moved to content/facebook/outbound/ since the doc cited content/outbound.js."
     },
     {
       "id": "browser-automation-kit-refactor",
-      "path": "specs/browser/BROWSER_AUTOMATION_KIT_REFACTOR.md",
-      "title": "BROWSER AUTOMATION KIT REFACTOR",
+      "path": "specs/domains/platform-foundation/features/browser-connector/implementation/automation-kit-refactor.md",
+      "title": "Browser Connector — Automation Kit Refactor (Design)",
       "domain": "browser",
       "type": "architecture",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "browser-connector",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "self-labelled BACKLOG/DESIGN, not started",
@@ -172,18 +190,27 @@
         "backlog",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24H. Self-labelled BACKLOG/DESIGN (not started) plan to refactor the ~1400-line outbound.js into a layered multi-platform kit. Complements the active automation-platform-core scaffolding. Future-facing -> draft."
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Self-labelled BACKLOG/DESIGN (not started) plan to refactor the ~1400-line outbound.js into a layered multi-platform kit. Complements the active automation-platform-core scaffolding. Future-facing -> draft."
     },
     {
       "id": "browser-gateway-and-facebook-automation-vision",
-      "path": "specs/browser/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md",
-      "title": "BROWSER GATEWAY AND FACEBOOK AUTOMATION VISION",
+      "path": "specs/domains/platform-foundation/features/browser-connector/decisions/browser-gateway-vision.md",
+      "title": "Browser Connector — Gateway Vision",
       "domain": "browser",
       "type": "roadmap",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "browser-connector",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "realized browser path is the Chrome connector (active local-connector-production-workflow) + automation-platform-core",
@@ -201,7 +228,7 @@
         "gateway",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24H. Browser-Gateway architectural direction. The realized browser path is the Chrome extension connector (active local-connector-production-workflow) and automation-platform-core scaffolding; the stable-gateway abstraction itself remains aspirational (platform abstraction frozen). Useful direction -> draft."
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Browser-Gateway architectural direction. The realized browser path is the Chrome extension connector (active local-connector-production-workflow) and automation-platform-core scaffolding; the stable-gateway abstraction itself remains aspirational (platform abstraction frozen). Useful direction -> draft."
     },
     {
       "id": "comment-async-reverify",
@@ -723,14 +750,23 @@
     },
     {
       "id": "llm-cost-controls-phase1",
-      "path": "specs/ai/LLM_COST_CONTROLS_PHASE1.md",
-      "title": "LLM COST CONTROLS PHASE1",
+      "path": "specs/domains/platform-foundation/features/ai-cost-controls/technical.md",
+      "title": "AI Cost Controls — Phase 1 Technical Contract",
       "domain": "ai",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "ai-cost-controls",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "logClassifierUsage in internal/ai/classifier_cache.go",
@@ -751,18 +787,27 @@
         "classifier",
         "caching"
       ],
-      "notes": "Reviewed in PR24H. Phase-1 classifier cost controls (structured JSON usage logs, bounded TTL exact-result cache, real token capture) are present on main in classifier_cache.go + classifier_usage_log.go with tests; the doc's 'not merged' header is now outdated. Implementation-backed."
+      "notes": "Moved under ai-cost-controls/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Phase-1 classifier cost controls (structured JSON usage logs, bounded TTL exact-result cache, real token capture) are present on main in classifier_cache.go + classifier_usage_log.go with tests; the doc's 'not merged' header is now outdated. Implementation-backed."
     },
     {
       "id": "local-connector-production-workflow",
-      "path": "specs/browser/LOCAL_CONNECTOR_PRODUCTION_WORKFLOW.md",
-      "title": "LOCAL CONNECTOR PRODUCTION WORKFLOW",
+      "path": "specs/domains/platform-foundation/features/browser-connector/runbooks/connector-production-workflow.md",
+      "title": "Browser Connector — Production Workflow Runbook",
       "domain": "browser",
       "type": "runbook",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "browser-connector",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24B specs audit (2026-06-23)",
         "local-connector-extension/ source tree",
@@ -784,7 +829,7 @@
         "runbook",
         "chrome-extension"
       ],
-      "notes": "Reviewed in PR24B. Describes current Chrome Web Store connector install/pairing workflow; the extension source, connector API handlers (internal/server/agent) and both build scripts exist. Operational/ops doc rather than test-pinned."
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Describes current Chrome Web Store connector install/pairing workflow; the extension source, connector API handlers (internal/server/agent) and both build scripts exist. Operational/ops doc rather than test-pinned."
     },
     {
       "id": "migration-to-monorepo-plan",
