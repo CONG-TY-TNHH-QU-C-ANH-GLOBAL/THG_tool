@@ -1,0 +1,269 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "multi-group-fresh-lead-crawl",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "fresh-lead-discovery"
+    ]
+  },
+  "entries": [
+    {
+      "id": "crawl-speed-checkpoint-audit",
+      "document": "evidence/crawl-speed-checkpoint-audit.md",
+      "title": "CRAWL SPEED CHECKPOINT AUDIT",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-08",
+      "verified_against": [
+        "extension crawl path is crawl.js crawlVisibleFacebookPosts (not the no-scroll CDPRuntime.FetchBatch)",
+        "in-flight heartbeat carries only {stage,fetched,max,source_url} (notifications.go NotifyCrawlProgress)",
+        "crawl.js live loop does not consume proof.js/facebook-state.js/outbox.js checkpoint classification",
+        "org_crawl_intents cursor exists in both sqlite baseline and platform postgres 0108 (dialect-aware store)"
+      ],
+      "related_code": [
+        "local-connector-extension/content/crawl.js",
+        "local-connector-extension/content/bridge.js",
+        "internal/jobhandlers/facebook_crawl/handler.go",
+        "internal/runtime/cdp_runtime.go",
+        "internal/server/system/notifications.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "investigation",
+        "crawl",
+        "reliability",
+        "observability",
+        "checkpoint",
+        "prc0"
+      ],
+      "notes": "PR-C0 audit-only investigation of facebook_crawl extension-path stall (slow scroll pacing + missing live checkpoint-signal surfacing). Maps flow, gives measured hypothesis table, ranks safe PR-C1 follow-ups. No runtime change.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "investigation",
+        "status": "active",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "facebook-crawl-campaign-postgres-schema-implementation",
+      "document": "implementation/postgres-schema.md",
+      "title": "FACEBOOK CRAWL CAMPAIGN POSTGRES SCHEMA IMPLEMENTATION",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-12",
+      "verified_against": [
+        "PR-M2B: migrations 0112-0117 apply via store.New boot path (internal/store/migrator.go: run-once; accounts anchor is a non-transactional CONCURRENTLY build)",
+        "accounts(id BIGSERIAL, org_id BIGINT) had no (org_id,id) anchor pre-0112; leads(id BIGSERIAL, org_id BIGINT) has none (lead-provenance FK deferred)",
+        "real-PostgreSQL constraint tests gated on POSTGRES_PLATFORM_TEST_DSN (internal/store/facebook_crawl_*_test.go)",
+        "forward-only runner, no down migrations (internal/store/migrations/README.md)"
+      ],
+      "related_code": [
+        "internal/store/migrations/platform/0112_accounts_tenant_anchor__postgres.up.sql",
+        "internal/store/migrations/platform/0113_facebook_crawl_campaigns__postgres.up.sql",
+        "internal/store/migrations/platform/0114_facebook_crawl_campaign_sources__postgres.up.sql",
+        "internal/store/migrations/platform/0115_facebook_crawl_runs_ledger__postgres.up.sql",
+        "internal/store/migrations/platform/0116_facebook_crawl_run_indexes__postgres.up.sql",
+        "internal/store/migrations/platform/0117_facebook_crawl_lead_index__postgres.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/facebook_crawl_apply_test.go",
+        "internal/store/facebook_crawl_campaign_test.go",
+        "internal/store/facebook_crawl_runs_test.go",
+        "internal/store/facebook_crawl_runs_lifecycle_test.go",
+        "internal/store/facebook_crawl_lead_index_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "migration",
+        "crawl",
+        "campaign",
+        "postgres",
+        "schema",
+        "prm2b"
+      ],
+      "notes": "PR-M2B PostgreSQL platform schema for multi-group fresh-lead crawl: facebook_crawl_campaigns, campaign account pool, campaign sources, append-only facebook_crawl_runs ledger (lifecycle CHECKs + partial-unique active/open/retry/task idempotency), facebook_crawl_lead_index identity. Runtime-inert (no scheduler/API/store consumer/SQLite). accounts(org_id,id) anchor added deterministically; lead-provenance FK deferred until leads gains a separately reviewed (org_id,id) anchor. Constraint tests require CI (POSTGRES_PLATFORM_TEST_DSN) and must run without skip before merge. Implements the schema for multi-group-fresh-lead-crawl-spec (PR-M0).",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "migration",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "facebook-crawl-code-organization-blueprint",
+      "document": "implementation/code-organization.md",
+      "title": "FACEBOOK CRAWL CODE ORGANIZATION BLUEPRINT",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-12",
+      "verified_against": [
+        "companion to facebook-crawl-campaign-postgres-schema-implementation (PR-M2B) and multi-group-fresh-lead-crawl-spec (PR-M0)",
+        "planned owners exist on main: internal/store/crawl/, cmd/scraper/crawl_scheduler.go, internal/server/agent/crawlingest/, internal/session/allocator.go",
+        "authorizes no runtime code in PR-M2B"
+      ],
+      "related_code": [
+        "internal/store/crawl/",
+        "cmd/scraper/crawl_scheduler.go",
+        "internal/server/agent/crawlingest/",
+        "internal/session/allocator.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "campaign",
+        "code-organization",
+        "blueprint",
+        "prm3",
+        "prm5"
+      ],
+      "notes": "Companion runtime code-organization blueprint for PR-M3..PR-M5 (runtime ownership, dependency direction, atomic ports, transaction/rollout seams). Docs-only; authorizes no runtime code in PR-M2B. Planned durable store boundary internal/store/crawl. Layers on the PR-M2B schema (facebook-crawl-campaign-postgres-schema-implementation) and multi-group-fresh-lead-crawl-spec.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-rejected-designs",
+      "document": "decisions/rejected-designs.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Rejected Designs",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §13"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "crawl",
+        "decisions",
+        "rejected-designs"
+      ],
+      "notes": "Twelve binding rejected alternatives (client-clock cutoff, ambiguous-timestamp trust, rotation patterns, queue frameworks, ...), each with the reason it must not come back.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-rollout",
+      "document": "implementation/rollout.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Rollout PR Plan",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "crawl",
+        "rollout",
+        "pr-train"
+      ],
+      "notes": "PR train M0-M6 for the fresh-lead crawl runtime. M0 (spec), M2B (schema), M3B (store mechanics) merged; M4 scheduler wiring onward not yet built.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "roadmap",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-spec",
+      "document": "technical.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-10",
+      "verified_against": [
+        "crawl.js emits posted_at:'' — post timestamps not extracted today (content/crawl.js)",
+        "dedup layers exist: crawl.js dedupKey/seen Set + posts.dedup_hash UNIQUE insert-or-ignore (internal/store/crawl/posts.go)",
+        "org_crawl_intents cursor/next_run_at exists on platform postgres 0108; no multi-group campaign grouping",
+        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
+        "layers on crawler-account-safety-spec (PR-C0.5) state machine/budgets/cooldown"
+      ],
+      "related_code": [
+        "local-connector-extension/content/crawl.js",
+        "internal/store/crawl/posts.go",
+        "internal/store/crawl/intents.go",
+        "internal/store/migrations/platform/0108_platform_crawl__postgres.up.sql",
+        "internal/session/allocator.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "campaign",
+        "fresh-lead",
+        "queue",
+        "scheduling",
+        "spec",
+        "prm0"
+      ],
+      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at/now_utc, canonical TimestampParse DTO (posted_at/confidence/earliest_utc/latest_utc) parser->wire->gate, strict provably-fresh window rule (earliest_utc >= cutoff), frontier streak reset on ambiguous/unknown, 3-layer dedupe incl. additive facebook_crawl_lead_index (leads table untouched), org-scoped composite FKs incl. account-pool membership anchored to accounts(org_id,id) (nullable account columns, no sentinel 0; running requires non-NULL account via CHECK), waiting_for_connector_upgrade as open run status, append-only idempotent retry lineage (retry_of_run_id + single-retry unique index) + (run_id, attempt) write fencing, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change. Split 2026-07-13 (spec IA sprint 1): business/experience layers extracted to experiences/fresh-lead-discovery/, rollout + rejected-designs extracted beside this contract, stale inline DDL replaced by a pointer to the shipped postgres-schema.md.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    }
+  ]
+}

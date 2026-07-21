@@ -1,0 +1,166 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "outbound-actions",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "engagement-approval"
+    ]
+  },
+  "entries": [
+    {
+      "id": "append-only-ledger-migration",
+      "document": "implementation/append-only-ledger.md",
+      "title": "Append-Only Ledger Migration — Design",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "spec IA mega sprint (2026-07-21): moved under outbound-actions/implementation/; event-sourced writers still NOT implemented",
+        "scripts/check_topology.sh §6.6 LEDGER_UPDATE_BASELINE=2 EXPECTED-FAIL (ARCHST-R1 lowered 3 -> 2)",
+        "PR A additive event_type column shipped (migration 0023 + action_ledger_event_type_test.go); RecordOutcomeForOutbound / RecordEngagementRevoked writers absent",
+        "internal/store/coordination/action_ledger.go + engagement_reconcile.go exist"
+      ],
+      "related_code": [
+        "internal/store/coordination/action_ledger.go",
+        "internal/store/coordination/engagement_reconcile.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "store",
+        "ledger",
+        "migration",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24D; moved under outbound-actions/implementation/ in the spec IA mega sprint (2026-07-21). Self-labelled 'design (no code)' — the migration to an event-sourced action_ledger is NOT yet implemented; the remaining 2 UPDATE violations it targets are real and tracked by scripts/check_topology.sh (baseline lowered 3 -> 2 by ARCHST-R1). PR A additive event_type column shipped; writers/readers remain proposed. Kept draft/proposed until the implementation PR.",
+      "compatibility": {
+        "domain": "store",
+        "type": "migration",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "outbound-actions-refactor-plan",
+      "document": "implementation/refactor-plan.md",
+      "title": "Outbound Actions — V2 Refactor Staged Plan",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): content-preserving extraction of v2-outbound-refactor-design §0/§1/§2.2/§6-§11",
+        "PR1 shipped (internal/store/outbound/dedup.go + action_policies seeds); PR2 cleanup (status column drop, renames, file split) not yet built"
+      ],
+      "related_code": [
+        "internal/store/outbound"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "outbound",
+        "refactor",
+        "rollout",
+        "pr-train"
+      ],
+      "notes": "Staged PR1/PR2 plan extracted verbatim from the V2 outbound refactor design during the spec IA mega sprint: revision history, per-PR scope, risks, acceptance criteria, resolved decisions, non-goals. PR1 shipped; PR2 breaking cleanup staged. Normative invariants stay in ../technical.md.",
+      "compatibility": {
+        "domain": "outbound",
+        "type": "roadmap",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "template-telegram-copilot-plan",
+      "document": "decisions/v2-5-umbrella-plan.md",
+      "title": "V2.5 Umbrella Plan — Templates/Telegram/Copilot (Ancestor Draft)",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "core verified-state-centric invariants now codified in active runtime-topology + v2-outbound-refactor-design + append-only-ledger-migration",
+        "ledger internal/store/coordination/action_ledger.go exists"
+      ],
+      "related_code": [
+        "internal/store/coordination/action_ledger.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "architecture",
+        "verified-state-centric",
+        "umbrella",
+        "design-doc"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24G. Broad v2.5 umbrella architecture plan (Outbound Invariant -> Engagement Ledger -> Templates -> Telegram -> Copilot). Its core verified-state-centric / append-only invariants have since been decomposed into and shipped via the now-authoritative active specs (runtime-topology, v2-outbound-refactor-design, append-only-ledger-migration); the Templates/Copilot portions remain forward-looking. Kept draft as ancestor architecture reference, not active, to avoid duplicating the authoritative specs.",
+      "compatibility": {
+        "domain": "platform",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "v2-outbound-refactor-design",
+      "document": "technical.md",
+      "title": "Outbound Actions — Technical Contract (V2 Outbound Refactor)",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "action_policies + policy-driven dedup in internal/store/outbound/dedup.go",
+        "internal/store/outbound subpackage exists"
+      ],
+      "related_code": [
+        "internal/store/outbound",
+        "internal/store/outbound/dedup.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "outbound",
+        "architecture",
+        "v2",
+        "tenant-isolation"
+      ],
+      "notes": "Reviewed in PR24D; promoted to outbound-actions/technical.md in the spec IA mega sprint (2026-07-21). PR1 (action_policies table + policy-driven dedup, transition ledger rows, 7 global functions deleted, tenant isolation) is reflected in internal/store/outbound. PR2 (drop legacy status column + split outbound.go) remains staged -> partial. Staged plan/risks/acceptance extracted verbatim to implementation/refactor-plan.md; this file keeps the normative invariants.",
+      "compatibility": {
+        "domain": "outbound",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}

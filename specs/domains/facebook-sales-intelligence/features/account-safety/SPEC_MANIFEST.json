@@ -1,0 +1,164 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "account-safety",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "fresh-lead-discovery"
+    ]
+  },
+  "entries": [
+    {
+      "id": "account-safety-boundaries",
+      "document": "decisions/ADR-001-conservative-account-safety.md",
+      "title": "ADR-001: Conservative, Fail-Safe Account Safety",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 fix-up (2026-07-13): recast as rationale-only ADR; binding invariants restored to the account-safety technical contract"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "account-safety",
+        "boundaries",
+        "data-planes",
+        "no-evasion"
+      ],
+      "notes": "Supporting rationale ADR for the conservative fail-safe account-safety posture: alternatives considered (rotation, auto-clear, parallelism, solving/evasion, instant retries), trade-offs, consequences. The binding invariants themselves live in the account-safety technical contract (crawler-account-safety-spec §2/§7).",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "policy",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "account-safety-review-checklist",
+      "document": "runbooks/review-checklist.md",
+      "title": "Account Safety — Review Checklist",
+      "metadata_version": 3,
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from crawler-account-safety-spec §10"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "account-safety",
+        "runbook",
+        "review-checklist"
+      ],
+      "notes": "Nine-item safety checklist applied to every PR-C* runtime PR (speed, concurrency, checkpoint behavior, bypass/evasion, lease, data-plane, text leakage, pure-policy testability, Sonar/CodeRabbit hygiene).",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "runbook",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "crawler-account-safety-spec",
+      "document": "technical.md",
+      "title": "Account Safety — Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-09",
+      "verified_against": [
+        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
+        "session.StateMachine + CheckpointManager own browser-session checkpoint lifecycle (NO_AUTOMATED_CAPTCHA_BYPASS)",
+        "existing checkpoint/login classifiers: proof.js:87, facebook-state.js:50, outbox.js:228",
+        "org_crawl_intents mid-migration to platform postgres 0108 (data-plane doctrine)"
+      ],
+      "related_code": [
+        "internal/session/allocator.go",
+        "internal/session/checkpoint.go",
+        "internal/session/statemachine.go",
+        "local-connector-extension/content/crawl.js",
+        "internal/server/system/notifications.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "account-safety",
+        "concurrency",
+        "cooldown",
+        "spec",
+        "prc0.5"
+      ],
+      "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change. Split 2026-07-13 (spec IA sprint 1): review checklist extracted to runbooks/review-checklist.md; binding invariants (hard boundaries, data-plane ownership) remain in this technical contract, with supporting rationale in decisions/ADR-001-conservative-account-safety.md.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "facebook-automation-reliability-track",
+      "document": "implementation/reliability-track.md",
+      "title": "Facebook Automation Reliability Track",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24C specs audit (2026-06-23)",
+        "PR-A mission-preflight reflected near cmd/scraper/crawl_runtime.go",
+        "no-silent-fallback invariant"
+      ],
+      "related_code": [
+        "cmd/scraper/crawl_runtime.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "reliability",
+        "roadmap",
+        "track"
+      ],
+      "notes": "Reviewed in PR24C; moved under account-safety/implementation/ in the spec IA mega sprint (2026-07-21) — its foundational invariant (verified initiator/account/connector/identity/eligibility, no silent fallback) is the account-safety surface, though its PR train spans crawl/comment/inbox. PR-A (mission preflight, reject account_id=0, no silent account fallback) shipped. PR-B..PR-F remain future-facing -> partial.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "roadmap",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

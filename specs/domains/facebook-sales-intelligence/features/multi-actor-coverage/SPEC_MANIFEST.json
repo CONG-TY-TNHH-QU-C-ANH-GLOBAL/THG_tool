@@ -1,0 +1,56 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "multi-actor-coverage",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "lead-management",
+      "engagement-approval"
+    ]
+  },
+  "entries": [
+    {
+      "id": "multi-actor-coverage-policy",
+      "document": "technical.md",
+      "title": "MULTI ACTOR COVERAGE POLICY",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/models/coverage.go (EvaluateCoverage/DeriveActorPersona)",
+        "internal/models/coverage_test.go"
+      ],
+      "related_code": [
+        "internal/models/coverage.go",
+        "internal/models/coverage_text.go"
+      ],
+      "related_tests": [
+        "internal/models/coverage_test.go",
+        "internal/models/coverage_text_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "lead",
+        "policy",
+        "coverage",
+        "projection"
+      ],
+      "notes": "Reviewed in PR24B. PR-0 contracts and pure rules (EvaluateCoverage, DeriveActorPersona) exist in internal/models/coverage.go and are unit-tested; coverage_text.go provides the PR-2 reason text. Later wiring phases not separately re-verified here.",
+      "compatibility": {
+        "domain": "lead",
+        "type": "policy",
+        "status": "active",
+        "maturity": "test_pinned"
+      }
+    }
+  ]
+}

@@ -1,113 +1,149 @@
-"""Regression tests for the spec-registry validator (stdlib only).
+"""Regression tests for manifest validation rules (stdlib only).
 
 Run: python scripts/test_check_spec_registry.py
-Covers the legacy (v1) checks staying intact and the per-entry v2
-metadata rules in spec_registry_v2.py. Exit 0 on PASS, non-zero on FAIL.
+Generation/drift tests live in test_build_spec_registry.py.
 """
+from pathlib import Path
 import sys
 
-import check_spec_registry as csr
-from spec_registry_v2 import check_v2_entry, check_v2_uniqueness
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from spec_registry import entry_checks as ec  # noqa: E402
+from spec_registry import validation as v  # noqa: E402
+from spec_registry.testkit import ROOT, entry, expect, manifest, real_manifests  # noqa: E402
+
+CASES = []
 
 
-def legacy_entry(**over):
-    entry = {
-        "id": "legacy-doc", "path": "CLAUDE.md", "title": "Legacy",
-        "domain": "platform", "type": "architecture", "status": "active",
-        "maturity": "reviewed", "owner": "unassigned", "last_reviewed": None,
-        "verified_against": [], "related_code": [], "related_tests": [],
-        "supersedes": [], "superseded_by": None, "tags": [], "notes": "",
-    }
-    entry.update(over)
-    return entry
+def case(fn):
+    CASES.append(fn)
+    return fn
 
 
-def v2_entry(**over):
-    entry = legacy_entry(id="v2-doc", path="AGENTS.md", metadata_version=2,
-                         ownership_domain="facebook-sales-intelligence",
-                         domain_kind="product", layer="technical",
-                         authority="authoritative", lifecycle="active",
-                         implementation_state="partial", effective=True,
-                         technical_feature="multi-group-fresh-lead-crawl")
-    entry.update(over)
-    return entry
-
-
-def entry_errors(entry):
+@case
+def duplicate_id_across_manifests():
     errors: list[str] = []
-    csr.check_entry(entry, 0, errors)
-    return errors
+    a = manifest(entries=[entry()])
+    b = manifest(node_id="comment-intelligence", entries=[entry()])
+    v._check_unique_ids_and_documents([a, b], errors)
+    expect(errors, "duplicate spec id 'sample-spec'")
 
 
-def v2_errors(**over):
+@case
+def duplicate_document_path():
     errors: list[str] = []
-    check_v2_entry(v2_entry(**over), "t", errors)
-    return errors
+    m = manifest(entries=[entry(), entry(id="other-spec")])
+    v._check_unique_ids_and_documents([m], errors)
+    expect(errors, "registered more than once")
 
 
-def expect(errors, fragment):
-    assert any(fragment in e for e in errors), f"expected '{fragment}' in {errors}"
+@case
+def missing_document():
+    errors: list[str] = []
+    ec.check_entry(ROOT, manifest(), entry(document="does-not-exist.md"), errors)
+    expect(errors, "document does not exist")
+
+
+@case
+def path_escape():
+    errors: list[str] = []
+    ec.check_entry(ROOT, manifest(), entry(document="../technical.md"), errors)
+    expect(errors, "escapes the manifest node")
+
+
+@case
+def node_directory_mismatch():
+    errors: list[str] = []
+    wrong = manifest(directory=Path("specs/domains/facebook-sales-intelligence/"
+                                    "features/comment-intelligence"))
+    v._check_node(wrong, errors)
+    expect(errors, "does not match directory")
+
+
+@case
+def unsupported_node_layer_pair():
+    errors: list[str] = []
+    ec.check_entry_enums(manifest(), entry(layer="business"), "t", errors)
+    expect(errors, "not valid for a technical_feature node")
+    ok: list[str] = []
+    ec.check_entry_enums(manifest(), entry(), "t", ok)
+    assert ok == []
+
+
+@case
+def domain_level_authority_without_fake_feature():
+    errors: list[str] = []
+    m = manifest(kind="domain", node_id="platform-foundation",
+                 domain="platform-foundation", domain_kind="platform")
+    v._check_node(m, errors)
+    ec.check_entry(ROOT, m, entry(layer="domain", document="DOMAIN.md"), errors)
+    assert errors == [], errors
+
+
+@case
+def technical_authority_uniqueness():
+    errors: list[str] = []
+    m = manifest(entries=[entry(), entry(id="rival-spec")])
+    v._check_authority_uniqueness([m], errors)
+    expect(errors, "duplicate authoritative technical authority")
+    ok: list[str] = []
+    calm = manifest(entries=[entry(), entry(id="rival-spec", authority="supporting")])
+    v._check_authority_uniqueness([calm], ok)
+    assert ok == []
+
+
+@case
+def experience_layer_uniqueness():
+    errors: list[str] = []
+    m = manifest(kind="experience", node_id="engagement-approval",
+                 entries=[entry(layer="business", implementation_state="partial"),
+                          entry(id="rival-spec", layer="business",
+                                implementation_state="partial")])
+    v._check_authority_uniqueness([m], errors)
+    expect(errors, "duplicate authoritative business authority")
+
+
+@case
+def historical_and_archived_require_effective_false():
+    errors: list[str] = []
+    ec.check_entry_governance(entry(authority="historical"), "t", errors)
+    expect(errors, "requires effective false")
+    errors = []
+    ec.check_entry_governance(entry(lifecycle="archived"), "t", errors)
+    expect(errors, "requires effective false")
+    ok: list[str] = []
+    ec.check_entry_governance(entry(authority="historical", lifecycle="archived",
+                                    effective=False), "t", ok)
+    assert ok == []
+
+
+@case
+def supported_experience_reference_validation():
+    errors: list[str] = []
+    feature = manifest(supported=("ghost-experience",), entries=[entry()])
+    v._check_supported_experience_refs([feature], errors)
+    expect(errors, "has no experience-node manifest")
+    ok: list[str] = []
+    experience = manifest(kind="experience", node_id="ghost-experience")
+    v._check_supported_experience_refs([feature, experience], ok)
+    assert ok == []
+
+
+@case
+def real_repo_registered_exactly_once():
+    manifests = real_manifests()
+    errors: list[str] = []
+    v.validate_manifests(ROOT, manifests, errors)
+    assert errors == [], errors
+    paths = [(m.directory / str(e["document"])).as_posix()
+             for m in manifests for e in m.entries]
+    assert len(paths) == len(set(paths))
 
 
 def main() -> int:
-    # 1. valid legacy entry
-    assert entry_errors(legacy_entry()) == []
-    # 2. valid mixed legacy/v2 registry (per-entry + cross-entry)
-    mixed = [legacy_entry(), v2_entry()]
-    errors: list[str] = []
-    for i, e in enumerate(mixed):
-        csr.check_entry(e, i, errors)
-    csr.check_cross_entry(mixed, errors)
-    assert errors == [], errors
-    # 3. stray v2 field on v1 entry
-    expect(entry_errors(legacy_entry(layer="technical")), "without 'metadata_version'")
-    # 4. unsupported metadata_version
-    expect(v2_errors(metadata_version=3), "unsupported metadata_version")
-    # 5. missing required v2 field
-    no_auth = v2_entry()
-    del no_auth["authority"]
-    errors = []
-    check_v2_entry(no_auth, "t", errors)
-    expect(errors, "requires field 'authority'")
-    # 6. invalid enum
-    expect(v2_errors(lifecycle="implementation_backed"), "invalid lifecycle")
-    # 7. non-boolean effective
-    expect(v2_errors(effective="true"), "'effective' must be a boolean")
-    # 8. malformed slug
-    expect(v2_errors(technical_feature="Fresh Lead"), "kebab-case slug")
-    # 9. both experience and technical_feature populated
-    expect(v2_errors(experience="fresh-lead-discovery"), "must not both be set")
-    # 10. neither populated for a technical layer
-    expect(v2_errors(technical_feature=None), "requires 'technical_feature'")
-    # 11. experience layer using not_applicable
-    expect(v2_errors(layer="experience", technical_feature=None,
-                     experience="fresh-lead-discovery",
-                     implementation_state="not_applicable"),
-           "proposed/partial/backed")
-    # 12. duplicate supported_experiences
-    expect(v2_errors(supported_experiences=["a-b", "a-b"]), "duplicate supported_experiences")
-    # 13. supported_experiences on an experience-owned document
-    expect(v2_errors(layer="business", technical_feature=None,
-                     experience="fresh-lead-discovery",
-                     supported_experiences=["fresh-lead-discovery"]),
-           "only allowed on technical-feature-owned")
-    # 14. historical document with effective true
-    expect(v2_errors(authority="historical"), "requires effective false")
-    # 15. archived document with effective true
-    expect(v2_errors(lifecycle="archived"), "requires effective false")
-    # 16. duplicate authoritative technical documents for one feature
-    errors = []
-    check_v2_uniqueness([v2_entry(id="a"), v2_entry(id="b")], errors)
-    expect(errors, "duplicate authoritative technical contract")
-    errors = []
-    check_v2_uniqueness([v2_entry(id="a"),
-                         v2_entry(id="b", authority="supporting")], errors)
-    assert errors == [], errors
-    # 17. valid domain roadmap with both ownership-node fields absent
-    assert v2_errors(layer="roadmap", technical_feature=None,
-                     implementation_state="not_applicable") == []
-
-    print("test_check_spec_registry: 17/17 cases PASS")
+    for fn in CASES:
+        fn()
+    print(f"test_check_spec_registry: {len(CASES)}/{len(CASES)} cases PASS")
     return 0
 
 

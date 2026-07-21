@@ -1,0 +1,169 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "sales-copilot",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product"
+  },
+  "entries": [
+    {
+      "id": "copilot-intent-routing-architecture",
+      "document": "technical.md",
+      "title": "Sales Copilot — Intent Routing Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24C specs audit (2026-06-23)",
+        "internal/drivers/copilot/intent_*.go pipeline exists",
+        "intent_router_test.go + agent_router_single_post_test.go pass"
+      ],
+      "related_code": [
+        "internal/drivers/copilot/intent_normalize.go",
+        "internal/drivers/copilot/intent_lexicon.go",
+        "internal/drivers/copilot/intent_entities.go",
+        "internal/drivers/copilot/intent_types.go",
+        "internal/drivers/copilot/intent_router.go",
+        "internal/drivers/copilot/agent_action_router.go",
+        "internal/fburl"
+      ],
+      "related_tests": [
+        "internal/drivers/copilot/intent_router_test.go",
+        "internal/drivers/copilot/agent_router_single_post_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "intent-routing",
+        "nlu",
+        "architecture"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24C. Intent pipeline (normalize/lexicon/entities/types/router) exists and is characterization-tested; design intact. NOTE: package moved from internal/ai/ (the doc's cited path) to internal/drivers/copilot/ since authoring.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "test_pinned"
+      }
+    },
+    {
+      "id": "omnichannel-sales-copilot-telegram-track",
+      "document": "implementation/telegram-track.md",
+      "title": "Sales Copilot — Omnichannel Telegram Track",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "PR-1/PR-3 comment-quality shipped (SanitizeComment in internal/ai/comment/quality.go)",
+        "telegram interface backed by active telegram-bot-runtime + control packages"
+      ],
+      "related_code": [
+        "internal/ai/comment/quality.go",
+        "internal/telegram/control"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "omnichannel",
+        "roadmap",
+        "track"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Active founder-directed track; comment-quality prerequisites PR-1/PR-3 shipped (SanitizeComment moved to internal/ai/comment/quality.go since the doc cited internal/ai) and the Telegram peer-interface builds on the shipped telegram control/runtime. Roadmap doc, partial implementation -> active/reviewed.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "roadmap",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "open-prompt-agent-design",
+      "document": "decisions/open-prompt-agent.md",
+      "title": "Sales Copilot — Open-Prompt Agent Design (Draft)",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "Agent.ProcessPromptForOrg in internal/drivers/copilot/agent.go",
+        "open-prompt handler internal/server/agent/ai_prompt.go",
+        "realized routing covered by active copilot-intent-routing-architecture"
+      ],
+      "related_code": [
+        "internal/drivers/copilot/agent.go",
+        "internal/server/agent/ai_prompt.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "open-prompt",
+        "agent",
+        "design-doc"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Self-labelled 'DRAFT - awaiting user approval' Phase 6 design proposal (2026-05-04). The open-prompt agent is partly realized (Agent.ProcessPromptForOrg, /api/agent prompt handler exist) and the deterministic routing it envisioned is now the active copilot-intent-routing-architecture, but this doc remains a forward proposal -> draft.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "sales-voice-automation-and-data-private-enterprise-plan",
+      "document": "implementation/voice-enterprise-plan.md",
+      "title": "Sales Copilot — Voice Automation and Private-Data Enterprise Plan (Draft)",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "forward product vision after Phase 6 Open-Prompt Agent; no specific implementation contract verified"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "vision",
+        "sales-voice",
+        "design-doc"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Forward product vision (AI Facebook Sales Employee trained on private business data) following the open-prompt agent. Aspirational direction, not an implementation contract -> draft.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "roadmap",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

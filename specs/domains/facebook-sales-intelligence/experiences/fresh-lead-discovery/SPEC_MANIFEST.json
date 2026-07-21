@@ -1,0 +1,77 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "experience",
+    "id": "fresh-lead-discovery",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product"
+  },
+  "entries": [
+    {
+      "id": "fresh-lead-discovery-business",
+      "document": "business.md",
+      "title": "Fresh-Lead Discovery — Business Contract",
+      "metadata_version": 3,
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §1/§9; section mapping in the PR"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "fresh-lead",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the fresh-lead-discovery experience: problem, users, value, lead-volume goals, business exclusions. Extracted verbatim from the PR-M0 spec during the spec IA sprint 1 split; inherits its draft status.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "contract",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "fresh-lead-discovery-experience",
+      "document": "experience.md",
+      "title": "Fresh-Lead Discovery — Operator Experience",
+      "metadata_version": 3,
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §3/§9/§10 operator surfaces + crawler-account-safety-spec §3 invariant; section mapping in the PR"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "fresh-lead",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of fresh-lead-discovery: operator flow, exclusion transparency (why 40 posts -> 3 leads), human_required behavior, waiting_for_connector_upgrade surfacing. Operator message catalog stays with the account-safety state machine (single source); this doc references it.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "contract",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    }
+  ]
+}

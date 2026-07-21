@@ -1,0 +1,163 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "knowledge-os",
+    "ownership_domain": "knowledge-platform",
+    "domain_kind": "product_platform"
+  },
+  "entries": [
+    {
+      "id": "postgres-compat-plan",
+      "document": "implementation/postgres-compat.md",
+      "title": "Knowledge OS — PostgreSQL Compatibility Plan",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "pgx/v5 driver in go.mod",
+        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go exists"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge",
+        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "migration",
+        "postgres",
+        "pgvector",
+        "dual-target"
+      ],
+      "notes": "Reviewed in PR24E; moved under knowledge-os/implementation/ in the spec IA mega sprint (2026-07-21). PR-1/2/3 SHIPPED: the Knowledge OS domain is dual-target SQLite+Postgres (pgx/v5 in go.mod, pgvector searcher present). Legacy domains remain SQLite-only as the doc states. Active and implementation-backed; complements active workspace-knowledge-os.",
+      "compatibility": {
+        "domain": "knowledge",
+        "type": "migration",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "production-hardening-goals",
+      "document": "implementation/production-hardening.md",
+      "title": "Knowledge OS — Production Hardening Goals",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "G1/G4 load-bearing code exists (soak/gold_dataset.go, governance/output_validator.go)",
+        "7/10 goals shipped with code+tests per doc"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge/soak/gold_dataset.go",
+        "internal/workspace_knowledge/governance/output_validator.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "hardening",
+        "roadmap",
+        "operator-dashboard"
+      ],
+      "notes": "Reviewed in PR24H; moved under knowledge-os/implementation/ in the spec IA mega sprint (2026-07-21). Operator dashboard for 10 production-hardening goals; 7 shipped end-to-end with code+tests (verified artifacts exist), 3 designed/deferred -> partial. (Some cited artifacts e.g. knowledge_cost.go have moved out of the internal/store root.)",
+      "compatibility": {
+        "domain": "knowledge",
+        "type": "roadmap",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "retrieval-soak-runbook",
+      "document": "runbooks/retrieval-soak.md",
+      "title": "Knowledge OS — Retrieval Soak Runbook",
+      "metadata_version": 3,
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "internal/workspace_knowledge/soak/report.go exists",
+        "TestSoak harness (go test ./internal/workspace_knowledge/soak/...) present"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge/soak",
+        "internal/workspace_knowledge/soak/report.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "runbook",
+        "soak",
+        "retrieval"
+      ],
+      "notes": "Reviewed in PR24D; moved under knowledge-os/runbooks/ in the spec IA mega sprint (2026-07-21). Operator runbook for the retrieval soak harness; the soak code (internal/workspace_knowledge/soak) and TestSoak exist and re-run in CI. The generated RETRIEVAL_SOAK_REPORT.md now writes to the gitignored artifacts/retrieval-soak/ dir (DOCS-R2 resolved) and is no longer a registered spec.",
+      "compatibility": {
+        "domain": "knowledge",
+        "type": "runbook",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "workspace-knowledge-os",
+      "document": "technical.md",
+      "title": "Knowledge OS — Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "internal/workspace_knowledge package exists (assets/retrieval/soak)",
+        "retrieval-soak-runbook proves a working retrieval substrate"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "rag",
+        "architecture",
+        "multi-tenant"
+      ],
+      "notes": "Reviewed in PR24D; promoted to knowledge-platform/features/knowledge-os/technical.md in the spec IA mega sprint (2026-07-21). KnowledgeOS backend (org-scoped assets -> retrieval -> context assembly) is implemented under internal/workspace_knowledge. Later vector-DB port-swap (pgvector/Qdrant) and some L5-L7 layers are deferred per the doc, but the core foundation is real and backed by the soak harness.",
+      "compatibility": {
+        "domain": "knowledge",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}
