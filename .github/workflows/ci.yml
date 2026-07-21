@@ -533,7 +533,7 @@ jobs:
         shell: bash
         run: PGPASSWORD="$CI_POSTGRES_PASSWORD" psql -h localhost -U thg -d thg_ci -c 'CREATE DATABASE thg_platform_ci;'
 
-      - name: Runtime topology contract (runtime-topology technical.md §6)
+      - name: Runtime topology contract (specs/RUNTIME_TOPOLOGY.md §6)
         run: bash scripts/check_topology.sh
 
       # Architecture import-boundary guard — WARN-ONLY (Phase A). Prints module
