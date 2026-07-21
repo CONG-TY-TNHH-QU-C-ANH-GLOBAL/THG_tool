@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED. Production realized the visible workspace Chrome + extension connector path instead; hidden per-account Docker containers conflict with the merged account-safety doctrine (operator-observable browsers, no hidden browser pools) and would require founder re-approval.
+
 ## Why
 
 The current workspace system launches Chrome directly on the host process, meaning all accounts share the same OS environment and competing for the same ports, file handles, and display resources. As account count grows past a handful, this creates port conflicts, profile corruption, and no isolation guarantees. We need a container-based approach where each Chrome instance runs in its own Docker container with a dedicated profile, VNC port, and CDP port, so the system can scale to hundreds of concurrent browsers reliably.

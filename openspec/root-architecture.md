@@ -1,7 +1,23 @@
 # Root Architecture Specification
 ## Multi-Tenant Browser Orchestration System
 
-> **Governance document only.** All modules described here are implemented. This spec defines system-wide boundaries, ownership rules, and invariants. No new modules are introduced.
+> **Lifecycle status (2026-07-21 spec IA reconciliation): PROPOSAL — not
+> current runtime authority.** Nothing under `openspec/` is runtime authority
+> (per `AGENTS.md`/`CLAUDE.md`); the current runtime authority is
+> `specs/domains/platform-foundation/features/runtime-topology/technical.md`.
+> The earlier claim here that "all modules described are implemented" was
+> wrong for this repository: the Docker browser orchestration modules this
+> document governs (docker service, warm pool, browser scheduler, runtime
+> manager, container port registry, streaming layer, container control plane)
+> are unimplemented proposals under `openspec/changes/`. What HAS shipped, in
+> different shape, is the durable `scheduler_jobs` store (`internal/jobs`),
+> the visible-workspace port registry (`internal/workspace/ports.go`), and
+> workspace VNC proxies. The realized browser path is the visible workspace
+> Chrome + extension connector; hidden container pools conflict with the
+> merged account-safety doctrine and would require founder re-approval.
+> §0 (prompt-scoped crawler boundary) reflects current product direction and
+> is restated by the merged specs; this document remains a governance
+> proposal for the browser-orchestration family only.
 
 ---
 

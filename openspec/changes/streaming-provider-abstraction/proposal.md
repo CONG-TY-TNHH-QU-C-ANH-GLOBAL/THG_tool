@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED as proposed. Workspace VNC streaming exists for visible workspaces (`internal/server/workspace` screen/VNC proxies); the per-container provider abstraction targets the unimplemented Docker platform.
+
 ## Why
 
 VNC is hard-coded into each Docker container (one x11vnc process per container, one noVNC WebSocket proxy per viewer), meaning every streaming session opens a persistent TCP tunnel through the server regardless of viewer count, and the VNC protocol was not designed for low-latency high-concurrency web delivery. Abstracting the streaming layer now — while the container model is still young — lets future streaming backends (WebRTC, CDP screencast relay) be swapped in without touching `BrowserService`, the warm pool, or the scheduler.
@@ -5,7 +7,7 @@ VNC is hard-coded into each Docker container (one x11vnc process per container, 
 ## What Changes
 
 - Introduce a `StreamingProvider` interface that `BrowserService` uses to attach, detach, and route viewers to a container's display, replacing all direct VNC/noVNC wiring.
-- Refactor the existing VNC implementation into a `VNCStreamingProvider` that satisfies the interface and is the default backend.
+- Refactor the proposed VNC implementation (from docker-browser-service) into a `VNCStreamingProvider` that satisfies the interface and is the default backend.
 - Add a `StreamingSession` concept: a per-viewer token-gated session with an independent lifecycle from the container itself.
 - Expose viewer management APIs: `POST /browser/:id/stream/attach`, `DELETE /browser/:id/stream/detach`, `GET /browser/:id/stream/info` — replacing the implicit "open WebSocket → you get VNC" model.
 - Define the `WebRTCStreamingProvider` interface contract (spec + stub) so a future implementation has a clear target without requiring it to be built now.

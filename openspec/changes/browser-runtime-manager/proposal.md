@@ -1,3 +1,5 @@
+> **Lifecycle status (2026-07-21 spec IA reconciliation):** proposal only — nothing under `openspec/` is current runtime authority (per `AGENTS.md`/`CLAUDE.md`; the runtime authority is `specs/domains/platform-foundation/features/runtime-topology/technical.md`). NOT IMPLEMENTED (depends on the unimplemented docker-browser-service). Visible workspace session lifecycle is handled by `internal/workspace` + `internal/session` instead.
+
 ## Why
 
 The `docker-browser-service` change creates and removes Docker containers on demand, but treats each container as a fire-and-forget object with no lifecycle state machine, no health probing, and no automatic recovery when a container enters a partial or failed state (created but not started, running but unresponsive, OOM-killed). A `BrowserRuntimeManager` that owns the complete single-node container lifecycle — from creation through health-verified running through clean shutdown — makes the system self-healing and operationally predictable.
