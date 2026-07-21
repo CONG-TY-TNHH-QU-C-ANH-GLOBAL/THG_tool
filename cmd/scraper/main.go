@@ -129,7 +129,7 @@ func main() {
 	agent, classifierMg, commentMg := setupAIAgent(cfg, db, jobStore, notify)
 
 	// Telegram (optional). The legacy single-org long-poll agent-bot was RETIRED (see
-	// specs/TELEGRAM_BOT_RUNTIME.md): long-poll (getUpdates) and a webhook cannot share one bot
+	// specs/domains/facebook-sales-intelligence/features/telegram-copilot/technical.md): long-poll (getUpdates) and a webhook cannot share one bot
 	// token, and the product direction is a tenant-scoped integration, not a single-org side bot.
 	// The tenant-scoped webhook control-plane (POST /api/telegram/webhook, wired in the server) is
 	// now the SINGLE Telegram runtime. Here we only wire the system notifier to send to the

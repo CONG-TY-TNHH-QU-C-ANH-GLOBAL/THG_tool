@@ -32,7 +32,7 @@ import (
 //     (e.g. JSONB queries), it goes in a separate optional method
 //     with a clear "ok" return so callers can branch deterministically.
 //
-// See specs/POSTGRES_COMPAT_PLAN.md for the production-risk inventory
+// See specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md for the production-risk inventory
 // this interface addresses (R1, R2, R7, R8, R9).
 type Dialect interface {
 	// Name is the short identifier — "sqlite" or "postgres". Used in

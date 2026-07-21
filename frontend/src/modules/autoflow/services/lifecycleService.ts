@@ -1,4 +1,4 @@
-// Lead Lifecycle service (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-4). Thin transport
+// Lead Lifecycle service (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-4). Thin transport
 // over the backend lifecycle endpoints. The backend owns all lifecycle derivation; this
 // layer only fetches + maps. Reuses toLead/BackendLead from leadsService (DRY).
 import type { Lead, LeadLifecycleState } from '../types';

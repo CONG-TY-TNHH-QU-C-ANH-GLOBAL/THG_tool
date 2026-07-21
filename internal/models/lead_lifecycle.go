@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// Lead Lifecycle (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md). A THIRD orthogonal
+// Lead Lifecycle (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md). A THIRD orthogonal
 // projection over the verified engagement ledger + conversation thread, on the
 // work-management axis — distinct from the coordination badge (LeadEngagementState)
 // and the multi-actor coverage picture (LeadCoverageState). freshness_state /

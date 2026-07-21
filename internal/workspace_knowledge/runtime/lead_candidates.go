@@ -13,7 +13,7 @@ import (
 )
 
 // CandidatesForLead is the Knowledge Intelligence Layer's retrieval step (P2a —
-// specs/COMMENT_INTELLIGENCE_PIPELINE.md §4). It returns the GROUNDING-eligible
+// specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §4). It returns the GROUNDING-eligible
 // candidate set for a lead — the only knowledge the agent may select from —
 // plus the retrieval_id that joins to the replay trace.
 //

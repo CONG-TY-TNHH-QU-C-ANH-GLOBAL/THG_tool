@@ -20,7 +20,7 @@
 //   - outbound queue persistence / dashboard eligibility
 //   - agent routing, connector / browser runtime, server transport
 //
-// Dependency rule (binding — see specs/COMPONENT_STRUCTURE_RULES.md): this
+// Dependency rule (binding — see specs/domains/platform-foundation/decisions/component-structure-rules.md): this
 // package may import only platform-neutral types (internal/models) and the
 // standard library. It must NOT import internal/store, internal/server,
 // internal/platform*, connector/outbound, or any Facebook-specific package.

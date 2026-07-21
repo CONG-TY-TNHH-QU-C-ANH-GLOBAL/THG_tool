@@ -11,7 +11,7 @@ import (
 
 // Characterization harness for IngestPost — deterministic Outcome-level behavior with
 // nil AppStore/LegacyDB (no DB, no AI). Pins the classify/route/gate/signal contract in
-// specs/lead_ingestion_behavior.md §6–§10 BEFORE the PR23C complexity reduction. Asserts
+// specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md §6–§10 BEFORE the PR23C complexity reduction. Asserts
 // CURRENT behavior. Not duplicated here (covered elsewhere): blank filter, hot/warm
 // qualify, cold skip, RejectRules gate, ValidateRouting, repairPrimaryURL, ForceLead
 // gate-reject/cold overrides.

@@ -1,7 +1,7 @@
 import type { LifecycleTab } from '../../types';
 import { LIFECYCLE_TABS } from '../../types';
 
-// Lifecycle tabs (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-4). The four work-management
+// Lifecycle tabs (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-4). The four work-management
 // groups. `stale` is intentionally absent — hidden by default. Labels are inlined bilingual
 // to avoid growing the i18n god file (strings.ts).
 const LABELS: Record<LifecycleTab, { vi: string; en: string }> = {

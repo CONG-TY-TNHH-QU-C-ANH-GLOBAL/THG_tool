@@ -47,7 +47,7 @@ GitHub PR `merged_at`). Item-file frontmatter is the source of truth._
   [ARCHWK4](items/architecture/workspace_knowledge/ARCHWK4-soak-internal-grouping.md),
   [DOCS-Y1](items/docs/DOCS-Y1-relocate-pr-checklist.md),
   [DOCS-Y2](items/docs/DOCS-Y2-governance-frontmatter-backfill.md).
-- **Blocked RED (audit-only):** ARCHST-R1, ARCHST-R2, ARCHST-R3, ARCHSV-R1, ARCHCM-R1, ARCHCM-R2, DOCS-R1, DOCS-R2.
+- **Blocked RED (audit-only):** ARCHST-R1, ARCHST-R2, ARCHST-R3, ARCHSV-R1, ARCHCM-R1, ARCHCM-R2, DOCS-R1. (DOCS-R2 resolved 2026-07-21.)
 
 ## How to resume
 
@@ -200,4 +200,4 @@ docs, no duplicated source of truth, no AI-generated spec sprawl. See
 | Item | Status | Summary |
 |---|---|---|
 | [DOCS-R1](items/docs/DOCS-R1-spec-source-of-truth-audit.md) | BLOCKED | Spec source-of-truth: root `specs/` (tool-referenced) vs governed `docs/specs/`. Recommend keeping root canonical; human decision. |
-| [DOCS-R2](items/docs/DOCS-R2-generated-artifact-location-audit.md) | BLOCKED | Generated `RETRIEVAL_SOAK_REPORT.md` location + soak-test write-gating (`-update`); test-code change, human decision. |
+| [DOCS-R2](items/docs/DOCS-R2-generated-artifact-location-audit.md) | DONE | Generated `RETRIEVAL_SOAK_REPORT.md` location + soak-test write-gating (`-update`); test-code change, human decision. |

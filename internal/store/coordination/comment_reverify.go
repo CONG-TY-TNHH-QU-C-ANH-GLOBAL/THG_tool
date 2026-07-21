@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Async comment reverify queue + append-only correction (spec: specs/COMMENT_ASYNC_REVERIFY.md,
+// Async comment reverify queue + append-only correction (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md,
 // PR-A). Coordination owns this because the correction it produces is an action_ledger
 // INSERT (topology §6.3 — ledger writes only here) and it must stay append-only (§6.4).
 

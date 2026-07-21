@@ -366,7 +366,7 @@ rule family from git history without opening every diff.
 **Go / backend:** `gofmt` changed Go files · `go vet ./...` · `go build ./...` ·
 `go test ./...` · `git diff --check` · `python scripts/check_file_size.py` if
 present · check import/topology/tenant scripts if present · revert
-`specs/RETRIEVAL_SOAK_REPORT.md` if tests rewrite it · remove coverage/build
+`artifacts/retrieval-soak/RETRIEVAL_SOAK_REPORT.md` (gitignored) if tests rewrite it · remove coverage/build
 artifacts.
 
 **Frontend:** detect package manager from lockfile/`package.json` · run existing

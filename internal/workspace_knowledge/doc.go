@@ -18,6 +18,6 @@
 // later replaces SQLite with Postgres + pgvector, only the store needs
 // to change.
 //
-// Design document: specs/WORKSPACE_KNOWLEDGE_OS.md. Read it before
+// Design document: specs/domains/knowledge-platform/features/knowledge-os/technical.md. Read it before
 // adding fields, methods, or new ports.
 package workspace_knowledge

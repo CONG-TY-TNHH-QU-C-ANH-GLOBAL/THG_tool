@@ -6,7 +6,7 @@
 // adapters package transforms storage into these domain types.
 //
 // Mirror of frontend/src/platform/services/types.ts. See also:
-//   - specs/DOMAIN_MODEL.md
+//   - specs/domains/platform-foundation/DOMAIN.md
 //   - frontend/src/platform/BOUNDARIES.md
 package contracts
 

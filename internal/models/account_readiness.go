@@ -4,7 +4,7 @@ package models
 // per-capability projection so every mission/action UI can show "can this account
 // do X, and if not, why" instead of guessing. Reasons are the SAME typed codes the
 // gates emit (connector readiness + behaviour caps), so the matrix and the gates
-// never disagree. See specs/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md (PR-D).
+// never disagree. See specs/domains/facebook-sales-intelligence/features/account-safety/implementation/reliability-track.md (PR-D).
 
 // Capability names (closed set).
 const (

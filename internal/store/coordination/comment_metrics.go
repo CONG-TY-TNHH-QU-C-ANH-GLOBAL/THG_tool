@@ -8,7 +8,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Comment outcome metrics (spec: specs/COMMENT_ASYNC_REVERIFY.md companion, Part C). A
+// Comment outcome metrics (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md companion, Part C). A
 // read-only summary across outbound_messages (verification_outcome buckets) + action_ledger
 // (correction reasons) + comment_reverify (errors). tenant-ok: cross-domain reads.
 

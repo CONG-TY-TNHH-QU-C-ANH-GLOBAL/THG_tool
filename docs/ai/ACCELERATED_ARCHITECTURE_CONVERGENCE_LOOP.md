@@ -19,7 +19,7 @@ authorities, not a new rulebook:
   → `CLAUDE.md` ("Engineering Guardrails").
 - Lane / feasibility / boundary vocabulary → `docs/architecture/BOUNDARY_MIGRATION_PLAYBOOK.md`.
 - Hard cases / decision records → [`ESCALATION_PLAYBOOK.md`](ESCALATION_PLAYBOOK.md).
-- Truth ownership / domain boundaries → `specs/RUNTIME_TOPOLOGY.md`,
+- Truth ownership / domain boundaries → `specs/domains/platform-foundation/features/runtime-topology/technical.md`,
   `internal/store/DOMAINS.md`.
 - Report shape → [`AGENT_REPORT_TEMPLATE.md`](AGENT_REPORT_TEMPLATE.md) + §8 below.
 - Validation → `scripts/ai_preflight.sh`, `scripts/ai_validate.sh`,
@@ -64,7 +64,7 @@ Move living production code toward the agreed modular-monolith architecture:
 
 ## 2. Survey
 
-- Scan current architecture hotspots: `specs/COMPONENT_HOTSPOTS.md`,
+- Scan current architecture hotspots: `specs/domains/platform-foundation/decisions/component-hotspots.md`,
   `scripts/check_component_structure.py` output, `scripts/check_file_size.py`
   allowlist (`scripts/file_size_allowlist.txt` — legacy files above the
   200-line limit are the natural extraction backlog), remaining deprecated
@@ -113,7 +113,7 @@ Move living production code toward the agreed modular-monolith architecture:
 - Preserve tenant/org filtering (every tenant feature keeps `org_id`
   ownership checks — `CLAUDE.md` "Hard Rules").
 - Preserve queue/CAS/lease/outbox/`action_ledger` semantics
-  (`specs/APPEND_ONLY_LEDGER_MIGRATION.md`).
+  (`specs/domains/facebook-sales-intelligence/features/outbound-actions/implementation/append-only-ledger.md`).
 - Preserve auth/security/session behavior.
 - No schema/migration changes unless explicitly selected as a controlled
   migration PR (its own item, its own decision record).

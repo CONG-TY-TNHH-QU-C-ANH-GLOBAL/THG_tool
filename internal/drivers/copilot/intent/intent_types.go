@@ -1,7 +1,7 @@
 package intent
 
 // Copilot intent/routing contract types (Architecture-first refactor — see
-// specs/COPILOT_INTENT_ROUTING_ARCHITECTURE.md). These give the routing pipeline
+// specs/domains/facebook-sales-intelligence/features/sales-copilot/technical.md). These give the routing pipeline
 // an explicit shape — raw text → normalize → entities → classify → route — so
 // future NLU (typo-tolerant / multilingual) has a clean home. Additive: the
 // existing DeterministicFacebookAction contract (string, args, bool) is kept.

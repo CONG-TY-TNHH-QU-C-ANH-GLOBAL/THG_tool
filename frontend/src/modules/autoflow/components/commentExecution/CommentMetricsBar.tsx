@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getCommentMetrics, type CommentMetricsResponse } from '../../services/outboxService';
 
-// Comment outcome metrics bar (spec: specs/COMMENT_ASYNC_REVERIFY.md companion, Part C).
+// Comment outcome metrics bar (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md companion, Part C).
 // Self-contained: fetches the 7-day summary and shows the submitted_unverified rate against
 // the decision threshold (<10% = edge case + manual fallback; >10–15% sustained = reopen
 // async reverify as a core bug). Best-effort — hidden if the call fails or there's no data.

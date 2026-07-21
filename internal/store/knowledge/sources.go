@@ -17,7 +17,7 @@ import (
 //
 // Every method here enforces strict tenant isolation: org_id is the
 // gate, and every public method takes an explicit orgID parameter.
-// Read [specs/WORKSPACE_KNOWLEDGE_OS.md §6] for the full contract.
+// Read [specs/domains/knowledge-platform/features/knowledge-os/technical.md §6] for the full contract.
 //
 // Two design choices repeated below for visibility:
 //

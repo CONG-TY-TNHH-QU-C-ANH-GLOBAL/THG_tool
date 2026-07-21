@@ -12,7 +12,7 @@ related_pr_or_issue: docs/data-plane-doctrine
 
 **Status:** OFFICIAL STANDARD. **Companion of** `ARCHITECTURE_STANDARD.md`.
 Builds on the existing `internal/store/DOMAINS.md` truth-ownership matrix (§2.4)
-and `specs/RUNTIME_TOPOLOGY.md`. This doc is the **table-level** contract: every
+and `specs/domains/platform-foundation/features/runtime-topology/technical.md`. This doc is the **table-level** contract: every
 table has exactly ONE owner module that may write it; everyone else reads via the
 owner's API or a documented `// tenant-ok` cross-domain projection.
 
@@ -203,4 +203,4 @@ global deterministic `NNNN` ordering (database boundary sprint PR2).
   org-scoped, and self-expiring (24h TTL).
 - **`outbound_messages` legacy columns** (`status`, `claimed_by`, `claimed_at`,
   `execution_id`, `lease_expiry`, `sent_at`): drop is V2 Outbound PR2, gated on
-  production verification (see `specs/V2_OUTBOUND_REFACTOR_DESIGN.md`).
+  production verification (see `specs/domains/facebook-sales-intelligence/features/outbound-actions/technical.md`).

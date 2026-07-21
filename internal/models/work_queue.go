@@ -5,7 +5,7 @@ import (
 	"sort"
 )
 
-// Work Queue (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-2). The dashboard- and
+// Work Queue (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-2). The dashboard- and
 // planner-facing read model: the subset of leads worth acting on now, lifecycle-filtered
 // and ordered. It composes the three existing projections — lifecycle (work axis),
 // coverage (multi-actor axis), and per-actor eligibility — so the copilot/comment planner

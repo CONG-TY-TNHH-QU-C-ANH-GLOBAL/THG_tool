@@ -16,7 +16,7 @@
 # (coordination owns direct_post_comment_workflows; leads.GetPostLeadByRef). PR-2 =
 # runtime in cmd/scraper (directPostIntake service + runDirectPostIntakeScheduler DB
 # poller; unknown post → import + async ack, then observe lead → queue comment). No
-# in-memory callback, no user_context KV. Spec: specs/DIRECT_POST_INTAKE_WORKFLOW.md.
+# in-memory callback, no user_context KV. Spec: specs/domains/facebook-sales-intelligence/features/direct-post-intake/technical.md.
 
 version: 1
 generated_for_commit_base: d35cf919   # Phase A merge

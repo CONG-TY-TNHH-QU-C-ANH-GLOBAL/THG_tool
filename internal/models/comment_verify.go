@@ -2,7 +2,7 @@ package models
 
 import "strings"
 
-// Manual human verification + retry contracts (spec: specs/COMMENT_ASYNC_REVERIFY.md
+// Manual human verification + retry contracts (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md
 // companion, Part A/B). Pure eligibility so the rules are single-sourced + unit-testable.
 
 // Correction reasons + source written on the appended ledger / audit rows.

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # check_topology.sh — Runtime topology contract enforcement.
 #
-# Enforces the invariants encoded in specs/RUNTIME_TOPOLOGY.md §6.
+# Enforces the invariants encoded in
+# specs/domains/platform-foundation/features/runtime-topology/technical.md §6.
 # Without this gate, the topology doc rots silently: a developer
 # moves a method across a boundary, no test fails, the doc stops
 # describing reality.
@@ -40,7 +41,7 @@ expected_fail() {
 
 echo "== Runtime Topology Linter =="
 echo "Root: $ROOT"
-echo "Spec: specs/RUNTIME_TOPOLOGY.md"
+echo "Spec: specs/domains/platform-foundation/features/runtime-topology/technical.md"
 echo
 
 # ---------------------------------------------------------------------

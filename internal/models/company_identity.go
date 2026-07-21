@@ -10,7 +10,7 @@ import "strings"
 // (empty = not known); the comment generator + quality guard NEVER fabricate a
 // website / contact that is not present here.
 //
-// See specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md (PR-3).
+// See specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/telegram-track.md (PR-3).
 type CompanyIdentity struct {
 	CompanyName    string `json:"company_name"`
 	Website        string `json:"website"`         // grounded official URL ("" if unknown)

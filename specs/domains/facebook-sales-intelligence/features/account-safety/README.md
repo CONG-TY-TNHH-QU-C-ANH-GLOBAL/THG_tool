@@ -18,6 +18,10 @@ experience.
   trade-offs, consequences.
 - [runbooks/review-checklist.md](runbooks/review-checklist.md) — the checklist
   applied to every PR-C* runtime PR.
+- [implementation/reliability-track.md](implementation/reliability-track.md) —
+  founder-directed reliability PR train (verified initiator/account/connector/
+  identity/eligibility before any action; no silent fallback). PR-A shipped;
+  its scope spans crawl/comment/inbox actions.
 
 Implementation state: **partial** — `internal/session/accountsafety/` (pure
 policy + tests) and the `session.Allocator` lease exist; the Coordinator wiring

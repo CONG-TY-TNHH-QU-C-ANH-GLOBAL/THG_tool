@@ -9,7 +9,7 @@ import (
 
 // GetLeadCoverageState projects the multi-actor coverage picture for a lead from the
 // VERIFIED engagement ledger + the conversation thread + the ACTUAL prior comment
-// texts (spec: specs/MULTI_ACTOR_COVERAGE_POLICY.md). website is the org's grounded
+// texts (spec: specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md). website is the org's grounded
 // website used to decide website_already_used. The planner uses the result to decide
 // whether ANOTHER actor may cover this lead and to shape that actor's persona.
 func (s *Store) GetLeadCoverageState(ctx context.Context, orgID, leadID int64, website string) (*models.LeadCoverageState, error) {

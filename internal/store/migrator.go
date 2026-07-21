@@ -190,7 +190,7 @@ func (s *Store) runMigrationsOn(ctx context.Context, ex dbExecer) error {
 // function is a no-op — the migration runner will then APPLY the
 // 0001 migration file from disk to bring the schema up.
 //
-// Risk addressed: R11 in POSTGRES_COMPAT_PLAN.md (existing prod
+// Risk addressed: R11 in specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md (existing prod
 // SQLite installs MUST NOT have the baseline migration re-run, or
 // CREATE TABLE statements would fail on duplicate-table errors).
 func (s *Store) recordBaselineIfNeeded(ctx context.Context, ex dbExecer) error {

@@ -55,7 +55,7 @@ type GroundingStats struct {
 
 // Knowledge Intelligence Layer — Reasoning (P2a). The agent proposes a selection
 // over RETRIEVED knowledge; grounding then drops anything not backed by a real
-// candidate. See specs/COMMENT_INTELLIGENCE_PIPELINE.md §4.
+// candidate. See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §4.
 //
 // Split of concerns:
 //   - GroundSelection / BuildDecision: PURE, deterministic, fully tested without

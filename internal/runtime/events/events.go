@@ -1,6 +1,6 @@
 // Package events is the typed lifecycle-event taxonomy for THG's
 // runtime. It is the emission contract paired with the Runtime
-// Topology doc (specs/RUNTIME_TOPOLOGY.md §5 — Failure Surface +
+// Topology doc (specs/domains/platform-foundation/features/runtime-topology/technical.md §5 — Failure Surface +
 // §6 — CI Enforcement).
 //
 // Why a typed taxonomy: without one, slog event names drift across

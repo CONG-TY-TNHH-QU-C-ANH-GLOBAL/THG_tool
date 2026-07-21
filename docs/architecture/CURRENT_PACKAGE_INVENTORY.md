@@ -171,7 +171,7 @@ excludes commenter leads). **PR-2 runtime** added in `cmd/scraper`:
 async ack) and `direct_post_intake_scheduler.go` (the `runDirectPostIntakeScheduler`
 DB poller → observe lead → queue comment). `commentSinglePost` now uses
 `GetPostLeadByRef` + the intake service instead of the scan-required copy. `jobs.Store`
-gained `Close()`. Spec: `specs/DIRECT_POST_INTAKE_WORKFLOW.md`.
+gained `Close()`. Spec: `specs/domains/facebook-sales-intelligence/features/direct-post-intake/technical.md`.
 
 ## Biggest inventory takeaways
 

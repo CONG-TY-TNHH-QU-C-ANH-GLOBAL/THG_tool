@@ -16,7 +16,7 @@ type Config struct {
 	TelegramOrgID     int64
 	// Telegram integration feature flags (control-plane). Default-safe: the bot + notifications
 	// are opt-in, and action EXECUTION is OFF by default and must stay off until reliability is
-	// validated (spec: specs/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md).
+	// validated (spec: specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/telegram-track.md).
 	TelegramBotEnabled     bool   // TELEGRAM_BOT_ENABLED
 	TelegramNotifyEnabled  bool   // TELEGRAM_NOTIFY_ENABLED
 	TelegramActionsEnabled bool   // TELEGRAM_ACTIONS_ENABLED (must default false)
@@ -100,7 +100,7 @@ type Config struct {
 	ScrollTimeout   int // seconds
 	ScanIntervalMin int // minutes
 
-	// Lead lifecycle / auto-archive (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md)
+	// Lead lifecycle / auto-archive (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md)
 	StaleAfterDays             int // days of no activity before a lead reads as stale
 	ArchiveAfterDays           int // days of no activity before the sweep auto-archives
 	EvidenceRetentionDays      int // retention for execution evidence blobs (compaction; ledger kept)

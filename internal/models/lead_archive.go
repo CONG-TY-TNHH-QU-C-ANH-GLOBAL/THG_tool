@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// Auto-Archive decision (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-3). Pure function
+// Auto-Archive decision (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-3). Pure function
 // over the lifecycle + coverage projections so the maintenance sweep is deterministic and
 // testable. Time-based reasons use archive_after_days — distinct from stale_after_days,
 // which only drives the DISPLAY state. A lead with a recent reply (live conversation) is

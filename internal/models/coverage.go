@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Multi-Actor Brand Coverage (spec: specs/MULTI_ACTOR_COVERAGE_POLICY.md). A lead is
+// Multi-Actor Brand Coverage (spec: specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md). A lead is
 // SHARED; several accounts may comment it with different roles/tone/angle/CTA — this
 // is brand coverage, NOT spam. CoveragePolicy caps how much / how often / how varied
 // the org's touches on one lead may be; it does NOT default to one-comment-per-lead.
@@ -91,7 +91,7 @@ func EvaluateCoverage(state LeadCoverageState, policy CoveragePolicy, actorAccou
 
 // ProjectLeadCoverage builds the coverage state from VERIFIED ledger entries + the
 // lead-replied signal + the ACTUAL prior comment texts (spec:
-// specs/MULTI_ACTOR_COVERAGE_POLICY.md). Entries should already be verified
+// specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md). Entries should already be verified
 // successes; the check is applied defensively. Content fields are CONTENT-ACCURATE:
 // website/CTA are true only if a comment actually used them, angles are classified
 // from the text — never inferred from a touch count.

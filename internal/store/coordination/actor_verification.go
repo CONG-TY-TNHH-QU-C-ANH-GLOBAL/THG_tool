@@ -12,7 +12,7 @@ import (
 )
 
 // ClassifyActorVerdict is the deterministic Verified-Actor classifier
-// (specs/COMMENT_INTELLIGENCE_PIPELINE.md §7b). It compares the account's
+// (specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7b). It compares the account's
 // EXPECTED Facebook identity (accounts.fb_user_id) against the ACTUAL
 // c_user the executor observed on the page at finalize.
 //

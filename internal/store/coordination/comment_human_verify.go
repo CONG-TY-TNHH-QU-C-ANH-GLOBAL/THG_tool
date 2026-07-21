@@ -8,7 +8,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Manual human verification (spec: specs/COMMENT_ASYNC_REVERIFY.md companion, Part A).
+// Manual human verification (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md companion, Part A).
 // Coordination owns this because the correction is an action_ledger INSERT (topology §6.3)
 // and must stay append-only (§6.4) — the old submitted_unverified row is never mutated.
 

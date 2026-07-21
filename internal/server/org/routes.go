@@ -61,7 +61,7 @@ func Routes(group fiber.Router, deps Deps, adminOnly fiber.Handler) {
 
 	// Workspace Knowledge OS — Operator Replay surface. Read-only;
 	// tenant-scoped via c.Locals("org_id"). See
-	// specs/WORKSPACE_KNOWLEDGE_OS.md.
+	// specs/domains/knowledge-platform/features/knowledge-os/technical.md.
 	group.Get("/org/knowledge/events", h.listKnowledgeEvents)
 	group.Get("/org/knowledge/events/:retrieval_id", h.getKnowledgeEvent)
 	group.Get("/org/knowledge/sources/:source_id/syncs", h.listSourceSyncs)

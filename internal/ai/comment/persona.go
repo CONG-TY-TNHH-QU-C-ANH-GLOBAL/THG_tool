@@ -6,7 +6,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// BuildPersonaRule turns an ActorPersona (spec: MULTI_ACTOR_COVERAGE_POLICY) into a
+// BuildPersonaRule turns an ActorPersona (spec: specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md) into a
 // prompt rule so a SECOND account covering the same lead adds a DIFFERENT angle —
 // no repeated website, no repeated hard CTA, no repeated phrasing. Empty persona
 // (a fresh lead / first actor) adds nothing. Numbered 9 to follow the contact rule.

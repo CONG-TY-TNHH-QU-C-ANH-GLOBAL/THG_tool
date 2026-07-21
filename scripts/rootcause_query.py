@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PR8A ROOT_CAUSE_REPORT helper — read-only.
 
-Runs the two queries from specs/ROOT_CAUSE_REPORT.md against whichever SQLite
+Runs the two queries from specs/domains/facebook-sales-intelligence/features/
+comment-automation/evidence/root-cause-report.md against whichever SQLite
 file actually holds the comment execution_attempts, so you don't have to guess
 between data/scraper.db (the server default DB_PATH) and data/local.db.
 

@@ -5,7 +5,7 @@
 //
 // This package contains the CONTRACT only. Concrete adapters live in
 // sibling packages — one per source type — and land in Phase B of the
-// roadmap. See [specs/WORKSPACE_KNOWLEDGE_OS.md §7].
+// roadmap. See [specs/domains/knowledge-platform/features/knowledge-os/technical.md §7].
 //
 // Why a port instead of a switch statement on SourceType: each
 // connector has its own auth model, schema, error taxonomy, and
@@ -72,7 +72,7 @@ type AssetWriter interface {
 	// == src.ID — passing other values returns ErrCrossTenantWrite.
 	//
 	// Operator-controlled columns on the existing row (state, pinned,
-	// boost) are NOT touched. See specs/WORKSPACE_KNOWLEDGE_OS.md §6.
+	// boost) are NOT touched. See specs/domains/knowledge-platform/features/knowledge-os/technical.md §6.
 	Write(ctx context.Context, a *assets.Asset) error
 }
 

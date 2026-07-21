@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Reverify eligibility finder (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-A). Split from
+// Reverify eligibility finder (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-A). Split from
 // comment_reverify.go to keep each file under the size budget.
 
 // FindReverifyEligible returns submitted-unverified comments worth reverifying: finished,

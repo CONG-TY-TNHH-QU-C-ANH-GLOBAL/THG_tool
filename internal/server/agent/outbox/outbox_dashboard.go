@@ -23,7 +23,7 @@ func (h *Handler) getOutbox(c *fiber.Ctx) error {
 	// Facebook identity so the operator sees "đăng bởi <FB actor>", not a bare
 	// #account_id. Distinct from CreatedBy (the initiating principal). Best
 	// effort — a lookup failure must not break the dashboard list.
-	// See specs/COMMENT_INTELLIGENCE_PIPELINE.md §7a (P1a).
+	// See specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md §7a (P1a).
 	actors, _ := h.db.Identities().AccountIdentitiesForOrg(orgID)
 	// Fold the Verified-Actor state (P1b) into the actor projection so the UI
 	// can render the verdict chip / blocked badge per account. Composed at the

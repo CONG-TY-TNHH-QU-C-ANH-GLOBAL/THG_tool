@@ -99,7 +99,7 @@ func (h HealthStatus) IsKnown() bool {
 // status flipped to "error" but the message is still last week's.
 //
 // LastSyncAt is a pointer because nil ("never synced") is meaningfully
-// different from the zero time. See specs/WORKSPACE_KNOWLEDGE_OS.md §5.
+// different from the zero time. See specs/domains/knowledge-platform/features/knowledge-os/technical.md §5.
 type Health struct {
 	Status     HealthStatus
 	Message    string

@@ -67,7 +67,7 @@ func (s *Store) installOutboundHooks() {
 			// Best-effort, errors swallowed (the outbound row is the
 			// source of truth). Failures are emitted as typed events
 			// (events.ExecutionHookFailed) so the Control Plane can
-			// surface them — see specs/RUNTIME_TOPOLOGY.md §5 failure
+			// surface them — see specs/domains/platform-foundation/features/runtime-topology/technical.md §5 failure
 			// surface gap fixed by this emission. The carrier struct is
 			// unpacked to primitives here so coordination stays free of
 			// any outbound import (same pattern as RecordTransition).

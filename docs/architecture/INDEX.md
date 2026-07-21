@@ -32,7 +32,7 @@ Map of architecture standards, boundaries, ownership, and decision records. See
 
 - The **standard** is [ARCHITECTURE_STANDARD.md](ARCHITECTURE_STANDARD.md); other
   docs here elaborate or record decisions against it.
-- Runtime topology + boundary enforcement live in `specs/RUNTIME_TOPOLOGY.md` +
+- Runtime topology + boundary enforcement live in `specs/domains/platform-foundation/features/runtime-topology/technical.md` +
   `scripts/check_topology.sh` (executable invariants) — the authoritative source;
   docs here must not contradict them.
 - One topic = one doc. If a doc is replaced, mark it `status: superseded`.

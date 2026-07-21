@@ -1,15 +1,22 @@
 ---
 id: DOCS-R2
-status: BLOCKED
+status: DONE
 lane: RED
 risk: RED
 depends_on: []
 parallel_safe: false
-branch: ""
+branch: "docs/spec-ia-completion-mega-sprint"
 pr_url: ""
 ---
 
 # DOCS-R2 — AUDIT: generated artifact RETRIEVAL_SOAK_REPORT.md location
+
+> **RESOLVED (2026-07-21, spec IA completion mega sprint):** founder-directed
+> decision applied. `writeSoakArtefact` now writes to the gitignored
+> `artifacts/retrieval-soak/RETRIEVAL_SOAK_REPORT.md` (repo-root walk via
+> go.mod, MkdirAll on demand); the tracked copy under `specs/knowledge/` and
+> its registry entry were removed. Test-only change; retrieval behavior,
+> scoring, fixtures, and data model untouched.
 
 ## Goal (audit-only — DO NOT move or change the test)
 specs/knowledge/RETRIEVAL_SOAK_REPORT.md is a TEST-GENERATED artifact tracked inside the spec tree; the soak test rewrites it on every `go test ./...`, dirtying the working tree. Decide its correct home and the write-gating policy.

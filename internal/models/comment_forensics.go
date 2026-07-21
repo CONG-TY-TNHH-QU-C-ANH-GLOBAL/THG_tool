@@ -1,6 +1,6 @@
 package models
 
-// Comment Verification Forensics (spec: specs/COMMENT_ASYNC_REVERIFY.md, PR-1 Part A). A
+// Comment Verification Forensics (spec: specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md, PR-1 Part A). A
 // read-only diagnostic shape: per (outbound, attempt, ledger) it surfaces the persisted
 // evidence and a classification that separates "failed before submit" from "submitted but
 // verify could not confirm" from "really failed". Submit/verify booleans are DERIVED from

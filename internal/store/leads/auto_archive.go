@@ -9,7 +9,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Auto-archive sweep (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-3). Org-scoped
+// Auto-archive sweep (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-3). Org-scoped
 // maintenance: project each live lead's lifecycle + coverage, ask the pure
 // models.EvaluateArchive whether it should be retired, and flip archived_at for the ones
 // that should. No hard delete — the engagement ledger is never touched, so dedup +

@@ -9,7 +9,7 @@ import "time"
 // infrastructure fields (ProxyURL, UserAgent) that classify as secrets.
 //
 // Explicitly excluded — adding any of these back is a security
-// regression (see specs/SAAS_UX_HARDENING_TRACK.md PR-2):
+// regression (see specs/domains/platform-foundation/features/workspace-ui/implementation/ux-hardening-track.md PR-2):
 //   - CookiesJSON (decrypted Facebook session cookies)
 //   - ProxyURL (proxy infrastructure, may embed credentials)
 //   - UserAgent (browser fingerprint material)

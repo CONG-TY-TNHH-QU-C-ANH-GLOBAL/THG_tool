@@ -7,7 +7,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
-// Work Queue read model (spec: specs/LEAD_LIFECYCLE_WORK_QUEUE.md, PR-2). Builds the
+// Work Queue read model (spec: specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md, PR-2). Builds the
 // act-now candidate set the dashboard shows and the comment planner selects from:
 // lifecycle-filtered (active/followup_due by default; archived already excluded upstream
 // by GetLeadsFiltered, stale opt-in) and ordered by score → freshness → next_action_at.

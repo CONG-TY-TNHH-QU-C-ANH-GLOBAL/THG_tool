@@ -1,7 +1,7 @@
 // Package adapters transforms storage shapes into domain entities. This is the
 // ONLY layer that touches *store.Store / models.* — resolvers and handlers
 // consume the domain contracts, never the ORM rows.
-// See specs/DOMAIN_MODEL.md § Storage model is NOT the domain model.
+// See specs/domains/platform-foundation/DOMAIN.md § Storage model is NOT the domain model.
 package adapters
 
 import (

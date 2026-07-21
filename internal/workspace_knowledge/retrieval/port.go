@@ -6,7 +6,7 @@
 //
 // This package contains the CONTRACT only. Concrete searchers live in
 // sibling packages and land in Phase C of the roadmap. See
-// [specs/WORKSPACE_KNOWLEDGE_OS.md §8].
+// [specs/domains/knowledge-platform/features/knowledge-os/technical.md §8].
 //
 // Why a port: the choice of retrieval backend is an infrastructure
 // decision that the agent runtime should not care about. As long as

@@ -83,7 +83,7 @@ Every entry in `specs/SPEC_REGISTRY.json` must provide all of these fields:
 ```json
 {
   "id": "lead-ingestion-behavior",
-  "path": "specs/leadingest/lead_ingestion_behavior.md",
+  "path": "specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md",
   "title": "Lead Ingestion Behavior Specification",
   "domain": "leadingest",
   "type": "behavior",

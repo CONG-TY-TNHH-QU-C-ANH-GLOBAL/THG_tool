@@ -11,7 +11,7 @@ import (
 )
 
 // DB-backed characterization for IngestPost's persist + notify side effects
-// (specs/lead_ingestion_behavior.md §4/§5/§7). Each test uses a FRESH SQLite store
+// (specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md §4/§5/§7). Each test uses a FRESH SQLite store
 // under t.TempDir() (auto-cleaned, no shared state, no ordering dependency) and the
 // existing public constructors store.New / db.App() — NO production seam is
 // added. These pin CURRENT behavior before the PR23C refactor.

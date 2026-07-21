@@ -14,5 +14,5 @@ excluded post and safe, operator-recoverable handling of checkpoint/login walls.
 - [multi-group-fresh-lead-crawl](../../features/multi-group-fresh-lead-crawl/README.md)
 - [account-safety](../../features/account-safety/README.md)
 - Platform dependency: browser-connector (currently
-  `specs/browser/LOCAL_CONNECTOR_PRODUCTION_WORKFLOW.md` and
-  `specs/browser/AUTOMATION_PLATFORM_CORE.md`; referenced, not duplicated).
+  `specs/domains/platform-foundation/features/browser-connector/runbooks/connector-production-workflow.md` and
+  `specs/domains/platform-foundation/features/browser-connector/technical.md`; referenced, not duplicated).

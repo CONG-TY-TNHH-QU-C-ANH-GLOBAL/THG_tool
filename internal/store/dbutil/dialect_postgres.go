@@ -44,7 +44,7 @@ func (PostgresDialect) IntervalDaysExpr(days int) string {
 // `RETURNING <id_col>`. PG returns the value via QueryRow + Scan; the
 // stdlib lib/pq driver does NOT support `LastInsertId()` at all
 // (returns ErrNoLastInsertID), which is the entire reason this method
-// exists. See risk R1 in POSTGRES_COMPAT_PLAN.md.
+// exists. See risk R1 in specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md.
 func (PostgresDialect) InsertReturningID(ctx context.Context, db *sql.DB, query string, args ...any) (int64, error) {
 	var id int64
 	if err := db.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
