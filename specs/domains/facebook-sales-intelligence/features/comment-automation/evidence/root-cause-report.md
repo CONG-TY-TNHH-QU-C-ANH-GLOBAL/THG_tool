@@ -12,7 +12,7 @@
   browser; it can only read the evidence the runs produce and classify it.
 - **Extension build required:** manifest **0.5.19** (PR8A evidence pack). Reload
   the extension before collecting, or the new fields will be absent.
-- **Opened:** 2026-06-04. **Investigation log:** `specs/AUTOCOMMENT_REDIRECT_INVESTIGATION.md`.
+- **Opened:** 2026-06-04. **Investigation log:** `autocomment-redirect-investigation.md` (same directory).
 
 ---
 

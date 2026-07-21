@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13",
+  "updated_at": "2026-07-21",
   "entries": [
     {
       "id": "api-spec",
@@ -32,17 +32,28 @@
     },
     {
       "id": "append-only-ledger-migration",
-      "path": "specs/store/APPEND_ONLY_LEDGER_MIGRATION.md",
-      "title": "APPEND ONLY LEDGER MIGRATION",
+      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/implementation/append-only-ledger.md",
+      "title": "Append-Only Ledger Migration — Design",
       "domain": "store",
       "type": "migration",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "outbound-actions",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24D specs audit (2026-06-23)",
-        "scripts/check_topology.sh tracks action_ledger writers/baseline",
+        "spec IA mega sprint (2026-07-21): moved under outbound-actions/implementation/; event-sourced writers still NOT implemented",
+        "scripts/check_topology.sh §6.6 LEDGER_UPDATE_BASELINE=2 EXPECTED-FAIL (ARCHST-R1 lowered 3 -> 2)",
+        "PR A additive event_type column shipped (migration 0023 + action_ledger_event_type_test.go); RecordOutcomeForOutbound / RecordEngagementRevoked writers absent",
         "internal/store/coordination/action_ledger.go + engagement_reconcile.go exist"
       ],
       "related_code": [
@@ -58,18 +69,27 @@
         "migration",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24D. Self-labelled 'design (no code)' — the migration to an event-sourced action_ledger is NOT yet implemented; the 3 UPDATE violations it targets are real and tracked by scripts/check_topology.sh. Kept draft until the implementation PR."
+      "notes": "Reviewed in PR24D; moved under outbound-actions/implementation/ in the spec IA mega sprint (2026-07-21). Self-labelled 'design (no code)' — the migration to an event-sourced action_ledger is NOT yet implemented; the remaining 2 UPDATE violations it targets are real and tracked by scripts/check_topology.sh (baseline lowered 3 -> 2 by ARCHST-R1). PR A additive event_type column shipped; writers/readers remain proposed. Kept draft/proposed until the implementation PR."
     },
     {
       "id": "autocomment-redirect-investigation",
-      "path": "specs/facebook/AUTOCOMMENT_REDIRECT_INVESTIGATION.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/evidence/autocomment-redirect-investigation.md",
       "title": "AUTOCOMMENT REDIRECT INVESTIGATION",
       "domain": "facebook",
       "type": "investigation",
       "status": "archived",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "comment-automation",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "PR8A evidence pack + proof-integrity fix shipped (manifest 0.5.19)",
@@ -88,7 +108,7 @@
         "redirect",
         "historical"
       ],
-      "notes": "Reviewed in PR24H. Historical PR8 auto-comment redirect investigation; the PR8A Evidence Pack + proof-integrity fix (buildCommentProof reorder) shipped (manifest 0.5.19). Companion to the archived root-cause-report; the remaining PR8B step is operator-owned. Historical investigation -> archived."
+      "notes": "Reviewed in PR24H; moved under comment-automation/evidence/ in the spec IA mega sprint (2026-07-21). Historical PR8 auto-comment redirect investigation; the PR8A Evidence Pack + proof-integrity fix (buildCommentProof reorder) shipped (manifest 0.5.19). Companion to the archived root-cause-report; the remaining PR8B step is operator-owned. Historical evidence, non-authoritative and not effective."
     },
     {
       "id": "automation-platform-core",
@@ -185,14 +205,26 @@
     },
     {
       "id": "comment-async-reverify",
-      "path": "specs/facebook/COMMENT_ASYNC_REVERIFY.md",
-      "title": "COMMENT ASYNC REVERIFY",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/technical.md",
+      "title": "Comment Automation — Technical Contract",
       "domain": "facebook",
       "type": "behavior",
       "status": "active",
       "maturity": "test_pinned",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "comment-automation",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "internal/models/comment_forensics.go (ClassifyCommentForensics)",
@@ -216,18 +248,27 @@
         "verification",
         "reliability"
       ],
-      "notes": "Reviewed in PR24C. Forensics classifier + soft-touch semantics + async reverify (Part D) shipped; backed by comment_forensics_test.go and comment_reverify_lease_test.go. Complements active lead-lifecycle-work-queue (waiting_verification state)."
+      "notes": "Reviewed in PR24C; promoted to comment-automation/technical.md in the spec IA mega sprint (2026-07-21). Forensics classifier + soft-touch semantics + async reverify (Part D) shipped; backed by comment_forensics_test.go and comment_reverify_lease_test.go. Owns only current test-pinned comment execution + reverification behavior; historical redirect evidence lives in evidence/. Complements active lead-lifecycle-work-queue (waiting_verification state)."
     },
     {
       "id": "comment-decision-dryrun-report",
-      "path": "specs/comment/COMMENT_DECISION_DRYRUN_REPORT.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-intelligence/evidence/comment-decision-dryrun-report.md",
       "title": "COMMENT DECISION DRYRUN REPORT",
       "domain": "comment",
       "type": "report",
       "status": "archived",
       "maturity": "snapshot",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "comment-intelligence",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24E specs audit (2026-06-23)",
         "scripts/comment_decision_dryrun_report.sql exists"
@@ -244,18 +285,30 @@
         "dry-run",
         "historical"
       ],
-      "notes": "Reviewed in PR24E. One-time 'AWAITING DATA' evaluation-report template that gated a past P2b/P2c go-live decision; the comment-intelligence work has since progressed. Report-only, not implementation guidance -> archived."
+      "notes": "Reviewed in PR24E; moved under comment-intelligence/evidence/ in the spec IA mega sprint (2026-07-21). One-time 'AWAITING DATA' evaluation-report template that gated a past P2b/P2c go-live decision; the comment-intelligence work has since progressed. Historical evidence, non-authoritative and not effective."
     },
     {
       "id": "comment-intelligence-pipeline",
-      "path": "specs/comment/COMMENT_INTELLIGENCE_PIPELINE.md",
-      "title": "COMMENT INTELLIGENCE PIPELINE",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md",
+      "title": "Comment Intelligence — Technical Design",
       "domain": "comment",
       "type": "architecture",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "comment-intelligence",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "internal/ai/comment + internal/workspace_knowledge stacks exist"
@@ -273,7 +326,7 @@
         "design-doc",
         "knowledge-first"
       ],
-      "notes": "Reviewed in PR24C. Self-labelled DESIGN (rev 3) — forward-looking knowledge-first autonomous-agent comment pipeline (P1-P4). Underlying ai/comment + workspace_knowledge stacks exist and parts have shipped via the comment-intelligence track, but the doc remains design guidance, so kept as draft rather than active."
+      "notes": "Reviewed in PR24C; promoted to comment-intelligence/technical.md in the spec IA mega sprint (2026-07-21). Self-labelled DESIGN (rev 3) — knowledge-first comment pipeline (P1-P4). P1a/b, P2b, P2c shipped; P2d Policy-Gate enforcement, P2e Inspector UI, P3 media, P4 vision remain planned -> draft/partial, NOT promoted to active on the strength of comment-automation being implemented."
     },
     {
       "id": "component-hotspots",
@@ -375,14 +428,26 @@
     },
     {
       "id": "direct-post-intake-workflow",
-      "path": "specs/facebook/DIRECT_POST_INTAKE_WORKFLOW.md",
-      "title": "DIRECT POST INTAKE WORKFLOW",
+      "path": "specs/domains/facebook-sales-intelligence/features/direct-post-intake/technical.md",
+      "title": "Direct Post Intake — Technical Contract",
       "domain": "facebook",
       "type": "architecture",
       "status": "active",
       "maturity": "test_pinned",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "direct-post-intake",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "directPostIntake in cmd/scraper/agent_actions.go",
@@ -409,7 +474,7 @@
         "workflow",
         "intake"
       ],
-      "notes": "Reviewed in PR24C. PR-1 (migration 0022 + typed coordination store) and PR-2 (directPostIntake service + runDirectPostIntakeScheduler process manager) landed with tests. PR-3 hardening (worker poller, transactional outbox) is future."
+      "notes": "Reviewed in PR24C; promoted to direct-post-intake/technical.md in the spec IA mega sprint (2026-07-21). PR-1 (migration 0022 + typed coordination store) and PR-2 (directPostIntake service + runDirectPostIntakeScheduler process manager) landed with tests; backed only for that shipped contract. PR-3 hardening (worker poller, transactional outbox) and the extension pre-submit call remain future."
     },
     {
       "id": "domain-model",
@@ -772,14 +837,23 @@
     },
     {
       "id": "nl-direct-link-comment-smoke",
-      "path": "specs/facebook/NL_DIRECT_LINK_COMMENT_SMOKE.md",
-      "title": "NL DIRECT LINK COMMENT SMOKE",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/runbooks/direct-link-smoke.md",
+      "title": "Direct-Link Comment Smoke — Runbook",
       "domain": "facebook",
       "type": "runbook",
       "status": "active",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "comment-automation",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "current operator smoke runbook for live comment_single_post / GetLeadByPostRef behavior",
@@ -797,7 +871,7 @@
         "smoke",
         "comment"
       ],
-      "notes": "Reviewed in PR24H. Current operator smoke runbook for the NL direct-link comment behavior (comment_single_post queues only when the lead pre-exists via GetLeadByPostRef). Maps to verified current code and validates active direct-post-intake-workflow. Active/reviewed runbook."
+      "notes": "Reviewed in PR24H; moved under comment-automation/runbooks/ in the spec IA mega sprint (2026-07-21). Current operator smoke runbook for the NL direct-link comment behavior (comment_single_post queues only when the lead pre-exists via GetLeadByPostRef). Maps to verified current code and validates active direct-post-intake-workflow. Active/reviewed runbook."
     },
     {
       "id": "omnichannel-sales-copilot-telegram-track",
@@ -1133,18 +1207,27 @@
     },
     {
       "id": "root-cause-report",
-      "path": "specs/facebook/ROOT_CAUSE_REPORT.md",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/evidence/root-cause-report.md",
       "title": "ROOT CAUSE REPORT",
       "domain": "facebook",
       "type": "report",
       "status": "archived",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "comment-automation",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24E specs audit (2026-06-23)",
         "models.NavDiagnostic in internal/models (execution_outcome.go / comment_forensics.go)",
-        "investigation log AUTOCOMMENT_REDIRECT_INVESTIGATION.md"
+        "investigation log autocomment-redirect-investigation.md (same evidence/ directory)"
       ],
       "related_code": [
         "internal/models/execution_outcome.go",
@@ -1160,7 +1243,7 @@
         "root-cause",
         "historical"
       ],
-      "notes": "Reviewed in PR24E. Completed root-cause investigation report (2026-06-04) for the autocomment redirect failure; conclusion fed the PR8 redirect work. Historical/report-only -> archived. Companion to the still-unreviewed autocomment-redirect-investigation."
+      "notes": "Reviewed in PR24E; moved under comment-automation/evidence/ in the spec IA mega sprint (2026-07-21). Completed root-cause investigation report (2026-06-04) for the autocomment redirect failure; conclusion fed the PR8 redirect work. Historical evidence, non-authoritative and not effective. Companion to the archived autocomment-redirect-investigation."
     },
     {
       "id": "runtime-topology",
@@ -1508,14 +1591,26 @@
     },
     {
       "id": "v2-outbound-refactor-design",
-      "path": "specs/outbound/V2_OUTBOUND_REFACTOR_DESIGN.md",
-      "title": "V2 OUTBOUND REFACTOR DESIGN",
+      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/technical.md",
+      "title": "Outbound Actions — Technical Contract (V2 Outbound Refactor)",
       "domain": "outbound",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "outbound-actions",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24D specs audit (2026-06-23)",
         "action_policies + policy-driven dedup in internal/store/outbound/dedup.go",
@@ -1534,7 +1629,7 @@
         "v2",
         "tenant-isolation"
       ],
-      "notes": "Reviewed in PR24D. PR1 (action_policies table + policy-driven dedup, transition ledger rows, 7 global functions deleted, tenant isolation) is reflected in internal/store/outbound. PR2 (drop legacy status column + split outbound.go) remains future. Active design guiding PR2."
+      "notes": "Reviewed in PR24D; promoted to outbound-actions/technical.md in the spec IA mega sprint (2026-07-21). PR1 (action_policies table + policy-driven dedup, transition ledger rows, 7 global functions deleted, tenant isolation) is reflected in internal/store/outbound. PR2 (drop legacy status column + split outbound.go) remains staged -> partial. Staged plan/risks/acceptance extracted verbatim to implementation/refactor-plan.md; this file keeps the normative invariants."
     },
     {
       "id": "workspace-knowledge-os",
@@ -2154,6 +2249,117 @@
         "experience-layer"
       ],
       "notes": "Experience layer of lead-management: shipped lifecycle states/tabs, queue ordering, coverage skip reasons, archive/restore, copilot wording. Planned items (retention compaction) explicitly flagged."
+    },
+    {
+      "id": "engagement-approval-business",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/engagement-approval/business.md",
+      "title": "Engagement Approval — Business Contract",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "experience": "engagement-approval",
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): distilled from shipped comment/outbound contracts + binding approval invariants formerly in agent entrypoints; no invented behavior",
+        "default-off auto_execute + Policy Gate floor per comment-intelligence design and AGENTS.md approval invariant",
+        "ownership control predicate + verified-state-centric policy per direct-post-intake-workflow / v2-outbound-refactor-design"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "engagement",
+        "approval",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the engagement-approval experience: approval-required default with explicit per-org auto_execute opt-in, auto-execution hard preconditions (verified actor, grounded content), channel discipline (inbox CS-style + first-touch semantics), ownership predicate, verified-outcome success measures. Full Policy-Gate enforcement remains partial (comment-intelligence P2d/P2e)."
+    },
+    {
+      "id": "engagement-approval-experience",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/engagement-approval/experience.md",
+      "title": "Engagement Approval — Operator Experience",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "experience": "engagement-approval",
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): submission/verification operator flows sourced from comment-automation technical.md + direct-link smoke runbook + direct-post-intake workflow; planned Policy-Gate UI explicitly flagged",
+        "human_required checkpoint behavior per account-safety state machine",
+        "actor-mismatch block + clear-actor-block endpoint per multi-actor-coverage"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "engagement",
+        "approval",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of engagement-approval: shipped submission acknowledgements, verification states (waiting_verification, human-verify only for submitted_unverified), typed block reasons, actor-mismatch clearing, human_required behavior. Planned P2d/P2e Policy-Gate UI and Decision Inspector explicitly flagged as not shipped."
+    },
+    {
+      "id": "outbound-actions-refactor-plan",
+      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/implementation/refactor-plan.md",
+      "title": "Outbound Actions — V2 Refactor Staged Plan",
+      "domain": "outbound",
+      "type": "roadmap",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "outbound-actions",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): content-preserving extraction of v2-outbound-refactor-design §0/§1/§2.2/§6-§11",
+        "PR1 shipped (internal/store/outbound/dedup.go + action_policies seeds); PR2 cleanup (status column drop, renames, file split) not yet built"
+      ],
+      "related_code": [
+        "internal/store/outbound"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "outbound",
+        "refactor",
+        "rollout",
+        "pr-train"
+      ],
+      "notes": "Staged PR1/PR2 plan extracted verbatim from the V2 outbound refactor design during the spec IA mega sprint: revision history, per-PR scope, risks, acceptance criteria, resolved decisions, non-goals. PR1 shipped; PR2 breaking cleanup staged. Normative invariants stay in ../technical.md."
     }
   ]
 }

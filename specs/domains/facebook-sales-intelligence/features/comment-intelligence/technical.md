@@ -69,56 +69,56 @@ causes — narrower than "there is no matching layer":
 
 1. **A matching layer already exists and is wired in.** `queueLeadOutreach`
    calls `Builder.BuildForLeadWithTrace` per lead
-   ([cmd/scraper/outbound_actions.go:94](../../cmd/scraper/outbound_actions.go#L94)),
+   ([cmd/scraper/outbound_actions.go:94](../../../../../cmd/scraper/outbound_actions.go#L94)),
    running a scored `hybrid`+`pgvector` searcher with a full explainability trace
-   ([context_builder.go:168](../../internal/workspace_knowledge/runtime/context_builder.go#L168))
+   ([context_builder.go:168](../../../../../internal/workspace_knowledge/runtime/context_builder.go#L168))
    and assembling top hits into a prompt block
-   ([context_assembly.go:68](../../internal/workspace_knowledge/assembly/context_assembly.go#L68)).
+   ([context_assembly.go:68](../../../../../internal/workspace_knowledge/assembly/context_assembly.go#L68)).
    **Price already flows** via `formatPriceRange`
-   ([context_assembly.go:210](../../internal/workspace_knowledge/assembly/context_assembly.go#L210)).
+   ([context_assembly.go:210](../../../../../internal/workspace_knowledge/assembly/context_assembly.go#L210)).
    → We **upgrade** this layer; we do **not** rebuild it (`feedback_freeze_abstraction`).
 
 2. **Wrong catalog content for the job.** The 131 rows are `AssetPODProduct`
    (physical goods). The screenshot lead wants a *fulfillment service*. A POD
    T-shirt cannot match a "need US fulfillment" lead, so the searcher returns
    **0 product hits** and the builder returns the base profile unchanged
-   ([context_builder.go:182](../../internal/workspace_knowledge/runtime/context_builder.go#L182)).
+   ([context_builder.go:182](../../../../../internal/workspace_knowledge/runtime/context_builder.go#L182)).
    The thing the comment must pitch (a **Service Offer**) is **not modeled**.
 
 3. **Images dropped at assembly.** `renderProduct` reads origin/price/sizes/sku/
    availability/sourceURL — **never `pv.Images`**
-   ([context_assembly.go:150-184](../../internal/workspace_knowledge/assembly/context_assembly.go#L150)).
+   ([context_assembly.go:150-184](../../../../../internal/workspace_knowledge/assembly/context_assembly.go#L150)).
 
 4. **Lossy, smuggled prompt contract.** The matched block is passed as the
-   `businessContext` arg ([outbound_actions.go:100](../../cmd/scraper/outbound_actions.go#L100))
-   landing under "BUSINESS PROFILE" ([msggen.go:130](../../internal/ai/msggen.go#L130)),
+   `businessContext` arg ([outbound_actions.go:100](../../../../../cmd/scraper/outbound_actions.go#L100))
+   landing under "BUSINESS PROFILE" ([msggen.go:130](../../../../../internal/ai/msggen.go#L130)),
    with only *"introduce your most relevant offering naturally"*
-   ([msggen.go:142](../../internal/ai/msggen.go#L142)). Output is prose, so outbound
+   ([msggen.go:142](../../../../../internal/ai/msggen.go#L142)). Output is prose, so outbound
    cannot extract an `image_url`, a price, or a confidence.
 
 5. **Attribution gap.** Ledgers store `account_id`+`created_by`; `accounts` holds
    `fb_user_id/fb_display_name/fb_username/fb_profile_url`. But the engagement
    projection joins only `users`+`accounts.name`
-   ([lead_engagement.go:267](../../internal/store/leads/lead_engagement.go#L267)) and
+   ([lead_engagement.go:267](../../../../../internal/store/leads/lead_engagement.go#L267)) and
    `CommentingView` renders bare `#account_id`
-   ([CommentingView.tsx:311](../../frontend/src/modules/autoflow/components/views/CommentingView.tsx#L311)).
+   ([CommentingView.tsx:311](../../../../../frontend/src/modules/autoflow/components/views/CommentingView.tsx#L311)).
 
 6. **No Verified Actor.** The executor reads the live `c_user` into
-   `NavDiagnostic.FBUserID` ([nav_diagnostic.go:68](../../internal/models/nav_diagnostic.go#L68))
+   `NavDiagnostic.FBUserID` ([nav_diagnostic.go:68](../../../../../internal/models/nav_diagnostic.go#L68))
    but it lives only in `evidence_json` — **never compared** to the account's
    expected `fb_user_id`. Account #49 (`fb_user_id=111`) logged into `222` posts
    and is silently mis-attributed. **An autonomous system MUST NOT auto-execute
    without this check** — it is the single hardest precondition.
 
 7. **Extension cannot attach media.** `executeComment` only `setEditableText` +
-   submit ([outbound.js](../local-connector-extension/content/outbound.js)); no
+   submit ([outbound.js](../../../../../local-connector-extension/content/outbound.js)); no
    `uploadImage / waitPreview / submit`.
 
 8. **"Anonymous participant" leaks into copy.** That label is the *target* (a FB
    anonymous group poster), captured verbatim
-   ([crawl.js:166](../../local-connector-extension/content/crawl.js#L166)); the prompt
+   ([crawl.js:166](../../../../../local-connector-extension/content/crawl.js#L166)); the prompt
    forces *"Address the author by their EXACT name"*
-   ([msggen.go:139](../../internal/ai/msggen.go#L139)).
+   ([msggen.go:139](../../../../../internal/ai/msggen.go#L139)).
 
 ---
 
@@ -177,7 +177,7 @@ a queue the operator must clear before anything ships.
 ### Raw material (already ingestable — no new connector, no CRUD)
 `AssetType` today: `POD_product, faq, shipping_policy, sales_playbook,
 pricing_rule, banned_claim, cta`
-([assets/types.go:27](../../internal/workspace_knowledge/assets/types.go#L27)), fed
+([assets/types.go:27](../../../../../internal/workspace_knowledge/assets/types.go#L27)), fed
 by existing ingestors: `rest_json/shopify/csv/sheets` (catalog/SKUs),
 `website/notion` (FAQ / playbooks / about / case studies as prose). The operator
 connects **sources**; ingestion + the business profile
@@ -353,7 +353,7 @@ is the gating dependency for autonomy.
 ### 7a. Surface the actor (display)
 - Extend the engagement projection to join `accounts.fb_display_name` +
   `accounts.fb_profile_url` (today only `accounts.name` —
-  [lead_engagement.go:267](../../internal/store/leads/lead_engagement.go#L267)).
+  [lead_engagement.go:267](../../../../../internal/store/leads/lead_engagement.go#L267)).
 - Two identities, always distinct (`feedback_outbound_taxonomy_split`):
   **Initiator** = `created_by`→staff (who/what ordered it; for autonomous runs a
   system/agent principal); **Executor (FB actor)** = `account_id`→
@@ -362,7 +362,7 @@ is the gating dependency for autonomy.
 ### 7b. Verified Actor (integrity)
 - **Expected:** `accounts.fb_user_id` for the assigned `account_id`.
 - **Actual:** `NavDiagnostic.FBUserID` (`c_user`) at execution
-  ([nav_diagnostic.go:68](../../internal/models/nav_diagnostic.go#L68)).
+  ([nav_diagnostic.go:68](../../../../../internal/models/nav_diagnostic.go#L68)).
 - At finalize, compute `actor_verdict ∈ {verified, mismatch, unknown}` and emit
   it on the **engagement event** (ledger = truth, append-only —
   `feedback_verified_state_centric`, `feedback_append_only_correction_events`).
@@ -455,7 +455,7 @@ No CRUD. Reuses KnowledgeOS retrieval, catalog sync, CTA assets, `UniversalClass
 
 ### P3 — Auto media delivery behind the Policy Gate *(high-risk, NOT blanket-approval)*
 - Extension `executeComment`: `uploadImage → waitPreview → submit`, forensics-first
-  (per `ROOT_CAUSE_REPORT.md` discipline), image rotation to avoid spam signatures.
+  (per the archived root-cause report discipline, ../comment-automation/evidence/root-cause-report.md), image rotation to avoid spam signatures.
 - **Risk-based delivery (founder requirement #7):** the same Policy Gate decides
   media delivery — `safe + high confidence → auto`; `risky/low confidence →
   require_review`. No global "every image needs approval."
