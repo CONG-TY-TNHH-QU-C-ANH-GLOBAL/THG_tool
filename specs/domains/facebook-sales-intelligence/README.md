@@ -40,10 +40,7 @@ experiences; experiences reference features, never duplicate them.
   operator-submitted post link → lead + queued comment workflow.
 - [outbound-actions](features/outbound-actions/README.md) — tenant-isolated
   outbound state machine with transition ledger and policy-driven dedup.
-
-## Not yet migrated
-
-The sales-copilot specs still live in the flat legacy folder
-(`specs/copilot/`) and are tracked in
-[`specs/SPEC_REGISTRY.json`](../../SPEC_REGISTRY.json). They migrate here in
-later batches.
+- [sales-copilot](features/sales-copilot/README.md) — NL intent routing,
+  open-prompt orchestration, omnichannel Telegram track.
+- [telegram-copilot](features/telegram-copilot/README.md) — tenant-scoped
+  Telegram bounded context: per-org bots, channel destinations, event wiring.

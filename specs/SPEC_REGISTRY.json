@@ -390,14 +390,23 @@
     },
     {
       "id": "copilot-intent-routing-architecture",
-      "path": "specs/copilot/COPILOT_INTENT_ROUTING_ARCHITECTURE.md",
-      "title": "COPILOT INTENT ROUTING ARCHITECTURE",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/technical.md",
+      "title": "Sales Copilot — Intent Routing Technical Contract",
       "domain": "copilot",
       "type": "architecture",
       "status": "active",
       "maturity": "test_pinned",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "sales-copilot",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "internal/drivers/copilot/intent_*.go pipeline exists",
@@ -424,7 +433,7 @@
         "nlu",
         "architecture"
       ],
-      "notes": "Reviewed in PR24C. Intent pipeline (normalize/lexicon/entities/types/router) exists and is characterization-tested; design intact. NOTE: package moved from internal/ai/ (the doc's cited path) to internal/drivers/copilot/ since authoring."
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24C. Intent pipeline (normalize/lexicon/entities/types/router) exists and is characterization-tested; design intact. NOTE: package moved from internal/ai/ (the doc's cited path) to internal/drivers/copilot/ since authoring."
     },
     {
       "id": "direct-post-intake-workflow",
@@ -892,14 +901,23 @@
     },
     {
       "id": "omnichannel-sales-copilot-telegram-track",
-      "path": "specs/copilot/OMNICHANNEL_SALES_COPILOT_TELEGRAM_TRACK.md",
-      "title": "OMNICHANNEL SALES COPILOT TELEGRAM TRACK",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/telegram-track.md",
+      "title": "Sales Copilot — Omnichannel Telegram Track",
       "domain": "copilot",
       "type": "roadmap",
       "status": "active",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "sales-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24G specs audit (2026-06-23)",
         "PR-1/PR-3 comment-quality shipped (SanitizeComment in internal/ai/comment/quality.go)",
@@ -919,18 +937,27 @@
         "roadmap",
         "track"
       ],
-      "notes": "Reviewed in PR24G. Active founder-directed track; comment-quality prerequisites PR-1/PR-3 shipped (SanitizeComment moved to internal/ai/comment/quality.go since the doc cited internal/ai) and the Telegram peer-interface builds on the shipped telegram control/runtime. Roadmap doc, partial implementation -> active/reviewed."
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Active founder-directed track; comment-quality prerequisites PR-1/PR-3 shipped (SanitizeComment moved to internal/ai/comment/quality.go since the doc cited internal/ai) and the Telegram peer-interface builds on the shipped telegram control/runtime. Roadmap doc, partial implementation -> active/reviewed."
     },
     {
       "id": "open-prompt-agent-design",
-      "path": "specs/copilot/OPEN_PROMPT_AGENT_DESIGN.md",
-      "title": "OPEN PROMPT AGENT DESIGN",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/decisions/open-prompt-agent.md",
+      "title": "Sales Copilot — Open-Prompt Agent Design (Draft)",
       "domain": "copilot",
       "type": "architecture",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "sales-copilot",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24G specs audit (2026-06-23)",
         "Agent.ProcessPromptForOrg in internal/drivers/copilot/agent.go",
@@ -950,7 +977,7 @@
         "agent",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24G. Self-labelled 'DRAFT - awaiting user approval' Phase 6 design proposal (2026-05-04). The open-prompt agent is partly realized (Agent.ProcessPromptForOrg, /api/agent prompt handler exist) and the deterministic routing it envisioned is now the active copilot-intent-routing-architecture, but this doc remains a forward proposal -> draft."
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Self-labelled 'DRAFT - awaiting user approval' Phase 6 design proposal (2026-05-04). The open-prompt agent is partly realized (Agent.ProcessPromptForOrg, /api/agent prompt handler exist) and the deterministic routing it envisioned is now the active copilot-intent-routing-architecture, but this doc remains a forward proposal -> draft."
     },
     {
       "id": "organic-sales-network",
@@ -1359,14 +1386,23 @@
     },
     {
       "id": "sales-voice-automation-and-data-private-enterprise-plan",
-      "path": "specs/copilot/SALES_VOICE_AUTOMATION_AND_DATA_PRIVATE_ENTERPRISE_PLAN.md",
-      "title": "SALES VOICE AUTOMATION AND DATA PRIVATE ENTERPRISE PLAN",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/voice-enterprise-plan.md",
+      "title": "Sales Copilot — Voice Automation and Private-Data Enterprise Plan (Draft)",
       "domain": "copilot",
       "type": "roadmap",
       "status": "draft",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "sales-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "forward product vision after Phase 6 Open-Prompt Agent; no specific implementation contract verified"
@@ -1381,7 +1417,7 @@
         "sales-voice",
         "design-doc"
       ],
-      "notes": "Reviewed in PR24H. Forward product vision (AI Facebook Sales Employee trained on private business data) following the open-prompt agent. Aspirational direction, not an implementation contract -> draft."
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Forward product vision (AI Facebook Sales Employee trained on private business data) following the open-prompt agent. Aspirational direction, not an implementation contract -> draft."
     },
     {
       "id": "store-subpackage-refactor",
@@ -1446,14 +1482,23 @@
     },
     {
       "id": "telegram-bot-runtime",
-      "path": "specs/copilot/TELEGRAM_BOT_RUNTIME.md",
-      "title": "TELEGRAM BOT RUNTIME",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/technical.md",
+      "title": "Telegram Copilot — Bot Runtime Technical Contract",
       "domain": "copilot",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "telegram-copilot",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24F specs audit (2026-06-23)",
         "bounded-context packages exist (store/telegram, telegram/control, server/telegram, telegram/client, telegram/render, server/integrations)",
@@ -1476,18 +1521,27 @@
         "webhook",
         "architecture"
       ],
-      "notes": "Reviewed in PR24F. Bounded-context Telegram runtime is implemented: store -> control -> {integrations, server/telegram}; webhook runtime present; the legacy long-poll bot.go is deleted as the doc states. Active and implementation-backed."
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Bounded-context Telegram runtime is implemented: store -> control -> {integrations, server/telegram}; webhook runtime present; the legacy long-poll bot.go is deleted as the doc states. Active and implementation-backed."
     },
     {
       "id": "telegram-channel-destinations",
-      "path": "specs/copilot/TELEGRAM_CHANNEL_DESTINATIONS.md",
-      "title": "TELEGRAM CHANNEL DESTINATIONS",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/channel-destinations.md",
+      "title": "Telegram Copilot — Channel Destinations",
       "domain": "copilot",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24G specs audit (2026-06-23)",
         "internal/store/telegram/destinations.go + migration 0015_telegram_destinations",
@@ -1511,18 +1565,27 @@
         "destinations",
         "notifications"
       ],
-      "notes": "Reviewed in PR24G. Channel-first destinations backend shipped: telegram_destinations (migration 0015), store CRUD, and control.NotifyEvent resolve/filter/deliver path all exist with tests. Active/implementation-backed; builds on active telegram-bot-runtime."
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Channel-first destinations backend shipped: telegram_destinations (migration 0015), store CRUD, and control.NotifyEvent resolve/filter/deliver path all exist with tests. Active/implementation-backed; builds on active telegram-bot-runtime."
     },
     {
       "id": "telegram-event-wiring",
-      "path": "specs/copilot/TELEGRAM_EVENT_WIRING.md",
-      "title": "TELEGRAM EVENT WIRING",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/event-wiring.md",
+      "title": "Telegram Copilot — Event Wiring",
       "domain": "copilot",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24F specs audit (2026-06-23)",
         "OnLeadCreated/SetLeadNotifier hook in internal/leadingest/ingest.go",
@@ -1543,18 +1606,27 @@
         "event-wiring",
         "notifications"
       ],
-      "notes": "Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go — minor path drift.) Active and implementation-backed."
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go — minor path drift.) Active and implementation-backed."
     },
     {
       "id": "telegram-integration-ui",
-      "path": "specs/copilot/TELEGRAM_INTEGRATION_UI.md",
-      "title": "TELEGRAM INTEGRATION UI",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/integration-ui.md",
+      "title": "Telegram Copilot — Integration Setup (Backend + UI)",
       "domain": "copilot",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24G specs audit (2026-06-23)",
         "migration 0013_telegram_integration + internal/store/telegram (settings/bindings/audit)",
@@ -1576,18 +1648,27 @@
         "integration",
         "control-plane"
       ],
-      "notes": "Reviewed in PR24G. PR-1 BACKEND (telegram_settings/bind_codes/bindings/alert_prefs/audit via migration 0013, tenant-scoped /api/settings/integrations/telegram handlers, default-safe flags) is shipped. The PR-2 Next.js UI is future. Active/implementation-backed for the backend contract."
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. PR-1 BACKEND (telegram_settings/bind_codes/bindings/alert_prefs/audit via migration 0013, tenant-scoped /api/settings/integrations/telegram handlers, default-safe flags) is shipped. The PR-2 Next.js UI is future. Active/implementation-backed for the backend contract."
     },
     {
       "id": "telegram-per-org-bot",
-      "path": "specs/copilot/TELEGRAM_PER_ORG_BOT.md",
-      "title": "TELEGRAM PER ORG BOT",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/per-org-bot.md",
+      "title": "Telegram Copilot — Per-Org Bot Credentials",
       "domain": "copilot",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24G specs audit (2026-06-23)",
         "internal/store/telegram/bot_credentials.go + migration 0016_telegram_bot_credentials",
@@ -1610,7 +1691,7 @@
         "secrets",
         "multi-tenant"
       ],
-      "notes": "Reviewed in PR24G. Per-org encrypted bot credentials backend shipped: telegram_bot_credentials (migration 0016, doc said 0015 - actual is 0016), AES-GCM encrypt, GetDecryptedBotToken internal-only, per-org resolveBot for connect/delivery. Active/implementation-backed."
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Per-org encrypted bot credentials backend shipped: telegram_bot_credentials (migration 0016, doc said 0015 - actual is 0016), AES-GCM encrypt, GetDecryptedBotToken internal-only, per-org resolveBot for connect/delivery. Active/implementation-backed."
     },
     {
       "id": "template-telegram-copilot-plan",
