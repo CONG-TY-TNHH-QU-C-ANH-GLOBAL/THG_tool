@@ -11,7 +11,7 @@ This file complements (does not replace):
 - [`AGENTS.md`](../../AGENTS.md) — short operating instructions per topic.
 - [`specs/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md`](../browser/BROWSER_GATEWAY_AND_FACEBOOK_AUTOMATION_VISION.md)
   — browser provider direction and Chrome Extension production path.
-- [`specs/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md`](../facebook/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md)
+- [`facebook-sales-intelligence roadmap.md`](../domains/facebook-sales-intelligence/roadmap.md)
   — long-form product / feature direction.
 - [`openspec/root-architecture.md`](../../openspec/root-architecture.md)
   — system boundaries.

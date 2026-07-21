@@ -7,6 +7,7 @@ Structure: `experiences/` hold customer/operator contracts (business.md +
 experience.md); `features/` hold the technical contracts and their
 implementation / decisions / evidence / runbooks. A feature may support several
 experiences; experiences reference features, never duplicate them.
+[roadmap.md](roadmap.md) is the product-direction authority for this domain.
 
 ## Experiences
 
@@ -42,7 +43,7 @@ experiences; experiences reference features, never duplicate them.
 
 ## Not yet migrated
 
-The rest of this domain's specs still live in the flat legacy folders
-(`specs/facebook/` remainder and `specs/copilot/`) and are tracked in
+The sales-copilot specs still live in the flat legacy folder
+(`specs/copilot/`) and are tracked in
 [`specs/SPEC_REGISTRY.json`](../../SPEC_REGISTRY.json). They migrate here in
 later batches.

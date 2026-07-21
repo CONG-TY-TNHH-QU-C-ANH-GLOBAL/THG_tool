@@ -508,14 +508,23 @@
     },
     {
       "id": "facebook-automation-reliability-track",
-      "path": "specs/facebook/FACEBOOK_AUTOMATION_RELIABILITY_TRACK.md",
-      "title": "FACEBOOK AUTOMATION RELIABILITY TRACK",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/implementation/reliability-track.md",
+      "title": "Facebook Automation Reliability Track",
       "domain": "facebook",
       "type": "roadmap",
       "status": "active",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "technical_feature": "account-safety",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24C specs audit (2026-06-23)",
         "PR-A mission-preflight reflected near cmd/scraper/crawl_runtime.go",
@@ -533,18 +542,26 @@
         "roadmap",
         "track"
       ],
-      "notes": "Reviewed in PR24C. Active founder-directed reliability track; PR-A (mission preflight, reject account_id=0, no silent account fallback) shipped. PR-B..PR-F remain future-facing. Roadmap doc, not fully test-pinned across phases."
+      "notes": "Reviewed in PR24C; moved under account-safety/implementation/ in the spec IA mega sprint (2026-07-21) — its foundational invariant (verified initiator/account/connector/identity/eligibility, no silent fallback) is the account-safety surface, though its PR train spans crawl/comment/inbox. PR-A (mission preflight, reject account_id=0, no silent account fallback) shipped. PR-B..PR-F remain future-facing -> partial."
     },
     {
       "id": "facebook-business-analysis-automation-plan",
-      "path": "specs/facebook/FACEBOOK_BUSINESS_ANALYSIS_AUTOMATION_PLAN.md",
-      "title": "FACEBOOK BUSINESS ANALYSIS AUTOMATION PLAN",
+      "path": "specs/domains/facebook-sales-intelligence/roadmap.md",
+      "title": "Facebook Sales Intelligence — Product Roadmap",
       "domain": "facebook",
       "type": "roadmap",
       "status": "active",
       "maturity": "reviewed",
+      "metadata_version": 2,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "layer": "roadmap",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24H final audit sweep (2026-06-23)",
         "CLAUDE.md read-first product plan",
@@ -566,7 +583,7 @@
         "roadmap",
         "north-star"
       ],
-      "notes": "Reviewed in PR24H. Canonical product/implementation plan (CLAUDE.md read-first). Its core implementation pointers exist; the crawl handler moved internal/handlers -> internal/jobhandlers/facebook_crawl. Broad north-star roadmap -> active/reviewed."
+      "notes": "Reviewed in PR24H; promoted to specs/domains/facebook-sales-intelligence/roadmap.md in the spec IA mega sprint (2026-07-21) — the product-direction path CLAUDE.md/AGENTS.md name. Its core implementation pointers exist; the crawl handler moved internal/handlers -> internal/jobhandlers/facebook_crawl. Broad north-star roadmap -> active/reviewed, partial by nature."
     },
     {
       "id": "frontend-contract",
