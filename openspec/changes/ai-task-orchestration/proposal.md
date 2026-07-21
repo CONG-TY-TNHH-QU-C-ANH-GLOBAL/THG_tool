@@ -2,7 +2,7 @@
 
 ## Why
 
-The browser automation platform can start, manage, and stream isolated Chrome containers per Facebook account, but has no layer that translates staff intent ("scrape hot leads from this group and comment on them") into the sequenced browser actions that execute it. Commands arrive via Telegram or the web UI as raw text; there is no structured skill dispatch, no multi-step task sequencing, and no durable record of what was attempted and what it produced.
+The proposed browser platform (docker-browser-service — unimplemented) would start, manage, and stream isolated Chrome containers per Facebook account, but there is no layer that translates staff intent ("scrape hot leads from this group and comment on them") into the sequenced browser actions that execute it. Commands arrive via Telegram or the web UI as raw text; there is no structured skill dispatch, no multi-step task sequencing, and no durable record of what was attempted and what it produced.
 
 ## What Changes
 

@@ -94,7 +94,7 @@
                                        │ StartContainer / StopContainer
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│  BROWSER RUNTIME MANAGER  (existing — internal/browser/)                        │
+│  BROWSER RUNTIME MANAGER  (proposed — internal/browser/)                        │
 │                                                                                 │
 │  • Manages Docker container FSM per account                                     │
 │  • Health probe, restart policy, resource limits                                │

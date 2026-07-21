@@ -7,7 +7,7 @@ VNC is hard-coded into each Docker container (one x11vnc process per container, 
 ## What Changes
 
 - Introduce a `StreamingProvider` interface that `BrowserService` uses to attach, detach, and route viewers to a container's display, replacing all direct VNC/noVNC wiring.
-- Refactor the existing VNC implementation into a `VNCStreamingProvider` that satisfies the interface and is the default backend.
+- Refactor the proposed VNC implementation (from docker-browser-service) into a `VNCStreamingProvider` that satisfies the interface and is the default backend.
 - Add a `StreamingSession` concept: a per-viewer token-gated session with an independent lifecycle from the container itself.
 - Expose viewer management APIs: `POST /browser/:id/stream/attach`, `DELETE /browser/:id/stream/detach`, `GET /browser/:id/stream/info` — replacing the implicit "open WebSocket → you get VNC" model.
 - Define the `WebRTCStreamingProvider` interface contract (spec + stub) so a future implementation has a clear target without requiring it to be built now.
