@@ -24,6 +24,8 @@ vocabulary (mandatory reading — synonyms are rejected on review).
   extension connector, channel-neutral automation core, production workflow.
 - [ai-cost-controls](features/ai-cost-controls/README.md) — Phase-1 LLM cost
   controls: usage logs, bounded cache, token capture.
+- [workspace-ui](features/workspace-ui/README.md) — workspace frontend plans
+  and mock-era evidence (no authoritative technical contract yet).
 
 ## Decisions
 
