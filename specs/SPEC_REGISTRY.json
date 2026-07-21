@@ -360,8 +360,8 @@
     },
     {
       "id": "component-structure-rules",
-      "path": "specs/platform/COMPONENT_STRUCTURE_RULES.md",
-      "title": "COMPONENT STRUCTURE RULES",
+      "path": "specs/domains/platform-foundation/decisions/component-structure-rules.md",
+      "title": "Component Structure Rules",
       "domain": "platform",
       "type": "policy",
       "status": "active",
@@ -386,7 +386,7 @@
         "binding",
         "governance"
       ],
-      "notes": "Reviewed in PR24B. Self-declared ACTIVE_BINDING; enforced warn-only by scripts/check_component_structure.py with companion COMPONENT_HOTSPOTS.md. Referenced intelligence-layer example internal/ai/comment exists."
+      "notes": "Reviewed in PR24B; moved to platform-foundation/decisions/ in the spec IA mega sprint (2026-07-21) — the path CLAUDE.md/AGENTS.md name for component ownership. Self-declared ACTIVE_BINDING; enforced warn-only by scripts/check_component_structure.py with companion COMPONENT_HOTSPOTS.md. Domain-level decision record; kept v1 metadata (v2 decision layer requires a feature owner)."
     },
     {
       "id": "copilot-intent-routing-architecture",
@@ -478,8 +478,8 @@
     },
     {
       "id": "domain-model",
-      "path": "specs/platform/DOMAIN_MODEL.md",
-      "title": "DOMAIN MODEL",
+      "path": "specs/domains/platform-foundation/DOMAIN.md",
+      "title": "Platform Domain Model (DOMAIN.md)",
       "domain": "platform",
       "type": "architecture",
       "status": "active",
@@ -504,7 +504,7 @@
         "glossary",
         "living-doc"
       ],
-      "notes": "Reviewed in PR24H. Living canonical vocabulary (mandatory reading); the owner packages it names (internal/auth, internal/platform, frontend/src/platform) exist. Active/reviewed glossary, not test-pinned."
+      "notes": "Reviewed in PR24H; moved to specs/domains/platform-foundation/DOMAIN.md in the spec IA mega sprint (2026-07-21) — the 'Platform vocabulary' path AGENTS.md names. Living canonical vocabulary (mandatory reading); the owner packages it names (internal/auth, internal/platform, frontend/src/platform) exist. Domain-root glossary; kept v1 metadata (no v2 layer fits a vocabulary doc)."
     },
     {
       "id": "facebook-automation-reliability-track",
@@ -1247,14 +1247,23 @@
     },
     {
       "id": "runtime-topology",
-      "path": "specs/platform/RUNTIME_TOPOLOGY.md",
-      "title": "RUNTIME TOPOLOGY",
+      "path": "specs/domains/platform-foundation/features/runtime-topology/technical.md",
+      "title": "Runtime Topology — Technical Contract",
       "domain": "platform",
       "type": "architecture",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 2,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "technical_feature": "runtime-topology",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
         "PR24B specs audit (2026-06-23)",
         "scripts/check_topology.sh (CI grep gates enforce its invariants)",
@@ -1275,7 +1284,7 @@
         "topology",
         "living-doc"
       ],
-      "notes": "Reviewed in PR24B. Living doc describing current runtime composition; its invariants are enforced by scripts/check_topology.sh and the referenced store subpackages all exist. (Doc also cites internal/server/org/superadmin.go which is not at that path; minor, not added.)"
+      "notes": "Reviewed in PR24B; promoted to platform-foundation/features/runtime-topology/technical.md in the spec IA mega sprint (2026-07-21) — the path CLAUDE.md/AGENTS.md name as current runtime authority. Living doc describing current runtime composition; its invariants are enforced by scripts/check_topology.sh and the referenced store subpackages all exist. (Doc also cites internal/server/org/superadmin.go which is not at that path; minor, not added.)"
     },
     {
       "id": "saas-ux-hardening-track",

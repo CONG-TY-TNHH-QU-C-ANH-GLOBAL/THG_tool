@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Component-structure guard (WARN-ONLY baseline).
 
-Surfaces the flat-package smells defined in specs/COMPONENT_STRUCTURE_RULES.md so
+Surfaces the flat-package smells defined in specs/domains/platform-foundation/decisions/component-structure-rules.md so
 new growth is visible in review, WITHOUT blocking CI while current hotspots are
 triaged in specs/COMPONENT_HOTSPOTS.md.
 
@@ -84,7 +84,7 @@ def main() -> int:
                     vague_warn.append(f"  {rel}/{f}  (vague catch-all; prefix it or document a single responsibility)")
 
     print("== Component structure guard (warn-only baseline) ==")
-    print("Rules: specs/COMPONENT_STRUCTURE_RULES.md | Triage: specs/COMPONENT_HOTSPOTS.md\n")
+    print("Rules: specs/domains/platform-foundation/decisions/component-structure-rules.md | Triage: specs/COMPONENT_HOTSPOTS.md\n")
 
     def section(title: str, rows: list[str]) -> None:
         print(f"[{title}] {len(rows)} flagged")

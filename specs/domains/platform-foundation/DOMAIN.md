@@ -138,7 +138,7 @@ Raw storage  →  Domain entities  →  Service resolvers  →
    PlatformService contract  →  Presentation resolver  →  UI
 ```
 
-Detailed pipeline + reverse-direction rule: [frontend/src/platform/BOUNDARIES.md § Resolution pipeline](../../frontend/src/platform/BOUNDARIES.md).
+Detailed pipeline + reverse-direction rule: [frontend/src/platform/BOUNDARIES.md § Resolution pipeline](../../../frontend/src/platform/BOUNDARIES.md).
 
 ---
 

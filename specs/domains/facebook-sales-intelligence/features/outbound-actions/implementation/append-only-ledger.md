@@ -1,6 +1,6 @@
 # Append-Only Ledger Migration — Design
 
-**Status**: design (no code). Stage 3 §5 semantic cleanup deliverable per [RUNTIME_TOPOLOGY.md §4](../../../../../platform/RUNTIME_TOPOLOGY.md#4-append-only-boundaries).
+**Status**: design (no code). Stage 3 §5 semantic cleanup deliverable per [runtime-topology technical.md §4](../../../../platform-foundation/features/runtime-topology/technical.md#4-append-only-boundaries).
 
 **Why this doc exists**: `action_ledger` is supposed to be append-only per [[feedback_append_only_correction_events]]. After the Phase 5B coordination extraction shipped, three UPDATE call sites remained (counted by `scripts/check_topology.sh` §6.6 as `EXPECTED-FAIL`; ARCHST-R1 later deleted the unused by-id `MarkActionLedgerOutcome`, lowering the baseline 3 → 2). This doc proposes the migration path. Implementation is a separate PR — this is the design-first artifact the user mandated for high-risk semantic changes.
 
@@ -135,7 +135,7 @@ Per [[feedback_staged_evolution_over_big_bang]] this lands additive → cleanup.
 
 ## 5. Out of scope
 
-- Migrating `execution_attempts` UPDATEs (the `Begin`→`AdvanceStatus`→`Finish` lifecycle UPDATEs). Those are intra-row state and the design intent — see [RUNTIME_TOPOLOGY.md §4](../../../../../platform/RUNTIME_TOPOLOGY.md#4-append-only-boundaries) "Append-only by design" table.
+- Migrating `execution_attempts` UPDATEs (the `Begin`→`AdvanceStatus`→`Finish` lifecycle UPDATEs). Those are intra-row state and the design intent — see [runtime-topology technical.md §4](../../../../platform-foundation/features/runtime-topology/technical.md#4-append-only-boundaries) "Append-only by design" table.
 - Migrating `account_runtime_state` writes. That's a counter table, not a ledger; UPDATE is the right semantics.
 - Reworking `outbound_messages.execution_state` CAS. That's the state machine primitive and stays as-is per the V2 outbound refactor design.
 
