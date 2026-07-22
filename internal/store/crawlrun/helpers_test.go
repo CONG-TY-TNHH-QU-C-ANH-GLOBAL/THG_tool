@@ -42,6 +42,7 @@ func cleanupOrg(t *testing.T, db *sql.DB, org int64) {
 		// Reverse FK order; best-effort — leftover rows only leak into the next
 		// run under this test's own org id, never mask an assertion.
 		for _, table := range []string{
+			"facebook_crawl_lead_index",
 			"facebook_crawl_runs",
 			"facebook_crawl_campaign_sources",
 			"facebook_crawl_campaign_accounts",
