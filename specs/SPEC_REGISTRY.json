@@ -2,7 +2,7 @@
   "schema_version": 1,
   "generated": true,
   "generated_from": "specs/domains/**/SPEC_MANIFEST.json",
-  "updated_at": "2026-07-21",
+  "updated_at": "2026-07-22",
   "entries": [
     {
       "id": "account-safety-boundaries",
@@ -1026,19 +1026,27 @@
         "fresh-lead-discovery"
       ],
       "owner": "unassigned",
-      "last_reviewed": "2026-07-12",
+      "last_reviewed": "2026-07-22",
       "verified_against": [
         "companion to facebook-crawl-campaign-postgres-schema-implementation (PR-M2B) and multi-group-fresh-lead-crawl-spec (PR-M0)",
         "planned owners exist on main: internal/store/crawl/, cmd/scraper/crawl_scheduler.go, internal/server/agent/crawlingest/, internal/session/allocator.go",
-        "authorizes no runtime code in PR-M2B"
+        "authorizes no runtime code in PR-M2B",
+        "PR-M3C (2026-07-22): ApplyRunResult shipped in internal/store/crawlrun (apply.go/apply_classify.go/apply_types.go) with pure + real-PostgreSQL fencing/idempotency/rollback/concurrency tests; §11 transaction contract realized; PR-M4 wiring still absent"
       ],
       "related_code": [
-        "internal/store/crawl/",
         "cmd/scraper/crawl_scheduler.go",
         "internal/server/agent/crawlingest/",
-        "internal/session/allocator.go"
+        "internal/services/facebook/crawlcampaign",
+        "internal/session/allocator.go",
+        "internal/store/crawl/",
+        "internal/store/crawlrun/apply.go"
       ],
-      "related_tests": [],
+      "related_tests": [
+        "internal/store/crawlrun/apply_concurrency_test.go",
+        "internal/store/crawlrun/apply_fence_test.go",
+        "internal/store/crawlrun/apply_input_test.go",
+        "internal/store/crawlrun/apply_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
       "tags": [
@@ -1633,9 +1641,10 @@
         "fresh-lead-discovery"
       ],
       "owner": "unassigned",
-      "last_reviewed": "2026-07-13",
+      "last_reviewed": "2026-07-22",
       "verified_against": [
-        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117"
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117",
+        "PR-M3C (2026-07-22): M3 row complete — M3A domain/policy, M3B queue/lifecycle store, M3C atomic ApplyRunResult all shipped dormant; M4 scheduler wiring onward not yet built"
       ],
       "related_code": [],
       "related_tests": [],

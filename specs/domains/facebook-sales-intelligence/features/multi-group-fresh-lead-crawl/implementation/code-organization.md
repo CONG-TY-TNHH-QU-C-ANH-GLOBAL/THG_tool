@@ -493,6 +493,33 @@ Do not create one `FacebookCrawlStore` god interface. Do not create an interface
 - real PostgreSQL store tests;
 - no production scheduler or ingest wiring.
 
+**Shipped evidence (M3A/M3B/M3C).** The durable store landed as
+`internal/store/crawlrun` — the canonical owner of every
+`facebook_crawl_runs` SQL statement — rather than the once-sketched
+`internal/store/crawl/run_result.go` (that package owns the SQLite-era
+crawl-pipeline tables; splitting run SQL across two packages would break the
+one-canonical-owner rule). PR-M3C implements §11 as
+`Store.ApplyRunResult(ctx, ApplyRunResultInput) (ApplyRunResultOutcome, error)`:
+one transaction that locks the run row `FOR UPDATE` under the org fence,
+classifies via the pure `classifyApply` (running → apply; exact terminal
+replay → `already_applied` with recomputed counts; different payload →
+`conflicting_replay`; attempt mismatch/unknown/foreign run →
+`stale_rejected`; queued/waiting → `run_not_running`), reserves lead
+identities through `pk_fb_crawl_lead_index` `ON CONFLICT DO NOTHING`
+(`lead_id` stays NULL — canonical lead creation is PR-M5), finishes the run
+under the full conditional-fence guard, and stamps the source
+(`last_run_at`, monotonic `cursor_last_post_at` via `GREATEST`). Worker
+input is restricted to `succeeded`/`stopped_safe`/`failed`; `abandoned`
+stays reaper-owned and `cancelled` operator-owned. Campaign aggregates: not
+part of the runtime model, not touched. The `RunResultStore` consumer port
+is deferred to the PR-M4 composition root (no consumer exists yet). Pinned
+by pure unit tests plus real-PostgreSQL integration tests: atomic success,
+exact/conflicting replay, stale attempt, cross-org rejection, nonexistent
+run, queued-run rejection, terminal-regression refusal, in-batch duplicates,
+partial index overlap, cross-org identity isolation, forced mid-transaction
+rollback (trigger-injected), and concurrent same-run single-winner plus
+overlapping-run dedup. PR-M4 scheduler wiring remains not implemented.
+
 ### PR-M4 — scheduler and account-pool wiring
 
 - default-off feature flag;
