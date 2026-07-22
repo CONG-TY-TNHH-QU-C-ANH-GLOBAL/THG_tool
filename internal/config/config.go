@@ -42,8 +42,14 @@ type Config struct {
 	OpenAIAPIKey          string
 	OpenAIClassifierModel string // UniversalClassify + price extraction. Cheap+fast: gpt-4o-mini / gpt-5.4-mini.
 	OpenAICommentModel    string // Comments, inbox, follow-up, job posts, agent reasoning. Strong: gpt-4.1 / gpt-5.4.
-	AgentBrainURL         string // optional Python sidecar planner endpoint base URL
-	AgentBrainTimeout     int    // milliseconds
+	// LLMBaseURL/LLMAPIKey route the chat-completions callers (classifier +
+	// comment generation) at an OpenAI-compatible provider (e.g. Together AI).
+	// Empty LLMBaseURL keeps the built-in OpenAI default; LLMAPIKey falls back
+	// to OpenAIAPIKey. Embeddings + vision (pricer) keep OpenAIAPIKey.
+	LLMBaseURL        string // e.g. https://api.together.xyz/v1 — blank = OpenAI
+	LLMAPIKey         string // provider key for chat models; blank = OpenAIAPIKey
+	AgentBrainURL     string // optional Python sidecar planner endpoint base URL
+	AgentBrainTimeout int    // milliseconds
 
 	// Security
 	APISecret      string // DEPRECATED: legacy API key; replaced by JWT auth
@@ -138,6 +144,8 @@ func Load() *Config {
 		// generation timeout to match. callOpenAI omits temperature for gpt-5*/o*
 		// automatically when such a model is configured.
 		OpenAICommentModel:         getEnv("OPENAI_COMMENT_MODEL", "gpt-4.1"),
+		LLMBaseURL:                 strings.TrimRight(getEnv("LLM_BASE_URL", ""), "/"),
+		LLMAPIKey:                  getEnv("LLM_API_KEY", getEnv("OPENAI_API_KEY", "")),
 		AgentBrainURL:              getEnv("AGENT_BRAIN_URL", ""),
 		AgentBrainTimeout:          getEnvInt("AGENT_BRAIN_TIMEOUT_MS", 1500),
 		APISecret:                  getEnv("API_SECRET", ""),

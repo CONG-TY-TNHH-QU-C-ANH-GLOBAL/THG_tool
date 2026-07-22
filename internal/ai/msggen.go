@@ -81,20 +81,43 @@ func detectLang(text string) string {
 	return "en"
 }
 
+// defaultChatCompletionsURL is the OpenAI chat-completions endpoint used when no
+// provider base URL is configured.
+const defaultChatCompletionsURL = "https://api.openai.com/v1/chat/completions"
+
 // MessageGenerator generates contextual messages for auto-commenting and auto-inbox.
 type MessageGenerator struct {
 	apiKey string
 	model  string
-	client *http.Client
+	// baseURL is an OpenAI-compatible chat endpoint base (e.g.
+	// https://api.together.xyz/v1). Empty means the OpenAI default.
+	baseURL string
+	client  *http.Client
 }
 
-// NewMessageGenerator creates a new AI message generator.
+// NewMessageGenerator creates a new AI message generator against OpenAI.
 func NewMessageGenerator(apiKey, model string) *MessageGenerator {
+	return NewMessageGeneratorWithEndpoint(apiKey, model, "")
+}
+
+// NewMessageGeneratorWithEndpoint creates a generator against any OpenAI-compatible
+// provider. A blank baseURL keeps the OpenAI default, so callers that pass "" behave
+// exactly like NewMessageGenerator.
+func NewMessageGeneratorWithEndpoint(apiKey, model, baseURL string) *MessageGenerator {
 	return &MessageGenerator{
-		apiKey: apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 30 * time.Second},
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		client:  &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// chatURL returns the chat-completions endpoint for this generator's provider.
+func (mg *MessageGenerator) chatURL() string {
+	if mg.baseURL == "" {
+		return defaultChatCompletionsURL
+	}
+	return mg.baseURL + "/chat/completions"
 }
 
 // Available returns true if the generator has a valid API key.
@@ -583,7 +606,7 @@ func (mg *MessageGenerator) callOpenAIStrictJSON(ctx context.Context, prompt, sc
 	}
 
 	jsonBody, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", mg.chatURL(), bytes.NewReader(jsonBody))
 	if err != nil {
 		return usage, err
 	}
@@ -721,7 +744,7 @@ func isRetryableOpenAIError(err error) bool {
 
 func (mg *MessageGenerator) callOpenAIOnce(ctx context.Context, prompt string) (string, error) {
 	jsonBody, _ := json.Marshal(chatCompletionBody(mg.model, prompt))
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", mg.chatURL(), bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", err
 	}
