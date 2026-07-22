@@ -78,6 +78,9 @@ func indexRows(t *testing.T, db *sql.DB, org int64) map[string]int64 {
 		}
 		got[hash] = runID
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate index: %v", err)
+	}
 	return got
 }
 

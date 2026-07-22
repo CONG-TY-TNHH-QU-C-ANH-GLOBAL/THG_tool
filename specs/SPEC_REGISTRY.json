@@ -1043,6 +1043,8 @@
       ],
       "related_tests": [
         "internal/store/crawlrun/apply_concurrency_test.go",
+        "internal/store/crawlrun/apply_fence_test.go",
+        "internal/store/crawlrun/apply_input_test.go",
         "internal/store/crawlrun/apply_test.go"
       ],
       "supersedes": [],
