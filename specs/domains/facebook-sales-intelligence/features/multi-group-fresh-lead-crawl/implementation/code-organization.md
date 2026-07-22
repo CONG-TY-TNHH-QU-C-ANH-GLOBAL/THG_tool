@@ -520,6 +520,36 @@ partial index overlap, cross-org identity isolation, forced mid-transaction
 rollback (trigger-injected), and concurrent same-run single-winner plus
 overlapping-run dedup. PR-M4 scheduler wiring remains not implemented.
 
+**Shipped evidence (M4A — orchestrator core).** The orchestration policy landed
+as `internal/services/facebook/crawlcampaign.Orchestrator` (`orchestrator.go`),
+a store-, transport-, and clock-free loop over the consumer ports in `ports.go`
+(`PoolReader`, `DueRunEnqueuer`, `RunClaimer`, `DispatchFailureRecoverer`,
+`AccountSafetyGate`, `ReadinessGate`, `CrawlCommandDispatcher` — no
+`FacebookCrawlStore` god interface, and the package still imports no
+store/server/cmd per the reverse-dependency seam). `RunOnce(ctx, now)` applies
+the §7 selection order per org: enqueue due work, then per pool account
+`FreeSlots` (machine budget) → `Eligible` (Account Safety fail-closed) →
+`Ready` (connector/identity/version) **before** the claim, then claim → reserve
+slot → dispatch → on failure `RecoverDispatchFailure` then release. The
+pre-claim safety+readiness gate is load-bearing: claiming for a not-ready
+account would mint an immediately-claimable retry each tick (a retry storm), so
+a not-ready account is never claimed. The composition root wires it in
+`cmd/scraper/crawl_campaign_orchestrator.go` — thin adapters mapping
+`crawlrun.Store` (with two new read-only helpers, `ActiveCampaignPools` and
+`DispatchInfo`, over the M2B campaign/source tables), the **shared** Account
+Safety `Coordinator` (so the machine budget of 1 is enforced across the legacy
+and campaign schedulers, never doubled), the `readiness` primitive (org-wide,
+`userID=0`), and the existing `crawler.SubmitCrawlRequest` command path (the
+`(run_id, attempt)` fence threaded into the task via `_fresh_lead_*` extras for
+PR-M5 result correlation). Gated by `FRESH_LEAD_CAMPAIGNS_ENABLED` (default
+false); Postgres-only, so `newFreshLeadCampaignOrchestrator` returns nil on a
+SQLite runtime and the campaign path fails closed. No migration, no
+`ApplyRunResult` change, no extension change. Pinned by pure orchestrator unit
+tests (budget cap, parked/not-ready skip, claim-miss, dispatch-failure recover
++ release, recover-failure holds slot, per-org isolation, pool-read fail-closed)
+and a composition-root fail-closed test. Result ingest / freshness minting
+(PR-M5) and operator UX (PR-M6) remain not implemented.
+
 ### PR-M4 — scheduler and account-pool wiring
 
 - default-off feature flag;

@@ -123,21 +123,29 @@
         "companion to facebook-crawl-campaign-postgres-schema-implementation (PR-M2B) and multi-group-fresh-lead-crawl-spec (PR-M0)",
         "planned owners exist on main: internal/store/crawl/, cmd/scraper/crawl_scheduler.go, internal/server/agent/crawlingest/, internal/session/allocator.go",
         "authorizes no runtime code in PR-M2B",
-        "PR-M3C (2026-07-22): ApplyRunResult shipped in internal/store/crawlrun (apply.go/apply_classify.go/apply_types.go) with pure + real-PostgreSQL fencing/idempotency/rollback/concurrency tests; §11 transaction contract realized; PR-M4 wiring still absent"
+        "PR-M3C (2026-07-22): ApplyRunResult shipped in internal/store/crawlrun (apply.go/apply_classify.go/apply_types.go) with pure + real-PostgreSQL fencing/idempotency/rollback/concurrency tests; §11 transaction contract realized; PR-M4 wiring still absent",
+        "PR-M4A (2026-07-22): orchestrator core + fenced dispatch shipped default-off — pure crawlcampaign.Orchestrator over consumer ports (orchestrator.go/ports.go) doing enqueue -> select account -> claim -> dispatch -> recover; crawlrun ActiveCampaignPools/DispatchInfo read adapters; cmd/scraper adapters + FRESH_LEAD_CAMPAIGNS_ENABLED (default false, Postgres-only fail-closed) wiring sharing the Account Safety machine budget; pre-claim safety+readiness gate prevents retry storms; ApplyRunResult boundary untouched; result-ingest/freshness deferred to PR-M5"
       ],
       "related_code": [
         "cmd/scraper/crawl_scheduler.go",
+        "cmd/scraper/crawl_campaign_orchestrator.go",
         "internal/server/agent/crawlingest/",
         "internal/services/facebook/crawlcampaign",
+        "internal/services/facebook/crawlcampaign/orchestrator.go",
+        "internal/services/facebook/crawlcampaign/ports.go",
         "internal/session/allocator.go",
         "internal/store/crawl/",
-        "internal/store/crawlrun/apply.go"
+        "internal/store/crawlrun/apply.go",
+        "internal/store/crawlrun/pools.go",
+        "internal/store/crawlrun/dispatch_info.go"
       ],
       "related_tests": [
         "internal/store/crawlrun/apply_concurrency_test.go",
         "internal/store/crawlrun/apply_fence_test.go",
         "internal/store/crawlrun/apply_input_test.go",
-        "internal/store/crawlrun/apply_test.go"
+        "internal/store/crawlrun/apply_test.go",
+        "internal/services/facebook/crawlcampaign/orchestrator_test.go",
+        "cmd/scraper/crawl_campaign_orchestrator_test.go"
       ],
       "supersedes": [],
       "superseded_by": null,
@@ -149,6 +157,7 @@
         "code-organization",
         "blueprint",
         "prm3",
+        "prm4",
         "prm5"
       ],
       "notes": "Companion runtime code-organization blueprint for PR-M3..PR-M5 (runtime ownership, dependency direction, atomic ports, transaction/rollout seams). Docs-only; authorizes no runtime code in PR-M2B. Planned durable store boundary internal/store/crawl. Layers on the PR-M2B schema (facebook-crawl-campaign-postgres-schema-implementation) and multi-group-fresh-lead-crawl-spec.",
@@ -206,10 +215,16 @@
       "last_reviewed": "2026-07-22",
       "verified_against": [
         "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117",
-        "PR-M3C (2026-07-22): M3 row complete — M3A domain/policy, M3B queue/lifecycle store, M3C atomic ApplyRunResult all shipped dormant; M4 scheduler wiring onward not yet built"
+        "PR-M3C (2026-07-22): M3 row complete — M3A domain/policy, M3B queue/lifecycle store, M3C atomic ApplyRunResult all shipped dormant; M4 scheduler wiring onward not yet built",
+        "PR-M4A (2026-07-22): orchestrator core + fenced dispatch shipped default-off (FRESH_LEAD_CAMPAIGNS_ENABLED, Postgres-only) — the campaign scheduler now enqueues/selects/claims/dispatches/recovers over the merged M3B/M3C store and CALLS the shared Account Safety Coordinator; legacy single-intent path untouched; result-ingest (M5) and operator UI (M6) not yet built"
       ],
-      "related_code": [],
-      "related_tests": [],
+      "related_code": [
+        "cmd/scraper/crawl_campaign_orchestrator.go",
+        "internal/services/facebook/crawlcampaign/orchestrator.go"
+      ],
+      "related_tests": [
+        "internal/services/facebook/crawlcampaign/orchestrator_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
       "tags": [
@@ -218,7 +233,7 @@
         "rollout",
         "pr-train"
       ],
-      "notes": "PR train M0-M6 for the fresh-lead crawl runtime. M0 (spec), M2B (schema), M3B (store mechanics) merged; M4 scheduler wiring onward not yet built.",
+      "notes": "PR train M0-M6 for the fresh-lead crawl runtime. M0 (spec), M2B (schema), M3B (store mechanics), M4A (default-off orchestrator core) merged; M4B enablement / M5 result-ingest / M6 operator UI not yet built.",
       "compatibility": {
         "domain": "facebook",
         "type": "roadmap",

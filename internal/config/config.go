@@ -32,6 +32,15 @@ type Config struct {
 	// the reel store has no SQLite schema.
 	ReelStudioEnabled bool
 
+	// FRESH_LEAD_CAMPAIGNS_ENABLED gates the multi-group fresh-lead campaign
+	// orchestrator (PR-M4). Default false: the durable campaign store is dormant
+	// and the legacy single-intent crawl scheduler stays the only crawl driver
+	// until an explicit enablement PR. Postgres-only — the campaign tables have
+	// no SQLite schema, so even when true the orchestrator fails closed on a
+	// SQLite runtime. Org/campaign scoping is layered on top: no active campaign
+	// row means no work regardless of this flag.
+	FreshLeadCampaignsEnabled bool
+
 	// AI (OpenAI only).
 	//
 	// Two-model split: classifier runs on every crawled post (high volume,
@@ -123,6 +132,7 @@ func Load() *Config {
 		TelegramWebhookSecret:       getEnv("TELEGRAM_WEBHOOK_SECRET", ""),
 		TelegramAllowGlobalFallback: getEnvBool("TELEGRAM_ALLOW_GLOBAL_FALLBACK", false),
 		ReelStudioEnabled:           getEnvBool("REEL_STUDIO_ENABLED", false),
+		FreshLeadCampaignsEnabled:   getEnvBool("FRESH_LEAD_CAMPAIGNS_ENABLED", false),
 		OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a
 		// legacy alias so existing /etc/thg-scraper/env files on production VPS
