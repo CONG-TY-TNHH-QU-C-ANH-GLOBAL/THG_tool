@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "THG SPEC_MANIFEST.json",
+  "description": "Node-owned source of spec-registry metadata. The executable validation lives in scripts/spec_registry/; this schema is the reviewable contract.",
+  "type": "object",
+  "required": ["manifest_schema_version", "node", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_schema_version": {"const": 1},
+    "node": {
+      "type": "object",
+      "required": ["kind", "id", "ownership_domain", "domain_kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["domain", "experience", "technical_feature"]},
+        "id": {"$ref": "#/definitions/slug"},
+        "ownership_domain": {"$ref": "#/definitions/slug"},
+        "domain_kind": {"enum": ["product", "product_platform", "platform"]},
+        "supported_experiences": {
+          "description": "technical_feature nodes only; each slug must name an experience node that has a manifest",
+          "type": "array",
+          "items": {"$ref": "#/definitions/slug"},
+          "uniqueItems": true
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/entry"}
+    }
+  },
+  "definitions": {
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+    "entry": {
+      "type": "object",
+      "required": ["id", "document", "title", "metadata_version", "layer",
+                   "authority", "lifecycle", "implementation_state", "effective",
+                   "owner", "last_reviewed", "verified_against", "related_code",
+                   "related_tests", "supersedes", "superseded_by", "tags", "notes",
+                   "compatibility"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/definitions/slug"},
+        "document": {
+          "description": "path relative to the manifest directory; must not escape the node",
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.).+\\.md$"
+        },
+        "title": {"type": "string"},
+        "metadata_version": {"const": 3},
+        "layer": {
+          "description": "must be valid for the node kind — domain: domain|roadmap|decision|evidence|runbook|implementation; experience: business|experience|roadmap|decision|evidence|runbook; technical_feature: technical|implementation|decision|evidence|runbook|roadmap",
+          "enum": ["domain", "business", "experience", "technical", "implementation",
+                   "decision", "evidence", "runbook", "roadmap"]
+        },
+        "authority": {"enum": ["authoritative", "supporting", "historical"]},
+        "lifecycle": {"enum": ["draft", "active", "superseded", "archived"]},
+        "implementation_state": {"enum": ["proposed", "partial", "backed", "not_applicable"]},
+        "effective": {
+          "description": "historical authority and superseded/archived lifecycle require false",
+          "type": "boolean"
+        },
+        "owner": {"type": "string"},
+        "last_reviewed": {"type": ["string", "null"]},
+        "verified_against": {"type": "array", "items": {"type": "string"}},
+        "related_code": {"type": "array", "items": {"type": "string"}},
+        "related_tests": {"type": "array", "items": {"type": "string"}},
+        "supersedes": {"type": "array", "items": {"type": "string"}},
+        "superseded_by": {"type": ["string", "null"]},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "notes": {"type": "string"},
+        "compatibility": {
+          "description": "legacy flattened fields preserved for existing SPEC_REGISTRY.json consumers; not authority semantics",
+          "type": "object",
+          "required": ["domain", "type", "status", "maturity"],
+          "additionalProperties": false,
+          "properties": {
+            "domain": {"type": "string"},
+            "type": {"enum": ["behavior", "architecture", "contract", "migration",
+                              "investigation", "runbook", "report", "roadmap",
+                              "policy", "unknown"]},
+            "status": {"enum": ["active", "draft", "unreviewed", "stale", "deprecated",
+                                "superseded", "archived"]},
+            "maturity": {"enum": ["snapshot", "reviewed", "test_pinned",
+                                  "implementation_backed", "superseded", "unknown"]}
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "experience",
+    "id": "lead-management",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product"
+  },
+  "entries": [
+    {
+      "id": "lead-management-business",
+      "document": "business.md",
+      "title": "Lead Management — Business Contract",
+      "metadata_version": 3,
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-13): distilled from lead-lifecycle PR-1..PR-5 shipped evidence + multi-actor-coverage contracts; no invented behavior"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "lead-management",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the lead-management experience: shared-lead/owned-execution policy, no-spam channel discipline, typed archiving. Sources verified shipped behavior; engagement remains governed by engagement-approval.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "contract",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "lead-management-experience",
+      "document": "experience.md",
+      "title": "Lead Management — Operator Experience",
+      "metadata_version": 3,
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-13): lifecycle tabs (LifecycleTabs.tsx), queue ordering, archive/unarchive endpoints, copilot_wording.go all verified shipped; compaction flagged planned"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/leads/LifecycleTabs.tsx",
+        "internal/services/facebook/leadoutreach/copilot_wording.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "lead-management",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of lead-management: shipped lifecycle states/tabs, queue ordering, coverage skip reasons, archive/restore, copilot wording. Planned items (retention compaction) explicitly flagged.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "contract",
+        "status": "draft",
+        "maturity": "snapshot"
+      }
+    }
+  ]
+}

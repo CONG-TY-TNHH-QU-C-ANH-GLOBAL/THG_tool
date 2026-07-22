@@ -1,0 +1,52 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "domain",
+    "id": "facebook-sales-intelligence",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product"
+  },
+  "entries": [
+    {
+      "id": "facebook-business-analysis-automation-plan",
+      "document": "roadmap.md",
+      "title": "Facebook Sales Intelligence — Product Roadmap",
+      "metadata_version": 3,
+      "layer": "roadmap",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "CLAUDE.md read-first product plan",
+        "core pointers exist: internal/ai/business.go, internal/ai/universal.go, internal/jobs/model.go, internal/store/app_store.go, internal/jobhandlers/facebook_crawl/handler.go"
+      ],
+      "related_code": [
+        "internal/ai/business.go",
+        "internal/ai/universal.go",
+        "internal/jobs/model.go",
+        "internal/store/app_store.go",
+        "internal/jobhandlers/facebook_crawl/handler.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "product-plan",
+        "roadmap",
+        "north-star"
+      ],
+      "notes": "Reviewed in PR24H; promoted to specs/domains/facebook-sales-intelligence/roadmap.md in the spec IA mega sprint (2026-07-21) — the product-direction path CLAUDE.md/AGENTS.md name. Its core implementation pointers exist; the crawl handler moved internal/handlers -> internal/jobhandlers/facebook_crawl. Broad north-star roadmap -> active/reviewed, partial by nature.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "roadmap",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

@@ -10,7 +10,9 @@ Claude-specific workflows live in `CLAUDE.md` and `.claude/`.
 
 Specifications are organized by ownership domain under `specs/domains/`
 (Domain → Experience → Technical Feature → implementation/decisions/evidence/
-runbooks). `specs/SPEC_REGISTRY.json` is the machine-readable authority index.
+runbooks). `specs/SPEC_REGISTRY.json` is the machine-readable authority index,
+generated from per-node `SPEC_MANIFEST.json` files — edit the manifest, never
+the registry (workflow: `specs/registry/README.md`).
 
 - `specs/domains/facebook-sales-intelligence/` — product domain: fresh-lead
   discovery, lead management, engagement approval, sales copilot.

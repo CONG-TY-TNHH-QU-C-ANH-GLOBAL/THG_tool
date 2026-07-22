@@ -1,7 +1,86 @@
 {
   "schema_version": 1,
+  "generated": true,
+  "generated_from": "specs/domains/**/SPEC_MANIFEST.json",
   "updated_at": "2026-07-21",
   "entries": [
+    {
+      "id": "account-safety-boundaries",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/decisions/ADR-001-conservative-account-safety.md",
+      "title": "ADR-001: Conservative, Fail-Safe Account Safety",
+      "domain": "facebook",
+      "type": "policy",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "account-safety",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 fix-up (2026-07-13): recast as rationale-only ADR; binding invariants restored to the account-safety technical contract"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "account-safety",
+        "boundaries",
+        "data-planes",
+        "no-evasion"
+      ],
+      "notes": "Supporting rationale ADR for the conservative fail-safe account-safety posture: alternatives considered (rotation, auto-clear, parallelism, solving/evasion, instant retries), trade-offs, consequences. The binding invariants themselves live in the account-safety technical contract (crawler-account-safety-spec §2/§7)."
+    },
+    {
+      "id": "account-safety-review-checklist",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/runbooks/review-checklist.md",
+      "title": "Account Safety — Review Checklist",
+      "domain": "facebook",
+      "type": "runbook",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "account-safety",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from crawler-account-safety-spec §10"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "account-safety",
+        "runbook",
+        "review-checklist"
+      ],
+      "notes": "Nine-item safety checklist applied to every PR-C* runtime PR (speed, concurrency, checkpoint behavior, bypass/evasion, lease, data-plane, text leakage, pure-policy testability, Sonar/CodeRabbit hygiene)."
+    },
     {
       "id": "api-spec",
       "path": "specs/domains/platform-foundation/features/workspace-ui/evidence/api-spec.md",
@@ -10,6 +89,17 @@
       "type": "contract",
       "status": "stale",
       "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "workspace-ui",
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "supported_experiences": [],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -38,15 +128,19 @@
       "type": "migration",
       "status": "draft",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "outbound-actions",
+      "node_kind": "technical_feature",
+      "node_id": "outbound-actions",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "draft",
       "implementation_state": "proposed",
       "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -79,15 +173,19 @@
       "type": "investigation",
       "status": "archived",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "comment-automation",
+      "node_kind": "technical_feature",
+      "node_id": "comment-automation",
       "layer": "evidence",
       "authority": "historical",
       "lifecycle": "archived",
       "implementation_state": "not_applicable",
       "effective": false,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -118,15 +216,17 @@
       "type": "architecture",
       "status": "active",
       "maturity": "test_pinned",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "platform-foundation",
       "domain_kind": "platform",
-      "technical_feature": "browser-connector",
+      "node_kind": "technical_feature",
+      "node_id": "browser-connector",
       "layer": "technical",
       "authority": "authoritative",
       "lifecycle": "active",
       "implementation_state": "backed",
       "effective": true,
+      "supported_experiences": [],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -161,15 +261,17 @@
       "type": "architecture",
       "status": "draft",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "platform-foundation",
       "domain_kind": "platform",
-      "technical_feature": "browser-connector",
+      "node_kind": "technical_feature",
+      "node_id": "browser-connector",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "draft",
       "implementation_state": "proposed",
       "effective": true,
+      "supported_experiences": [],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -200,15 +302,17 @@
       "type": "roadmap",
       "status": "draft",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "platform-foundation",
       "domain_kind": "platform",
-      "technical_feature": "browser-connector",
+      "node_kind": "technical_feature",
+      "node_id": "browser-connector",
       "layer": "decision",
       "authority": "supporting",
       "lifecycle": "draft",
       "implementation_state": "proposed",
       "effective": true,
+      "supported_experiences": [],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -238,10 +342,11 @@
       "type": "behavior",
       "status": "active",
       "maturity": "test_pinned",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "comment-automation",
+      "node_kind": "technical_feature",
+      "node_id": "comment-automation",
       "layer": "technical",
       "authority": "authoritative",
       "lifecycle": "active",
@@ -285,15 +390,19 @@
       "type": "report",
       "status": "archived",
       "maturity": "snapshot",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "comment-intelligence",
+      "node_kind": "technical_feature",
+      "node_id": "comment-intelligence",
       "layer": "evidence",
       "authority": "historical",
       "lifecycle": "archived",
       "implementation_state": "not_applicable",
       "effective": false,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -322,10 +431,11 @@
       "type": "architecture",
       "status": "draft",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "comment-intelligence",
+      "node_kind": "technical_feature",
+      "node_id": "comment-intelligence",
       "layer": "technical",
       "authority": "authoritative",
       "lifecycle": "draft",
@@ -363,6 +473,16 @@
       "type": "investigation",
       "status": "stale",
       "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "domain",
+      "node_id": "platform-foundation",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -393,6 +513,16 @@
       "type": "policy",
       "status": "active",
       "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "domain",
+      "node_id": "platform-foundation",
+      "layer": "decision",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
       "owner": "unassigned",
       "last_reviewed": "2026-06-23",
       "verified_against": [
@@ -423,15 +553,17 @@
       "type": "architecture",
       "status": "active",
       "maturity": "test_pinned",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "sales-copilot",
+      "node_kind": "technical_feature",
+      "node_id": "sales-copilot",
       "layer": "technical",
       "authority": "authoritative",
       "lifecycle": "active",
       "implementation_state": "backed",
       "effective": true,
+      "supported_experiences": [],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -463,6 +595,107 @@
       "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24C. Intent pipeline (normalize/lexicon/entities/types/router) exists and is characterization-tested; design intact. NOTE: package moved from internal/ai/ (the doc's cited path) to internal/drivers/copilot/ since authoring."
     },
     {
+      "id": "crawl-speed-checkpoint-audit",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/evidence/crawl-speed-checkpoint-audit.md",
+      "title": "CRAWL SPEED CHECKPOINT AUDIT",
+      "domain": "facebook",
+      "type": "investigation",
+      "status": "active",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "multi-group-fresh-lead-crawl",
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-08",
+      "verified_against": [
+        "extension crawl path is crawl.js crawlVisibleFacebookPosts (not the no-scroll CDPRuntime.FetchBatch)",
+        "in-flight heartbeat carries only {stage,fetched,max,source_url} (notifications.go NotifyCrawlProgress)",
+        "crawl.js live loop does not consume proof.js/facebook-state.js/outbox.js checkpoint classification",
+        "org_crawl_intents cursor exists in both sqlite baseline and platform postgres 0108 (dialect-aware store)"
+      ],
+      "related_code": [
+        "local-connector-extension/content/crawl.js",
+        "local-connector-extension/content/bridge.js",
+        "internal/jobhandlers/facebook_crawl/handler.go",
+        "internal/runtime/cdp_runtime.go",
+        "internal/server/system/notifications.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "investigation",
+        "crawl",
+        "reliability",
+        "observability",
+        "checkpoint",
+        "prc0"
+      ],
+      "notes": "PR-C0 audit-only investigation of facebook_crawl extension-path stall (slow scroll pacing + missing live checkpoint-signal surfacing). Maps flow, gives measured hypothesis table, ranks safe PR-C1 follow-ups. No runtime change."
+    },
+    {
+      "id": "crawler-account-safety-spec",
+      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/technical.md",
+      "title": "Account Safety — Technical Contract",
+      "domain": "facebook",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "account-safety",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-09",
+      "verified_against": [
+        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
+        "session.StateMachine + CheckpointManager own browser-session checkpoint lifecycle (NO_AUTOMATED_CAPTCHA_BYPASS)",
+        "existing checkpoint/login classifiers: proof.js:87, facebook-state.js:50, outbox.js:228",
+        "org_crawl_intents mid-migration to platform postgres 0108 (data-plane doctrine)"
+      ],
+      "related_code": [
+        "internal/session/allocator.go",
+        "internal/session/checkpoint.go",
+        "internal/session/statemachine.go",
+        "local-connector-extension/content/crawl.js",
+        "internal/server/system/notifications.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "account-safety",
+        "concurrency",
+        "cooldown",
+        "spec",
+        "prc0.5"
+      ],
+      "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change. Split 2026-07-13 (spec IA sprint 1): review checklist extracted to runbooks/review-checklist.md; binding invariants (hard boundaries, data-plane ownership) remain in this technical contract, with supporting rationale in decisions/ADR-001-conservative-account-safety.md."
+    },
+    {
       "id": "direct-post-intake-workflow",
       "path": "specs/domains/facebook-sales-intelligence/features/direct-post-intake/technical.md",
       "title": "Direct Post Intake — Technical Contract",
@@ -470,10 +703,11 @@
       "type": "architecture",
       "status": "active",
       "maturity": "test_pinned",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "direct-post-intake",
+      "node_kind": "technical_feature",
+      "node_id": "direct-post-intake",
       "layer": "technical",
       "authority": "authoritative",
       "lifecycle": "active",
@@ -520,6 +754,16 @@
       "type": "architecture",
       "status": "active",
       "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "domain",
+      "node_id": "platform-foundation",
+      "layer": "domain",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
       "owner": "unassigned",
       "last_reviewed": "2026-06-23",
       "verified_against": [
@@ -543,6 +787,82 @@
       "notes": "Reviewed in PR24H; moved to specs/domains/platform-foundation/DOMAIN.md in the spec IA mega sprint (2026-07-21) — the 'Platform vocabulary' path AGENTS.md names. Living canonical vocabulary (mandatory reading); the owner packages it names (internal/auth, internal/platform, frontend/src/platform) exist. Domain-root glossary; kept v1 metadata (no v2 layer fits a vocabulary doc)."
     },
     {
+      "id": "engagement-approval-business",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/engagement-approval/business.md",
+      "title": "Engagement Approval — Business Contract",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "experience",
+      "node_id": "engagement-approval",
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): distilled from shipped comment/outbound contracts + binding approval invariants formerly in agent entrypoints; no invented behavior",
+        "default-off auto_execute + Policy Gate floor per comment-intelligence design and AGENTS.md approval invariant",
+        "ownership control predicate + verified-state-centric policy per direct-post-intake-workflow / v2-outbound-refactor-design"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "engagement",
+        "approval",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the engagement-approval experience: approval-required default with explicit per-org auto_execute opt-in, auto-execution hard preconditions (verified actor, grounded content), channel discipline (inbox CS-style + first-touch semantics), ownership predicate, verified-outcome success measures. Full Policy-Gate enforcement remains partial (comment-intelligence P2d/P2e)."
+    },
+    {
+      "id": "engagement-approval-experience",
+      "path": "specs/domains/facebook-sales-intelligence/experiences/engagement-approval/experience.md",
+      "title": "Engagement Approval — Operator Experience",
+      "domain": "facebook",
+      "type": "contract",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "experience",
+      "node_id": "engagement-approval",
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): submission/verification operator flows sourced from comment-automation technical.md + direct-link smoke runbook + direct-post-intake workflow; planned Policy-Gate UI explicitly flagged",
+        "human_required checkpoint behavior per account-safety state machine",
+        "actor-mismatch block + clear-actor-block endpoint per multi-actor-coverage"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "engagement",
+        "approval",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of engagement-approval: shipped submission acknowledgements, verification states (waiting_verification, human-verify only for submitted_unverified), typed block reasons, actor-mismatch clearing, human_required behavior. Planned P2d/P2e Policy-Gate UI and Decision Inspector explicitly flagged as not shipped."
+    },
+    {
       "id": "facebook-automation-reliability-track",
       "path": "specs/domains/facebook-sales-intelligence/features/account-safety/implementation/reliability-track.md",
       "title": "Facebook Automation Reliability Track",
@@ -550,15 +870,19 @@
       "type": "roadmap",
       "status": "active",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "account-safety",
+      "node_kind": "technical_feature",
+      "node_id": "account-safety",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "active",
       "implementation_state": "partial",
       "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -588,9 +912,11 @@
       "type": "roadmap",
       "status": "active",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
+      "node_kind": "domain",
+      "node_id": "facebook-sales-intelligence",
       "layer": "roadmap",
       "authority": "authoritative",
       "lifecycle": "active",
@@ -622,1483 +948,6 @@
       "notes": "Reviewed in PR24H; promoted to specs/domains/facebook-sales-intelligence/roadmap.md in the spec IA mega sprint (2026-07-21) — the product-direction path CLAUDE.md/AGENTS.md name. Its core implementation pointers exist; the crawl handler moved internal/handlers -> internal/jobhandlers/facebook_crawl. Broad north-star roadmap -> active/reviewed, partial by nature."
     },
     {
-      "id": "frontend-contract",
-      "path": "specs/domains/platform-foundation/features/workspace-ui/implementation/component-contracts.md",
-      "title": "Workspace UI — Component Contracts (Draft)",
-      "domain": "frontend",
-      "type": "contract",
-      "status": "draft",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "workspace-ui",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "partial",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24F specs audit (2026-06-23)",
-        "frontend/src/modules/autoflow/components/ui exists"
-      ],
-      "related_code": [
-        "frontend/src/modules/autoflow/components/ui"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "frontend",
-        "contract",
-        "components",
-        "design-doc"
-      ],
-      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Post-refactor component prop contracts for the autoflow UI primitives; the components/ui module exists, but the doc derives from the same experimental mock as api-spec and is not test-pinned or verified binding against current props. Kept draft as component-contract guidance."
-    },
-    {
-      "id": "known-issues",
-      "path": "specs/domains/platform-foundation/features/workspace-ui/evidence/known-issues.md",
-      "title": "Workspace UI — Known Issues (Mock-Era Audit)",
-      "domain": "frontend",
-      "type": "report",
-      "status": "archived",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "workspace-ui",
-      "layer": "evidence",
-      "authority": "historical",
-      "lifecycle": "archived",
-      "implementation_state": "not_applicable",
-      "effective": false,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "all KI-* target autoflow_platform.experimental.tsx (2026-04-27) which is ABSENT from the repo",
-        "production FE moved to frontend/src/modules/autoflow"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "frontend",
-        "known-issues",
-        "mock-derived",
-        "historical"
-      ],
-      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Bug/tech-debt list (KI-001..) audited against autoflow_platform.experimental.tsx (2026-04-27), a mock file no longer present in the repo; the production frontend has moved to frontend/src/modules/autoflow. Targets are obsolete -> archived."
-    },
-    {
-      "id": "leadsview-decomposition",
-      "path": "specs/domains/platform-foundation/features/workspace-ui/implementation/leadsview-decomposition.md",
-      "title": "Workspace UI — LeadsView Decomposition Plan",
-      "domain": "frontend",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "workspace-ui",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "proposed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24F specs audit (2026-06-23)",
-        "frontend/src/modules/autoflow/components/views/LeadsView.tsx still ~999 lines on scripts/file_size_allowlist.txt"
-      ],
-      "related_code": [
-        "frontend/src/modules/autoflow/components/views/LeadsView.tsx"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "frontend",
-        "refactor",
-        "decomposition",
-        "plan",
-        "design-doc"
-      ],
-      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Self-labelled 'PLAN (not yet implemented)' refactor-only split of the LeadsView god view, which is still ~999 lines and on the file-size allowlist. Future-facing -> draft. Tied to active lead-lifecycle-work-queue (PR-4 LifecycleTabs already extracted)."
-    },
-    {
-      "id": "lead-lifecycle-work-queue",
-      "path": "specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md",
-      "title": "LEAD LIFECYCLE WORK QUEUE",
-      "domain": "lead",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "test_pinned",
-      "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
-      "verified_against": [
-        "PR24B specs audit (2026-06-23)",
-        "internal/models/lead_lifecycle.go (DeriveLeadLifecycle)",
-        "internal/models/lead_lifecycle_test.go"
-      ],
-      "related_code": [
-        "internal/models/lead_lifecycle.go",
-        "internal/leadingest/ingest.go"
-      ],
-      "related_tests": [
-        "internal/models/lead_lifecycle_test.go"
-      ],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "lead",
-        "projection",
-        "work-queue"
-      ],
-      "notes": "Reviewed in PR24B. Core freshness_state projection DeriveLeadLifecycle exists and is unit-tested; reads leads via internal/leadingest/ingest.go as the doc states. Mega sprint 2026-07-13: status header refreshed to reflect PR-1..PR-5 shipped evidence (work_queue.go, lead_archive.go, auto_archive_scheduler.go, server/leads/lifecycle.go, LifecycleTabs.tsx, copilot_wording.go); retention compaction remains config-staged.",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "lead-lifecycle",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "supported_experiences": [
-        "lead-management"
-      ]
-    },
-    {
-      "id": "llm-cost-controls-phase1",
-      "path": "specs/domains/platform-foundation/features/ai-cost-controls/technical.md",
-      "title": "AI Cost Controls — Phase 1 Technical Contract",
-      "domain": "ai",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "ai-cost-controls",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "logClassifierUsage in internal/ai/classifier_cache.go",
-        "classifier cache + usage log + tests present on main (classifier_cache.go, classifier_usage_log.go, classifier_cache_test.go)"
-      ],
-      "related_code": [
-        "internal/ai/classifier_cache.go",
-        "internal/ai/classifier_usage_log.go"
-      ],
-      "related_tests": [
-        "internal/ai/classifier_cache_test.go"
-      ],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "ai",
-        "cost-controls",
-        "classifier",
-        "caching"
-      ],
-      "notes": "Moved under ai-cost-controls/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Phase-1 classifier cost controls (structured JSON usage logs, bounded TTL exact-result cache, real token capture) are present on main in classifier_cache.go + classifier_usage_log.go with tests; the doc's 'not merged' header is now outdated. Implementation-backed."
-    },
-    {
-      "id": "local-connector-production-workflow",
-      "path": "specs/domains/platform-foundation/features/browser-connector/runbooks/connector-production-workflow.md",
-      "title": "Browser Connector — Production Workflow Runbook",
-      "domain": "browser",
-      "type": "runbook",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "browser-connector",
-      "layer": "runbook",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "not_applicable",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24B specs audit (2026-06-23)",
-        "local-connector-extension/ source tree",
-        "internal/server/agent connector handlers",
-        "scripts/build-chrome-extension.{ps1,sh}"
-      ],
-      "related_code": [
-        "local-connector-extension",
-        "internal/server/agent",
-        "scripts/build-chrome-extension.ps1",
-        "scripts/build-chrome-extension.sh"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "browser",
-        "connector",
-        "runbook",
-        "chrome-extension"
-      ],
-      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Describes current Chrome Web Store connector install/pairing workflow; the extension source, connector API handlers (internal/server/agent) and both build scripts exist. Operational/ops doc rather than test-pinned."
-    },
-    {
-      "id": "migration-to-monorepo-plan",
-      "path": "specs/domains/platform-foundation/decisions/monorepo-plan.md",
-      "title": "Monorepo Migration Plan (Deferred Draft)",
-      "domain": "platform",
-      "type": "migration",
-      "status": "draft",
-      "maturity": "reviewed",
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24E specs audit (2026-06-23)",
-        "baseline services/agent-brain exists; go.work/apps/packages not yet adopted"
-      ],
-      "related_code": [
-        "services/agent-brain"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "platform",
-        "migration",
-        "monorepo",
-        "deferred",
-        "design-doc"
-      ],
-      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24E. Self-labelled 'Deferred - execution not started' go.work monorepo plan; the only realized baseline is services/agent-brain. Future-facing, revisit before Phase 0 -> draft."
-    },
-    {
-      "id": "multi-actor-coverage-policy",
-      "path": "specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md",
-      "title": "MULTI ACTOR COVERAGE POLICY",
-      "domain": "lead",
-      "type": "policy",
-      "status": "active",
-      "maturity": "test_pinned",
-      "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
-      "verified_against": [
-        "PR24B specs audit (2026-06-23)",
-        "internal/models/coverage.go (EvaluateCoverage/DeriveActorPersona)",
-        "internal/models/coverage_test.go"
-      ],
-      "related_code": [
-        "internal/models/coverage.go",
-        "internal/models/coverage_text.go"
-      ],
-      "related_tests": [
-        "internal/models/coverage_test.go",
-        "internal/models/coverage_text_test.go"
-      ],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "lead",
-        "policy",
-        "coverage",
-        "projection"
-      ],
-      "notes": "Reviewed in PR24B. PR-0 contracts and pure rules (EvaluateCoverage, DeriveActorPersona) exist in internal/models/coverage.go and are unit-tested; coverage_text.go provides the PR-2 reason text. Later wiring phases not separately re-verified here.",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "multi-actor-coverage",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "supported_experiences": [
-        "lead-management",
-        "engagement-approval"
-      ]
-    },
-    {
-      "id": "nl-direct-link-comment-smoke",
-      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/runbooks/direct-link-smoke.md",
-      "title": "Direct-Link Comment Smoke — Runbook",
-      "domain": "facebook",
-      "type": "runbook",
-      "status": "active",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "comment-automation",
-      "layer": "runbook",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "not_applicable",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "current operator smoke runbook for live comment_single_post / GetLeadByPostRef behavior",
-        "internal/store/leads/lookup.go (GetLeadByPostRef) exists"
-      ],
-      "related_code": [
-        "internal/store/leads/lookup.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "runbook",
-        "smoke",
-        "comment"
-      ],
-      "notes": "Reviewed in PR24H; moved under comment-automation/runbooks/ in the spec IA mega sprint (2026-07-21). Current operator smoke runbook for the NL direct-link comment behavior (comment_single_post queues only when the lead pre-exists via GetLeadByPostRef). Maps to verified current code and validates active direct-post-intake-workflow. Active/reviewed runbook."
-    },
-    {
-      "id": "omnichannel-sales-copilot-telegram-track",
-      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/telegram-track.md",
-      "title": "Sales Copilot — Omnichannel Telegram Track",
-      "domain": "copilot",
-      "type": "roadmap",
-      "status": "active",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "sales-copilot",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "partial",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24G specs audit (2026-06-23)",
-        "PR-1/PR-3 comment-quality shipped (SanitizeComment in internal/ai/comment/quality.go)",
-        "telegram interface backed by active telegram-bot-runtime + control packages"
-      ],
-      "related_code": [
-        "internal/ai/comment/quality.go",
-        "internal/telegram/control"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "telegram",
-        "omnichannel",
-        "roadmap",
-        "track"
-      ],
-      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Active founder-directed track; comment-quality prerequisites PR-1/PR-3 shipped (SanitizeComment moved to internal/ai/comment/quality.go since the doc cited internal/ai) and the Telegram peer-interface builds on the shipped telegram control/runtime. Roadmap doc, partial implementation -> active/reviewed."
-    },
-    {
-      "id": "open-prompt-agent-design",
-      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/decisions/open-prompt-agent.md",
-      "title": "Sales Copilot — Open-Prompt Agent Design (Draft)",
-      "domain": "copilot",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "sales-copilot",
-      "layer": "decision",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "partial",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24G specs audit (2026-06-23)",
-        "Agent.ProcessPromptForOrg in internal/drivers/copilot/agent.go",
-        "open-prompt handler internal/server/agent/ai_prompt.go",
-        "realized routing covered by active copilot-intent-routing-architecture"
-      ],
-      "related_code": [
-        "internal/drivers/copilot/agent.go",
-        "internal/server/agent/ai_prompt.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "open-prompt",
-        "agent",
-        "design-doc"
-      ],
-      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Self-labelled 'DRAFT - awaiting user approval' Phase 6 design proposal (2026-05-04). The open-prompt agent is partly realized (Agent.ProcessPromptForOrg, /api/agent prompt handler exist) and the deterministic routing it envisioned is now the active copilot-intent-routing-architecture, but this doc remains a forward proposal -> draft."
-    },
-    {
-      "id": "organic-sales-network",
-      "path": "specs/domains/facebook-sales-intelligence/features/lead-lifecycle/decisions/organic-sales-network.md",
-      "title": "ORGANIC SALES NETWORK",
-      "domain": "lead",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "reviewed",
-      "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
-      "verified_against": [
-        "PR24D specs audit (2026-06-23)",
-        "extends existing append-only ledger internal/store/coordination/action_ledger.go",
-        "feedback_shared_battlefield_not_crm direction"
-      ],
-      "related_code": [
-        "internal/store/coordination/action_ledger.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "lead",
-        "ownership",
-        "architecture",
-        "directive",
-        "design-doc"
-      ],
-      "notes": "Reviewed in PR24D. Founder architecture directive (Lead shared / Execution owned via created_by / Contribution derived / Campaign orchestration) sourcing PR0-PR8. It extends the existing append-only action_ledger but most PRs are future-facing; kept draft as forward guidance.",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "lead-lifecycle",
-      "layer": "decision",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "partial",
-      "effective": true
-    },
-    {
-      "id": "phase-5a-coordination-audit",
-      "path": "specs/domains/platform-foundation/features/store-architecture/evidence/phase-5a-coordination-audit.md",
-      "title": "Store Architecture — Phase 5A Coordination Audit",
-      "domain": "store",
-      "type": "investigation",
-      "status": "archived",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "store-architecture",
-      "layer": "evidence",
-      "authority": "historical",
-      "lifecycle": "archived",
-      "implementation_state": "not_applicable",
-      "effective": false,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24E specs audit (2026-06-23)",
-        "audited coordination domain internal/store/coordination exists",
-        "store subpackage extraction (incl. coordination) shipped per STORE_SUBPACKAGE_REFACTOR Phases 0-8b"
-      ],
-      "related_code": [
-        "internal/store/coordination"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "store",
-        "coordination",
-        "audit",
-        "historical"
-      ],
-      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24E. One-time Phase 5A extraction-readiness audit (zero code moves) that gated Phase 5B; the coordination subpackage extraction has since shipped. Historical deliverable -> archived."
-    },
-    {
-      "id": "postgres-compat-plan",
-      "path": "specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md",
-      "title": "Knowledge OS — PostgreSQL Compatibility Plan",
-      "domain": "knowledge",
-      "type": "migration",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "knowledge-platform",
-      "domain_kind": "product_platform",
-      "technical_feature": "knowledge-os",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24E specs audit (2026-06-23)",
-        "pgx/v5 driver in go.mod",
-        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go exists"
-      ],
-      "related_code": [
-        "internal/workspace_knowledge",
-        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "knowledge",
-        "migration",
-        "postgres",
-        "pgvector",
-        "dual-target"
-      ],
-      "notes": "Reviewed in PR24E; moved under knowledge-os/implementation/ in the spec IA mega sprint (2026-07-21). PR-1/2/3 SHIPPED: the Knowledge OS domain is dual-target SQLite+Postgres (pgx/v5 in go.mod, pgvector searcher present). Legacy domains remain SQLite-only as the doc states. Active and implementation-backed; complements active workspace-knowledge-os."
-    },
-    {
-      "id": "production-database-migration-plan",
-      "path": "specs/domains/platform-foundation/features/data-platform/implementation/production-database-migration.md",
-      "title": "Data Platform — Production Database Migration Plan (Draft)",
-      "domain": "migration",
-      "type": "migration",
-      "status": "draft",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "data-platform",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "proposed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "only the KnowledgeOS slice is dual-target (active postgres-compat-plan); legacy domains remain SQLite"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "migration",
-        "postgres",
-        "deferred",
-        "design-doc"
-      ],
-      "notes": "Moved under data-platform/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Aspirational all-domains SQLite to Postgres production migration plan. Only the KnowledgeOS slice is realized (active postgres-compat-plan); legacy domains still run SQLite. Future-facing -> draft."
-    },
-    {
-      "id": "production-flow",
-      "path": "specs/domains/platform-foundation/features/runtime-topology/evidence/production-flow.md",
-      "title": "Production Flow — Runtime Pipe Reference (Stale)",
-      "domain": "platform",
-      "type": "architecture",
-      "status": "stale",
-      "maturity": "snapshot",
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24F specs audit (2026-06-23)",
-        "cites internal/ai/agent.go (function-calling agent) which moved to internal/drivers/copilot/agent.go",
-        "last refresh 2026-05-03 predates telegram bounded-context, copilot relocation, postgres dual-target"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "platform",
-        "production-flow",
-        "living-doc",
-        "stale"
-      ],
-      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24F. Living production-pipe reference last refreshed 2026-05-03. The north star and approval-required defaults are still accurate, but load-bearing references have drifted (e.g. internal/ai/agent.go moved to internal/drivers/copilot; telegram bounded-context + postgres dual-target shipped after this refresh). Stale until refreshed; active runtime-topology is the newer authoritative runtime doc."
-    },
-    {
-      "id": "production-hardening-goals",
-      "path": "specs/domains/knowledge-platform/features/knowledge-os/implementation/production-hardening.md",
-      "title": "Knowledge OS — Production Hardening Goals",
-      "domain": "knowledge",
-      "type": "roadmap",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "knowledge-platform",
-      "domain_kind": "product_platform",
-      "technical_feature": "knowledge-os",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "partial",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "G1/G4 load-bearing code exists (soak/gold_dataset.go, governance/output_validator.go)",
-        "7/10 goals shipped with code+tests per doc"
-      ],
-      "related_code": [
-        "internal/workspace_knowledge/soak/gold_dataset.go",
-        "internal/workspace_knowledge/governance/output_validator.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "knowledge",
-        "hardening",
-        "roadmap",
-        "operator-dashboard"
-      ],
-      "notes": "Reviewed in PR24H; moved under knowledge-os/implementation/ in the spec IA mega sprint (2026-07-21). Operator dashboard for 10 production-hardening goals; 7 shipped end-to-end with code+tests (verified artifacts exist), 3 designed/deferred -> partial. (Some cited artifacts e.g. knowledge_cost.go have moved out of the internal/store root.)"
-    },
-    {
-      "id": "retrieval-soak-runbook",
-      "path": "specs/domains/knowledge-platform/features/knowledge-os/runbooks/retrieval-soak.md",
-      "title": "Knowledge OS — Retrieval Soak Runbook",
-      "domain": "knowledge",
-      "type": "runbook",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "knowledge-platform",
-      "domain_kind": "product_platform",
-      "technical_feature": "knowledge-os",
-      "layer": "runbook",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "not_applicable",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24D specs audit (2026-06-23)",
-        "internal/workspace_knowledge/soak/report.go exists",
-        "TestSoak harness (go test ./internal/workspace_knowledge/soak/...) present"
-      ],
-      "related_code": [
-        "internal/workspace_knowledge/soak",
-        "internal/workspace_knowledge/soak/report.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "knowledge",
-        "runbook",
-        "soak",
-        "retrieval"
-      ],
-      "notes": "Reviewed in PR24D; moved under knowledge-os/runbooks/ in the spec IA mega sprint (2026-07-21). Operator runbook for the retrieval soak harness; the soak code (internal/workspace_knowledge/soak) and TestSoak exist and re-run in CI. The generated RETRIEVAL_SOAK_REPORT.md now writes to the gitignored artifacts/retrieval-soak/ dir (DOCS-R2 resolved) and is no longer a registered spec."
-    },
-    {
-      "id": "root-architecture",
-      "path": "specs/domains/platform-foundation/features/workspace-ui/evidence/root-architecture.md",
-      "title": "Workspace UI — Early Frontend Architecture (Stale)",
-      "domain": "frontend",
-      "type": "architecture",
-      "status": "stale",
-      "maturity": "snapshot",
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "self-derived from autoflow_platform.experimental.tsx mock (2026-04-27), same lineage as stale api-spec",
-        "production FE moved to frontend/src/modules/autoflow"
-      ],
-      "related_code": [
-        "frontend/src/modules/autoflow"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "frontend",
-        "architecture",
-        "mock-derived",
-        "stale"
-      ],
-      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Early frontend architecture spec derived from the autoflow_platform.experimental.tsx mock (2026-04-27); the production frontend has since moved to frontend/src/modules/autoflow. Still cited by CLAUDE.md read-first, so refresh rather than drop. Stale snapshot."
-    },
-    {
-      "id": "root-cause-report",
-      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/evidence/root-cause-report.md",
-      "title": "ROOT CAUSE REPORT",
-      "domain": "facebook",
-      "type": "report",
-      "status": "archived",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "comment-automation",
-      "layer": "evidence",
-      "authority": "historical",
-      "lifecycle": "archived",
-      "implementation_state": "not_applicable",
-      "effective": false,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24E specs audit (2026-06-23)",
-        "models.NavDiagnostic in internal/models (execution_outcome.go / comment_forensics.go)",
-        "investigation log autocomment-redirect-investigation.md (same evidence/ directory)"
-      ],
-      "related_code": [
-        "internal/models/execution_outcome.go",
-        "internal/models/comment_forensics.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "comment",
-        "report",
-        "root-cause",
-        "historical"
-      ],
-      "notes": "Reviewed in PR24E; moved under comment-automation/evidence/ in the spec IA mega sprint (2026-07-21). Completed root-cause investigation report (2026-06-04) for the autocomment redirect failure; conclusion fed the PR8 redirect work. Historical evidence, non-authoritative and not effective. Companion to the archived autocomment-redirect-investigation."
-    },
-    {
-      "id": "runtime-topology",
-      "path": "specs/domains/platform-foundation/features/runtime-topology/technical.md",
-      "title": "Runtime Topology — Technical Contract",
-      "domain": "platform",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "runtime-topology",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24B specs audit (2026-06-23)",
-        "scripts/check_topology.sh (CI grep gates enforce its invariants)",
-        "internal/store/DOMAINS.md"
-      ],
-      "related_code": [
-        "internal/store/leads",
-        "internal/store/threads",
-        "internal/store/outbound",
-        "internal/store/coordination",
-        "internal/server/observability"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "architecture",
-        "topology",
-        "living-doc"
-      ],
-      "notes": "Reviewed in PR24B; promoted to platform-foundation/features/runtime-topology/technical.md in the spec IA mega sprint (2026-07-21) — the path CLAUDE.md/AGENTS.md name as current runtime authority. Living doc describing current runtime composition; its invariants are enforced by scripts/check_topology.sh and the referenced store subpackages all exist. (Doc also cites internal/server/org/superadmin.go which is not at that path; minor, not added.)"
-    },
-    {
-      "id": "saas-ux-hardening-track",
-      "path": "specs/domains/platform-foundation/features/workspace-ui/implementation/ux-hardening-track.md",
-      "title": "Workspace UI — SaaS UX Hardening Track",
-      "domain": "frontend",
-      "type": "roadmap",
-      "status": "draft",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "workspace-ui",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "proposed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "self-labelled DESIGN APPROVED (2026-06-12); PRs not yet shipped per project tracking"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "frontend",
-        "ux",
-        "rbac",
-        "roadmap",
-        "design-doc"
-      ],
-      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Design-approved authoritative UX/RBAC/extension-version-gating plan; the PRs (incl. the cookie-leak fix) are not yet shipped. Future-facing approved plan -> draft."
-    },
-    {
-      "id": "sales-voice-automation-and-data-private-enterprise-plan",
-      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/voice-enterprise-plan.md",
-      "title": "Sales Copilot — Voice Automation and Private-Data Enterprise Plan (Draft)",
-      "domain": "copilot",
-      "type": "roadmap",
-      "status": "draft",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "sales-copilot",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "proposed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "forward product vision after Phase 6 Open-Prompt Agent; no specific implementation contract verified"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "vision",
-        "sales-voice",
-        "design-doc"
-      ],
-      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Forward product vision (AI Facebook Sales Employee trained on private business data) following the open-prompt agent. Aspirational direction, not an implementation contract -> draft."
-    },
-    {
-      "id": "store-subpackage-refactor",
-      "path": "specs/domains/platform-foundation/features/store-architecture/technical.md",
-      "title": "Store Architecture — Subpackage Decomposition",
-      "domain": "store",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "platform-foundation",
-      "domain_kind": "platform",
-      "technical_feature": "store-architecture",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24B specs audit (2026-06-23)",
-        "internal/store/DOMAINS.md",
-        "store subpackages (dbutil/outbound/coordination/leads/crawl) exist"
-      ],
-      "related_code": [
-        "internal/store/dbutil",
-        "internal/store/outbound",
-        "internal/store/coordination",
-        "internal/store/leads",
-        "internal/store/crawl"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "architecture",
-        "store",
-        "refactor-history"
-      ],
-      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Canonical store subpackage decomposition; the subpackages it specifies exist in the current tree and RUNTIME_TOPOLOGY references it as authoritative. Migration phases are largely shipped."
-    },
-    {
-      "id": "structural-refactor-plan",
-      "path": "specs/domains/platform-foundation/decisions/structural-refactor-plan.md",
-      "title": "Structural Refactor Plan (Draft)",
-      "domain": "platform",
-      "type": "roadmap",
-      "status": "draft",
-      "maturity": "reviewed",
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "tracks open boundary decisions (internal/auth vs internal/server/auth, both exist); quick wins shipped"
-      ],
-      "related_code": [
-        "internal/auth",
-        "internal/server/auth"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "platform",
-        "refactor",
-        "living-plan",
-        "deferred"
-      ],
-      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24H. Living plan tracking structural decisions deferred at the 2026-05-07 cleanup; quick wins shipped, several boundary decisions still open. Future-facing guidance -> draft. Complements active store-subpackage-refactor + component-structure-rules."
-    },
-    {
-      "id": "telegram-bot-runtime",
-      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/technical.md",
-      "title": "Telegram Copilot — Bot Runtime Technical Contract",
-      "domain": "copilot",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "telegram-copilot",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24F specs audit (2026-06-23)",
-        "bounded-context packages exist (store/telegram, telegram/control, server/telegram, telegram/client, telegram/render, server/integrations)",
-        "legacy internal/telegram/bot.go retired (absent)"
-      ],
-      "related_code": [
-        "internal/telegram/control",
-        "internal/server/telegram",
-        "internal/store/telegram",
-        "internal/telegram/client",
-        "internal/telegram/render"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "telegram",
-        "runtime",
-        "webhook",
-        "architecture"
-      ],
-      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Bounded-context Telegram runtime is implemented: store -> control -> {integrations, server/telegram}; webhook runtime present; the legacy long-poll bot.go is deleted as the doc states. Active and implementation-backed."
-    },
-    {
-      "id": "telegram-channel-destinations",
-      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/channel-destinations.md",
-      "title": "Telegram Copilot — Channel Destinations",
-      "domain": "copilot",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "telegram-copilot",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24G specs audit (2026-06-23)",
-        "internal/store/telegram/destinations.go + migration 0015_telegram_destinations",
-        "control.NotifyEvent in internal/telegram/control/notify_event.go",
-        "destinations_test.go present"
-      ],
-      "related_code": [
-        "internal/store/telegram/destinations.go",
-        "internal/telegram/control/notify_event.go",
-        "internal/store/migrations/0015_telegram_destinations__sqlite.up.sql"
-      ],
-      "related_tests": [
-        "internal/store/telegram/destinations_test.go",
-        "internal/telegram/control/destinations_test.go"
-      ],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "telegram",
-        "destinations",
-        "notifications"
-      ],
-      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Channel-first destinations backend shipped: telegram_destinations (migration 0015), store CRUD, and control.NotifyEvent resolve/filter/deliver path all exist with tests. Active/implementation-backed; builds on active telegram-bot-runtime."
-    },
-    {
-      "id": "telegram-event-wiring",
-      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/event-wiring.md",
-      "title": "Telegram Copilot — Event Wiring",
-      "domain": "copilot",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "telegram-copilot",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24F specs audit (2026-06-23)",
-        "OnLeadCreated/SetLeadNotifier hook in internal/leadingest/ingest.go",
-        "wired in cmd/worker/main.go + internal/server/agent + internal/server/router.go"
-      ],
-      "related_code": [
-        "internal/leadingest/ingest.go",
-        "internal/server/agent/outbox_agent.go",
-        "internal/server/router.go",
-        "cmd/worker/main.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "telegram",
-        "event-wiring",
-        "notifications"
-      ],
-      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go — minor path drift.) Active and implementation-backed."
-    },
-    {
-      "id": "telegram-integration-ui",
-      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/integration-ui.md",
-      "title": "Telegram Copilot — Integration Setup (Backend + UI)",
-      "domain": "copilot",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "telegram-copilot",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24G specs audit (2026-06-23)",
-        "migration 0013_telegram_integration + internal/store/telegram (settings/bindings/audit)",
-        "control-plane endpoints in internal/server/integrations/routes.go",
-        "telegram flags in internal/config/config.go"
-      ],
-      "related_code": [
-        "internal/store/telegram/settings.go",
-        "internal/server/integrations/routes.go",
-        "internal/config/config.go",
-        "internal/store/migrations/0013_telegram_integration__sqlite.up.sql"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "telegram",
-        "integration",
-        "control-plane"
-      ],
-      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. PR-1 BACKEND (telegram_settings/bind_codes/bindings/alert_prefs/audit via migration 0013, tenant-scoped /api/settings/integrations/telegram handlers, default-safe flags) is shipped. The PR-2 Next.js UI is future. Active/implementation-backed for the backend contract."
-    },
-    {
-      "id": "telegram-per-org-bot",
-      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/per-org-bot.md",
-      "title": "Telegram Copilot — Per-Org Bot Credentials",
-      "domain": "copilot",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "telegram-copilot",
-      "layer": "implementation",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24G specs audit (2026-06-23)",
-        "internal/store/telegram/bot_credentials.go + migration 0016_telegram_bot_credentials",
-        "control resolveBot/GetDecryptedBotToken path",
-        "bot_credentials_test.go present"
-      ],
-      "related_code": [
-        "internal/store/telegram/bot_credentials.go",
-        "internal/store/migrations/0016_telegram_bot_credentials__sqlite.up.sql"
-      ],
-      "related_tests": [
-        "internal/store/telegram/bot_credentials_test.go"
-      ],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "copilot",
-        "telegram",
-        "per-org-bot",
-        "secrets",
-        "multi-tenant"
-      ],
-      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Per-org encrypted bot credentials backend shipped: telegram_bot_credentials (migration 0016, doc said 0015 - actual is 0016), AES-GCM encrypt, GetDecryptedBotToken internal-only, per-org resolveBot for connect/delivery. Active/implementation-backed."
-    },
-    {
-      "id": "template-telegram-copilot-plan",
-      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/decisions/v2-5-umbrella-plan.md",
-      "title": "V2.5 Umbrella Plan — Templates/Telegram/Copilot (Ancestor Draft)",
-      "domain": "platform",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "reviewed",
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24G specs audit (2026-06-23)",
-        "core verified-state-centric invariants now codified in active runtime-topology + v2-outbound-refactor-design + append-only-ledger-migration",
-        "ledger internal/store/coordination/action_ledger.go exists"
-      ],
-      "related_code": [
-        "internal/store/coordination/action_ledger.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "platform",
-        "architecture",
-        "verified-state-centric",
-        "umbrella",
-        "design-doc"
-      ],
-      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24G. Broad v2.5 umbrella architecture plan (Outbound Invariant -> Engagement Ledger -> Templates -> Telegram -> Copilot). Its core verified-state-centric / append-only invariants have since been decomposed into and shipped via the now-authoritative active specs (runtime-topology, v2-outbound-refactor-design, append-only-ledger-migration); the Templates/Copilot portions remain forward-looking. Kept draft as ancestor architecture reference, not active, to avoid duplicating the authoritative specs."
-    },
-    {
-      "id": "v2-outbound-refactor-design",
-      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/technical.md",
-      "title": "Outbound Actions — Technical Contract (V2 Outbound Refactor)",
-      "domain": "outbound",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "outbound-actions",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "partial",
-      "effective": true,
-      "supported_experiences": [
-        "engagement-approval"
-      ],
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24D specs audit (2026-06-23)",
-        "action_policies + policy-driven dedup in internal/store/outbound/dedup.go",
-        "internal/store/outbound subpackage exists"
-      ],
-      "related_code": [
-        "internal/store/outbound",
-        "internal/store/outbound/dedup.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "outbound",
-        "architecture",
-        "v2",
-        "tenant-isolation"
-      ],
-      "notes": "Reviewed in PR24D; promoted to outbound-actions/technical.md in the spec IA mega sprint (2026-07-21). PR1 (action_policies table + policy-driven dedup, transition ledger rows, 7 global functions deleted, tenant isolation) is reflected in internal/store/outbound. PR2 (drop legacy status column + split outbound.go) remains staged -> partial. Staged plan/risks/acceptance extracted verbatim to implementation/refactor-plan.md; this file keeps the normative invariants."
-    },
-    {
-      "id": "workspace-knowledge-os",
-      "path": "specs/domains/knowledge-platform/features/knowledge-os/technical.md",
-      "title": "Knowledge OS — Technical Contract",
-      "domain": "knowledge",
-      "type": "architecture",
-      "status": "active",
-      "maturity": "implementation_backed",
-      "metadata_version": 2,
-      "ownership_domain": "knowledge-platform",
-      "domain_kind": "product_platform",
-      "technical_feature": "knowledge-os",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24D specs audit (2026-06-23)",
-        "internal/workspace_knowledge package exists (assets/retrieval/soak)",
-        "retrieval-soak-runbook proves a working retrieval substrate"
-      ],
-      "related_code": [
-        "internal/workspace_knowledge"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "knowledge",
-        "rag",
-        "architecture",
-        "multi-tenant"
-      ],
-      "notes": "Reviewed in PR24D; promoted to knowledge-platform/features/knowledge-os/technical.md in the spec IA mega sprint (2026-07-21). KnowledgeOS backend (org-scoped assets -> retrieval -> context assembly) is implemented under internal/workspace_knowledge. Later vector-DB port-swap (pgvector/Qdrant) and some L5-L7 layers are deferred per the doc, but the core foundation is real and backed by the soak harness."
-    },
-    {
-      "id": "lead-ingestion-behavior",
-      "path": "specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md",
-      "title": "Lead Ingestion Behavior Specification",
-      "domain": "leadingest",
-      "type": "behavior",
-      "status": "active",
-      "maturity": "test_pinned",
-      "owner": "unassigned",
-      "last_reviewed": "2026-06-23",
-      "verified_against": [
-        "PR23B (test/pr23b-lead-ingest-harness)",
-        "PR23C (refactor/pr23c-lead-ingest-complexity)"
-      ],
-      "related_code": [
-        "internal/leadingest/ingest.go"
-      ],
-      "related_tests": [
-        "internal/leadingest/ingest_characterization_test.go",
-        "internal/leadingest/ingest_persistence_characterization_test.go"
-      ],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "leadingest",
-        "characterization"
-      ],
-      "notes": "Active behavior contract used to guide the PR23C lead ingestion complexity refactor; pinned by characterization tests.",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "lead-ingestion",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "backed",
-      "effective": true,
-      "supported_experiences": [
-        "fresh-lead-discovery",
-        "lead-management"
-      ]
-    },
-    {
-      "id": "saas-automation-spec",
-      "path": "specs/domains/platform-foundation/decisions/automation-principles.md",
-      "title": "SaaS Automation Principles (Vision Draft)",
-      "domain": "platform",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "reviewed",
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-21",
-      "verified_against": [
-        "PR24H final audit sweep (2026-06-23)",
-        "high-level retrieval/reasoning/memory + no-blind-crawling + planner-first principles; aligns with current direction but vision-level"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "platform",
-        "principles",
-        "planner",
-        "design-doc"
-      ],
-      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24H. High-level system-principles spec (Retrieval+Reasoning+Memory, No-Blind-Crawling, Planner-first, cross-domain generalization). Aligns with the current product direction but is vision-level, not an implementation contract -> draft."
-    },
-    {
-      "id": "crawl-speed-checkpoint-audit",
-      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/evidence/crawl-speed-checkpoint-audit.md",
-      "title": "CRAWL SPEED CHECKPOINT AUDIT",
-      "domain": "facebook",
-      "type": "investigation",
-      "status": "active",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "multi-group-fresh-lead-crawl",
-      "layer": "evidence",
-      "authority": "supporting",
-      "lifecycle": "active",
-      "implementation_state": "not_applicable",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-08",
-      "verified_against": [
-        "extension crawl path is crawl.js crawlVisibleFacebookPosts (not the no-scroll CDPRuntime.FetchBatch)",
-        "in-flight heartbeat carries only {stage,fetched,max,source_url} (notifications.go NotifyCrawlProgress)",
-        "crawl.js live loop does not consume proof.js/facebook-state.js/outbox.js checkpoint classification",
-        "org_crawl_intents cursor exists in both sqlite baseline and platform postgres 0108 (dialect-aware store)"
-      ],
-      "related_code": [
-        "local-connector-extension/content/crawl.js",
-        "local-connector-extension/content/bridge.js",
-        "internal/jobhandlers/facebook_crawl/handler.go",
-        "internal/runtime/cdp_runtime.go",
-        "internal/server/system/notifications.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "investigation",
-        "crawl",
-        "reliability",
-        "observability",
-        "checkpoint",
-        "prc0"
-      ],
-      "notes": "PR-C0 audit-only investigation of facebook_crawl extension-path stall (slow scroll pacing + missing live checkpoint-signal surfacing). Maps flow, gives measured hypothesis table, ranks safe PR-C1 follow-ups. No runtime change."
-    },
-    {
-      "id": "crawler-account-safety-spec",
-      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/technical.md",
-      "title": "Account Safety — Technical Contract",
-      "domain": "facebook",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "account-safety",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "draft",
-      "implementation_state": "partial",
-      "effective": true,
-      "supported_experiences": [
-        "fresh-lead-discovery"
-      ],
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-09",
-      "verified_against": [
-        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
-        "session.StateMachine + CheckpointManager own browser-session checkpoint lifecycle (NO_AUTOMATED_CAPTCHA_BYPASS)",
-        "existing checkpoint/login classifiers: proof.js:87, facebook-state.js:50, outbox.js:228",
-        "org_crawl_intents mid-migration to platform postgres 0108 (data-plane doctrine)"
-      ],
-      "related_code": [
-        "internal/session/allocator.go",
-        "internal/session/checkpoint.go",
-        "internal/session/statemachine.go",
-        "local-connector-extension/content/crawl.js",
-        "internal/server/system/notifications.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "architecture",
-        "crawl",
-        "account-safety",
-        "concurrency",
-        "cooldown",
-        "spec",
-        "prc0.5"
-      ],
-      "notes": "PR-C0.5 docs-only architecture baseline for Facebook crawler multi-account safety (Account Safety Coordinator, account-runtime state machine, concurrency/risk-budget policy, telemetry contract, data-plane ownership). Companion to crawl-speed-checkpoint-audit. Not anti-detection. No runtime change. Split 2026-07-13 (spec IA sprint 1): review checklist extracted to runbooks/review-checklist.md; binding invariants (hard boundaries, data-plane ownership) remain in this technical contract, with supporting rationale in decisions/ADR-001-conservative-account-safety.md."
-    },
-    {
-      "id": "multi-group-fresh-lead-crawl-spec",
-      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/technical.md",
-      "title": "Multi-Group Fresh-Lead Crawl — Technical Contract",
-      "domain": "facebook",
-      "type": "architecture",
-      "status": "draft",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "multi-group-fresh-lead-crawl",
-      "layer": "technical",
-      "authority": "authoritative",
-      "lifecycle": "draft",
-      "implementation_state": "partial",
-      "effective": true,
-      "supported_experiences": [
-        "fresh-lead-discovery"
-      ],
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-10",
-      "verified_against": [
-        "crawl.js emits posted_at:'' — post timestamps not extracted today (content/crawl.js)",
-        "dedup layers exist: crawl.js dedupKey/seen Set + posts.dedup_hash UNIQUE insert-or-ignore (internal/store/crawl/posts.go)",
-        "org_crawl_intents cursor/next_run_at exists on platform postgres 0108; no multi-group campaign grouping",
-        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
-        "layers on crawler-account-safety-spec (PR-C0.5) state machine/budgets/cooldown"
-      ],
-      "related_code": [
-        "local-connector-extension/content/crawl.js",
-        "internal/store/crawl/posts.go",
-        "internal/store/crawl/intents.go",
-        "internal/store/migrations/platform/0108_platform_crawl__postgres.up.sql",
-        "internal/session/allocator.go"
-      ],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "architecture",
-        "crawl",
-        "campaign",
-        "fresh-lead",
-        "queue",
-        "scheduling",
-        "spec",
-        "prm0"
-      ],
-      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at/now_utc, canonical TimestampParse DTO (posted_at/confidence/earliest_utc/latest_utc) parser->wire->gate, strict provably-fresh window rule (earliest_utc >= cutoff), frontier streak reset on ambiguous/unknown, 3-layer dedupe incl. additive facebook_crawl_lead_index (leads table untouched), org-scoped composite FKs incl. account-pool membership anchored to accounts(org_id,id) (nullable account columns, no sentinel 0; running requires non-NULL account via CHECK), waiting_for_connector_upgrade as open run status, append-only idempotent retry lineage (retry_of_run_id + single-retry unique index) + (run_id, attempt) write fencing, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change. Split 2026-07-13 (spec IA sprint 1): business/experience layers extracted to experiences/fresh-lead-discovery/, rollout + rejected-designs extracted beside this contract, stale inline DDL replaced by a pointer to the shipped postgres-schema.md."
-    },
-    {
       "id": "facebook-crawl-campaign-postgres-schema-implementation",
       "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/postgres-schema.md",
       "title": "FACEBOOK CRAWL CAMPAIGN POSTGRES SCHEMA IMPLEMENTATION",
@@ -2106,15 +955,19 @@
       "type": "migration",
       "status": "active",
       "maturity": "implementation_backed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "multi-group-fresh-lead-crawl",
+      "node_kind": "technical_feature",
+      "node_id": "multi-group-fresh-lead-crawl",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "active",
       "implementation_state": "backed",
       "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-12",
       "verified_against": [
@@ -2159,15 +1012,19 @@
       "type": "architecture",
       "status": "draft",
       "maturity": "snapshot",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "multi-group-fresh-lead-crawl",
+      "node_kind": "technical_feature",
+      "node_id": "multi-group-fresh-lead-crawl",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "draft",
       "implementation_state": "partial",
       "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-12",
       "verified_against": [
@@ -2204,10 +1061,11 @@
       "type": "contract",
       "status": "draft",
       "maturity": "snapshot",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "experience": "fresh-lead-discovery",
+      "node_kind": "experience",
+      "node_id": "fresh-lead-discovery",
       "layer": "business",
       "authority": "authoritative",
       "lifecycle": "draft",
@@ -2238,10 +1096,11 @@
       "type": "contract",
       "status": "draft",
       "maturity": "snapshot",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "experience": "fresh-lead-discovery",
+      "node_kind": "experience",
+      "node_id": "fresh-lead-discovery",
       "layer": "experience",
       "authority": "authoritative",
       "lifecycle": "draft",
@@ -2265,141 +1124,168 @@
       "notes": "Experience layer of fresh-lead-discovery: operator flow, exclusion transparency (why 40 posts -> 3 leads), human_required behavior, waiting_for_connector_upgrade surfacing. Operator message catalog stays with the account-safety state machine (single source); this doc references it."
     },
     {
-      "id": "multi-group-fresh-lead-crawl-rollout",
-      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/rollout.md",
-      "title": "Multi-Group Fresh-Lead Crawl — Rollout PR Plan",
-      "domain": "facebook",
-      "type": "roadmap",
+      "id": "frontend-contract",
+      "path": "specs/domains/platform-foundation/features/workspace-ui/implementation/component-contracts.md",
+      "title": "Workspace UI — Component Contracts (Draft)",
+      "domain": "frontend",
+      "type": "contract",
       "status": "draft",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "multi-group-fresh-lead-crawl",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "workspace-ui",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "draft",
       "implementation_state": "partial",
       "effective": true,
+      "supported_experiences": [],
       "owner": "unassigned",
-      "last_reviewed": "2026-07-13",
+      "last_reviewed": "2026-07-21",
       "verified_against": [
-        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117"
+        "PR24F specs audit (2026-06-23)",
+        "frontend/src/modules/autoflow/components/ui exists"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/ui"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "contract",
+        "components",
+        "design-doc"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Post-refactor component prop contracts for the autoflow UI primitives; the components/ui module exists, but the doc derives from the same experimental mock as api-spec and is not test-pinned or verified binding against current props. Kept draft as component-contract guidance."
+    },
+    {
+      "id": "known-issues",
+      "path": "specs/domains/platform-foundation/features/workspace-ui/evidence/known-issues.md",
+      "title": "Workspace UI — Known Issues (Mock-Era Audit)",
+      "domain": "frontend",
+      "type": "report",
+      "status": "archived",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "workspace-ui",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "all KI-* target autoflow_platform.experimental.tsx (2026-04-27) which is ABSENT from the repo",
+        "production FE moved to frontend/src/modules/autoflow"
       ],
       "related_code": [],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
       "tags": [
-        "facebook",
-        "crawl",
-        "rollout",
-        "pr-train"
+        "frontend",
+        "known-issues",
+        "mock-derived",
+        "historical"
       ],
-      "notes": "PR train M0-M6 for the fresh-lead crawl runtime. M0 (spec), M2B (schema), M3B (store mechanics) merged; M4 scheduler wiring onward not yet built."
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Bug/tech-debt list (KI-001..) audited against autoflow_platform.experimental.tsx (2026-04-27), a mock file no longer present in the repo; the production frontend has moved to frontend/src/modules/autoflow. Targets are obsolete -> archived."
     },
     {
-      "id": "multi-group-fresh-lead-crawl-rejected-designs",
-      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/decisions/rejected-designs.md",
-      "title": "Multi-Group Fresh-Lead Crawl — Rejected Designs",
-      "domain": "facebook",
+      "id": "lead-ingestion-behavior",
+      "path": "specs/domains/facebook-sales-intelligence/features/lead-ingestion/technical.md",
+      "title": "Lead Ingestion Behavior Specification",
+      "domain": "leadingest",
+      "type": "behavior",
+      "status": "active",
+      "maturity": "test_pinned",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "lead-ingestion",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery",
+        "lead-management"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR23B (test/pr23b-lead-ingest-harness)",
+        "PR23C (refactor/pr23c-lead-ingest-complexity)"
+      ],
+      "related_code": [
+        "internal/leadingest/ingest.go"
+      ],
+      "related_tests": [
+        "internal/leadingest/ingest_characterization_test.go",
+        "internal/leadingest/ingest_persistence_characterization_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "leadingest",
+        "characterization"
+      ],
+      "notes": "Active behavior contract used to guide the PR23C lead ingestion complexity refactor; pinned by characterization tests."
+    },
+    {
+      "id": "lead-lifecycle-work-queue",
+      "path": "specs/domains/facebook-sales-intelligence/features/lead-lifecycle/technical.md",
+      "title": "LEAD LIFECYCLE WORK QUEUE",
+      "domain": "lead",
       "type": "architecture",
-      "status": "draft",
-      "maturity": "snapshot",
-      "metadata_version": 2,
+      "status": "active",
+      "maturity": "test_pinned",
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "multi-group-fresh-lead-crawl",
-      "layer": "decision",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "not_applicable",
+      "node_kind": "technical_feature",
+      "node_id": "lead-lifecycle",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
       "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-13",
-      "verified_against": [
-        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §13"
+      "supported_experiences": [
+        "lead-management"
       ],
-      "related_code": [],
-      "related_tests": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/models/lead_lifecycle.go (DeriveLeadLifecycle)",
+        "internal/models/lead_lifecycle_test.go"
+      ],
+      "related_code": [
+        "internal/models/lead_lifecycle.go",
+        "internal/leadingest/ingest.go"
+      ],
+      "related_tests": [
+        "internal/models/lead_lifecycle_test.go"
+      ],
       "supersedes": [],
       "superseded_by": null,
       "tags": [
-        "facebook",
-        "crawl",
-        "decisions",
-        "rejected-designs"
+        "lead",
+        "projection",
+        "work-queue"
       ],
-      "notes": "Twelve binding rejected alternatives (client-clock cutoff, ambiguous-timestamp trust, rotation patterns, queue frameworks, ...), each with the reason it must not come back."
-    },
-    {
-      "id": "account-safety-boundaries",
-      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/decisions/ADR-001-conservative-account-safety.md",
-      "title": "ADR-001: Conservative, Fail-Safe Account Safety",
-      "domain": "facebook",
-      "type": "policy",
-      "status": "draft",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "account-safety",
-      "layer": "decision",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "not_applicable",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-13",
-      "verified_against": [
-        "spec IA sprint 1 fix-up (2026-07-13): recast as rationale-only ADR; binding invariants restored to the account-safety technical contract"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "account-safety",
-        "boundaries",
-        "data-planes",
-        "no-evasion"
-      ],
-      "notes": "Supporting rationale ADR for the conservative fail-safe account-safety posture: alternatives considered (rotation, auto-clear, parallelism, solving/evasion, instant retries), trade-offs, consequences. The binding invariants themselves live in the account-safety technical contract (crawler-account-safety-spec §2/§7)."
-    },
-    {
-      "id": "account-safety-review-checklist",
-      "path": "specs/domains/facebook-sales-intelligence/features/account-safety/runbooks/review-checklist.md",
-      "title": "Account Safety — Review Checklist",
-      "domain": "facebook",
-      "type": "runbook",
-      "status": "draft",
-      "maturity": "snapshot",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "technical_feature": "account-safety",
-      "layer": "runbook",
-      "authority": "supporting",
-      "lifecycle": "draft",
-      "implementation_state": "not_applicable",
-      "effective": true,
-      "owner": "unassigned",
-      "last_reviewed": "2026-07-13",
-      "verified_against": [
-        "spec IA sprint 1 (2026-07-13): content-preserving extraction from crawler-account-safety-spec §10"
-      ],
-      "related_code": [],
-      "related_tests": [],
-      "supersedes": [],
-      "superseded_by": null,
-      "tags": [
-        "facebook",
-        "account-safety",
-        "runbook",
-        "review-checklist"
-      ],
-      "notes": "Nine-item safety checklist applied to every PR-C* runtime PR (speed, concurrency, checkpoint behavior, bypass/evasion, lease, data-plane, text leakage, pure-policy testability, Sonar/CodeRabbit hygiene)."
+      "notes": "Reviewed in PR24B. Core freshness_state projection DeriveLeadLifecycle exists and is unit-tested; reads leads via internal/leadingest/ingest.go as the doc states. Mega sprint 2026-07-13: status header refreshed to reflect PR-1..PR-5 shipped evidence (work_queue.go, lead_archive.go, auto_archive_scheduler.go, server/leads/lifecycle.go, LifecycleTabs.tsx, copilot_wording.go); retention compaction remains config-staged."
     },
     {
       "id": "lead-management-business",
@@ -2409,10 +1295,11 @@
       "type": "contract",
       "status": "draft",
       "maturity": "snapshot",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "experience": "lead-management",
+      "node_kind": "experience",
+      "node_id": "lead-management",
       "layer": "business",
       "authority": "authoritative",
       "lifecycle": "draft",
@@ -2443,10 +1330,11 @@
       "type": "contract",
       "status": "draft",
       "maturity": "snapshot",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "experience": "lead-management",
+      "node_kind": "experience",
+      "node_id": "lead-management",
       "layer": "experience",
       "authority": "authoritative",
       "lifecycle": "draft",
@@ -2473,65 +1361,243 @@
       "notes": "Experience layer of lead-management: shipped lifecycle states/tabs, queue ordering, coverage skip reasons, archive/restore, copilot wording. Planned items (retention compaction) explicitly flagged."
     },
     {
-      "id": "engagement-approval-business",
-      "path": "specs/domains/facebook-sales-intelligence/experiences/engagement-approval/business.md",
-      "title": "Engagement Approval — Business Contract",
-      "domain": "facebook",
-      "type": "contract",
-      "status": "active",
+      "id": "leadsview-decomposition",
+      "path": "specs/domains/platform-foundation/features/workspace-ui/implementation/leadsview-decomposition.md",
+      "title": "Workspace UI — LeadsView Decomposition Plan",
+      "domain": "frontend",
+      "type": "architecture",
+      "status": "draft",
       "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "experience": "engagement-approval",
-      "layer": "business",
-      "authority": "authoritative",
-      "lifecycle": "active",
-      "implementation_state": "partial",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "workspace-ui",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
       "effective": true,
+      "supported_experiences": [],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
-        "spec IA mega sprint (2026-07-21): distilled from shipped comment/outbound contracts + binding approval invariants formerly in agent entrypoints; no invented behavior",
-        "default-off auto_execute + Policy Gate floor per comment-intelligence design and AGENTS.md approval invariant",
-        "ownership control predicate + verified-state-centric policy per direct-post-intake-workflow / v2-outbound-refactor-design"
+        "PR24F specs audit (2026-06-23)",
+        "frontend/src/modules/autoflow/components/views/LeadsView.tsx still ~999 lines on scripts/file_size_allowlist.txt"
       ],
-      "related_code": [],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/views/LeadsView.tsx"
+      ],
       "related_tests": [],
       "supersedes": [],
       "superseded_by": null,
       "tags": [
-        "facebook",
-        "engagement",
-        "approval",
-        "business",
-        "experience-layer"
+        "frontend",
+        "refactor",
+        "decomposition",
+        "plan",
+        "design-doc"
       ],
-      "notes": "Business layer of the engagement-approval experience: approval-required default with explicit per-org auto_execute opt-in, auto-execution hard preconditions (verified actor, grounded content), channel discipline (inbox CS-style + first-touch semantics), ownership predicate, verified-outcome success measures. Full Policy-Gate enforcement remains partial (comment-intelligence P2d/P2e)."
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Self-labelled 'PLAN (not yet implemented)' refactor-only split of the LeadsView god view, which is still ~999 lines and on the file-size allowlist. Future-facing -> draft. Tied to active lead-lifecycle-work-queue (PR-4 LifecycleTabs already extracted)."
     },
     {
-      "id": "engagement-approval-experience",
-      "path": "specs/domains/facebook-sales-intelligence/experiences/engagement-approval/experience.md",
-      "title": "Engagement Approval — Operator Experience",
-      "domain": "facebook",
-      "type": "contract",
+      "id": "llm-cost-controls-phase1",
+      "path": "specs/domains/platform-foundation/features/ai-cost-controls/technical.md",
+      "title": "AI Cost Controls — Phase 1 Technical Contract",
+      "domain": "ai",
+      "type": "architecture",
       "status": "active",
-      "maturity": "reviewed",
-      "metadata_version": 2,
-      "ownership_domain": "facebook-sales-intelligence",
-      "domain_kind": "product",
-      "experience": "engagement-approval",
-      "layer": "experience",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "ai-cost-controls",
+      "layer": "technical",
       "authority": "authoritative",
       "lifecycle": "active",
-      "implementation_state": "partial",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "logClassifierUsage in internal/ai/classifier_cache.go",
+        "classifier cache + usage log + tests present on main (classifier_cache.go, classifier_usage_log.go, classifier_cache_test.go)"
+      ],
+      "related_code": [
+        "internal/ai/classifier_cache.go",
+        "internal/ai/classifier_usage_log.go"
+      ],
+      "related_tests": [
+        "internal/ai/classifier_cache_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "ai",
+        "cost-controls",
+        "classifier",
+        "caching"
+      ],
+      "notes": "Moved under ai-cost-controls/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Phase-1 classifier cost controls (structured JSON usage logs, bounded TTL exact-result cache, real token capture) are present on main in classifier_cache.go + classifier_usage_log.go with tests; the doc's 'not merged' header is now outdated. Implementation-backed."
+    },
+    {
+      "id": "local-connector-production-workflow",
+      "path": "specs/domains/platform-foundation/features/browser-connector/runbooks/connector-production-workflow.md",
+      "title": "Browser Connector — Production Workflow Runbook",
+      "domain": "browser",
+      "type": "runbook",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "browser-connector",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "local-connector-extension/ source tree",
+        "internal/server/agent connector handlers",
+        "scripts/build-chrome-extension.{ps1,sh}"
+      ],
+      "related_code": [
+        "local-connector-extension",
+        "internal/server/agent",
+        "scripts/build-chrome-extension.ps1",
+        "scripts/build-chrome-extension.sh"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "browser",
+        "connector",
+        "runbook",
+        "chrome-extension"
+      ],
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Describes current Chrome Web Store connector install/pairing workflow; the extension source, connector API handlers (internal/server/agent) and both build scripts exist. Operational/ops doc rather than test-pinned."
+    },
+    {
+      "id": "migration-to-monorepo-plan",
+      "path": "specs/domains/platform-foundation/decisions/monorepo-plan.md",
+      "title": "Monorepo Migration Plan (Deferred Draft)",
+      "domain": "platform",
+      "type": "migration",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "domain",
+      "node_id": "platform-foundation",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
       "effective": true,
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
-        "spec IA mega sprint (2026-07-21): submission/verification operator flows sourced from comment-automation technical.md + direct-link smoke runbook + direct-post-intake workflow; planned Policy-Gate UI explicitly flagged",
-        "human_required checkpoint behavior per account-safety state machine",
-        "actor-mismatch block + clear-actor-block endpoint per multi-actor-coverage"
+        "PR24E specs audit (2026-06-23)",
+        "baseline services/agent-brain exists; go.work/apps/packages not yet adopted"
+      ],
+      "related_code": [
+        "services/agent-brain"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "migration",
+        "monorepo",
+        "deferred",
+        "design-doc"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24E. Self-labelled 'Deferred - execution not started' go.work monorepo plan; the only realized baseline is services/agent-brain. Future-facing, revisit before Phase 0 -> draft."
+    },
+    {
+      "id": "multi-actor-coverage-policy",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-actor-coverage/technical.md",
+      "title": "MULTI ACTOR COVERAGE POLICY",
+      "domain": "lead",
+      "type": "policy",
+      "status": "active",
+      "maturity": "test_pinned",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "multi-actor-coverage",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [
+        "lead-management",
+        "engagement-approval"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/models/coverage.go (EvaluateCoverage/DeriveActorPersona)",
+        "internal/models/coverage_test.go"
+      ],
+      "related_code": [
+        "internal/models/coverage.go",
+        "internal/models/coverage_text.go"
+      ],
+      "related_tests": [
+        "internal/models/coverage_test.go",
+        "internal/models/coverage_text_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "lead",
+        "policy",
+        "coverage",
+        "projection"
+      ],
+      "notes": "Reviewed in PR24B. PR-0 contracts and pure rules (EvaluateCoverage, DeriveActorPersona) exist in internal/models/coverage.go and are unit-tested; coverage_text.go provides the PR-2 reason text. Later wiring phases not separately re-verified here."
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-rejected-designs",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/decisions/rejected-designs.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Rejected Designs",
+      "domain": "facebook",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "multi-group-fresh-lead-crawl",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §13"
       ],
       "related_code": [],
       "related_tests": [],
@@ -2539,12 +1605,271 @@
       "superseded_by": null,
       "tags": [
         "facebook",
-        "engagement",
-        "approval",
-        "operator-experience",
-        "experience-layer"
+        "crawl",
+        "decisions",
+        "rejected-designs"
       ],
-      "notes": "Experience layer of engagement-approval: shipped submission acknowledgements, verification states (waiting_verification, human-verify only for submitted_unverified), typed block reasons, actor-mismatch clearing, human_required behavior. Planned P2d/P2e Policy-Gate UI and Decision Inspector explicitly flagged as not shipped."
+      "notes": "Twelve binding rejected alternatives (client-clock cutoff, ambiguous-timestamp trust, rotation patterns, queue frameworks, ...), each with the reason it must not come back."
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-rollout",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/implementation/rollout.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Rollout PR Plan",
+      "domain": "facebook",
+      "type": "roadmap",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "multi-group-fresh-lead-crawl",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-13",
+      "verified_against": [
+        "spec IA sprint 1 (2026-07-13): content-preserving extraction from multi-group-fresh-lead-crawl-spec §11 + rollback; PR-M2 shipped as PR-M2B migrations 0112-0117"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "crawl",
+        "rollout",
+        "pr-train"
+      ],
+      "notes": "PR train M0-M6 for the fresh-lead crawl runtime. M0 (spec), M2B (schema), M3B (store mechanics) merged; M4 scheduler wiring onward not yet built."
+    },
+    {
+      "id": "multi-group-fresh-lead-crawl-spec",
+      "path": "specs/domains/facebook-sales-intelligence/features/multi-group-fresh-lead-crawl/technical.md",
+      "title": "Multi-Group Fresh-Lead Crawl — Technical Contract",
+      "domain": "facebook",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "multi-group-fresh-lead-crawl",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "fresh-lead-discovery"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-10",
+      "verified_against": [
+        "crawl.js emits posted_at:'' — post timestamps not extracted today (content/crawl.js)",
+        "dedup layers exist: crawl.js dedupKey/seen Set + posts.dedup_hash UNIQUE insert-or-ignore (internal/store/crawl/posts.go)",
+        "org_crawl_intents cursor/next_run_at exists on platform postgres 0108; no multi-group campaign grouping",
+        "session.Allocator PolicySticky per-account lease exists (internal/session/allocator.go)",
+        "layers on crawler-account-safety-spec (PR-C0.5) state machine/budgets/cooldown"
+      ],
+      "related_code": [
+        "local-connector-extension/content/crawl.js",
+        "internal/store/crawl/posts.go",
+        "internal/store/crawl/intents.go",
+        "internal/store/migrations/platform/0108_platform_crawl__postgres.up.sql",
+        "internal/session/allocator.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "architecture",
+        "crawl",
+        "campaign",
+        "fresh-lead",
+        "queue",
+        "scheduling",
+        "spec",
+        "prm0"
+      ],
+      "notes": "PR-M0 docs-only spec for multi-group fresh-lead crawl orchestration: org-scoped campaign/queue over an account pool (1 account = max 1 active crawl, org-scoped partial-unique-index backstop on facebook_crawl_runs), server-defined fresh_cutoff_at/now_utc, canonical TimestampParse DTO (posted_at/confidence/earliest_utc/latest_utc) parser->wire->gate, strict provably-fresh window rule (earliest_utc >= cutoff), frontier streak reset on ambiguous/unknown, 3-layer dedupe incl. additive facebook_crawl_lead_index (leads table untouched), org-scoped composite FKs incl. account-pool membership anchored to accounts(org_id,id) (nullable account columns, no sentinel 0; running requires non-NULL account via CHECK), waiting_for_connector_upgrade as open run status, append-only idempotent retry lineage (retry_of_run_id + single-retry unique index) + (run_id, attempt) write fencing, PR-M1..M6 rollout train. Layers on crawler-account-safety-spec; no evasion, no runtime change. Split 2026-07-13 (spec IA sprint 1): business/experience layers extracted to experiences/fresh-lead-discovery/, rollout + rejected-designs extracted beside this contract, stale inline DDL replaced by a pointer to the shipped postgres-schema.md."
+    },
+    {
+      "id": "nl-direct-link-comment-smoke",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/runbooks/direct-link-smoke.md",
+      "title": "Direct-Link Comment Smoke — Runbook",
+      "domain": "facebook",
+      "type": "runbook",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "comment-automation",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "current operator smoke runbook for live comment_single_post / GetLeadByPostRef behavior",
+        "internal/store/leads/lookup.go (GetLeadByPostRef) exists"
+      ],
+      "related_code": [
+        "internal/store/leads/lookup.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "runbook",
+        "smoke",
+        "comment"
+      ],
+      "notes": "Reviewed in PR24H; moved under comment-automation/runbooks/ in the spec IA mega sprint (2026-07-21). Current operator smoke runbook for the NL direct-link comment behavior (comment_single_post queues only when the lead pre-exists via GetLeadByPostRef). Maps to verified current code and validates active direct-post-intake-workflow. Active/reviewed runbook."
+    },
+    {
+      "id": "omnichannel-sales-copilot-telegram-track",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/telegram-track.md",
+      "title": "Sales Copilot — Omnichannel Telegram Track",
+      "domain": "copilot",
+      "type": "roadmap",
+      "status": "active",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "sales-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "PR-1/PR-3 comment-quality shipped (SanitizeComment in internal/ai/comment/quality.go)",
+        "telegram interface backed by active telegram-bot-runtime + control packages"
+      ],
+      "related_code": [
+        "internal/ai/comment/quality.go",
+        "internal/telegram/control"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "omnichannel",
+        "roadmap",
+        "track"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Active founder-directed track; comment-quality prerequisites PR-1/PR-3 shipped (SanitizeComment moved to internal/ai/comment/quality.go since the doc cited internal/ai) and the Telegram peer-interface builds on the shipped telegram control/runtime. Roadmap doc, partial implementation -> active/reviewed."
+    },
+    {
+      "id": "open-prompt-agent-design",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/decisions/open-prompt-agent.md",
+      "title": "Sales Copilot — Open-Prompt Agent Design (Draft)",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "sales-copilot",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "Agent.ProcessPromptForOrg in internal/drivers/copilot/agent.go",
+        "open-prompt handler internal/server/agent/ai_prompt.go",
+        "realized routing covered by active copilot-intent-routing-architecture"
+      ],
+      "related_code": [
+        "internal/drivers/copilot/agent.go",
+        "internal/server/agent/ai_prompt.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "open-prompt",
+        "agent",
+        "design-doc"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Self-labelled 'DRAFT - awaiting user approval' Phase 6 design proposal (2026-05-04). The open-prompt agent is partly realized (Agent.ProcessPromptForOrg, /api/agent prompt handler exist) and the deterministic routing it envisioned is now the active copilot-intent-routing-architecture, but this doc remains a forward proposal -> draft."
+    },
+    {
+      "id": "organic-sales-network",
+      "path": "specs/domains/facebook-sales-intelligence/features/lead-lifecycle/decisions/organic-sales-network.md",
+      "title": "ORGANIC SALES NETWORK",
+      "domain": "lead",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "lead-lifecycle",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "lead-management"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "extends existing append-only ledger internal/store/coordination/action_ledger.go",
+        "feedback_shared_battlefield_not_crm direction"
+      ],
+      "related_code": [
+        "internal/store/coordination/action_ledger.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "lead",
+        "ownership",
+        "architecture",
+        "directive",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24D. Founder architecture directive (Lead shared / Execution owned via created_by / Contribution derived / Campaign orchestration) sourcing PR0-PR8. It extends the existing append-only action_ledger but most PRs are future-facing; kept draft as forward guidance."
     },
     {
       "id": "outbound-actions-refactor-plan",
@@ -2554,15 +1879,19 @@
       "type": "roadmap",
       "status": "active",
       "maturity": "reviewed",
-      "metadata_version": 2,
+      "metadata_version": 3,
       "ownership_domain": "facebook-sales-intelligence",
       "domain_kind": "product",
-      "technical_feature": "outbound-actions",
+      "node_kind": "technical_feature",
+      "node_id": "outbound-actions",
       "layer": "implementation",
       "authority": "supporting",
       "lifecycle": "active",
       "implementation_state": "partial",
       "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
       "owner": "unassigned",
       "last_reviewed": "2026-07-21",
       "verified_against": [
@@ -2582,6 +1911,914 @@
         "pr-train"
       ],
       "notes": "Staged PR1/PR2 plan extracted verbatim from the V2 outbound refactor design during the spec IA mega sprint: revision history, per-PR scope, risks, acceptance criteria, resolved decisions, non-goals. PR1 shipped; PR2 breaking cleanup staged. Normative invariants stay in ../technical.md."
+    },
+    {
+      "id": "phase-5a-coordination-audit",
+      "path": "specs/domains/platform-foundation/features/store-architecture/evidence/phase-5a-coordination-audit.md",
+      "title": "Store Architecture — Phase 5A Coordination Audit",
+      "domain": "store",
+      "type": "investigation",
+      "status": "archived",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "store-architecture",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "audited coordination domain internal/store/coordination exists",
+        "store subpackage extraction (incl. coordination) shipped per STORE_SUBPACKAGE_REFACTOR Phases 0-8b"
+      ],
+      "related_code": [
+        "internal/store/coordination"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "store",
+        "coordination",
+        "audit",
+        "historical"
+      ],
+      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24E. One-time Phase 5A extraction-readiness audit (zero code moves) that gated Phase 5B; the coordination subpackage extraction has since shipped. Historical deliverable -> archived."
+    },
+    {
+      "id": "postgres-compat-plan",
+      "path": "specs/domains/knowledge-platform/features/knowledge-os/implementation/postgres-compat.md",
+      "title": "Knowledge OS — PostgreSQL Compatibility Plan",
+      "domain": "knowledge",
+      "type": "migration",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "knowledge-platform",
+      "domain_kind": "product_platform",
+      "node_kind": "technical_feature",
+      "node_id": "knowledge-os",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "pgx/v5 driver in go.mod",
+        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go exists"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge",
+        "internal/workspace_knowledge/retrieval/pgvector/pgvector_searcher.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "migration",
+        "postgres",
+        "pgvector",
+        "dual-target"
+      ],
+      "notes": "Reviewed in PR24E; moved under knowledge-os/implementation/ in the spec IA mega sprint (2026-07-21). PR-1/2/3 SHIPPED: the Knowledge OS domain is dual-target SQLite+Postgres (pgx/v5 in go.mod, pgvector searcher present). Legacy domains remain SQLite-only as the doc states. Active and implementation-backed; complements active workspace-knowledge-os."
+    },
+    {
+      "id": "production-database-migration-plan",
+      "path": "specs/domains/platform-foundation/features/data-platform/implementation/production-database-migration.md",
+      "title": "Data Platform — Production Database Migration Plan (Draft)",
+      "domain": "migration",
+      "type": "migration",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "data-platform",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "only the KnowledgeOS slice is dual-target (active postgres-compat-plan); legacy domains remain SQLite"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "migration",
+        "postgres",
+        "deferred",
+        "design-doc"
+      ],
+      "notes": "Moved under data-platform/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Aspirational all-domains SQLite to Postgres production migration plan. Only the KnowledgeOS slice is realized (active postgres-compat-plan); legacy domains still run SQLite. Future-facing -> draft."
+    },
+    {
+      "id": "production-flow",
+      "path": "specs/domains/platform-foundation/features/runtime-topology/evidence/production-flow.md",
+      "title": "Production Flow — Runtime Pipe Reference (Stale)",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "stale",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "runtime-topology",
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "cites internal/ai/agent.go (function-calling agent) which moved to internal/drivers/copilot/agent.go",
+        "last refresh 2026-05-03 predates telegram bounded-context, copilot relocation, postgres dual-target"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "production-flow",
+        "living-doc",
+        "stale"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24F. Living production-pipe reference last refreshed 2026-05-03. The north star and approval-required defaults are still accurate, but load-bearing references have drifted (e.g. internal/ai/agent.go moved to internal/drivers/copilot; telegram bounded-context + postgres dual-target shipped after this refresh). Stale until refreshed; active runtime-topology is the newer authoritative runtime doc."
+    },
+    {
+      "id": "production-hardening-goals",
+      "path": "specs/domains/knowledge-platform/features/knowledge-os/implementation/production-hardening.md",
+      "title": "Knowledge OS — Production Hardening Goals",
+      "domain": "knowledge",
+      "type": "roadmap",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "knowledge-platform",
+      "domain_kind": "product_platform",
+      "node_kind": "technical_feature",
+      "node_id": "knowledge-os",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "G1/G4 load-bearing code exists (soak/gold_dataset.go, governance/output_validator.go)",
+        "7/10 goals shipped with code+tests per doc"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge/soak/gold_dataset.go",
+        "internal/workspace_knowledge/governance/output_validator.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "hardening",
+        "roadmap",
+        "operator-dashboard"
+      ],
+      "notes": "Reviewed in PR24H; moved under knowledge-os/implementation/ in the spec IA mega sprint (2026-07-21). Operator dashboard for 10 production-hardening goals; 7 shipped end-to-end with code+tests (verified artifacts exist), 3 designed/deferred -> partial. (Some cited artifacts e.g. knowledge_cost.go have moved out of the internal/store root.)"
+    },
+    {
+      "id": "retrieval-soak-runbook",
+      "path": "specs/domains/knowledge-platform/features/knowledge-os/runbooks/retrieval-soak.md",
+      "title": "Knowledge OS — Retrieval Soak Runbook",
+      "domain": "knowledge",
+      "type": "runbook",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "knowledge-platform",
+      "domain_kind": "product_platform",
+      "node_kind": "technical_feature",
+      "node_id": "knowledge-os",
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "internal/workspace_knowledge/soak/report.go exists",
+        "TestSoak harness (go test ./internal/workspace_knowledge/soak/...) present"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge/soak",
+        "internal/workspace_knowledge/soak/report.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "runbook",
+        "soak",
+        "retrieval"
+      ],
+      "notes": "Reviewed in PR24D; moved under knowledge-os/runbooks/ in the spec IA mega sprint (2026-07-21). Operator runbook for the retrieval soak harness; the soak code (internal/workspace_knowledge/soak) and TestSoak exist and re-run in CI. The generated RETRIEVAL_SOAK_REPORT.md now writes to the gitignored artifacts/retrieval-soak/ dir (DOCS-R2 resolved) and is no longer a registered spec."
+    },
+    {
+      "id": "root-architecture",
+      "path": "specs/domains/platform-foundation/features/workspace-ui/evidence/root-architecture.md",
+      "title": "Workspace UI — Early Frontend Architecture (Stale)",
+      "domain": "frontend",
+      "type": "architecture",
+      "status": "stale",
+      "maturity": "snapshot",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "workspace-ui",
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-derived from autoflow_platform.experimental.tsx mock (2026-04-27), same lineage as stale api-spec",
+        "production FE moved to frontend/src/modules/autoflow"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "architecture",
+        "mock-derived",
+        "stale"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Early frontend architecture spec derived from the autoflow_platform.experimental.tsx mock (2026-04-27); the production frontend has since moved to frontend/src/modules/autoflow. Still cited by CLAUDE.md read-first, so refresh rather than drop. Stale snapshot."
+    },
+    {
+      "id": "root-cause-report",
+      "path": "specs/domains/facebook-sales-intelligence/features/comment-automation/evidence/root-cause-report.md",
+      "title": "ROOT CAUSE REPORT",
+      "domain": "facebook",
+      "type": "report",
+      "status": "archived",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "comment-automation",
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "models.NavDiagnostic in internal/models (execution_outcome.go / comment_forensics.go)",
+        "investigation log autocomment-redirect-investigation.md (same evidence/ directory)"
+      ],
+      "related_code": [
+        "internal/models/execution_outcome.go",
+        "internal/models/comment_forensics.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "comment",
+        "report",
+        "root-cause",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24E; moved under comment-automation/evidence/ in the spec IA mega sprint (2026-07-21). Completed root-cause investigation report (2026-06-04) for the autocomment redirect failure; conclusion fed the PR8 redirect work. Historical evidence, non-authoritative and not effective. Companion to the archived autocomment-redirect-investigation."
+    },
+    {
+      "id": "runtime-topology",
+      "path": "specs/domains/platform-foundation/features/runtime-topology/technical.md",
+      "title": "Runtime Topology — Technical Contract",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "runtime-topology",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "scripts/check_topology.sh (CI grep gates enforce its invariants)",
+        "internal/store/DOMAINS.md"
+      ],
+      "related_code": [
+        "internal/store/leads",
+        "internal/store/threads",
+        "internal/store/outbound",
+        "internal/store/coordination",
+        "internal/server/observability"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "architecture",
+        "topology",
+        "living-doc"
+      ],
+      "notes": "Reviewed in PR24B; promoted to platform-foundation/features/runtime-topology/technical.md in the spec IA mega sprint (2026-07-21) — the path CLAUDE.md/AGENTS.md name as current runtime authority. Living doc describing current runtime composition; its invariants are enforced by scripts/check_topology.sh and the referenced store subpackages all exist. (Doc also cites internal/server/org/superadmin.go which is not at that path; minor, not added.)"
+    },
+    {
+      "id": "saas-automation-spec",
+      "path": "specs/domains/platform-foundation/decisions/automation-principles.md",
+      "title": "SaaS Automation Principles (Vision Draft)",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "domain",
+      "node_id": "platform-foundation",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "high-level retrieval/reasoning/memory + no-blind-crawling + planner-first principles; aligns with current direction but vision-level"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "principles",
+        "planner",
+        "design-doc"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24H. High-level system-principles spec (Retrieval+Reasoning+Memory, No-Blind-Crawling, Planner-first, cross-domain generalization). Aligns with the current product direction but is vision-level, not an implementation contract -> draft."
+    },
+    {
+      "id": "saas-ux-hardening-track",
+      "path": "specs/domains/platform-foundation/features/workspace-ui/implementation/ux-hardening-track.md",
+      "title": "Workspace UI — SaaS UX Hardening Track",
+      "domain": "frontend",
+      "type": "roadmap",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "workspace-ui",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-labelled DESIGN APPROVED (2026-06-12); PRs not yet shipped per project tracking"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "ux",
+        "rbac",
+        "roadmap",
+        "design-doc"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Design-approved authoritative UX/RBAC/extension-version-gating plan; the PRs (incl. the cookie-leak fix) are not yet shipped. Future-facing approved plan -> draft."
+    },
+    {
+      "id": "sales-voice-automation-and-data-private-enterprise-plan",
+      "path": "specs/domains/facebook-sales-intelligence/features/sales-copilot/implementation/voice-enterprise-plan.md",
+      "title": "Sales Copilot — Voice Automation and Private-Data Enterprise Plan (Draft)",
+      "domain": "copilot",
+      "type": "roadmap",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "sales-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "forward product vision after Phase 6 Open-Prompt Agent; no specific implementation contract verified"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "vision",
+        "sales-voice",
+        "design-doc"
+      ],
+      "notes": "Moved under sales-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Forward product vision (AI Facebook Sales Employee trained on private business data) following the open-prompt agent. Aspirational direction, not an implementation contract -> draft."
+    },
+    {
+      "id": "store-subpackage-refactor",
+      "path": "specs/domains/platform-foundation/features/store-architecture/technical.md",
+      "title": "Store Architecture — Subpackage Decomposition",
+      "domain": "store",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "technical_feature",
+      "node_id": "store-architecture",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/store/DOMAINS.md",
+        "store subpackages (dbutil/outbound/coordination/leads/crawl) exist"
+      ],
+      "related_code": [
+        "internal/store/dbutil",
+        "internal/store/outbound",
+        "internal/store/coordination",
+        "internal/store/leads",
+        "internal/store/crawl"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "architecture",
+        "store",
+        "refactor-history"
+      ],
+      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Canonical store subpackage decomposition; the subpackages it specifies exist in the current tree and RUNTIME_TOPOLOGY references it as authoritative. Migration phases are largely shipped."
+    },
+    {
+      "id": "structural-refactor-plan",
+      "path": "specs/domains/platform-foundation/decisions/structural-refactor-plan.md",
+      "title": "Structural Refactor Plan (Draft)",
+      "domain": "platform",
+      "type": "roadmap",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "platform-foundation",
+      "domain_kind": "platform",
+      "node_kind": "domain",
+      "node_id": "platform-foundation",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "tracks open boundary decisions (internal/auth vs internal/server/auth, both exist); quick wins shipped"
+      ],
+      "related_code": [
+        "internal/auth",
+        "internal/server/auth"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "refactor",
+        "living-plan",
+        "deferred"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24H. Living plan tracking structural decisions deferred at the 2026-05-07 cleanup; quick wins shipped, several boundary decisions still open. Future-facing guidance -> draft. Complements active store-subpackage-refactor + component-structure-rules."
+    },
+    {
+      "id": "telegram-bot-runtime",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/technical.md",
+      "title": "Telegram Copilot — Bot Runtime Technical Contract",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "telegram-copilot",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "bounded-context packages exist (store/telegram, telegram/control, server/telegram, telegram/client, telegram/render, server/integrations)",
+        "legacy internal/telegram/bot.go retired (absent)"
+      ],
+      "related_code": [
+        "internal/telegram/control",
+        "internal/server/telegram",
+        "internal/store/telegram",
+        "internal/telegram/client",
+        "internal/telegram/render"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "runtime",
+        "webhook",
+        "architecture"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Bounded-context Telegram runtime is implemented: store -> control -> {integrations, server/telegram}; webhook runtime present; the legacy long-poll bot.go is deleted as the doc states. Active and implementation-backed."
+    },
+    {
+      "id": "telegram-channel-destinations",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/channel-destinations.md",
+      "title": "Telegram Copilot — Channel Destinations",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "internal/store/telegram/destinations.go + migration 0015_telegram_destinations",
+        "control.NotifyEvent in internal/telegram/control/notify_event.go",
+        "destinations_test.go present"
+      ],
+      "related_code": [
+        "internal/store/telegram/destinations.go",
+        "internal/telegram/control/notify_event.go",
+        "internal/store/migrations/0015_telegram_destinations__sqlite.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/telegram/destinations_test.go",
+        "internal/telegram/control/destinations_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "destinations",
+        "notifications"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Channel-first destinations backend shipped: telegram_destinations (migration 0015), store CRUD, and control.NotifyEvent resolve/filter/deliver path all exist with tests. Active/implementation-backed; builds on active telegram-bot-runtime."
+    },
+    {
+      "id": "telegram-event-wiring",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/event-wiring.md",
+      "title": "Telegram Copilot — Event Wiring",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "OnLeadCreated/SetLeadNotifier hook in internal/leadingest/ingest.go",
+        "wired in cmd/worker/main.go + internal/server/agent + internal/server/router.go"
+      ],
+      "related_code": [
+        "internal/leadingest/ingest.go",
+        "internal/server/agent/outbox_agent.go",
+        "internal/server/router.go",
+        "cmd/worker/main.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "event-wiring",
+        "notifications"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go — minor path drift.) Active and implementation-backed."
+    },
+    {
+      "id": "telegram-integration-ui",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/integration-ui.md",
+      "title": "Telegram Copilot — Integration Setup (Backend + UI)",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "migration 0013_telegram_integration + internal/store/telegram (settings/bindings/audit)",
+        "control-plane endpoints in internal/server/integrations/routes.go",
+        "telegram flags in internal/config/config.go"
+      ],
+      "related_code": [
+        "internal/store/telegram/settings.go",
+        "internal/server/integrations/routes.go",
+        "internal/config/config.go",
+        "internal/store/migrations/0013_telegram_integration__sqlite.up.sql"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "integration",
+        "control-plane"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. PR-1 BACKEND (telegram_settings/bind_codes/bindings/alert_prefs/audit via migration 0013, tenant-scoped /api/settings/integrations/telegram handlers, default-safe flags) is shipped. The PR-2 Next.js UI is future. Active/implementation-backed for the backend contract."
+    },
+    {
+      "id": "telegram-per-org-bot",
+      "path": "specs/domains/facebook-sales-intelligence/features/telegram-copilot/implementation/per-org-bot.md",
+      "title": "Telegram Copilot — Per-Org Bot Credentials",
+      "domain": "copilot",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "telegram-copilot",
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "internal/store/telegram/bot_credentials.go + migration 0016_telegram_bot_credentials",
+        "control resolveBot/GetDecryptedBotToken path",
+        "bot_credentials_test.go present"
+      ],
+      "related_code": [
+        "internal/store/telegram/bot_credentials.go",
+        "internal/store/migrations/0016_telegram_bot_credentials__sqlite.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/telegram/bot_credentials_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "per-org-bot",
+        "secrets",
+        "multi-tenant"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Per-org encrypted bot credentials backend shipped: telegram_bot_credentials (migration 0016, doc said 0015 - actual is 0016), AES-GCM encrypt, GetDecryptedBotToken internal-only, per-org resolveBot for connect/delivery. Active/implementation-backed."
+    },
+    {
+      "id": "template-telegram-copilot-plan",
+      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/decisions/v2-5-umbrella-plan.md",
+      "title": "V2.5 Umbrella Plan — Templates/Telegram/Copilot (Ancestor Draft)",
+      "domain": "platform",
+      "type": "architecture",
+      "status": "draft",
+      "maturity": "reviewed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "outbound-actions",
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "core verified-state-centric invariants now codified in active runtime-topology + v2-outbound-refactor-design + append-only-ledger-migration",
+        "ledger internal/store/coordination/action_ledger.go exists"
+      ],
+      "related_code": [
+        "internal/store/coordination/action_ledger.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "architecture",
+        "verified-state-centric",
+        "umbrella",
+        "design-doc"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24G. Broad v2.5 umbrella architecture plan (Outbound Invariant -> Engagement Ledger -> Templates -> Telegram -> Copilot). Its core verified-state-centric / append-only invariants have since been decomposed into and shipped via the now-authoritative active specs (runtime-topology, v2-outbound-refactor-design, append-only-ledger-migration); the Templates/Copilot portions remain forward-looking. Kept draft as ancestor architecture reference, not active, to avoid duplicating the authoritative specs."
+    },
+    {
+      "id": "v2-outbound-refactor-design",
+      "path": "specs/domains/facebook-sales-intelligence/features/outbound-actions/technical.md",
+      "title": "Outbound Actions — Technical Contract (V2 Outbound Refactor)",
+      "domain": "outbound",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "facebook-sales-intelligence",
+      "domain_kind": "product",
+      "node_kind": "technical_feature",
+      "node_id": "outbound-actions",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "supported_experiences": [
+        "engagement-approval"
+      ],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "action_policies + policy-driven dedup in internal/store/outbound/dedup.go",
+        "internal/store/outbound subpackage exists"
+      ],
+      "related_code": [
+        "internal/store/outbound",
+        "internal/store/outbound/dedup.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "outbound",
+        "architecture",
+        "v2",
+        "tenant-isolation"
+      ],
+      "notes": "Reviewed in PR24D; promoted to outbound-actions/technical.md in the spec IA mega sprint (2026-07-21). PR1 (action_policies table + policy-driven dedup, transition ledger rows, 7 global functions deleted, tenant isolation) is reflected in internal/store/outbound. PR2 (drop legacy status column + split outbound.go) remains staged -> partial. Staged plan/risks/acceptance extracted verbatim to implementation/refactor-plan.md; this file keeps the normative invariants."
+    },
+    {
+      "id": "workspace-knowledge-os",
+      "path": "specs/domains/knowledge-platform/features/knowledge-os/technical.md",
+      "title": "Knowledge OS — Technical Contract",
+      "domain": "knowledge",
+      "type": "architecture",
+      "status": "active",
+      "maturity": "implementation_backed",
+      "metadata_version": 3,
+      "ownership_domain": "knowledge-platform",
+      "domain_kind": "product_platform",
+      "node_kind": "technical_feature",
+      "node_id": "knowledge-os",
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "supported_experiences": [],
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "internal/workspace_knowledge package exists (assets/retrieval/soak)",
+        "retrieval-soak-runbook proves a working retrieval substrate"
+      ],
+      "related_code": [
+        "internal/workspace_knowledge"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "knowledge",
+        "rag",
+        "architecture",
+        "multi-tenant"
+      ],
+      "notes": "Reviewed in PR24D; promoted to knowledge-platform/features/knowledge-os/technical.md in the spec IA mega sprint (2026-07-21). KnowledgeOS backend (org-scoped assets -> retrieval -> context assembly) is implemented under internal/workspace_knowledge. Later vector-DB port-swap (pgvector/Qdrant) and some L5-L7 layers are deferred per the doc, but the core foundation is real and backed by the soak harness."
     }
   ]
 }

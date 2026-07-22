@@ -1,0 +1,52 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "lead-ingestion",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "fresh-lead-discovery",
+      "lead-management"
+    ]
+  },
+  "entries": [
+    {
+      "id": "lead-ingestion-behavior",
+      "document": "technical.md",
+      "title": "Lead Ingestion Behavior Specification",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR23B (test/pr23b-lead-ingest-harness)",
+        "PR23C (refactor/pr23c-lead-ingest-complexity)"
+      ],
+      "related_code": [
+        "internal/leadingest/ingest.go"
+      ],
+      "related_tests": [
+        "internal/leadingest/ingest_characterization_test.go",
+        "internal/leadingest/ingest_persistence_characterization_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "leadingest",
+        "characterization"
+      ],
+      "notes": "Active behavior contract used to guide the PR23C lead ingestion complexity refactor; pinned by characterization tests.",
+      "compatibility": {
+        "domain": "leadingest",
+        "type": "behavior",
+        "status": "active",
+        "maturity": "test_pinned"
+      }
+    }
+  ]
+}

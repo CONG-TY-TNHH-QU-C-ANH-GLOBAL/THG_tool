@@ -1,0 +1,171 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "comment-automation",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "engagement-approval"
+    ]
+  },
+  "entries": [
+    {
+      "id": "autocomment-redirect-investigation",
+      "document": "evidence/autocomment-redirect-investigation.md",
+      "title": "AUTOCOMMENT REDIRECT INVESTIGATION",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "PR8A evidence pack + proof-integrity fix shipped (manifest 0.5.19)",
+        "companion to archived root-cause-report",
+        "content/proof.js exists"
+      ],
+      "related_code": [
+        "local-connector-extension/content/proof.js"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "investigation",
+        "redirect",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24H; moved under comment-automation/evidence/ in the spec IA mega sprint (2026-07-21). Historical PR8 auto-comment redirect investigation; the PR8A Evidence Pack + proof-integrity fix (buildCommentProof reorder) shipped (manifest 0.5.19). Companion to the archived root-cause-report; the remaining PR8B step is operator-owned. Historical evidence, non-authoritative and not effective.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "investigation",
+        "status": "archived",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "comment-async-reverify",
+      "document": "technical.md",
+      "title": "Comment Automation — Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24C specs audit (2026-06-23)",
+        "internal/models/comment_forensics.go (ClassifyCommentForensics)",
+        "internal/store/coordination/comment_forensics.go",
+        "internal/store/comment_forensics_test.go + comment_reverify_lease_test.go",
+        "PR24C: targeted tests executed and PASS — `go test ./internal/store/ -run 'CommentForensics|Reverify'` (9 tests incl. TestClassifyCommentForensics_Buckets)"
+      ],
+      "related_code": [
+        "internal/models/comment_forensics.go",
+        "internal/store/coordination/comment_forensics.go"
+      ],
+      "related_tests": [
+        "internal/store/comment_forensics_test.go",
+        "internal/store/comment_reverify_lease_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "comment",
+        "verification",
+        "reliability"
+      ],
+      "notes": "Reviewed in PR24C; promoted to comment-automation/technical.md in the spec IA mega sprint (2026-07-21). Forensics classifier + soft-touch semantics + async reverify (Part D) shipped; backed by comment_forensics_test.go and comment_reverify_lease_test.go. Owns only current test-pinned comment execution + reverification behavior; historical redirect evidence lives in evidence/. Complements active lead-lifecycle-work-queue (waiting_verification state).",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "behavior",
+        "status": "active",
+        "maturity": "test_pinned"
+      }
+    },
+    {
+      "id": "nl-direct-link-comment-smoke",
+      "document": "runbooks/direct-link-smoke.md",
+      "title": "Direct-Link Comment Smoke — Runbook",
+      "metadata_version": 3,
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "current operator smoke runbook for live comment_single_post / GetLeadByPostRef behavior",
+        "internal/store/leads/lookup.go (GetLeadByPostRef) exists"
+      ],
+      "related_code": [
+        "internal/store/leads/lookup.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "runbook",
+        "smoke",
+        "comment"
+      ],
+      "notes": "Reviewed in PR24H; moved under comment-automation/runbooks/ in the spec IA mega sprint (2026-07-21). Current operator smoke runbook for the NL direct-link comment behavior (comment_single_post queues only when the lead pre-exists via GetLeadByPostRef). Maps to verified current code and validates active direct-post-intake-workflow. Active/reviewed runbook.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "runbook",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "root-cause-report",
+      "document": "evidence/root-cause-report.md",
+      "title": "ROOT CAUSE REPORT",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "models.NavDiagnostic in internal/models (execution_outcome.go / comment_forensics.go)",
+        "investigation log autocomment-redirect-investigation.md (same evidence/ directory)"
+      ],
+      "related_code": [
+        "internal/models/execution_outcome.go",
+        "internal/models/comment_forensics.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "comment",
+        "report",
+        "root-cause",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24E; moved under comment-automation/evidence/ in the spec IA mega sprint (2026-07-21). Completed root-cause investigation report (2026-06-04) for the autocomment redirect failure; conclusion fed the PR8 redirect work. Historical evidence, non-authoritative and not effective. Companion to the archived autocomment-redirect-investigation.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "report",
+        "status": "archived",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

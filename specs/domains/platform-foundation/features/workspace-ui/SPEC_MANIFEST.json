@@ -1,0 +1,227 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "workspace-ui",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "api-spec",
+      "document": "evidence/api-spec.md",
+      "title": "Workspace UI — Mock-Derived API Spec (Stale)",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "no /api/v1 routes exist in internal/server or cmd",
+        "types derived from autoflow_platform.experimental.tsx mock (e.g. Lead.last='2g', agent='Agent_01')"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "api",
+        "contract",
+        "mock-derived",
+        "stale"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Self-describes as derived from an experimental TSX mock. The documented base URL /api/v1 is NOT implemented in the current backend (no /api/v1 routes) and the mock-shaped types do not match the real API. Stale early contract; do not use as source of truth without rewrite.",
+      "compatibility": {
+        "domain": "frontend",
+        "type": "contract",
+        "status": "stale",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "frontend-contract",
+      "document": "implementation/component-contracts.md",
+      "title": "Workspace UI — Component Contracts (Draft)",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "frontend/src/modules/autoflow/components/ui exists"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/ui"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "contract",
+        "components",
+        "design-doc"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Post-refactor component prop contracts for the autoflow UI primitives; the components/ui module exists, but the doc derives from the same experimental mock as api-spec and is not test-pinned or verified binding against current props. Kept draft as component-contract guidance.",
+      "compatibility": {
+        "domain": "frontend",
+        "type": "contract",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "known-issues",
+      "document": "evidence/known-issues.md",
+      "title": "Workspace UI — Known Issues (Mock-Era Audit)",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "all KI-* target autoflow_platform.experimental.tsx (2026-04-27) which is ABSENT from the repo",
+        "production FE moved to frontend/src/modules/autoflow"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "known-issues",
+        "mock-derived",
+        "historical"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Bug/tech-debt list (KI-001..) audited against autoflow_platform.experimental.tsx (2026-04-27), a mock file no longer present in the repo; the production frontend has moved to frontend/src/modules/autoflow. Targets are obsolete -> archived.",
+      "compatibility": {
+        "domain": "frontend",
+        "type": "report",
+        "status": "archived",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "leadsview-decomposition",
+      "document": "implementation/leadsview-decomposition.md",
+      "title": "Workspace UI — LeadsView Decomposition Plan",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "frontend/src/modules/autoflow/components/views/LeadsView.tsx still ~999 lines on scripts/file_size_allowlist.txt"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow/components/views/LeadsView.tsx"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "refactor",
+        "decomposition",
+        "plan",
+        "design-doc"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Self-labelled 'PLAN (not yet implemented)' refactor-only split of the LeadsView god view, which is still ~999 lines and on the file-size allowlist. Future-facing -> draft. Tied to active lead-lifecycle-work-queue (PR-4 LifecycleTabs already extracted).",
+      "compatibility": {
+        "domain": "frontend",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "root-architecture",
+      "document": "evidence/root-architecture.md",
+      "title": "Workspace UI — Early Frontend Architecture (Stale)",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-derived from autoflow_platform.experimental.tsx mock (2026-04-27), same lineage as stale api-spec",
+        "production FE moved to frontend/src/modules/autoflow"
+      ],
+      "related_code": [
+        "frontend/src/modules/autoflow"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "architecture",
+        "mock-derived",
+        "stale"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Early frontend architecture spec derived from the autoflow_platform.experimental.tsx mock (2026-04-27); the production frontend has since moved to frontend/src/modules/autoflow. Still cited by CLAUDE.md read-first, so refresh rather than drop. Stale snapshot.",
+      "compatibility": {
+        "domain": "frontend",
+        "type": "architecture",
+        "status": "stale",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "saas-ux-hardening-track",
+      "document": "implementation/ux-hardening-track.md",
+      "title": "Workspace UI — SaaS UX Hardening Track",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-labelled DESIGN APPROVED (2026-06-12); PRs not yet shipped per project tracking"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "frontend",
+        "ux",
+        "rbac",
+        "roadmap",
+        "design-doc"
+      ],
+      "notes": "Moved under workspace-ui/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Design-approved authoritative UX/RBAC/extension-version-gating plan; the PRs (incl. the cookie-leak fix) are not yet shipped. Future-facing approved plan -> draft.",
+      "compatibility": {
+        "domain": "frontend",
+        "type": "roadmap",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

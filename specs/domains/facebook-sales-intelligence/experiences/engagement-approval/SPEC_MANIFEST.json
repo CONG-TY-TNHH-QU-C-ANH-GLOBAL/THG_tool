@@ -1,0 +1,83 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "experience",
+    "id": "engagement-approval",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product"
+  },
+  "entries": [
+    {
+      "id": "engagement-approval-business",
+      "document": "business.md",
+      "title": "Engagement Approval — Business Contract",
+      "metadata_version": 3,
+      "layer": "business",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): distilled from shipped comment/outbound contracts + binding approval invariants formerly in agent entrypoints; no invented behavior",
+        "default-off auto_execute + Policy Gate floor per comment-intelligence design and AGENTS.md approval invariant",
+        "ownership control predicate + verified-state-centric policy per direct-post-intake-workflow / v2-outbound-refactor-design"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "engagement",
+        "approval",
+        "business",
+        "experience-layer"
+      ],
+      "notes": "Business layer of the engagement-approval experience: approval-required default with explicit per-org auto_execute opt-in, auto-execution hard preconditions (verified actor, grounded content), channel discipline (inbox CS-style + first-touch semantics), ownership predicate, verified-outcome success measures. Full Policy-Gate enforcement remains partial (comment-intelligence P2d/P2e).",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "contract",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "engagement-approval-experience",
+      "document": "experience.md",
+      "title": "Engagement Approval — Operator Experience",
+      "metadata_version": 3,
+      "layer": "experience",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "spec IA mega sprint (2026-07-21): submission/verification operator flows sourced from comment-automation technical.md + direct-link smoke runbook + direct-post-intake workflow; planned Policy-Gate UI explicitly flagged",
+        "human_required checkpoint behavior per account-safety state machine",
+        "actor-mismatch block + clear-actor-block endpoint per multi-actor-coverage"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "facebook",
+        "engagement",
+        "approval",
+        "operator-experience",
+        "experience-layer"
+      ],
+      "notes": "Experience layer of engagement-approval: shipped submission acknowledgements, verification states (waiting_verification, human-verify only for submitted_unverified), typed block reasons, actor-mismatch clearing, human_required behavior. Planned P2d/P2e Policy-Gate UI and Decision Inspector explicitly flagged as not shipped.",
+      "compatibility": {
+        "domain": "facebook",
+        "type": "contract",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

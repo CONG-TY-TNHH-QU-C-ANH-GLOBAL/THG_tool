@@ -1,0 +1,169 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "browser-connector",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "automation-platform-core",
+      "document": "technical.md",
+      "title": "Browser Connector — Automation Platform Core",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24C specs audit (2026-06-23)",
+        "local-connector-extension/automation + channels/facebook modules exist",
+        "test/automation_core.test.js + test/facebook_adapter.test.js",
+        "PR24C: JS tests executed and PASS — `node local-connector-extension/test/automation_core.test.js` + `facebook_adapter.test.js`"
+      ],
+      "related_code": [
+        "local-connector-extension/automation",
+        "local-connector-extension/channels/facebook"
+      ],
+      "related_tests": [
+        "local-connector-extension/test/automation_core.test.js",
+        "local-connector-extension/test/facebook_adapter.test.js"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "browser",
+        "platform-core",
+        "extension",
+        "channel-neutral"
+      ],
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24C. Channel-neutral automation CORE + Facebook adapter scaffolding shipped and unit-tested (code-only; not yet wired into manifest.json, zero production load by design). The hot-path executor it wraps moved to content/facebook/outbound/ since the doc cited content/outbound.js.",
+      "compatibility": {
+        "domain": "browser",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "test_pinned"
+      }
+    },
+    {
+      "id": "browser-automation-kit-refactor",
+      "document": "implementation/automation-kit-refactor.md",
+      "title": "Browser Connector — Automation Kit Refactor (Design)",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "self-labelled BACKLOG/DESIGN, not started",
+        "targets local-connector-extension/content/facebook/outbound/outbound.js"
+      ],
+      "related_code": [
+        "local-connector-extension/content/facebook/outbound/outbound.js"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "browser",
+        "refactor",
+        "kit",
+        "backlog",
+        "design-doc"
+      ],
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Self-labelled BACKLOG/DESIGN (not started) plan to refactor the ~1400-line outbound.js into a layered multi-platform kit. Complements the active automation-platform-core scaffolding. Future-facing -> draft.",
+      "compatibility": {
+        "domain": "browser",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "browser-gateway-and-facebook-automation-vision",
+      "document": "decisions/browser-gateway-vision.md",
+      "title": "Browser Connector — Gateway Vision",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "realized browser path is the Chrome connector (active local-connector-production-workflow) + automation-platform-core",
+        "gateway abstraction not implemented (abstraction frozen)"
+      ],
+      "related_code": [
+        "local-connector-extension"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "browser",
+        "vision",
+        "gateway",
+        "design-doc"
+      ],
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Browser-Gateway architectural direction. The realized browser path is the Chrome extension connector (active local-connector-production-workflow) and automation-platform-core scaffolding; the stable-gateway abstraction itself remains aspirational (platform abstraction frozen). Useful direction -> draft.",
+      "compatibility": {
+        "domain": "browser",
+        "type": "roadmap",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "local-connector-production-workflow",
+      "document": "runbooks/connector-production-workflow.md",
+      "title": "Browser Connector — Production Workflow Runbook",
+      "metadata_version": 3,
+      "layer": "runbook",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "local-connector-extension/ source tree",
+        "internal/server/agent connector handlers",
+        "scripts/build-chrome-extension.{ps1,sh}"
+      ],
+      "related_code": [
+        "local-connector-extension",
+        "internal/server/agent",
+        "scripts/build-chrome-extension.ps1",
+        "scripts/build-chrome-extension.sh"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "browser",
+        "connector",
+        "runbook",
+        "chrome-extension"
+      ],
+      "notes": "Moved under browser-connector/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Describes current Chrome Web Store connector install/pairing workflow; the extension source, connector API handlers (internal/server/agent) and both build scripts exist. Operational/ops doc rather than test-pinned.",
+      "compatibility": {
+        "domain": "browser",
+        "type": "runbook",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}

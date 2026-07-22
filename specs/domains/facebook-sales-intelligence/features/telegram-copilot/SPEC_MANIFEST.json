@@ -1,0 +1,219 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "telegram-copilot",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product"
+  },
+  "entries": [
+    {
+      "id": "telegram-bot-runtime",
+      "document": "technical.md",
+      "title": "Telegram Copilot — Bot Runtime Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "bounded-context packages exist (store/telegram, telegram/control, server/telegram, telegram/client, telegram/render, server/integrations)",
+        "legacy internal/telegram/bot.go retired (absent)"
+      ],
+      "related_code": [
+        "internal/telegram/control",
+        "internal/server/telegram",
+        "internal/store/telegram",
+        "internal/telegram/client",
+        "internal/telegram/render"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "runtime",
+        "webhook",
+        "architecture"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. Bounded-context Telegram runtime is implemented: store -> control -> {integrations, server/telegram}; webhook runtime present; the legacy long-poll bot.go is deleted as the doc states. Active and implementation-backed.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "telegram-channel-destinations",
+      "document": "implementation/channel-destinations.md",
+      "title": "Telegram Copilot — Channel Destinations",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "internal/store/telegram/destinations.go + migration 0015_telegram_destinations",
+        "control.NotifyEvent in internal/telegram/control/notify_event.go",
+        "destinations_test.go present"
+      ],
+      "related_code": [
+        "internal/store/telegram/destinations.go",
+        "internal/telegram/control/notify_event.go",
+        "internal/store/migrations/0015_telegram_destinations__sqlite.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/telegram/destinations_test.go",
+        "internal/telegram/control/destinations_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "destinations",
+        "notifications"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Channel-first destinations backend shipped: telegram_destinations (migration 0015), store CRUD, and control.NotifyEvent resolve/filter/deliver path all exist with tests. Active/implementation-backed; builds on active telegram-bot-runtime.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "telegram-event-wiring",
+      "document": "implementation/event-wiring.md",
+      "title": "Telegram Copilot — Event Wiring",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "OnLeadCreated/SetLeadNotifier hook in internal/leadingest/ingest.go",
+        "wired in cmd/worker/main.go + internal/server/agent + internal/server/router.go"
+      ],
+      "related_code": [
+        "internal/leadingest/ingest.go",
+        "internal/server/agent/outbox_agent.go",
+        "internal/server/router.go",
+        "cmd/worker/main.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "event-wiring",
+        "notifications"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24F. lead_created + comment/inbox/post outcomes are wired to per-org Telegram channels: leadingest.IngestPost exposes the OnLeadCreated hook, consumed by the worker and server crawl path; outcome finalize emits via control. (Doc cites server/agent/crawl.go; the hook wiring lives in server/agent/crawl_ingest.go — minor path drift.) Active and implementation-backed.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "telegram-integration-ui",
+      "document": "implementation/integration-ui.md",
+      "title": "Telegram Copilot — Integration Setup (Backend + UI)",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "migration 0013_telegram_integration + internal/store/telegram (settings/bindings/audit)",
+        "control-plane endpoints in internal/server/integrations/routes.go",
+        "telegram flags in internal/config/config.go"
+      ],
+      "related_code": [
+        "internal/store/telegram/settings.go",
+        "internal/server/integrations/routes.go",
+        "internal/config/config.go",
+        "internal/store/migrations/0013_telegram_integration__sqlite.up.sql"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "integration",
+        "control-plane"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. PR-1 BACKEND (telegram_settings/bind_codes/bindings/alert_prefs/audit via migration 0013, tenant-scoped /api/settings/integrations/telegram handlers, default-safe flags) is shipped. The PR-2 Next.js UI is future. Active/implementation-backed for the backend contract.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "telegram-per-org-bot",
+      "document": "implementation/per-org-bot.md",
+      "title": "Telegram Copilot — Per-Org Bot Credentials",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24G specs audit (2026-06-23)",
+        "internal/store/telegram/bot_credentials.go + migration 0016_telegram_bot_credentials",
+        "control resolveBot/GetDecryptedBotToken path",
+        "bot_credentials_test.go present"
+      ],
+      "related_code": [
+        "internal/store/telegram/bot_credentials.go",
+        "internal/store/migrations/0016_telegram_bot_credentials__sqlite.up.sql"
+      ],
+      "related_tests": [
+        "internal/store/telegram/bot_credentials_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "copilot",
+        "telegram",
+        "per-org-bot",
+        "secrets",
+        "multi-tenant"
+      ],
+      "notes": "Moved under telegram-copilot/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24G. Per-org encrypted bot credentials backend shipped: telegram_bot_credentials (migration 0016, doc said 0015 - actual is 0016), AES-GCM encrypt, GetDecryptedBotToken internal-only, per-org resolveBot for connect/delivery. Active/implementation-backed.",
+      "compatibility": {
+        "domain": "copilot",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}

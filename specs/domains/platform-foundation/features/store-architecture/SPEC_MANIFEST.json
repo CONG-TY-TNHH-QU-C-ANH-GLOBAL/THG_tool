@@ -1,0 +1,88 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "store-architecture",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "phase-5a-coordination-audit",
+      "document": "evidence/phase-5a-coordination-audit.md",
+      "title": "Store Architecture — Phase 5A Coordination Audit",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "audited coordination domain internal/store/coordination exists",
+        "store subpackage extraction (incl. coordination) shipped per STORE_SUBPACKAGE_REFACTOR Phases 0-8b"
+      ],
+      "related_code": [
+        "internal/store/coordination"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "store",
+        "coordination",
+        "audit",
+        "historical"
+      ],
+      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24E. One-time Phase 5A extraction-readiness audit (zero code moves) that gated Phase 5B; the coordination subpackage extraction has since shipped. Historical deliverable -> archived.",
+      "compatibility": {
+        "domain": "store",
+        "type": "investigation",
+        "status": "archived",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "store-subpackage-refactor",
+      "document": "technical.md",
+      "title": "Store Architecture — Subpackage Decomposition",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/store/DOMAINS.md",
+        "store subpackages (dbutil/outbound/coordination/leads/crawl) exist"
+      ],
+      "related_code": [
+        "internal/store/dbutil",
+        "internal/store/outbound",
+        "internal/store/coordination",
+        "internal/store/leads",
+        "internal/store/crawl"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "architecture",
+        "store",
+        "refactor-history"
+      ],
+      "notes": "Moved under store-architecture/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24B. Canonical store subpackage decomposition; the subpackages it specifies exist in the current tree and RUNTIME_TOPOLOGY references it as authoritative. Migration phases are largely shipped.",
+      "compatibility": {
+        "domain": "store",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}

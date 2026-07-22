@@ -30,6 +30,9 @@ bash scripts/go_cognitive_check.sh
 echo "== docs governance guard =="
 bash scripts/check_docs_governance.sh
 
+echo "== spec registry guard (manifests + generated aggregate) =="
+python scripts/check_spec_registry.py
+
 echo "== autopilot queue guard =="
 bash scripts/ai_queue_check.sh
 

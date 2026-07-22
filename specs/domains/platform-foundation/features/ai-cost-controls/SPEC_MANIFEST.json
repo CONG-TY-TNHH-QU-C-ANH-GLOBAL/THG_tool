@@ -1,0 +1,51 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "ai-cost-controls",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "llm-cost-controls-phase1",
+      "document": "technical.md",
+      "title": "AI Cost Controls — Phase 1 Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "logClassifierUsage in internal/ai/classifier_cache.go",
+        "classifier cache + usage log + tests present on main (classifier_cache.go, classifier_usage_log.go, classifier_cache_test.go)"
+      ],
+      "related_code": [
+        "internal/ai/classifier_cache.go",
+        "internal/ai/classifier_usage_log.go"
+      ],
+      "related_tests": [
+        "internal/ai/classifier_cache_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "ai",
+        "cost-controls",
+        "classifier",
+        "caching"
+      ],
+      "notes": "Moved under ai-cost-controls/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Phase-1 classifier cost controls (structured JSON usage logs, bounded TTL exact-result cache, real token capture) are present on main in classifier_cache.go + classifier_usage_log.go with tests; the doc's 'not merged' header is now outdated. Implementation-backed.",
+      "compatibility": {
+        "domain": "ai",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "runtime-topology",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "production-flow",
+      "document": "evidence/production-flow.md",
+      "title": "Production Flow — Runtime Pipe Reference (Stale)",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24F specs audit (2026-06-23)",
+        "cites internal/ai/agent.go (function-calling agent) which moved to internal/drivers/copilot/agent.go",
+        "last refresh 2026-05-03 predates telegram bounded-context, copilot relocation, postgres dual-target"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "production-flow",
+        "living-doc",
+        "stale"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24F. Living production-pipe reference last refreshed 2026-05-03. The north star and approval-required defaults are still accurate, but load-bearing references have drifted (e.g. internal/ai/agent.go moved to internal/drivers/copilot; telegram bounded-context + postgres dual-target shipped after this refresh). Stale until refreshed; active runtime-topology is the newer authoritative runtime doc.",
+      "compatibility": {
+        "domain": "platform",
+        "type": "architecture",
+        "status": "stale",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "runtime-topology",
+      "document": "technical.md",
+      "title": "Runtime Topology — Technical Contract",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "scripts/check_topology.sh (CI grep gates enforce its invariants)",
+        "internal/store/DOMAINS.md"
+      ],
+      "related_code": [
+        "internal/store/leads",
+        "internal/store/threads",
+        "internal/store/outbound",
+        "internal/store/coordination",
+        "internal/server/observability"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "architecture",
+        "topology",
+        "living-doc"
+      ],
+      "notes": "Reviewed in PR24B; promoted to platform-foundation/features/runtime-topology/technical.md in the spec IA mega sprint (2026-07-21) — the path CLAUDE.md/AGENTS.md name as current runtime authority. Living doc describing current runtime composition; its invariants are enforced by scripts/check_topology.sh and the referenced store subpackages all exist. (Doc also cites internal/server/org/superadmin.go which is not at that path; minor, not added.)",
+      "compatibility": {
+        "domain": "platform",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    }
+  ]
+}

@@ -1,0 +1,233 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "domain",
+    "id": "platform-foundation",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "component-hotspots",
+      "document": "decisions/component-hotspots.md",
+      "title": "Component Hotspots — Triage Snapshot (Stale)",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "current ls internal/ai = 25 .go files, agent_*=0, comment_*=5 (doc claims 43 files, agent_*=11, comment_*=12)",
+        "agent/intent cluster now in internal/drivers/copilot"
+      ],
+      "related_code": [
+        "internal/ai",
+        "internal/drivers/copilot"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "inventory",
+        "snapshot",
+        "component-structure"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24D. Explicitly-dated 2026-06-14 inventory snapshot now OUTDATED: internal/ai dropped 43->25 .go files, the agent_* cluster (11) moved to internal/drivers/copilot, comment_* 12->5, so its 'internal/ai is the first refactor target' recommendation has partially already been executed. Companion rules doc component-structure-rules stays active; this snapshot needs regeneration.",
+      "compatibility": {
+        "domain": "platform",
+        "type": "investigation",
+        "status": "stale",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "component-structure-rules",
+      "document": "decisions/component-structure-rules.md",
+      "title": "Component Structure Rules",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "scripts/check_component_structure.py (warn-only enforcement)",
+        "specs/COMPONENT_HOTSPOTS.md"
+      ],
+      "related_code": [
+        "scripts/check_component_structure.py",
+        "internal/ai/comment"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "policy",
+        "architecture",
+        "binding",
+        "governance"
+      ],
+      "notes": "Reviewed in PR24B; moved to platform-foundation/decisions/ in the spec IA mega sprint (2026-07-21) — the path CLAUDE.md/AGENTS.md name for component ownership. Self-declared ACTIVE_BINDING; enforced warn-only by scripts/check_component_structure.py with companion COMPONENT_HOTSPOTS.md. Domain-level decision record; kept v1 metadata (v2 decision layer requires a feature owner).",
+      "compatibility": {
+        "domain": "platform",
+        "type": "policy",
+        "status": "active",
+        "maturity": "implementation_backed"
+      }
+    },
+    {
+      "id": "domain-model",
+      "document": "DOMAIN.md",
+      "title": "Platform Domain Model (DOMAIN.md)",
+      "metadata_version": 3,
+      "layer": "domain",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "not_applicable",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "owner packages internal/auth, internal/platform, frontend/src/platform exist"
+      ],
+      "related_code": [
+        "internal/auth",
+        "internal/platform",
+        "frontend/src/platform"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "vocabulary",
+        "glossary",
+        "living-doc"
+      ],
+      "notes": "Reviewed in PR24H; moved to specs/domains/platform-foundation/DOMAIN.md in the spec IA mega sprint (2026-07-21) — the 'Platform vocabulary' path AGENTS.md names. Living canonical vocabulary (mandatory reading); the owner packages it names (internal/auth, internal/platform, frontend/src/platform) exist. Domain-root glossary; kept v1 metadata (no v2 layer fits a vocabulary doc).",
+      "compatibility": {
+        "domain": "platform",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "migration-to-monorepo-plan",
+      "document": "decisions/monorepo-plan.md",
+      "title": "Monorepo Migration Plan (Deferred Draft)",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "baseline services/agent-brain exists; go.work/apps/packages not yet adopted"
+      ],
+      "related_code": [
+        "services/agent-brain"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "migration",
+        "monorepo",
+        "deferred",
+        "design-doc"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24E. Self-labelled 'Deferred - execution not started' go.work monorepo plan; the only realized baseline is services/agent-brain. Future-facing, revisit before Phase 0 -> draft.",
+      "compatibility": {
+        "domain": "platform",
+        "type": "migration",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "saas-automation-spec",
+      "document": "decisions/automation-principles.md",
+      "title": "SaaS Automation Principles (Vision Draft)",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "high-level retrieval/reasoning/memory + no-blind-crawling + planner-first principles; aligns with current direction but vision-level"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "principles",
+        "planner",
+        "design-doc"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24H. High-level system-principles spec (Retrieval+Reasoning+Memory, No-Blind-Crawling, Planner-first, cross-domain generalization). Aligns with the current product direction but is vision-level, not an implementation contract -> draft.",
+      "compatibility": {
+        "domain": "platform",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    },
+    {
+      "id": "structural-refactor-plan",
+      "document": "decisions/structural-refactor-plan.md",
+      "title": "Structural Refactor Plan (Draft)",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "tracks open boundary decisions (internal/auth vs internal/server/auth, both exist); quick wins shipped"
+      ],
+      "related_code": [
+        "internal/auth",
+        "internal/server/auth"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "platform",
+        "refactor",
+        "living-plan",
+        "deferred"
+      ],
+      "notes": "Relocated in the spec IA mega sprint (2026-07-21; v1 metadata kept — cross-cutting stale/draft plan). Reviewed in PR24H. Living plan tracking structural decisions deferred at the 2026-05-07 cleanup; quick wins shipped, several boundary decisions still open. Future-facing guidance -> draft. Complements active store-subpackage-refactor + component-structure-rules.",
+      "compatibility": {
+        "domain": "platform",
+        "type": "roadmap",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

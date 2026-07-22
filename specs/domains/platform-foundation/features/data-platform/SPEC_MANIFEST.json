@@ -1,0 +1,45 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "data-platform",
+    "ownership_domain": "platform-foundation",
+    "domain_kind": "platform"
+  },
+  "entries": [
+    {
+      "id": "production-database-migration-plan",
+      "document": "implementation/production-database-migration.md",
+      "title": "Data Platform — Production Database Migration Plan (Draft)",
+      "metadata_version": 3,
+      "layer": "implementation",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "proposed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24H final audit sweep (2026-06-23)",
+        "only the KnowledgeOS slice is dual-target (active postgres-compat-plan); legacy domains remain SQLite"
+      ],
+      "related_code": [],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "migration",
+        "postgres",
+        "deferred",
+        "design-doc"
+      ],
+      "notes": "Moved under data-platform/ in the spec IA mega sprint (2026-07-21). Reviewed in PR24H. Aspirational all-domains SQLite to Postgres production migration plan. Only the KnowledgeOS slice is realized (active postgres-compat-plan); legacy domains still run SQLite. Future-facing -> draft.",
+      "compatibility": {
+        "domain": "migration",
+        "type": "migration",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

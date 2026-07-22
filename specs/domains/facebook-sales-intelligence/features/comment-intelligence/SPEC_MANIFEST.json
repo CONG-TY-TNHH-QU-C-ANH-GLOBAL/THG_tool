@@ -1,0 +1,87 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "comment-intelligence",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "engagement-approval"
+    ]
+  },
+  "entries": [
+    {
+      "id": "comment-decision-dryrun-report",
+      "document": "evidence/comment-decision-dryrun-report.md",
+      "title": "COMMENT DECISION DRYRUN REPORT",
+      "metadata_version": 3,
+      "layer": "evidence",
+      "authority": "historical",
+      "lifecycle": "archived",
+      "implementation_state": "not_applicable",
+      "effective": false,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24E specs audit (2026-06-23)",
+        "scripts/comment_decision_dryrun_report.sql exists"
+      ],
+      "related_code": [
+        "scripts/comment_decision_dryrun_report.sql"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "comment",
+        "report",
+        "dry-run",
+        "historical"
+      ],
+      "notes": "Reviewed in PR24E; moved under comment-intelligence/evidence/ in the spec IA mega sprint (2026-07-21). One-time 'AWAITING DATA' evaluation-report template that gated a past P2b/P2c go-live decision; the comment-intelligence work has since progressed. Historical evidence, non-authoritative and not effective.",
+      "compatibility": {
+        "domain": "comment",
+        "type": "report",
+        "status": "archived",
+        "maturity": "snapshot"
+      }
+    },
+    {
+      "id": "comment-intelligence-pipeline",
+      "document": "technical.md",
+      "title": "Comment Intelligence — Technical Design",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-07-21",
+      "verified_against": [
+        "PR24C specs audit (2026-06-23)",
+        "internal/ai/comment + internal/workspace_knowledge stacks exist"
+      ],
+      "related_code": [
+        "internal/ai/comment",
+        "internal/workspace_knowledge"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "comment",
+        "intelligence",
+        "design-doc",
+        "knowledge-first"
+      ],
+      "notes": "Reviewed in PR24C; promoted to comment-intelligence/technical.md in the spec IA mega sprint (2026-07-21). Self-labelled DESIGN (rev 3) — knowledge-first comment pipeline (P1-P4). P1a/b, P2b, P2c shipped; P2d Policy-Gate enforcement, P2e Inspector UI, P3 media, P4 vision remain planned -> draft/partial, NOT promoted to active on the strength of comment-automation being implemented.",
+      "compatibility": {
+        "domain": "comment",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "manifest_schema_version": 1,
+  "node": {
+    "kind": "technical_feature",
+    "id": "lead-lifecycle",
+    "ownership_domain": "facebook-sales-intelligence",
+    "domain_kind": "product",
+    "supported_experiences": [
+      "lead-management"
+    ]
+  },
+  "entries": [
+    {
+      "id": "lead-lifecycle-work-queue",
+      "document": "technical.md",
+      "title": "LEAD LIFECYCLE WORK QUEUE",
+      "metadata_version": 3,
+      "layer": "technical",
+      "authority": "authoritative",
+      "lifecycle": "active",
+      "implementation_state": "backed",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24B specs audit (2026-06-23)",
+        "internal/models/lead_lifecycle.go (DeriveLeadLifecycle)",
+        "internal/models/lead_lifecycle_test.go"
+      ],
+      "related_code": [
+        "internal/models/lead_lifecycle.go",
+        "internal/leadingest/ingest.go"
+      ],
+      "related_tests": [
+        "internal/models/lead_lifecycle_test.go"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "lead",
+        "projection",
+        "work-queue"
+      ],
+      "notes": "Reviewed in PR24B. Core freshness_state projection DeriveLeadLifecycle exists and is unit-tested; reads leads via internal/leadingest/ingest.go as the doc states. Mega sprint 2026-07-13: status header refreshed to reflect PR-1..PR-5 shipped evidence (work_queue.go, lead_archive.go, auto_archive_scheduler.go, server/leads/lifecycle.go, LifecycleTabs.tsx, copilot_wording.go); retention compaction remains config-staged.",
+      "compatibility": {
+        "domain": "lead",
+        "type": "architecture",
+        "status": "active",
+        "maturity": "test_pinned"
+      }
+    },
+    {
+      "id": "organic-sales-network",
+      "document": "decisions/organic-sales-network.md",
+      "title": "ORGANIC SALES NETWORK",
+      "metadata_version": 3,
+      "layer": "decision",
+      "authority": "supporting",
+      "lifecycle": "draft",
+      "implementation_state": "partial",
+      "effective": true,
+      "owner": "unassigned",
+      "last_reviewed": "2026-06-23",
+      "verified_against": [
+        "PR24D specs audit (2026-06-23)",
+        "extends existing append-only ledger internal/store/coordination/action_ledger.go",
+        "feedback_shared_battlefield_not_crm direction"
+      ],
+      "related_code": [
+        "internal/store/coordination/action_ledger.go"
+      ],
+      "related_tests": [],
+      "supersedes": [],
+      "superseded_by": null,
+      "tags": [
+        "lead",
+        "ownership",
+        "architecture",
+        "directive",
+        "design-doc"
+      ],
+      "notes": "Reviewed in PR24D. Founder architecture directive (Lead shared / Execution owned via created_by / Contribution derived / Campaign orchestration) sourcing PR0-PR8. It extends the existing append-only action_ledger but most PRs are future-facing; kept draft as forward guidance.",
+      "compatibility": {
+        "domain": "lead",
+        "type": "architecture",
+        "status": "draft",
+        "maturity": "reviewed"
+      }
+    }
+  ]
+}
