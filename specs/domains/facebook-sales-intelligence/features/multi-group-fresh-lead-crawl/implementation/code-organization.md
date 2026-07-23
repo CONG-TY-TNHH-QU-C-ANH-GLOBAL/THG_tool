@@ -540,22 +540,31 @@ never claimed. The composition root wires it in
 `crawlrun.Store` (with two new read-only helpers, `ActiveCampaignPools` and
 `DispatchInfo`, over the M2B campaign/source tables), the **shared** Account
 Safety `Coordinator` — whose one machine slot is acquired atomically via
-`TryMarkRunning` (a single-critical-section budget check-and-mark), so a
-concurrent legacy + campaign reservation can never observe the same free slot and
-double the machine budget of 1 — the `readiness` primitive (org-wide,
-`userID=0`), and the existing `crawler.SubmitCrawlRequest` command path (the
-`(run_id, attempt)` fence threaded into the task via `_fresh_lead_*` extras,
-RFC3339Nano-precise cutoff, for PR-M5 result correlation). Gated by
-`FRESH_LEAD_CAMPAIGNS_ENABLED` (default false); Postgres-only, so
-`newFreshLeadCampaignOrchestrator` returns nil on a SQLite runtime and the
-campaign path fails closed. No migration, no `ApplyRunResult` change, no
-extension change. Pinned by pure orchestrator unit tests (budget cap,
+`TryMarkRunning`, a single critical section that under one lock releases stale
+runs, rejects an ineligible account (closing the eligibility TOCTOU), checks the
+machine budget, and marks running. **Both** schedulers acquire the slot through
+this one primitive: the legacy recurring-intent scheduler (`crawl_scheduler.go`)
+reserves via `TryMarkRunning` **before** submit and releases (`Finish`) if the
+submit fails, with `FreeSlots` demoted to a non-authoritative pre-claim throttle
+(no longer a dispatch authority); the campaign orchestrator reserves via
+`TryReserve`. So a concurrent legacy + campaign reservation can never observe the
+same free slot and double the machine budget of 1. Also wired: the `readiness`
+primitive (org-wide, `userID=0`), and the existing `crawler.SubmitCrawlRequest`
+command path (the `(run_id, attempt)` fence threaded into the task via
+`_fresh_lead_*` extras, RFC3339Nano-precise cutoff, for PR-M5 result
+correlation). Gated by `FRESH_LEAD_CAMPAIGNS_ENABLED` (default false);
+Postgres-only, so `newFreshLeadCampaignOrchestrator` returns nil on a SQLite
+runtime and the campaign path fails closed. No migration, no `ApplyRunResult`
+change, no extension change. Pinned by pure orchestrator unit tests (budget cap,
 parked/not-ready skip, claim-miss/error release, dispatch-failure recover +
 release, recover-failure holds slot, per-org isolation, pool-read fail-closed), a
-coordinator atomicity regression test and a two-scheduler interleaving test
-(exactly one atomic reservation wins the shared slot, only one dispatches, no
-leak on claim miss), and a composition-root fail-closed test. Result ingest /
-freshness minting (PR-M5) and operator UX (PR-M6) remain not implemented.
+coordinator atomicity regression test (64-goroutine contention) + an
+ineligible-account reservation-rejection test, a **legacy-vs-campaign**
+cross-scheduler interleaving test over the real acquisition paths (deterministic
+barrier: exactly one reserves, only one dispatches, active count stays 1, no slot
+leak) alongside the campaign-vs-campaign interleaving and claim-miss-release
+tests, and a composition-root fail-closed test. Result ingest / freshness minting
+(PR-M5) and operator UX (PR-M6) remain not implemented.
 
 ### M4B — Enablement hardening
 

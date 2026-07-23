@@ -60,11 +60,13 @@ type DispatchFailureRecoverer interface {
 // AccountSafetyGate is the Account Safety Coordinator seen through the
 // orchestrator's lens: per-account eligibility (parked/checkpoint/login/risk and
 // cooldown fail closed) plus the atomic acquire/release of the one machine crawl
-// slot. TryReserve checks the machine budget and marks the account running in a
-// single critical section, so a concurrent scheduler can never observe the same
-// free slot and double the budget; it returns false when no slot is free. The
-// orchestrator reads this gate; it never reimplements safety policy (blueprint
-// §7; account-safety technical §Coordinator).
+// slot. TryReserve checks eligibility AND the machine budget and marks the
+// account running in a single critical section, so a concurrent scheduler can
+// never observe the same free slot and double the budget; it returns false when
+// no slot is free OR the account is not eligible at the instant of reservation
+// (closing the eligibility TOCTOU the caller's earlier Eligible check leaves
+// open). The orchestrator reads this gate; it never reimplements safety policy
+// (blueprint §7; account-safety technical §Coordinator).
 type AccountSafetyGate interface {
 	Eligible(accountID int64, now time.Time) bool
 	TryReserve(accountID int64, now time.Time) bool

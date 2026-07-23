@@ -124,7 +124,8 @@
         "planned owners exist on main: internal/store/crawl/, cmd/scraper/crawl_scheduler.go, internal/server/agent/crawlingest/, internal/session/allocator.go",
         "authorizes no runtime code in PR-M2B",
         "PR-M3C (2026-07-22): ApplyRunResult shipped in internal/store/crawlrun (apply.go/apply_classify.go/apply_types.go) with pure + real-PostgreSQL fencing/idempotency/rollback/concurrency tests; §11 transaction contract realized; PR-M4 wiring still absent",
-        "PR-M4A (2026-07-22): orchestrator core + fenced dispatch shipped default-off — pure crawlcampaign.Orchestrator over consumer ports (orchestrator.go/ports.go) doing enqueue -> eligibility/readiness -> atomic slot reservation -> claim -> dispatch -> recover; crawlrun ActiveCampaignPools/DispatchInfo read adapters; cmd/scraper adapters + FRESH_LEAD_CAMPAIGNS_ENABLED (default false, Postgres-only fail-closed) wiring sharing the Account Safety machine budget; the shared machine slot is acquired atomically via Coordinator.TryMarkRunning (single-critical-section check-and-mark) so a concurrent legacy+campaign reservation cannot double the budget, pinned by coordinator + two-scheduler interleaving regression tests; pre-claim safety+readiness gate prevents retry storms; RFC3339Nano fresh-cutoff correlation; ApplyRunResult boundary untouched; result-ingest/freshness deferred to PR-M5"
+        "PR-M4A (2026-07-22): orchestrator core + fenced dispatch shipped default-off — pure crawlcampaign.Orchestrator over consumer ports (orchestrator.go/ports.go) doing enqueue -> eligibility/readiness -> atomic slot reservation -> claim -> dispatch -> recover; crawlrun ActiveCampaignPools/DispatchInfo read adapters; cmd/scraper adapters + FRESH_LEAD_CAMPAIGNS_ENABLED (default false, Postgres-only fail-closed) wiring sharing the Account Safety machine budget; the shared machine slot is acquired atomically via Coordinator.TryMarkRunning (single-critical-section check-and-mark) so a concurrent legacy+campaign reservation cannot double the budget, pinned by coordinator + two-scheduler interleaving regression tests; pre-claim safety+readiness gate prevents retry storms; RFC3339Nano fresh-cutoff correlation; ApplyRunResult boundary untouched; result-ingest/freshness deferred to PR-M5",
+        "PR-M4A fix-up (2026-07-22): closed the cross-scheduler machine-budget race — the legacy recurring-intent scheduler (crawl_scheduler.go) now reserves via Coordinator.TryMarkRunning BEFORE submit and releases (Finish) on submit failure, with FreeSlots demoted to a non-authoritative pre-claim throttle (no longer a dispatch authority); TryMarkRunning validates eligibility inside the same lock as the budget check (closing the eligibility TOCTOU); every production acquisition path (legacy + campaign) now shares the one atomic primitive; pinned by a legacy-vs-campaign cross-scheduler interleaving test and an ineligible-account reservation-rejection test"
       ],
       "related_code": [
         "cmd/scraper/crawl_scheduler.go",
@@ -133,6 +134,7 @@
         "internal/services/facebook/crawlcampaign",
         "internal/services/facebook/crawlcampaign/orchestrator.go",
         "internal/services/facebook/crawlcampaign/ports.go",
+        "internal/session/accountsafety/runtime.go",
         "internal/session/allocator.go",
         "internal/store/crawl/",
         "internal/store/crawlrun/apply.go",
@@ -147,6 +149,7 @@
         "internal/services/facebook/crawlcampaign/orchestrator_test.go",
         "cmd/scraper/crawl_campaign_orchestrator_test.go",
         "cmd/scraper/crawl_campaign_concurrency_test.go",
+        "cmd/scraper/crawl_scheduler_cross_test.go",
         "internal/session/accountsafety/runtime_concurrency_test.go"
       ],
       "supersedes": [],

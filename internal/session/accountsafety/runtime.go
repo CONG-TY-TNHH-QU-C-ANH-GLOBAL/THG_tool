@@ -85,17 +85,26 @@ func (c *Coordinator) MarkRunning(accountID int64, now time.Time) {
 	c.runningSince[accountID] = now
 }
 
-// TryMarkRunning atomically claims one machine crawl slot for accountID: under a
-// single lock it releases stale runs, checks the machine budget, and (only if a
-// slot is free) marks the account running. It returns true iff the slot was
-// acquired. Unlike a FreeSlots-then-MarkRunning sequence, the check and the mark
-// share one critical section, so two schedulers on the same coordinator can never
-// both observe the same free slot and double the machine budget. It does not
-// evaluate per-account eligibility — callers gate that before reserving.
+// TryMarkRunning atomically claims one machine crawl slot for accountID. Under a
+// single lock it (1) releases stale runs, (2) rejects an ineligible account
+// (parked/checkpoint/login/risk, or a cooldown that has not elapsed — and, since
+// a running account is itself ineligible, a second reservation of the same
+// account), (3) checks the machine budget, and (4) only if both pass marks the
+// account running. It returns true iff the slot was acquired.
+//
+// All four steps share one critical section, so two schedulers on the same
+// coordinator can never both observe the same free slot and double the machine
+// budget, and an account cannot be reserved in the window after a concurrent
+// park/finish changed its state (the eligibility TOCTOU a separate
+// IsAccountEligible-then-mark would leave open). An account the coordinator has
+// never seen is eligible by default, matching IsAccountEligible.
 func (c *Coordinator) TryMarkRunning(accountID int64, now time.Time) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.releaseStale(now)
+	if st, ok := c.states[accountID]; ok && !IsEligible(st, now) {
+		return false
+	}
 	if c.cfg.MaxActiveCrawlsPerMachine-c.machineLocked().activeCount() <= 0 {
 		return false
 	}
