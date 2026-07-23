@@ -85,6 +85,25 @@ func (c *Coordinator) MarkRunning(accountID int64, now time.Time) {
 	c.runningSince[accountID] = now
 }
 
+// TryMarkRunning atomically claims one machine crawl slot for accountID: under a
+// single lock it releases stale runs, checks the machine budget, and (only if a
+// slot is free) marks the account running. It returns true iff the slot was
+// acquired. Unlike a FreeSlots-then-MarkRunning sequence, the check and the mark
+// share one critical section, so two schedulers on the same coordinator can never
+// both observe the same free slot and double the machine budget. It does not
+// evaluate per-account eligibility — callers gate that before reserving.
+func (c *Coordinator) TryMarkRunning(accountID int64, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.releaseStale(now)
+	if c.cfg.MaxActiveCrawlsPerMachine-c.machineLocked().activeCount() <= 0 {
+		return false
+	}
+	c.states[accountID] = AccountState{AccountID: accountID, Status: StatusRunning}
+	c.runningSince[accountID] = now
+	return true
+}
+
 // Finish applies a crawl result to accountID (PR-C4B result-feedback): risk exits
 // park the account (human-required, no auto-clear); stalled → stalled_no_progress;
 // clean → ready. Always clears the running timer, freeing the machine slot

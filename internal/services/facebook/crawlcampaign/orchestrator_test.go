@@ -49,15 +49,36 @@ func TestNotReadyAccountIsNotClaimed(t *testing.T) {
 	}
 }
 
-func TestClaimMissDoesNotReserveOrDispatch(t *testing.T) {
+func TestClaimMissReleasesReservationAndDoesNotDispatch(t *testing.T) {
 	h := newHarness()
 	h.claim.claimable = map[int64]PooledClaim{} // account eligible+ready but no queued run
 	h.run(t)
 	if len(h.claim.calls) != 1 {
 		t.Fatalf("expected one claim attempt, got %v", h.claim.calls)
 	}
-	if len(h.safe.reserved) != 0 || len(h.disp.dispatch) != 0 {
-		t.Fatalf("claim miss must not reserve/dispatch: reserved=%v dispatch=%v", h.safe.reserved, h.disp.dispatch)
+	if len(h.safe.reserved) != 1 || len(h.safe.released) != 1 {
+		t.Fatalf("claim miss must reserve then release (no leak): reserved=%v released=%v", h.safe.reserved, h.safe.released)
+	}
+	if len(h.disp.dispatch) != 0 {
+		t.Fatalf("claim miss must not dispatch: dispatch=%v", h.disp.dispatch)
+	}
+	if h.safe.free != 1 {
+		t.Fatalf("claim miss must restore the machine budget, free=%d want 1", h.safe.free)
+	}
+}
+
+func TestClaimErrorReleasesReservationAndDoesNotDispatch(t *testing.T) {
+	h := newHarness()
+	h.claim.err = errors.New("pg blip")
+	h.run(t)
+	if len(h.safe.reserved) != 1 || len(h.safe.released) != 1 {
+		t.Fatalf("claim error must reserve then release (no leak): reserved=%v released=%v", h.safe.reserved, h.safe.released)
+	}
+	if len(h.disp.dispatch) != 0 || len(h.rec.calls) != 0 {
+		t.Fatalf("claim error must not dispatch or recover: dispatch=%v recover=%v", h.disp.dispatch, h.rec.calls)
+	}
+	if h.safe.free != 1 {
+		t.Fatalf("claim error must restore the machine budget, free=%d want 1", h.safe.free)
 	}
 }
 

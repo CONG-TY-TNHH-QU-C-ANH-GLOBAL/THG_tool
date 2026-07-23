@@ -66,15 +66,21 @@ func (f *fakeRecoverer) RecoverDispatchFailure(_ context.Context, fence RunFence
 type fakeSafety struct {
 	free       int
 	ineligible map[int64]bool
-	reserved   []int64
+	reserved   []int64 // accounts whose TryReserve returned true
 	released   []int64
 }
 
 func (f *fakeSafety) Eligible(accountID int64, _ time.Time) bool { return !f.ineligible[accountID] }
-func (f *fakeSafety) FreeSlots(time.Time) int                    { return f.free }
-func (f *fakeSafety) Reserve(accountID int64, _ time.Time) {
+
+// TryReserve models the coordinator's atomic budget check-and-mark: it succeeds
+// only while a slot is free, decrementing it in the same call.
+func (f *fakeSafety) TryReserve(accountID int64, _ time.Time) bool {
+	if f.free <= 0 {
+		return false
+	}
 	f.free--
 	f.reserved = append(f.reserved, accountID)
+	return true
 }
 func (f *fakeSafety) Release(accountID int64, _ string, _ time.Time) {
 	f.free++

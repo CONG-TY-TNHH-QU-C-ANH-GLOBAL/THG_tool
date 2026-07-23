@@ -524,42 +524,50 @@ overlapping-run dedup. PR-M4 scheduler wiring remains not implemented.
 as `internal/services/facebook/crawlcampaign.Orchestrator` (`orchestrator.go`),
 a store-, transport-, and clock-free loop over the consumer ports in `ports.go`
 (`PoolReader`, `DueRunEnqueuer`, `RunClaimer`, `DispatchFailureRecoverer`,
-`AccountSafetyGate`, `ReadinessGate`, `CrawlCommandDispatcher` — no
+`AccountSafetyGate`, `AccountReadinessChecker`, `CrawlCommandDispatcher` — no
 `FacebookCrawlStore` god interface, and the package still imports no
 store/server/cmd per the reverse-dependency seam). `RunOnce(ctx, now)` applies
 the §7 selection order per org: enqueue due work, then per pool account
-`FreeSlots` (machine budget) → `Eligible` (Account Safety fail-closed) →
-`Ready` (connector/identity/version) **before** the claim, then claim → reserve
-slot → dispatch → on failure `RecoverDispatchFailure` then release. The
-pre-claim safety+readiness gate is load-bearing: claiming for a not-ready
-account would mint an immediately-claimable retry each tick (a retry storm), so
-a not-ready account is never claimed. The composition root wires it in
+`Eligible` (Account Safety fail-closed) → `Ready` (connector/identity/version) →
+atomic `TryReserve` — all **before** the claim, then claim → dispatch → on
+failure `RecoverDispatchFailure` then release. A claim miss or error releases the
+reservation (no slot leak); a failed reservation means the one machine slot is
+already taken, so the pass over the org ends. The pre-claim safety+readiness gate
+is load-bearing: claiming for a not-ready account would mint an
+immediately-claimable retry each tick (a retry storm), so a not-ready account is
+never claimed. The composition root wires it in
 `cmd/scraper/crawl_campaign_orchestrator.go` — thin adapters mapping
 `crawlrun.Store` (with two new read-only helpers, `ActiveCampaignPools` and
 `DispatchInfo`, over the M2B campaign/source tables), the **shared** Account
-Safety `Coordinator` (so the machine budget of 1 is enforced across the legacy
-and campaign schedulers, never doubled), the `readiness` primitive (org-wide,
+Safety `Coordinator` — whose one machine slot is acquired atomically via
+`TryMarkRunning` (a single-critical-section budget check-and-mark), so a
+concurrent legacy + campaign reservation can never observe the same free slot and
+double the machine budget of 1 — the `readiness` primitive (org-wide,
 `userID=0`), and the existing `crawler.SubmitCrawlRequest` command path (the
-`(run_id, attempt)` fence threaded into the task via `_fresh_lead_*` extras for
-PR-M5 result correlation). Gated by `FRESH_LEAD_CAMPAIGNS_ENABLED` (default
-false); Postgres-only, so `newFreshLeadCampaignOrchestrator` returns nil on a
-SQLite runtime and the campaign path fails closed. No migration, no
-`ApplyRunResult` change, no extension change. Pinned by pure orchestrator unit
-tests (budget cap, parked/not-ready skip, claim-miss, dispatch-failure recover
-+ release, recover-failure holds slot, per-org isolation, pool-read fail-closed)
-and a composition-root fail-closed test. Result ingest / freshness minting
-(PR-M5) and operator UX (PR-M6) remain not implemented.
+`(run_id, attempt)` fence threaded into the task via `_fresh_lead_*` extras,
+RFC3339Nano-precise cutoff, for PR-M5 result correlation). Gated by
+`FRESH_LEAD_CAMPAIGNS_ENABLED` (default false); Postgres-only, so
+`newFreshLeadCampaignOrchestrator` returns nil on a SQLite runtime and the
+campaign path fails closed. No migration, no `ApplyRunResult` change, no
+extension change. Pinned by pure orchestrator unit tests (budget cap,
+parked/not-ready skip, claim-miss/error release, dispatch-failure recover +
+release, recover-failure holds slot, per-org isolation, pool-read fail-closed), a
+coordinator atomicity regression test and a two-scheduler interleaving test
+(exactly one atomic reservation wins the shared slot, only one dispatches, no
+leak on claim miss), and a composition-root fail-closed test. Result ingest /
+freshness minting (PR-M5) and operator UX (PR-M6) remain not implemented.
 
-### PR-M4 — scheduler and account-pool wiring
+### M4B — Enablement hardening
 
-- default-off feature flag;
-- campaign due-run enqueue;
-- account-pool selection;
-- Account Safety eligibility;
-- session allocator lease;
-- connector capability gate;
-- claim and command dispatch;
-- legacy scheduler retained.
+M4A shipped the default-off orchestrator core (enqueue → eligibility/readiness →
+atomic slot reservation → fenced claim → dispatch → recover, legacy scheduler
+retained). The remaining enablement/hardening before production turn-on:
+
+- org- and campaign-scoped enablement beyond the global default-off flag;
+- production flag cutover with single-owner-per-normalized-source coordination
+  so the legacy and campaign schedulers never run the same source concurrently;
+- dispatch-failure retry cap / backoff above the current tick pacing;
+- pool-account fairness rotation beyond stable pool order.
 
 ### PR-M5 — fresh-lead/result behavior
 

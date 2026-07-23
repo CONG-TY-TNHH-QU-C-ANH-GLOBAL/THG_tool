@@ -66,16 +66,16 @@ func (a campaignRunStore) RecoverDispatchFailure(ctx context.Context, fence craw
 	return err
 }
 
-// campaignSafetyGate adapts the shared Account Safety Coordinator: reserve is a
-// running mark, release finishes the run with the given reason.
+// campaignSafetyGate adapts the shared Account Safety Coordinator: TryReserve is
+// the atomic budget-check-and-running-mark, release finishes the run with the
+// given reason.
 type campaignSafetyGate struct{ coord *accountsafety.Coordinator }
 
 func (s campaignSafetyGate) Eligible(accountID int64, now time.Time) bool {
 	return s.coord.IsAccountEligible(accountID, now)
 }
-func (s campaignSafetyGate) FreeSlots(now time.Time) int { return s.coord.FreeSlots(now) }
-func (s campaignSafetyGate) Reserve(accountID int64, now time.Time) {
-	s.coord.MarkRunning(accountID, now)
+func (s campaignSafetyGate) TryReserve(accountID int64, now time.Time) bool {
+	return s.coord.TryMarkRunning(accountID, now)
 }
 func (s campaignSafetyGate) Release(accountID int64, reason string, now time.Time) {
 	s.coord.Finish(accountID, reason, now)
@@ -133,7 +133,7 @@ func freshLeadDispatchExtras(claim crawlcampaign.PooledClaim) map[string]any {
 		"_fresh_lead_source_id":   claim.SourceID,
 	}
 	if !claim.FreshCutoffAt.IsZero() {
-		extras["_fresh_lead_cutoff_at"] = claim.FreshCutoffAt.UTC().Format(time.RFC3339)
+		extras["_fresh_lead_cutoff_at"] = claim.FreshCutoffAt.UTC().Format(time.RFC3339Nano)
 	}
 	return extras
 }

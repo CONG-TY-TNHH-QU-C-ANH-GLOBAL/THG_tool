@@ -59,21 +59,23 @@ type DispatchFailureRecoverer interface {
 
 // AccountSafetyGate is the Account Safety Coordinator seen through the
 // orchestrator's lens: per-account eligibility (parked/checkpoint/login/risk and
-// cooldown fail closed), the machine crawl budget, and the reserve/release of a
-// machine slot. The orchestrator reads this gate; it never reimplements safety
-// policy (blueprint §7; account-safety technical §Coordinator).
+// cooldown fail closed) plus the atomic acquire/release of the one machine crawl
+// slot. TryReserve checks the machine budget and marks the account running in a
+// single critical section, so a concurrent scheduler can never observe the same
+// free slot and double the budget; it returns false when no slot is free. The
+// orchestrator reads this gate; it never reimplements safety policy (blueprint
+// §7; account-safety technical §Coordinator).
 type AccountSafetyGate interface {
 	Eligible(accountID int64, now time.Time) bool
-	FreeSlots(now time.Time) int
-	Reserve(accountID int64, now time.Time)
+	TryReserve(accountID int64, now time.Time) bool
 	Release(accountID int64, reason string, now time.Time)
 }
 
-// ReadinessGate reports whether an account can dispatch a crawl right now
-// (connector online, live identity, supported extension). It gates BEFORE the
-// claim so a not-ready account is never claimed-then-recovered every tick — that
-// would mint an immediately-claimable retry and become a retry storm.
-type ReadinessGate interface {
+// AccountReadinessChecker reports whether an account can dispatch a crawl right
+// now (connector online, live identity, supported extension). It gates BEFORE
+// the claim so a not-ready account is never claimed-then-recovered every tick —
+// that would mint an immediately-claimable retry and become a retry storm.
+type AccountReadinessChecker interface {
 	Ready(ctx context.Context, orgID, accountID int64) bool
 }
 

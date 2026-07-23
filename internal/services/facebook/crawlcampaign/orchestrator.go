@@ -9,6 +9,11 @@ import (
 // failure; it mirrors the store's terminal exit_reason_code for the same event.
 const dispatchFailedReason = "dispatch_failed"
 
+// claimAbortedReason releases a reservation the orchestrator backed out of before
+// any crawl ran (the claim missed or errored). It is a clean, non-risk release —
+// the account never started, so it returns to ready and paces normally.
+const claimAbortedReason = "claim_aborted"
+
 // Deps are the PR-M4A orchestrator's collaborators, all consumer ports. Logf is
 // optional (nil = silent); every other port is required and supplied by the
 // composition root.
@@ -18,7 +23,7 @@ type Deps struct {
 	Claimer    RunClaimer
 	Recoverer  DispatchFailureRecoverer
 	Safety     AccountSafetyGate
-	Readiness  ReadinessGate
+	Readiness  AccountReadinessChecker
 	Dispatcher CrawlCommandDispatcher
 	Logf       func(format string, args ...any)
 }
@@ -55,42 +60,46 @@ func (o *Orchestrator) RunOnce(ctx context.Context, now time.Time) error {
 // runOrg materializes the org's due runs, then walks its pool accounts applying
 // the blueprint §7 selection order: campaign membership (the pool) → sticky
 // preference and pool membership (enforced durably inside the claim) → Account
-// Safety eligibility → connector/account readiness → machine budget. It stops as
-// soon as the machine budget is spent.
+// Safety eligibility → connector/account readiness → atomic machine-slot
+// reservation. Eligibility and readiness are evaluated BEFORE reservation; a
+// failed reservation means the one machine slot is already taken, so no later
+// account can reserve either and the pass over this org ends.
 func (o *Orchestrator) runOrg(ctx context.Context, pool OrgPool, now time.Time) {
 	if err := o.d.Enqueuer.EnqueueDueRuns(ctx, pool.OrgID, now); err != nil {
 		o.logf("crawlcampaign: enqueue org=%d: %v", pool.OrgID, err)
 		return
 	}
 	for _, accountID := range pool.AccountIDs {
-		if o.d.Safety.FreeSlots(now) <= 0 {
-			return // machine crawl budget spent — remaining work waits for a later tick
-		}
 		if !o.d.Safety.Eligible(accountID, now) {
 			continue // parked/checkpoint/login/risk/cooldown fails closed — never auto-rotate
 		}
 		if !o.d.Readiness.Ready(ctx, pool.OrgID, accountID) {
 			continue // no connector/identity/supported extension — do not claim, avoids retry storm
 		}
+		if !o.d.Safety.TryReserve(accountID, now) {
+			return // machine crawl budget spent — remaining work waits for a later tick
+		}
 		o.claimAndDispatch(ctx, pool.OrgID, accountID, now)
 	}
 }
 
-// claimAndDispatch claims one run for the preselected account and dispatches it.
-// The machine slot is reserved only after a successful claim (we hold a running
-// run), and released after a dispatch failure only once the durable recovery has
-// committed — the lease is never dropped before the DB reflects the failure.
+// claimAndDispatch runs with the machine slot already atomically reserved for
+// accountID. It claims one run and dispatches it. A claim miss or error releases
+// the reservation (nothing durable to keep). On a dispatch failure the durable
+// recovery commits FIRST and the slot is released only after — never dropped
+// before the DB reflects the failure; if recovery itself fails the slot is held.
 func (o *Orchestrator) claimAndDispatch(ctx context.Context, orgID, accountID int64, now time.Time) {
 	claim, ok, err := o.d.Claimer.ClaimNextRun(ctx, orgID, accountID, now)
 	if err != nil {
 		o.logf("crawlcampaign: claim org=%d account=%d: %v", orgID, accountID, err)
+		o.d.Safety.Release(accountID, claimAbortedReason, now) // no run claimed — free the slot
 		return
 	}
 	if !ok {
-		return // no queued run this account may serve
+		o.d.Safety.Release(accountID, claimAbortedReason, now) // no queued run this account may serve
+		return
 	}
 
-	o.d.Safety.Reserve(accountID, now)
 	if err := o.d.Dispatcher.Dispatch(ctx, claim); err != nil {
 		o.logf("crawlcampaign: dispatch org=%d run=%d account=%d: %v", orgID, claim.Fence.RunID, accountID, err)
 		if rerr := o.d.Recoverer.RecoverDispatchFailure(ctx, claim.Fence, accountID, now); rerr != nil {
