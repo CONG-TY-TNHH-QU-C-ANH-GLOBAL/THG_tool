@@ -14,6 +14,12 @@ import (
 	"github.com/thg/scraper/internal/textutil"
 )
 
+// crawlDispatchFailedReason releases the machine slot when a legacy dispatch was
+// reserved but its submit never started the crawl. It is a clean (non-risk,
+// non-stall) reason, so Finish returns the account to ready — no park, no
+// rotation. It mirrors the campaign orchestrator's dispatch-failure release.
+const crawlDispatchFailedReason = "dispatch_failed"
+
 func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *jobs.Store, coord *accountsafety.Coordinator, tickEvery time.Duration) {
 	if db == nil || jobStore == nil || coord == nil {
 		return
@@ -41,11 +47,14 @@ func runCrawlIntentScheduler(ctx context.Context, db *store.Store, jobStore *job
 
 func scheduleDueCrawlIntents(ctx context.Context, db *store.Store, jobStore *jobs.Store, coord *accountsafety.Coordinator) error {
 	now := time.Now().UTC()
-	// Account Safety Coordinator (PR-C4): claim only as many due intents as the
-	// machine can safely run now (default budget = 1). Un-claimed due intents keep
-	// their next_run_at and are re-picked on a later tick — a clean cross-tick
-	// queue that needs NO change to ClaimDueIntents semantics. This never raises
-	// concurrency; it only lowers it.
+	// FreeSlots here is a non-authoritative pre-claim THROTTLE, not the dispatch
+	// authority: it only bounds how many due intents to claim this tick so
+	// ClaimDueIntents (which advances next_run_at at claim time) does not consume
+	// the cadence of intents the machine plainly cannot run now — un-claimed due
+	// intents stay due and re-fire next tick. The authoritative machine-slot
+	// acquisition is the atomic TryMarkRunning inside dispatch(); a stale FreeSlots
+	// read can only cause an over-claim that TryMarkRunning then rejects (the
+	// intent re-fires), never a double dispatch. This never raises concurrency.
 	free := coord.FreeSlots(now)
 	if free <= 0 {
 		return nil
@@ -101,6 +110,16 @@ func (d crawlIntentDispatcher) dispatch(ctx context.Context, intent crawl.Intent
 			intent.ID, accountID, d.coord.Snapshot(now).Accounts[accountID])
 		return
 	}
+	// Atomic machine-slot acquisition — the SOLE dispatch authority. The slot is
+	// reserved BEFORE submit (single-critical-section check-and-mark), so two
+	// schedulers sharing this coordinator can never both launch a crawl: the old
+	// FreeSlots-then-MarkRunning race is gone. A lost reservation means the one
+	// machine slot is already taken (e.g. by the campaign scheduler); the intent
+	// keeps its advanced next_run_at and re-fires next interval — no rotation.
+	if !d.coord.TryMarkRunning(accountID, now) {
+		log.Printf("[CrawlIntent] skipped intent=%d account=%d: machine crawl budget full — re-fires next interval", intent.ID, accountID)
+		return
+	}
 	args := map[string]any{
 		"org_id":         intent.OrgID,
 		"account_id":     accountID,
@@ -127,12 +146,14 @@ func (d crawlIntentDispatcher) dispatch(ctx context.Context, intent crawl.Intent
 		log.Printf("[CrawlIntent] mark result failed intent=%d: %v", intent.ID, err)
 	}
 	if submitErr != nil {
+		// The crawl never started — release the machine slot reserved above so a
+		// failed submit does not hold the budget (the reservation precedes submit).
+		d.coord.Finish(accountID, crawlDispatchFailedReason, now)
 		log.Printf("[CrawlIntent] run failed intent=%d task=%s: %v", intent.ID, taskID, submitErr)
 		return
 	}
-	// Consume a machine slot until the crawl result frees it (PR-C4B
-	// result-feedback) or the coordinator's stale-running fallback does.
-	d.coord.MarkRunning(accountID, now)
+	// Reserved + dispatched — the slot stays held until the crawl result frees it
+	// (PR-C4B result-feedback) or the coordinator's stale-running fallback does.
 	log.Printf("[CrawlIntent] scheduled intent=%d task=%s: %s (safety: active=%d)", intent.ID, taskID, result, d.coord.Snapshot(now).Active)
 }
 

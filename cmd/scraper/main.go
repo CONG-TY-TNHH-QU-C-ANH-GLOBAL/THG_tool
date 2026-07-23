@@ -145,6 +145,12 @@ func main() {
 	go runCrawlIntentScheduler(ctx, db, jobStore, accountSafety, time.Minute)
 	log.Println("✅ Recurring crawl intent scheduler started (org plans → 30m+ automation; per-machine crawl budget = 1)")
 
+	// Fresh-lead campaign orchestrator (PR-M4A) — DEFAULT OFF. Turns durable due
+	// campaign/source work into one fenced Facebook crawl dispatch, sharing the
+	// SAME Account Safety coordinator as the legacy scheduler so the machine crawl
+	// budget (1) is enforced across both and never doubled.
+	startFreshLeadCampaignOrchestrator(ctx, cfg.FreshLeadCampaignsEnabled, db, jobStore, accountSafety)
+
 	go runAutoArchiveScheduler(ctx, db, cfg)
 	log.Println("✅ Auto-archive scheduler started (lead lifecycle retention)")
 
