@@ -73,6 +73,7 @@ export interface KnowledgeStrings {
     pinned: string;
     boostLabel: string;
     asset_POD_product: string;
+    asset_supplier_product: string;
     asset_faq: string;
     asset_shipping_policy: string;
     asset_sales_playbook: string;
@@ -199,6 +200,7 @@ const VI: KnowledgeStrings = {
     pinned: 'Đã ghim',
     boostLabel: 'Ưu tiên',
     asset_POD_product: 'Sản phẩm POD',
+    asset_supplier_product: 'Nguồn 1688/Taobao',
     asset_faq: 'FAQ',
     asset_shipping_policy: 'Chính sách ship',
     asset_sales_playbook: 'Playbook',
@@ -325,6 +327,7 @@ const EN: KnowledgeStrings = {
     pinned: 'Pinned',
     boostLabel: 'Priority',
     asset_POD_product: 'POD product',
+    asset_supplier_product: 'Sourced item',
     asset_faq: 'FAQ',
     asset_shipping_policy: 'Shipping policy',
     asset_sales_playbook: 'Playbook',

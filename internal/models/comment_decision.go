@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // Knowledge Intelligence Layer contracts (P2a — specs/domains/facebook-sales-intelligence/features/comment-intelligence/technical.md
 // §4). These are DOMAIN CONTRACTS (feedback_contracts_not_orm), not DB rows: the
 // agent reasons over retrieved knowledge and emits a CommentDecision whose every
@@ -29,6 +31,42 @@ type KnowledgeCandidate struct {
 	SourceURL    string  `json:"source_url,omitempty"`   // catalog PDP link; never generated
 	Availability string  `json:"availability,omitempty"` // canonical product availability
 	Score        float64 `json:"score"`
+	// Supplier is set only for a supplier_product candidate. It carries the
+	// sourcing facts (price, weight, MOQ, origin) the operator message quotes
+	// verbatim; nil for every other kind.
+	Supplier *SupplierFacts `json:"supplier,omitempty"`
+}
+
+// SupplierFacts are the sourcing numbers for one marketplace item, read back
+// from the persisted asset payload. Every field is optional and is rendered
+// only when present — the message never fills a gap with an estimate.
+type SupplierFacts struct {
+	Platform  string   `json:"platform"` // taobao | alibaba
+	ProductID string   `json:"product_id,omitempty"`
+	PriceCNY  *float64 `json:"price_cny,omitempty"`
+	PriceNote string   `json:"price_note,omitempty"`
+	MOQ       *int     `json:"moq,omitempty"`
+	Unit      string   `json:"unit,omitempty"`
+	WeightKG  *float64 `json:"weight_kg,omitempty"`
+	ShipFrom  string   `json:"ship_from,omitempty"`
+	ShopName  string   `json:"shop_name,omitempty"`
+	// CapturedAt is when the upstream price was read. Zero when unknown.
+	CapturedAt time.Time `json:"captured_at,omitempty"`
+}
+
+// PlatformLabel is the operator-facing marketplace name.
+func (s *SupplierFacts) PlatformLabel() string {
+	if s == nil {
+		return ""
+	}
+	switch s.Platform {
+	case "alibaba":
+		return "1688"
+	case "taobao":
+		return "Taobao"
+	default:
+		return s.Platform
+	}
 }
 
 // GroundedItem is the no-fabrication unit: an agent claim that points at a real

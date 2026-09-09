@@ -28,12 +28,16 @@ const (
 func kindAllowedForRole(role, kind string) bool {
 	switch role {
 	case roleProduct:
-		return kind == string(assets.AssetPODProduct)
+		// A sourced marketplace item is a product claim too: it names a real
+		// item with a real price, so it grounds the product role exactly as a
+		// catalog SKU does.
+		return kind == string(assets.AssetPODProduct) || kind == string(assets.AssetSupplierProduct)
 	case roleCTA:
 		return kind == string(assets.AssetCTA)
 	case roleCapability, roleProof:
 		// Prose knowledge only — never a product, CTA, or a banned claim.
 		return kind != string(assets.AssetPODProduct) &&
+			kind != string(assets.AssetSupplierProduct) &&
 			kind != string(assets.AssetCTA) &&
 			kind != string(assets.AssetBannedClaim)
 	default:

@@ -25,7 +25,7 @@ export interface KnowledgeSource {
   error_message?: string;
 }
 
-export type AssetType = 'POD_product' | 'faq' | 'shipping_policy' | 'sales_playbook' | 'pricing_rule' | 'banned_claim' | 'cta';
+export type AssetType = 'POD_product' | 'supplier_product' | 'faq' | 'shipping_policy' | 'sales_playbook' | 'pricing_rule' | 'banned_claim' | 'cta';
 export type AssetState = 'approved' | 'pending' | 'hidden';
 
 export interface KnowledgeAsset {

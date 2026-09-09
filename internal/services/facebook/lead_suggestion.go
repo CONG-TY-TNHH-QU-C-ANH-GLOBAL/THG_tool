@@ -117,13 +117,26 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		return LeadSuggestion{}
 	}
 	product := PickSuggestedProductDetails(candidates)
-	if product.Name == "" && product.URL == "" {
+	supplier := PickSuggestedSupplier(candidates)
+	// Either grounding is enough to be worth notifying on: the workspace may have
+	// only a catalog, only a sourced marketplace index, or both.
+	if product.Name == "" && product.URL == "" && !supplier.HasOffer() {
 		return LeadSuggestion{}
 	}
-	serviceMatch := product.Name + " " + product.URL
-	reply, err := msgGen.GenerateCommentWithService(ctx, leadText, author, profile.ToPromptBlock(), serviceMatch, models.CompanyIdentity{}, models.ActorPersona{})
-	if err != nil {
-		return LeadSuggestion{ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL}
+	out := LeadSuggestion{
+		ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL,
+		Supplier: supplier,
 	}
-	return LeadSuggestion{Reply: strings.TrimSpace(reply), ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL}
+	reply, err := msgGen.GenerateLeadReplySuggestion(ctx, ai.LeadReplyRequest{
+		PostContent:     leadText,
+		AuthorName:      author,
+		BusinessContext: profile.ToPromptBlock(),
+		BrandName:       profile.Name,
+		GroundedFacts:   BuildGroundedFacts(product, supplier),
+	})
+	if err != nil {
+		return out
+	}
+	out.Reply = strings.TrimSpace(reply)
+	return out
 }

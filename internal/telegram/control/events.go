@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/telegram/render"
 )
 
@@ -55,6 +56,9 @@ type LeadNotice struct {
 	// Optional operator reply suggestion (generated upstream by the caller;
 	// this sink only renders it). Empty when suggestions are disabled.
 	SuggestedReply, ProductName, ProductURL, ProductImageURL string
+	// Supplier is the matched sourceable marketplace item, when the workspace has
+	// one indexed. nil = the notice carries no sourcing block.
+	Supplier *models.SupplierMatch
 }
 
 // NotifyLead emits a rich "new lead" channel notification.
@@ -66,19 +70,27 @@ func (s *Service) NotifyLead(n LeadNotice) {
 	if channel == "" {
 		channel = "facebook"
 	}
+	supplier := n.Supplier
+	if !supplier.HasOffer() {
+		supplier = &models.SupplierMatch{}
+	}
 	msg := render.Lead(render.LeadMsg{
-		Workspace:       n.Workspace,
-		SourceLabel:     sourceLabel(n.SourceName),
-		Author:          n.Author,
-		Excerpt:         SanitizeExcerpt(n.Excerpt),
-		Reason:          strings.TrimSpace(n.Reason),
-		Status:          "Sẵn sàng xử lý",
-		PostURL:         strings.TrimSpace(n.PostURL),
-		DashboardURL:    dashboardLeadURL(n.BaseURL, n.LeadID),
-		SuggestedReply:  strings.TrimSpace(n.SuggestedReply),
-		ProductName:     strings.TrimSpace(n.ProductName),
-		ProductURL:      strings.TrimSpace(n.ProductURL),
-		ProductImageURL: strings.TrimSpace(n.ProductImageURL),
+		Workspace:        n.Workspace,
+		SourceLabel:      sourceLabel(n.SourceName),
+		Author:           n.Author,
+		Excerpt:          SanitizeExcerpt(n.Excerpt),
+		Reason:           strings.TrimSpace(n.Reason),
+		Status:           "Sẵn sàng xử lý",
+		PostURL:          strings.TrimSpace(n.PostURL),
+		DashboardURL:     dashboardLeadURL(n.BaseURL, n.LeadID),
+		SuggestedReply:   strings.TrimSpace(n.SuggestedReply),
+		ProductName:      strings.TrimSpace(n.ProductName),
+		ProductURL:       strings.TrimSpace(n.ProductURL),
+		ProductImageURL:  strings.TrimSpace(n.ProductImageURL),
+		SupplierPlatform: supplier.Platform,
+		SupplierName:     supplier.Name,
+		SupplierURL:      supplier.URL,
+		SupplierSummary:  supplierSummary(supplier),
 	})
 	delivered, err := s.NotifyEvent(n.OrgID, "lead_created", channel, msg)
 	if err != nil {
@@ -152,4 +164,26 @@ func (s *Service) NotifyAction(n ActionNotice) {
 		OutboxURL: outboxURL(n.BaseURL, n.OutboundID),
 	})
 	_, _ = s.NotifyEvent(n.OrgID, n.EventType, channel, msg)
+}
+
+// supplierSummary renders the sourcing numbers as one operator-scannable strip
+// ("¥28.9 · 0.29 kg · MOQ 1 件 · 广东省广州市"). Missing numbers are dropped
+// rather than shown as blanks, so the strip never implies a value we don't have.
+func supplierSummary(s *models.SupplierMatch) string {
+	if s == nil {
+		return ""
+	}
+	parts := make([]string, 0, 4)
+	for _, value := range []string{s.PriceText, s.WeightKG} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	if moq := strings.TrimSpace(s.MOQText); moq != "" {
+		parts = append(parts, "MOQ "+moq)
+	}
+	if from := strings.TrimSpace(s.ShipFrom); from != "" {
+		parts = append(parts, from)
+	}
+	return strings.Join(parts, " · ")
 }

@@ -206,7 +206,7 @@ func (h *handler) seedService(c *fiber.Ctx) error {
 	if at == "" {
 		at = assets.AssetSalesPlaybook
 	}
-	if !at.IsKnown() || at == assets.AssetPODProduct || at == assets.AssetBannedClaim {
+	if !at.IsKnown() || ingestOnlyAssetType(at) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_asset_type", "asset_type": string(at)})
 	}
 
@@ -368,4 +368,16 @@ func (h *handler) syncSource(c *fiber.Ctx) error {
 		return c.Status(status).JSON(body)
 	}
 	return c.JSON(body)
+}
+
+// ingestOnlyAssetType reports the asset kinds a seed request may never create.
+// Catalog rows (POD_product) and sourced marketplace rows (supplier_product)
+// carry a structured payload that only their ingestor can build correctly, and
+// a banned claim must not be seedable at all.
+func ingestOnlyAssetType(at assets.AssetType) bool {
+	switch at {
+	case assets.AssetPODProduct, assets.AssetSupplierProduct, assets.AssetBannedClaim:
+		return true
+	}
+	return false
 }
