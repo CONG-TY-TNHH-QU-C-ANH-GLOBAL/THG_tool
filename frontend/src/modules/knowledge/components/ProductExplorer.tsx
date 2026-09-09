@@ -15,6 +15,7 @@ const STATE_FILTERS: Array<AssetState | 'all'> = ['all', 'approved', 'pending', 
 
 const TYPE_TINT: Record<AssetType, string> = {
   POD_product: 'var(--accent)',
+  supplier_product: 'oklch(70% 0.15 60)',
   faq: 'var(--info)',
   shipping_policy: 'var(--ok)',
   sales_playbook: 'var(--warn)',

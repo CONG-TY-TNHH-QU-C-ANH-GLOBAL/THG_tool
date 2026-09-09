@@ -39,6 +39,11 @@ const (
 	// THG Training. It is intentionally distinct from product REST JSON because
 	// it emits internal sales-playbook assets, never catalog products.
 	SourceTrainingExport SourceType = "training_export"
+	// SourceSupplierCatalog pre-indexes sourceable 1688 / Taobao items through
+	// the THG Pricing Hub. It exists so per-lead matching is a local retrieval:
+	// the upstream marketplace API has a small monthly request budget and must
+	// never be called once per crawled lead.
+	SourceSupplierCatalog SourceType = "supplier_catalog"
 )
 
 // IsKnown reports whether t is a SourceType the system currently
@@ -50,7 +55,7 @@ const (
 // this source type?".
 func (t SourceType) IsKnown() bool {
 	switch t {
-	case SourceShopify, SourceCSV, SourceGoogleSheets, SourceNotion, SourceWebsite, SourceCatalog, SourceRESTJSON, SourceTrainingExport:
+	case SourceShopify, SourceCSV, SourceGoogleSheets, SourceNotion, SourceWebsite, SourceCatalog, SourceRESTJSON, SourceTrainingExport, SourceSupplierCatalog:
 		return true
 	}
 	return false

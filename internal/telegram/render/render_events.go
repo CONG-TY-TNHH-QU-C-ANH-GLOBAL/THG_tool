@@ -36,6 +36,10 @@ type LeadMsg struct {
 	// SuggestedReply/ProductName/ProductURL/ProductImageURL are the optional operator-facing reply
 	// suggestion (generated upstream; the sink only renders it). Empty = omitted.
 	SuggestedReply, ProductName, ProductURL, ProductImageURL string
+	// Supplier* describe a sourceable 1688 / Taobao item matched for this lead.
+	// SupplierSummary is the one-line facts strip (price · weight · MOQ · origin);
+	// it is empty when the marketplace published none of those numbers.
+	SupplierPlatform, SupplierName, SupplierURL, SupplierSummary string
 }
 
 type ActionMsg struct {
@@ -47,6 +51,15 @@ func tidy(s string) string {
 		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
 	}
 	return strings.TrimRight(s, "\n")
+}
+
+// supplierLabel names the marketplace inline when it is known, so the operator
+// can tell a 1688 wholesale offer from a Taobao retail listing at a glance.
+func supplierLabel(platform string) string {
+	if platform = strings.TrimSpace(platform); platform != "" {
+		return "🏭 Nguồn hàng " + platform
+	}
+	return "🏭 Nguồn hàng"
 }
 
 // Lead renders a "new lead" notification.
@@ -66,6 +79,9 @@ func Lead(m LeadMsg) string {
 	b.WriteString(line("🛍 Sản phẩm gợi ý", m.ProductName))
 	b.WriteString(link("🔗 Link sản phẩm", m.ProductURL))
 	b.WriteString(link("🖼 Ảnh sản phẩm", m.ProductImageURL))
+	b.WriteString(line(supplierLabel(m.SupplierPlatform), m.SupplierName))
+	b.WriteString(line("📦 Thông số nguồn", m.SupplierSummary))
+	b.WriteString(link("🔗 Link nguồn hàng", m.SupplierURL))
 	b.WriteString(line("Trạng thái", m.Status))
 	b.WriteString(link("🔗 Mở bài viết Facebook", m.PostURL))
 	b.WriteString(link("📊 Mở trong dashboard", m.DashboardURL))

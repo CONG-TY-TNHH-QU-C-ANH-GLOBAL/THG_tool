@@ -31,6 +31,7 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 			Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: h.baseURL,
 			SuggestedReply: suggestion.Reply, ProductName: suggestion.ProductName, ProductURL: suggestion.ProductURL,
 			ProductImageURL: suggestion.ProductImageURL,
+			Supplier:        suggestion.Supplier,
 		})
 	}
 	if h.leadSuggestion != nil && h.leadSuggestionAllowed != nil && h.leadSuggestionAllowed(ev.OrgID) && h.suggestionRunner != nil && h.suggestionRunner.Try(

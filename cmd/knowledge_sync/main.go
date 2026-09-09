@@ -19,6 +19,7 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion/rest_json"
+	suppliercatalog "github.com/thg/scraper/internal/workspace_knowledge/ingestion/supplier_catalog"
 	trainingexport "github.com/thg/scraper/internal/workspace_knowledge/ingestion/training_export"
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
 )
@@ -52,6 +53,7 @@ func main() {
 	registry := ingestion.NewRegistry()
 	registry.Register(rest_json.New())
 	registry.Register(trainingexport.New())
+	registry.Register(suppliercatalog.New())
 	dispatcher := &ingestion.Dispatcher{
 		Registry: registry, Health: db.Knowledge(),
 		WriterFactory: func(src *sources.Source) ingestion.AssetWriter {

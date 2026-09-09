@@ -36,10 +36,43 @@ type payload struct {
 // Telegram and CRM. It is deliberately copied from the caller's already-built
 // suggestion; this package never does retrieval or generation itself.
 type enrichment struct {
-	SuggestedReply  string `json:"suggestedReply"`
-	ProductName     string `json:"productName"`
-	ProductURL      string `json:"productUrl"`
-	ProductImageURL string `json:"productImageUrl"`
+	SuggestedReply  string    `json:"suggestedReply"`
+	ProductName     string    `json:"productName"`
+	ProductURL      string    `json:"productUrl"`
+	ProductImageURL string    `json:"productImageUrl"`
+	Supplier        *supplier `json:"supplier,omitempty"`
+}
+
+// supplier is the sourced 1688 / Taobao item behind the same snapshot. It is a
+// separate block from the catalog product on purpose: the CRM must be able to
+// tell "what we sell" apart from "what we can source", and the numbers here are
+// supplier-side, not customer-facing pricing.
+type supplier struct {
+	Platform   string `json:"platform"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	ImageURL   string `json:"imageUrl,omitempty"`
+	PriceText  string `json:"priceText,omitempty"`
+	WeightText string `json:"weightText,omitempty"`
+	MOQText    string `json:"moqText,omitempty"`
+	ShipFrom   string `json:"shipFrom,omitempty"`
+	ShopName   string `json:"shopName,omitempty"`
+	CapturedAt string `json:"capturedAt,omitempty"`
+}
+
+// supplierFrom copies a matched supplier item into the wire block. Returns nil
+// when the match lacks a name or link, so a partial match never reaches the CRM.
+func supplierFrom(match *models.SupplierMatch) *supplier {
+	if !match.HasOffer() {
+		return nil
+	}
+	return &supplier{
+		Platform: strings.TrimSpace(match.Platform), Name: strings.TrimSpace(match.Name),
+		URL: strings.TrimSpace(match.URL), ImageURL: strings.TrimSpace(match.ImageURL),
+		PriceText: strings.TrimSpace(match.PriceText), WeightText: strings.TrimSpace(match.WeightKG),
+		MOQText: strings.TrimSpace(match.MOQText), ShipFrom: strings.TrimSpace(match.ShipFrom),
+		ShopName: strings.TrimSpace(match.ShopName), CapturedAt: strings.TrimSpace(match.CapturedAt),
+	}
 }
 
 func payloadFor(event leadingest.LeadEvent, suggestion models.LeadSuggestion) (payload, bool) {
@@ -61,6 +94,7 @@ func payloadFor(event leadingest.LeadEvent, suggestion models.LeadSuggestion) (p
 		Enrichment: enrichment{
 			SuggestedReply: strings.TrimSpace(suggestion.Reply), ProductName: strings.TrimSpace(suggestion.ProductName),
 			ProductURL: strings.TrimSpace(suggestion.ProductURL), ProductImageURL: strings.TrimSpace(suggestion.ProductImageURL),
+			Supplier: supplierFrom(suggestion.Supplier),
 		},
 	}, true
 }

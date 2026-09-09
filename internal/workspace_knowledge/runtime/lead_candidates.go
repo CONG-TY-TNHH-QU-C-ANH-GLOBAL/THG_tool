@@ -10,6 +10,7 @@ import (
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/products"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
+	"github.com/thg/scraper/internal/workspace_knowledge/suppliers"
 )
 
 // CandidatesForLead is the Knowledge Intelligence Layer's retrieval step (P2a —
@@ -89,6 +90,24 @@ func candidateFromHit(h retrieval.Hit) models.KnowledgeCandidate {
 		}
 		return c
 	}
+	if a.Type == assets.AssetSupplierProduct {
+		var sv suppliers.PayloadV1
+		if len(a.Payload) > 0 && json.Unmarshal(a.Payload, &sv) == nil {
+			c.SourceURL = strings.TrimSpace(sv.SourceURL)
+			if len(sv.Images) > 0 {
+				c.ImageURL = strings.TrimSpace(sv.Images[0])
+			}
+			c.PriceText = formatSupplierPrice(sv.PriceCNY)
+			c.Supplier = &models.SupplierFacts{
+				Platform: sv.Platform, ProductID: sv.ProductID,
+				PriceCNY: sv.PriceCNY, PriceNote: sv.PriceNote,
+				MOQ: sv.MOQ, Unit: sv.Unit, WeightKG: sv.WeightKG,
+				ShipFrom: sv.ShipFrom, ShopName: sv.ShopName,
+				CapturedAt: sv.SourceFetchedAt,
+			}
+		}
+		return c
+	}
 	// Non-product assets (proofs/playbooks/site) may carry object-shaped images.
 	if imgs := assets.ImagesFromPayload(a.Payload); len(imgs) > 0 {
 		c.ImageURL = imgs[0].URL
@@ -123,6 +142,15 @@ func formatCandidatePrice(minPrice, maxPrice *float64, currency string) string {
 		out += " " + currency
 	}
 	return out
+}
+
+// formatSupplierPrice renders a marketplace price in yuan for the candidate
+// summary. Returns "" when the upstream did not expose a price.
+func formatSupplierPrice(price *float64) string {
+	if price == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*price, 'f', -1, 64) + " CNY"
 }
 
 func truncateRunes(s string, n int) string {

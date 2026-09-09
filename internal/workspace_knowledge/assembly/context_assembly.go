@@ -109,7 +109,7 @@ func splitByType(hits []retrieval.Hit) (products, policies, ctas []retrieval.Hit
 			continue
 		}
 		switch h.Asset.Type {
-		case assets.AssetPODProduct:
+		case assets.AssetPODProduct, assets.AssetSupplierProduct:
 			products = append(products, h)
 		case assets.AssetShippingPolicy, assets.AssetPricingRule, assets.AssetSalesPlaybook, assets.AssetFAQ:
 			policies = append(policies, h)

@@ -25,18 +25,23 @@ import (
 type AssetType string
 
 const (
-	AssetPODProduct     AssetType = "POD_product"
-	AssetFAQ            AssetType = "faq"
-	AssetShippingPolicy AssetType = "shipping_policy"
-	AssetSalesPlaybook  AssetType = "sales_playbook"
-	AssetPricingRule    AssetType = "pricing_rule"
-	AssetBannedClaim    AssetType = "banned_claim"
-	AssetCTA            AssetType = "cta"
+	AssetPODProduct AssetType = "POD_product"
+	// AssetSupplierProduct is a sourceable item on a Chinese marketplace
+	// (1688 / Taobao) that THG can fulfil for the customer. It is NOT the
+	// org's own catalog: it carries a supplier price, MOQ, and shipping
+	// weight, and it must never be presented as a THG product page.
+	AssetSupplierProduct AssetType = "supplier_product"
+	AssetFAQ             AssetType = "faq"
+	AssetShippingPolicy  AssetType = "shipping_policy"
+	AssetSalesPlaybook   AssetType = "sales_playbook"
+	AssetPricingRule     AssetType = "pricing_rule"
+	AssetBannedClaim     AssetType = "banned_claim"
+	AssetCTA             AssetType = "cta"
 )
 
 func (t AssetType) IsKnown() bool {
 	switch t {
-	case AssetPODProduct, AssetFAQ, AssetShippingPolicy,
+	case AssetPODProduct, AssetSupplierProduct, AssetFAQ, AssetShippingPolicy,
 		AssetSalesPlaybook, AssetPricingRule, AssetBannedClaim, AssetCTA:
 		return true
 	}
@@ -175,16 +180,16 @@ func (a *Asset) MergeFromIngest(fresh *Asset) {
 // All filters are AND-combined. Org isolation is enforced by the
 // repository receiver — there is no OrgID field here.
 type ListFilter struct {
-	Types     []AssetType   // empty = any type
-	States    []AssetState  // empty = any state. Note: the retrieval engine
-	                        // overrides this to {approved} when reading on
-	                        // the runtime hot path; the Product Explorer
-	                        // panel reads with empty (to show pending+hidden).
-	SourceID  int64         // 0 = any source
-	SearchQ   string        // case-insensitive substring across title + tags
-	Limit     int           // 0 = no limit
-	Offset    int
-	OrderBy   ListOrder
+	Types  []AssetType  // empty = any type
+	States []AssetState // empty = any state. Note: the retrieval engine
+	// overrides this to {approved} when reading on
+	// the runtime hot path; the Product Explorer
+	// panel reads with empty (to show pending+hidden).
+	SourceID int64  // 0 = any source
+	SearchQ  string // case-insensitive substring across title + tags
+	Limit    int    // 0 = no limit
+	Offset   int
+	OrderBy  ListOrder
 	// Hot path only: AI never quotes stale/error/needs_auth sources.
 	ExcludeUnhealthySources bool
 }
