@@ -72,10 +72,14 @@ func (i *Ingestor) Sync(ctx context.Context, src *sources.Source, w ingestion.As
 	run := &syncRun{ingestor: i, cfg: cfg, src: src, writer: w, client: client, spend: &budget{remaining: cfg.MaxAPICalls}}
 	run.indexLinks(ctx)
 	run.indexQueries(ctx)
-	if run.spend.remaining == 0 {
+	// Report exhaustion only when it actually cut work short. A run whose last
+	// planned call happens to spend the last unit finished everything it was
+	// asked to do, and saying otherwise sends the operator to raise a ceiling
+	// that was never the constraint.
+	if run.truncated {
 		run.result.Errors = append(run.result.Errors, ingestion.SyncError{
 			Reason: "api_budget_exhausted",
-			Detail: fmt.Sprintf("stopped after %d upstream calls; raise max_api_calls or split the run", cfg.MaxAPICalls),
+			Detail: fmt.Sprintf("stopped early after %d upstream calls; raise max_api_calls or split the run", cfg.MaxAPICalls),
 		})
 	}
 	return run.result, nil
@@ -91,6 +95,8 @@ type syncRun struct {
 	client   *suppliersourcing.Client
 	spend    *budget
 	result   ingestion.SyncResult
+	// truncated records that the budget ran out with work still pending.
+	truncated bool
 }
 
 // indexLinks resolves the product URLs the operator picked by hand.
@@ -105,6 +111,7 @@ func (r *syncRun) indexLinks(ctx context.Context) {
 			continue
 		}
 		if !r.spend.take() {
+			r.truncated = true
 			return
 		}
 		product, err := r.client.Detail(ctx, platform, "", link)
@@ -121,6 +128,7 @@ func (r *syncRun) indexLinks(ctx context.Context) {
 func (r *syncRun) indexQueries(ctx context.Context) {
 	for _, query := range r.cfg.Queries {
 		if !r.spend.take() {
+			r.truncated = true
 			return
 		}
 		items, err := r.client.Search(ctx, query.Q, query.Platform, query.Size)
@@ -147,6 +155,7 @@ func (r *syncRun) promoteHits(ctx context.Context, query Query, items []supplier
 			continue
 		}
 		if !r.spend.take() {
+			r.truncated = true
 			return true
 		}
 		product, err := r.client.Detail(ctx, query.Platform, item.ID, item.Link)
@@ -202,7 +211,7 @@ func payloadFrom(product *suppliersourcing.Product, fetchedAt time.Time) supplie
 		ShopName: product.ShopName, Category: product.Category,
 		PriceCNY: product.Price, PriceNote: product.PriceNote,
 		MOQ: product.MOQ, Unit: product.Unit,
-		WeightKG: product.WeightKG, LengthCM: product.Length,
+		WeightKG: plausibleWeight(product.WeightKG), LengthCM: product.Length,
 		WidthCM: product.Width, HeightCM: product.Height,
 		ShipFrom: product.ShipFrom, SoldCount: product.Sold,
 		Images: product.Images, SourceURL: product.Link,
@@ -232,4 +241,22 @@ func platformFromLink(link string) string {
 	default:
 		return ""
 	}
+}
+
+// minPlausibleWeightKG is the floor below which an upstream weight is treated
+// as missing data rather than as a measurement.
+//
+// The marketplace figure is an AI estimate ("aiWeight") and it is sometimes
+// junk: a pilot run returned 0.001 kg for a fleece hoodie. Nothing that ships
+// in a parcel weighs a gram, and quoting that number would produce a shipping
+// estimate the business cannot honour — so an implausible value becomes "not
+// known" and is omitted downstream, exactly like an absent one. This drops a
+// value; it never substitutes a computed one.
+const minPlausibleWeightKG = 0.01
+
+func plausibleWeight(weight *float64) *float64 {
+	if weight == nil || *weight < minPlausibleWeightKG {
+		return nil
+	}
+	return weight
 }
