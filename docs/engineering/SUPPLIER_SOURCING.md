@@ -16,9 +16,20 @@ shipping weight, MOQ and origin.
 
 The upstream marketplace data comes from Elim (`openapi.elim.asia`), reached
 only through the THG Pricing Hub worker, which owns the API key and the D1
-response cache. **The plan is metered per month and shared with the human
-quoting tool** — one call per crawled lead would exhaust it in a day and would
-also break quoting for the sales team.
+response cache. **The budget is tiny, non-renewing, and shared with the human
+quoting tool.**
+
+As measured on 2026-09-11, the Free plan grants **100 requests for the whole
+billing period, which runs 2026-08-07 → 2036-08-07** — it does NOT refill
+monthly. 71 were left, with a zero credit balance. One call per crawled lead
+would exhaust the decade in an afternoon and break quoting for the sales team.
+
+Always read the live number before planning a run; never trust a figure written
+in a doc:
+
+```bash
+curl -H "x-thg-integration-key: <key>" https://pricingtool.thgfulfill.com/api/scrape/quota
+```
 
 So the flow is inverted: a `supplier_catalog` knowledge source indexes a curated
 set of items once, and per-lead matching is a local KnowledgeOS retrieval that
@@ -47,6 +58,9 @@ Both sides need one shared key.
 ```bash
 echo "<key>" | npx wrangler secret put THG_TOOL_INTEGRATION_KEY
 ```
+
+Done on 2026-09-11: the secret is set on the `thg-pricing-tool` Worker and the
+deployed build accepts it (version `dac85391-3049-4145-b237-86438db49f4b`).
 
 It opens `POST /api/scrape/detail`, `POST /api/scrape/search` and
 `GET /api/scrape/quota` — nothing else. The caller gets role `service`, so every
@@ -80,13 +94,10 @@ rather than continuing. Budget accounting:
 - one call per query (search), plus up to `detail_per_query` calls to fetch the
   weight and MOQ that search results do not carry.
 
-So the example above costs at most `1 + 2 × (1 + 4) = 11` calls.
-
-Check the remaining monthly budget before a large run:
-
-```bash
-curl -H "x-thg-integration-key: <key>" https://pricingtool.thgfulfill.com/api/scrape/quota
-```
+So the example above costs at most `1 + 2 × (1 + 4) = 11` calls. Against a
+remaining balance in the dozens, size `max_api_calls` in single digits for a
+pilot and treat a larger index as something to fund by upgrading the Elim plan
+first.
 
 ## Running a sync
 
