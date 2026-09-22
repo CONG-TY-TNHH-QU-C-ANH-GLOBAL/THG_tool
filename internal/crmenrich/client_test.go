@@ -45,7 +45,7 @@ func TestFailuresDegradeToEmpty(t *testing.T) {
 		func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("not json")) },
 	} {
 		server := httptest.NewServer(handler)
-		got := New(server.URL, "k").Enrich(context.Background(), "t", "", "hot")
+		got := New(server.URL, "k").Enrich(context.Background(), "https://detail.1688.com/offer/1.html", "", "hot")
 		server.Close()
 		if got.HasProduct() || got.HasQuote() {
 			t.Fatalf("failure should yield empty result, got %+v", got)
@@ -65,7 +65,7 @@ func TestEnrichRendersFigures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	got := New(server.URL, "secret").Enrich(context.Background(), "cần ship", "https://fb.test/p/1", "hot")
+	got := New(server.URL, "secret").Enrich(context.Background(), "cần ship https://detail.1688.com/offer/1.html", "https://fb.test/p/1", "hot")
 	if gotKey != "secret" {
 		t.Fatalf("key header not sent, got %q", gotKey)
 	}
@@ -96,5 +96,54 @@ func TestMissingFiguresRenderNothing(t *testing.T) {
 	}
 	if r.HasQuote() {
 		t.Fatal("a not-ok quote must not count as a quote")
+	}
+}
+
+// The pre-check is what keeps 99% of leads off the network. It must fire on the
+// link shapes the crawler actually captures, and must not fire on ordinary text
+// that merely mentions a marketplace by name.
+func TestHasMarketplaceLink(t *testing.T) {
+	hits := []string{
+		"mẫu này https://detail.1688.com/offer/1052769132343.html giá tốt",
+		"https://item.taobao.com/item.htm?id=123",
+		"xem https://m.tb.cn/h.abc",
+		"HTTPS://DETAIL.1688.COM/OFFER/1.HTML",
+		"https://detail.tmall.hk/item.htm?id=9",
+	}
+	for _, s := range hits {
+		if !HasMarketplaceLink(s) {
+			t.Fatalf("should have matched: %q", s)
+		}
+	}
+	misses := []string{
+		"",
+		"mình hay nhập hàng 1688 về bán",        // nhắc tên sàn, không có link
+		"taobao rẻ hơn tmall nhiều",             // ditto
+		"https://facebook.com/groups/1/posts/2", // link khác sàn
+		"https://1688.com.evil.example/x",       // host giả mạo, không phải 1688.com
+	}
+	for _, s := range misses {
+		if HasMarketplaceLink(s) {
+			t.Fatalf("should NOT have matched: %q", s)
+		}
+	}
+}
+
+// Without a marketplace link there must be NO request at all: on live data only
+// 2 of 321 posts carry one, and the call sits inside a 5s suggestion budget.
+func TestNoLinkSkipsTheNetwork(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	got := New(server.URL, "k").Enrich(context.Background(), "cần tìm xưởng may áo thun", "https://facebook.com/p/1", "hot")
+	if called {
+		t.Fatal("a lead with no marketplace link must not reach the CRM")
+	}
+	if got.HasProduct() || got.HasQuote() {
+		t.Fatalf("expected empty result, got %+v", got)
 	}
 }

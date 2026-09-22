@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -54,7 +55,9 @@ type Result struct {
 }
 
 // HasProduct reports whether a grounded product came back.
-func (r Result) HasProduct() bool { return r.Product != nil && strings.TrimSpace(r.Product.Title) != "" }
+func (r Result) HasProduct() bool {
+	return r.Product != nil && strings.TrimSpace(r.Product.Title) != ""
+}
 
 // HasQuote reports whether a usable shipping cost came back.
 func (r Result) HasQuote() bool { return r.Quote != nil && r.Quote.OK && r.Quote.TotalUSD > 0 }
@@ -101,17 +104,40 @@ func New(baseURL, key string) *Client {
 	if baseURL == "" || key == "" {
 		return nil
 	}
-	// 6s: this sits on the path to a lead notification. A slow CRM must cost
-	// the notice its numbers, never its delivery.
-	return &Client{baseURL: baseURL, key: key, http: &http.Client{Timeout: 6 * time.Second}}
+	// 2.5s, and that ceiling is not arbitrary: this call happens INSIDE the
+	// suggestion runner's own budget (LEAD_SUGGESTION_TIMEOUT_MS, 5000 in
+	// production) which also has to cover the LLM call that writes the comment.
+	// Spend too long here and the whole suggestion is cancelled — a lead that
+	// used to get a reply would get none, which is worse than one without a
+	// price. Numbers are a bonus; the reply is the product.
+	return &Client{baseURL: baseURL, key: key, http: &http.Client{Timeout: 2500 * time.Millisecond}}
 }
 
 func (c *Client) Available() bool { return c != nil }
+
+// marketplaceLink matches a link to a Chinese marketplace the CRM can price.
+//
+// The domain must END the host — anchored by a port, path, query, fragment or
+// string end. A plain word-boundary match would accept
+// "https://1688.com.evil.example/x", handing an attacker-chosen host a free
+// round trip out of our lead pipeline on the strength of a prefix.
+var marketplaceLink = regexp.MustCompile(
+	`(?i)https?://([a-z0-9\-]+\.)*(1688\.com|taobao\.com|tmall\.com|tmall\.hk|tb\.cn)([:/?#]|$)`)
+
+// HasMarketplaceLink reports whether text names a product the CRM could price.
+func HasMarketplaceLink(text string) bool { return marketplaceLink.MatchString(text) }
 
 // Enrich asks the CRM about one lead. It never returns an error the caller has
 // to handle: a failure is an empty Result, which renders as "no numbers".
 func (c *Client) Enrich(ctx context.Context, text, sourceURL, category string) Result {
 	if c == nil {
+		return Result{}
+	}
+	// Skip the round trip entirely when there is nothing to price. On the live
+	// data only 2 of 321 scanned posts carry a marketplace link, so without this
+	// check 99% of leads would pay a network call — inside a 5s suggestion
+	// budget — to be told "no link found". Same answer, none of the risk.
+	if !HasMarketplaceLink(text) && !HasMarketplaceLink(sourceURL) {
 		return Result{}
 	}
 	payload, err := json.Marshal(map[string]string{"text": text, "sourceUrl": sourceURL, "category": category})
