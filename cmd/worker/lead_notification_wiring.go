@@ -9,6 +9,7 @@ import (
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/config"
+	"github.com/thg/scraper/internal/crmenrich"
 	"github.com/thg/scraper/internal/crmleadsync"
 	facebookcrawl "github.com/thg/scraper/internal/jobhandlers/facebook_crawl"
 	"github.com/thg/scraper/internal/leadingest"
@@ -53,11 +54,24 @@ func newWorkerSuggestionRuntime(mainStore *store.Store) workerSuggestionRuntime 
 		log.Println("[LeadSuggestion] enabled but comment provider is unavailable; suggestions remain inactive")
 		return runtime
 	}
+	// Giá sản phẩm sàn TQ và cước vận chuyển nằm bên CRM: biểu giá công bố và
+	// bộ đọc Elim đều ở đó, có cron giữ cho mới. Dùng chung khoá với CRM lead
+	// sync — cùng một cặp hệ thống, thêm khoá thứ hai chỉ tạo thêm một thứ để
+	// quên xoay. nil khi chưa cấu hình, khi đó gợi ý vẫn sinh như cũ.
+	crm := crmenrich.New(envOr("CRM_ENRICH_URL", "https://crm.thgfulfill.com"), crmLeadSyncSecret())
+	if crm.Available() {
+		log.Println("✅ CRM enrich wired: gợi ý trả lời sẽ kèm giá sản phẩm và cước")
+	} else {
+		log.Println("ℹ️  CRM enrich chưa bật (thiếu CRM_LEAD_SYNC_KEY) — gợi ý không có giá/cước")
+	}
 	runtime.build = func(ctx context.Context, ev leadingest.LeadEvent) models.LeadSuggestion {
 		if !runtime.allowlist.Allows(ev.OrgID) {
 			return models.LeadSuggestion{}
 		}
-		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName)
+		return facebook.BuildLeadSuggestionWithCRM(
+			ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), crm,
+			ev.OrgID, ev.Excerpt, ev.AuthorName, ev.PostURL, ev.Category,
+		)
 	}
 	runtime.runner = notifications.NewSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, time.Duration(cfg.LeadSuggestionTimeoutMS)*time.Millisecond)
 	logWorkerSuggestionPolicy(runtime.allowlist)
@@ -112,7 +126,7 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 				OrgID: ev.OrgID, LeadID: ev.LeadID, Channel: "facebook", Workspace: workspace,
 				Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: baseURL,
 				SuggestedReply: enrichment.Reply, ProductName: enrichment.ProductName, ProductURL: enrichment.ProductURL,
-				ProductImageURL: enrichment.ProductImageURL,
+				ProductImageURL: enrichment.ProductImageURL, ShippingLine: enrichment.ShippingLine,
 			})
 		}
 		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) && suggestion.runner != nil && suggestion.runner.Try(

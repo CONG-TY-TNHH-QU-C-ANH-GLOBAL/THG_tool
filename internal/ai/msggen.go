@@ -166,10 +166,16 @@ type ProductFacts struct {
 	Name      string
 	PriceText string
 	URL       string
+	// ShippingText is a shipping cost the CRM computed from a published rate
+	// card ("$14.20 · 6–12 ngày làm việc (Epacket CN→US, 1 kiện 0.4 kg)").
+	// It is the single most persuasive number in a reply, and the one this
+	// repo cannot work out on its own — there is no rate table here.
+	ShippingText string
 }
 
 func (p ProductFacts) empty() bool {
-	return strings.TrimSpace(p.Name) == "" && strings.TrimSpace(p.PriceText) == "" && strings.TrimSpace(p.URL) == ""
+	return strings.TrimSpace(p.Name) == "" && strings.TrimSpace(p.PriceText) == "" &&
+		strings.TrimSpace(p.URL) == "" && strings.TrimSpace(p.ShippingText) == ""
 }
 
 // block renders the prompt section. Returns "" when there is nothing grounded,
@@ -188,6 +194,9 @@ func (p ProductFacts) block() string {
 	}
 	if u := strings.TrimSpace(p.URL); u != "" {
 		b.WriteString("\n- Link: " + u)
+	}
+	if s := strings.TrimSpace(p.ShippingText); s != "" {
+		b.WriteString("\n- Shipping cost (computed by THG from its published rate card): " + s)
 	}
 	return b.String()
 }
@@ -245,7 +254,7 @@ RULES:
 5. Introduce your most relevant offering naturally
 6. End with a soft CTA%s. Follow the CONTACT POLICY below for the website/contact.
 7. NO EMOJIS. Professional but human.
-8. When a PRODUCT FACTS block is present, state its price in the comment, copied exactly. When it is absent, write no price at all — never estimate one.
+8. When a PRODUCT FACTS block is present, state its price and, if given, its shipping cost and transit time in the comment, copied exactly. When it is absent, write no price or shipping figure at all — never estimate one.
 %s
 %s
 

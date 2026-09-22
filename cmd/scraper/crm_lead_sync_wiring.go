@@ -42,3 +42,13 @@ func startCRMLeadSync(ctx context.Context, mainStore *store.Store) *crmleadsync.
 	log.Println("CRM lead sync outbox enabled for connector and worker lead paths")
 	return dispatcher
 }
+
+// crmEnrichURL is the CRM origin the suggestion builder asks for product price
+// and shipping cost. Same host as the lead-sync endpoint, so one override
+// covers a staging CRM.
+func crmEnrichURL() string {
+	if value := strings.TrimSpace(os.Getenv("CRM_ENRICH_URL")); value != "" {
+		return value
+	}
+	return "https://crm.thgfulfill.com"
+}

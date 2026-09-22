@@ -110,4 +110,3 @@ func TestResolveDirectPostAccount_AmbiguousMultiLive(t *testing.T) {
 		t.Errorf("selected #B must resolve to #B, got %+v", r)
 	}
 }
-

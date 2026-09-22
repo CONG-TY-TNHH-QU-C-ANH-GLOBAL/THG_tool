@@ -12,10 +12,10 @@ func TestMaxItemsFromPrompt(t *testing.T) {
 	}{
 		{"", 0},
 		{"crawl this group", 0},
-		{"lấy 30 bài mới nhất", 30},  // "30 bai" form
-		{"cào 12 post", 12},          // "cao N" form
-		{"crawl 999 posts", 200},     // clamped to 200
-		{"lấy 0 bài", 0},             // non-positive ignored
+		{"lấy 30 bài mới nhất", 30}, // "30 bai" form
+		{"cào 12 post", 12},         // "cao N" form
+		{"crawl 999 posts", 200},    // clamped to 200
+		{"lấy 0 bài", 0},            // non-positive ignored
 	}
 	for _, c := range cases {
 		if got := maxItemsFromPrompt(c.in); got != c.want {

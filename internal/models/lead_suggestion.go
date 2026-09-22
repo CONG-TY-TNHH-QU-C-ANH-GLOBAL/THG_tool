@@ -7,4 +7,8 @@ type LeadSuggestion struct {
 	ProductName     string
 	ProductURL      string
 	ProductImageURL string
+	// ShippingLine is a cost the CRM computed from a published rate card, shown
+	// on its own line in the Telegram notice. Empty when the lead named no
+	// marketplace product, or the product published no weight.
+	ShippingLine string
 }

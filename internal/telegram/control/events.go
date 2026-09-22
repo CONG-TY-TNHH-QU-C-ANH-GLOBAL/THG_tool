@@ -55,6 +55,9 @@ type LeadNotice struct {
 	// Optional operator reply suggestion (generated upstream by the caller;
 	// this sink only renders it). Empty when suggestions are disabled.
 	SuggestedReply, ProductName, ProductURL, ProductImageURL string
+	// ShippingLine: cước CRM tính từ biểu giá công bố. Rỗng khi lead không nêu
+	// sản phẩm sàn, hoặc sản phẩm không khai cân nặng.
+	ShippingLine string
 }
 
 // NotifyLead emits a rich "new lead" channel notification.
@@ -79,6 +82,7 @@ func (s *Service) NotifyLead(n LeadNotice) {
 		ProductName:     strings.TrimSpace(n.ProductName),
 		ProductURL:      strings.TrimSpace(n.ProductURL),
 		ProductImageURL: strings.TrimSpace(n.ProductImageURL),
+		ShippingLine:    strings.TrimSpace(n.ShippingLine),
 	})
 	delivered, err := s.NotifyEvent(n.OrgID, "lead_created", channel, msg)
 	if err != nil {

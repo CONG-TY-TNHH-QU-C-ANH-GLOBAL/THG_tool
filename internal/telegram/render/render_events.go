@@ -36,6 +36,8 @@ type LeadMsg struct {
 	// SuggestedReply/ProductName/ProductURL/ProductImageURL are the optional operator-facing reply
 	// suggestion (generated upstream; the sink only renders it). Empty = omitted.
 	SuggestedReply, ProductName, ProductURL, ProductImageURL string
+	// ShippingLine: cước CRM tính từ biểu giá công bố của THG. Empty = omitted.
+	ShippingLine string
 }
 
 type ActionMsg struct {
@@ -66,6 +68,7 @@ func Lead(m LeadMsg) string {
 	b.WriteString(line("🛍 Sản phẩm gợi ý", m.ProductName))
 	b.WriteString(link("🔗 Link sản phẩm", m.ProductURL))
 	b.WriteString(link("🖼 Ảnh sản phẩm", m.ProductImageURL))
+	b.WriteString(line("🚢 Cước tham chiếu", m.ShippingLine))
 	b.WriteString(line("Trạng thái", m.Status))
 	b.WriteString(link("🔗 Mở bài viết Facebook", m.PostURL))
 	b.WriteString(link("📊 Mở trong dashboard", m.DashboardURL))
