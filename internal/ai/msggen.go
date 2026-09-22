@@ -155,7 +155,52 @@ func (mg *MessageGenerator) GenerateComment(ctx context.Context, postContent, au
 
 // GenerateCommentWithService generates a comment using business profile for any industry.
 // serviceMatch and niche are kept for backward compat but no longer drive hardcoded templates.
+// ProductFacts carries catalog numbers that are already known at call time, so
+// the comment can name a concrete price instead of staying vague.
+//
+// Retrieval has always computed PriceText (see workspace_knowledge/runtime:
+// lead_candidates.go), but nothing forwarded it into the prompt — the number was
+// formatted and then dropped. Every field here is copied verbatim from a stored
+// catalog record; the model is told to use them as-is and invent nothing.
+type ProductFacts struct {
+	Name      string
+	PriceText string
+	URL       string
+}
+
+func (p ProductFacts) empty() bool {
+	return strings.TrimSpace(p.Name) == "" && strings.TrimSpace(p.PriceText) == "" && strings.TrimSpace(p.URL) == ""
+}
+
+// block renders the prompt section. Returns "" when there is nothing grounded,
+// so the prompt keeps its original shape for callers that pass no facts.
+func (p ProductFacts) block() string {
+	if p.empty() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nPRODUCT FACTS (copy these numbers EXACTLY — never round, never invent a price):")
+	if name := strings.TrimSpace(p.Name); name != "" {
+		b.WriteString("\n- Product: " + name)
+	}
+	if price := strings.TrimSpace(p.PriceText); price != "" {
+		b.WriteString("\n- Price: " + price)
+	}
+	if u := strings.TrimSpace(p.URL); u != "" {
+		b.WriteString("\n- Link: " + u)
+	}
+	return b.String()
+}
+
 func (mg *MessageGenerator) GenerateCommentWithService(ctx context.Context, postContent, authorName, businessContext, serviceMatch string, identity models.CompanyIdentity, persona models.ActorPersona) (string, error) {
+	return mg.GenerateCommentWithProduct(ctx, postContent, authorName, businessContext, serviceMatch, ProductFacts{}, identity, persona)
+}
+
+// GenerateCommentWithProduct is GenerateCommentWithService plus grounded catalog
+// numbers. Kept as a separate entry point on purpose: the existing signature has
+// three call sites and the auto-comment pipeline must not shift behaviour just
+// because the lead-suggestion path wants a price.
+func (mg *MessageGenerator) GenerateCommentWithProduct(ctx context.Context, postContent, authorName, businessContext, serviceMatch string, product ProductFacts, identity models.CompanyIdentity, persona models.ActorPersona) (string, error) {
 	lang := detectLang(postContent)
 	var langRule string
 	if lang == "en" {
@@ -190,7 +235,7 @@ COMPANY IDENTITY (ground every brand / website / contact claim ONLY in this bloc
 
 POST AUTHOR: %s
 POST CONTENT:
-"""%s"""
+"""%s"""%s
 
 RULES:
 1. %s
@@ -200,10 +245,11 @@ RULES:
 5. Introduce your most relevant offering naturally
 6. End with a soft CTA%s. Follow the CONTACT POLICY below for the website/contact.
 7. NO EMOJIS. Professional but human.
+8. When a PRODUCT FACTS block is present, state its price in the comment, copied exactly. When it is absent, write no price at all — never estimate one.
 %s
 %s
 
-RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, langRule, ctaSuffix(identity.PrimaryCTA), contactRule, personaRule)
+RETURN ONLY THE COMMENT, NO EXPLANATION.`, businessContext, serviceNote, companyBlock, authorName, postContent, product.block(), langRule, ctaSuffix(identity.PrimaryCTA), contactRule, personaRule)
 
 	return mg.callOpenAI(ctx, prompt)
 }

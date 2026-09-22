@@ -62,6 +62,10 @@ func (a OrgAllowlist) Configured() bool {
 
 type SuggestedProduct struct {
 	Name, URL, ImageURL string
+	// PriceText is the candidate's own formatted price ("4.5-9 USD"). Retrieval
+	// has always computed it; carrying it here is what lets the reply name a
+	// number instead of staying vague.
+	PriceText string
 }
 
 func validHTTPSURL(raw string) string {
@@ -90,6 +94,7 @@ func PickSuggestedProductDetails(candidates []models.KnowledgeCandidate) Suggest
 		}
 		return SuggestedProduct{
 			Name: strings.TrimSpace(c.Title), URL: link, ImageURL: validHTTPSURL(c.ImageURL),
+			PriceText: strings.TrimSpace(c.PriceText),
 		}
 	}
 	return SuggestedProduct{}
@@ -120,8 +125,13 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	if product.Name == "" && product.URL == "" {
 		return LeadSuggestion{}
 	}
+	// serviceMatch stays name+URL: it is keyword-matched to pick a THG service
+	// link, not shown to the model. Price goes through ProductFacts instead —
+	// mixing it in here would skew that keyword match and still never reach the
+	// prompt, which is exactly why the number was being lost.
 	serviceMatch := product.Name + " " + product.URL
-	reply, err := msgGen.GenerateCommentWithService(ctx, leadText, author, profile.ToPromptBlock(), serviceMatch, models.CompanyIdentity{}, models.ActorPersona{})
+	facts := ai.ProductFacts{Name: product.Name, PriceText: product.PriceText, URL: product.URL}
+	reply, err := msgGen.GenerateCommentWithProduct(ctx, leadText, author, profile.ToPromptBlock(), serviceMatch, facts, models.CompanyIdentity{}, models.ActorPersona{})
 	if err != nil {
 		return LeadSuggestion{ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL}
 	}
