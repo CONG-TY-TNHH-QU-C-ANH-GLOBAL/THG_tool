@@ -90,6 +90,50 @@ func (r Result) ShippingText() string {
 	return out
 }
 
+// ShippingCost is ShippingText without the basis, for a notice that shows the
+// basis on its own line underneath.
+func (r Result) ShippingCost() string {
+	if !r.HasQuote() {
+		return ""
+	}
+	out := fmt.Sprintf("$%.2f", r.Quote.TotalUSD)
+	if t := strings.TrimSpace(r.Quote.Transit); t != "" {
+		out += " · " + t
+	}
+	return out
+}
+
+// ShippingBasis explains what the figure was computed from ("Epacket CN→US,
+// 1 kiện 0.4 kg"). Always shown next to the number: a landed cost with no
+// stated basis is a number nobody can check before quoting it to a customer.
+func (r Result) ShippingBasis() string {
+	if !r.HasQuote() {
+		return ""
+	}
+	return strings.TrimSpace(r.Quote.Basis)
+}
+
+// ProductLine renders the one-line product summary for the lead notice:
+// "<tên> · 20 CNY · MOQ 2包". Every part is omitted when the marketplace did
+// not publish it — no "0 CNY", no "MOQ 0".
+func (r Result) ProductLine() string {
+	if !r.HasProduct() {
+		return ""
+	}
+	parts := []string{strings.TrimSpace(r.Product.Title)}
+	if price := r.PriceText(); price != "" {
+		parts = append(parts, price)
+	}
+	if r.Product.MOQ > 0 {
+		moq := fmt.Sprintf("MOQ %g", r.Product.MOQ)
+		if unit := strings.TrimSpace(r.Product.Unit); unit != "" {
+			moq += unit
+		}
+		parts = append(parts, moq)
+	}
+	return strings.Join(parts, " · ")
+}
+
 type Client struct {
 	baseURL string
 	key     string

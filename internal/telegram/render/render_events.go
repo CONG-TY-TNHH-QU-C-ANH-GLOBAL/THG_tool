@@ -36,8 +36,17 @@ type LeadMsg struct {
 	// SuggestedReply/ProductName/ProductURL/ProductImageURL are the optional operator-facing reply
 	// suggestion (generated upstream; the sink only renders it). Empty = omitted.
 	SuggestedReply, ProductName, ProductURL, ProductImageURL string
-	// ShippingLine: cước CRM tính từ biểu giá công bố của THG. Empty = omitted.
-	ShippingLine string
+	// Heat is the classification badge ("🔥 rất nóng"). Sale reads this first to
+	// decide which lead to open, so it sits on line two.
+	Heat string
+	// ProductLine: "<tên> · 20 CNY · MOQ 2包" — mang giá thật của sàn.
+	// ProductName một mình chưa bao giờ mang được giá.
+	ProductLine string
+	// ShippingLine: cước CRM tính từ biểu giá công bố ("$14.20 · 6–12 ngày").
+	// ShippingBasis: tính từ đâu ra ("Epacket CN→US, 1 kiện 0.4 kg").
+	ShippingLine, ShippingBasis string
+	// CrmURL: trang CRM để mở lead. Rỗng thì bỏ dòng.
+	CrmURL string
 }
 
 type ActionMsg struct {
@@ -52,27 +61,99 @@ func tidy(s string) string {
 }
 
 // Lead renders a "new lead" notification.
+// indented renders a continuation line under the entry above it.
+func indented(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return "   " + strings.TrimSpace(value) + "\n"
+}
+
+// Lead renders the new-lead notice.
+//
+// Shape is deliberate and ordered by what Sale decides with, not by what is
+// easiest to assemble:
+//
+//	who        name + heat — enough to decide whether to open at all
+//	what       the post itself
+//	numbers    product price, then landed cost with its basis
+//	action     the reply they can send
+//	links      where to go next
+//
+// The old shape led with "Workspace" and "Nguồn" — two fields that are the same
+// on every single notice, so they pushed the post text below the fold and made
+// every lead look identical in the list.
+//
+// Plain text: the bot sends without parse_mode, so no bold or italics. Emoji
+// and line breaks carry the structure instead.
 func Lead(m LeadMsg) string {
 	excerpt := m.Excerpt
 	if strings.TrimSpace(excerpt) == "" {
 		excerpt = excerptFallback
 	}
 	var b strings.Builder
-	b.WriteString("📌 Lead mới từ Facebook\n\n")
-	b.WriteString(line("Workspace", m.Workspace))
-	b.WriteString(line("Nguồn", m.SourceLabel))
-	b.WriteString(line("Người đăng", m.Author))
-	b.WriteString(block("Nội dung", "\""+excerpt+"\""))
-	b.WriteString(block("Lý do phù hợp", m.Reason))
-	b.WriteString(block("💬 Gợi ý trả lời", m.SuggestedReply))
-	b.WriteString(line("🛍 Sản phẩm gợi ý", m.ProductName))
-	b.WriteString(link("🔗 Link sản phẩm", m.ProductURL))
-	b.WriteString(link("🖼 Ảnh sản phẩm", m.ProductImageURL))
-	b.WriteString(line("🚢 Cước tham chiếu", m.ShippingLine))
-	b.WriteString(line("Trạng thái", m.Status))
-	b.WriteString(link("🔗 Mở bài viết Facebook", m.PostURL))
-	b.WriteString(link("📊 Mở trong dashboard", m.DashboardURL))
+
+	b.WriteString("🔔 Lead mới")
+	if author := strings.TrimSpace(m.Author); author != "" {
+		b.WriteString(" · " + author)
+	}
+	b.WriteString("\n")
+
+	// Heat, workspace and source on ONE line — all three answer "how do I triage
+	// this", none of them is content. The old shape gave each its own labelled
+	// line, which pushed the post text below the fold.
+	//
+	// Workspace stays even though a per-org bot means one group only ever sees
+	// one workspace: this is a multi-tenant deployment, and the day two orgs
+	// share a group is the day its absence becomes a silent mix-up.
+	badge := []string{}
+	for _, part := range []string{m.Heat, m.Workspace, m.SourceLabel} {
+		if value := strings.TrimSpace(part); value != "" {
+			badge = append(badge, value)
+		}
+	}
+	if len(badge) > 0 {
+		b.WriteString(strings.Join(badge, " · ") + "\n")
+	}
+
+	b.WriteString("\n" + strings.TrimSpace(excerpt) + "\n")
+
+	if reason := strings.TrimSpace(m.Reason); reason != "" {
+		b.WriteString("\n🎯 " + reason + "\n")
+	}
+
+	// Product: prefer the enriched one-liner (carries the real marketplace
+	// price); fall back to the bare catalog name when no lookup happened.
+	product := strings.TrimSpace(m.ProductLine)
+	if product == "" {
+		product = strings.TrimSpace(m.ProductName)
+	}
+	if product != "" {
+		b.WriteString("\n🛍 Sản phẩm: " + product + "\n")
+		b.WriteString(indented(m.ProductURL))
+	}
+
+	if ship := strings.TrimSpace(m.ShippingLine); ship != "" {
+		b.WriteString("\n🚢 Cước tham chiếu: " + ship + "\n")
+		b.WriteString(indented(m.ShippingBasis))
+	}
+
+	if reply := strings.TrimSpace(m.SuggestedReply); reply != "" {
+		b.WriteString("\n💬 Gợi ý trả lời:\n" + reply + "\n")
+	}
+
+	b.WriteString(link("🔗 Bài gốc", m.PostURL))
+	b.WriteString(link("📊 Mở CRM", firstNonEmpty(m.CrmURL, m.DashboardURL)))
 	return tidy(b.String())
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // Action renders a comment/inbox/post outcome notification.

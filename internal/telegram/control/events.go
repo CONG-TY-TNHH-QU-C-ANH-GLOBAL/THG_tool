@@ -55,9 +55,9 @@ type LeadNotice struct {
 	// Optional operator reply suggestion (generated upstream by the caller;
 	// this sink only renders it). Empty when suggestions are disabled.
 	SuggestedReply, ProductName, ProductURL, ProductImageURL string
-	// ShippingLine: cước CRM tính từ biểu giá công bố. Rỗng khi lead không nêu
-	// sản phẩm sàn, hoặc sản phẩm không khai cân nặng.
-	ShippingLine string
+	// Heat / ProductLine / ShippingBasis / CrmURL: xem render.LeadMsg.
+	Heat, ProductLine, ShippingBasis, CrmURL string
+	ShippingLine                             string
 }
 
 // NotifyLead emits a rich "new lead" channel notification.
@@ -82,7 +82,11 @@ func (s *Service) NotifyLead(n LeadNotice) {
 		ProductName:     strings.TrimSpace(n.ProductName),
 		ProductURL:      strings.TrimSpace(n.ProductURL),
 		ProductImageURL: strings.TrimSpace(n.ProductImageURL),
+		Heat:            heatBadge(n.Heat),
+		ProductLine:     strings.TrimSpace(n.ProductLine),
 		ShippingLine:    strings.TrimSpace(n.ShippingLine),
+		ShippingBasis:   strings.TrimSpace(n.ShippingBasis),
+		CrmURL:          strings.TrimSpace(n.CrmURL),
 	})
 	delivered, err := s.NotifyEvent(n.OrgID, "lead_created", channel, msg)
 	if err != nil {
@@ -156,4 +160,23 @@ func (s *Service) NotifyAction(n ActionNotice) {
 		OutboxURL: outboxURL(n.BaseURL, n.OutboundID),
 	})
 	_, _ = s.NotifyEvent(n.OrgID, n.EventType, channel, msg)
+}
+
+// heatBadge turns the classifier's category into what Sale actually reads.
+// Unknown categories pass through unchanged rather than being dropped: a new
+// category the classifier starts emitting should show up in the notice, not
+// vanish from it.
+func heatBadge(category string) string {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "":
+		return ""
+	case "hot":
+		return "🔥 rất nóng"
+	case "warm":
+		return "🌤 ấm"
+	case "cold":
+		return "❄️ lạnh"
+	default:
+		return strings.TrimSpace(category)
+	}
 }

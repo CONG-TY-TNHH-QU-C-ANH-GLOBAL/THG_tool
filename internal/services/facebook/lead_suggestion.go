@@ -176,8 +176,12 @@ func BuildLeadSuggestionWithCRM(
 			out.ProductImageURL = validHTTPSURL(img)
 		}
 	}
+	// Prompt gets the one-string form; the notice gets cost and basis separately
+	// because it puts the basis on its own indented line under the number.
 	facts.ShippingText = enriched.ShippingText()
-	out.ShippingLine = enriched.ShippingText()
+	out.ShippingLine = enriched.ShippingCost()
+	out.ShippingBasis = enriched.ShippingBasis()
+	out.ProductLine = enriched.ProductLine()
 
 	reply, err := msgGen.GenerateCommentWithProduct(ctx, leadText, author, profile.ToPromptBlock(), serviceMatch, facts, models.CompanyIdentity{}, models.ActorPersona{})
 	if err != nil {

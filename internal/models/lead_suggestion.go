@@ -7,8 +7,19 @@ type LeadSuggestion struct {
 	ProductName     string
 	ProductURL      string
 	ProductImageURL string
-	// ShippingLine is a cost the CRM computed from a published rate card, shown
-	// on its own line in the Telegram notice. Empty when the lead named no
-	// marketplace product, or the product published no weight.
-	ShippingLine string
+
+	// ProductLine is the one-line product summary the notice shows:
+	// "<tên> · 20 CNY · MOQ 2包". Built from the CRM lookup, so it carries the
+	// real marketplace price — ProductName alone never did.
+	ProductLine string
+
+	// ShippingLine is the cost the CRM computed from a published rate card
+	// ("$14.20 · 6–12 ngày làm việc"), and ShippingBasis is what it was computed
+	// from ("Epacket CN→US, 1 kiện 0.4 kg").
+	//
+	// They are separate fields, not one string, because the notice puts the
+	// basis on its own indented line under the number. A landed cost with no
+	// stated basis is a figure nobody can check before quoting it to a customer.
+	ShippingLine  string
+	ShippingBasis string
 }

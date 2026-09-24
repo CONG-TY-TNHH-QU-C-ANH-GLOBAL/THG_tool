@@ -126,7 +126,10 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 				OrgID: ev.OrgID, LeadID: ev.LeadID, Channel: "facebook", Workspace: workspace,
 				Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: baseURL,
 				SuggestedReply: enrichment.Reply, ProductName: enrichment.ProductName, ProductURL: enrichment.ProductURL,
-				ProductImageURL: enrichment.ProductImageURL, ShippingLine: enrichment.ShippingLine,
+				ProductImageURL: enrichment.ProductImageURL,
+				Heat:            ev.Category, ProductLine: enrichment.ProductLine,
+				ShippingLine: enrichment.ShippingLine, ShippingBasis: enrichment.ShippingBasis,
+				CrmURL: envOr("CRM_ENRICH_URL", "https://crm.thgfulfill.com"),
 			})
 		}
 		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) && suggestion.runner != nil && suggestion.runner.Try(
