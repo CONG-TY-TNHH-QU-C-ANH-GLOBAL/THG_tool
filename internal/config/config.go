@@ -157,7 +157,7 @@ func Load() *Config {
 		FreshLeadCampaignsEnabled:    getEnvBool("FRESH_LEAD_CAMPAIGNS_ENABLED", false),
 		LeadSuggestionEnabled:        getEnvBool("LEAD_SUGGESTION_ENABLED", false),
 		LeadSuggestionOrgIDs:         getEnv("LEAD_SUGGESTION_ORG_IDS", ""),
-		LeadSuggestionTimeoutMS:      getEnvInt("LEAD_SUGGESTION_TIMEOUT_MS", 5000),
+		LeadSuggestionTimeoutMS:      getEnvInt("LEAD_SUGGESTION_TIMEOUT_MS", 12000),
 		LeadSuggestionMaxConcurrency: getEnvInt("LEAD_SUGGESTION_MAX_CONCURRENCY", 2),
 		OpenAIAPIKey:                 getEnv("OPENAI_API_KEY", ""),
 		// OPENAI_CLASSIFIER_MODEL is the canonical name; OPENAI_MODEL is kept as a

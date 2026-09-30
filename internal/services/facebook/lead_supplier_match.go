@@ -24,11 +24,11 @@ func PickSuggestedSupplier(candidates []models.KnowledgeCandidate) *models.Suppl
 			continue
 		}
 		link := validHTTPSURL(c.SourceURL)
-		if link == "" {
+		if link == "" || !marketplaceURL(link) {
 			continue
 		}
 		name := strings.TrimSpace(c.Title)
-		if name == "" {
+		if name == "" || c.Supplier.PriceCNY == nil || *c.Supplier.PriceCNY <= 0 {
 			continue
 		}
 		return &models.SupplierMatch{
@@ -69,6 +69,11 @@ func BuildGroundedFacts(product SuggestedProduct, supplier *models.SupplierMatch
 		writeFact(&b, "minimum order", supplier.MOQText)
 		writeFact(&b, "ships from", supplier.ShipFrom)
 		writeFact(&b, "link", supplier.URL)
+		if supplier.Shipping != nil {
+			writeFact(&b, "reference shipping per parcel", supplier.Shipping.PriceText)
+			writeFact(&b, "shipping transit", supplier.Shipping.Transit)
+			writeFact(&b, "shipping basis", supplier.Shipping.Basis)
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

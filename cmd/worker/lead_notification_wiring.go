@@ -16,6 +16,7 @@ import (
 	"github.com/thg/scraper/internal/notifications"
 	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/store"
+	"github.com/thg/scraper/internal/suppliersourcing"
 	tgclient "github.com/thg/scraper/internal/telegram/client"
 	"github.com/thg/scraper/internal/telegram/control"
 	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
@@ -50,14 +51,20 @@ func newWorkerSuggestionRuntime(mainStore *store.Store) workerSuggestionRuntime 
 	builder := knowledgeRuntime.NewBuilder(mainStore.Knowledge())
 	commentGen := ai.NewMessageGeneratorWithEndpoint(cfg.LLMCommentAPIKey, cfg.OpenAICommentModel, cfg.LLMCommentBaseURL)
 	if !commentGen.Available() {
-		log.Println("[LeadSuggestion] enabled but comment provider is unavailable; suggestions remain inactive")
-		return runtime
+		log.Println("[LeadSuggestion] comment provider unavailable; grounded product suggestions use concise fallback copy")
+	}
+	var supplierLookup facebook.SupplierLookupFunc
+	if pricingClient := suppliersourcing.RuntimeClient(); pricingClient != nil {
+		supplierLookup = facebook.NewSupplierLookup(pricingClient)
 	}
 	runtime.build = func(ctx context.Context, ev leadingest.LeadEvent) models.LeadSuggestion {
 		if !runtime.allowlist.Allows(ev.OrgID) {
 			return models.LeadSuggestion{}
 		}
-		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName)
+		shippingQuote := func(ctx context.Context, shipment models.ShippingRequest) (*models.ShippingReference, error) {
+			return crmleadsync.QuoteSupplierShipment(ctx, envOr("CRM_SHIPPING_QUOTE_URL", crmleadsync.DefaultShippingQuoteURL), crmLeadSyncSecret(), shipment)
+		}
+		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, shippingQuote, supplierLookup)
 	}
 	runtime.runner = notifications.NewSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, time.Duration(cfg.LeadSuggestionTimeoutMS)*time.Millisecond)
 	logWorkerSuggestionPolicy(runtime.allowlist)

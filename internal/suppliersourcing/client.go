@@ -1,6 +1,6 @@
 // Package suppliersourcing reads Taobao/1688 product facts from the THG
 // Pricing Hub worker, which owns the upstream Elim API key, the shared D1
-// response cache, and the monthly request budget. This package never talks to
+// response cache, and the shared request budget. This package never talks to
 // the Chinese marketplaces or to Elim directly: keeping one caller means one
 // cache and one place where the quota is observable.
 package suppliersourcing
@@ -78,6 +78,8 @@ type Product struct {
 	Width      *float64    `json:"width"`
 	Height     *float64    `json:"height"`
 	Cached     bool        `json:"cached"`
+	FetchedAt  string      `json:"fetchedAt"`
+	CachedAt   string      `json:"cachedAt"`
 }
 
 // SearchItem is one hit from a keyword search. Search results carry no weight
@@ -93,7 +95,7 @@ type SearchItem struct {
 	Unit   string   `json:"unit"`
 }
 
-// Quota reports how much of the upstream monthly budget is already spent.
+// Quota reports upstream plan status and local usage counters.
 type Quota struct {
 	Plan  json.RawMessage `json:"plan"`
 	Local struct {
@@ -184,7 +186,7 @@ func (c *Client) Search(ctx context.Context, query, platform string, size int) (
 }
 
 // Quota reads the remaining upstream budget. Callers use it to refuse a bulk
-// index run that would exhaust the month.
+// index run that would exhaust the plan.
 func (c *Client) Quota(ctx context.Context) (Quota, error) {
 	var out Quota
 	if c == nil {

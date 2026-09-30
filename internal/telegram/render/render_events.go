@@ -39,7 +39,7 @@ type LeadMsg struct {
 	// Supplier* describe a sourceable 1688 / Taobao item matched for this lead.
 	// SupplierSummary is the one-line facts strip (price · weight · MOQ · origin);
 	// it is empty when the marketplace published none of those numbers.
-	SupplierPlatform, SupplierName, SupplierURL, SupplierSummary string
+	SupplierPlatform, SupplierName, SupplierURL, SupplierSummary, SupplierShipping, SupplierCapturedAt string
 }
 
 type ActionMsg struct {
@@ -75,13 +75,15 @@ func Lead(m LeadMsg) string {
 	b.WriteString(line("Người đăng", m.Author))
 	b.WriteString(block("Nội dung", "\""+excerpt+"\""))
 	b.WriteString(block("Lý do phù hợp", m.Reason))
-	b.WriteString(block("💬 Gợi ý trả lời", m.SuggestedReply))
 	b.WriteString(line("🛍 Sản phẩm gợi ý", m.ProductName))
 	b.WriteString(link("🔗 Link sản phẩm", m.ProductURL))
 	b.WriteString(link("🖼 Ảnh sản phẩm", m.ProductImageURL))
 	b.WriteString(line(supplierLabel(m.SupplierPlatform), m.SupplierName))
 	b.WriteString(line("📦 Thông số nguồn", m.SupplierSummary))
+	b.WriteString(line("🚢 Cước tham chiếu", m.SupplierShipping))
+	b.WriteString(line("Giá nguồn ghi nhận", m.SupplierCapturedAt))
 	b.WriteString(link("🔗 Link nguồn hàng", m.SupplierURL))
+	b.WriteString(block("💬 Gợi ý trả lời", m.SuggestedReply))
 	b.WriteString(line("Trạng thái", m.Status))
 	b.WriteString(link("🔗 Mở bài viết Facebook", m.PostURL))
 	b.WriteString(link("📊 Mở trong dashboard", m.DashboardURL))

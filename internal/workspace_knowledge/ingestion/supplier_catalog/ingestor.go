@@ -2,7 +2,7 @@
 // workspace knowledge base through the THG Pricing Hub.
 //
 // Why pre-index instead of looking a product up per lead: the upstream
-// marketplace API is metered per month and shared with the human quoting tool.
+// marketplace API has a small shared quota across the plan period.
 // Indexing once turns per-lead product matching into a local retrieval that
 // costs nothing and cannot exhaust anyone's budget. Freshness is traded away
 // deliberately — a sync run re-reads prices, and the operator-facing message

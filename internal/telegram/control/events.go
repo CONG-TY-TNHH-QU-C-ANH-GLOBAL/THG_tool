@@ -75,22 +75,24 @@ func (s *Service) NotifyLead(n LeadNotice) {
 		supplier = &models.SupplierMatch{}
 	}
 	msg := render.Lead(render.LeadMsg{
-		Workspace:        n.Workspace,
-		SourceLabel:      sourceLabel(n.SourceName),
-		Author:           n.Author,
-		Excerpt:          SanitizeExcerpt(n.Excerpt),
-		Reason:           strings.TrimSpace(n.Reason),
-		Status:           "Sẵn sàng xử lý",
-		PostURL:          strings.TrimSpace(n.PostURL),
-		DashboardURL:     dashboardLeadURL(n.BaseURL, n.LeadID),
-		SuggestedReply:   strings.TrimSpace(n.SuggestedReply),
-		ProductName:      strings.TrimSpace(n.ProductName),
-		ProductURL:       strings.TrimSpace(n.ProductURL),
-		ProductImageURL:  strings.TrimSpace(n.ProductImageURL),
-		SupplierPlatform: supplier.Platform,
-		SupplierName:     supplier.Name,
-		SupplierURL:      supplier.URL,
-		SupplierSummary:  supplierSummary(supplier),
+		Workspace:          n.Workspace,
+		SourceLabel:        sourceLabel(n.SourceName),
+		Author:             n.Author,
+		Excerpt:            SanitizeExcerpt(n.Excerpt),
+		Reason:             strings.TrimSpace(n.Reason),
+		Status:             "Sẵn sàng xử lý",
+		PostURL:            strings.TrimSpace(n.PostURL),
+		DashboardURL:       dashboardLeadURL(n.BaseURL, n.LeadID),
+		SuggestedReply:     strings.TrimSpace(n.SuggestedReply),
+		ProductName:        strings.TrimSpace(n.ProductName),
+		ProductURL:         strings.TrimSpace(n.ProductURL),
+		ProductImageURL:    strings.TrimSpace(n.ProductImageURL),
+		SupplierPlatform:   supplier.Platform,
+		SupplierName:       supplier.Name,
+		SupplierURL:        supplier.URL,
+		SupplierSummary:    supplierSummary(supplier),
+		SupplierShipping:   supplierShipping(supplier),
+		SupplierCapturedAt: supplierCapturedAt(supplier),
 	})
 	delivered, err := s.NotifyEvent(n.OrgID, "lead_created", channel, msg)
 	if err != nil {
@@ -186,4 +188,22 @@ func supplierSummary(s *models.SupplierMatch) string {
 		parts = append(parts, from)
 	}
 	return strings.Join(parts, " · ")
+}
+
+func supplierShipping(s *models.SupplierMatch) string {
+	if s == nil || s.Shipping == nil || s.Shipping.PriceText == "" {
+		return ""
+	}
+	parts := []string{s.Shipping.PriceText, s.Shipping.Basis}
+	if s.Shipping.Transit != "" {
+		parts = append(parts, s.Shipping.Transit)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func supplierCapturedAt(s *models.SupplierMatch) string {
+	if s == nil {
+		return ""
+	}
+	return s.CapturedAt
 }
