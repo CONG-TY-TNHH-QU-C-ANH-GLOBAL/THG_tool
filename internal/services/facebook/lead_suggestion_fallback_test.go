@@ -98,3 +98,13 @@ func TestNoOfferStatusDistinguishesMissingInfoFromUnavailableAPI(t *testing.T) {
 		t.Fatalf("insufficient product description should be explicit: %+v", got)
 	}
 }
+
+func TestUnavailableLeadSuggestionDoesNotClaimSearchCompleted(t *testing.T) {
+	got := UnavailableLeadSuggestion("Cần nhập viên bổ khớp cho chó về Mỹ", "Lan")
+	if !strings.Contains(got.SourcingNote, "chưa xử lý kịp") || strings.Contains(got.SourcingNote, "chưa tìm được") || got.Reply == "" {
+		t.Fatalf("unfinished enrichment needs a safe draft and status: %+v", got)
+	}
+	if got := UnavailableLeadSuggestion("Bên nào có kho ở Mỹ?", "Lan"); got.Reply != "" || got.SourcingNote != "" {
+		t.Fatalf("vague logistics post should not get a sourcing draft: %+v", got)
+	}
+}

@@ -123,9 +123,14 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 				Supplier:        enrichment.Supplier, SourcingNote: enrichment.SourcingNote,
 			})
 		}
-		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) && suggestion.runner != nil && suggestion.runner.Try(
-			func(ctx context.Context) models.LeadSuggestion { return suggestion.build(ctx, ev) }, deliver,
-		) {
+		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) {
+			unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
+			if suggestion.runner != nil && suggestion.runner.TryWithFallback(
+				func(ctx context.Context) models.LeadSuggestion { return suggestion.build(ctx, ev) }, deliver, unavailable,
+			) {
+				return
+			}
+			deliver(unavailable)
 			return
 		}
 		deliver(models.LeadSuggestion{})

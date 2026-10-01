@@ -26,6 +26,12 @@ func NewSuggestionRunner(maxConcurrent int, timeout time.Duration) *SuggestionRu
 }
 
 func (r *SuggestionRunner) Try(build func(context.Context) models.LeadSuggestion, deliver func(models.LeadSuggestion)) bool {
+	return r.TryWithFallback(build, deliver, models.LeadSuggestion{})
+}
+
+// TryWithFallback delivers an honest operator draft when optional enrichment
+// times out or panics. Saturation remains the caller's responsibility.
+func (r *SuggestionRunner) TryWithFallback(build func(context.Context) models.LeadSuggestion, deliver func(models.LeadSuggestion), unavailable models.LeadSuggestion) bool {
 	if r == nil || build == nil || deliver == nil {
 		return false
 	}
@@ -39,7 +45,7 @@ func (r *SuggestionRunner) Try(build func(context.Context) models.LeadSuggestion
 			go func() {
 				defer func() {
 					if recover() != nil {
-						result <- models.LeadSuggestion{}
+						result <- unavailable
 					}
 				}()
 				result <- build(ctx)
@@ -48,7 +54,7 @@ func (r *SuggestionRunner) Try(build func(context.Context) models.LeadSuggestion
 			case suggestion := <-result:
 				deliver(suggestion)
 			case <-ctx.Done():
-				deliver(models.LeadSuggestion{})
+				deliver(unavailable)
 				<-result // keep context-ignoring provider work bounded by the slot
 			}
 		}()

@@ -5,6 +5,16 @@ import "strings"
 // noOfferSourcingNote is shown to the operator, never to the lead.
 const noOfferSourcingNote = "chưa tìm được sản phẩm/nguồn phù hợp — sale cần kiểm tra thủ công"
 
+// UnavailableLeadSuggestion is used only when enrichment did not finish.
+// It never claims a marketplace search completed or invents an offer.
+func UnavailableLeadSuggestion(leadText, author string) LeadSuggestion {
+	out := noOfferSuggestion(leadText, author)
+	if out.SourcingNote != "" {
+		out.SourcingNote = "gợi ý chưa xử lý kịp — sale cần kiểm tra nguồn thủ công"
+	}
+	return out
+}
+
 func noOfferSuggestionForLookup(leadText, author string, lookupUnavailable bool) LeadSuggestion {
 	out := noOfferSuggestion(leadText, author)
 	if out.SourcingNote == "" {

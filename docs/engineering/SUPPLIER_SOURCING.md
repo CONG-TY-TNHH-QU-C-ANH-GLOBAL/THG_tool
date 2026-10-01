@@ -74,6 +74,9 @@ API is unavailable, the Telegram note names that state instead of claiming a
 completed search found nothing. That draft never contains a link, price or shipping cost. For an
 English post that asks for a European supplier, it asks whether a China-based
 alternative is acceptable. Posts without a product or sourcing need still get no draft.
+If enrichment times out, panics or cannot enter the bounded worker queue, an
+enabled org receives a safe ask-for-details draft with a distinct "chưa xử lý
+kịp" operator note; this does not claim the marketplace was searched.
 These fields go to Telegram only: the CRM snapshot receives the draft in
 `suggestedReply`, and its contract is unchanged.
 
