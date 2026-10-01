@@ -7,13 +7,11 @@ type LeadSuggestion struct {
 	ProductName     string
 	ProductURL      string
 	ProductImageURL string
-	// Supplier is the matched sourceable marketplace item (1688 / Taobao), when
-	// one was indexed or found through Pricing Hub. It is a SECOND, distinct offer from
-	// the catalog product above: the catalog link is what the business sells,
-	// the supplier link is what it can source. nil when nothing matched.
+	// Supplier is one matched 1688/Taobao offer from the approved index or
+	// Pricing Hub. The company catalog item takes priority for a POD lead.
 	Supplier *SupplierMatch
-	// SourcingNote tells the operator that no product or source matched, so an
-	// ask-for-details draft is not mistaken for a sourced offer. Telegram only.
+	// SourcingNote distinguishes no match, insufficient details and an unfinished
+	// lookup so an ask-for-details draft is not mistaken for a sourced offer.
 	SourcingNote string
 }
 
