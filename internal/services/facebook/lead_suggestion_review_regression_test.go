@@ -80,40 +80,28 @@ func TestReviewPODWithoutCatalogLabelsMarketplaceAlternative(t *testing.T) {
 	}
 }
 
-func TestReviewAmbiguousDestinationNeverRequestsShipping(t *testing.T) {
-	weight := 0.4
-	called := false
-	lookup := func(context.Context, string) (*ResolvedSupplier, error) {
-		return &ResolvedSupplier{Match: &models.SupplierMatch{
-			Name: "Kẹo táo", URL: "https://detail.1688.com/offer/2.html", PriceText: "¥20",
-		}, WeightKG: &weight}, nil
+func TestReviewUnsafeQuoteInputs(t *testing.T) {
+	cases := []struct{ name, post, product string }{
+		{"person name is not UK", "Cần nhập 500 hộp kẹo táo, gửi về anh Nam ở Hà Nội", "Kẹo táo"},
+		{"five products are not one parcel", "Cần mua 5 áo hoodie cotton gửi sang Mỹ", "Áo hoodie cotton"},
 	}
-	quote := func(context.Context, models.ShippingRequest) (*models.ShippingReference, error) {
-		called = true
-		return &models.ShippingReference{PriceText: "$14.20"}, nil
-	}
-	result := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1,
-		"Cần nhập 500 hộp kẹo táo, gửi về anh Nam ở Hà Nội", "Lan", quote, lookup)
-	if called || result.Supplier == nil || result.Supplier.Shipping != nil || strings.Contains(result.Reply, "$14.20") {
-		t.Fatalf("person's name must not trigger a CN→GB shipping quote: %+v", result)
-	}
-}
-
-func TestReviewMultipleItemsNeedParcelWeightBeforeQuote(t *testing.T) {
-	weight := 0.4
-	called := false
-	lookup := func(context.Context, string) (*ResolvedSupplier, error) {
-		return &ResolvedSupplier{Match: &models.SupplierMatch{
-			Name: "Áo hoodie cotton", URL: "https://detail.1688.com/offer/2.html", PriceText: "¥20",
-		}, WeightKG: &weight}, nil
-	}
-	quote := func(context.Context, models.ShippingRequest) (*models.ShippingReference, error) {
-		called = true
-		return &models.ShippingReference{PriceText: "$14.20"}, nil
-	}
-	result := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1,
-		"Cần mua 5 áo hoodie cotton gửi sang Mỹ", "Lan", quote, lookup)
-	if called || result.Supplier == nil || result.Supplier.Shipping != nil || strings.Contains(result.Reply, "$14.20") {
-		t.Fatalf("one product's weight cannot price a five-item parcel: %+v", result)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			weight := 0.4
+			called := false
+			lookup := func(context.Context, string) (*ResolvedSupplier, error) {
+				return &ResolvedSupplier{Match: &models.SupplierMatch{
+					Name: tc.product, URL: "https://detail.1688.com/offer/2.html", PriceText: "¥20",
+				}, WeightKG: &weight}, nil
+			}
+			quote := func(context.Context, models.ShippingRequest) (*models.ShippingReference, error) {
+				called = true
+				return &models.ShippingReference{PriceText: "$14.20"}, nil
+			}
+			result := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1, tc.post, "Lan", quote, lookup)
+			if called || result.Supplier == nil || result.Supplier.Shipping != nil || strings.Contains(result.Reply, "$14.20") {
+				t.Fatalf("unsafe shipping facts produced a number: %+v", result)
+			}
+		})
 	}
 }
