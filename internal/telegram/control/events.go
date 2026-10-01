@@ -59,6 +59,8 @@ type LeadNotice struct {
 	// Supplier is the matched sourceable marketplace item, when the workspace has
 	// one indexed. nil = the notice carries no sourcing block.
 	Supplier *models.SupplierMatch
+	// SourcingNote warns that no product or source matched the lead.
+	SourcingNote string
 }
 
 // NotifyLead emits a rich "new lead" channel notification.
@@ -88,7 +90,8 @@ func (s *Service) NotifyLead(n LeadNotice) {
 		ProductURL:         strings.TrimSpace(n.ProductURL),
 		ProductImageURL:    strings.TrimSpace(n.ProductImageURL),
 		SupplierPlatform:   supplier.Platform,
-		SupplierName:       supplier.Name,
+		SupplierName:       supplierName(supplier),
+		SourcingNote:       strings.TrimSpace(n.SourcingNote),
 		SupplierURL:        supplier.URL,
 		SupplierSummary:    supplierSummary(supplier),
 		SupplierShipping:   supplierShipping(supplier),

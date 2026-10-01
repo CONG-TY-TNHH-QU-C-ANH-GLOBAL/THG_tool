@@ -32,10 +32,14 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	}
 	if product.URL == "" {
 		supplier = PickSuggestedSupplier(matched)
-		if linkedURL, _ := leadMarketplaceURL(leadText); linkedURL != "" && supplier != nil && supplier.URL != linkedURL {
+		if linkedURL, _ := leadMarketplaceURL(leadText); linkedURL != "" && supplier != nil {
 			// An exact seller link in the post outranks a similarly titled item
-			// from the approved index.
-			supplier = nil
+			// from the approved index; the indexed copy of that link is exact.
+			if supplier.URL != linkedURL {
+				supplier = nil
+			} else {
+				supplier.Similar = false
+			}
 		}
 		if !freshSupplierPrice(supplier, time.Now()) {
 			supplier = nil
@@ -82,7 +86,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	// The company's matching POD item takes priority. Marketplace sourcing is the
 	// fallback, never a second unrelated offer in the same lead suggestion.
 	if product.Name == "" && product.URL == "" && !supplier.HasOffer() {
-		return LeadSuggestion{}
+		return noOfferSuggestion(leadText, author)
 	}
 	out := LeadSuggestion{
 		ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL,
@@ -134,7 +138,11 @@ func freshSupplierPrice(supplier *models.SupplierMatch, now time.Time) bool {
 
 func supplierFallbackReply(author string, supplier *models.SupplierMatch, leadText string) string {
 	if supplierEnglishQuery(leadText) != "" {
-		first := "Hi " + leadSalutation(author) + ", we found a similar " + shortLeadTitle(supplier.Name) + " from China"
+		article := "a similar "
+		if !supplier.Similar {
+			article = "the "
+		}
+		first := "Hi " + leadSalutation(author) + ", we found " + article + shortLeadTitle(supplier.Name) + " from China"
 		if supplier.PriceText != "" {
 			first += " at a reference product price of " + supplier.PriceText
 		}
@@ -153,7 +161,11 @@ func supplierFallbackReply(author string, supplier *models.SupplierMatch, leadTe
 		}
 		return first + ". Please share the " + missingFacts + " for a shipping quote."
 	}
-	first := leadSalutation(author) + ", bên mình có thể tìm nguồn " + shortLeadTitle(supplier.Name)
+	first := leadSalutation(author) + ", bên mình có thể tìm nguồn "
+	if supplier.Similar {
+		first += "mẫu tương tự "
+	}
+	first += shortLeadTitle(supplier.Name)
 	if supplier.PriceText != "" {
 		first += ", giá nguồn tham khảo " + supplier.PriceText
 	}

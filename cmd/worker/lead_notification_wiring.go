@@ -120,7 +120,7 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 				Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: baseURL,
 				SuggestedReply: enrichment.Reply, ProductName: enrichment.ProductName, ProductURL: enrichment.ProductURL,
 				ProductImageURL: enrichment.ProductImageURL,
-				Supplier:        enrichment.Supplier,
+				Supplier:        enrichment.Supplier, SourcingNote: enrichment.SourcingNote,
 			})
 		}
 		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) && suggestion.runner != nil && suggestion.runner.Try(

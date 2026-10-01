@@ -52,7 +52,12 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 			if query != "" && (product == nil || !matchesLeadProduct(query, product.Title)) {
 				return nil, errors.New("linked supplier product did not match the lead")
 			}
-			return resolvedSupplier(product, platform)
+			resolved, err := resolvedSupplier(product, platform)
+			if resolved != nil {
+				// The lead pasted this exact listing, so it is not a lookalike.
+				resolved.Match.Similar = false
+			}
+			return resolved, err
 		}
 		if query == "" {
 			return nil, nil
@@ -117,6 +122,7 @@ func resolvedSupplier(product *suppliersourcing.Product, platform string) (*Reso
 		PriceText: formatYuan(product.Price), WeightKG: formatWeight(product.WeightKG),
 		MOQText: formatMOQ(product.MOQ, product.Unit), ShipFrom: strings.TrimSpace(product.ShipFrom),
 		ShopName: strings.TrimSpace(product.ShopName), CapturedAt: strings.TrimSpace(product.FetchedAt),
+		Similar: true,
 	}, WeightKG: product.WeightKG}, nil
 }
 

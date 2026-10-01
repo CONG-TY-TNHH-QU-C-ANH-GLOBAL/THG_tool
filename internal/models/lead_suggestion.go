@@ -8,10 +8,13 @@ type LeadSuggestion struct {
 	ProductURL      string
 	ProductImageURL string
 	// Supplier is the matched sourceable marketplace item (1688 / Taobao), when
-// one was indexed or found through Pricing Hub. It is a SECOND, distinct offer from
+	// one was indexed or found through Pricing Hub. It is a SECOND, distinct offer from
 	// the catalog product above: the catalog link is what the business sells,
 	// the supplier link is what it can source. nil when nothing matched.
 	Supplier *SupplierMatch
+	// SourcingNote tells the operator that no product or source matched, so an
+	// ask-for-details draft is not mistaken for a sourced offer. Telegram only.
+	SourcingNote string
 }
 
 // SupplierMatch is the render-ready view of one sourced marketplace item. Every
@@ -29,6 +32,9 @@ type SupplierMatch struct {
 	ShopName   string
 	CapturedAt string // when the price was read upstream, RFC3339; may be empty
 	Shipping   *ShippingReference
+	// Similar marks an offer matched by title rather than a link from the post.
+	// Without image matching it may not be the exact model the lead asked for.
+	Similar bool
 }
 
 // ShippingReference is a published per-parcel estimate from CRM's rate card.

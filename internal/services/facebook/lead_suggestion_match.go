@@ -71,7 +71,7 @@ func wantsBulkSourcing(text string) bool {
 	return false
 }
 
-var bulkQuantityPattern = regexp.MustCompile(`\d{2,}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi)`)
+var bulkQuantityPattern = regexp.MustCompile(`\d{2,}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|áo|shirts|hoodies)`)
 
 func wantsPersonalizedPOD(text string) bool {
 	text = strings.ToLower(text)
@@ -92,7 +92,7 @@ func isUSDestination(text string) bool {
 	return false
 }
 
-var leadQuantityPattern = regexp.MustCompile(`(\d{1,6})\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces)`)
+var leadQuantityPattern = regexp.MustCompile(`(\d{1,6})\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces|áo|shirts|hoodies)`)
 
 func leadQuantity(text string) int {
 	if match := leadQuantityPattern.FindStringSubmatch(strings.ToLower(text)); len(match) > 1 {

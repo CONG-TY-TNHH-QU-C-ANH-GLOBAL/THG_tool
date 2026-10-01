@@ -40,6 +40,8 @@ type LeadMsg struct {
 	// SupplierSummary is the one-line facts strip (price · weight · MOQ · origin);
 	// it is empty when the marketplace published none of those numbers.
 	SupplierPlatform, SupplierName, SupplierURL, SupplierSummary, SupplierShipping, SupplierCapturedAt string
+	// SourcingNote warns that nothing matched, so the draft below only asks for details.
+	SourcingNote string
 }
 
 type ActionMsg struct {
@@ -83,6 +85,7 @@ func Lead(m LeadMsg) string {
 	b.WriteString(line("🚢 Cước tham chiếu", m.SupplierShipping))
 	b.WriteString(line("Giá nguồn ghi nhận", m.SupplierCapturedAt))
 	b.WriteString(link("🔗 Link nguồn hàng", m.SupplierURL))
+	b.WriteString(line("⚠️ Tìm nguồn", m.SourcingNote))
 	b.WriteString(block("💬 Gợi ý trả lời", m.SuggestedReply))
 	b.WriteString(line("Trạng thái", m.Status))
 	b.WriteString(link("🔗 Mở bài viết Facebook", m.PostURL))

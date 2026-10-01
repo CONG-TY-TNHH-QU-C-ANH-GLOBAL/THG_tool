@@ -51,6 +51,22 @@ alternative, never as a European supplier or an exact image match. When the
 post omits quantity or destination, the draft asks for them instead of quoting
 an unsupported shipping price.
 
+Matching uses text only, with no image comparison. Every searched or indexed
+offer is therefore marked `Similar`: the Vietnamese draft says "mẫu tương tự",
+and Telegram adds "mẫu tương tự, sale cần đối chiếu ảnh/mã hàng" to the
+supplier line. A 1688/Taobao listing pasted by the lead is treated as that
+listing, not as proof that its photo matches the lead's requested model.
+
+When a post asks for a product or a source but neither the catalog nor Pricing
+Hub returns a usable match, the suggestion asks only for details missing from
+the post (model reference, quantity, destination) plus a Telegram line
+"⚠️ Tìm nguồn: chưa tìm được…" for
+the sale. That draft never contains a link, price or shipping cost. For an
+English post that asks for a European supplier, it asks whether a China-based
+alternative is acceptable. Posts without a product or sourcing need still get no draft.
+These fields go to Telegram only: the CRM snapshot receives the draft in
+`suggestedReply`, and its contract is unchanged.
+
 ## Moving parts
 
 | Piece | Where |

@@ -27,6 +27,18 @@ func supplierSummary(s *models.SupplierMatch) string {
 	return strings.Join(parts, " · ")
 }
 
+// supplierName flags a title-matched offer so the operator checks the photo or
+// model code before telling the lead it is the exact item.
+func supplierName(s *models.SupplierMatch) string {
+	if s == nil {
+		return ""
+	}
+	if s.Name == "" || !s.Similar {
+		return s.Name
+	}
+	return s.Name + " · mẫu tương tự, sale cần đối chiếu ảnh/mã hàng"
+}
+
 func supplierShipping(s *models.SupplierMatch) string {
 	if s == nil || s.Shipping == nil || s.Shipping.PriceText == "" {
 		return ""

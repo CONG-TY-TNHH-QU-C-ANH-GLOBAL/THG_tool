@@ -42,6 +42,7 @@ func PickSuggestedSupplier(candidates []models.KnowledgeCandidate) *models.Suppl
 			ShipFrom:   strings.TrimSpace(c.Supplier.ShipFrom),
 			ShopName:   strings.TrimSpace(c.Supplier.ShopName),
 			CapturedAt: formatCapturedAt(c.Supplier.CapturedAt),
+			Similar:    true,
 		}
 	}
 	return nil
