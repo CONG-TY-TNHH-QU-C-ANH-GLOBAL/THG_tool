@@ -30,12 +30,16 @@ func TestReviewIntentRequiresWholeWords(t *testing.T) {
 	if !wantsPersonalizedPOD("Cần in logo lên áo hoodie") {
 		t.Fatal("explicit logo printing must remain POD")
 	}
+	if !wantsPersonalizedPOD("Need to print logo on 300 hoodies") {
+		t.Fatal("English logo printing must route to POD")
+	}
 }
 
 func TestReviewDestinationRequiresCountryPhrase(t *testing.T) {
 	for _, post := range []string{
 		"Cần nhập 500 hộp kẹo táo, gửi về anh Nam ở Hà Nội",
 		"How to use this hand massager?",
+		"Can you send the sample to us?",
 	} {
 		if got := leadDestinationCountry(post); got != "" {
 			t.Fatalf("person or English verb mistaken for a country: %q => %q", post, got)
@@ -43,6 +47,9 @@ func TestReviewDestinationRequiresCountryPhrase(t *testing.T) {
 	}
 	if got := leadDestinationCountry("Cần gửi áo hoodie sang Mỹ"); got != "US" {
 		t.Fatalf("explicit US destination lost: %q", got)
+	}
+	if got := leadDestinationCountry("Ship this hoodie to US"); got != "US" {
+		t.Fatalf("explicit uppercase US destination lost: %q", got)
 	}
 	if got := leadDestinationCountry("Cần gửi áo hoodie đi nước Anh"); got != "GB" {
 		t.Fatalf("explicit UK destination lost: %q", got)

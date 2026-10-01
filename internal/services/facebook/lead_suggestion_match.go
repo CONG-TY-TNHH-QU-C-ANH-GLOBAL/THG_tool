@@ -113,7 +113,7 @@ func wantsBulkSourcing(text string) bool {
 var bulkQuantityPattern = regexp.MustCompile(`\d{2,}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|áo|shirts|hoodies)`)
 
 func wantsPersonalizedPOD(text string) bool {
-	for _, phrase := range []string{"in theo logo", "in logo", "in theo thiết kế", "in theo yêu cầu", "cá nhân hóa", "custom logo", "personalized", "print on demand", "pod"} {
+	for _, phrase := range []string{"in theo logo", "in logo", "in theo thiết kế", "in theo yêu cầu", "cá nhân hóa", "custom logo", "print logo", "logo printing", "custom print", "personalized", "print on demand", "pod"} {
 		if containsLeadPhrase(text, phrase) {
 			return true
 		}
@@ -121,13 +121,18 @@ func wantsPersonalizedPOD(text string) bool {
 	return false
 }
 func isUSDestination(text string) bool {
-	for _, term := range []string{"sang mỹ", "về mỹ", "đi mỹ", "tại mỹ", "qua mỹ", "to us", "to usa", " united states", " hoa kỳ", " u.s."} {
+	if explicitUSDestination.MatchString(text) {
+		return true
+	}
+	for _, term := range []string{"sang mỹ", "về mỹ", "đi mỹ", "tại mỹ", "qua mỹ", "to usa", "to united states", " hoa kỳ", " u.s."} {
 		if containsLeadPhrase(text, term) {
 			return true
 		}
 	}
 	return false
 }
+
+var explicitUSDestination = regexp.MustCompile(`\b(?:to|ship to|deliver to)\s+US\b`)
 
 var leadQuantityPattern = regexp.MustCompile(`(\d{1,6})\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces|áo|shirts|hoodies)`)
 

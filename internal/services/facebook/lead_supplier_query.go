@@ -9,6 +9,18 @@ import (
 var supplierLeadingNumber = regexp.MustCompile(`^\d{1,6}\s+`)
 var supplierLeadingQuantity = regexp.MustCompile(`^\d{1,6}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces)(?:\s+|$)`)
 
+func supplierQueryLanguage(text string) string {
+	if supplierEnglishQuery(text) != "" {
+		return "en"
+	}
+	for _, phrase := range []string{"print logo", "logo printing", "custom logo", "custom print"} {
+		if containsLeadPhrase(text, phrase) {
+			return "en"
+		}
+	}
+	return "vi"
+}
+
 // supplierQuery extracts a product phrase from buying or POD requests. Vague
 // logistics posts have no query, so they never consume marketplace quota.
 func supplierQuery(raw string) string {
@@ -22,10 +34,10 @@ func supplierQuery(raw string) string {
 			goto cut
 		}
 	}
-	if query := supplierEnglishQuery(raw); query != "" {
+	if query := podSupplierQuery(raw); query != "" {
 		return query
 	}
-	return podSupplierQuery(raw)
+	return supplierEnglishQuery(raw)
 cut:
 	for _, marker := range []string{" từ 1688", " từ taobao", " về mỹ", " sang mỹ", " đi mỹ", " ship ", " khoảng ", " số lượng ", " in logo", " in theo", " mẫu này", " https://", " http://", "\n", ".", ",", ";"} {
 		if at := strings.Index(text, marker); at >= 0 {
