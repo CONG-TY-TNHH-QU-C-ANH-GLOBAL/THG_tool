@@ -27,8 +27,8 @@ type supplierReader interface {
 	DetailLocalized(context.Context, string, string, string, string) (*suppliersourcing.Product, error)
 }
 
-// NewSupplierLookup makes at most two keyword searches and one detail request
-// per marketplace. A failure on the first marketplace can fall back to the
+// NewSupplierLookup makes at most two keyword searches and two detail requests
+// in total. A failure on the first marketplace can fall back to the
 // second when the post did not name a specific marketplace.
 // A product URL already present in the post goes straight to detail, avoiding
 // a search that could select a different seller's product.
@@ -49,7 +49,10 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 			if err != nil {
 				return nil, err
 			}
-			if query != "" && (product == nil || !matchesLeadProduct(query, product.Title)) {
+			if product == nil || !sameMarketplaceListing(link, product.Link) {
+				return nil, errors.New("linked supplier product resolved to a different listing")
+			}
+			if query != "" && !matchesSupplierQuery(query, product.Title) {
 				return nil, errors.New("linked supplier product did not match the lead")
 			}
 			resolved, err := resolvedSupplier(product, platform)
@@ -70,6 +73,7 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 			platforms = []string{suppliersourcing.PlatformTaobao}
 		}
 		var lookupErr error
+		detailAttempts := 0
 		for _, platform := range platforms {
 			items, err := client.SearchLocalized(ctx, query, platform, 10, lang)
 			if err != nil {
@@ -77,23 +81,29 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 				continue
 			}
 			for _, item := range items {
-				if !matchesLeadProduct(query, item.Title) || !marketplaceURL(item.Link) {
+				if !matchesSupplierQuery(query, item.Title) || !marketplaceURL(item.Link) {
 					continue
 				}
+				if detailAttempts >= 2 {
+					break
+				}
+				detailAttempts++
 				product, err := client.DetailLocalized(ctx, platform, item.ID, item.Link, lang)
 				if err != nil {
 					lookupErr = err
-					break
+					continue
 				}
-				if product == nil || !matchesLeadProduct(query, product.Title) {
+				if product == nil || !matchesSupplierQuery(query, product.Title) {
 					lookupErr = errors.New("supplier detail did not match the lead")
-					break
+					continue
 				}
 				resolved, err := resolvedSupplier(product, platform)
 				if err == nil {
 					return resolved, nil
 				}
 				lookupErr = err
+			}
+			if detailAttempts >= 2 {
 				break
 			}
 		}
@@ -155,36 +165,34 @@ func marketplaceURL(raw string) bool {
 		host == "tmall.com" || strings.HasSuffix(host, ".tmall.com")
 }
 
-// supplierQuery extracts the product phrase only when the post contains a
-// purchase verb. This deliberately returns no query for vague logistics posts.
-func supplierQuery(raw string) string {
-	text := strings.ToLower(raw)
-	if len([]rune(text)) > 1500 {
-		text = string([]rune(text)[:1500])
-	}
-	for _, marker := range []string{"cần nhập ", "muốn nhập ", "cần tìm nguồn ", "cần nguồn ", "tìm nguồn ", "cần mua ", "muốn mua ", "nhập ", "mua "} {
-		if at := strings.Index(text, marker); at >= 0 {
-			text = text[at+len(marker):]
-			goto cut
-		}
-	}
-	return supplierEnglishQuery(raw)
-cut:
-	for _, marker := range []string{" từ 1688", " từ taobao", " về mỹ", " sang mỹ", " đi mỹ", " ship ", " khoảng ", " số lượng ", " mẫu này", " https://", " http://", "\n", ".", ",", ";"} {
-		if at := strings.Index(text, marker); at >= 0 {
-			text = text[:at]
-		}
-	}
-	text = strings.TrimSpace(text)
-	text = supplierLeadingQuantity.ReplaceAllString(text, "")
-	for _, prefix := range []string{"một số lượng lớn ", "số lượng lớn ", "sản phẩm ", "hàng "} {
-		text = strings.TrimPrefix(text, prefix)
-	}
-	words := strings.Fields(text)
-	if len(words) < 2 || len(words) > 12 {
-		return ""
-	}
-	return strings.Join(words, " ")
-}
+var offerPathID = regexp.MustCompile(`(?i)/offer/(\d+)`)
 
-var supplierLeadingQuantity = regexp.MustCompile(`^\d{1,6}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces)(?:\s+|$)`)
+// A pasted link is an exact offer only when Pricing Hub returns the same item ID.
+// Tracking parameters and mobile/desktop hosts may differ without changing it.
+func sameMarketplaceListing(requested, returned string) bool {
+	if !marketplaceURL(requested) || !marketplaceURL(returned) {
+		return false
+	}
+	a, _ := url.Parse(requested)
+	b, _ := url.Parse(returned)
+	platform := func(host string) string {
+		host = strings.ToLower(host)
+		if host == "1688.com" || strings.HasSuffix(host, ".1688.com") {
+			return "1688"
+		}
+		return "taobao"
+	}
+	if platform(a.Hostname()) != platform(b.Hostname()) {
+		return false
+	}
+	id := func(u *url.URL) string {
+		if found := offerPathID.FindStringSubmatch(u.Path); len(found) > 1 {
+			return found[1]
+		}
+		if value := u.Query().Get("offerId"); value != "" {
+			return value
+		}
+		return u.Query().Get("id")
+	}
+	return id(a) != "" && id(a) == id(b)
+}

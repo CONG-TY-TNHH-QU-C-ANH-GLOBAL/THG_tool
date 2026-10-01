@@ -27,6 +27,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	matched := matchingCandidates(leadText, candidates)
 	product := PickSuggestedProductDetails(matched)
 	var supplier *models.SupplierMatch
+	lookupUnavailable := supplierLookup == nil
 	if wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) {
 		product = SuggestedProduct{}
 	}
@@ -35,7 +36,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		if linkedURL, _ := leadMarketplaceURL(leadText); linkedURL != "" && supplier != nil {
 			// An exact seller link in the post outranks a similarly titled item
 			// from the approved index; the indexed copy of that link is exact.
-			if supplier.URL != linkedURL {
+			if !sameMarketplaceListing(supplier.URL, linkedURL) {
 				supplier = nil
 			} else {
 				supplier.Similar = false
@@ -47,6 +48,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		var liveWeight *float64
 		if !supplier.HasOffer() && supplierLookup != nil {
 			resolved, lookupErr := supplierLookup(ctx, leadText)
+			lookupUnavailable = lookupErr != nil
 			if lookupErr == nil && resolved != nil {
 				supplier, liveWeight = resolved.Match, resolved.WeightKG
 			}
@@ -83,10 +85,9 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 			}
 		}
 	}
-	// The company's matching POD item takes priority. Marketplace sourcing is the
-	// fallback, never a second unrelated offer in the same lead suggestion.
+	// One notice offers one matching catalog item or one marketplace source.
 	if product.Name == "" && product.URL == "" && !supplier.HasOffer() {
-		return noOfferSuggestion(leadText, author)
+		return noOfferSuggestionForLookup(leadText, author, lookupUnavailable)
 	}
 	out := LeadSuggestion{
 		ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL,

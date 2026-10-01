@@ -5,6 +5,20 @@ import "strings"
 // noOfferSourcingNote is shown to the operator, never to the lead.
 const noOfferSourcingNote = "chưa tìm được sản phẩm/nguồn phù hợp — sale cần kiểm tra thủ công"
 
+func noOfferSuggestionForLookup(leadText, author string, lookupUnavailable bool) LeadSuggestion {
+	out := noOfferSuggestion(leadText, author)
+	if out.SourcingNote == "" {
+		return out
+	}
+	link, _ := leadMarketplaceURL(leadText)
+	if supplierQuery(leadText) == "" && link == "" {
+		out.SourcingNote = "chưa đủ mô tả sản phẩm để tìm nguồn — sale cần hỏi thêm"
+	} else if lookupUnavailable {
+		out.SourcingNote = "chưa tra cứu được nguồn sàn — sale cần kiểm tra thủ công"
+	}
+	return out
+}
+
 // noOfferSuggestion is the draft for a lead that asks for a product or source
 // when neither the catalog nor Pricing Hub returned a usable match. It asks for
 // the missing details instead of inventing a link, price or shipping cost.

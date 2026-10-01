@@ -35,14 +35,16 @@ matching first uses approved KnowledgeOS assets at zero upstream cost. An
 approved item is only reusable for a post with an explicit marketplace URL
 when it has that exact URL. Otherwise, the post's URL is looked up directly
 by detail. Without a usable indexed offer or URL,
-the runtime extracts a short product phrase, searches the named marketplace
-when specified (otherwise 1688 then Taobao), checks the result title against
-that phrase, and
-fetches one detail record through Pricing Hub. It
+the runtime extracts a short product phrase, including the blank product in an
+explicit POD request when the company catalog has no match. It searches the
+named marketplace when specified (otherwise 1688 then Taobao), requires the
+result title to cover the meaningful product words, and fetches up to two
+detail records through Pricing Hub when the first match has no usable price or
+does not describe the requested item. It
 rejects vague posts and unrelated/unsafe links. Pricing Hub owns the shared D1
 cache and Elim quota accounting; at most two searches and two details are made
-for one lead when the first marketplace fails; a named marketplace uses one
-search and one detail. A live lookup requires `PRICING_HUB_INTEGRATION_KEY` or
+for one lead; a named marketplace uses one search and at most two details. A
+live lookup requires `PRICING_HUB_INTEGRATION_KEY` or
 `/etc/thg-scraper/pricing_hub_key`; `PRICING_HUB_BASE_URL` defaults to
 `https://pricingtool.thgfulfill.com`. With no key, only approved indexed items
 are offered. The optional suggestion deadline defaults to 12 seconds.
@@ -58,13 +60,16 @@ Matching uses text only, with no image comparison. Every searched or indexed
 offer is therefore marked `Similar`: the Vietnamese draft says "mẫu tương tự",
 and Telegram adds "mẫu tương tự, sale cần đối chiếu ảnh/mã hàng" to the
 supplier line. A 1688/Taobao listing pasted by the lead is treated as that
-listing, not as proof that its photo matches the lead's requested model.
+listing only when the returned marketplace item ID matches the pasted link.
+That still does not prove its photo matches the lead's requested model.
 
 When a post asks for a product or a source but neither the catalog nor Pricing
 Hub returns a usable match, the suggestion asks only for details missing from
 the post (model reference, quantity, destination) plus a Telegram line
 "⚠️ Tìm nguồn: chưa tìm được…" for
-the sale. That draft never contains a link, price or shipping cost. For an
+the sale. If a product description is too vague to search, or the marketplace
+API is unavailable, the Telegram note names that state instead of claiming a
+completed search found nothing. That draft never contains a link, price or shipping cost. For an
 English post that asks for a European supplier, it asks whether a China-based
 alternative is acceptable. Posts without a product or sourcing need still get no draft.
 These fields go to Telegram only: the CRM snapshot receives the draft in
