@@ -140,11 +140,18 @@ func supplierFallbackReply(author string, supplier *models.SupplierMatch, leadTe
 		}
 		if supplier.Shipping != nil && supplier.Shipping.PriceText != "" {
 			first += "; reference shipping " + supplier.Shipping.PriceText + " per parcel"
+			if strings.Contains(supplier.Shipping.Basis, "không phải tổng cước lô") {
+				first += " (not the total bulk shipping cost)"
+			}
+		}
+		missingFacts := "quantity and destination"
+		if leadDestinationCountry(leadText) != "" {
+			missingFacts = "quantity and parcel details"
 		}
 		if strings.Contains(strings.ToLower(leadText), "european") || strings.Contains(strings.ToLower(leadText), "supplier in europe") {
-			return first + ". Would a China-based alternative work? Please share the quantity and destination for a shipping quote."
+			return first + ". Would a China-based alternative work? Please share the " + missingFacts + " for a shipping quote."
 		}
-		return first + ". Please share the quantity and destination for a shipping quote."
+		return first + ". Please share the " + missingFacts + " for a shipping quote."
 	}
 	first := leadSalutation(author) + ", bên mình có thể tìm nguồn " + shortLeadTitle(supplier.Name)
 	if supplier.PriceText != "" {

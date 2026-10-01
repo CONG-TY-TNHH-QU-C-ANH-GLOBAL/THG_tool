@@ -52,3 +52,14 @@ func TestEnglishLeadThroughPricingHubUsesEnglishOnBothRequests(t *testing.T) {
 		t.Fatalf("end-to-end sourcing failed: requests=%d result=%+v", requests, result)
 	}
 }
+
+func TestEnglishBulkRateIsLabelledPerParcel(t *testing.T) {
+	supplier := &models.SupplierMatch{Name: "Hand massager", PriceText: "¥42", Shipping: &models.ShippingReference{
+		PriceText: "$14.20", Basis: "1 kiện; không phải tổng cước lô 300 sản phẩm",
+	}}
+	reply := supplierFallbackReply("Oksana", supplier, "Looking for a dropshipping supplier for this hand massager to US")
+	if !strings.Contains(reply, "$14.20 per parcel (not the total bulk shipping cost)") ||
+		!strings.Contains(reply, "quantity and parcel details") {
+		t.Fatalf("rate scope or missing facts unclear: %s", reply)
+	}
+}
