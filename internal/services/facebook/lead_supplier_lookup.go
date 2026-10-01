@@ -23,6 +23,8 @@ type ResolvedSupplier struct {
 type supplierReader interface {
 	Search(context.Context, string, string, int) ([]suppliersourcing.SearchItem, error)
 	Detail(context.Context, string, string, string) (*suppliersourcing.Product, error)
+	SearchLocalized(context.Context, string, string, int, string) ([]suppliersourcing.SearchItem, error)
+	DetailLocalized(context.Context, string, string, string, string) (*suppliersourcing.Product, error)
 }
 
 // NewSupplierLookup makes at most two keyword searches and one detail request
@@ -38,8 +40,12 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 	}
 	return func(ctx context.Context, leadText string) (*ResolvedSupplier, error) {
 		query := supplierQuery(leadText)
+		lang := "vi"
+		if supplierEnglishQuery(leadText) != "" {
+			lang = "en"
+		}
 		if link, platform := leadMarketplaceURL(leadText); link != "" {
-			product, err := client.Detail(ctx, platform, "", link)
+			product, err := client.DetailLocalized(ctx, platform, "", link, lang)
 			if err != nil {
 				return nil, err
 			}
@@ -60,7 +66,7 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 		}
 		var lookupErr error
 		for _, platform := range platforms {
-			items, err := client.Search(ctx, query, platform, 10)
+			items, err := client.SearchLocalized(ctx, query, platform, 10, lang)
 			if err != nil {
 				lookupErr = err
 				continue
@@ -69,7 +75,7 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 				if !matchesLeadProduct(query, item.Title) || !marketplaceURL(item.Link) {
 					continue
 				}
-				product, err := client.Detail(ctx, platform, item.ID, item.Link)
+				product, err := client.DetailLocalized(ctx, platform, item.ID, item.Link, lang)
 				if err != nil {
 					lookupErr = err
 					break
@@ -156,7 +162,7 @@ func supplierQuery(raw string) string {
 			goto cut
 		}
 	}
-	return ""
+	return supplierEnglishQuery(raw)
 cut:
 	for _, marker := range []string{" từ 1688", " từ taobao", " về mỹ", " sang mỹ", " đi mỹ", " ship ", " khoảng ", " số lượng ", " mẫu này", " https://", " http://", "\n", ".", ",", ";"} {
 		if at := strings.Index(text, marker); at >= 0 {

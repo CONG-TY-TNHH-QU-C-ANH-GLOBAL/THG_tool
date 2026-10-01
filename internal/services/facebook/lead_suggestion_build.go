@@ -133,6 +133,19 @@ func freshSupplierPrice(supplier *models.SupplierMatch, now time.Time) bool {
 }
 
 func supplierFallbackReply(author string, supplier *models.SupplierMatch, leadText string) string {
+	if supplierEnglishQuery(leadText) != "" {
+		first := "Hi " + leadSalutation(author) + ", we found a similar " + shortLeadTitle(supplier.Name) + " from China"
+		if supplier.PriceText != "" {
+			first += " at a reference product price of " + supplier.PriceText
+		}
+		if supplier.Shipping != nil && supplier.Shipping.PriceText != "" {
+			first += "; reference shipping " + supplier.Shipping.PriceText + " per parcel"
+		}
+		if strings.Contains(strings.ToLower(leadText), "european") || strings.Contains(strings.ToLower(leadText), "supplier in europe") {
+			return first + ". Would a China-based alternative work? Please share the quantity and destination for a shipping quote."
+		}
+		return first + ". Please share the quantity and destination for a shipping quote."
+	}
 	first := leadSalutation(author) + ", bên mình có thể tìm nguồn " + shortLeadTitle(supplier.Name)
 	if supplier.PriceText != "" {
 		first += ", giá nguồn tham khảo " + supplier.PriceText

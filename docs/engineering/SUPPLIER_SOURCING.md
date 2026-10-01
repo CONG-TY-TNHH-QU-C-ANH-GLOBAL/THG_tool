@@ -44,6 +44,13 @@ search and one detail. A live lookup requires `PRICING_HUB_INTEGRATION_KEY` or
 `https://pricingtool.thgfulfill.com`. With no key, only approved indexed items
 are offered. The optional suggestion deadline defaults to 12 seconds.
 
+Explicit English requests such as "dropshipping supplier for this hand massager"
+use English titles for search and detail matching. A Chinese marketplace match
+for a post requesting a European supplier is labelled as a China-based
+alternative, never as a European supplier or an exact image match. When the
+post omits quantity or destination, the draft asks for them instead of quoting
+an unsupported shipping price.
+
 ## Moving parts
 
 | Piece | Where |

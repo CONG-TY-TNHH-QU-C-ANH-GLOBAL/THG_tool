@@ -123,6 +123,9 @@ func TestLeadBusinessIntent(t *testing.T) {
 	if wantsPersonalizedPOD("Cần nhập 300 hộp thực phẩm bổ khớp cho chó") {
 		t.Fatal("ordinary bulk purchase should not route to POD")
 	}
+	if !wantsBulkSourcing("Looking for a European dropshipping supplier for this exact hand massager") {
+		t.Fatal("English dropshipping supplier should route to sourcing")
+	}
 }
 
 func TestShippingOnlyForExplicitUSOrdinaryApparel(t *testing.T) {

@@ -63,7 +63,7 @@ func wantsBulkSourcing(text string) bool {
 	if bulkQuantityPattern.MatchString(text) {
 		return true
 	}
-	for _, phrase := range []string{"số lượng lớn", "sll", "nhập hàng", "lấy sỉ", "mua sỉ", "nguồn hàng", "giá sỉ", "1688", "taobao", "hộp/tháng", "cái/tháng", "sp/tháng"} {
+	for _, phrase := range []string{"số lượng lớn", "sll", "nhập hàng", "lấy sỉ", "mua sỉ", "nguồn hàng", "giá sỉ", "1688", "taobao", "hộp/tháng", "cái/tháng", "sp/tháng", "dropshipping supplier", "dropshipping agent", "wholesale supplier", "bulk order"} {
 		if strings.Contains(text, phrase) {
 			return true
 		}

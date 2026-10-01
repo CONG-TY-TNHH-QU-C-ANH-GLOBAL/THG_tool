@@ -13,6 +13,7 @@ import (
 
 type fakeSupplierReader struct {
 	queries  []string
+	langs    []string
 	items    []suppliersourcing.SearchItem
 	product  *suppliersourcing.Product
 	details  int
@@ -29,6 +30,14 @@ func (f *fakeSupplierReader) Search(_ context.Context, query, platform string, _
 func (f *fakeSupplierReader) Detail(context.Context, string, string, string) (*suppliersourcing.Product, error) {
 	f.details++
 	return f.product, nil
+}
+func (f *fakeSupplierReader) SearchLocalized(ctx context.Context, query, platform string, size int, lang string) ([]suppliersourcing.SearchItem, error) {
+	f.langs = append(f.langs, lang)
+	return f.Search(ctx, query, platform, size)
+}
+func (f *fakeSupplierReader) DetailLocalized(ctx context.Context, platform, id, link, lang string) (*suppliersourcing.Product, error) {
+	f.langs = append(f.langs, lang)
+	return f.Detail(ctx, platform, id, link)
 }
 
 func TestSupplierQueryExtractsProductAndSkipsVaguePost(t *testing.T) {
@@ -163,5 +172,24 @@ func TestSupplierLookupThroughPricingHubContract(t *testing.T) {
 	got, err := NewSupplierLookup(client)(context.Background(), "Cần nhập viên bổ khớp cho chó từ 1688 về Mỹ")
 	if err != nil || got == nil || got.Match.PriceText != "¥20" || got.Match.CapturedAt != "2026-09-30T00:00:00Z" || requests != 2 {
 		t.Fatalf("pricing hub contract failed: %+v, requests=%d, err=%v", got, requests, err)
+	}
+}
+
+func TestSupplierLookupEnglishDropshippingPost(t *testing.T) {
+	post := "Hi everyone! I'm looking for a European dropshipping supplier for this exact hand massager or a very similar model."
+	if got := supplierQuery(post); got != "hand massager" {
+		t.Fatalf("English query=%q", got)
+	}
+	price := 42.0
+	client := &fakeSupplierReader{
+		items:   []suppliersourcing.SearchItem{{ID: "12", Title: "Electric hand massager", Link: "https://detail.1688.com/offer/12.html"}},
+		product: &suppliersourcing.Product{ID: "12", Title: "Electric hand massager", Link: "https://detail.1688.com/offer/12.html", Price: &price},
+	}
+	got, err := NewSupplierLookup(client)(context.Background(), post)
+	if err != nil || got == nil || got.Match.PriceText != "¥42" || len(client.langs) != 2 || client.langs[0] != "en" || client.langs[1] != "en" {
+		t.Fatalf("English sourcing failed: got=%+v langs=%v err=%v", got, client.langs, err)
+	}
+	if supplierQuery("Looking for a European dropshipping supplier") != "" {
+		t.Fatal("no product noun must not trigger a sourcing search")
 	}
 }

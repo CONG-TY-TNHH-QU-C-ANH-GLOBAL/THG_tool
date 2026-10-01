@@ -65,6 +65,11 @@ func NormalizePlatform(raw string) string {
 // since 2026-08 Taobao rejects bare numeric item ids and the upstream needs the
 // link (or an mi_id) to resolve them.
 func (c *Client) Detail(ctx context.Context, platform, productID, productURL string) (*Product, error) {
+	return c.DetailLocalized(ctx, platform, productID, productURL, "vi")
+}
+
+// DetailLocalized requests a translated title in the language used by the lead.
+func (c *Client) DetailLocalized(ctx context.Context, platform, productID, productURL, lang string) (*Product, error) {
 	if c == nil {
 		return nil, errors.New("suppliersourcing: client not configured")
 	}
@@ -72,7 +77,10 @@ func (c *Client) Detail(ctx context.Context, platform, productID, productURL str
 	if pf == "" {
 		return nil, fmt.Errorf("suppliersourcing: unsupported platform %q", platform)
 	}
-	body := map[string]any{"platform": pf, "lang": "vi"}
+	if lang != "en" {
+		lang = "vi"
+	}
+	body := map[string]any{"platform": pf, "lang": lang}
 	if id := strings.TrimSpace(productID); id != "" {
 		body["id"] = id
 	}
@@ -98,6 +106,11 @@ func (c *Client) Detail(ctx context.Context, platform, productID, productURL str
 
 // Search runs a keyword lookup. size is clamped upstream to 1..40.
 func (c *Client) Search(ctx context.Context, query, platform string, size int) ([]SearchItem, error) {
+	return c.SearchLocalized(ctx, query, platform, size, "vi")
+}
+
+// SearchLocalized keeps English lead terms comparable with translated hits.
+func (c *Client) SearchLocalized(ctx context.Context, query, platform string, size int, lang string) ([]SearchItem, error) {
 	if c == nil {
 		return nil, errors.New("suppliersourcing: client not configured")
 	}
@@ -117,7 +130,10 @@ func (c *Client) Search(ctx context.Context, query, platform string, size int) (
 		Error string       `json:"error"`
 		Items []SearchItem `json:"items"`
 	}
-	body := map[string]any{"q": query, "platform": pf, "size": size, "lang": "vi"}
+	if lang != "en" {
+		lang = "vi"
+	}
+	body := map[string]any{"q": query, "platform": pf, "size": size, "lang": lang}
 	if err := c.post(ctx, "/api/scrape/search", body, &envelope); err != nil {
 		return nil, err
 	}
