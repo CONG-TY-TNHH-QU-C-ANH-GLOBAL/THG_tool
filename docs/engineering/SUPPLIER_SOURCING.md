@@ -2,7 +2,7 @@
 doc_type: engineering
 status: active
 owner: platform
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-01
 related_pr_or_issue: supplier-sourced-lead-suggestions
 ---
 
@@ -12,6 +12,9 @@ Operator lead notices select one matching offer. Explicit personalization
 requests favor an in-stock POD catalog item; wholesale/import requests favor a
 sourceable marketplace item. Without a clear wholesale signal, a matching POD
 item has priority over a supplier item.
+If an explicit POD request has no matching catalog item, a marketplace item may
+be shown as an alternative product source. The draft must say customization
+still needs confirmation; a seller listing is not proof that printing is offered.
 For a Dropship lead, the operator-facing suggested reply delivered to the
 `THG_Sale_Lead` Telegram group includes the source price as a labelled
 reference and a shipping reference only when the selected lane can be priced.
@@ -165,6 +168,10 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
   Domestic 3PL pricing needs a US warehouse shipment and delivery zone; the
   chính ngạch card is for VN→US cargo. Neither is a substitute for missing
   CN→US parcel facts.
+- Destination and cargo terms are matched as whole words. An ordinary name such
+  as "anh Nam" is not the United Kingdom, and "kẹo táo" is not apparel. For a
+  non-bulk request covering multiple items, one item's weight cannot stand in
+  for the packed parcel's weight, so no automatic numeric quote is shown.
 - Source numbers are copied; the shipping calculator adds the published
   $0.70 handling fee to the selected CMS weight row. No currency conversion,
   estimated weight, or invented MOQ tier — a missing value is omitted everywhere

@@ -64,7 +64,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 				cargo = "standard"
 			}
 			quoteForWeight := func(weight float64) {
-				if quantity > 0 && weight > 0 && weight <= 20 {
+				if quantity > 0 && (mode == "bulk" || quantity == 1) && weight > 0 && weight <= 20 {
 					supplier.Shipping, _ = shippingQuote(ctx, models.ShippingRequest{
 						OriginCountry: "CN", DestinationCountry: leadDestinationCountry(leadText),
 						Quantity: quantity, ShipmentMode: mode, CargoCategory: cargo, WeightKG: weight,
@@ -96,7 +96,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		// Sourcing facts already provide a concise, copy-ready operator draft.
 		// Assemble it deterministically so an LLM cannot change the price or
 		// turn a one-parcel reference into a quote for the whole shipment.
-		out.Reply = supplierFallbackReply(author, supplier, leadText) + " " + supplier.URL
+		out.Reply = supplierReplyForIntent(author, supplier, leadText) + " " + supplier.URL
 		return out
 	}
 	if msgGen == nil || !msgGen.Available() || profile == nil {

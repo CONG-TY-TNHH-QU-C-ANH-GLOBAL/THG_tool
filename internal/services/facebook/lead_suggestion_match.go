@@ -15,6 +15,10 @@ func matchesLeadProduct(leadText, title string) bool {
 	words := func(s string) map[string]bool {
 		out := map[string]bool{}
 		for _, word := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
+			if leadProductStopWords[word] {
+				continue
+			}
+			word = singularProductWord(word)
 			if len([]rune(word)) >= 3 && !leadProductStopWords[word] {
 				out[word] = true
 			}
@@ -34,6 +38,18 @@ func matchesLeadProduct(leadText, title string) bool {
 	return false
 }
 
+// Singularize common English plurals before comparing product names. This is
+// deliberately narrow: stemming arbitrary words can create false matches.
+func singularProductWord(word string) string {
+	if strings.HasSuffix(word, "sses") || strings.HasSuffix(word, "xes") {
+		return strings.TrimSuffix(word, "es")
+	}
+	if len(word) > 4 && strings.HasSuffix(word, "s") && !strings.HasSuffix(word, "ss") {
+		return strings.TrimSuffix(word, "s")
+	}
+	return word
+}
+
 var leadProductSpecificTerms = map[string]bool{
 	"hoodie": true, "stocking": true, "tshirt": true,
 	"sweatshirt": true, "shirt": true, "thun": true,
@@ -44,6 +60,29 @@ var leadProductStopWords = map[string]bool{
 	"giá": true, "cho": true, "với": true, "của": true, "bên": true,
 	"mình": true, "shop": true, "bán": true, "đơn": true, "ship": true,
 	"the": true, "and": true, "for": true, "product": true, "new": true,
+	"personalized": true, "personalised": true, "custom": true,
+	"christmas": true, "xmas": true, "etsy": true, "logo": true,
+	"design": true, "cotton": true, "unisex": true, "premium": true,
+}
+
+// Match whole Unicode words so "pod" cannot match "tripod", and "áo"
+// cannot match "táo". Punctuation (including arrows and slashes) separates words.
+func containsLeadPhrase(text, phrase string) bool {
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	needle := strings.FieldsFunc(strings.ToLower(phrase), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	for start := 0; start+len(needle) <= len(words); start++ {
+		matched := true
+		for i, word := range needle {
+			if words[start+i] != word {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func matchingCandidates(leadText string, candidates []models.KnowledgeCandidate) []models.KnowledgeCandidate {
@@ -74,18 +113,16 @@ func wantsBulkSourcing(text string) bool {
 var bulkQuantityPattern = regexp.MustCompile(`\d{2,}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|áo|shirts|hoodies)`)
 
 func wantsPersonalizedPOD(text string) bool {
-	text = strings.ToLower(text)
 	for _, phrase := range []string{"in theo logo", "in logo", "in theo thiết kế", "in theo yêu cầu", "cá nhân hóa", "custom logo", "personalized", "print on demand", "pod"} {
-		if strings.Contains(text, phrase) {
+		if containsLeadPhrase(text, phrase) {
 			return true
 		}
 	}
 	return false
 }
 func isUSDestination(text string) bool {
-	text = strings.ToLower(text)
 	for _, term := range []string{"sang mỹ", "về mỹ", "đi mỹ", "tại mỹ", "qua mỹ", "to us", "to usa", " united states", " hoa kỳ", " u.s."} {
-		if strings.Contains(" "+text, term) {
+		if containsLeadPhrase(text, term) {
 			return true
 		}
 	}
@@ -113,9 +150,8 @@ func leadDestinationCountry(text string) string {
 	if isUSDestination(text) {
 		return "US"
 	}
-	text = strings.ToLower(text)
-	for _, term := range []string{"sang anh", "về anh", "đi anh", "to uk", "to gb", " united kingdom"} {
-		if strings.Contains(" "+text, term) {
+	for _, term := range []string{"sang nước anh", "về nước anh", "đi nước anh", "vương quốc anh", "to uk", "to gb", "united kingdom"} {
+		if containsLeadPhrase(text, term) {
 			return "GB"
 		}
 	}
@@ -123,14 +159,13 @@ func leadDestinationCountry(text string) string {
 }
 
 func isOrdinaryApparel(name string) bool {
-	name = strings.ToLower(name)
-	for _, blocked := range []string{"thuốc", "thực phẩm", "bổ sung", "pin", "mỹ phẩm", "chất lỏng", "supplement", "battery", "cosmetic"} {
-		if strings.Contains(name, blocked) {
+	for _, blocked := range []string{"thuốc", "thực phẩm", "bổ sung", "pin", "mỹ phẩm", "chất lỏng", "supplement", "battery", "cosmetic", "tất cả"} {
+		if containsLeadPhrase(name, blocked) {
 			return false
 		}
 	}
 	for _, term := range []string{"áo", "hoodie", "shirt", "stocking", "tất", "vớ", "quần", "socks", "dress"} {
-		if strings.Contains(name, term) {
+		if containsLeadPhrase(name, term) {
 			return true
 		}
 	}
