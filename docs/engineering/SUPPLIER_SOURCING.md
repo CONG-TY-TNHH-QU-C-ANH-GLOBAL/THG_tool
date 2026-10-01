@@ -31,7 +31,9 @@ before a sync; do not treat this as a monthly allowance. One call per crawled
 lead would exhaust it quickly and also disrupt sales quoting.
 
 A `supplier_catalog` knowledge source can index curated items once. Per-lead
-matching first uses approved KnowledgeOS assets at zero upstream cost. An
+matching first uses approved KnowledgeOS assets at zero upstream cost. Indexed
+marketplace titles must still cover the requested product phrase, including
+qualifiers such as the target animal/model. An
 approved item is only reusable for a post with an explicit marketplace URL
 when it has that exact URL. Otherwise, the post's URL is looked up directly
 by detail. Without a usable indexed offer or URL,

@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 )
 
 // A retrieval hit can be broadly relevant to the workspace without matching the
@@ -87,7 +88,14 @@ func containsLeadPhrase(text, phrase string) bool {
 
 func matchingCandidates(leadText string, candidates []models.KnowledgeCandidate) []models.KnowledgeCandidate {
 	matched := make([]models.KnowledgeCandidate, 0, len(candidates))
+	supplierPhrase := supplierQuery(leadText)
 	for _, candidate := range candidates {
+		if candidate.Kind == string(assets.AssetSupplierProduct) && supplierPhrase != "" {
+			if matchesSupplierQuery(supplierPhrase, candidate.Title) {
+				matched = append(matched, candidate)
+			}
+			continue
+		}
 		if matchesLeadProduct(leadText, candidate.Title) {
 			matched = append(matched, candidate)
 		}

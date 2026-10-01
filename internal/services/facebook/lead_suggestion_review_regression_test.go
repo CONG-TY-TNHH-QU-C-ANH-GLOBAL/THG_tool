@@ -18,6 +18,17 @@ func TestReviewCatalogRequiresProductIdentity(t *testing.T) {
 	}
 }
 
+func TestReviewIndexedSupplierKeepsProductQualifier(t *testing.T) {
+	post := "Cần nhập viên bổ khớp cho chó"
+	got := matchingCandidates(post, []models.KnowledgeCandidate{
+		{Kind: "supplier_product", Title: "Viên bổ khớp cho mèo"},
+		{Kind: "supplier_product", Title: "Viên bổ khớp cho chó"},
+	})
+	if len(got) != 1 || got[0].Title != "Viên bổ khớp cho chó" {
+		t.Fatalf("indexed supplier should retain the requested animal: %+v", got)
+	}
+}
+
 func TestReviewIntentRequiresWholeWords(t *testing.T) {
 	for _, post := range []string{
 		"Cần tìm xưởng làm tripod số lượng lớn",
