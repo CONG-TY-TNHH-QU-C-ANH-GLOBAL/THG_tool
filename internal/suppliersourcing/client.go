@@ -1,6 +1,6 @@
 // Package suppliersourcing reads Taobao/1688 product facts from the THG
 // Pricing Hub worker, which owns the upstream Elim API key, the shared D1
-// response cache, and the monthly request budget. This package never talks to
+// response cache, and the shared request budget. This package never talks to
 // the Chinese marketplaces or to Elim directly: keeping one caller means one
 // cache and one place where the quota is observable.
 package suppliersourcing
@@ -47,62 +47,6 @@ func NewClient(endpoint, key string, timeout time.Duration) *Client {
 	return &Client{baseURL: endpoint, key: key, http: &http.Client{Timeout: timeout}}
 }
 
-// PriceTier is one MOQ break on a 1688 wholesale offer.
-type PriceTier struct {
-	MOQ            int      `json:"moq"`
-	Price          *float64 `json:"price"`
-	PromotionPrice *float64 `json:"promotion_price"`
-}
-
-// Product is the normalized detail record. Every field is optional: the
-// upstream fills what the marketplace exposed and nothing is inferred here.
-type Product struct {
-	Platform   string      `json:"platform"`
-	ID         string      `json:"id"`
-	Title      string      `json:"title"`
-	TitleCN    string      `json:"titleCn"`
-	ShopName   string      `json:"shopName"`
-	Category   string      `json:"category"`
-	QuoteType  string      `json:"quoteType"`
-	MOQ        *int        `json:"moq"`
-	Unit       string      `json:"unit"`
-	Sold       *int        `json:"sold"`
-	Price      *float64    `json:"price"`
-	PriceNote  string      `json:"priceNote"`
-	PriceRange []PriceTier `json:"priceRange"`
-	Images     []string    `json:"images"`
-	Link       string      `json:"link"`
-	ShipFrom   string      `json:"shipFrom"`
-	WeightKG   *float64    `json:"weight"`
-	Length     *float64    `json:"length"`
-	Width      *float64    `json:"width"`
-	Height     *float64    `json:"height"`
-	Cached     bool        `json:"cached"`
-}
-
-// SearchItem is one hit from a keyword search. Search results carry no weight
-// or MOQ — those only exist on the detail record.
-type SearchItem struct {
-	ID     string   `json:"id"`
-	Title  string   `json:"title"`
-	Link   string   `json:"link"`
-	Image  string   `json:"image"`
-	Seller string   `json:"seller"`
-	Price  *float64 `json:"price"`
-	Sales  *int     `json:"sales"`
-	Unit   string   `json:"unit"`
-}
-
-// Quota reports how much of the upstream monthly budget is already spent.
-type Quota struct {
-	Plan  json.RawMessage `json:"plan"`
-	Local struct {
-		Month        int `json:"month"`
-		Today        int `json:"today"`
-		SavedByCache int `json:"savedByCache"`
-	} `json:"local"`
-}
-
 // NormalizePlatform maps the marketplace names operators use onto the two the
 // upstream accepts. An unrecognized value returns "" so callers can reject it
 // instead of silently querying the wrong marketplace.
@@ -121,6 +65,11 @@ func NormalizePlatform(raw string) string {
 // since 2026-08 Taobao rejects bare numeric item ids and the upstream needs the
 // link (or an mi_id) to resolve them.
 func (c *Client) Detail(ctx context.Context, platform, productID, productURL string) (*Product, error) {
+	return c.DetailLocalized(ctx, platform, productID, productURL, "vi")
+}
+
+// DetailLocalized requests a translated title in the language used by the lead.
+func (c *Client) DetailLocalized(ctx context.Context, platform, productID, productURL, lang string) (*Product, error) {
 	if c == nil {
 		return nil, errors.New("suppliersourcing: client not configured")
 	}
@@ -128,7 +77,10 @@ func (c *Client) Detail(ctx context.Context, platform, productID, productURL str
 	if pf == "" {
 		return nil, fmt.Errorf("suppliersourcing: unsupported platform %q", platform)
 	}
-	body := map[string]any{"platform": pf, "lang": "vi"}
+	if lang != "en" {
+		lang = "vi"
+	}
+	body := map[string]any{"platform": pf, "lang": lang}
 	if id := strings.TrimSpace(productID); id != "" {
 		body["id"] = id
 	}
@@ -154,6 +106,11 @@ func (c *Client) Detail(ctx context.Context, platform, productID, productURL str
 
 // Search runs a keyword lookup. size is clamped upstream to 1..40.
 func (c *Client) Search(ctx context.Context, query, platform string, size int) ([]SearchItem, error) {
+	return c.SearchLocalized(ctx, query, platform, size, "vi")
+}
+
+// SearchLocalized keeps English lead terms comparable with translated hits.
+func (c *Client) SearchLocalized(ctx context.Context, query, platform string, size int, lang string) ([]SearchItem, error) {
 	if c == nil {
 		return nil, errors.New("suppliersourcing: client not configured")
 	}
@@ -173,7 +130,10 @@ func (c *Client) Search(ctx context.Context, query, platform string, size int) (
 		Error string       `json:"error"`
 		Items []SearchItem `json:"items"`
 	}
-	body := map[string]any{"q": query, "platform": pf, "size": size, "lang": "vi"}
+	if lang != "en" {
+		lang = "vi"
+	}
+	body := map[string]any{"q": query, "platform": pf, "size": size, "lang": lang}
 	if err := c.post(ctx, "/api/scrape/search", body, &envelope); err != nil {
 		return nil, err
 	}
@@ -184,7 +144,7 @@ func (c *Client) Search(ctx context.Context, query, platform string, size int) (
 }
 
 // Quota reads the remaining upstream budget. Callers use it to refuse a bulk
-// index run that would exhaust the month.
+// index run that would exhaust the plan.
 func (c *Client) Quota(ctx context.Context) (Quota, error) {
 	var out Quota
 	if c == nil {

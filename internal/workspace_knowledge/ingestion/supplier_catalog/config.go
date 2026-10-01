@@ -14,7 +14,7 @@ import (
 //
 // The operator declares WHAT to index, never how many upstream calls to spend:
 // MaxAPICalls is the hard ceiling for one sync run, because the upstream
-// marketplace budget is small, shared, and monthly. A run stops cleanly at the
+// marketplace budget is small and shared. A run stops cleanly at the
 // ceiling and reports how far it got.
 type Config struct {
 	// BaseURL is the THG Pricing Hub origin (it owns the marketplace API key).

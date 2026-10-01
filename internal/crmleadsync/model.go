@@ -48,16 +48,24 @@ type enrichment struct {
 // tell "what we sell" apart from "what we can source", and the numbers here are
 // supplier-side, not customer-facing pricing.
 type supplier struct {
-	Platform   string `json:"platform"`
-	Name       string `json:"name"`
-	URL        string `json:"url"`
-	ImageURL   string `json:"imageUrl,omitempty"`
-	PriceText  string `json:"priceText,omitempty"`
-	WeightText string `json:"weightText,omitempty"`
-	MOQText    string `json:"moqText,omitempty"`
-	ShipFrom   string `json:"shipFrom,omitempty"`
-	ShopName   string `json:"shopName,omitempty"`
-	CapturedAt string `json:"capturedAt,omitempty"`
+	Platform   string             `json:"platform"`
+	Name       string             `json:"name"`
+	URL        string             `json:"url"`
+	ImageURL   string             `json:"imageUrl,omitempty"`
+	PriceText  string             `json:"priceText,omitempty"`
+	WeightText string             `json:"weightText,omitempty"`
+	MOQText    string             `json:"moqText,omitempty"`
+	ShipFrom   string             `json:"shipFrom,omitempty"`
+	ShopName   string             `json:"shopName,omitempty"`
+	CapturedAt string             `json:"capturedAt,omitempty"`
+	Shipping   *shippingReference `json:"shipping,omitempty"`
+}
+
+type shippingReference struct {
+	PriceText string `json:"priceText"`
+	Transit   string `json:"transit,omitempty"`
+	Basis     string `json:"basis"`
+	SourceURL string `json:"sourceUrl,omitempty"`
 }
 
 // supplierFrom copies a matched supplier item into the wire block. Returns nil
@@ -66,13 +74,18 @@ func supplierFrom(match *models.SupplierMatch) *supplier {
 	if !match.HasOffer() {
 		return nil
 	}
-	return &supplier{
+	out := &supplier{
 		Platform: strings.TrimSpace(match.Platform), Name: strings.TrimSpace(match.Name),
 		URL: strings.TrimSpace(match.URL), ImageURL: strings.TrimSpace(match.ImageURL),
 		PriceText: strings.TrimSpace(match.PriceText), WeightText: strings.TrimSpace(match.WeightKG),
 		MOQText: strings.TrimSpace(match.MOQText), ShipFrom: strings.TrimSpace(match.ShipFrom),
 		ShopName: strings.TrimSpace(match.ShopName), CapturedAt: strings.TrimSpace(match.CapturedAt),
 	}
+	if match.Shipping != nil && match.Shipping.PriceText != "" {
+		out.Shipping = &shippingReference{PriceText: match.Shipping.PriceText, Transit: match.Shipping.Transit,
+			Basis: match.Shipping.Basis, SourceURL: match.Shipping.SourceURL}
+	}
+	return out
 }
 
 func payloadFor(event leadingest.LeadEvent, suggestion models.LeadSuggestion) (payload, bool) {

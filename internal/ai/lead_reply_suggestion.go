@@ -59,17 +59,18 @@ POST CONTENT:
 SHAPE (follow it, do not label the parts):
 1. Greet the author by their EXACT name.
 2. One short clause showing you read what they actually need.
-3. State the matched product with the concrete numbers from GROUNDED PRODUCT FACTS.
-4. One soft closing question offering the next step.
+3. State the matched product, its supplier-source price labelled as a reference (if available), and the reference shipping per parcel (if available). Never call a supplier-source price THG's selling price.
+4. Include the matched product link exactly as supplied and one soft closing question.
 
 RULES:
 - %s
 - %s
-- Maximum 3 sentences. Shorter is better.
+- Maximum 2 short sentences. Keep the product link verbatim.
 - Every number and every link must come from GROUNDED PRODUCT FACTS, copied exactly. Never estimate, convert, or round a price or weight.
 - If a fact is missing from that block, simply omit it. Never write a placeholder.
 - No emojis. No marketing superlatives. No bullet points.
-- Do not promise delivery times, stock levels, or discounts.
+- Transit, if present, is a reference for one parcel. Never imply that it covers a bulk order.
+- Do not promise stock levels or discounts.
 
 RETURN ONLY THE REPLY, NO EXPLANATION.`, req.BusinessContext, facts, req.AuthorName, req.PostContent, langRule, brandRule)
 

@@ -2,7 +2,7 @@
 // workspace knowledge base through the THG Pricing Hub.
 //
 // Why pre-index instead of looking a product up per lead: the upstream
-// marketplace API is metered per month and shared with the human quoting tool.
+// marketplace API has a small shared quota across the plan period.
 // Indexing once turns per-lead product matching into a local retrieval that
 // costs nothing and cannot exhaust anyone's budget. Freshness is traded away
 // deliberately — a sync run re-reads prices, and the operator-facing message
@@ -19,7 +19,6 @@ import (
 	"github.com/thg/scraper/internal/suppliersourcing"
 	"github.com/thg/scraper/internal/workspace_knowledge/ingestion"
 	"github.com/thg/scraper/internal/workspace_knowledge/sources"
-	"github.com/thg/scraper/internal/workspace_knowledge/suppliers"
 )
 
 // Ingestor implements ingestion.Ingestor for sources.SourceSupplierCatalog.
@@ -190,46 +189,4 @@ func (r *syncRun) recordFailure(ref string, err error) {
 	r.result.Errors = append(r.result.Errors, ingestion.SyncError{
 		ExternalID: ref, Reason: "upstream_failed", Detail: err.Error(),
 	})
-}
-
-// payloadFrom copies the upstream record into the persisted schema. It only
-// copies: nothing here estimates a weight, converts a currency, or invents a
-// tier the marketplace did not publish.
-func payloadFrom(product *suppliersourcing.Product, fetchedAt time.Time) suppliers.PayloadV1 {
-	payload := suppliers.PayloadV1{
-		Platform: product.Platform, ProductID: product.ID,
-		Title: product.Title, TitleCN: product.TitleCN,
-		ShopName: product.ShopName, Category: product.Category,
-		PriceCNY: product.Price, PriceNote: product.PriceNote,
-		MOQ: product.MOQ, Unit: product.Unit,
-		WeightKG: product.WeightKG, LengthCM: product.Length,
-		WidthCM: product.Width, HeightCM: product.Height,
-		ShipFrom: product.ShipFrom, SoldCount: product.Sold,
-		Images: product.Images, SourceURL: product.Link,
-		SourceFetchedAt: fetchedAt.UTC(),
-	}
-	for _, tier := range product.PriceRange {
-		price := tier.PromotionPrice
-		if price == nil {
-			price = tier.Price
-		}
-		if price == nil {
-			continue
-		}
-		payload.PriceTiers = append(payload.PriceTiers, suppliers.PriceTier{MOQ: tier.MOQ, Price: *price})
-	}
-	return payload
-}
-
-// platformFromLink recognises which marketplace a pasted URL belongs to.
-func platformFromLink(link string) string {
-	lower := strings.ToLower(link)
-	switch {
-	case strings.Contains(lower, "1688.com"):
-		return suppliersourcing.PlatformAlibaba
-	case strings.Contains(lower, "taobao.com"), strings.Contains(lower, "tmall.com"), strings.Contains(lower, "tb.cn"):
-		return suppliersourcing.PlatformTaobao
-	default:
-		return ""
-	}
 }

@@ -11,7 +11,7 @@ func TestLoadLeadSuggestionDefaultsFailClosed(t *testing.T) {
 	if cfg.LeadSuggestionEnabled || cfg.LeadSuggestionOrgIDs != "" {
 		t.Fatalf("suggestions must default off with no allowed orgs: %+v", cfg)
 	}
-	if cfg.LeadSuggestionTimeoutMS != 5000 || cfg.LeadSuggestionMaxConcurrency != 2 {
+	if cfg.LeadSuggestionTimeoutMS != 12000 || cfg.LeadSuggestionMaxConcurrency != 2 {
 		t.Fatalf("unexpected bounded-runner defaults: timeout=%d concurrency=%d", cfg.LeadSuggestionTimeoutMS, cfg.LeadSuggestionMaxConcurrency)
 	}
 }
