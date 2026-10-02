@@ -3,15 +3,16 @@ package facebook
 import (
 	"context"
 	"errors"
-	"net/url"
-	"regexp"
 	"strings"
+	"time"
 
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/suppliersourcing"
 )
 
 type SupplierLookupFunc func(context.Context, string) (*ResolvedSupplier, error)
+
+var errSupplierNoMatch = errors.New("supplier item did not match the requested listing")
 
 // ResolvedSupplier keeps the raw weight separate from the display string so
 // the rate calculator never parses text meant for Telegram.
@@ -42,22 +43,25 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 		query := supplierQuery(leadText)
 		lang := supplierQueryLanguage(leadText)
 		if link, platform := leadMarketplaceURL(leadText); link != "" {
+			if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
+				return nil, err
+			}
 			product, err := client.DetailLocalized(ctx, platform, "", link, lang)
 			if err != nil {
 				return nil, err
 			}
-			if product == nil || !sameMarketplaceListing(link, product.Link) {
-				return nil, errors.New("linked supplier product resolved to a different listing")
-			}
-			if query != "" && !matchesSupplierQuery(query, product.Title) {
-				return nil, errors.New("linked supplier product did not match the lead")
+			if product == nil || !linkedMarketplaceListing(link, product.Link) {
+				return nil, errSupplierNoMatch
 			}
 			resolved, err := resolvedSupplier(product, platform)
 			if resolved != nil {
 				// The lead pasted this exact listing, so it is not a lookalike.
 				resolved.Match.Similar = false
 			}
-			return resolved, err
+			if err != nil {
+				return nil, errSupplierNoMatch
+			}
+			return resolved, nil
 		}
 		if query == "" {
 			return nil, nil
@@ -72,8 +76,14 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 		var lookupErr error
 		detailAttempts := 0
 		for _, platform := range platforms {
+			if err := supplierLookupBudget(ctx, 9*time.Second); err != nil {
+				return nil, err
+			}
 			items, err := client.SearchLocalized(ctx, query, platform, 10, lang)
 			if err != nil {
+				if errors.Is(err, suppliersourcing.ErrQuotaExceeded) {
+					return nil, err
+				}
 				lookupErr = err
 				continue
 			}
@@ -84,21 +94,25 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 				if detailAttempts >= 2 {
 					break
 				}
+				if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
+					return nil, err
+				}
 				detailAttempts++
 				product, err := client.DetailLocalized(ctx, platform, item.ID, item.Link, lang)
 				if err != nil {
+					if errors.Is(err, suppliersourcing.ErrQuotaExceeded) {
+						return nil, err
+					}
 					lookupErr = err
 					continue
 				}
 				if product == nil || !matchesSupplierQuery(query, product.Title) {
-					lookupErr = errors.New("supplier detail did not match the lead")
 					continue
 				}
 				resolved, err := resolvedSupplier(product, platform)
 				if err == nil {
 					return resolved, nil
 				}
-				lookupErr = err
 			}
 			if detailAttempts >= 2 {
 				break
@@ -131,65 +145,4 @@ func resolvedSupplier(product *suppliersourcing.Product, platform string) (*Reso
 		ShopName: strings.TrimSpace(product.ShopName), CapturedAt: strings.TrimSpace(product.FetchedAt),
 		Similar: true,
 	}, WeightKG: product.WeightKG}, nil
-}
-
-var leadURLPattern = regexp.MustCompile(`https://[^\s<>"']+`)
-
-func leadMarketplaceURL(text string) (string, string) {
-	for _, raw := range leadURLPattern.FindAllString(text, 4) {
-		link := strings.TrimRight(raw, ".,;!?)]}")
-		if !marketplaceURL(link) {
-			continue
-		}
-		u, _ := url.Parse(link)
-		host := strings.ToLower(u.Hostname())
-		if host == "1688.com" || strings.HasSuffix(host, ".1688.com") {
-			return link, suppliersourcing.PlatformAlibaba
-		}
-		return link, suppliersourcing.PlatformTaobao
-	}
-	return "", ""
-}
-
-func marketplaceURL(raw string) bool {
-	if validHTTPSURL(raw) == "" {
-		return false
-	}
-	u, _ := url.Parse(raw)
-	host := strings.ToLower(u.Hostname())
-	return host == "1688.com" || strings.HasSuffix(host, ".1688.com") ||
-		host == "taobao.com" || strings.HasSuffix(host, ".taobao.com") ||
-		host == "tmall.com" || strings.HasSuffix(host, ".tmall.com")
-}
-
-var offerPathID = regexp.MustCompile(`(?i)/offer/(\d+)`)
-
-// A pasted link is an exact offer only when Pricing Hub returns the same item ID.
-// Tracking parameters and mobile/desktop hosts may differ without changing it.
-func sameMarketplaceListing(requested, returned string) bool {
-	if !marketplaceURL(requested) || !marketplaceURL(returned) {
-		return false
-	}
-	a, _ := url.Parse(requested)
-	b, _ := url.Parse(returned)
-	platform := func(host string) string {
-		host = strings.ToLower(host)
-		if host == "1688.com" || strings.HasSuffix(host, ".1688.com") {
-			return "1688"
-		}
-		return "taobao"
-	}
-	if platform(a.Hostname()) != platform(b.Hostname()) {
-		return false
-	}
-	id := func(u *url.URL) string {
-		if found := offerPathID.FindStringSubmatch(u.Path); len(found) > 1 {
-			return found[1]
-		}
-		if value := u.Query().Get("offerId"); value != "" {
-			return value
-		}
-		return u.Query().Get("id")
-	}
-	return id(a) != "" && id(a) == id(b)
 }

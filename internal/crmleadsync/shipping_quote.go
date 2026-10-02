@@ -60,7 +60,7 @@ func QuoteSupplierShipment(ctx context.Context, endpoint, key string, input mode
 	}
 	basis := fmt.Sprintf("%s %s→%s, 1 kiện %.3g kg; cước tham chiếu, chưa gồm phụ phí phát sinh", quote.Lane, input.OriginCountry, input.DestinationCountry, quote.BillableKG)
 	if input.ShipmentMode == "bulk" {
-		basis += fmt.Sprintf("; không phải tổng cước lô %d sản phẩm", input.Quantity)
+		basis = fmt.Sprintf("%s %s→%s, 1 sản phẩm %.3g kg nếu gửi riêng; cước tham chiếu, không phải tổng cước lô %d sản phẩm", quote.Lane, input.OriginCountry, input.DestinationCountry, quote.BillableKG, input.Quantity)
 	}
 	return &models.ShippingReference{
 		PriceText: fmt.Sprintf("$%.2f", quote.TotalUSD),

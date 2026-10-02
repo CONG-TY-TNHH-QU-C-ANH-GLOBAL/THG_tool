@@ -45,13 +45,14 @@ cut:
 		}
 	}
 	text = strings.TrimSpace(text)
+	text = trimSupplierQueryContext(text)
 	text = supplierLeadingQuantity.ReplaceAllString(text, "")
 	text = supplierLeadingNumber.ReplaceAllString(text, "")
 	for _, prefix := range []string{"một số lượng lớn ", "số lượng lớn ", "sản phẩm ", "hàng "} {
 		text = strings.TrimPrefix(text, prefix)
 	}
 	words := strings.Fields(text)
-	if len(words) < 2 || len(words) > 12 {
+	if len(words) == 0 || len(words) > 12 || !safeSupplierQuery(text) {
 		return ""
 	}
 	return strings.Join(words, " ")
@@ -64,7 +65,7 @@ func podSupplierQuery(raw string) string {
 		return ""
 	}
 	text := strings.ToLower(raw)
-	for _, marker := range []string{"logo lên ", "logo trên ", "thiết kế lên ", "yêu cầu lên ", "logo on ", "print on "} {
+	for _, marker := range []string{"logo lên ", "logo trên ", "thiết kế lên ", "yêu cầu lên ", "logo on ", "printing on ", "print on "} {
 		if at := strings.Index(text, marker); at >= 0 {
 			return cleanPODSupplierPhrase(text[at+len(marker):])
 		}
@@ -84,6 +85,7 @@ func cleanPODSupplierPhrase(text string) string {
 		}
 	}
 	text = strings.TrimSpace(text)
+	text = trimSupplierQueryContext(text)
 	for _, prefix := range []string{"cần ", "muốn ", "tìm ", "lên ", "trên ", "cho "} {
 		text = strings.TrimPrefix(text, prefix)
 	}
@@ -94,44 +96,60 @@ func cleanPODSupplierPhrase(text string) string {
 		return ""
 	}
 	query := strings.Join(words, " ")
-	if len(supplierIdentityWords(query)) == 0 {
-		return ""
-	}
-	if len(words) == 1 && !leadProductSpecificTerms[singularProductWord(words[0])] {
+	if !safeSupplierQuery(query) {
 		return ""
 	}
 	return query
 }
 
-// A marketplace title must cover the product phrase, including qualifiers
-// such as the intended animal/model. Two shared generic words are not enough.
+// A marketplace title must retain the phrase's first and last specific words
+// and cover at least 80% of its identity words. This tolerates minor listing
+// wording changes while protecting qualifiers such as the target animal.
 func matchesSupplierQuery(query, title string) bool {
-	need := supplierIdentityWords(query)
+	need := supplierIdentitySequence(query)
 	if len(need) == 0 {
 		return false
 	}
 	if len(need) == 1 {
-		for word := range need {
-			if !leadProductSpecificTerms[word] {
-				return false
-			}
-		}
-	}
-	have := supplierIdentityWords(title)
-	for word := range need {
-		if !have[word] {
+		if !leadProductSpecificTerms[need[0]] {
 			return false
 		}
 	}
-	return true
+	have := supplierIdentityWords(title)
+	if !have[need[0]] || !have[need[len(need)-1]] {
+		return false
+	}
+	matched := 0
+	for _, word := range need {
+		if have[word] {
+			matched++
+		}
+	}
+	return matched*5 >= len(need)*4
 }
 
 func supplierIdentityWords(text string) map[string]bool {
 	words := make(map[string]bool)
+	for _, word := range supplierIdentitySequence(text) {
+		words[word] = true
+	}
+	return words
+}
+
+func supplierIdentitySequence(text string) []string {
+	words := make([]string, 0, 8)
+	seen := make(map[string]bool)
 	for _, word := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
 		word = singularProductWord(word)
-		if len([]rune(word)) >= 3 && !leadProductStopWords[word] && word != "viên" && word != "mẫu" && !allDigits(word) {
-			words[word] = true
+		switch word {
+		case "massager", "massage":
+			word = "massage"
+		case "handheld":
+			word = "hand"
+		}
+		if len([]rune(word)) >= 2 && !leadProductStopWords[word] && word != "viên" && word != "mẫu" && !allDigits(word) && !seen[word] {
+			words = append(words, word)
+			seen[word] = true
 		}
 	}
 	return words

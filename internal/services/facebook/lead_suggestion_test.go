@@ -167,7 +167,7 @@ func TestSupplierFallbackReplyIncludesCapturedPriceAndPerParcelRate(t *testing.T
 		PriceText: "$14.20", Transit: "6–12 ngày làm việc", Basis: "1 kiện; không phải tổng cước lô 300 sản phẩm",
 	}}
 	reply := supplierFallbackReply("Ngọc Trâm", supplier, "Cần nhập 300 áo hoodie về Mỹ")
-	for _, fact := range []string{"Ngọc Trâm", "¥28.9", "$14.20/kiện", "chưa phải tổng cước lô", "6–12 ngày làm việc"} {
+	for _, fact := range []string{"Ngọc Trâm", "¥28.9", "$14.20/sản phẩm nếu gửi riêng", "chưa phải cước lô", "6–12 ngày làm việc"} {
 		if !strings.Contains(reply, fact) {
 			t.Fatalf("reply missing %q: %s", fact, reply)
 		}

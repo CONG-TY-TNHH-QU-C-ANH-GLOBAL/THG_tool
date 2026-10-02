@@ -167,12 +167,19 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
 
 - A supplier item is a **distinct** offer from the catalog product. It is never
   rendered as a THG product page, and the CRM receives it under its own
-  `enrichment.supplier` key. Product title terms must match the post before an
-  item is offered. A matching POD item wins; the supplier is the fallback.
+  `enrichment.supplier` key. Search results must cover the product's defining
+  words before an item is offered; a lead-provided marketplace URL is checked
+  by listing identity after Pricing Hub resolves it, even when its translated
+  title differs. Supported marketplace short links go through the same detail
+  lookup. A matching POD item wins; the supplier is the fallback. Live search
+  queries are trimmed to product words, excluding contact details, destination,
+  quantity and sales copy.
 - CRM calculates a shipping reference only when the post states quantity and
   destination, the item has a known weight, and a `live`, recently fetched CMS
   international rate card supports its cargo category. The operator sees a
-  per-parcel reference, never a bulk total. Ambiguous cargo categories receive
+  per-parcel reference, never a bulk total. For bulk posts, the draft explicitly
+  labels this as one product shipped separately; its unit weight is not the
+  packed weight or total freight for the lot. Ambiguous cargo categories receive
   no automatic number. The old undated Epacket seed is not used by this path.
 - The international CN→US card is the applicable public lane for that case.
   Domestic 3PL pricing needs a US warehouse shipment and delivery zone; the
@@ -192,7 +199,11 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
   the draft names the CN→destination route and asks to confirm delivery mode
   and parcel details. Every draft is still for staff review before sending.
 - Suggestions stay best-effort: any failure in this path leaves lead ingestion
-  untouched.
+  untouched. Lookup is skipped when the runner has too little time left for a
+  useful request. No match, lookup failure, and exhausted Elim quota receive
+  different operator notes; none supplies an invented offer. The supplier MOQ
+  is included when returned, but a marketplace price remains a reference and
+  must be checked against the selected quantity and SKU before quoting a buyer.
 - Taobao ids: since 2026-08 the upstream rejects bare numeric item ids, so pass
   the product URL. `suppliersourcing.Client.Detail` accepts either.
 

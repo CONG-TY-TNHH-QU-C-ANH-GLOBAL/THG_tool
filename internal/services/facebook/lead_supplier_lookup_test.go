@@ -88,15 +88,15 @@ func TestSupplierLookupPrefersProductLinkOverSearch(t *testing.T) {
 	}
 }
 
-func TestSupplierLookupRejectsLinkedProductWithDifferentTitle(t *testing.T) {
+func TestSupplierLookupAcceptsExactLinkedProductWithDifferentTitle(t *testing.T) {
 	price := 20.0
 	link := "https://detail.1688.com/offer/2.html"
 	client := &fakeSupplierReader{product: &suppliersourcing.Product{
 		Title: "Áo thun cotton", Link: link, Price: &price,
 	}}
 	got, err := NewSupplierLookup(client)(context.Background(), "Cần nhập viên bổ khớp cho chó "+link)
-	if err == nil || got != nil || len(client.queries) != 0 {
-		t.Fatalf("mismatched linked product must not be offered: %+v, err=%v", got, err)
+	if err != nil || got == nil || got.Match.Similar || len(client.queries) != 0 {
+		t.Fatalf("lead's exact listing should outrank a translated title: %+v, err=%v", got, err)
 	}
 }
 

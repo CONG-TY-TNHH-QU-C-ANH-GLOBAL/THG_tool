@@ -13,6 +13,9 @@ import (
 // A retrieval hit can be broadly relevant to the workspace without matching the
 // item in this post. Require a product term from the post before offering it.
 func matchesLeadProduct(leadText, title string) bool {
+	if sharedProductHeadPhrase(leadText, title) {
+		return true
+	}
 	words := func(s string) map[string]bool {
 		out := map[string]bool{}
 		for _, word := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
@@ -132,7 +135,7 @@ func isUSDestination(text string) bool {
 	if explicitUSDestination.MatchString(text) {
 		return true
 	}
-	for _, term := range []string{"sang mỹ", "về mỹ", "đi mỹ", "tại mỹ", "qua mỹ", "to usa", "to united states", " hoa kỳ", " u.s."} {
+	for _, term := range []string{"sang mỹ", "về mỹ", "đi mỹ", "tại mỹ", "qua mỹ", "giao tới mỹ", "gửi mỹ", "gửi đến mỹ", "gửi sang mỹ", "to usa", "to the usa", "to united states", "to the united states", " hoa kỳ", " u.s."} {
 		if containsLeadPhrase(text, term) {
 			return true
 		}
@@ -140,7 +143,7 @@ func isUSDestination(text string) bool {
 	return false
 }
 
-var explicitUSDestination = regexp.MustCompile(`\b(?:to|ship to|deliver to)\s+US\b`)
+var explicitUSDestination = regexp.MustCompile(`\b(?:to|ship to|deliver to)\s+(?:the\s+)?US\b`)
 
 var leadQuantityPattern = regexp.MustCompile(`(\d{1,6})\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces|áo|shirts|hoodies)`)
 
@@ -163,7 +166,7 @@ func leadDestinationCountry(text string) string {
 	if isUSDestination(text) {
 		return "US"
 	}
-	for _, term := range []string{"sang nước anh", "về nước anh", "đi nước anh", "vương quốc anh", "to uk", "to gb", "united kingdom"} {
+	for _, term := range []string{"sang nước anh", "về nước anh", "đi nước anh", "vương quốc anh", "to uk", "to the uk", "to gb", "united kingdom"} {
 		if containsLeadPhrase(text, term) {
 			return "GB"
 		}
@@ -172,7 +175,7 @@ func leadDestinationCountry(text string) string {
 }
 
 func isOrdinaryApparel(name string) bool {
-	for _, blocked := range []string{"thuốc", "thực phẩm", "bổ sung", "pin", "mỹ phẩm", "chất lỏng", "supplement", "battery", "cosmetic", "tất cả"} {
+	for _, blocked := range []string{"thuốc", "thực phẩm", "bổ sung", "pin", "mỹ phẩm", "chất lỏng", "supplement", "battery", "cosmetic", "tất cả", "sưởi", "điện", "usb", "sạc", "led", "heated", "electric", "rechargeable"} {
 		if containsLeadPhrase(name, blocked) {
 			return false
 		}

@@ -99,7 +99,7 @@ func (c *Client) DetailLocalized(ctx context.Context, platform, productID, produ
 		return nil, err
 	}
 	if !envelope.OK || envelope.Product == nil {
-		return nil, fmt.Errorf("suppliersourcing: detail rejected: %s", fallbackError(envelope.Error))
+		return nil, scrapeRejection("detail", envelope.Error)
 	}
 	return envelope.Product, nil
 }
@@ -138,7 +138,7 @@ func (c *Client) SearchLocalized(ctx context.Context, query, platform string, si
 		return nil, err
 	}
 	if !envelope.OK {
-		return nil, fmt.Errorf("suppliersourcing: search rejected: %s", fallbackError(envelope.Error))
+		return nil, scrapeRejection("search", envelope.Error)
 	}
 	return envelope.Items, nil
 }
@@ -183,17 +183,13 @@ func (c *Client) do(req *http.Request, out any) error {
 		return fmt.Errorf("suppliersourcing: read %s: %w", req.URL.Path, err)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		if response.StatusCode == http.StatusPaymentRequired {
+			return fmt.Errorf("suppliersourcing: %w", ErrQuotaExceeded)
+		}
 		return fmt.Errorf("suppliersourcing: %s responded %d", req.URL.Path, response.StatusCode)
 	}
 	if err := json.Unmarshal(payload, out); err != nil {
 		return fmt.Errorf("suppliersourcing: decode %s: %w", req.URL.Path, err)
 	}
 	return nil
-}
-
-func fallbackError(message string) string {
-	if strings.TrimSpace(message) == "" {
-		return "unknown upstream error"
-	}
-	return message
 }

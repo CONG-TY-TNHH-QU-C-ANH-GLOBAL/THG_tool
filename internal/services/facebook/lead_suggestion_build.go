@@ -27,7 +27,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	matched := matchingCandidates(leadText, candidates)
 	product := PickSuggestedProductDetails(matched)
 	var supplier *models.SupplierMatch
-	lookupUnavailable := supplierLookup == nil
+	lookupStatus := classifySupplierLookupError(nil, supplierLookup == nil)
 	if wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) {
 		product = SuggestedProduct{}
 	}
@@ -48,7 +48,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		var liveWeight *float64
 		if !supplier.HasOffer() && supplierLookup != nil {
 			resolved, lookupErr := supplierLookup(ctx, leadText)
-			lookupUnavailable = lookupErr != nil
+			lookupStatus = classifySupplierLookupError(lookupErr, false)
 			if lookupErr == nil && resolved != nil {
 				supplier, liveWeight = resolved.Match, resolved.WeightKG
 			}
@@ -58,7 +58,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		if supplier.HasOffer() && shippingQuote != nil && leadDestinationCountry(leadText) != "" {
 			quantity := leadQuantity(leadText)
 			mode := "parcel"
-			if wantsBulkSourcing(leadText) {
+			if wantsBulkSourcing(leadText) && quantity > 1 {
 				mode = "bulk"
 			}
 			cargo := "unknown"
@@ -85,9 +85,8 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 			}
 		}
 	}
-	// One notice offers one matching catalog item or one marketplace source.
 	if product.Name == "" && product.URL == "" && !supplier.HasOffer() {
-		return noOfferSuggestionForLookup(leadText, author, lookupUnavailable)
+		return noOfferSuggestionForLookup(leadText, author, lookupStatus)
 	}
 	out := LeadSuggestion{
 		ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL,
@@ -135,66 +134,4 @@ func freshSupplierPrice(supplier *models.SupplierMatch, now time.Time) bool {
 	}
 	age := now.Sub(captured)
 	return age >= 0 && age <= 7*24*time.Hour
-}
-
-func supplierFallbackReply(author string, supplier *models.SupplierMatch, leadText string) string {
-	if supplierEnglishQuery(leadText) != "" {
-		article := "a similar "
-		if !supplier.Similar {
-			article = "the "
-		}
-		first := "Hi " + leadSalutation(author) + ", we found " + article + shortLeadTitle(supplier.Name) + " from China"
-		if supplier.PriceText != "" {
-			first += " at a reference product price of " + supplier.PriceText
-		}
-		if supplier.Shipping != nil && supplier.Shipping.PriceText != "" {
-			first += "; reference shipping " + supplier.Shipping.PriceText + " per parcel"
-			if strings.Contains(supplier.Shipping.Basis, "không phải tổng cước lô") {
-				first += " (not the total bulk shipping cost)"
-			}
-		}
-		missingFacts := "quantity and destination"
-		if leadDestinationCountry(leadText) != "" {
-			missingFacts = "quantity and parcel details"
-		}
-		if strings.Contains(strings.ToLower(leadText), "european") || strings.Contains(strings.ToLower(leadText), "supplier in europe") {
-			return first + ". Would a China-based alternative work? Please share the " + missingFacts + " for a shipping quote."
-		}
-		return first + ". Please share the " + missingFacts + " for a shipping quote."
-	}
-	first := leadSalutation(author) + ", bên mình có thể tìm nguồn "
-	if supplier.Similar {
-		first += "mẫu tương tự "
-	}
-	first += shortLeadTitle(supplier.Name)
-	if supplier.PriceText != "" {
-		first += ", giá nguồn tham khảo " + supplier.PriceText
-	}
-	if supplier.Shipping != nil && supplier.Shipping.PriceText != "" {
-		first += "; cước tham chiếu " + supplier.Shipping.PriceText + "/kiện"
-		if strings.Contains(supplier.Shipping.Basis, "không phải tổng cước lô") {
-			first += " (chưa phải tổng cước lô)"
-		}
-		if supplier.Shipping.Transit != "" {
-			first += " (" + supplier.Shipping.Transit + ")"
-		}
-	} else if destination := leadDestinationCountry(leadText); destination != "" {
-		first += "; tuyến CN→" + destination + ", cước cần xác nhận theo cách giao và quy cách kiện"
-	}
-	return first + ". Mình trao đổi số lượng và báo giá cụ thể qua inbox nhé?"
-}
-
-func leadSalutation(author string) string {
-	if name := strings.TrimSpace(author); name != "" {
-		return name
-	}
-	return "Bạn"
-}
-
-func shortLeadTitle(title string) string {
-	runes := []rune(strings.TrimSpace(title))
-	if len(runes) > 100 {
-		return string(runes[:100]) + "…"
-	}
-	return string(runes)
 }
