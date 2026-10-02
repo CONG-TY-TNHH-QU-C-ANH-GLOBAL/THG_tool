@@ -12,16 +12,17 @@ var englishProductNeed = regexp.MustCompile(`(?i)\b(?:looking\s+for|need|seeking
 // treating "looking for a supplier" as a product. It never uses the image
 // alone to claim an exact model match.
 func supplierEnglishQuery(raw string) string {
-	text := strings.ToLower(raw)
+	text := raw
 	if len(text) > 3000 {
 		text = text[:3000]
 	}
 	var phrase string
-	if match := englishSupplierFor.FindStringSubmatch(text); len(match) > 1 {
-		phrase = match[1]
-	} else if match := englishProductNeed.FindStringSubmatch(text); len(match) > 1 {
-		phrase = match[1]
+	if match := englishSupplierFor.FindStringSubmatchIndex(text); len(match) >= 4 {
+		phrase = text[match[2]:match[3]]
+	} else if match := englishProductNeed.FindStringSubmatchIndex(text); len(match) >= 4 {
+		phrase = text[match[2]:match[3]]
 	}
+	phrase = strings.ToLower(trimSupplierProperNameTail(phrase))
 	for _, marker := range []string{" or ", " with ", " to ", " from ", " in ", " for ", " model", " https", ".", ",", ";", "\n"} {
 		if at := strings.Index(phrase, marker); at >= 0 {
 			phrase = phrase[:at]

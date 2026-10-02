@@ -3,10 +3,59 @@ package facebook
 import (
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var supplierEmailOrPhone = regexp.MustCompile(`(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|\+?\d[\d .-]{6,}\d`)
 var supplierTrailingQuantity = regexp.MustCompile(`(?i)\s+\d{1,6}\s*(?:hộp|cái|chiếc|sản phẩm|pcs|units|boxes|pieces)(?:/tháng|/month|\b)`)
+var commonVietnameseSurname = map[string]bool{
+	"nguyễn": true, "trần": true, "lê": true, "phạm": true, "hoàng": true,
+	"vũ": true, "võ": true, "đặng": true, "bùi": true, "đỗ": true,
+	"hồ": true, "ngô": true, "dương": true, "đinh": true,
+}
+var supplierContextProperWords = map[string]bool{
+	"mỹ": true, "us": true, "usa": true, "uk": true,
+	"taobao": true, "tmall": true, "alibaba": true, "china": true,
+	"europe": true, "european": true, "canada": true,
+}
+
+// Keep a product phrase when a customer adds a capitalized personal name after
+// it. This reduces accidental disclosure; ambiguous lower-case text still
+// needs a separate fail-closed check before calling the external API.
+func trimSupplierProperNameTail(raw string) string {
+	words := strings.Fields(raw)
+	for i, word := range words {
+		if i == 0 || !startsWithUppercaseLetter(word) {
+			continue
+		}
+		if supplierContextProperWords[strings.ToLower(word)] {
+			continue
+		}
+		capitalizedNext := i+1 < len(words) && startsWithUppercaseLetter(words[i+1])
+		precededByLowercase := false
+		for _, prior := range words[:i] {
+			r, _ := utf8.DecodeRuneInString(prior)
+			if unicode.IsLower(r) {
+				precededByLowercase = true
+				break
+			}
+		}
+		if commonVietnameseSurname[strings.ToLower(word)] || (capitalizedNext && i >= 2 && precededByLowercase) || (i >= 3 && precededByLowercase) {
+			return strings.Join(words[:i], " ")
+		}
+	}
+	return raw
+}
+
+func startsWithUppercaseLetter(word string) bool {
+	for _, r := range word {
+		if unicode.IsLetter(r) {
+			return unicode.IsUpper(r)
+		}
+	}
+	return false
+}
 
 // Keep only product words before delivery instructions, sales copy or contact
 // information. The returned text is the only text sent as an Elim search term.
@@ -40,6 +89,11 @@ func trimSupplierQueryContext(raw string) string {
 func safeSupplierQuery(text string) bool {
 	if text == "" || strings.ContainsAny(text, "@:/\\") || supplierEmailOrPhone.MatchString(text) {
 		return false
+	}
+	for _, word := range strings.Fields(strings.ToLower(text)) {
+		if commonVietnameseSurname[word] {
+			return false
+		}
 	}
 	words := supplierIdentityWords(text)
 	if len(words) >= 2 {

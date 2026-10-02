@@ -88,6 +88,15 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	if product.Name == "" && product.URL == "" && !supplier.HasOffer() {
 		return noOfferSuggestionForLookup(leadText, author, lookupStatus)
 	}
+	if supplier.HasOffer() && wantsBulkSourcing(leadText) && leadQuantity(leadText) > 1 &&
+		!strings.Contains(supplier.PriceText, "giá bậc") && !strings.Contains(supplier.PriceText, "tier ") &&
+		!strings.Contains(supplier.PriceText, "MOQ") {
+		if supplierQueryLanguage(leadText) == "en" {
+			supplier.PriceText += " (volume price to confirm)"
+		} else {
+			supplier.PriceText += " (giá theo số lượng cần xác nhận)"
+		}
+	}
 	out := LeadSuggestion{
 		ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL,
 		Supplier: supplier,
@@ -115,7 +124,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		return out
 	}
 	out.Reply = strings.TrimSpace(reply)
-	if out.Reply == "" {
+	if out.Reply == "" || !generatedPODReplyGrounded(out.Reply, product.URL) {
 		out.Reply = podFallbackReply(author, product, leadText)
 		return out
 	}

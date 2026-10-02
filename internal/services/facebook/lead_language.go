@@ -1,11 +1,17 @@
 package facebook
 
-import "unicode"
+import (
+	"strings"
+	"unicode"
+)
 
 // leadLooksEnglish reports a post written without Vietnamese or other
 // non-ASCII letters, so a draft that cannot extract a product phrase still
 // answers in the post's language.
 func leadLooksEnglish(text string) bool {
+	if looksLikeUnaccentedVietnamese(text) {
+		return false
+	}
 	words := 0
 	inWord := false
 	for _, r := range text {
@@ -21,6 +27,17 @@ func leadLooksEnglish(text string) bool {
 	return words >= 3
 }
 
+// ASCII alone does not mean English: Facebook posts often omit Vietnamese
+// accents. Use only phrases that are distinctive in this sales context.
+func looksLikeUnaccentedVietnamese(text string) bool {
+	for _, phrase := range []string{"can nhap", "muon nhap", "can mua", "muon mua", "tim nguon", "so luong", "bao gia", "gui ve", "ben minh", "cho minh", "nhap hang", "ao hoodie", "ao thun"} {
+		if containsLeadPhrase(text, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 // asciiQuery reports a search phrase that is English even inside a Vietnamese
 // post ("cần nhập hand massager"), so Elim returns titles in the same language.
 func asciiQuery(query string) bool {
@@ -32,7 +49,7 @@ func asciiQuery(query string) bool {
 			return false
 		}
 	}
-	return true
+	return !looksLikeUnaccentedVietnamese(query) && !strings.HasPrefix(strings.ToLower(query), "ao ")
 }
 
 // asksForWarehouse marks storage or fulfillment requests. They are not
