@@ -189,13 +189,17 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
   as "anh Nam" is not the United Kingdom, and "kẹo táo" is not apparel. For a
   non-bulk request covering multiple items, one item's weight cannot stand in
   for the packed parcel's weight, so no automatic numeric quote is shown.
-- Source numbers are copied; the shipping calculator adds the published
-  $0.70 handling fee to the selected CMS weight row. No currency conversion,
-  estimated weight, or invented MOQ tier — a missing value is omitted everywhere
-  (facts block, Telegram strip, CRM payload).
+- Source numbers are copied; for a 1688 volume offer with published price tiers,
+  the largest eligible MOQ tier is selected for the quantity stated in the post
+  and labelled in the draft. An unknown quantity or one below MOQ is labelled
+  as a reference, never as an eligible lot price. The shipping calculator adds
+  the published $0.70 handling fee to the selected CMS weight row. No currency
+  conversion or estimated weight is invented; missing values are omitted.
 - The Dropship draft is assembled from verified product and rate fields,
   without another LLM call. The POD prompt uses assembled facts and a short
-  fixed fallback. When the destination is known but a numeric rate is not,
+  fixed fallback when the generator is unavailable, errors, or returns no
+  visible text. This fallback retains the matched catalog link and follows the
+  post language. When the destination is known but a numeric rate is not,
   the draft names the CN→destination route and asks to confirm delivery mode
   and parcel details. Every draft is still for staff review before sending.
 - Suggestions stay best-effort: any failure in this path leaves lead ingestion

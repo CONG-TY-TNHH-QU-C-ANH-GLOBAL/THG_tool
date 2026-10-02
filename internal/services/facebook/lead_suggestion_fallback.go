@@ -1,6 +1,7 @@
 package facebook
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -13,11 +14,15 @@ const (
 	lookupCompleted supplierLookupStatus = iota
 	lookupUnavailable
 	lookupQuotaExhausted
+	lookupTimedOut
 )
 
 func classifySupplierLookupError(err error, unavailable bool) supplierLookupStatus {
 	if errors.Is(err, suppliersourcing.ErrQuotaExceeded) {
 		return lookupQuotaExhausted
+	}
+	if errors.Is(err, errSupplierBudget) || errors.Is(err, context.DeadlineExceeded) {
+		return lookupTimedOut
 	}
 	if unavailable || (err != nil && !errors.Is(err, errSupplierNoMatch)) {
 		return lookupUnavailable
@@ -48,6 +53,8 @@ func noOfferSuggestionForLookup(leadText, author string, status supplierLookupSt
 		out.SourcingNote = "chưa đủ mô tả sản phẩm để tìm nguồn — sale cần hỏi thêm"
 	} else if status == lookupQuotaExhausted {
 		out.SourcingNote = "Elim đã hết lượt tra cứu — sale cần kiểm tra nguồn thủ công"
+	} else if status == lookupTimedOut {
+		out.SourcingNote = "hết thời gian tra cứu nguồn sàn — sale cần kiểm tra thủ công"
 	} else if status == lookupUnavailable {
 		out.SourcingNote = "chưa tra cứu được nguồn sàn — sale cần kiểm tra thủ công"
 	}
@@ -60,11 +67,16 @@ func noOfferSuggestionForLookup(leadText, author string, status supplierLookupSt
 // Posts without a product or sourcing need get no draft, so a vague logistics
 // post is not answered with an off-topic question.
 func noOfferSuggestion(leadText, author string) LeadSuggestion {
-	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && supplierQuery(leadText) == "" {
+	query := supplierQuery(leadText)
+	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && query == "" {
+		return LeadSuggestion{}
+	}
+	// "Kho Mỹ nhận hàng nhập từ 1688" asks for storage, not a product to source.
+	if link, _ := leadMarketplaceURL(leadText); query == "" && link == "" && !wantsPersonalizedPOD(leadText) && asksForWarehouse(leadText) {
 		return LeadSuggestion{}
 	}
 	out := LeadSuggestion{SourcingNote: noOfferSourcingNote}
-	if supplierEnglishQuery(leadText) != "" {
+	if supplierQueryLanguage(leadText) == "en" {
 		name := leadSalutation(author)
 		if strings.TrimSpace(author) == "" {
 			name = "there"

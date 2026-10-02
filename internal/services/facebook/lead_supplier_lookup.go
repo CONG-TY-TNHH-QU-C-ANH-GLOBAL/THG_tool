@@ -41,7 +41,11 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 	}
 	return func(ctx context.Context, leadText string) (*ResolvedSupplier, error) {
 		query := supplierQuery(leadText)
-		lang := supplierQueryLanguage(leadText)
+		replyLang := supplierQueryLanguage(leadText)
+		lang := replyLang
+		if asciiQuery(query) {
+			lang = "en"
+		}
 		if link, platform := leadMarketplaceURL(leadText); link != "" {
 			if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
 				return nil, err
@@ -53,7 +57,7 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 			if product == nil || !linkedMarketplaceListing(link, product.Link) {
 				return nil, errSupplierNoMatch
 			}
-			resolved, err := resolvedSupplier(product, platform)
+			resolved, err := resolvedSupplier(product, platform, leadQuantity(leadText), replyLang)
 			if resolved != nil {
 				// The lead pasted this exact listing, so it is not a lookalike.
 				resolved.Match.Similar = false
@@ -109,7 +113,7 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 				if product == nil || !matchesSupplierQuery(query, product.Title) {
 					continue
 				}
-				resolved, err := resolvedSupplier(product, platform)
+				resolved, err := resolvedSupplier(product, platform, leadQuantity(leadText), replyLang)
 				if err == nil {
 					return resolved, nil
 				}
@@ -122,7 +126,7 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 	}
 }
 
-func resolvedSupplier(product *suppliersourcing.Product, platform string) (*ResolvedSupplier, error) {
+func resolvedSupplier(product *suppliersourcing.Product, platform string, quantity int, replyLang string) (*ResolvedSupplier, error) {
 	if product == nil || !marketplaceURL(product.Link) || product.Price == nil || *product.Price <= 0 {
 		return nil, errors.New("supplier detail has no usable link or price")
 	}
@@ -140,7 +144,7 @@ func resolvedSupplier(product *suppliersourcing.Product, platform string) (*Reso
 	}
 	return &ResolvedSupplier{Match: &models.SupplierMatch{
 		Platform: label, Name: name, URL: product.Link, ImageURL: image,
-		PriceText: formatYuan(product.Price), WeightKG: formatWeight(product.WeightKG),
+		PriceText: supplierSourcePriceText(product, platform, quantity, replyLang), WeightKG: formatWeight(product.WeightKG),
 		MOQText: formatMOQ(product.MOQ, product.Unit), ShipFrom: strings.TrimSpace(product.ShipFrom),
 		ShopName: strings.TrimSpace(product.ShopName), CapturedAt: strings.TrimSpace(product.FetchedAt),
 		Similar: true,

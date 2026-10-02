@@ -18,6 +18,9 @@ func supplierQueryLanguage(text string) string {
 			return "en"
 		}
 	}
+	if leadLooksEnglish(text) {
+		return "en"
+	}
 	return "vi"
 }
 
@@ -30,7 +33,8 @@ func supplierQuery(raw string) string {
 	}
 	for _, marker := range []string{"cần nhập ", "muốn nhập ", "cần tìm nguồn ", "cần nguồn ", "tìm nguồn ", "cần mua ", "muốn mua ", "nhập ", "mua "} {
 		if at := strings.Index(text, marker); at >= 0 {
-			text = text[at+len(marker):]
+			// Preserve case until a possible personal-name tail has been removed.
+			text = strings.ToLower(trimSupplierProperNameTail(raw[at+len(marker):]))
 			goto cut
 		}
 	}
@@ -67,12 +71,12 @@ func podSupplierQuery(raw string) string {
 	text := strings.ToLower(raw)
 	for _, marker := range []string{"logo lên ", "logo trên ", "thiết kế lên ", "yêu cầu lên ", "logo on ", "printing on ", "print on "} {
 		if at := strings.Index(text, marker); at >= 0 {
-			return cleanPODSupplierPhrase(text[at+len(marker):])
+			return cleanPODSupplierPhrase(strings.ToLower(trimSupplierProperNameTail(raw[at+len(marker):])))
 		}
 	}
 	for _, marker := range []string{" in logo", " in theo thiết kế", " in theo yêu cầu", " with custom logo"} {
 		if at := strings.Index(text, marker); at >= 0 {
-			return cleanPODSupplierPhrase(text[:at])
+			return cleanPODSupplierPhrase(strings.ToLower(trimSupplierProperNameTail(raw[:at])))
 		}
 	}
 	return ""

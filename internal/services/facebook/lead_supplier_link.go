@@ -67,20 +67,24 @@ func sameMarketplaceListing(requested, returned string) bool {
 	if marketplacePlatform(a.Hostname()) != marketplacePlatform(b.Hostname()) {
 		return false
 	}
-	id := func(u *url.URL) string {
-		if found := offerPathID.FindStringSubmatch(u.Path); len(found) > 1 {
-			return found[1]
-		}
-		if value := u.Query().Get("offerId"); value != "" {
-			return value
-		}
-		return u.Query().Get("id")
-	}
-	return id(a) != "" && id(a) == id(b)
+	return marketplaceListingID(a) != "" && marketplaceListingID(a) == marketplaceListingID(b)
 }
 
+func marketplaceListingID(u *url.URL) string {
+	if found := offerPathID.FindStringSubmatch(u.Path); len(found) > 1 {
+		return found[1]
+	}
+	if value := u.Query().Get("offerId"); value != "" {
+		return value
+	}
+	return u.Query().Get("id")
+}
+
+var numericListingID = regexp.MustCompile(`^\d+$`)
+
 // Pricing Hub resolves a trusted marketplace short link to a canonical item.
-// A short URL has no visible ID, so verify only the destination marketplace.
+// A short URL has no visible ID, so verify the destination marketplace and
+// that the resolved link names a real item (not "offer/undefined.html").
 func linkedMarketplaceListing(requested, returned string) bool {
 	if sameMarketplaceListing(requested, returned) {
 		return true
@@ -90,5 +94,6 @@ func linkedMarketplaceListing(requested, returned string) bool {
 	}
 	a, _ := url.Parse(requested)
 	b, _ := url.Parse(returned)
-	return marketplacePlatform(a.Hostname()) == marketplacePlatform(b.Hostname())
+	return marketplacePlatform(a.Hostname()) == marketplacePlatform(b.Hostname()) &&
+		numericListingID.MatchString(marketplaceListingID(b))
 }

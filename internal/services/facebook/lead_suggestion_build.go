@@ -88,6 +88,15 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	if product.Name == "" && product.URL == "" && !supplier.HasOffer() {
 		return noOfferSuggestionForLookup(leadText, author, lookupStatus)
 	}
+	if supplier.HasOffer() && wantsBulkSourcing(leadText) && leadQuantity(leadText) > 1 &&
+		!strings.Contains(supplier.PriceText, "giá bậc") && !strings.Contains(supplier.PriceText, "tier ") &&
+		!strings.Contains(supplier.PriceText, "MOQ") {
+		if supplierQueryLanguage(leadText) == "en" {
+			supplier.PriceText += " (volume price to confirm)"
+		} else {
+			supplier.PriceText += " (giá theo số lượng cần xác nhận)"
+		}
+	}
 	out := LeadSuggestion{
 		ProductName: product.Name, ProductURL: product.URL, ProductImageURL: product.ImageURL,
 		Supplier: supplier,
@@ -100,7 +109,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		return out
 	}
 	if msgGen == nil || !msgGen.Available() || profile == nil {
-		out.Reply = leadSalutation(author) + ", bên mình có " + shortLeadTitle(product.Name) + " phù hợp nhu cầu của bạn. Mình gửi chi tiết qua inbox nhé? " + product.URL
+		out.Reply = podFallbackReply(author, product, leadText)
 		return out
 	}
 	reply, err := msgGen.GenerateLeadReplySuggestion(ctx, ai.LeadReplyRequest{
@@ -111,12 +120,17 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		GroundedFacts:   BuildGroundedFacts(product, supplier),
 	})
 	if err != nil {
+		out.Reply = podFallbackReply(author, product, leadText)
 		return out
 	}
 	out.Reply = strings.TrimSpace(reply)
+	if out.Reply == "" || !generatedPODReplyGrounded(out.Reply, product.URL) {
+		out.Reply = podFallbackReply(author, product, leadText)
+		return out
+	}
 	selectedURL := product.URL
 	if product.URL != "" && len([]rune(out.Reply)) > 320 {
-		out.Reply = leadSalutation(author) + ", bên mình có " + shortLeadTitle(product.Name) + " phù hợp nhu cầu của bạn. Mình gửi thêm chi tiết qua inbox nhé?"
+		out.Reply = podFallbackReply(author, product, leadText)
 	}
 	if selectedURL != "" && !strings.Contains(out.Reply, selectedURL) {
 		out.Reply = strings.TrimSpace(out.Reply + " " + selectedURL)
