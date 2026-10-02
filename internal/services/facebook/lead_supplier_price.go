@@ -13,20 +13,7 @@ func supplierSourcePriceText(product *suppliersourcing.Product, platform string,
 	if platform != suppliersourcing.PlatformAlibaba || product.QuoteType != "by_volume" || len(product.PriceRange) == 0 {
 		return base
 	}
-	var lowest, applicable *suppliersourcing.PriceTier
-	for i := range product.PriceRange {
-		tier := &product.PriceRange[i]
-		price := supplierTierPrice(tier)
-		if tier.MOQ <= 0 || price == nil || *price <= 0 {
-			continue
-		}
-		if lowest == nil || tier.MOQ < lowest.MOQ {
-			lowest = tier
-		}
-		if quantity >= tier.MOQ && (applicable == nil || tier.MOQ > applicable.MOQ) {
-			applicable = tier
-		}
-	}
+	lowest, applicable := volumePriceTiers(product.PriceRange, quantity)
 	if lowest == nil {
 		return base
 	}
@@ -38,22 +25,43 @@ func supplierSourcePriceText(product *suppliersourcing.Product, platform string,
 	if label == "" {
 		return base
 	}
+	return formatVolumePrice(label, selected.MOQ, quantity, applicable != nil, lang)
+}
+
+func volumePriceTiers(tiers []suppliersourcing.PriceTier, quantity int) (lowest, applicable *suppliersourcing.PriceTier) {
+	for i := range tiers {
+		tier := &tiers[i]
+		price := supplierTierPrice(tier)
+		if tier.MOQ <= 0 || price == nil || *price <= 0 {
+			continue
+		}
+		if lowest == nil || tier.MOQ < lowest.MOQ {
+			lowest = tier
+		}
+		if quantity >= tier.MOQ && (applicable == nil || tier.MOQ > applicable.MOQ) {
+			applicable = tier
+		}
+	}
+	return lowest, applicable
+}
+
+func formatVolumePrice(label string, moq, quantity int, eligible bool, lang string) string {
 	if quantity == 0 {
 		if lang == "en" {
-			return fmt.Sprintf("%s (from MOQ %d; quantity to confirm)", label, selected.MOQ)
+			return fmt.Sprintf("%s (from MOQ %d; quantity to confirm)", label, moq)
 		}
-		return fmt.Sprintf("%s (giá từ MOQ %d; cần chốt số lượng)", label, selected.MOQ)
+		return fmt.Sprintf("%s (giá từ MOQ %d; cần chốt số lượng)", label, moq)
 	}
-	if applicable == nil {
+	if !eligible {
 		if lang == "en" {
-			return fmt.Sprintf("%s (MOQ %d+; not valid for %d items)", label, selected.MOQ, quantity)
+			return fmt.Sprintf("%s (MOQ %d+; not valid for %d items)", label, moq, quantity)
 		}
-		return fmt.Sprintf("%s (chỉ từ MOQ %d; chưa áp dụng cho %d sản phẩm)", label, selected.MOQ, quantity)
+		return fmt.Sprintf("%s (chỉ từ MOQ %d; chưa áp dụng cho %d sản phẩm)", label, moq, quantity)
 	}
 	if lang == "en" {
-		return fmt.Sprintf("%s (tier %d+; variant to confirm)", label, selected.MOQ)
+		return fmt.Sprintf("%s (tier %d+; variant to confirm)", label, moq)
 	}
-	return fmt.Sprintf("%s (giá bậc %d+; tùy phân loại hàng)", label, selected.MOQ)
+	return fmt.Sprintf("%s (giá bậc %d+; tùy phân loại hàng)", label, moq)
 }
 
 func supplierTierPrice(tier *suppliersourcing.PriceTier) *float64 {

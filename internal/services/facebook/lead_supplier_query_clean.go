@@ -32,20 +32,28 @@ func trimSupplierProperNameTail(raw string) string {
 		if supplierContextProperWords[strings.ToLower(word)] {
 			continue
 		}
-		capitalizedNext := i+1 < len(words) && startsWithUppercaseLetter(words[i+1])
-		precededByLowercase := false
-		for _, prior := range words[:i] {
-			r, _ := utf8.DecodeRuneInString(prior)
-			if unicode.IsLower(r) {
-				precededByLowercase = true
-				break
-			}
-		}
-		if commonVietnameseSurname[strings.ToLower(word)] || (capitalizedNext && i >= 2 && precededByLowercase) || (i >= 3 && precededByLowercase) {
+		if probableSupplierPersonTail(words, i) {
 			return strings.Join(words[:i], " ")
 		}
 	}
 	return raw
+}
+
+func probableSupplierPersonTail(words []string, i int) bool {
+	if commonVietnameseSurname[strings.ToLower(words[i])] {
+		return true
+	}
+	capitalizedNext := i+1 < len(words) && startsWithUppercaseLetter(words[i+1])
+	if i < 3 && !capitalizedNext {
+		return false
+	}
+	for _, prior := range words[:i] {
+		r, _ := utf8.DecodeRuneInString(prior)
+		if unicode.IsLower(r) {
+			return i >= 3 || (i >= 2 && capitalizedNext)
+		}
+	}
+	return false
 }
 
 func startsWithUppercaseLetter(word string) bool {

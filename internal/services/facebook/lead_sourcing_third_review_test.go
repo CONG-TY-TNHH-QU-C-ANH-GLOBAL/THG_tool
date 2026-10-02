@@ -37,7 +37,7 @@ func TestThirdReviewQueryDropsTrailingDeliveryAndContactWords(t *testing.T) {
 	}
 }
 
-func TestThirdReviewPODAlternativeFoundWhenPostSaysGửiVềMỹ(t *testing.T) {
+func TestThirdReviewPODAlternativeFoundWhenPostSaysGuiVeMy(t *testing.T) {
 	price := 9.0
 	link := "https://detail.1688.com/offer/9.html"
 	reader := &fakeSupplierReader{
