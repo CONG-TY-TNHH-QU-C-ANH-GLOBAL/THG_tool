@@ -29,7 +29,7 @@ func supplierEnglishQuery(raw string) string {
 	}
 	phrase = strings.TrimSpace(phrase)
 	phrase = trimSupplierQueryContext(phrase)
-	if strings.Contains(phrase, "supplier") || strings.Contains(phrase, "agent") || strings.Contains(phrase, "shipping") {
+	if strings.Contains(phrase, "supplier") || strings.Contains(phrase, "agent") || strings.Contains(phrase, "shipping") || asksForWarehouse(phrase) {
 		return ""
 	}
 	words := strings.Fields(phrase)

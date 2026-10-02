@@ -13,15 +13,19 @@ var supplierTrailingQuantity = regexp.MustCompile(`(?i)\s+\d{1,6}\s*(?:hộp|cá
 func trimSupplierQueryContext(raw string) string {
 	text := strings.TrimSpace(strings.ToLower(raw))
 	cut := len(text)
+	// The trailing space lets word markers such as " gửi " also match the last
+	// word, e.g. "túi vải canvas gửi" left after "về mỹ" was removed upstream.
+	padded := text + " "
 	for _, marker := range []string{
 		" liên hệ", " sđt", " số điện thoại", " zalo", " inbox", " ib ",
-		" chị ", " anh ", " email", " phone", " contact", " gửi ", " giao ",
+		" chị ", " anh ", " em ", " nhé ", " email", " phone", " contact", " gửi ", " giao ",
+		" địa chỉ", " đ/c", " đc ", " quận ", " phường ", " huyện ", " đường ", " facebook", " fb ",
 		" tới mỹ", " đến mỹ", " về mỹ", " sang mỹ", " đi mỹ",
 		" to the us", " to us", " to the usa", " to usa", " to the uk", " to uk", " to united states",
 		" loại ", " giá ", " khoảng ", " số lượng", " https://", " http://",
 		" www.", "@", "\n", ",", ";",
 	} {
-		if at := strings.Index(text, marker); at >= 0 && at < cut {
+		if at := strings.Index(padded, marker); at >= 0 && at < cut {
 			cut = at
 		}
 	}

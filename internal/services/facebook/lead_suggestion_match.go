@@ -67,6 +67,8 @@ var leadProductStopWords = map[string]bool{
 	"personalized": true, "personalised": true, "custom": true,
 	"christmas": true, "xmas": true, "etsy": true, "logo": true,
 	"design": true, "cotton": true, "unisex": true, "premium": true,
+	// Grade and gift qualifiers ("cao cấp", "quà tặng") are shared by unrelated items.
+	"cao": true, "cấp": true, "quà": true, "tặng": true,
 }
 
 // Match whole Unicode words so "pod" cannot match "tripod", and "áo"
@@ -175,7 +177,7 @@ func leadDestinationCountry(text string) string {
 }
 
 func isOrdinaryApparel(name string) bool {
-	for _, blocked := range []string{"thuốc", "thực phẩm", "bổ sung", "pin", "mỹ phẩm", "chất lỏng", "supplement", "battery", "cosmetic", "tất cả", "sưởi", "điện", "usb", "sạc", "led", "heated", "electric", "rechargeable"} {
+	for _, blocked := range []string{"thuốc", "thực phẩm", "bổ sung", "pin", "mỹ phẩm", "chất lỏng", "supplement", "battery", "cosmetic", "tất cả", "sưởi", "điện", "usb", "sạc", "led", "heated", "electric", "rechargeable", "quạt", "đèn", "phát sáng", "fan", "light", "glow"} {
 		if containsLeadPhrase(name, blocked) {
 			return false
 		}

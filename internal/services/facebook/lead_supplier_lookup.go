@@ -42,6 +42,9 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 	return func(ctx context.Context, leadText string) (*ResolvedSupplier, error) {
 		query := supplierQuery(leadText)
 		lang := supplierQueryLanguage(leadText)
+		if asciiQuery(query) {
+			lang = "en"
+		}
 		if link, platform := leadMarketplaceURL(leadText); link != "" {
 			if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
 				return nil, err

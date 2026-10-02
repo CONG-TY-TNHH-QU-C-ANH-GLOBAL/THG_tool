@@ -18,6 +18,9 @@ func supplierQueryLanguage(text string) string {
 			return "en"
 		}
 	}
+	if leadLooksEnglish(text) {
+		return "en"
+	}
 	return "vi"
 }
 
