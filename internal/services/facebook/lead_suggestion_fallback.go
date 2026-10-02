@@ -1,9 +1,58 @@
 package facebook
 
-import "strings"
+import (
+	"errors"
+	"strings"
+
+	"github.com/thg/scraper/internal/suppliersourcing"
+)
+
+type supplierLookupStatus uint8
+
+const (
+	lookupCompleted supplierLookupStatus = iota
+	lookupUnavailable
+	lookupQuotaExhausted
+)
+
+func classifySupplierLookupError(err error, unavailable bool) supplierLookupStatus {
+	if errors.Is(err, suppliersourcing.ErrQuotaExceeded) {
+		return lookupQuotaExhausted
+	}
+	if unavailable || (err != nil && !errors.Is(err, errSupplierNoMatch)) {
+		return lookupUnavailable
+	}
+	return lookupCompleted
+}
 
 // noOfferSourcingNote is shown to the operator, never to the lead.
 const noOfferSourcingNote = "chưa tìm được sản phẩm/nguồn phù hợp — sale cần kiểm tra thủ công"
+
+// UnavailableLeadSuggestion is used only when enrichment did not finish.
+// It never claims a marketplace search completed or invents an offer.
+func UnavailableLeadSuggestion(leadText, author string) LeadSuggestion {
+	out := noOfferSuggestion(leadText, author)
+	if out.SourcingNote != "" {
+		out.SourcingNote = "gợi ý chưa xử lý kịp — sale cần kiểm tra nguồn thủ công"
+	}
+	return out
+}
+
+func noOfferSuggestionForLookup(leadText, author string, status supplierLookupStatus) LeadSuggestion {
+	out := noOfferSuggestion(leadText, author)
+	if out.SourcingNote == "" {
+		return out
+	}
+	link, _ := leadMarketplaceURL(leadText)
+	if supplierQuery(leadText) == "" && link == "" {
+		out.SourcingNote = "chưa đủ mô tả sản phẩm để tìm nguồn — sale cần hỏi thêm"
+	} else if status == lookupQuotaExhausted {
+		out.SourcingNote = "Elim đã hết lượt tra cứu — sale cần kiểm tra nguồn thủ công"
+	} else if status == lookupUnavailable {
+		out.SourcingNote = "chưa tra cứu được nguồn sàn — sale cần kiểm tra thủ công"
+	}
+	return out
+}
 
 // noOfferSuggestion is the draft for a lead that asks for a product or source
 // when neither the catalog nor Pricing Hub returned a usable match. It asks for
@@ -16,7 +65,11 @@ func noOfferSuggestion(leadText, author string) LeadSuggestion {
 	}
 	out := LeadSuggestion{SourcingNote: noOfferSourcingNote}
 	if supplierEnglishQuery(leadText) != "" {
-		out.Reply = "Hi " + leadSalutation(author) + ", we can check sourcing options for this product."
+		name := leadSalutation(author)
+		if strings.TrimSpace(author) == "" {
+			name = "there"
+		}
+		out.Reply = "Hi " + name + ", we can check sourcing options for this product."
 		lower := strings.ToLower(leadText)
 		if strings.Contains(lower, "european") || strings.Contains(lower, "supplier in europe") {
 			out.Reply += " Would a China-based alternative work?"

@@ -75,3 +75,36 @@ func TestSourcedOfferDoesNotUseNoOfferFallback(t *testing.T) {
 		t.Fatalf("a sourced offer must not be marked as not found: %+v", result)
 	}
 }
+
+func TestNoOfferStatusDistinguishesMissingInfoFromUnavailableAPI(t *testing.T) {
+	post := "Cần nhập viên bổ khớp cho chó về Mỹ"
+	for _, tc := range []struct {
+		name, want string
+		lookup     SupplierLookupFunc
+	}{
+		{"lookup failed", "chưa tra cứu được nguồn sàn", noOfferLookup},
+		{"lookup not configured", "chưa tra cứu được nguồn sàn", nil},
+		{"search completed without match", "chưa tìm được sản phẩm/nguồn phù hợp", func(context.Context, string) (*ResolvedSupplier, error) { return nil, nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1, post, "Lan", nil, tc.lookup)
+			if !strings.Contains(got.SourcingNote, tc.want) || got.Reply == "" {
+				t.Fatalf("wrong sourcing status: %+v", got)
+			}
+		})
+	}
+	got := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1, "Cần nhập hàng sll", "Lan", nil, nil)
+	if !strings.Contains(got.SourcingNote, "chưa đủ mô tả sản phẩm") {
+		t.Fatalf("insufficient product description should be explicit: %+v", got)
+	}
+}
+
+func TestUnavailableLeadSuggestionDoesNotClaimSearchCompleted(t *testing.T) {
+	got := UnavailableLeadSuggestion("Cần nhập viên bổ khớp cho chó về Mỹ", "Lan")
+	if !strings.Contains(got.SourcingNote, "chưa xử lý kịp") || strings.Contains(got.SourcingNote, "chưa tìm được") || got.Reply == "" {
+		t.Fatalf("unfinished enrichment needs a safe draft and status: %+v", got)
+	}
+	if got := UnavailableLeadSuggestion("Bên nào có kho ở Mỹ?", "Lan"); got.Reply != "" || got.SourcingNote != "" {
+		t.Fatalf("vague logistics post should not get a sourcing draft: %+v", got)
+	}
+}

@@ -41,6 +41,7 @@ type enrichment struct {
 	ProductURL      string    `json:"productUrl"`
 	ProductImageURL string    `json:"productImageUrl"`
 	Supplier        *supplier `json:"supplier,omitempty"`
+	SourcingNote    string    `json:"sourcingNote,omitempty"`
 }
 
 // supplier is the sourced 1688 / Taobao item behind the same snapshot. It is a
@@ -59,6 +60,7 @@ type supplier struct {
 	ShopName   string             `json:"shopName,omitempty"`
 	CapturedAt string             `json:"capturedAt,omitempty"`
 	Shipping   *shippingReference `json:"shipping,omitempty"`
+	Similar    bool               `json:"similar,omitempty"`
 }
 
 type shippingReference struct {
@@ -80,6 +82,7 @@ func supplierFrom(match *models.SupplierMatch) *supplier {
 		PriceText: strings.TrimSpace(match.PriceText), WeightText: strings.TrimSpace(match.WeightKG),
 		MOQText: strings.TrimSpace(match.MOQText), ShipFrom: strings.TrimSpace(match.ShipFrom),
 		ShopName: strings.TrimSpace(match.ShopName), CapturedAt: strings.TrimSpace(match.CapturedAt),
+		Similar: match.Similar,
 	}
 	if match.Shipping != nil && match.Shipping.PriceText != "" {
 		out.Shipping = &shippingReference{PriceText: match.Shipping.PriceText, Transit: match.Shipping.Transit,
@@ -107,7 +110,8 @@ func payloadFor(event leadingest.LeadEvent, suggestion models.LeadSuggestion) (p
 		Enrichment: enrichment{
 			SuggestedReply: strings.TrimSpace(suggestion.Reply), ProductName: strings.TrimSpace(suggestion.ProductName),
 			ProductURL: strings.TrimSpace(suggestion.ProductURL), ProductImageURL: strings.TrimSpace(suggestion.ProductImageURL),
-			Supplier: supplierFrom(suggestion.Supplier),
+			Supplier:     supplierFrom(suggestion.Supplier),
+			SourcingNote: strings.TrimSpace(suggestion.SourcingNote),
 		},
 	}, true
 }

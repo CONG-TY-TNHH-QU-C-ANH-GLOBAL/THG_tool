@@ -18,6 +18,7 @@ type fakeSupplierReader struct {
 	product  *suppliersourcing.Product
 	details  int
 	searchFn func(string) ([]suppliersourcing.SearchItem, error)
+	detailFn func(string) (*suppliersourcing.Product, error)
 }
 
 func (f *fakeSupplierReader) Search(_ context.Context, query, platform string, _ int) ([]suppliersourcing.SearchItem, error) {
@@ -27,8 +28,11 @@ func (f *fakeSupplierReader) Search(_ context.Context, query, platform string, _
 	}
 	return f.items, nil
 }
-func (f *fakeSupplierReader) Detail(context.Context, string, string, string) (*suppliersourcing.Product, error) {
+func (f *fakeSupplierReader) Detail(_ context.Context, _ string, id, _ string) (*suppliersourcing.Product, error) {
 	f.details++
+	if f.detailFn != nil {
+		return f.detailFn(id)
+	}
 	return f.product, nil
 }
 func (f *fakeSupplierReader) SearchLocalized(ctx context.Context, query, platform string, size int, lang string) ([]suppliersourcing.SearchItem, error) {
@@ -84,15 +88,15 @@ func TestSupplierLookupPrefersProductLinkOverSearch(t *testing.T) {
 	}
 }
 
-func TestSupplierLookupRejectsLinkedProductWithDifferentTitle(t *testing.T) {
+func TestSupplierLookupAcceptsExactLinkedProductWithDifferentTitle(t *testing.T) {
 	price := 20.0
 	link := "https://detail.1688.com/offer/2.html"
 	client := &fakeSupplierReader{product: &suppliersourcing.Product{
 		Title: "Áo thun cotton", Link: link, Price: &price,
 	}}
 	got, err := NewSupplierLookup(client)(context.Background(), "Cần nhập viên bổ khớp cho chó "+link)
-	if err == nil || got != nil || len(client.queries) != 0 {
-		t.Fatalf("mismatched linked product must not be offered: %+v, err=%v", got, err)
+	if err != nil || got == nil || got.Match.Similar || len(client.queries) != 0 {
+		t.Fatalf("lead's exact listing should outrank a translated title: %+v, err=%v", got, err)
 	}
 }
 

@@ -58,7 +58,7 @@ func TestEnglishBulkRateIsLabelledPerParcel(t *testing.T) {
 		PriceText: "$14.20", Basis: "1 kiện; không phải tổng cước lô 300 sản phẩm",
 	}}
 	reply := supplierFallbackReply("Oksana", supplier, "Looking for a dropshipping supplier for this hand massager to US")
-	if !strings.Contains(reply, "$14.20 per parcel (not the total bulk shipping cost)") ||
+	if !strings.Contains(reply, "$14.20 if one item ships separately (not the lot total)") ||
 		!strings.Contains(reply, "quantity and parcel details") {
 		t.Fatalf("rate scope or missing facts unclear: %s", reply)
 	}

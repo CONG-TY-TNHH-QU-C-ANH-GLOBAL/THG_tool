@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/thg/scraper/internal/models"
@@ -38,5 +39,18 @@ func TestQuoteSupplierShipment_RejectsUnusableRate(t *testing.T) {
 	defer server.Close()
 	if got, err := QuoteSupplierShipment(context.Background(), server.URL, "test-key", models.ShippingRequest{OriginCountry: "CN", DestinationCountry: "US", Quantity: 1, ShipmentMode: "parcel", CargoCategory: "standard", WeightKG: 0.4}); err == nil || got != nil {
 		t.Fatalf("missing rate must be omitted, got %+v, %v", got, err)
+	}
+}
+
+func TestQuoteSupplierShipment_BulkReferenceIsPerItem(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"lane":"international","currency":"USD","totalUsd":14.2,"billableKg":0.4,"transit":"6–12 ngày","source":"https://thgfulfill.com/vi/international-pricing"}`))
+	}))
+	defer server.Close()
+	got, err := QuoteSupplierShipment(context.Background(), server.URL, "test-key", models.ShippingRequest{
+		OriginCountry: "CN", DestinationCountry: "US", Quantity: 300, ShipmentMode: "bulk", CargoCategory: "standard", WeightKG: 0.4,
+	})
+	if err != nil || got == nil || !strings.Contains(got.Basis, "1 sản phẩm") || !strings.Contains(got.Basis, "không phải tổng cước lô 300") {
+		t.Fatalf("bulk unit reference must not look like a lot price: %+v, %v", got, err)
 	}
 }

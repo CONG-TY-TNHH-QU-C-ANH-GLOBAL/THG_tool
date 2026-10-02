@@ -2,7 +2,7 @@
 doc_type: engineering
 status: active
 owner: platform
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-01
 related_pr_or_issue: supplier-sourced-lead-suggestions
 ---
 
@@ -12,6 +12,9 @@ Operator lead notices select one matching offer. Explicit personalization
 requests favor an in-stock POD catalog item; wholesale/import requests favor a
 sourceable marketplace item. Without a clear wholesale signal, a matching POD
 item has priority over a supplier item.
+If an explicit POD request has no matching catalog item, a marketplace item may
+be shown as an alternative product source. The draft must say customization
+still needs confirmation; a seller listing is not proof that printing is offered.
 For a Dropship lead, the operator-facing suggested reply delivered to the
 `THG_Sale_Lead` Telegram group includes the source price as a labelled
 reference and a shipping reference only when the selected lane can be priced.
@@ -28,18 +31,22 @@ before a sync; do not treat this as a monthly allowance. One call per crawled
 lead would exhaust it quickly and also disrupt sales quoting.
 
 A `supplier_catalog` knowledge source can index curated items once. Per-lead
-matching first uses approved KnowledgeOS assets at zero upstream cost. An
+matching first uses approved KnowledgeOS assets at zero upstream cost. Indexed
+marketplace titles must still cover the requested product phrase, including
+qualifiers such as the target animal/model. An
 approved item is only reusable for a post with an explicit marketplace URL
 when it has that exact URL. Otherwise, the post's URL is looked up directly
 by detail. Without a usable indexed offer or URL,
-the runtime extracts a short product phrase, searches the named marketplace
-when specified (otherwise 1688 then Taobao), checks the result title against
-that phrase, and
-fetches one detail record through Pricing Hub. It
+the runtime extracts a short product phrase, including the blank product in an
+explicit POD request when the company catalog has no match. It searches the
+named marketplace when specified (otherwise 1688 then Taobao), requires the
+result title to cover the meaningful product words, and fetches up to two
+detail records through Pricing Hub when the first match has no usable price or
+does not describe the requested item. It
 rejects vague posts and unrelated/unsafe links. Pricing Hub owns the shared D1
 cache and Elim quota accounting; at most two searches and two details are made
-for one lead when the first marketplace fails; a named marketplace uses one
-search and one detail. A live lookup requires `PRICING_HUB_INTEGRATION_KEY` or
+for one lead; a named marketplace uses one search and at most two details. A
+live lookup requires `PRICING_HUB_INTEGRATION_KEY` or
 `/etc/thg-scraper/pricing_hub_key`; `PRICING_HUB_BASE_URL` defaults to
 `https://pricingtool.thgfulfill.com`. With no key, only approved indexed items
 are offered. The optional suggestion deadline defaults to 12 seconds.
@@ -55,15 +62,21 @@ Matching uses text only, with no image comparison. Every searched or indexed
 offer is therefore marked `Similar`: the Vietnamese draft says "mẫu tương tự",
 and Telegram adds "mẫu tương tự, sale cần đối chiếu ảnh/mã hàng" to the
 supplier line. A 1688/Taobao listing pasted by the lead is treated as that
-listing, not as proof that its photo matches the lead's requested model.
+listing only when the returned marketplace item ID matches the pasted link.
+That still does not prove its photo matches the lead's requested model.
 
 When a post asks for a product or a source but neither the catalog nor Pricing
 Hub returns a usable match, the suggestion asks only for details missing from
 the post (model reference, quantity, destination) plus a Telegram line
 "⚠️ Tìm nguồn: chưa tìm được…" for
-the sale. That draft never contains a link, price or shipping cost. For an
+the sale. If a product description is too vague to search, or the marketplace
+API is unavailable, the Telegram note names that state instead of claiming a
+completed search found nothing. That draft never contains a link, price or shipping cost. For an
 English post that asks for a European supplier, it asks whether a China-based
 alternative is acceptable. Posts without a product or sourcing need still get no draft.
+If enrichment times out, panics or cannot enter the bounded worker queue, an
+enabled org receives a safe ask-for-details draft with a distinct "chưa xử lý
+kịp" operator note; this does not claim the marketplace was searched.
 These fields go to Telegram only: the CRM snapshot receives the draft in
 `suggestedReply`, and its contract is unchanged.
 
@@ -154,17 +167,28 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
 
 - A supplier item is a **distinct** offer from the catalog product. It is never
   rendered as a THG product page, and the CRM receives it under its own
-  `enrichment.supplier` key. Product title terms must match the post before an
-  item is offered. A matching POD item wins; the supplier is the fallback.
+  `enrichment.supplier` key. Search results must cover the product's defining
+  words before an item is offered; a lead-provided marketplace URL is checked
+  by listing identity after Pricing Hub resolves it, even when its translated
+  title differs. Supported marketplace short links go through the same detail
+  lookup. A matching POD item wins; the supplier is the fallback. Live search
+  queries are trimmed to product words, excluding contact details, destination,
+  quantity and sales copy.
 - CRM calculates a shipping reference only when the post states quantity and
   destination, the item has a known weight, and a `live`, recently fetched CMS
   international rate card supports its cargo category. The operator sees a
-  per-parcel reference, never a bulk total. Ambiguous cargo categories receive
+  per-parcel reference, never a bulk total. For bulk posts, the draft explicitly
+  labels this as one product shipped separately; its unit weight is not the
+  packed weight or total freight for the lot. Ambiguous cargo categories receive
   no automatic number. The old undated Epacket seed is not used by this path.
 - The international CN→US card is the applicable public lane for that case.
   Domestic 3PL pricing needs a US warehouse shipment and delivery zone; the
   chính ngạch card is for VN→US cargo. Neither is a substitute for missing
   CN→US parcel facts.
+- Destination and cargo terms are matched as whole words. An ordinary name such
+  as "anh Nam" is not the United Kingdom, and "kẹo táo" is not apparel. For a
+  non-bulk request covering multiple items, one item's weight cannot stand in
+  for the packed parcel's weight, so no automatic numeric quote is shown.
 - Source numbers are copied; the shipping calculator adds the published
   $0.70 handling fee to the selected CMS weight row. No currency conversion,
   estimated weight, or invented MOQ tier — a missing value is omitted everywhere
@@ -175,7 +199,15 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
   the draft names the CN→destination route and asks to confirm delivery mode
   and parcel details. Every draft is still for staff review before sending.
 - Suggestions stay best-effort: any failure in this path leaves lead ingestion
-  untouched.
+  untouched. Lookup is skipped when the runner has too little time left for a
+  useful request. No match, lookup failure, and exhausted Elim quota receive
+  different operator notes; none supplies an invented offer. The supplier MOQ
+  is included when returned, but a marketplace price remains a reference and
+  must be checked against the selected quantity and SKU before quoting a buyer.
+- The CRM event carries optional `enrichment.sourcingNote` and
+  `enrichment.supplier.similar` so its scan view can show the same operator
+  warning and model-match label as Telegram. Missing fields keep the old event
+  shape. Deploy the CRM consumer before enabling this producer contract.
 - Taobao ids: since 2026-08 the upstream rejects bare numeric item ids, so pass
   the product URL. `suppliersourcing.Client.Detail` accepts either.
 

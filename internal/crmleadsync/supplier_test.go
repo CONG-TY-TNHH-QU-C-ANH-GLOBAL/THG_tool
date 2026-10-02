@@ -19,7 +19,7 @@ func TestPayloadFor_CarriesTheSupplierBlock(t *testing.T) {
 		Reply: "Hi Minh, ...", ProductName: "Hoodie", ProductURL: "https://thgfulfill.com/p/hoodie",
 		Supplier: &models.SupplierMatch{
 			Platform: "1688", Name: "Áo hoodie nỉ bông", URL: "https://detail.1688.com/offer/1.html",
-			PriceText: "¥28.9", WeightKG: "0.292 kg", MOQText: "1 件", ShipFrom: "广东省广州市",
+			PriceText: "¥28.9", WeightKG: "0.292 kg", MOQText: "1 件", ShipFrom: "广东省广州市", Similar: true,
 		},
 	}
 
@@ -32,6 +32,9 @@ func TestPayloadFor_CarriesTheSupplierBlock(t *testing.T) {
 	}
 	if got.Enrichment.Supplier.PriceText != "¥28.9" || got.Enrichment.Supplier.WeightText != "0.292 kg" {
 		t.Errorf("supplier numbers not copied: %+v", got.Enrichment.Supplier)
+	}
+	if !got.Enrichment.Supplier.Similar {
+		t.Fatal("title-matched supplier must be marked similar in CRM")
 	}
 
 	// The supplier block must be a distinct key, never merged into the catalog
@@ -61,7 +64,7 @@ func TestSupplierFrom_DropsPartialMatches(t *testing.T) {
 
 func TestPayloadFor_OmitsSupplierWhenAbsent(t *testing.T) {
 	event := leadingest.LeadEvent{OrgID: 7, AuthorName: "Minh", PostURL: "https://facebook.com/p/1"}
-	got, ok := payloadFor(event, models.LeadSuggestion{Reply: "Hi"})
+	got, ok := payloadFor(event, models.LeadSuggestion{Reply: "Hi", SourcingNote: "chưa tìm được nguồn — sale kiểm tra thủ công"})
 	if !ok {
 		t.Fatal("expected a payload")
 	}
@@ -71,5 +74,8 @@ func TestPayloadFor_OmitsSupplierWhenAbsent(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "supplier") {
 		t.Errorf("absent supplier must not appear on the wire: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"sourcingNote":"chưa tìm được nguồn`) {
+		t.Errorf("operator note must survive without a supplier: %s", encoded)
 	}
 }

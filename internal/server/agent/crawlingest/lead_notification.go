@@ -6,6 +6,7 @@ import (
 
 	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/telegram/control"
 )
 
@@ -31,12 +32,17 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 			Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: h.baseURL,
 			SuggestedReply: suggestion.Reply, ProductName: suggestion.ProductName, ProductURL: suggestion.ProductURL,
 			ProductImageURL: suggestion.ProductImageURL,
-			Supplier:        suggestion.Supplier,
+			Supplier:        suggestion.Supplier, SourcingNote: suggestion.SourcingNote,
 		})
 	}
-	if h.leadSuggestion != nil && h.leadSuggestionAllowed != nil && h.leadSuggestionAllowed(ev.OrgID) && h.suggestionRunner != nil && h.suggestionRunner.Try(
-		func(ctx context.Context) models.LeadSuggestion { return h.leadSuggestion(ctx, ev) }, deliver,
-	) {
+	if h.leadSuggestion != nil && h.leadSuggestionAllowed != nil && h.leadSuggestionAllowed(ev.OrgID) {
+		unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
+		if h.suggestionRunner != nil && h.suggestionRunner.TryWithFallback(
+			func(ctx context.Context) models.LeadSuggestion { return h.leadSuggestion(ctx, ev) }, deliver, unavailable,
+		) {
+			return
+		}
+		deliver(unavailable)
 		return
 	}
 	deliver(models.LeadSuggestion{})

@@ -28,11 +28,12 @@ func supplierEnglishQuery(raw string) string {
 		}
 	}
 	phrase = strings.TrimSpace(phrase)
+	phrase = trimSupplierQueryContext(phrase)
 	if strings.Contains(phrase, "supplier") || strings.Contains(phrase, "agent") || strings.Contains(phrase, "shipping") {
 		return ""
 	}
 	words := strings.Fields(phrase)
-	if len(words) < 2 || len(words) > 10 {
+	if len(words) == 0 || len(words) > 10 || !safeSupplierQuery(phrase) {
 		return ""
 	}
 	return strings.Join(words, " ")
