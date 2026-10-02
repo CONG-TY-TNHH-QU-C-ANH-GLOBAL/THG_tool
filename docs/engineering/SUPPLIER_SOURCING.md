@@ -195,7 +195,9 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
   (facts block, Telegram strip, CRM payload).
 - The Dropship draft is assembled from verified product and rate fields,
   without another LLM call. The POD prompt uses assembled facts and a short
-  fixed fallback. When the destination is known but a numeric rate is not,
+  fixed fallback when the generator is unavailable, errors, or returns no
+  visible text. This fallback retains the matched catalog link and follows the
+  post language. When the destination is known but a numeric rate is not,
   the draft names the CN→destination route and asks to confirm delivery mode
   and parcel details. Every draft is still for staff review before sending.
 - Suggestions stay best-effort: any failure in this path leaves lead ingestion
