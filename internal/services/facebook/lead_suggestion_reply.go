@@ -6,6 +6,24 @@ import (
 	"github.com/thg/scraper/internal/models"
 )
 
+func podFallbackReply(author string, product SuggestedProduct, leadText string) string {
+	name := shortLeadTitle(product.Name)
+	if supplierQueryLanguage(leadText) == "en" {
+		if name == "" {
+			name = "a matching product"
+		}
+		greeting := leadSalutation(author)
+		if strings.TrimSpace(author) == "" {
+			greeting = "there"
+		}
+		return "Hi " + greeting + ", we have " + name + " in our POD catalog. Please message us for details. " + product.URL
+	}
+	if name == "" {
+		name = "sản phẩm phù hợp"
+	}
+	return leadSalutation(author) + ", bên mình có " + name + " trong catalog POD. Mình gửi chi tiết qua inbox nhé? " + product.URL
+}
+
 func supplierFallbackReply(author string, supplier *models.SupplierMatch, leadText string) string {
 	if supplierQueryLanguage(leadText) == "en" {
 		name := leadSalutation(author)

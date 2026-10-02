@@ -100,7 +100,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		return out
 	}
 	if msgGen == nil || !msgGen.Available() || profile == nil {
-		out.Reply = leadSalutation(author) + ", bên mình có " + shortLeadTitle(product.Name) + " phù hợp nhu cầu của bạn. Mình gửi chi tiết qua inbox nhé? " + product.URL
+		out.Reply = podFallbackReply(author, product, leadText)
 		return out
 	}
 	reply, err := msgGen.GenerateLeadReplySuggestion(ctx, ai.LeadReplyRequest{
@@ -111,12 +111,17 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 		GroundedFacts:   BuildGroundedFacts(product, supplier),
 	})
 	if err != nil {
+		out.Reply = podFallbackReply(author, product, leadText)
 		return out
 	}
 	out.Reply = strings.TrimSpace(reply)
+	if out.Reply == "" {
+		out.Reply = podFallbackReply(author, product, leadText)
+		return out
+	}
 	selectedURL := product.URL
 	if product.URL != "" && len([]rune(out.Reply)) > 320 {
-		out.Reply = leadSalutation(author) + ", bên mình có " + shortLeadTitle(product.Name) + " phù hợp nhu cầu của bạn. Mình gửi thêm chi tiết qua inbox nhé?"
+		out.Reply = podFallbackReply(author, product, leadText)
 	}
 	if selectedURL != "" && !strings.Contains(out.Reply, selectedURL) {
 		out.Reply = strings.TrimSpace(out.Reply + " " + selectedURL)
