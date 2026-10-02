@@ -204,6 +204,10 @@ DB_PATH=data/scraper.db go run ./cmd/knowledge_sync -org <orgID>
   different operator notes; none supplies an invented offer. The supplier MOQ
   is included when returned, but a marketplace price remains a reference and
   must be checked against the selected quantity and SKU before quoting a buyer.
+- The CRM event carries optional `enrichment.sourcingNote` and
+  `enrichment.supplier.similar` so its scan view can show the same operator
+  warning and model-match label as Telegram. Missing fields keep the old event
+  shape. Deploy the CRM consumer before enabling this producer contract.
 - Taobao ids: since 2026-08 the upstream rejects bare numeric item ids, so pass
   the product URL. `suppliersourcing.Client.Detail` accepts either.
 
