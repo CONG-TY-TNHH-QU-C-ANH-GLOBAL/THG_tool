@@ -168,6 +168,11 @@ func leadDestinationCountry(text string) string {
 	if isUSDestination(text) {
 		return "US"
 	}
+	for _, term := range []string{"to uae", "to the uae", "to united arab emirates", "ship to uae", "gửi đến uae", "đi uae"} {
+		if containsLeadPhrase(text, term) {
+			return "AE"
+		}
+	}
 	for _, term := range []string{"sang nước anh", "về nước anh", "đi nước anh", "vương quốc anh", "to uk", "to the uk", "to gb", "united kingdom"} {
 		if containsLeadPhrase(text, term) {
 			return "GB"

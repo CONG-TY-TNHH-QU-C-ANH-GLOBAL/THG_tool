@@ -10,7 +10,7 @@ var supplierLeadingNumber = regexp.MustCompile(`^\d{1,6}\s+`)
 var supplierLeadingQuantity = regexp.MustCompile(`^\d{1,6}\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces)(?:\s+|$)`)
 
 func supplierQueryLanguage(text string) string {
-	if supplierEnglishQuery(text) != "" {
+	if supplierEnglishQuery(text) != "" || asksForSupplierHelp(text) {
 		return "en"
 	}
 	for _, phrase := range []string{"print logo", "logo printing", "custom logo", "custom print"} {

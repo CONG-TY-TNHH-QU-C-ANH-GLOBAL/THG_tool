@@ -14,6 +14,13 @@ import (
 // It is intentionally best-effort: retrieval or generation failure may omit
 // a draft and must never affect lead ingestion.
 func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder, msgGen *ai.MessageGenerator, profile *ai.BusinessProfile, orgID int64, leadText, author string, shippingQuote ShippingQuoteFunc, supplierLookup SupplierLookupFunc) LeadSuggestion {
+	// A generic supplier request has no item to match. Ask for the item first;
+	// shared words such as "winter" must not select an unrelated catalog offer.
+	if asksForSupplierHelp(leadText) && supplierQuery(leadText) == "" && !wantsPersonalizedPOD(leadText) {
+		if link, _ := leadMarketplaceURL(leadText); link == "" {
+			return noOfferSuggestionForLookup(leadText, author, lookupCompleted)
+		}
+	}
 	var candidates []models.KnowledgeCandidate
 	if builder != nil {
 		var err error
@@ -46,7 +53,8 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 			supplier = nil
 		}
 		var liveWeight *float64
-		if !supplier.HasOffer() && supplierLookup != nil {
+		linkedURL, _ := leadMarketplaceURL(leadText)
+		if !supplier.HasOffer() && supplierLookup != nil && (supplierQuery(leadText) != "" || linkedURL != "") {
 			resolved, lookupErr := supplierLookup(ctx, leadText)
 			lookupStatus = classifySupplierLookupError(lookupErr, false)
 			if lookupErr == nil && resolved != nil {

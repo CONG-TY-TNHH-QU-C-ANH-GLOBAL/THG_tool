@@ -68,7 +68,7 @@ func noOfferSuggestionForLookup(leadText, author string, status supplierLookupSt
 // post is not answered with an off-topic question.
 func noOfferSuggestion(leadText, author string) LeadSuggestion {
 	query := supplierQuery(leadText)
-	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && query == "" {
+	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && query == "" && !asksForSupplierHelp(leadText) {
 		return LeadSuggestion{}
 	}
 	// "Kho Mỹ nhận hàng nhập từ 1688" asks for storage, not a product to source.
@@ -81,14 +81,18 @@ func noOfferSuggestion(leadText, author string) LeadSuggestion {
 		if strings.TrimSpace(author) == "" {
 			name = "there"
 		}
-		out.Reply = "Hi " + name + ", we can check sourcing options for this product."
+		out.Reply = "Hi " + name + ", we can check sourcing options."
 		lower := strings.ToLower(leadText)
 		if strings.Contains(lower, "european") || strings.Contains(lower, "supplier in europe") {
 			out.Reply += " Would a China-based alternative work?"
 		}
 		var missing []string
 		if link, _ := leadMarketplaceURL(leadText); link == "" {
-			missing = append(missing, "a model number or product link if available")
+			if query == "" {
+				missing = append(missing, "the specific product or model")
+			} else {
+				missing = append(missing, "a model number or product link if available")
+			}
 		}
 		if leadQuantity(leadText) == 0 {
 			missing = append(missing, "quantity")
