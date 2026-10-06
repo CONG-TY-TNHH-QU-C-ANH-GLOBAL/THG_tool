@@ -64,10 +64,6 @@ jobs:
                     if os.path.exists(temp_name):
                         os.unlink(temp_name)
 
-            def restart_services():
-                for service in services:
-                    subprocess.run(['systemctl', 'restart', service], check=True, timeout=60)
-
             def verify_hub():
                 request = urllib.request.Request(
                     'https://pricingtool.thgfulfill.com/api/scrape/quota',
@@ -90,7 +86,12 @@ jobs:
                 if not readable:
                     raise RuntimeError('worker_cannot_read_key')
                 for service in services:
-                    subprocess.run(['systemctl', 'is-active', '--quiet', service], check=True)
+                    for attempt in range(10):
+                        if subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode == 0:
+                            break
+                        time.sleep(1)
+                    else:
+                        raise RuntimeError('service_not_active_' + service)
                 verify_hub()
 
             try:
@@ -100,10 +101,14 @@ jobs:
                 sys.exit('preflight=' + reason)
 
             if old != new:
+                failure_stage = 'write_file'
                 try:
                     write_file(new)
-                    restart_services()
+                    for service in services:
+                        failure_stage = 'restart_' + service
+                        subprocess.run(['systemctl', 'restart', service], check=True, timeout=60)
                     time.sleep(2)
+                    failure_stage = 'verify'
                     verify()
                 except Exception as exc:
                     if old is None:
@@ -114,6 +119,7 @@ jobs:
                     for service in services:
                         rollback_ok &= subprocess.run(['systemctl', 'restart', service]).returncode == 0
                     reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                    print('failure_stage=' + failure_stage, file=sys.stderr)
                     print('failure_reason=' + reason, file=sys.stderr)
                     sys.exit('result=rolled_back' if rollback_ok else 'result=rollback_failed')
             else:
