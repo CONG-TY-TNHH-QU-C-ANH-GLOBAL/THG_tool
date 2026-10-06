@@ -30,7 +30,7 @@ func leadLooksEnglish(text string) bool {
 // ASCII alone does not mean English: Facebook posts often omit Vietnamese
 // accents. Use only phrases that are distinctive in this sales context.
 func looksLikeUnaccentedVietnamese(text string) bool {
-	for _, phrase := range []string{"can nhap", "muon nhap", "can mua", "muon mua", "tim nguon", "so luong", "bao gia", "gui ve", "ben minh", "cho minh", "nhap hang", "ao hoodie", "ao thun"} {
+	for _, phrase := range []string{"can nhap", "muon nhap", "can mua", "muon mua", "tim nguon", "so luong", "bao gia", "gui ve", "ben minh", "cho minh", "nhap hang", "ao hoodie", "ao thun", "nha cung cap", "tim xuong", "uy tin"} {
 		if containsLeadPhrase(text, phrase) {
 			return true
 		}

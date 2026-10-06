@@ -168,7 +168,9 @@ func leadDestinationCountry(text string) string {
 	if isUSDestination(text) {
 		return "US"
 	}
-	for _, term := range []string{"to uae", "to the uae", "to united arab emirates", "ship to uae", "gửi đến uae", "đi uae"} {
+	for _, term := range []string{"to uae", "to the uae", "to united arab emirates", "ship to uae", "gửi đến uae", "đi uae", "sang uae", "về uae",
+		// "supplier in UAE" names where the seller is, so only "based in" counts.
+		"to dubai", "to abu dhabi", "based in uae", "based in dubai"} {
 		if containsLeadPhrase(text, term) {
 			return "AE"
 		}

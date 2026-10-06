@@ -5,15 +5,19 @@ import (
 	"strings"
 )
 
-var englishSupplierFor = regexp.MustCompile(`(?i)\b(?:looking\s+for|need|seeking|sourcing)\s+(?:(?:a|an|the)\s+)?(?:(?:european|chinese|china|eu|1688|taobao)\s+)?(?:(?:reliable|trusted|dropshipping|wholesale)\s+){0,2}supplier\s+for\s+(?:(?:this|the|a|an)\s+)?(?:(?:exact|same|similar)\s+)?([a-z][a-z0-9 -]+)`)
+var englishSupplierFor = regexp.MustCompile(`(?i)\b(?:looking\s+for|need|seeking|sourcing)\s+(?:(?:a|an|the)\s+)?(?:(?:european|chinese|china|eu|1688|taobao)\s+)?(?:(?:reliable|trusted|dropshipping|wholesale)\s+){0,2}(?:suppliers?|manufacturers?|vendors?|factory|factories|wholesalers?)\s+(?:for|of)\s+(?:(?:this|the|a|an)\s+)?(?:(?:exact|same|similar)\s+)?([a-z][a-z0-9 -]+)`)
 var englishProductNeed = regexp.MustCompile(`(?i)\b(?:looking\s+for|need|seeking|sourcing)\s+(?:(?:this|the|a|an)\s+)?(?:(?:exact|same|similar)\s+)?([a-z][a-z0-9 -]+)`)
-var englishSupplierIntent = regexp.MustCompile(`(?i)\b(?:looking\s+for|need|seeking|sourcing)\s+(?:(?:a|an|the)\s+)?(?:[a-z-]+\s+){0,4}(?:supplier|agent)\b`)
+var englishSupplierIntent = regexp.MustCompile(`(?i)\b(?:looking\s+for|needs?|seeking|searching\s+for|sourcing|anyone\s+(?:know|have|recommend)|recommend)\s+(?:(?:a|an|the|any)\s+)?(?:[a-z-]+\s+){0,4}(?:suppliers?|agents?|manufacturers?|vendors?|factory|factories|wholesalers?)\b`)
+var englishSupplierNeeded = regexp.MustCompile(`(?i)\b(?:suppliers?|manufacturers?|vendors?|sourcing\s+agents?)\s+needed\b`)
 
 // An unspecified supplier request deserves a short question, but cannot be
 // turned into a marketplace search for an arbitrary product.
 func asksForSupplierHelp(text string) bool {
-	return englishSupplierIntent.MatchString(text)
+	return englishSupplierIntent.MatchString(text) || englishSupplierNeeded.MatchString(text)
 }
+
+// Words naming who supplies rather than what is supplied.
+var supplierRoleWords = []string{"supplier", "agent", "shipping", "vendor", "manufacturer", "factor", "wholesaler"}
 
 // supplierEnglishQuery handles explicit English product requests without
 // treating "looking for a supplier" as a product. It never uses the image
@@ -44,7 +48,12 @@ func supplierEnglishQuery(raw string) string {
 			return ""
 		}
 	}
-	if strings.Contains(phrase, "supplier") || strings.Contains(phrase, "agent") || strings.Contains(phrase, "shipping") || asksForWarehouse(phrase) {
+	for _, role := range supplierRoleWords {
+		if strings.Contains(phrase, role) {
+			return ""
+		}
+	}
+	if asksForWarehouse(phrase) {
 		return ""
 	}
 	if len(words) == 0 || len(words) > 10 || !safeSupplierQuery(phrase) {
