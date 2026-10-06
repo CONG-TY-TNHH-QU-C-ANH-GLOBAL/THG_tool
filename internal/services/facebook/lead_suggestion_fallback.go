@@ -68,6 +68,11 @@ func noOfferSuggestionForLookup(leadText, author string, status supplierLookupSt
 // post is not answered with an off-topic question.
 func noOfferSuggestion(leadText, author string) LeadSuggestion {
 	query := supplierQuery(leadText)
+	if link, _ := leadMarketplaceURL(leadText); link == "" && query == "" && !wantsPersonalizedPOD(leadText) {
+		if service := serviceInquirySuggestion(leadText, author); service.Reply != "" {
+			return service
+		}
+	}
 	supplierRequest := asksForSupplier(leadText)
 	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && query == "" && !supplierRequest {
 		return LeadSuggestion{}

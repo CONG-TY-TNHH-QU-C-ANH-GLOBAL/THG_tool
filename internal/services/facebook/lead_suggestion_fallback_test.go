@@ -59,8 +59,8 @@ func TestNoOfferPODDraftOnlyMentionsPersonalization(t *testing.T) {
 func TestNoOfferVagueLogisticsPostGetsNoDraft(t *testing.T) {
 	post := "Bên nào có kho fulfill ở Mỹ không ạ? Inbox mình nhé"
 	result := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1, post, "Lan", nil, noOfferLookup)
-	if result.Reply != "" || result.SourcingNote != "" {
-		t.Fatalf("a post without a product need must not get a sourcing question: %+v", result)
+	if !strings.Contains(result.Reply, "dịch vụ kho và fulfillment") || result.SourcingNote != "" || strings.Contains(result.Reply, "mẫu") {
+		t.Fatalf("a warehousing question gets a service draft, not a sourcing question: %+v", result)
 	}
 }
 
@@ -104,14 +104,14 @@ func TestUnavailableLeadSuggestionDoesNotClaimSearchCompleted(t *testing.T) {
 	if !strings.Contains(got.SourcingNote, "chưa xử lý kịp") || strings.Contains(got.SourcingNote, "chưa tìm được") || got.Reply == "" {
 		t.Fatalf("unfinished enrichment needs a safe draft and status: %+v", got)
 	}
-	if got := UnavailableLeadSuggestion("Bên nào có kho ở Mỹ?", "Lan"); got.Reply != "" || got.SourcingNote != "" {
-		t.Fatalf("vague logistics post should not get a sourcing draft: %+v", got)
+	if got := UnavailableLeadSuggestion("Bên nào có kho ở Mỹ?", "Lan"); !strings.Contains(got.Reply, "kho") || got.SourcingNote != "" {
+		t.Fatalf("a warehousing question keeps its service draft after a timeout: %+v", got)
 	}
 }
 
 func TestRecentChromeCrawlPostsUseSpecificIntent(t *testing.T) {
 	cases := []struct {
-		name, post, author string
+		name, post, author         string
 		wantDraft, wantDestination bool
 	}{
 		{

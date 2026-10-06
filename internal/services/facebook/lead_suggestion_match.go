@@ -147,7 +147,7 @@ func isUSDestination(text string) bool {
 
 var explicitUSDestination = regexp.MustCompile(`\b(?:to|ship to|deliver to)\s+(?:the\s+)?US\b`)
 
-var leadQuantityPattern = regexp.MustCompile(`(\d{1,6})\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces|áo|shirts|hoodies)`)
+var leadQuantityPattern = regexp.MustCompile(`(\d{1,6})\s*(hộp|cái|chiếc|sản phẩm|pcs|units|đôi|boxes|pieces|áo|shirts|hoodies|cốc|ly|túi|mũ|nón|bộ|mugs|bags|cups|hats)`)
 
 func leadQuantity(text string) int {
 	if match := leadQuantityPattern.FindStringSubmatch(strings.ToLower(text)); len(match) > 1 {

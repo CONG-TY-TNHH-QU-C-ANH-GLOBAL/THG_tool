@@ -55,7 +55,7 @@ func asciiQuery(query string) bool {
 // asksForWarehouse marks storage or fulfillment requests. They are not
 // product sourcing requests even when they mention 1688 or bulk volume.
 func asksForWarehouse(text string) bool {
-	for _, term := range []string{"kho", "warehouse", "3pl", "fulfillment", "fulfilment", "fulfill", "storage"} {
+	for _, term := range []string{"kho", "warehouse", "3pl", "fulfillment", "fulfilment", "fulfill", "storage", "prep center"} {
 		if containsLeadPhrase(text, term) {
 			return true
 		}

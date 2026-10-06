@@ -72,7 +72,7 @@ func TestCommentsDoNotTurnAdviceIntoSalesLead(t *testing.T) {
 // Facebook UI, followed by two comments and their action labels.
 func TestProductionCrawlShapeKeepsOnlyPostBody(t *testing.T) {
 	post := "Facebook Poster Name 22 phút trước · LOOKING FOR A RELIABLE SUPPLIER/AGENT SHIPPING TO UAE Xem bản dịch 3 1 Abcfulfillment · 9 phút · Theo dõi May I ask what product you need? Trả lời Xem bản dịch Chia sẻ Other Seller · 1 phút here Trả lời Xem bản dịch Chia sẻ Viết câu trả lời... Facebook"
-	if got := leadPostBody(post); got != "Facebook Poster Name 22 phút trước · LOOKING FOR A RELIABLE SUPPLIER/AGENT SHIPPING TO UAE" {
+	if got := leadPostBody(post); got != "LOOKING FOR A RELIABLE SUPPLIER/AGENT SHIPPING TO UAE" {
 		t.Fatalf("post body = %q", got)
 	}
 	s, msg := renderedCrawlNotice(t, post, "Poster Name")

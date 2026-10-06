@@ -17,7 +17,7 @@ func asksForSupplierHelp(text string) bool {
 }
 
 // Words naming who supplies rather than what is supplied.
-var supplierRoleWords = []string{"supplier", "agent", "shipping", "vendor", "manufacturer", "factor", "wholesaler"}
+var supplierRoleWords = []string{"supplier", "agent", "shipping", "vendor", "manufacturer", "factor", "wholesaler", "forwarder", "freight", "courier", "logistics"}
 
 // supplierEnglishQuery handles explicit English product requests without
 // treating "looking for a supplier" as a product. It never uses the image
