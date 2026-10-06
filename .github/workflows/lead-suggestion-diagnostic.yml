@@ -1,0 +1,66 @@
+name: Diagnose lead suggestions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check effective production settings without printing secrets
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          command_timeout: 3m
+          script: |
+            set -eu
+
+            db=/opt/thg-scraper/data/scraper.db
+            if ! command -v sqlite3 >/dev/null 2>&1 || ! sudo test -f "$db"; then
+              echo 'thgfulfill_org=unavailable'
+              exit 1
+            fi
+            org_id=$(sudo sqlite3 -readonly "$db" \
+              "SELECT id FROM organizations WHERE lower(replace(name, ' ', '')) = 'thgfulfill' LIMIT 1;")
+            case "$org_id" in
+              ''|*[!0-9]*) echo 'thgfulfill_org=not_found'; exit 1 ;;
+            esac
+            echo 'thgfulfill_org=found'
+
+            for service in thg-scraper thg-worker; do
+              if ! systemctl is-active --quiet "$service"; then
+                echo "$service=inactive"
+                continue
+              fi
+              pid=$(systemctl show "$service" --property=MainPID --value)
+              case "$pid" in
+                ''|0|*[!0-9]*) echo "$service=pid_unavailable"; continue ;;
+              esac
+              enabled=$(sudo awk -v key=LEAD_SUGGESTION_ENABLED \
+                'BEGIN { RS="\0"; FS="=" } $1==key { value=$2 } END { print value }' \
+                "/proc/$pid/environ")
+              allowlist=$(sudo awk -v key=LEAD_SUGGESTION_ORG_IDS \
+                'BEGIN { RS="\0"; FS="=" } $1==key { value=$2 } END { print value }' \
+                "/proc/$pid/environ" | tr -d '[:space:]')
+              enabled=$(printf '%s' "$enabled" | tr '[:upper:]' '[:lower:]')
+              case "$enabled" in
+                1|true|yes|y|on) flag=on ;;
+                *) flag=off ;;
+              esac
+              allowed=no
+              if [ "$allowlist" = '*' ]; then
+                allowed=yes
+              elif printf '%s' "$allowlist" | grep -Eq '^[1-9][0-9]*(,[1-9][0-9]*)*$'; then
+                case ",$allowlist," in
+                  *,"$org_id",*) allowed=yes ;;
+                esac
+              fi
+              echo "$service=active suggestion_flag=$flag thgfulfill_allowed=$allowed"
+            done
