@@ -64,3 +64,54 @@ jobs:
               fi
               echo "$service=active suggestion_flag=$flag thgfulfill_allowed=$allowed"
             done
+
+            # Read the worker's effective configuration and test the same
+            # read-only Pricing Hub quota route used by the sourcing client.
+            # Never print credentials, URLs, response bodies, or quota values.
+            sudo python3 - <<'PY'
+            import json
+            import subprocess
+            import urllib.error
+            import urllib.parse
+            import urllib.request
+            from pathlib import Path
+
+            pid = subprocess.check_output(
+                ['systemctl', 'show', 'thg-worker', '--property=MainPID', '--value'], text=True
+            ).strip()
+            if not pid.isdigit() or int(pid) <= 0:
+                print('pricing_hub=worker_unavailable')
+                raise SystemExit(0)
+            entries = Path('/proc/' + pid + '/environ').read_bytes().split(b'\0')
+            env = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)
+            key = env.get(b'PRICING_HUB_INTEGRATION_KEY', b'').strip()
+            if not key:
+                key_file = Path('/etc/thg-scraper/pricing_hub_key')
+                if key_file.is_file():
+                    key = key_file.read_bytes().strip()
+            if not key:
+                print('pricing_hub=unconfigured')
+                raise SystemExit(0)
+            base = env.get(b'PRICING_HUB_BASE_URL', b'').decode('ascii').strip()
+            if not base:
+                base = 'https://pricingtool.thgfulfill.com'
+            parsed = urllib.parse.urlparse(base)
+            if parsed.scheme != 'https' or parsed.hostname != 'pricingtool.thgfulfill.com':
+                print('pricing_hub=invalid_endpoint')
+                raise SystemExit(0)
+            request = urllib.request.Request(
+                base.rstrip('/') + '/api/scrape/quota',
+                headers={'x-thg-integration-key': key.decode('ascii')},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    result = json.load(response)
+                if result.get('ok') and not result.get('plan', {}).get('error'):
+                    print('pricing_hub=ready')
+                else:
+                    print('pricing_hub=upstream_unavailable')
+            except urllib.error.HTTPError as exc:
+                print('pricing_hub=auth_failed' if exc.code in (401, 403) else 'pricing_hub=http_error')
+            except (OSError, ValueError, UnicodeError):
+                print('pricing_hub=unreachable')
+            PY
