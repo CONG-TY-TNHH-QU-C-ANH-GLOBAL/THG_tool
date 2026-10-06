@@ -71,7 +71,9 @@ jobs:
             def verify_hub():
                 request = urllib.request.Request(
                     'https://pricingtool.thgfulfill.com/api/scrape/quota',
-                    headers={'x-thg-integration-key': key},
+                    # Match the deployed Go client's User-Agent; Cloudflare
+                    # rejects Python's default User-Agent from this server.
+                    headers={'x-thg-integration-key': key, 'User-Agent': 'Go-http-client/1.1'},
                 )
                 try:
                     with urllib.request.urlopen(request, timeout=8) as response:
