@@ -104,7 +104,8 @@ jobs:
                 raise SystemExit(0)
             request = urllib.request.Request(
                 base.rstrip('/') + '/api/scrape/quota',
-                headers={'x-thg-integration-key': key.decode('ascii')},
+                headers={'x-thg-integration-key': key.decode('ascii'),
+                         'User-Agent': 'Go-http-client/1.1'},
             )
             try:
                 with urllib.request.urlopen(request, timeout=8) as response:
@@ -114,7 +115,7 @@ jobs:
                 else:
                     print('pricing_hub=upstream_unavailable')
             except urllib.error.HTTPError as exc:
-                print('pricing_hub=auth_failed' if exc.code in (401, 403) else 'pricing_hub=http_error')
+                print('pricing_hub=auth_failed' if exc.code == 401 else 'pricing_hub=http_' + str(exc.code))
             except (OSError, ValueError, UnicodeError):
                 print('pricing_hub=unreachable')
             PY
