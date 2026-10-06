@@ -1,0 +1,108 @@
+name: Provision Pricing Hub sourcing key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install dedicated key and verify read-only quota access
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          PRICING_HUB_SOURCING_KEY: ${{ secrets.PRICING_HUB_SOURCING_KEY }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          envs: PRICING_HUB_SOURCING_KEY
+          command_timeout: 3m
+          script: |
+            set -eu
+            sudo --preserve-env=PRICING_HUB_SOURCING_KEY python3 - <<'PY'
+            import grp
+            import json
+            import os
+            import re
+            import stat
+            import subprocess
+            import sys
+            import tempfile
+            import time
+            import urllib.request
+            from pathlib import Path
+
+            key = os.environ.get('PRICING_HUB_SOURCING_KEY', '')
+            if not re.fullmatch(r'[0-9a-f]{64}', key):
+                sys.exit('result=missing_or_invalid_secret')
+            path = Path('/etc/thg-scraper/pricing_hub_key')
+            if not path.parent.is_dir():
+                sys.exit('result=config_directory_missing')
+            old = path.read_bytes() if path.exists() else None
+            old_meta = path.stat() if path.exists() else None
+            new = (key + '\n').encode('ascii')
+            services = ('thg-scraper', 'thg-worker')
+
+            def write_file(data, metadata=None):
+                fd, temp_name = tempfile.mkstemp(prefix='.pricing_hub_key.', dir=path.parent)
+                try:
+                    os.fchmod(fd, stat.S_IMODE(metadata.st_mode) if metadata else 0o640)
+                    os.fchown(fd, metadata.st_uid if metadata else 0,
+                              metadata.st_gid if metadata else grp.getgrnam('thg-scraper').gr_gid)
+                    with os.fdopen(fd, 'wb') as output:
+                        output.write(data)
+                        output.flush()
+                        os.fsync(output.fileno())
+                    os.replace(temp_name, path)
+                finally:
+                    if os.path.exists(temp_name):
+                        os.unlink(temp_name)
+
+            def restart_services():
+                for service in services:
+                    subprocess.run(['systemctl', 'restart', service], check=True, timeout=60)
+
+            def verify():
+                readable = subprocess.run(
+                    ['runuser', '-u', 'thg-scraper', '--', 'test', '-r', str(path)]
+                ).returncode == 0
+                if not readable:
+                    raise RuntimeError('worker_cannot_read_key')
+                for service in services:
+                    subprocess.run(['systemctl', 'is-active', '--quiet', service], check=True)
+                request = urllib.request.Request(
+                    'https://pricingtool.thgfulfill.com/api/scrape/quota',
+                    headers={'x-thg-integration-key': key},
+                )
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    result = json.load(response)
+                if not result.get('ok') or (result.get('plan') or {}).get('error'):
+                    raise RuntimeError('pricing_hub_quota_unavailable')
+
+            if old != new:
+                try:
+                    write_file(new)
+                    restart_services()
+                    time.sleep(2)
+                    verify()
+                except Exception as exc:
+                    if old is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        write_file(old, old_meta)
+                    rollback_ok = True
+                    for service in services:
+                        rollback_ok &= subprocess.run(['systemctl', 'restart', service]).returncode == 0
+                    reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                    print('failure_reason=' + reason, file=sys.stderr)
+                    sys.exit('result=rolled_back' if rollback_ok else 'result=rollback_failed')
+            else:
+                verify()
+            print('result=provisioned')
+            print('pricing_hub=ready')
+            PY
