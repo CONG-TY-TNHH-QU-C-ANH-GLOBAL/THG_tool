@@ -107,7 +107,12 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 		if org, _ := mainStore.GetOrganization(ev.OrgID); org != nil {
 			workspace = org.Name
 		}
+		gate := facebook.SuggestionGateDisabled
+		if suggestion.build != nil && !suggestion.allowlist.Allows(ev.OrgID) {
+			gate = facebook.SuggestionGateNotAllowed
+		}
 		deliver := func(enrichment models.LeadSuggestion) {
+			facebook.LogLeadSuggestionOutcome("worker", ev.OrgID, gate, enrichment)
 			// The exact snapshot is first durably queued for CRM, then rendered for
 			// Telegram. CRM never regenerates the suggestion from the raw lead.
 			if crmSync != nil {
@@ -125,11 +130,13 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 		}
 		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) {
 			unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
+			gate = facebook.SuggestionGateAttempted
 			if suggestion.runner != nil && suggestion.runner.TryWithFallback(
 				func(ctx context.Context) models.LeadSuggestion { return suggestion.build(ctx, ev) }, deliver, unavailable,
 			) {
 				return
 			}
+			gate = facebook.SuggestionGateBusy
 			deliver(unavailable)
 			return
 		}

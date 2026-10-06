@@ -36,7 +36,7 @@ const noOfferSourcingNote = "chưa tìm được sản phẩm/nguồn phù hợp
 // UnavailableLeadSuggestion is used only when enrichment did not finish.
 // It never claims a marketplace search completed or invents an offer.
 func UnavailableLeadSuggestion(leadText, author string) LeadSuggestion {
-	out := noOfferSuggestion(leadText, author)
+	out := noOfferSuggestion(leadPostBody(leadText), author)
 	if out.SourcingNote != "" {
 		out.SourcingNote = "gợi ý chưa xử lý kịp — sale cần kiểm tra nguồn thủ công"
 	}
@@ -68,11 +68,18 @@ func noOfferSuggestionForLookup(leadText, author string, status supplierLookupSt
 // post is not answered with an off-topic question.
 func noOfferSuggestion(leadText, author string) LeadSuggestion {
 	query := supplierQuery(leadText)
-	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && query == "" && !asksForSupplierHelp(leadText) {
+	if link, _ := leadMarketplaceURL(leadText); link == "" && query == "" && !wantsPersonalizedPOD(leadText) {
+		if service := serviceInquirySuggestion(leadText, author); service.Reply != "" {
+			return service
+		}
+	}
+	supplierRequest := asksForSupplier(leadText)
+	if !wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) && query == "" && !supplierRequest {
 		return LeadSuggestion{}
 	}
 	// "Kho Mỹ nhận hàng nhập từ 1688" asks for storage, not a product to source.
-	if link, _ := leadMarketplaceURL(leadText); query == "" && link == "" && !wantsPersonalizedPOD(leadText) && asksForWarehouse(leadText) {
+	// An explicit supplier/agent request still gets a draft when it also says "warehouse".
+	if link, _ := leadMarketplaceURL(leadText); query == "" && link == "" && !wantsPersonalizedPOD(leadText) && !supplierRequest && asksForWarehouse(leadText) {
 		return LeadSuggestion{}
 	}
 	out := LeadSuggestion{SourcingNote: noOfferSourcingNote}
@@ -110,6 +117,8 @@ func noOfferSuggestion(leadText, author string) LeadSuggestion {
 	if wantsPersonalizedPOD(leadText) {
 		service = "in theo yêu cầu"
 		detail = "mẫu thiết kế nếu có"
+	} else if query == "" && supplierRequest {
+		detail = "sản phẩm cụ thể bạn cần"
 	}
 	out.Reply = leadSalutation(author) + ", bên mình có thể hỗ trợ " + service + "."
 	var missing []string

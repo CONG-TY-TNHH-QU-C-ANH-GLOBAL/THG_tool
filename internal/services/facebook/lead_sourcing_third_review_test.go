@@ -61,10 +61,15 @@ func TestThirdReviewPoweredClothingIsNotStandardCargo(t *testing.T) {
 	}
 }
 
+// Warehousing is a THG service: the draft offers it instead of asking for a product model.
 func TestThirdReviewWarehouseQuestionsGetNoSourcingDraft(t *testing.T) {
-	for _, post := range []string{"Need a 3PL warehouse in the US for my Shopify store", "Cần tìm kho Mỹ nhận hàng nhập từ 1688"} {
-		if got := noOfferSuggestionForLookup(post, "", lookupCompleted); got.Reply != "" || got.SourcingNote != "" {
-			t.Errorf("warehouse question %q must not ask for a product model: %+v", post, got)
+	for post, want := range map[string]string{
+		"Need a 3PL warehouse in the US for my Shopify store": "warehousing and fulfillment",
+		"Cần tìm kho Mỹ nhận hàng nhập từ 1688":               "dịch vụ kho và fulfillment",
+	} {
+		got := noOfferSuggestionForLookup(post, "", lookupCompleted)
+		if !strings.Contains(got.Reply, want) || got.SourcingNote != "" || strings.Contains(got.Reply, "mẫu") || strings.Contains(got.Reply, "model") {
+			t.Errorf("warehouse question %q must get a warehousing draft, not a sourcing one: %+v", post, got)
 		}
 	}
 }

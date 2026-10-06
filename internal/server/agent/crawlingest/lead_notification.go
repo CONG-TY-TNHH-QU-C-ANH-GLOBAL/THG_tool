@@ -18,7 +18,9 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 	if org, _ := h.db.GetOrganization(ev.OrgID); org != nil {
 		workspace = org.Name
 	}
+	gate := facebook.SuggestionGateDisabled
 	deliver := func(suggestion models.LeadSuggestion) {
+		facebook.LogLeadSuggestionOutcome("crawl", ev.OrgID, gate, suggestion)
 		if h.crmLeadSync != nil {
 			if err := h.crmLeadSync.Enqueue(context.Background(), ev, suggestion); err != nil {
 				log.Printf("CRM enriched lead enqueue failed: %v", err)
@@ -35,13 +37,19 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 			Supplier:        suggestion.Supplier, SourcingNote: suggestion.SourcingNote,
 		})
 	}
-	if h.leadSuggestion != nil && h.leadSuggestionAllowed != nil && h.leadSuggestionAllowed(ev.OrgID) {
+	allowed := h.leadSuggestion != nil && h.leadSuggestionAllowed != nil && h.leadSuggestionAllowed(ev.OrgID)
+	if h.leadSuggestion != nil && !allowed {
+		gate = facebook.SuggestionGateNotAllowed
+	}
+	if allowed {
 		unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
+		gate = facebook.SuggestionGateAttempted
 		if h.suggestionRunner != nil && h.suggestionRunner.TryWithFallback(
 			func(ctx context.Context) models.LeadSuggestion { return h.leadSuggestion(ctx, ev) }, deliver, unavailable,
 		) {
 			return
 		}
+		gate = facebook.SuggestionGateBusy
 		deliver(unavailable)
 		return
 	}
