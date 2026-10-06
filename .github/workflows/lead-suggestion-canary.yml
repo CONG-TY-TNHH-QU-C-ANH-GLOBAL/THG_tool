@@ -130,12 +130,18 @@ jobs:
                 raise RuntimeError('scraper_health_failed')
 
             if updated != original:
+                failure_stage = 'write_config'
                 try:
                     write_config(updated)
                     for service in services:
+                        failure_stage = 'restart_' + service
                         subprocess.run(['systemctl', 'restart', service], check=True, timeout=60)
+                    failure_stage = 'verify_services'
                     verify_services()
-                except Exception:
+                except Exception as exc:
+                    reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                    print('failure_stage=' + failure_stage, file=sys.stderr)
+                    print('failure_reason=' + reason, file=sys.stderr)
                     write_config(original)
                     rollback_ok = True
                     for service in services:

@@ -295,14 +295,13 @@ jobs:
               sudo cp /tmp/thg-deploy/services/agent-brain/planner_llm.py /opt/thg-agent-brain/
               sudo cp /tmp/thg-deploy/services/agent-brain/requirements.txt /opt/thg-agent-brain/
 
-              # Ensure python3-venv is installed (in case setup-server.sh wasn't run)
-              if ! dpkg -l | grep -q python3-venv; then
-                sudo apt-get update
-                sudo apt-get install -y python3-venv
-              fi
-
-              # Create venv if missing or broken (no pip)
+              # Only install python3-venv when the existing environment needs repair.
+              # Package mirrors can stall deploys even when the venv is already usable.
               if [ ! -f /opt/thg-agent-brain/venv/bin/pip ]; then
+                if [ "$(dpkg-query -W -f='${Status}' python3-venv 2>/dev/null || true)" != 'install ok installed' ]; then
+                  sudo apt-get update
+                  sudo apt-get install -y python3-venv
+                fi
                 sudo rm -rf /opt/thg-agent-brain/venv
                 sudo python3 -m venv /opt/thg-agent-brain/venv
               fi
