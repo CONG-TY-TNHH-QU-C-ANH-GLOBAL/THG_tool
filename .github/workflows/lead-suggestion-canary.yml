@@ -105,20 +105,29 @@ jobs:
 
             def verify_services():
                 for service in services:
-                    subprocess.run(['systemctl', 'is-active', '--quiet', service], check=True)
-                    pid = subprocess.check_output(
-                        ['systemctl', 'show', service, '--property=MainPID', '--value'], text=True
-                    ).strip()
-                    if not pid.isdigit() or int(pid) <= 0:
-                        raise RuntimeError('service_pid_unavailable')
-                    entries = Path('/proc/' + pid + '/environ').read_bytes().split(b'\0')
-                    process_env = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)
-                    active = process_env.get(b'LEAD_SUGGESTION_ENABLED', b'').lower()
-                    if active not in (b'1', b'true', b'yes', b'y', b'on'):
-                        raise RuntimeError('effective_flag_off')
-                    allowed = process_env.get(b'LEAD_SUGGESTION_ORG_IDS', b'').decode('ascii')
-                    if (org_id in allowed.split(',')) != expected:
-                        raise RuntimeError('effective_allowlist_mismatch')
+                    # Type=simple may report active before ExecStart has finished.
+                    # Retry the process environment, then fail closed if it stays wrong.
+                    for attempt in range(10):
+                        try:
+                            subprocess.run(['systemctl', 'is-active', '--quiet', service], check=True)
+                            pid = subprocess.check_output(
+                                ['systemctl', 'show', service, '--property=MainPID', '--value'], text=True
+                            ).strip()
+                            if not pid.isdigit() or int(pid) <= 0:
+                                raise RuntimeError('service_pid_unavailable')
+                            entries = Path('/proc/' + pid + '/environ').read_bytes().split(b'\0')
+                            process_env = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)
+                            active = process_env.get(b'LEAD_SUGGESTION_ENABLED', b'').lower()
+                            if active not in (b'1', b'true', b'yes', b'y', b'on'):
+                                raise RuntimeError('effective_flag_off_' + service)
+                            allowed = process_env.get(b'LEAD_SUGGESTION_ORG_IDS', b'').decode('ascii')
+                            if (org_id in allowed.split(',')) != expected:
+                                raise RuntimeError('effective_allowlist_mismatch_' + service)
+                            break
+                        except (RuntimeError, subprocess.CalledProcessError, OSError) as exc:
+                            if attempt == 9:
+                                raise exc
+                            time.sleep(1)
                 for _ in range(12):
                     health = subprocess.run(
                         ['curl', '-fsS', '--max-time', '2', 'http://127.0.0.1:8080/api/stats'],
