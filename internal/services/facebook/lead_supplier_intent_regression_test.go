@@ -68,6 +68,32 @@ func TestCommentsDoNotTurnAdviceIntoSalesLead(t *testing.T) {
 	}
 }
 
+// Production shape (names replaced): an English post shown in the Vietnamese
+// Facebook UI, followed by two comments and their action labels.
+func TestProductionCrawlShapeKeepsOnlyPostBody(t *testing.T) {
+	post := "Facebook Poster Name 22 phút trước · LOOKING FOR A RELIABLE SUPPLIER/AGENT SHIPPING TO UAE Xem bản dịch 3 1 Abcfulfillment · 9 phút · Theo dõi May I ask what product you need? Trả lời Xem bản dịch Chia sẻ Other Seller · 1 phút here Trả lời Xem bản dịch Chia sẻ Viết câu trả lời... Facebook"
+	if got := leadPostBody(post); got != "Facebook Poster Name 22 phút trước · LOOKING FOR A RELIABLE SUPPLIER/AGENT SHIPPING TO UAE" {
+		t.Fatalf("post body = %q", got)
+	}
+	s, msg := renderedCrawlNotice(t, post, "Poster Name")
+	if !strings.Contains(s.Reply, "specific product") || strings.Contains(s.Reply, "destination") || !strings.Contains(msg, "💬 Gợi ý trả lời") {
+		t.Fatalf("UAE supplier request must ask only for product and quantity: %q", s.Reply)
+	}
+}
+
+// Vietnamese posts have no "Xem bản dịch" label; the comment header is the boundary.
+func TestVietnameseCommentDoesNotCreateSourcingIntent(t *testing.T) {
+	// Before the comment boundary, "nhập hàng 1688" in the seller's comment produced a sourcing draft.
+	post := "Facebook Poster Name 1 giờ trước · Mọi người cho mình xin kinh nghiệm bán Amazon cho người mới với ạ 2 1 Nguồn Hàng Express · 5 phút · Theo dõi Bên em nhận nhập hàng 1688 giá tốt, ib em Trả lời Chia sẻ"
+	if s, _ := renderedCrawlNotice(t, post, "Poster Name"); s.Reply != "" {
+		t.Fatalf("a seller's comment must not make an advice question a sourcing lead: %+v", s)
+	}
+	body := "Cần nhập 300 cái áo hoodie · 20 ngày giao hàng, ai nhận inbox"
+	if got := leadPostBody(body); got != body {
+		t.Fatalf("a post sentence with a delivery time is not a comment header: %q", got)
+	}
+}
+
 func TestSupplierPluralForConcreteProductKeepsQuery(t *testing.T) {
 	if got := supplierQuery("Looking for reliable suppliers for winter jackets shipped to UAE"); got != "winter jackets" {
 		t.Fatalf("named product must stay searchable, got %q", got)
