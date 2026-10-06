@@ -53,7 +53,8 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 			supplier = nil
 		}
 		var liveWeight *float64
-		if !supplier.HasOffer() && supplierLookup != nil {
+		linkedURL, _ := leadMarketplaceURL(leadText)
+		if !supplier.HasOffer() && supplierLookup != nil && (supplierQuery(leadText) != "" || linkedURL != "") {
 			resolved, lookupErr := supplierLookup(ctx, leadText)
 			lookupStatus = classifySupplierLookupError(lookupErr, false)
 			if lookupErr == nil && resolved != nil {
