@@ -1,0 +1,148 @@
+name: THGFulfill lead suggestion canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Check, enable, or disable suggestions for THGFulfill only
+        required: true
+        type: choice
+        options: [check, enable, disable]
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Update only the THGFulfill allowlist entry
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          CANARY_OPERATION: ${{ inputs.operation }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          envs: CANARY_OPERATION
+          command_timeout: 3m
+          script: |
+            set -eu
+            case "$CANARY_OPERATION" in check|enable|disable) ;; *) exit 1 ;; esac
+            sudo python3 - "$CANARY_OPERATION" <<'PY'
+            import os
+            import re
+            import sqlite3
+            import stat
+            import subprocess
+            import sys
+            import tempfile
+            import time
+            from pathlib import Path
+
+            operation = sys.argv[1]
+            config = Path('/etc/thg-scraper/env')
+            services = ('thg-scraper', 'thg-worker')
+            db_uri = 'file:/opt/thg-scraper/data/scraper.db?mode=ro'
+
+            with sqlite3.connect(db_uri, uri=True) as db:
+                rows = db.execute(
+                    "SELECT id FROM organizations WHERE lower(replace(name, ' ', '')) = 'thgfulfill' LIMIT 2"
+                ).fetchall()
+            if len(rows) != 1 or not isinstance(rows[0][0], int) or rows[0][0] <= 0:
+                sys.exit('target_org=unavailable')
+            org_id = str(rows[0][0])
+
+            original = config.read_bytes()
+            lines = original.splitlines(keepends=True)
+
+            def assignment(name):
+                matches = [(i, line) for i, line in enumerate(lines)
+                           if re.match(rb'^\s*' + name + rb'\s*=', line)]
+                if len(matches) != 1:
+                    sys.exit('production_config=unexpected_assignments')
+                index, line = matches[0]
+                value = line.split(b'=', 1)[1].strip().strip(bytes([34, 39])).decode('ascii')
+                return index, value
+
+            _, flag = assignment(b'LEAD_SUGGESTION_ENABLED')
+            if flag.lower() not in ('1', 'true', 'yes', 'y', 'on'):
+                sys.exit('suggestion_flag=off')
+            index, raw_allowlist = assignment(b'LEAD_SUGGESTION_ORG_IDS')
+            if raw_allowlist == '*':
+                sys.exit('allowlist=wildcard_refused')
+            if raw_allowlist and not re.fullmatch(r'[1-9][0-9]*(,[1-9][0-9]*)*', raw_allowlist):
+                sys.exit('allowlist=invalid_refused')
+            if operation == 'check':
+                print('result=ready')
+                sys.exit(0)
+            ids = raw_allowlist.split(',') if raw_allowlist else []
+            if operation == 'enable' and org_id not in ids:
+                ids.append(org_id)
+            elif operation == 'disable':
+                ids = [item for item in ids if item != org_id]
+            expected = operation == 'enable'
+            suffix = b'\r\n' if lines[index].endswith(b'\r\n') else b'\n'
+            lines[index] = b'LEAD_SUGGESTION_ORG_IDS=' + ','.join(ids).encode('ascii') + suffix
+            updated = b''.join(lines)
+
+            def write_config(data):
+                metadata = config.stat()
+                fd, temp_name = tempfile.mkstemp(prefix='.env.canary.', dir=config.parent)
+                try:
+                    os.fchmod(fd, stat.S_IMODE(metadata.st_mode))
+                    os.fchown(fd, metadata.st_uid, metadata.st_gid)
+                    with os.fdopen(fd, 'wb') as output:
+                        output.write(data)
+                        output.flush()
+                        os.fsync(output.fileno())
+                    os.replace(temp_name, config)
+                finally:
+                    if os.path.exists(temp_name):
+                        os.unlink(temp_name)
+
+            def verify_services():
+                for service in services:
+                    subprocess.run(['systemctl', 'is-active', '--quiet', service], check=True)
+                    pid = subprocess.check_output(
+                        ['systemctl', 'show', service, '--property=MainPID', '--value'], text=True
+                    ).strip()
+                    if not pid.isdigit() or int(pid) <= 0:
+                        raise RuntimeError('service_pid_unavailable')
+                    entries = Path('/proc/' + pid + '/environ').read_bytes().split(b'\0')
+                    process_env = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)
+                    active = process_env.get(b'LEAD_SUGGESTION_ENABLED', b'').lower()
+                    if active not in (b'1', b'true', b'yes', b'y', b'on'):
+                        raise RuntimeError('effective_flag_off')
+                    allowed = process_env.get(b'LEAD_SUGGESTION_ORG_IDS', b'').decode('ascii')
+                    if (org_id in allowed.split(',')) != expected:
+                        raise RuntimeError('effective_allowlist_mismatch')
+                for _ in range(12):
+                    health = subprocess.run(
+                        ['curl', '-fsS', '--max-time', '2', 'http://127.0.0.1:8080/api/stats'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    if health.returncode == 0:
+                        return
+                    time.sleep(2)
+                raise RuntimeError('scraper_health_failed')
+
+            if updated != original:
+                try:
+                    write_config(updated)
+                    for service in services:
+                        subprocess.run(['systemctl', 'restart', service], check=True, timeout=60)
+                    verify_services()
+                except Exception:
+                    write_config(original)
+                    rollback_ok = True
+                    for service in services:
+                        rollback_ok &= subprocess.run(['systemctl', 'restart', service]).returncode == 0
+                    sys.exit('result=rolled_back' if rollback_ok else 'result=rollback_failed')
+            else:
+                verify_services()
+            print('result=enabled' if expected else 'result=disabled')
+            print('services=healthy')
+            PY
