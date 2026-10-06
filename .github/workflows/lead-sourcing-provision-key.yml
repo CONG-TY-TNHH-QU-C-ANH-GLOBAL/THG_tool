@@ -86,9 +86,23 @@ jobs:
                 if not readable:
                     raise RuntimeError('worker_cannot_read_key')
                 for service in services:
-                    for attempt in range(10):
+                    # thg-worker has RestartSec=15; a transient failed start
+                    # needs time to recover before we judge the final state.
+                    deadline = time.monotonic() + 40
+                    while time.monotonic() < deadline:
                         if subprocess.run(['systemctl', 'is-active', '--quiet', service]).returncode == 0:
-                            break
+                            pid = subprocess.check_output(
+                                ['systemctl', 'show', service, '--property=MainPID', '--value'], text=True
+                            ).strip()
+                            if pid.isdigit() and int(pid) > 0:
+                                time.sleep(5)
+                                stable_pid = subprocess.check_output(
+                                    ['systemctl', 'show', service, '--property=MainPID', '--value'], text=True
+                                ).strip()
+                                if stable_pid == pid and subprocess.run(
+                                    ['systemctl', 'is-active', '--quiet', service]
+                                ).returncode == 0:
+                                    break
                         time.sleep(1)
                     else:
                         raise RuntimeError('service_not_active_' + service)
