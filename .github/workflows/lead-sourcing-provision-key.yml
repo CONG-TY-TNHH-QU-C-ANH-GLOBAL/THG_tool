@@ -34,6 +34,7 @@ jobs:
             import sys
             import tempfile
             import time
+            import urllib.error
             import urllib.request
             from pathlib import Path
 
@@ -67,6 +68,19 @@ jobs:
                 for service in services:
                     subprocess.run(['systemctl', 'restart', service], check=True, timeout=60)
 
+            def verify_hub():
+                request = urllib.request.Request(
+                    'https://pricingtool.thgfulfill.com/api/scrape/quota',
+                    headers={'x-thg-integration-key': key},
+                )
+                try:
+                    with urllib.request.urlopen(request, timeout=8) as response:
+                        result = json.load(response)
+                except urllib.error.HTTPError as exc:
+                    raise RuntimeError('pricing_hub_http_' + str(exc.code)) from None
+                if not result.get('ok') or (result.get('plan') or {}).get('error'):
+                    raise RuntimeError('pricing_hub_quota_unavailable')
+
             def verify():
                 readable = subprocess.run(
                     ['runuser', '-u', 'thg-scraper', '--', 'test', '-r', str(path)]
@@ -75,14 +89,13 @@ jobs:
                     raise RuntimeError('worker_cannot_read_key')
                 for service in services:
                     subprocess.run(['systemctl', 'is-active', '--quiet', service], check=True)
-                request = urllib.request.Request(
-                    'https://pricingtool.thgfulfill.com/api/scrape/quota',
-                    headers={'x-thg-integration-key': key},
-                )
-                with urllib.request.urlopen(request, timeout=8) as response:
-                    result = json.load(response)
-                if not result.get('ok') or (result.get('plan') or {}).get('error'):
-                    raise RuntimeError('pricing_hub_quota_unavailable')
+                verify_hub()
+
+            try:
+                verify_hub()
+            except Exception as exc:
+                reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                sys.exit('preflight=' + reason)
 
             if old != new:
                 try:
