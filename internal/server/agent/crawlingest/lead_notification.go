@@ -20,7 +20,7 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 	}
 	gate := facebook.SuggestionGateDisabled
 	deliver := func(suggestion models.LeadSuggestion) {
-		facebook.LogLeadSuggestionOutcome("crawl", ev.OrgID, gate, suggestion)
+		facebook.LogLeadSuggestionOutcome("crawl", ev.OrgID, ev.LeadID, gate, suggestion)
 		if h.crmLeadSync != nil {
 			if err := h.crmLeadSync.Enqueue(context.Background(), ev, suggestion); err != nil {
 				log.Printf("CRM enriched lead enqueue failed: %v", err)

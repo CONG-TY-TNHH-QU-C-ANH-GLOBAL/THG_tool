@@ -2,7 +2,7 @@
 doc_type: engineering
 status: active
 owner: platform
-last_reviewed: 2026-10-01
+last_reviewed: 2026-10-15
 related_pr_or_issue: supplier-sourced-lead-suggestions
 ---
 
@@ -10,8 +10,9 @@ related_pr_or_issue: supplier-sourced-lead-suggestions
 
 Operator lead notices select one matching offer. Explicit personalization
 requests favor an in-stock POD catalog item; wholesale/import requests favor a
-sourceable marketplace item. Without a clear wholesale signal, a matching POD
-item has priority over a supplier item.
+sourceable marketplace item. An explicit supplier request is a sourcing signal
+even without a stated bulk quantity. A matching POD item has priority only
+when the post does not ask for supplier or wholesale sourcing.
 If an explicit POD request has no matching catalog item, a marketplace item may
 be shown as an alternative product source. The draft must say customization
 still needs confirmation; a seller listing is not proof that printing is offered.

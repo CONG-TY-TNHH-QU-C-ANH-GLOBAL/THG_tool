@@ -43,7 +43,7 @@ func BuildLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder,
 	product := PickSuggestedProductDetails(matched)
 	var supplier *models.SupplierMatch
 	lookupStatus := classifySupplierLookupError(nil, supplierLookup == nil)
-	if wantsBulkSourcing(leadText) && !wantsPersonalizedPOD(leadText) {
+	if (wantsBulkSourcing(leadText) || asksForSupplier(leadText)) && !wantsPersonalizedPOD(leadText) {
 		product = SuggestedProduct{}
 	}
 	if product.URL == "" {

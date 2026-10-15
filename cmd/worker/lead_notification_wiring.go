@@ -112,7 +112,7 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 			gate = facebook.SuggestionGateNotAllowed
 		}
 		deliver := func(enrichment models.LeadSuggestion) {
-			facebook.LogLeadSuggestionOutcome("worker", ev.OrgID, gate, enrichment)
+			facebook.LogLeadSuggestionOutcome("worker", ev.OrgID, ev.LeadID, gate, enrichment)
 			// The exact snapshot is first durably queued for CRM, then rendered for
 			// Telegram. CRM never regenerates the suggestion from the raw lead.
 			if crmSync != nil {
