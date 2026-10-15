@@ -9,6 +9,9 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/notifications"
 	"github.com/thg/scraper/internal/telegram/render"
+	"github.com/thg/scraper/internal/workspace_knowledge/assets"
+	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
+	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
 )
 
 // renderedCrawlNotice runs extension-shaped text through the real suggestion
@@ -100,5 +103,24 @@ func TestSupplierPluralForConcreteProductKeepsQuery(t *testing.T) {
 	}
 	if got := supplierQuery("We are looking for a vendor who can ship to UAE"); got != "" {
 		t.Fatalf("a role word is not a product to search, got %q", got)
+	}
+}
+
+func TestSupplierRequestDoesNotTurnMatchingCatalogItemIntoPOD(t *testing.T) {
+	const catalogURL = "https://thgfulfill.com/vi/catalog?productId=massager"
+	const sourceURL = "https://detail.1688.com/offer/123.html"
+	post := "Looking for a reliable supplier for hand massager"
+	builder := &knowledgeRuntime.Builder{Searcher: podFallbackSearcher{hit: retrieval.Hit{Asset: &assets.Asset{
+		Type: assets.AssetPODProduct, State: assets.StateApproved, Title: "Hand massager",
+		Payload: []byte(`{"source_url":"` + catalogURL + `","availability":"in_stock"}`),
+	}}}}
+	lookup := func(context.Context, string) (*ResolvedSupplier, error) {
+		return &ResolvedSupplier{Match: &models.SupplierMatch{
+			Name: "Hand massager", URL: sourceURL, PriceText: "¥25", Similar: true,
+		}}, nil
+	}
+	got := BuildLeadSuggestion(context.Background(), builder, nil, nil, 1, post, "Alex", nil, lookup)
+	if got.ProductURL != "" || got.Supplier == nil || got.Supplier.URL != sourceURL || !strings.Contains(got.Reply, sourceURL) || strings.Contains(got.Reply, catalogURL) {
+		t.Fatalf("supplier request should use the sourced item, not a matching POD catalog item: %+v", got)
 	}
 }
