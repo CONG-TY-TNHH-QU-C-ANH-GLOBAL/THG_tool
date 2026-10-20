@@ -46,7 +46,7 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 	if allowed {
 		unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
 		gate = facebook.SuggestionGateAttempted
-		if h.suggestionRunner != nil && h.suggestionRunner.TryWithFallback(
+		if h.suggestionRunner != nil && h.suggestionRunner.TryForOrgWithFallback(ev.OrgID,
 			func(ctx context.Context) models.LeadSuggestion { return h.leadSuggestion(ctx, ev) }, deliver, unavailable,
 		) {
 			return

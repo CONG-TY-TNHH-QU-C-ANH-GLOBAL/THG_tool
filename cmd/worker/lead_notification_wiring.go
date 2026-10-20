@@ -85,7 +85,10 @@ func newWorkerSuggestionRuntime(mainStore *store.Store) workerSuggestionRuntime 
 		}
 		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, shippingQuote, supplierLookup)
 	}
-	runtime.runner = notifications.NewSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, time.Duration(cfg.LeadSuggestionTimeoutMS)*time.Millisecond)
+	baseTimeout := time.Duration(cfg.LeadSuggestionTimeoutMS) * time.Millisecond
+	runtime.runner = notifications.NewSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, baseTimeout, func(orgID int64) time.Duration {
+		return facebook.LeadSuggestionTimeout(baseTimeout, cfg.LeadContextAnalysisEnabled || cfg.LeadImageContextEnabled, contextAllowlist, orgID)
+	})
 	logWorkerSuggestionPolicy(runtime.allowlist)
 	return runtime
 }
@@ -148,7 +151,7 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) {
 			unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
 			gate = facebook.SuggestionGateAttempted
-			if suggestion.runner != nil && suggestion.runner.TryWithFallback(
+			if suggestion.runner != nil && suggestion.runner.TryForOrgWithFallback(ev.OrgID,
 				func(ctx context.Context) models.LeadSuggestion { return suggestion.build(ctx, ev) }, deliver, unavailable,
 			) {
 				return

@@ -2,6 +2,7 @@ package facebook
 
 import (
 	"context"
+	"strings"
 
 	"github.com/thg/scraper/internal/ai"
 	"github.com/thg/scraper/internal/ai/leadcontext"
@@ -13,6 +14,9 @@ import (
 // fields, links, pricing and company capability still come from their owners.
 func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRuntime.Builder, generator *ai.MessageGenerator, profile *ai.BusinessProfile, orgID int64, post, author string, images []string, shipping ShippingQuoteFunc, sourcing SupplierLookupFunc) LeadSuggestion {
 	post = leadPostBody(post)
+	if containsAnyLeadPhrase(post, serviceOfferTerms) && !directProductRequest(post) {
+		return LeadSuggestion{AnalysisStatus: "offer_review", ReplyStatus: "not_applicable", ReplyNote: "Bài có nội dung chào bán dịch vụ; sale cần xem trước khi tiếp cận."}
+	}
 	urls := media.URLs(images)
 	need, err := generator.AnalyzeLeadContext(ctx, post, urls)
 	if err != nil {
@@ -26,10 +30,19 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		out.AnalysisStatus = "conflict"
 		return out
 	}
+	if directProductRequest(post) && contradictsProductIntent(need.Intent) {
+		out := buildGroundedLeadSuggestion(ctx, builder, orgID, post, author, shipping, sourcing)
+		out.AnalysisStatus, out.ReplyStatus = "intent_conflict", "grounded_template"
+		out.ReplyNote = "Phân tích nhu cầu chưa khớp yêu cầu sản phẩm rõ trong bài; gợi ý dựa trên nội dung chữ, sale cần đối chiếu."
+		return out
+	}
 	out := groundedForLeadContext(ctx, builder, orgID, post, author, need, shipping, sourcing)
 	out.AnalysisStatus = need.Intent
 	if len(urls) > 0 {
 		out.ContextNote = "Đã phân tích ảnh tham chiếu; chưa xác minh đúng mã hàng hoặc mẫu sàn."
+		if len(need.Visual.Observations) == 0 {
+			out.ContextNote = "Chưa xác nhận được nội dung ảnh; gợi ý dựa trên chữ, sale cần đối chiếu ảnh."
+		}
 	} else if len(images) > 0 {
 		out.ContextNote = "Chưa nhận được ảnh gốc hợp lệ; gợi ý dựa trên chữ, sale cần đối chiếu ảnh."
 	}
@@ -38,6 +51,32 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		visual = need.Visual.PromptBlock()
 	}
 	return refineLeadSuggestion(ctx, builder, generator, profile, orgID, post, author, out, need.PromptBlock(), visual)
+}
+
+// Only a direct buyer request can override a contradictory model verdict.
+// Educational/conditional mentions and explicit logistics requests stay separate.
+func directProductRequest(post string) bool {
+	if serviceInquiryKind(post) != "" || containsAnyLeadPhrase(post, serviceOfferTerms) {
+		return false
+	}
+	if supplierQuery(post) == "" && !wantsPersonalizedPOD(post) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(post))
+	for _, prefix := range []string{"looking for ", "need ", "i need ", "we need ", "seeking ", "sourcing ", "cần ", "mình cần ", "shop mình cần ", "tôi cần ", "muốn mua ", "muốn nhập "} {
+		if strings.HasPrefix(text, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func contradictsProductIntent(intent string) bool {
+	switch intent {
+	case leadcontext.NonCommercial, leadcontext.Shipping, leadcontext.Warehouse:
+		return true
+	}
+	return false
 }
 
 func groundedForLeadContext(ctx context.Context, builder *knowledgeRuntime.Builder, orgID int64, post, author string, need leadcontext.Context, shipping ShippingQuoteFunc, sourcing SupplierLookupFunc) LeadSuggestion {

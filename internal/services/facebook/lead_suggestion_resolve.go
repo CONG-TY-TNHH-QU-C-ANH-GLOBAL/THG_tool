@@ -55,7 +55,7 @@ func quoteLeadSupplier(ctx context.Context, text string, matched []models.Knowle
 		return
 	}
 	cargo := "unknown"
-	if isOrdinaryApparel(supplier.Name) {
+	if isOrdinaryApparel(supplier.Name + " " + text) {
 		cargo = "standard"
 	}
 	supplier.Shipping, _ = quote(ctx, models.ShippingRequest{
