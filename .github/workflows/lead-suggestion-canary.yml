@@ -107,6 +107,8 @@ jobs:
                 for name in modes:
                     _, value = assignment(name, required=False)
                     print(name.decode('ascii').lower() + '=' + ('on' if value.lower() in ('1', 'true', 'yes', 'y', 'on') else 'off'))
+                _, scope = assignment(b'LEAD_CONTEXT_ORG_IDS', required=False)
+                print('context_scope=' + ('thgfulfill_only' if scope == org_id else 'other_or_unset'))
                 print('result=ready')
                 sys.exit(0)
             ids = raw_allowlist.split(',') if raw_allowlist else []
@@ -114,16 +116,18 @@ jobs:
                 ids.append(org_id)
             elif operation == 'disable':
                 ids = [item for item in ids if item != org_id]
-            if 'enable' in modes.values() and ids != [org_id]:
-                sys.exit('analysis_scope=requires_only_thgfulfill_allowlisted')
             expected = operation == 'enable'
             suffix = b'\r\n' if lines[index].endswith(b'\r\n') else b'\n'
             lines[index] = b'LEAD_SUGGESTION_ORG_IDS=' + ','.join(ids).encode('ascii') + suffix
-            for name, mode in modes.items():
-                if mode == 'keep':
-                    continue
+            settings = {name: b'true' if mode == 'enable' else b'false'
+                        for name, mode in modes.items() if mode != 'keep'}
+            if 'enable' in modes.values():
+                _, scope = assignment(b'LEAD_CONTEXT_ORG_IDS', required=False)
+                if scope and scope != org_id:
+                    sys.exit('analysis_scope=other_scope_refused')
+                settings[b'LEAD_CONTEXT_ORG_IDS'] = org_id.encode('ascii')
+            for name, value in settings.items():
                 flag_index, _ = assignment(name, required=False)
-                value = b'true' if mode == 'enable' else b'false'
                 if flag_index is None:
                     if lines and not lines[-1].endswith(b'\n'):
                         lines[-1] += b'\n'
@@ -173,6 +177,8 @@ jobs:
                                 enabled = process_env.get(name, b'').lower() in (b'1', b'true', b'yes', b'y', b'on')
                                 if enabled != (mode == 'enable'):
                                     raise RuntimeError('effective_analysis_mismatch_' + service)
+                            if 'enable' in modes.values() and process_env.get(b'LEAD_CONTEXT_ORG_IDS', b'').decode('ascii') != org_id:
+                                raise RuntimeError('effective_analysis_scope_mismatch_' + service)
                             if modes[b'LEAD_CONTEXT_ANALYSIS_ENABLED'] == 'enable':
                                 override = [process_env.get(name, b'').strip() for name in
                                             (b'LEAD_MODEL_API_KEY', b'LEAD_MODEL_BASE_URL', b'LEAD_MODEL_NAME')]
@@ -218,6 +224,8 @@ jobs:
                 verify_services()
             print('result=enabled' if expected else 'result=disabled')
             print('services=healthy')
+            if 'enable' in modes.values():
+                print('context_scope=thgfulfill_only')
             for name, mode in modes.items():
                 if mode != 'keep':
                     print(name.decode('ascii').lower() + '=' + ('on' if mode == 'enable' else 'off'))

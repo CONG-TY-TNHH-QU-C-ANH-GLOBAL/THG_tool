@@ -47,6 +47,7 @@ type Config struct {
 	LeadSuggestionEnabled        bool
 	LeadImageContextEnabled      bool
 	LeadContextAnalysisEnabled   bool
+	LeadContextOrgIDs            string // Explicit scope for both text and photo analysis.
 	LeadModel                    LeadModelConfig
 	LeadSuggestionOrgIDs         string
 	LeadSuggestionTimeoutMS      int
@@ -161,6 +162,7 @@ func Load() *Config {
 		LeadSuggestionEnabled:        getEnvBool("LEAD_SUGGESTION_ENABLED", false),
 		LeadImageContextEnabled:      getEnvBool("LEAD_IMAGE_CONTEXT_ENABLED", false),
 		LeadContextAnalysisEnabled:   getEnvBool("LEAD_CONTEXT_ANALYSIS_ENABLED", false),
+		LeadContextOrgIDs:            getEnv("LEAD_CONTEXT_ORG_IDS", ""),
 		LeadModel:                    loadLeadModel(),
 		LeadSuggestionOrgIDs:         getEnv("LEAD_SUGGESTION_ORG_IDS", ""),
 		LeadSuggestionTimeoutMS:      getEnvInt("LEAD_SUGGESTION_TIMEOUT_MS", 12000),

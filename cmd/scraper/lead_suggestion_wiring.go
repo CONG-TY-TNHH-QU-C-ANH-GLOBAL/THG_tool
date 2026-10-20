@@ -27,6 +27,7 @@ func setupLeadSuggestionRuntime(cfg *config.Config, db *store.Store, commentGen 
 		return nil, nil, nil
 	}
 	allowlist := facebook.ParseOrgAllowlist(cfg.LeadSuggestionOrgIDs)
+	contextAllowlist := facebook.ParseOrgAllowlist(cfg.LeadContextOrgIDs)
 	if !allowlist.Configured() {
 		log.Println("[LeadSuggestion] enabled but LEAD_SUGGESTION_ORG_IDS is empty/invalid; no org is allowed")
 	}
@@ -55,10 +56,12 @@ func setupLeadSuggestionRuntime(cfg *config.Config, db *store.Store, commentGen 
 		if !cfg.LeadImageContextEnabled {
 			images = nil
 		}
-		if cfg.LeadContextAnalysisEnabled {
+		switch {
+		case !contextAllowlist.Allows(ev.OrgID):
+			// Keep the existing text suggestion path outside the analysis scope.
+		case cfg.LeadContextAnalysisEnabled:
 			return facebook.BuildLeadSuggestionWithContext(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, images, shippingQuote, supplierLookup)
-		}
-		if cfg.LeadImageContextEnabled {
+		case cfg.LeadImageContextEnabled:
 			return facebook.BuildLeadSuggestionWithImages(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, ev.ImageURLs, shippingQuote, supplierLookup)
 		}
 		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, shippingQuote, supplierLookup)
