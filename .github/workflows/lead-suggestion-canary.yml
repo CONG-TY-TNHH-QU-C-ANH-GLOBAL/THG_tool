@@ -49,7 +49,7 @@ jobs:
           script: |
             set -eu
             case "$CANARY_OPERATION" in check|enable|disable) ;; *) exit 1 ;; esac
-            sudo python3 - "$CANARY_OPERATION" <<'PY'
+            sudo --preserve-env=CONTEXT_MODE,IMAGE_MODE python3 - "$CANARY_OPERATION" <<'PY'
             import os
             import re
             import sqlite3
