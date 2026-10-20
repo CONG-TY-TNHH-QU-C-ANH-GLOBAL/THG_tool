@@ -37,6 +37,28 @@ jobs:
             esac
             echo 'thgfulfill_org=found'
 
+            # Aggregate fixed result codes only; never emit raw leads/journal lines.
+            sudo python3 - "$org_id" <<'PY'
+            import subprocess
+            import sys
+
+            journal = subprocess.check_output(
+                ['journalctl', '-u', 'thg-scraper', '-u', 'thg-worker', '--since', '20 minutes ago',
+                 '-n', '2000', '--no-pager', '-o', 'cat'], text=True,
+            )
+            lines = [line for line in journal.splitlines()
+                     if '[LeadSuggestion]' in line and (' org_id=' + sys.argv[1] + ' ') in line]
+            print('recent_suggestion_events=' + str(len(lines)))
+            for label, token in (
+                ('recent_with_reply', ' reply=true '),
+                ('recent_model_generated', ' wording=model_generated '),
+                ('recent_model_rejected', ' wording=model_rejected '),
+                ('recent_model_error', ' wording=model_error '),
+                ('recent_analysis_unavailable', ' analysis=unavailable '),
+            ):
+                print(label + '=' + str(sum(token in line for line in lines)))
+            PY
+
             for service in thg-scraper thg-worker; do
               if ! systemctl is-active --quiet "$service"; then
                 echo "$service=inactive"

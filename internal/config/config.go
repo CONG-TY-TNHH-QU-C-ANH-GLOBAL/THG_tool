@@ -45,6 +45,9 @@ type Config struct {
 	// OrgIDs is a fail-closed canary allowlist; timeout/concurrency bound provider
 	// work off the ingest path. Default false: Facebook outbound is unchanged.
 	LeadSuggestionEnabled        bool
+	LeadImageContextEnabled      bool
+	LeadContextAnalysisEnabled   bool
+	LeadModel                    LeadModelConfig
 	LeadSuggestionOrgIDs         string
 	LeadSuggestionTimeoutMS      int
 	LeadSuggestionMaxConcurrency int
@@ -156,6 +159,9 @@ func Load() *Config {
 		ReelStudioEnabled:            getEnvBool("REEL_STUDIO_ENABLED", false),
 		FreshLeadCampaignsEnabled:    getEnvBool("FRESH_LEAD_CAMPAIGNS_ENABLED", false),
 		LeadSuggestionEnabled:        getEnvBool("LEAD_SUGGESTION_ENABLED", false),
+		LeadImageContextEnabled:      getEnvBool("LEAD_IMAGE_CONTEXT_ENABLED", false),
+		LeadContextAnalysisEnabled:   getEnvBool("LEAD_CONTEXT_ANALYSIS_ENABLED", false),
+		LeadModel:                    loadLeadModel(),
 		LeadSuggestionOrgIDs:         getEnv("LEAD_SUGGESTION_ORG_IDS", ""),
 		LeadSuggestionTimeoutMS:      getEnvInt("LEAD_SUGGESTION_TIMEOUT_MS", 12000),
 		LeadSuggestionMaxConcurrency: getEnvInt("LEAD_SUGGESTION_MAX_CONCURRENCY", 2),

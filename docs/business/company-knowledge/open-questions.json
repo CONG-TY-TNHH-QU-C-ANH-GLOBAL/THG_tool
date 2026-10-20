@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "updated_on": "2026-10-18",
+  "items": [
+    {
+      "id": "brand-name",
+      "owner_role": "Leader/Marketing",
+      "source_ids": [
+        "web-home",
+        "web-warehouse"
+      ],
+      "question": "Tên dùng trong câu trả lời là THG Fulfill hay TH Group? Có quy tắc theo thương hiệu/dịch vụ không?",
+      "reason": "Các trang hiện hiển thị hai cách gọi.",
+      "until_confirmed": "Dùng tên trong profile workspace đã được duyệt; không tự đổi tên trên hệ thống.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "company-profile",
+      "owner_role": "Leader/Administration",
+      "source_ids": [
+        "web-home",
+        "training-company-snapshot"
+      ],
+      "question": "Có company profile mới nhất về pháp nhân, lịch sử, địa điểm và chứng nhận được phép công bố không?",
+      "reason": "Đã đọc tổng quan Training trong repo; số kho và cách mô tả mạng lưới chưa thống nhất với phần website đọc được.",
+      "until_confirmed": "Không chọn một số kho để quảng bá hoặc suy quyền sở hữu/công suất khi chưa thống nhất nguồn.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "service-lanes",
+      "owner_role": "Operations",
+      "source_ids": [
+        "web-express",
+        "web-warehouse"
+      ],
+      "question": "Danh sách dịch vụ/tuyến đang nhận, giới hạn và điều kiện theo loại hàng nào là bản được vận hành duyệt?",
+      "reason": "Có trang quảng bá nhiều thị trường nhưng chưa xác nhận mọi SKU/đích giao đều được hỗ trợ.",
+      "until_confirmed": "Thu yêu cầu, kiểm tra tuyến hiện hành trước khi hứa nhận hàng.",
+      "priority": "before_operational_claims"
+    },
+    {
+      "id": "policy-full-text",
+      "owner_role": "Operations/Customer Service",
+      "source_ids": [
+        "web-policy",
+        "web-shipping-policy"
+      ],
+      "question": "Bản điều khoản mới nhất có text hoặc PDF gốc và ngày hiệu lực là bản nào?",
+      "reason": "Chính sách nhiều trang dạng ảnh chưa được đọc/đối chiếu đầy đủ; trang vận chuyển có mốc cũ.",
+      "until_confirmed": "Không báo hạn khiếu nại, hạn bồi thường, điều kiện hàng nhạy cảm hay nghĩa vụ thuế từ suy đoán.",
+      "priority": "before_operational_claims"
+    },
+    {
+      "id": "compensation-scope",
+      "owner_role": "Operations/Customer Service",
+      "source_ids": [
+        "web-home",
+        "web-fulfill",
+        "web-policy"
+      ],
+      "question": "Bồi thường POD, Dropship, hàng lô và từng line áp dụng mức/điều kiện nào?",
+      "reason": "Thông điệp giới thiệu chung và FAQ dịch vụ không đủ để xác nhận cùng một quyền lợi cho mọi đơn.",
+      "until_confirmed": "Nhận mã đơn/tracking, thông tin sự cố và chuyển kiểm tra điều khoản.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "order-and-payment",
+      "owner_role": "Sales Operations/Finance",
+      "source_ids": [
+        "web-fulfill",
+        "web-express",
+        "repo-training"
+      ],
+      "question": "Quy trình lên đơn, thanh toán và đối soát chuẩn theo từng dịch vụ là gì?",
+      "reason": "Website mô tả Hub, ERP và file chung; chưa xác định cách dùng cho từng loại khách.",
+      "until_confirmed": "Hướng dẫn nhận tư vấn và dùng kênh được cấp; không gửi tài khoản thanh toán chưa xác thực.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "catalog-current",
+      "owner_role": "Product/POD Operations",
+      "source_ids": [
+        "web-catalog",
+        "repo-catalog"
+      ],
+      "question": "Ai duyệt catalog/biến thể, khả năng in, giá và thời gian sản xuất? Dữ liệu nào hiện được đồng bộ?",
+      "reason": "Đã thấy contract nhưng chưa xác nhận snapshot sản phẩm live trong lần xây pack.",
+      "until_confirmed": "Tra SKU thật qua nguồn catalog hiện hành; không tạo sản phẩm/giá mẫu để AI dùng như dữ kiện thật.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "customer-price-policy",
+      "owner_role": "Leader/Sales",
+      "source_ids": [
+        "owner-task"
+      ],
+      "question": "Giá nguồn được phép ghi thế nào trong bản sale gửi khách?",
+      "reason": "Đã chốt hiển thị nội bộ THG_Sale_Lead; chưa có quy tắc công khai cho mọi khách và mọi lớp chi phí.",
+      "until_confirmed": "Giữ nhãn nội bộ, phân biệt nguồn tham khảo và báo giá khách; không mở rộng quyền dữ liệu CRM.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "pricing-authority",
+      "owner_role": "Operations/Pricing",
+      "source_ids": [
+        "web-international",
+        "web-domestic",
+        "web-formal",
+        "training-sale-express-detail",
+        "training-dropship-pricing-detail"
+      ],
+      "question": "Nguồn được duyệt cho giá số, phiên bản, phụ phí và hiệu lực của từng bảng hiện là đâu?",
+      "reason": "Trang web là điểm tham chiếu; cần nguồn máy đọc và đủ điều kiện để phát ra một con số.",
+      "until_confirmed": "Không chép giá quảng bá hay giá cũ thành báo giá; chỉ dùng bảng đúng chặng và xác nhận số hiện hành.",
+      "evidence_notes": [
+        "FAQ sale Express mô tả basecost như giá cuối đã gồm một số phí; phần tính giá Dropship tách nhiều cấu phần. Chưa có đủ điều kiện để kết luận đây là cùng gói dịch vụ hoặc một tài liệu sai.",
+        "Phần sale Express yêu cầu kiểm giá mới và điều khoản của line trước mỗi lần tư vấn; không lấy đơn cũ làm căn cứ."
+      ],
+      "affected_record_ids": [
+        "dropship-quote-components",
+        "commercial-price-layers",
+        "shipping-rate-refresh",
+        "commercial-quote-comparison"
+      ],
+      "priority": "before_operational_claims"
+    },
+    {
+      "id": "training-live-export",
+      "owner_role": "Training/Sales Operations",
+      "source_ids": [
+        "repo-training",
+        "repo-tool"
+      ],
+      "question": "Những SOP sales/service nào hiện hành, được duyệt và nằm trong scope xuất sang THG_tool?",
+      "reason": "Export gồm docs quản lý cũ và CMS published; nhánh docs không có trạng thái duyệt trong payload. Người dùng xác nhận có quyền truy cập Training; đang đối chiếu các tài liệu trong repo theo chỉ dẫn của người dùng.",
+      "until_confirmed": "Giữ pack chờ duyệt; kiểm tra hiệu lực của từng SOP, không coi internal là approved.",
+      "priority": "before_operational_claims"
+    },
+    {
+      "id": "approval-maintenance",
+      "owner_role": "Leader",
+      "source_ids": [
+        "user-quality"
+      ],
+      "question": "Ai duyệt nội dung công ty, ai cập nhật dịch vụ/cước và ai duyệt câu trả lời mẫu?",
+      "reason": "Cần chủ sở hữu theo nhóm để sửa thông tin khi thay đổi.",
+      "until_confirmed": "Không gán tên cá nhân hoặc ghi approved thay người có thẩm quyền.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "runtime-scope",
+      "owner_role": "Workspace administrator/Engineering",
+      "source_ids": [
+        "repo-tool"
+      ],
+      "question": "Org đích và cơ chế lọc tri thức nội bộ trước khi tạo bản nháp khách là gì?",
+      "reason": "Nhãn audience trong pack chưa được runtime thực thi; nhập tài liệu chưa đủ để mọi nhánh reply sử dụng.",
+      "until_confirmed": "Chỉ kiểm thử local/review; chưa nhập/duyệt/bật pack trên production.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "customer-service-scope",
+      "owner_role": "Leader/Sales Operations",
+      "source_ids": [
+        "training-company-snapshot",
+        "web-order",
+        "web-shipping-policy"
+      ],
+      "question": "Phạm vi nhận khách cá nhân, khách order hộ và seller theo từng dịch vụ hiện là gì? Nguyên tắc nhận hàng trong tổng quan Training có điều kiện nào?",
+      "reason": "Training tổng quan hướng tới seller, trong khi trang order nói tới người Việt tại Mỹ mua hàng. Câu khái quát hàng bán trên sàn trong snapshot không đủ thay điều kiện tuyến.",
+      "until_confirmed": "Ghi nhận đúng nhu cầu và kiểm tra dịch vụ/line; không tự loại mọi cá nhân hoặc hứa mọi hàng bán trên sàn đều ship được.",
+      "priority": "content_completion"
+    },
+    {
+      "id": "basecost-inclusions",
+      "owner_role": "Operations/Pricing",
+      "source_ids": [
+        "training-sale-express-detail",
+        "training-dropship-pricing-detail",
+        "user-interim-judgment"
+      ],
+      "question": "Theo từng dịch vụ, basecost là giá nguồn, tổng chi phí nội bộ hay giá cuối cho khách? Khoản nào đã gồm và khoản nào tính thêm?",
+      "reason": "Cách gọi trong các snapshot khác nhau; dùng một công thức chung có thể thiếu phí hoặc tính trùng.",
+      "until_confirmed": "Áp dụng hướng dẫn tạm thời theo từng báo giá: phân biệt đã gồm/tính riêng/không áp dụng/chưa rõ; không cộng trùng hoặc báo tổng cuối khi thiếu khoản. Việc biên soạn và kiểm thử tiếp tục, không cần chờ định nghĩa chung.",
+      "evidence_notes": [
+        "FAQ Express rút gọn tiền hàng và vận chuyển thành basecost cuối; bài tính Dropship còn phân tách nội địa nguồn, mua hộ/quy đổi và quốc tế. Có thể khác gói hoặc khác thời điểm, cần owner xác nhận.",
+        "Người dùng cho phép tiếp tục bằng phán đoán. Đã chọn hướng dẫn tạm thời có điều kiện; chưa xác nhận điều khoản kinh doanh hiện hành."
+      ],
+      "affected_record_ids": [
+        "dropship-quote-components",
+        "commercial-price-layers",
+        "commercial-quote-comparison"
+      ],
+      "priority": "before_operational_claims",
+      "handling_state": "interim_guidance_defined",
+      "interim_guidance_ids": [
+        "commercial-basecost-interpretation"
+      ]
+    },
+    {
+      "id": "tracking-activation-scope",
+      "owner_role": "Operations/Customer Service",
+      "source_ids": [
+        "training-sale-express-detail",
+        "training-dropship-exceptions-detail",
+        "user-interim-judgment"
+      ],
+      "question": "Theo line/nền tảng hiện hành, tạo tracking, hãng nhận kiện và tracking đủ điều kiện sàn là các mốc nào? Có SLA được duyệt cho từng mốc không?",
+      "reason": "Snapshot FAQ nêu 48 giờ còn tình huống Dropship nhắc 24 giờ cho TikTok; chưa đủ dữ kiện về điểm bắt đầu, loại đơn và thời điểm áp dụng.",
+      "until_confirmed": "Áp dụng hướng dẫn tạm thời theo sự kiện thực tế: tách tạo mã, bàn giao/scan và trạng thái nền tảng; không tự đặt SLA. Việc biên soạn và kiểm thử tiếp tục, không cần chờ mốc 24/48 giờ.",
+      "evidence_notes": [
+        "Các mốc trong tài liệu lịch sử không được dùng làm lời hứa hiện hành. Khác thời gian chưa tự chứng minh tài liệu nào đúng nếu chưa rõ cùng phạm vi.",
+        "Người dùng cho phép tiếp tục bằng phán đoán. Đã chọn hướng dẫn tạm thời có điều kiện; chưa xác nhận điều khoản kinh doanh hiện hành."
+      ],
+      "affected_record_ids": [
+        "warehouse-status-interpretation",
+        "training-warehouse-label-mode",
+        "shipping-policy-scope"
+      ],
+      "priority": "before_operational_claims",
+      "handling_state": "interim_guidance_defined",
+      "interim_guidance_ids": [
+        "shipping-tracking-milestones"
+      ]
+    }
+  ]
+}

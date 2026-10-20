@@ -30,6 +30,7 @@ func setupLeadSuggestionRuntime(cfg *config.Config, db *store.Store, commentGen 
 	if !allowlist.Configured() {
 		log.Println("[LeadSuggestion] enabled but LEAD_SUGGESTION_ORG_IDS is empty/invalid; no org is allowed")
 	}
+	commentGen = leadSuggestionGenerator(cfg, commentGen)
 	if commentGen == nil || !commentGen.Available() {
 		log.Println("[LeadSuggestion] comment provider unavailable; grounded product suggestions use concise fallback copy")
 	}
@@ -50,8 +51,28 @@ func setupLeadSuggestionRuntime(cfg *config.Config, db *store.Store, commentGen 
 		if !allowlist.Allows(ev.OrgID) {
 			return models.LeadSuggestion{}
 		}
+		images := ev.ImageURLs
+		if !cfg.LeadImageContextEnabled {
+			images = nil
+		}
+		if cfg.LeadContextAnalysisEnabled {
+			return facebook.BuildLeadSuggestionWithContext(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, images, shippingQuote, supplierLookup)
+		}
+		if cfg.LeadImageContextEnabled {
+			return facebook.BuildLeadSuggestionWithImages(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, ev.ImageURLs, shippingQuote, supplierLookup)
+		}
 		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, shippingQuote, supplierLookup)
 	}
 	runner := notifications.NewSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, time.Duration(cfg.LeadSuggestionTimeoutMS)*time.Millisecond)
 	return build, allowlist.Allows, runner
+}
+
+func leadSuggestionGenerator(cfg *config.Config, fallback *ai.MessageGenerator) *ai.MessageGenerator {
+	if !cfg.LeadModel.Explicit() {
+		return fallback
+	}
+	if !cfg.LeadModel.Complete() {
+		return nil
+	}
+	return ai.NewMessageGeneratorWithEndpoint(cfg.LeadModel.APIKey, cfg.LeadModel.Model, cfg.LeadModel.BaseURL)
 }

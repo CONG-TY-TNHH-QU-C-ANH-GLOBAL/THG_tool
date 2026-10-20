@@ -47,87 +47,38 @@ func NewSupplierLookup(client supplierReader) SupplierLookupFunc {
 			lang = "en"
 		}
 		if link, platform := leadMarketplaceURL(leadText); link != "" {
-			if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
-				return nil, err
-			}
-			product, err := client.DetailLocalized(ctx, platform, "", link, lang)
-			if err != nil {
-				return nil, err
-			}
-			if product == nil || !linkedMarketplaceListing(link, product.Link) {
-				return nil, errSupplierNoMatch
-			}
-			resolved, err := resolvedSupplier(product, platform, leadQuantity(leadText), replyLang)
-			if resolved != nil {
-				// The lead pasted this exact listing, so it is not a lookalike.
-				resolved.Match.Similar = false
-			}
-			if err != nil {
-				return nil, errSupplierNoMatch
-			}
-			return resolved, nil
+			return lookupLinkedSupplier(ctx, client, link, platform, lang, replyLang, leadQuantity(leadText))
 		}
 		if query == "" {
 			return nil, nil
 		}
-		platforms := []string{suppliersourcing.PlatformAlibaba, suppliersourcing.PlatformTaobao}
-		lowerLead := strings.ToLower(leadText)
-		if strings.Contains(lowerLead, "1688") && !strings.Contains(lowerLead, "taobao") {
-			platforms = platforms[:1]
-		} else if strings.Contains(lowerLead, "taobao") && !strings.Contains(lowerLead, "1688") {
-			platforms = []string{suppliersourcing.PlatformTaobao}
-		}
-		var lookupErr error
-		detailAttempts := 0
-		for _, platform := range platforms {
-			if err := supplierLookupBudget(ctx, 9*time.Second); err != nil {
-				return nil, err
-			}
-			items, err := client.SearchLocalized(ctx, query, platform, 10, lang)
-			if err != nil {
-				if errors.Is(err, suppliersourcing.ErrQuotaExceeded) {
-					return nil, err
-				}
-				lookupErr = err
-				continue
-			}
-			for _, item := range items {
-				if !matchesSupplierQuery(query, item.Title) || !marketplaceURL(item.Link) {
-					continue
-				}
-				if detailAttempts >= 2 {
-					break
-				}
-				if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
-					return nil, err
-				}
-				detailAttempts++
-				product, err := client.DetailLocalized(ctx, platform, item.ID, item.Link, lang)
-				if err != nil {
-					if errors.Is(err, suppliersourcing.ErrQuotaExceeded) {
-						return nil, err
-					}
-					lookupErr = err
-					continue
-				}
-				if product == nil || !matchesSupplierQuery(query, product.Title) {
-					continue
-				}
-				resolved, err := resolvedSupplier(product, platform, leadQuantity(leadText), replyLang)
-				if err == nil {
-					return resolved, nil
-				}
-			}
-			if detailAttempts >= 2 {
-				break
-			}
-		}
-		return nil, lookupErr
+		search := supplierSearch{client: client, query: query, lang: lang, replyLang: replyLang, quantity: leadQuantity(leadText)}
+		return search.lookup(ctx, supplierLookupPlatforms(leadText))
 	}
 }
 
+func lookupLinkedSupplier(ctx context.Context, client supplierReader, link, platform, lang, replyLang string, quantity int) (*ResolvedSupplier, error) {
+	if err := supplierLookupBudget(ctx, 5*time.Second); err != nil {
+		return nil, err
+	}
+	product, err := client.DetailLocalized(ctx, platform, "", link, lang)
+	if err != nil {
+		return nil, err
+	}
+	if product == nil || !linkedMarketplaceListing(link, product.Link) {
+		return nil, errSupplierNoMatch
+	}
+	resolved, err := resolvedSupplier(product, platform, quantity, replyLang)
+	if err != nil {
+		return nil, errSupplierNoMatch
+	}
+	// The lead pasted this exact listing, so it is not a lookalike.
+	resolved.Match.Similar = false
+	return resolved, nil
+}
+
 func resolvedSupplier(product *suppliersourcing.Product, platform string, quantity int, replyLang string) (*ResolvedSupplier, error) {
-	if product == nil || !marketplaceURL(product.Link) || product.Price == nil || *product.Price <= 0 {
+	if product == nil || !marketplaceProductURL(product.Link) || product.Price == nil || *product.Price <= 0 {
 		return nil, errors.New("supplier detail has no usable link or price")
 	}
 	name := strings.TrimSpace(product.Title)

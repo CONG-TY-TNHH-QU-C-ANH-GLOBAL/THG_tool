@@ -15,6 +15,10 @@ folder just means nothing has landed there yet.
 ## Business
 `docs/business/` — product, customer, market, operator workflow, requirements.
 
+- [THGFulfill company knowledge](business/company-knowledge/INDEX.md) — sourced draft
+  covering services, products, sourcing, shipping, sales guidance and open questions;
+  not yet loaded into production retrieval.
+
 ## Architecture
 `docs/architecture/` — architecture standards, module ownership, boundaries.
 See the subtree map: [`docs/architecture/INDEX.md`](architecture/INDEX.md).
@@ -31,6 +35,13 @@ root `specs/` home with this governed taxonomy is tracked as queue item DOCS-R1
 
 ## Engineering
 `docs/engineering/` — runbooks, validation, testing, deployment notes.
+
+- [Multilingual knowledge retrieval](engineering/KNOWLEDGE_MULTILINGUAL_RETRIEVAL.md) —
+  Vietnamese normalization, versioned scoring, local evaluation and rollback.
+- [Lead image context](engineering/LEAD_IMAGE_CONTEXT.md) — original post photos,
+  tentative visual observations, text/image conflicts and operator reply grounding.
+- [Lead model pipeline](engineering/LEAD_MODEL_PIPELINE.md) — need analysis,
+  guarded replies and local review with the existing provider; Muse Spark deferred.
 - `docs/DOCS_GOVERNANCE.md` — documentation governance.
 
 ## Technical Debt

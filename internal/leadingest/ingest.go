@@ -60,6 +60,7 @@ type LeadEvent struct {
 	PostURL          string    // canonical Facebook permalink
 	PostFBID         string    // Facebook post id when captured by the crawler
 	Excerpt          string    // raw post content (sanitized downstream)
+	ImageURLs        []string  // original post photos, ephemeral enrichment references
 	Reason           string    // matched signal / AI reason
 	SourceType       string    // post | comment
 	GroupFBID        string    // source group id, when known
@@ -94,6 +95,7 @@ type Input struct {
 	AuthorName       string
 	AuthorProfileURL string
 	Content          string
+	ImageURLs        []string // optional post photos; comment/avatar/preview media excluded
 	// PostedAt is the original post timestamp (zero when the crawler does not
 	// emit one). Drives the conditional cursor advance — only newer posts move
 	// the cursor forward. Zero falls back to last-call-wins.

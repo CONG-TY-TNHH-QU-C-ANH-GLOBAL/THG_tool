@@ -22,7 +22,7 @@ var leadCommentHeader = regexp.MustCompile(`(?i)\s(?:\d+\s+){1,3}(?:\S+\s+){1,5}
 var leadPostHeader = regexp.MustCompile(`(?i)^\s*facebook\s+[^·]{1,80}?\s\d+\s*(?:phút|giờ|ngày|tuần|tháng|năm|mins?|minutes?|hrs?|hours?|h|days?|d|weeks?|w|years?|y)(?:\s+trước|\s+ago)?\s*·\s*`)
 
 func leadPostBody(text string) string {
-	if at := leadPostHeader.FindStringIndex(text); at != nil && len([]rune(text[at[1]:])) >= 20 {
+	if at := leadPostHeader.FindStringIndex(text); at != nil && strings.TrimSpace(text[at[1]:]) != "" {
 		text = text[at[1]:]
 	}
 	cut := len(text)
@@ -31,7 +31,7 @@ func leadPostBody(text string) string {
 			cut = at[0]
 		}
 	}
-	if body := strings.TrimSpace(text[:cut]); cut < len(text) && len([]rune(body)) >= 20 {
+	if body := strings.TrimSpace(text[:cut]); cut < len(text) && body != "" {
 		return body
 	}
 	return text

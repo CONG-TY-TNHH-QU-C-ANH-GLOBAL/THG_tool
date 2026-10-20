@@ -89,6 +89,10 @@ func serviceInquirySuggestion(leadText, author string) LeadSuggestion {
 	if kind == "" {
 		return LeadSuggestion{}
 	}
+	return serviceSuggestionForKind(leadText, author, kind, false)
+}
+
+func serviceSuggestionForKind(leadText, author, kind string, knownProduct bool) LeadSuggestion {
 	destVI, destEN := serviceDestination(leadText)
 	english := supplierQueryLanguage(leadText) == "en"
 	var missing []string
@@ -99,7 +103,9 @@ func serviceInquirySuggestion(leadText, author string) LeadSuggestion {
 			missing = append(missing, vi)
 		}
 	}
-	add("loại hàng", "the product type")
+	if !knownProduct {
+		add("loại hàng", "the product type")
+	}
 	if kind == serviceExpress {
 		if !leadShipmentVolume.MatchString(leadText) {
 			add("khối lượng hoặc số kiện mỗi tháng", "your monthly weight or parcel count")
@@ -110,28 +116,10 @@ func serviceInquirySuggestion(leadText, author string) LeadSuggestion {
 	} else if !leadOrderVolume.MatchString(leadText) {
 		add("số đơn mỗi tháng", "your monthly order volume")
 	}
-	if english {
-		name := strings.TrimSpace(author)
-		if name == "" {
-			name = "there"
-		}
-		service := "THG can help with warehousing and fulfillment"
-		if kind == serviceExpress {
-			service = "THG can help with international shipping"
-			if destEN != "" {
-				service += " to " + destEN
-			}
-		}
-		return LeadSuggestion{Reply: "Hi " + name + ", " + service + ". Could you share " + joinWithAnd(missing, "and") + " so we can suggest the right option?"}
+	if len(missing) == 0 {
+		add("kích thước và trọng lượng từng kiện", "the dimensions and weight of each parcel")
 	}
-	service := "bên mình có dịch vụ kho và fulfillment"
-	if kind == serviceExpress {
-		service = "bên mình có dịch vụ vận chuyển quốc tế"
-		if destVI != "" {
-			service += " đi " + destVI
-		}
-	}
-	return LeadSuggestion{Reply: leadSalutation(author) + ", " + service + ". Bạn cho mình xin " + joinWithAnd(missing, "và") + " để tư vấn phương án phù hợp nhé?"}
+	return LeadSuggestion{Reply: serviceReplyText(kind, author, destVI, destEN, missing, english)}
 }
 
 func joinWithAnd(items []string, and string) string {

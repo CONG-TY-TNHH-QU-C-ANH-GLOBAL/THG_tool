@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "checked_on": "2026-10-18",
+  "repository": "THG_Training",
+  "revision": "ec170a949623f96229db58d21c6b9ca7791826d4",
+  "scope": "Local snapshot provenance only; no live publication, business approval or full-document review implied.",
+  "files": [
+    {
+      "source_id": "training-company-snapshot",
+      "path": "1.1-cong-ty-khach-hang-4-mang-dich-vu.html",
+      "working_file_sha256": "bad6057026c355a3e4206d05bf2f0eec8f6e07803c82dd7a0e35e81c264c687a",
+      "lf_normalized_sha256": "50bad9c75151617a759c0e47a25fbe034b417cb8e272e9108be278f355c80a20",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-sales-snapshot",
+      "path": "sop-sale-clean.html",
+      "working_file_sha256": "d84003e671a7a079447993ca0cb4e54bc26d84a5848a285ad974494e295b7522",
+      "lf_normalized_sha256": "fc29c82360d711f702c257b1b927497f10a858391c29b836b867ba93a225d00b",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-sourcing-snapshot",
+      "path": "dropship.html",
+      "working_file_sha256": "fefbb90b0a9058e6c023810aa1c351ccbd90e712467ebd5879aa1a73c86d1b82",
+      "lf_normalized_sha256": "8e809f267866bd6a9c00c87336b6db452319cf8987380a5ff0404813fbcbb4b9",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-pod-snapshot",
+      "path": "pod.html",
+      "working_file_sha256": "23eb8d4049b3df309b6bb92c36b6078319c02b815d45f83d46908fe1207f2a4f",
+      "lf_normalized_sha256": "179c694f7013f39ee75e65fcf190c1ea9e4defa1f9d029dd1c51df2ded69ff46",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-express-snapshot",
+      "path": "express.html",
+      "working_file_sha256": "70bf61f14dd126e823fa023ef43d49449d2c860764e4d2a2d8aa4c58b13e5f0c",
+      "lf_normalized_sha256": "ee3e6d4eef4e64be1988cf7a544a702c07fda255e4b1174f1537aa6b27956734",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-warehouse-snapshot",
+      "path": "fulfill.html",
+      "working_file_sha256": "90d0baf373f2fea1e238bc6372fd3efa2799c16105b2a888e597cd555f284a2a",
+      "lf_normalized_sha256": "7b11159bfb2ab29a1298b0126b4be58758db1db898df2427d512e2cb5a3974cd",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-cskh-snapshot",
+      "path": "sop-cskh.html",
+      "working_file_sha256": "c2b142c85314334c08fe85a1844ae50502046291b14b4afa86de93ad523f3028",
+      "lf_normalized_sha256": "08b7072a3c00cac4ac9af6107b194461913359c534522cd6db141e3036a1b4f4",
+      "reviewed_sections": [],
+      "scope": "Selected reading described in sources.json; no exact section inventory recorded."
+    },
+    {
+      "source_id": "training-pod-catalog-detail",
+      "path": "pod-moi-phan02.html",
+      "working_file_sha256": "076134b9b519ee50f9f97b2059fb32f2974d66bb7e00e437dbeabbafddcb7d40",
+      "lf_normalized_sha256": "63fed64d09c414ae5cd04dcf793d5d024e00c27b350dddde9a146afba6ce89c1",
+      "reviewed_sections": [
+        "1 Danh mục sản phẩm POD",
+        "2 Template — lấy ở đâu gửi khách?"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-pod-workflow-detail",
+      "path": "pod-moi-phan03.html",
+      "working_file_sha256": "0461255c91eab56a8e6ed46b95e57a38ebb462c90efd4ef3afc423cd428771a9",
+      "lf_normalized_sha256": "9dbb33ce68784234431724cece8816b9e98f23e10395ddb45f07728e5ca075de",
+      "reviewed_sections": [
+        "1 Quy trình POD đơn giản — 7 bước"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-dropship-pricing-detail",
+      "path": "dropship-moi-phan03.html",
+      "working_file_sha256": "571ada2a9c96040a4246988757c9f9e2c3445153319b671a5b52062eaa490d0f",
+      "lf_normalized_sha256": "964277e07a5d69606e0e3c10eb1763b5e655b64b3ee7fbb48dceb0762944645e",
+      "reviewed_sections": [
+        "3.1 Cách tính basecost 1 đơn Dropship",
+        "3.3 Nguyên tắc báo giá chuyên nghiệp (bổ sung)"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-dropship-workflow-detail",
+      "path": "dropship-moi-phan04.html",
+      "working_file_sha256": "8cfd6e2277caf353e7cdd76b768115b22440aae09208221cf13129d10a69ec77",
+      "lf_normalized_sha256": "ecbd5fa6a65d1982ce3f10a502d0184487bf4400cc4b6daa85dde16db8d337cb",
+      "reviewed_sections": [
+        "Bước 1: Tiếp nhận nhu cầu khách hàng",
+        "Bước 2: Tìm kiếm & Đề xuất nguồn hàng",
+        "Bước 3: Tính giá & Báo giá",
+        "Bước 4: Chốt đơn & Xác nhận chính sách",
+        "Bước 5: Lên đơn & Theo dõi vận hành"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-warehouse-fees-detail",
+      "path": "warehouse-full-phan02.html",
+      "working_file_sha256": "f4c40ddca0b3f090d2e3d0a68e885ef60ac27730b781be7b4c7be9b33e8c2995",
+      "lf_normalized_sha256": "88e7f89473d5a34bcaa239e8208265129e93705dc65e78e7804251b98a528864",
+      "reviewed_sections": [
+        "1 3 loại phí cần nhớ",
+        "5 Khi thấy giá \"lệch\" — phải làm gì?"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-warehouse-flow-detail",
+      "path": "warehouse-full-phan03.html",
+      "working_file_sha256": "8572d76ff70a5fe23b5f7fa59f829530a4c89970a1d8781a125c6f55fc62536e",
+      "lf_normalized_sha256": "0b4bafe6868913f874ae274340c0b6478d9924a8a62a4b1f3cfad8ae8544f67e",
+      "reviewed_sections": [
+        "4 Bước 2 — Quy trình & Điều kiện nhập kho",
+        "5 Bước 3 — Nhận đơn & Chuyển bộ phận liên quan",
+        "Trạng thái đơn hàng cần nắm",
+        "7 Bước 5 — Xử lý Return / Refund"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-warehouse-packaging-detail",
+      "path": "warehouse-full-phan04.html",
+      "working_file_sha256": "d113c8c3f55ed656d624480cd6f9d4a01d8e4ef58b61fc4b745e220df4a1ec27",
+      "lf_normalized_sha256": "531bd80778a23c2b62b1d98f70324c9a60b730a921dd3be45500742ac2cfc2e4",
+      "reviewed_sections": [
+        "📦 Trao đổi rõ về bao bì với khách"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-ops-services-detail",
+      "path": "van-hanh-dich-vu-clean.html",
+      "working_file_sha256": "9f5283e5442f0578e6b52c49ed2bc4ff9732088302d2161f5f315de3234b01ac",
+      "lf_normalized_sha256": "835040be9a35d8129e6c9735f04dff10efc40a221e26109fc331451933c7c75d",
+      "reviewed_sections": [
+        "Tìm & Đặt Nguồn Hàng",
+        "Kiểm Tra – Đóng Gói – Dán Nhãn",
+        "Chọn Line Vận Chuyển Phù Hợp",
+        "Dịch Vụ POD – Print on Demand",
+        "🏬 3.3.1 – Hàng Sẵn Tại Kho US",
+        "📋 3.3.2 – Fulfillment Tại Kho US"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-ops-culture-detail",
+      "path": "van-hanh-quy-tac-clean.html",
+      "working_file_sha256": "e5caf60d59a9b8f52d1cccfab3ab9aa9700e17978c0c68da77cf2d830fa3c6c7",
+      "lf_normalized_sha256": "d311e4cf690b81034611b0c5341c61396225c02bbbebfff0c3b1d3cca6e66e10",
+      "reviewed_sections": [
+        "🔑 Nguyên Tắc Bắt Buộc: Tính Rõ Ràng & Xác Nhận Thông Tin"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-cross-roles-detail",
+      "path": "sop-cross-clean.html",
+      "working_file_sha256": "daa95480fa4c78dabad31a4ed31c41aded899a91ee3484bf29c713abe1dfd10e",
+      "lf_normalized_sha256": "33eb5a791d3196d514a40771555ca459d5599eb296d6eb13b45f214dc6e5d075",
+      "reviewed_sections": [
+        "Sale & Marketing",
+        "CSKH",
+        "Vận Hành (Ops)",
+        "Finance / Kế Toán",
+        "Kho (TQ & US)",
+        "Onboard khách hàng mới từ Sale sang CSKH/Ops"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-sale-express-detail",
+      "path": "sale-express-clean.html",
+      "working_file_sha256": "e8e2cb535e8f0e3e7df1f093481b6e3cecba26c0d121dd030f57b507c08f3199",
+      "lf_normalized_sha256": "d01771068581824aa865225ebc164752b37aa4379f35410fd2f4b8c0f2911d9b",
+      "reviewed_sections": [
+        "Các Line Vận Chuyển THG Cung Cấp",
+        "Lưu Ý Quan Trọng Về Giá Vận Chuyển",
+        "Các Thắc Mắc Thường Gặp Của Khách Hàng"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-pod-onboarding-detail",
+      "path": "pod-moi-phan04.html",
+      "working_file_sha256": "c316050d649c575a7159dfc6a54a54c450b712fdc23b2faf29c08ea385333a33",
+      "lf_normalized_sha256": "e33a75754baca1d521a25c7675196f9bd3b09ce3ea582bb2087232bab3bb5d74",
+      "reviewed_sections": [
+        "B Tiếp nhận khách hàng mới"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-dropship-search-detail",
+      "path": "dropship-moi-phan02.html",
+      "working_file_sha256": "0d822351e00f782b91b8557799bf9b07b013e9f64d4f08ed41f785693279f5a6",
+      "lf_normalized_sha256": "a96840b61baf0e0c9d8e022241e838dcf46bca07a51acbddb79f4f0acec67e85",
+      "reviewed_sections": [
+        "So sánh nhanh các sàn (kiến thức bổ sung)",
+        "2.2 Cách tìm kiếm nguồn hàng Trung Quốc (Sàn 1688/Taobao)",
+        "Tìm bằng hình ảnh",
+        "2.3 Checklist đánh giá supplier uy tín"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    },
+    {
+      "source_id": "training-dropship-exceptions-detail",
+      "path": "dropship-moi-phan05.html",
+      "working_file_sha256": "e61635459ae1e28ea83bb8dedb9d7f57b0863de1dab376e10483dbc76d0896b0",
+      "lf_normalized_sha256": "9dedfe733c3d25ae789b58a520784514d9e0b89b5b796bdab048e71b01b4ca72",
+      "reviewed_sections": [
+        "5.3 Xử lý 4 tình huống Fresher chắc chắn sẽ gặp"
+      ],
+      "scope": "Selected section titles found; content interpretation remains a manual review."
+    }
+  ]
+}

@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "status": "proposed_synthetic_cases",
+  "scope": "Company knowledge retrieval expectations; not proof of AI response quality or company approval",
+  "cases": [
+    {
+      "id": "warehouse-vi",
+      "query": "dịch vụ kho Mỹ",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-warehouse"
+      ],
+      "top": 1
+    },
+    {
+      "id": "warehouse-ascii",
+      "query": "dich vu kho My",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-warehouse"
+      ],
+      "top": 1
+    },
+    {
+      "id": "warehouse-inbound",
+      "query": "nhập kho SKU barcode",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-warehouse"
+      ],
+      "top": 3
+    },
+    {
+      "id": "international-vi",
+      "query": "cước vận chuyển quốc tế",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-express",
+        "shipping-international"
+      ],
+      "top": 3
+    },
+    {
+      "id": "international-ascii",
+      "query": "cuoc van chuyen quoc te",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-express",
+        "shipping-international"
+      ],
+      "top": 3
+    },
+    {
+      "id": "domestic-3pl",
+      "query": "biểu phí 3PL Mỹ",
+      "public_facts_only": true,
+      "expected_any": [
+        "shipping-domestic"
+      ],
+      "top": 3
+    },
+    {
+      "id": "sourcing-vi",
+      "query": "tìm nguồn Taobao 1688",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-sourcing"
+      ],
+      "top": 3
+    },
+    {
+      "id": "catalog-pod",
+      "query": "catalog sản phẩm POD",
+      "public_facts_only": false,
+      "expected_any": [
+        "product-live-catalog"
+      ],
+      "top": 3
+    },
+    {
+      "id": "tracking-public",
+      "query": "theo dõi tracking",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-express"
+      ],
+      "top": 3
+    },
+    {
+      "id": "basecost-vi",
+      "query": "basecost đã gồm phí nào",
+      "public_facts_only": false,
+      "expected_any": [
+        "commercial-basecost-interpretation",
+        "dropship-quote-components"
+      ],
+      "top": 3
+    },
+    {
+      "id": "basecost-ascii",
+      "query": "basecost da gom phi nao",
+      "public_facts_only": false,
+      "expected_any": [
+        "commercial-basecost-interpretation",
+        "dropship-quote-components"
+      ],
+      "top": 3
+    },
+    {
+      "id": "warehouse-fees",
+      "query": "phí lưu kho xử lý đóng gói",
+      "public_facts_only": false,
+      "expected_any": [
+        "warehouse-fee-components",
+        "warehouse-price-discrepancy"
+      ],
+      "top": 3
+    },
+    {
+      "id": "tracking-status",
+      "query": "tracking chưa cập nhật",
+      "public_facts_only": false,
+      "expected_any": [
+        "warehouse-status-interpretation",
+        "shipping-tracking-milestones"
+      ],
+      "top": 3
+    },
+    {
+      "id": "returns-en",
+      "query": "return refund reship",
+      "public_facts_only": false,
+      "expected_any": [
+        "warehouse-return-refund-reship"
+      ],
+      "top": 3
+    },
+    {
+      "id": "cotton-polyester",
+      "query": "túi cotton polyester",
+      "public_facts_only": false,
+      "expected_any": [
+        "case-pod-alternative",
+        "product-required-attributes"
+      ],
+      "top": 3
+    },
+    {
+      "id": "no-logo",
+      "query": "không in logo",
+      "public_facts_only": false,
+      "expected_any": [
+        "product-negative-printing"
+      ],
+      "top": 3
+    },
+    {
+      "id": "pod-template",
+      "query": "POD template thiết kế",
+      "public_facts_only": false,
+      "expected_any": [
+        "pod-template-and-design"
+      ],
+      "top": 3
+    },
+    {
+      "id": "similar-offer",
+      "query": "mẫu tương tự",
+      "public_facts_only": false,
+      "expected_any": [
+        "sourcing-similar"
+      ],
+      "top": 3
+    },
+    {
+      "id": "supplier-delay",
+      "query": "nhà cung cấp giao chậm",
+      "public_facts_only": false,
+      "expected_any": [
+        "commercial-supplier-delay"
+      ],
+      "top": 3
+    },
+    {
+      "id": "private-evidence",
+      "query": "quyền sử dụng workspace nội bộ",
+      "public_facts_only": false,
+      "expected_any": [
+        "governance-workspace-audience"
+      ],
+      "top": 3
+    },
+    {
+      "id": "unknown-terms",
+      "query": "axolotl quantum calibration",
+      "public_facts_only": false,
+      "expected_any": [],
+      "expect_no_results": true,
+      "top": 3
+    },
+    {
+      "id": "warehouse-english",
+      "query": "US warehouse fulfillment",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-warehouse"
+      ],
+      "top": 3
+    },
+    {
+      "id": "shipping-english",
+      "query": "international shipping",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-express",
+        "shipping-international"
+      ],
+      "top": 3
+    },
+    {
+      "id": "sourcing-english",
+      "query": "product sourcing buying agent",
+      "public_facts_only": true,
+      "expected_any": [
+        "service-sourcing"
+      ],
+      "top": 3
+    }
+  ]
+}

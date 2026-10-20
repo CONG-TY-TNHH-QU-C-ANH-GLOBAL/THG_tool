@@ -50,7 +50,13 @@ func newWorkerSuggestionRuntime(mainStore *store.Store) workerSuggestionRuntime 
 	runtime.allowlist = facebook.ParseOrgAllowlist(cfg.LeadSuggestionOrgIDs)
 	builder := knowledgeRuntime.NewBuilder(mainStore.Knowledge())
 	commentGen := ai.NewMessageGeneratorWithEndpoint(cfg.LLMCommentAPIKey, cfg.OpenAICommentModel, cfg.LLMCommentBaseURL)
-	if !commentGen.Available() {
+	if cfg.LeadModel.Explicit() {
+		commentGen = nil
+		if cfg.LeadModel.Complete() {
+			commentGen = ai.NewMessageGeneratorWithEndpoint(cfg.LeadModel.APIKey, cfg.LeadModel.Model, cfg.LeadModel.BaseURL)
+		}
+	}
+	if commentGen == nil || !commentGen.Available() {
 		log.Println("[LeadSuggestion] comment provider unavailable; grounded product suggestions use concise fallback copy")
 	}
 	var supplierLookup facebook.SupplierLookupFunc
@@ -63,6 +69,16 @@ func newWorkerSuggestionRuntime(mainStore *store.Store) workerSuggestionRuntime 
 		}
 		shippingQuote := func(ctx context.Context, shipment models.ShippingRequest) (*models.ShippingReference, error) {
 			return crmleadsync.QuoteSupplierShipment(ctx, envOr("CRM_SHIPPING_QUOTE_URL", crmleadsync.DefaultShippingQuoteURL), crmLeadSyncSecret(), shipment)
+		}
+		images := ev.ImageURLs
+		if !cfg.LeadImageContextEnabled {
+			images = nil
+		}
+		if cfg.LeadContextAnalysisEnabled {
+			return facebook.BuildLeadSuggestionWithContext(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, images, shippingQuote, supplierLookup)
+		}
+		if cfg.LeadImageContextEnabled {
+			return facebook.BuildLeadSuggestionWithImages(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, ev.ImageURLs, shippingQuote, supplierLookup)
 		}
 		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(mainStore, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, shippingQuote, supplierLookup)
 	}
@@ -115,17 +131,15 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 			facebook.LogLeadSuggestionOutcome("worker", ev.OrgID, ev.LeadID, gate, enrichment)
 			// The exact snapshot is first durably queued for CRM, then rendered for
 			// Telegram. CRM never regenerates the suggestion from the raw lead.
-			if crmSync != nil {
-				if err := crmSync.Enqueue(context.Background(), ev, enrichment); err != nil {
-					log.Printf("CRM enriched lead enqueue failed: %v", err)
-				}
-			}
+			enqueueWorkerSuggestion(crmSync, ev, enrichment)
 			tgControl.NotifyLead(control.LeadNotice{
 				OrgID: ev.OrgID, LeadID: ev.LeadID, Channel: "facebook", Workspace: workspace,
 				Author: ev.AuthorName, PostURL: ev.PostURL, Excerpt: ev.Excerpt, Reason: ev.Reason, BaseURL: baseURL,
 				SuggestedReply: enrichment.Reply, ProductName: enrichment.ProductName, ProductURL: enrichment.ProductURL,
 				ProductImageURL: enrichment.ProductImageURL,
 				Supplier:        enrichment.Supplier, SourcingNote: enrichment.SourcingNote,
+				ContextNote: enrichment.ContextNote,
+				ReplyNote:   enrichment.ReplyNote,
 			})
 		}
 		if suggestion.build != nil && suggestion.allowlist.Allows(ev.OrgID) {
@@ -141,5 +155,14 @@ func workerLeadNotifier(mainStore *store.Store, tgControl *control.Service, base
 			return
 		}
 		deliver(models.LeadSuggestion{})
+	}
+}
+
+func enqueueWorkerSuggestion(dispatcher *crmleadsync.Dispatcher, event leadingest.LeadEvent, suggestion models.LeadSuggestion) {
+	if dispatcher == nil {
+		return
+	}
+	if err := dispatcher.Enqueue(context.Background(), event, suggestion); err != nil {
+		log.Printf("CRM enriched lead enqueue failed: %v", err)
 	}
 }

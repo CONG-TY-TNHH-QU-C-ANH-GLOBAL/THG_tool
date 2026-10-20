@@ -15,21 +15,8 @@
 //   - trigram / BM25 (needs FTS5 or Postgres) — deferred to Phase C.2
 //   - pgvector semantic — explicitly LAST; user said "đừng vội"
 //
-// Score formula:
-//
-//   text     = max(token_overlap, exact_phrase_bonus)        [0, 1]
-//   recency  = 1.0 if last_retrieved_at within 7d, else 0    [0, 0.10]
-//   governance: banned_claim → REJECT (no score, no inclusion)
-//
-//   final = clamp01(0.50*text + 0.20*boost + 0.20*pin + 0.10*recency)
-//
-// The pin weight dropped from 0.25 (naive) to 0.20 here. Reason: with
-// recency contributing, pin no longer needs to single-handedly surface
-// CTAs — a pinned CTA that was actually retrieved recently scores
-// 0.20 + 0.10 = 0.30, higher than naive's 0.25.
-//
-// Score breakdown still surfaces every component to the trace so
-// the Replay UI can explain why each asset surfaced.
+// New retains v1 scoring. NewMultilingual selects v2 lexical scoring;
+// both keep the 0.50 text / 0.20 boost / 0.20 pin / 0.10 recency formula.
 package hybrid
 
 import (
@@ -54,7 +41,8 @@ type AssetLister interface {
 
 // Searcher implements retrieval.Searcher.
 type Searcher struct {
-	Lister AssetLister
+	Lister       AssetLister
+	multilingual bool
 	// Clock is overridable for deterministic test runs. Defaults to time.Now.
 	Clock func() time.Time
 }
@@ -81,7 +69,7 @@ func (s *Searcher) TopK(ctx context.Context, orgID int64, query string, filter r
 func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string, filter retrieval.SearchFilter, k int) ([]retrieval.Hit, retrieval.Trace, error) {
 	trace := retrieval.Trace{
 		Query:         retrieval.TruncateQuery(query),
-		SearcherImpl:  SearcherImpl,
+		SearcherImpl:  s.SearcherName(),
 		TotalByReason: map[retrieval.RejectionReason]int{},
 	}
 	if s.Lister == nil {
@@ -93,9 +81,6 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 	if k <= 0 {
 		return nil, trace, nil
 	}
-
-	queryTokens := retrieval.Tokenize(query)
-	queryPhrase := strings.ToLower(strings.TrimSpace(query))
 
 	listFilter := assets.ListFilter{
 		Types:   filter.Types,
@@ -111,7 +96,7 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 	}
 	trace.CandidatesConsidered = len(candidates)
 
-	now := s.now()
+	rank := s.ranker(query, candidates, filter.Tags)
 	type scored struct {
 		asset     *assets.Asset
 		score     float64
@@ -130,7 +115,7 @@ func (s *Searcher) TopKWithTrace(ctx context.Context, orgID int64, query string,
 			retrieval.RecordRejection(&trace, a, retrieval.RejectTagFilter, 0)
 			continue
 		}
-		score, breakdown, reason := scoreAsset(a, queryTokens, queryPhrase, now)
+		score, breakdown, reason := rank(a)
 		if score <= 0 {
 			retrieval.RecordRejection(&trace, a, retrieval.RejectBelowThreshold, score)
 			continue

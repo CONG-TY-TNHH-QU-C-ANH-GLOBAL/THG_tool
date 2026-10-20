@@ -24,7 +24,7 @@ func PickSuggestedSupplier(candidates []models.KnowledgeCandidate) *models.Suppl
 			continue
 		}
 		link := validHTTPSURL(c.SourceURL)
-		if link == "" || !marketplaceURL(link) {
+		if !marketplaceProductURL(link) {
 			continue
 		}
 		name := strings.TrimSpace(c.Title)
@@ -62,7 +62,10 @@ func BuildGroundedFacts(product SuggestedProduct, supplier *models.SupplierMatch
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("SOURCEABLE ITEM (we can source and fulfil this for the customer):\n")
+		b.WriteString("MARKETPLACE REFERENCE (not proof of stock, customization or shipping eligibility):\n")
+		if supplier.Similar {
+			writeFact(&b, "match status", "similar item / mẫu tương tự; exact SKU not verified")
+		}
 		writeFact(&b, "marketplace", supplier.Platform)
 		writeFact(&b, "name", supplier.Name)
 		writeFact(&b, "unit price", supplier.PriceText)

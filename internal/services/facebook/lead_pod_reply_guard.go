@@ -22,3 +22,21 @@ func generatedPODReplyGrounded(reply, productURL string) bool {
 	}
 	return true
 }
+
+// Repair omission only; guards still reject changed or unrelated URLs. Empty
+// model output must retain the full grounded draft rather than become link-only.
+func ensureSelectedReplyLink(reply, selectedURL string) string {
+	if reply != "" && selectedURL != "" && !containsExactReplyURL(reply, selectedURL) {
+		return reply + " " + selectedURL
+	}
+	return reply
+}
+
+func containsExactReplyURL(reply, selectedURL string) bool {
+	for _, found := range podReplyURL.FindAllString(reply, -1) {
+		if strings.TrimRight(found, ".,);") == selectedURL {
+			return true
+		}
+	}
+	return false
+}

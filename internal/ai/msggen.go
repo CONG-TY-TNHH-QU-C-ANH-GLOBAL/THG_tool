@@ -129,6 +129,14 @@ func isDeepSeekEndpoint(baseURL string) bool {
 // applyProviderTuning adds provider-specific request fields in place. Currently
 // only DeepSeek's thinking toggle; a no-op for OpenAI/Together.
 func (mg *MessageGenerator) applyProviderTuning(body map[string]any) {
+	// Muse Spark reasons by default. Bound effort for the short lead pipeline
+	// and leave sampling at Meta's recommended defaults. Keep other models intact.
+	modelName := strings.ToLower(mg.model)
+	modelName = modelName[strings.LastIndex(modelName, "/")+1:]
+	if strings.HasPrefix(modelName, "muse-spark-") {
+		delete(body, "temperature")
+		body["reasoning_effort"] = "low"
+	}
 	if mg.disableThinking {
 		body["thinking"] = map[string]string{"type": "disabled"}
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 var leadURLPattern = regexp.MustCompile(`https://[^\s<>"']+`)
-var offerPathID = regexp.MustCompile(`(?i)/offer/(\d+)`)
+var offerPathID = regexp.MustCompile(`(?i)^/offer/([1-9]\d*)(?:\.html)?/?$`)
 
 func leadMarketplaceURL(text string) (string, string) {
 	for _, raw := range leadURLPattern.FindAllString(text, 4) {
@@ -35,7 +35,8 @@ func marketplacePlatform(host string) string {
 }
 
 func shortMarketplaceURL(raw string) bool {
-	if validHTTPSURL(raw) == "" {
+	raw = validHTTPSURL(raw)
+	if raw == "" {
 		return false
 	}
 	u, _ := url.Parse(raw)
@@ -47,7 +48,8 @@ func shortMarketplaceURL(raw string) bool {
 }
 
 func marketplaceURL(raw string) bool {
-	if validHTTPSURL(raw) == "" {
+	raw = validHTTPSURL(raw)
+	if raw == "" {
 		return false
 	}
 	u, _ := url.Parse(raw)
@@ -57,9 +59,26 @@ func marketplaceURL(raw string) bool {
 		host == "tmall.com" || strings.HasSuffix(host, ".tmall.com")
 }
 
+// Only canonical item links can become offers. Search/shop pages and trusted
+// short links may be lookup inputs, but must first resolve to an actual item.
+func marketplaceProductURL(raw string) bool {
+	if raw != validHTTPSURL(raw) || !marketplaceURL(raw) {
+		return false
+	}
+	u, _ := url.Parse(raw)
+	if marketplacePlatform(u.Hostname()) == suppliersourcing.PlatformAlibaba {
+		return offerPathID.MatchString(u.Path)
+	}
+	switch strings.ToLower(u.Path) {
+	case "/item.htm", "/item.html", "/awp/core/detail.htm", "/detail/detail.html":
+		return numericListingID.MatchString(u.Query().Get("id"))
+	}
+	return false
+}
+
 // A full pasted link is exact only when its marketplace item ID matches.
 func sameMarketplaceListing(requested, returned string) bool {
-	if !marketplaceURL(requested) || !marketplaceURL(returned) {
+	if !marketplaceProductURL(requested) || !marketplaceProductURL(returned) {
 		return false
 	}
 	a, _ := url.Parse(requested)
@@ -80,7 +99,7 @@ func marketplaceListingID(u *url.URL) string {
 	return u.Query().Get("id")
 }
 
-var numericListingID = regexp.MustCompile(`^\d+$`)
+var numericListingID = regexp.MustCompile(`^[1-9]\d*$`)
 
 // Pricing Hub resolves a trusted marketplace short link to a canonical item.
 // A short URL has no visible ID, so verify the destination marketplace and
@@ -89,7 +108,7 @@ func linkedMarketplaceListing(requested, returned string) bool {
 	if sameMarketplaceListing(requested, returned) {
 		return true
 	}
-	if !shortMarketplaceURL(requested) || !marketplaceURL(returned) {
+	if !shortMarketplaceURL(requested) || !marketplaceProductURL(returned) {
 		return false
 	}
 	a, _ := url.Parse(requested)

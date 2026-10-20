@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "checked_on": "2026-10-18",
+  "code_base": "b2a3cf6dcf21c88277875960b746a8258db98adf",
+  "pack_records": 82,
+  "scope": "In-memory draft preview using existing hybrid retriever; no LLM or production calls",
+  "scenarios": [
+    {
+      "query": "nguồn hàng Taobao 1688",
+      "flags": [],
+      "mode": "approved_only_local",
+      "observed_ids": [],
+      "expected": "Pending entries must not appear",
+      "satisfied": true
+    },
+    {
+      "query": "nguồn hàng Taobao 1688",
+      "flags": [
+        "-review-draft",
+        "-top",
+        "3"
+      ],
+      "mode": "pending_review_only",
+      "observed_ids": [
+        "service-sourcing",
+        "sourcing-china-alternative",
+        "sourcing-lookup-failure"
+      ],
+      "expected": "service-sourcing is in top 3 for this query",
+      "satisfied": true
+    },
+    {
+      "query": "dịch vụ kho Mỹ",
+      "flags": [
+        "-review-draft",
+        "-public-facts-only",
+        "-top",
+        "3"
+      ],
+      "mode": "pending_review_only",
+      "observed_ids": [
+        "service-pod",
+        "service-sourcing",
+        "service-express"
+      ],
+      "expected": "service-warehouse should be in top 3",
+      "satisfied": false
+    }
+  ],
+  "runtime_enabled": false,
+  "finding": "The existing lexical tokenizer keeps ASCII letters/digits only. Accented Vietnamese is fragmented; generic service titles can tie or outrank the intended warehouse entry. Keyword overlap scores title/tags; descriptions only contribute an exact-phrase bonus. Structural tests passing do not demonstrate relevant company context selection.",
+  "historical_baseline": true,
+  "superseded_by": "RETRIEVAL_EVALUATION.json"
+}

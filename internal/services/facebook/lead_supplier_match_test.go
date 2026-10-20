@@ -81,7 +81,7 @@ func TestBuildGroundedFacts_OmitsWhatTheMarketplaceDidNotPublish(t *testing.T) {
 
 	facts := BuildGroundedFacts(SuggestedProduct{Name: "Hoodie THG", URL: "https://thgfulfill.com/p/hoodie"}, supplier)
 
-	for _, want := range []string{"OUR CATALOG PRODUCT", "Hoodie THG", "SOURCEABLE ITEM", "¥28.9", "minimum order: 1 件"} {
+	for _, want := range []string{"OUR CATALOG PRODUCT", "Hoodie THG", "MARKETPLACE REFERENCE", "similar item", "¥28.9", "minimum order: 1 件"} {
 		if !strings.Contains(facts, want) {
 			t.Errorf("facts block missing %q:\n%s", want, facts)
 		}

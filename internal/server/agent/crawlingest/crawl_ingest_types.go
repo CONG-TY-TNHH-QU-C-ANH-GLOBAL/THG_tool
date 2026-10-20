@@ -10,17 +10,18 @@ import "errors"
 // extension payload; older extensions that omit PostFBID/GroupFBID/PostedAt leave them empty
 // and the server falls back to URL parsing (backward compatible).
 type connectorCrawlItem struct {
-	ID               string `json:"id"`
-	SourceURL        string `json:"source_url"`
-	AuthorProfileURL string `json:"author_profile_url"`
-	AuthorName       string `json:"author_name"`
-	Content          string `json:"content"`
-	Reactions        int    `json:"reactions"`
-	Comments         int    `json:"comments"`
-	Shares           int    `json:"shares"`
-	PostFBID         string `json:"post_fbid"`
-	GroupFBID        string `json:"group_fbid"`
-	PostedAt         string `json:"posted_at"` // RFC3339; empty when crawler can't extract
+	ID               string   `json:"id"`
+	SourceURL        string   `json:"source_url"`
+	AuthorProfileURL string   `json:"author_profile_url"`
+	AuthorName       string   `json:"author_name"`
+	Content          string   `json:"content"`
+	ImageURLs        []string `json:"image_urls,omitempty"`
+	Reactions        int      `json:"reactions"`
+	Comments         int      `json:"comments"`
+	Shares           int      `json:"shares"`
+	PostFBID         string   `json:"post_fbid"`
+	GroupFBID        string   `json:"group_fbid"`
+	PostedAt         string   `json:"posted_at"` // RFC3339; empty when crawler can't extract
 }
 
 // connectorCrawlResultRequest is the typed connector crawl-result payload (replaces the
