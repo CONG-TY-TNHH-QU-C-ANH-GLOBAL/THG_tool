@@ -232,6 +232,9 @@ buyer needs through a model-generated category hint. This is a bounded lexical
 cross-check, not a complete semantic classifier. Financial checks now compare
 complete source amount tokens. Cargo checks inspect both the source name and
 the author's text. A photo without observations is explicitly unconfirmed.
+Product hints without matching text or an observed photo category are removed
+before routing and rewriting. A literal quote showing a supplier need cannot
+authorize an invented product category for a vague text-only post.
 
 New audit cases include noncommercial/shipping/warehouse misclassification,
 advertisements, valid shipping requests, unsupported extra fees, battery warnings,

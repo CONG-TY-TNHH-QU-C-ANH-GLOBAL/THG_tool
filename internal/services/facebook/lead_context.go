@@ -25,6 +25,10 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		out.ReplyNote = "Chưa phân tích được đầy đủ ngữ cảnh; gợi ý dự phòng dựa trên nội dung chữ."
 		return out
 	}
+	unconfirmedProduct := !supportedLeadProductHint(post, need)
+	if unconfirmedProduct {
+		need.Product = ""
+	}
 	if need.Visual.Conflict {
 		out := conflictingImageSuggestion(post, author)
 		out.AnalysisStatus = "conflict"
@@ -38,6 +42,9 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 	}
 	out := groundedForLeadContext(ctx, builder, orgID, post, author, need, shipping, sourcing)
 	out.AnalysisStatus = need.Intent
+	if unconfirmedProduct {
+		out.ReplyNote = "Chưa có căn cứ xác nhận loại sản phẩm model đề xuất; cần làm rõ sản phẩm, không tự chọn nguồn thay khách."
+	}
 	if len(urls) > 0 {
 		out.ContextNote = "Đã phân tích ảnh tham chiếu; chưa xác minh đúng mã hàng hoặc mẫu sàn."
 		if len(need.Visual.Observations) == 0 {
@@ -51,6 +58,16 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		visual = need.Visual.PromptBlock()
 	}
 	return refineLeadSuggestion(ctx, builder, generator, profile, orgID, post, author, out, need.PromptBlock(), visual)
+}
+
+func supportedLeadProductHint(post string, need leadcontext.Context) bool {
+	if need.Product == "" || containsLeadPhrase(post, need.Product) || matchesSupplierQuery(need.Product, post) {
+		return true
+	}
+	if supplierQuery(post) != "" {
+		return false // Explicit text identity outranks a different photo category.
+	}
+	return need.Visual.Product == need.Product && len(need.Visual.Observations) > 0
 }
 
 // Only a direct buyer request can override a contradictory model verdict.

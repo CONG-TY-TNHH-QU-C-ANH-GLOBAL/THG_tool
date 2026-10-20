@@ -39,6 +39,20 @@ func TestAuditServiceFallbackDoesNotInventCompanyCapabilities(t *testing.T) {
 	}
 }
 
+func TestAuditTextOnlyVaguePostCannotInventProductCategory(t *testing.T) {
+	const post = "Looking for a reliable supplier for winter products"
+	calls := 0
+	gen := contextTestGenerator(t, testNeed(leadcontext.Sourcing, "winter gloves", post), "", &calls)
+	lookup := func(context.Context, string) (*ResolvedSupplier, error) {
+		t.Error("an invented category must not trigger sourcing")
+		return nil, nil
+	}
+	got := BuildLeadSuggestionWithContext(context.Background(), nil, gen, nil, 7, post, "Lan", nil, nil, lookup)
+	if got.Reply == "" || strings.Contains(got.Reply, "gloves") || !strings.Contains(got.Reply, "specific product") {
+		t.Fatalf("a vague category was silently replaced with a guessed item: %+v", got)
+	}
+}
+
 func TestAuditModelCannotSilenceExplicitProductSourcing(t *testing.T) {
 	const post = "Looking for a supplier for hand massagers, 100 pcs to the US"
 	for _, intent := range []string{leadcontext.NonCommercial, leadcontext.Shipping, leadcontext.Warehouse} {

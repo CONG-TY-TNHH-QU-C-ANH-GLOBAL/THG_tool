@@ -73,6 +73,16 @@ func refineLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder
 }
 
 func safeAnalyzedReply(reply, post string, out LeadSuggestion) bool {
+	name := out.ProductName
+	if out.Supplier.HasOffer() {
+		name = out.Supplier.Name
+	}
+	// A correct URL/price does not establish that the wording names that item.
+	// Prefer the grounded draft when a rewrite drops or changes its identity.
+	text := podReplyURL.ReplaceAllString(reply, "")
+	if name != "" && !containsLeadPhrase(text, name) && !matchesLeadProduct(text, name) {
+		return false
+	}
 	if out.Supplier.HasOffer() {
 		custom := wantsPersonalizedPOD(post) || containsAnyLeadPhrase(out.Reply, []string{"confirm customization", "xác nhận khả năng in"})
 		return safeSupplierReply(reply, post, out.Supplier, custom)
