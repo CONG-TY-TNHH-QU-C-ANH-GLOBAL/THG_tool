@@ -4,19 +4,19 @@ import "testing"
 
 func TestIsReasoningModel(t *testing.T) {
 	cases := map[string]bool{
-		"gpt-5.4":      true,
-		"gpt-5.4-mini": true,
-		"gpt-5":        true,
-		"GPT-5.4":      true, // case-insensitive
-		"o1":           true,
-		"o1-mini":      true,
-		"o3-mini":      true,
-		"o4-mini":      true,
-		"gpt-4o":       false,
-		"gpt-4o-mini":  false,
-		"gpt-4.1":      false,
+		"gpt-5.4":       true,
+		"gpt-5.4-mini":  true,
+		"gpt-5":         true,
+		"GPT-5.4":       true, // case-insensitive
+		"o1":            true,
+		"o1-mini":       true,
+		"o3-mini":       true,
+		"o4-mini":       true,
+		"gpt-4o":        false,
+		"gpt-4o-mini":   false,
+		"gpt-4.1":       false,
 		"gpt-3.5-turbo": false,
-		"":             false,
+		"":              false,
 	}
 	for model, want := range cases {
 		if got := isReasoningModel(model); got != want {
@@ -41,5 +41,22 @@ func TestChatCompletionBody_OmitsTemperatureForReasoningModels(t *testing.T) {
 	classic := chatCompletionBody("gpt-4o", "hello")
 	if classic["temperature"] != 0.7 {
 		t.Fatalf("classic model body must keep temperature 0.7, got %v", classic["temperature"])
+	}
+}
+
+func TestMuseSparkLeadRequestsUseBoundedReasoningAndDefaultSampling(t *testing.T) {
+	for _, model := range []string{"muse-spark-1.3", "meta/muse-spark-1.3"} {
+		mg := NewMessageGeneratorWithEndpoint("test-key", model, "https://api.meta.ai/v1")
+		body := chatCompletionBody(model, "hello")
+		mg.applyProviderTuning(body)
+		if _, exists := body["temperature"]; exists || body["reasoning_effort"] != "low" {
+			t.Fatalf("Muse Spark must use provider-default sampling and low effort: %v", body)
+		}
+	}
+	mg := NewMessageGeneratorWithEndpoint("test-key", "gpt-4.1", "")
+	body := chatCompletionBody("gpt-4.1", "hello")
+	mg.applyProviderTuning(body)
+	if body["temperature"] != 0.7 || body["reasoning_effort"] != nil {
+		t.Fatal("existing provider behavior changed")
 	}
 }

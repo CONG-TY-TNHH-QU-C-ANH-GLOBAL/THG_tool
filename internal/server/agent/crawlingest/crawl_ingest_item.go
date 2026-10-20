@@ -81,6 +81,7 @@ func (h *Handler) processConnectorCrawlItem(ctx context.Context, orgID int64, ta
 		AuthorName:       strings.TrimSpace(item.AuthorName),
 		AuthorProfileURL: strings.TrimSpace(item.AuthorProfileURL),
 		Content:          content,
+		ImageURLs:        item.ImageURLs,
 		Reactions:        item.Reactions,
 		Comments:         item.Comments,
 		Shares:           item.Shares,

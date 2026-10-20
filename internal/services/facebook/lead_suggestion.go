@@ -3,6 +3,7 @@ package facebook
 import (
 	"context"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -80,8 +81,8 @@ func PickSuggestedProductDetails(candidates []models.KnowledgeCandidate) Suggest
 		case "out_of_stock", "discontinued":
 			continue
 		}
-		link := validHTTPSURL(c.SourceURL)
-		if link == "" {
+		link := catalogProductURL(c.SourceURL)
+		if link == "" || strings.TrimSpace(c.Title) == "" {
 			continue
 		}
 		return SuggestedProduct{
@@ -89,6 +90,32 @@ func PickSuggestedProductDetails(candidates []models.KnowledgeCandidate) Suggest
 		}
 	}
 	return SuggestedProduct{}
+}
+
+var catalogLocalePath = regexp.MustCompile(`(?i)^[a-z]{2}(?:-[a-z]{2})?$`)
+
+// Catalog ownership comes from the approved tenant asset, not a global domain
+// allowlist. Reject obvious index pages; this does not verify remote stock or SKU.
+func catalogProductURL(raw string) string {
+	link := validHTTPSURL(raw)
+	if link == "" || marketplaceURL(link) || shortMarketplaceURL(link) {
+		return ""
+	}
+	u, _ := url.Parse(link)
+	path := strings.Trim(strings.ToLower(u.Path), "/")
+	if path == "" || catalogLocalePath.MatchString(path) {
+		return ""
+	}
+	parts := strings.Split(path, "/")
+	switch parts[len(parts)-1] {
+	case "catalog", "products", "collections":
+		id := strings.TrimSpace(u.Query().Get("productId"))
+		switch strings.ToLower(id) {
+		case "", "undefined", "null":
+			return ""
+		}
+	}
+	return link
 }
 
 // PickSuggestedProduct returns the first grounded POD-product candidate that

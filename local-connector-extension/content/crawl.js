@@ -297,6 +297,7 @@ var THGContentCrawl = (() => {
     return {
       id: `dp:${postFBID || sourceURL}`, source_url: sourceURL,
       author_profile_url: author.author_profile_url, author_name: author.author_name,
+      image_urls: globalThis.THGCrawlImages?.fromArticle(article) || [],
       content, reactions: 0, comments: 0, shares: 0, post_fbid: postFBID, group_fbid: groupFBID, posted_at: ''
     };
   }
@@ -513,6 +514,7 @@ var THGContentCrawl = (() => {
           source_url: sourceURL,
           author_profile_url: author.author_profile_url,
           author_name: author.author_name,
+          image_urls: globalThis.THGCrawlImages?.fromArticle(article) || [],
           content,
           reactions: 0,
           comments: 0,

@@ -20,7 +20,7 @@ const (
 // It logs no post text, author or reply: only the org, the gate, whether a
 // reply exists and the fixed operator status note.
 func LogLeadSuggestionOutcome(path string, orgID, leadID int64, gate string, suggestion models.LeadSuggestion) {
-	log.Printf("[LeadSuggestion] path=%s org_id=%d lead_id=%d gate=%s reply=%t supplier=%t product=%t note=%q",
-		path, orgID, leadID, gate, strings.TrimSpace(suggestion.Reply) != "", suggestion.Supplier.HasOffer(),
+	log.Printf("[LeadSuggestion] path=%s org_id=%d lead_id=%d gate=%s analysis=%s wording=%s reply=%t supplier=%t product=%t note=%q",
+		path, orgID, leadID, gate, suggestion.AnalysisStatus, suggestion.ReplyStatus, strings.TrimSpace(suggestion.Reply) != "", suggestion.Supplier.HasOffer(),
 		strings.TrimSpace(suggestion.ProductURL) != "", suggestion.SourcingNote)
 }

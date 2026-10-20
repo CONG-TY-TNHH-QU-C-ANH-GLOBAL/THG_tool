@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thg/scraper/internal/models"
+	fbmedia "github.com/thg/scraper/internal/platform/facebook/media"
 	"github.com/thg/scraper/internal/store/app"
 	"github.com/thg/scraper/internal/textutil"
 )
@@ -107,6 +108,7 @@ func mirrorLegacyLead(ctx context.Context, deps Deps, in Input, content, sourceT
 			OrgID: in.OrgID, LeadID: leadID,
 			AuthorName: strings.TrimSpace(in.AuthorName), AuthorProfileURL: strings.TrimSpace(in.AuthorProfileURL),
 			PostURL: in.PrimaryURL, PostFBID: in.PostFBID, Excerpt: content,
+			ImageURLs:  fbmedia.URLs(in.ImageURLs),
 			Reason:     textutil.FirstNonEmpty(out.AIReason, strings.Join(out.Signals, " / ")),
 			SourceType: sourceType, GroupFBID: in.GroupFBID, Score: out.Score, Category: out.Category,
 			OccurredAt: time.Now().UTC(),

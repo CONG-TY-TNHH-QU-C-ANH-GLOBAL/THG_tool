@@ -13,6 +13,13 @@ type LeadSuggestion struct {
 	// SourcingNote distinguishes no match, insufficient details and an unfinished
 	// lookup so an ask-for-details draft is not mistaken for a sourced offer.
 	SourcingNote string
+	// ContextNote reports image availability/conflict to sale, not to the buyer.
+	ContextNote string
+	// ReplyNote explains an unavailable/unclear/noncommercial analysis to sale.
+	// AnalysisStatus is a fixed diagnostic code, never model prose or raw errors.
+	ReplyNote      string
+	AnalysisStatus string
+	ReplyStatus    string
 }
 
 // SupplierMatch is the render-ready view of one sourced marketplace item. Every

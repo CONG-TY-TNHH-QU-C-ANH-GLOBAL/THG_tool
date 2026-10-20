@@ -92,7 +92,7 @@ type Builder struct {
 // composes pgvector → hybrid via the fallback wrapper.
 func NewBuilder(lister AssetLister) *Builder {
 	return &Builder{
-		Searcher: hybrid.New(lister),
+		Searcher: hybrid.NewMultilingual(lister),
 		K:        6,
 	}
 }
@@ -101,9 +101,9 @@ func NewBuilder(lister AssetLister) *Builder {
 // directive PR-2 §4). When the store reports pgvector capability
 // (Postgres + extension + embedding column), it wires:
 //
-//   primary  = pgvector.Searcher(store, embedder)
-//   fallback = hybrid.Searcher(store)
-//   wrap     = fallback.Searcher{Primary, Fallback}
+//	primary  = pgvector.Searcher(store, embedder)
+//	fallback = hybrid.Searcher(store)
+//	wrap     = fallback.Searcher{Primary, Fallback}
 //
 // When pgvector capability is NOT present (SQLite, fresh PG without
 // extension), it returns the plain hybrid searcher — same behavior
@@ -113,7 +113,7 @@ func NewBuilder(lister AssetLister) *Builder {
 // NO feature flag. Detection happens here at boot, then the chosen
 // Searcher is immutable for the Builder's lifetime.
 func NewBuilderWithVector(ctx context.Context, store VectorCapableStore, embedder embedding.Embedder) *Builder {
-	hybridSearcher := hybrid.New(store)
+	hybridSearcher := hybrid.NewMultilingual(store)
 	if !store.HasPGVector(ctx) || embedder == nil {
 		// No vector capability — hybrid is the whole show. The
 		// fallback wrapper still goes around it so any future
@@ -196,14 +196,12 @@ func (b *Builder) BuildForLeadWithTrace(ctx context.Context, orgID int64, leadTe
 	// Best-effort metrics. Failures are logged + swallowed — neither
 	// counter writes nor trace persistence should ever abort a sales
 	// action.
-	if b.Recorder != nil {
-		for _, h := range hits {
-			if h.Asset == nil {
-				continue
-			}
-			if err := b.Recorder.IncrementAssetRetrieval(ctx, h.Asset.ID, orgID); err != nil {
-				log.Printf("[knowledge.BuildForLead] increment retrieval id=%d: %v", h.Asset.ID, err)
-			}
+	for _, h := range hits {
+		if b.Recorder == nil || h.Asset == nil {
+			continue
+		}
+		if err := b.Recorder.IncrementAssetRetrieval(ctx, h.Asset.ID, orgID); err != nil {
+			log.Printf("[knowledge.BuildForLead] increment retrieval id=%d: %v", h.Asset.ID, err)
 		}
 	}
 	if b.TraceRec != nil {

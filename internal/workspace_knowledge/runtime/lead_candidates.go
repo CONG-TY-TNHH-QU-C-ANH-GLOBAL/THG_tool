@@ -23,6 +23,10 @@ import (
 // NOT change the existing prompt-block path. Empty result (no searcher / no
 // knowledge) returns (nil, "", nil) so the caller degrades to knowledge_gap.
 func (b *Builder) CandidatesForLead(ctx context.Context, orgID int64, leadText string) ([]models.KnowledgeCandidate, string, error) {
+	return b.candidatesForLead(ctx, orgID, leadText, nil)
+}
+
+func (b *Builder) candidatesForLead(ctx context.Context, orgID int64, leadText string, types []assets.AssetType) ([]models.KnowledgeCandidate, string, error) {
 	if b == nil || b.Searcher == nil || orgID <= 0 {
 		return nil, "", nil
 	}
@@ -33,7 +37,7 @@ func (b *Builder) CandidatesForLead(ctx context.Context, orgID int64, leadText s
 	// Explicit approved-only filter (P2a.1 #6). EffectiveStates already defaults
 	// to approved, but we state it so the guarantee does not depend on that
 	// default; the per-hit skip below is belt-and-braces.
-	filter := retrieval.SearchFilter{States: []assets.AssetState{assets.StateApproved}}
+	filter := retrieval.SearchFilter{States: []assets.AssetState{assets.StateApproved}, Types: types}
 	hits, _, err := b.Searcher.TopKWithTrace(ctx, orgID, leadText, filter, k)
 	if err != nil {
 		return nil, "", err
@@ -54,6 +58,9 @@ func (b *Builder) CandidatesForLead(ctx context.Context, orgID int64, leadText s
 		if h.Asset.Type == assets.AssetBannedClaim {
 			continue
 		}
+		if !candidateTypeAllowed(h.Asset.Type, types) {
+			continue
+		}
 		out = append(out, candidateFromHit(h))
 	}
 	// retrieval_id (P2a.1 #1): we do NOT mint a fake id here — a fake would not
@@ -62,6 +69,18 @@ func (b *Builder) CandidatesForLead(ctx context.Context, orgID int64, leadText s
 	// "not persisted by this path"; a joinable id arrives when P2c makes this
 	// the canonical retrieval and records the single trace.
 	return out, "", nil
+}
+
+func candidateTypeAllowed(kind assets.AssetType, types []assets.AssetType) bool {
+	if len(types) == 0 {
+		return true
+	}
+	for _, allowed := range types {
+		if kind == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 // candidateFromHit maps one retrieval hit to a grounding candidate, extracting

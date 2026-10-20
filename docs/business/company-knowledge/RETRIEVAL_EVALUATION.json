@@ -1,0 +1,558 @@
+{
+  "scope": "Synthetic offline retrieval only; no LLM, vision, live pricing or production calls",
+  "runtime_enabled": false,
+  "knowledge_sha256": "9a9b6814192c3bc95bff49d45078f9d051841ff7a763ff23ba766e5ae16cde76",
+  "cases_sha256": "4403a77e72d07288d48155eae774c1797d5900dcf9d2515257227d18586f4cdf",
+  "before_impl": "hybrid-v1",
+  "after_impl": "hybrid-v2-multilingual",
+  "before_passed": 17,
+  "after_passed": 24,
+  "results": [
+    {
+      "case": {
+        "id": "warehouse-vi",
+        "query": "dịch vụ kho Mỹ",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-warehouse"
+        ],
+        "top": 1,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-pod"
+      ],
+      "after_ids": [
+        "service-warehouse"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "warehouse-ascii",
+        "query": "dich vu kho My",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-warehouse"
+        ],
+        "top": 1,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-warehouse"
+      ],
+      "after_ids": [
+        "service-warehouse"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "warehouse-inbound",
+        "query": "nhập kho SKU barcode",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-warehouse"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-warehouse",
+        "customer-segments",
+        "shipping-formal"
+      ],
+      "after_ids": [
+        "service-warehouse",
+        "company-ecosystem",
+        "company-locations"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "international-vi",
+        "query": "cước vận chuyển quốc tế",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-express",
+          "shipping-international"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-express",
+        "shipping-international"
+      ],
+      "after_ids": [
+        "service-express",
+        "shipping-international",
+        "company-ecosystem"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "international-ascii",
+        "query": "cuoc van chuyen quoc te",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-express",
+          "shipping-international"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [],
+      "after_ids": [
+        "service-express",
+        "shipping-international",
+        "company-ecosystem"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "domestic-3pl",
+        "query": "biểu phí 3PL Mỹ",
+        "public_facts_only": true,
+        "expected_any": [
+          "shipping-domestic"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "shipping-domestic",
+        "sourcing-platform-scope"
+      ],
+      "after_ids": [
+        "shipping-domestic",
+        "service-warehouse",
+        "shipping-formal"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "sourcing-vi",
+        "query": "tìm nguồn Taobao 1688",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-sourcing"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-sourcing",
+        "sourcing-platform-scope"
+      ],
+      "after_ids": [
+        "service-sourcing",
+        "sourcing-platform-scope"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "catalog-pod",
+        "query": "catalog sản phẩm POD",
+        "public_facts_only": false,
+        "expected_any": [
+          "product-live-catalog"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "product-live-catalog",
+        "catalog-destination-conditions",
+        "service-pod"
+      ],
+      "after_ids": [
+        "product-live-catalog",
+        "pod-mockup-qc",
+        "catalog-destination-conditions"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "tracking-public",
+        "query": "theo dõi tracking",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-express"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [],
+      "after_ids": [
+        "service-express",
+        "shipping-international",
+        "shipping-domestic"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "basecost-vi",
+        "query": "basecost đã gồm phí nào",
+        "public_facts_only": false,
+        "expected_any": [
+          "commercial-basecost-interpretation",
+          "dropship-quote-components"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "commercial-basecost-interpretation",
+        "customer-demand-vs-offer",
+        "customer-out-of-scope"
+      ],
+      "after_ids": [
+        "commercial-basecost-interpretation",
+        "warehouse-fee-components",
+        "dropship-quote-components"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "basecost-ascii",
+        "query": "basecost da gom phi nao",
+        "public_facts_only": false,
+        "expected_any": [
+          "commercial-basecost-interpretation",
+          "dropship-quote-components"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "commercial-basecost-interpretation"
+      ],
+      "after_ids": [
+        "commercial-basecost-interpretation",
+        "warehouse-fee-components",
+        "dropship-quote-components"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "warehouse-fees",
+        "query": "phí lưu kho xử lý đóng gói",
+        "public_facts_only": false,
+        "expected_any": [
+          "warehouse-fee-components",
+          "warehouse-price-discrepancy"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "customer-demand-vs-offer",
+        "customer-out-of-scope",
+        "product-customization"
+      ],
+      "after_ids": [
+        "warehouse-fee-components",
+        "warehouse-outbound-procedure",
+        "warehouse-packaging-agreement"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "tracking-status",
+        "query": "tracking chưa cập nhật",
+        "public_facts_only": false,
+        "expected_any": [
+          "warehouse-status-interpretation",
+          "shipping-tracking-milestones"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "customer-segments",
+        "sourcing-routing",
+        "sourcing-china-alternative"
+      ],
+      "after_ids": [
+        "warehouse-status-interpretation",
+        "shipping-tracking-milestones",
+        "shipping-rate-refresh"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "returns-en",
+        "query": "return refund reship",
+        "public_facts_only": false,
+        "expected_any": [
+          "warehouse-return-refund-reship"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "warehouse-return-refund-reship"
+      ],
+      "after_ids": [
+        "warehouse-return-refund-reship",
+        "warehouse-fee-components"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "cotton-polyester",
+        "query": "túi cotton polyester",
+        "public_facts_only": false,
+        "expected_any": [
+          "case-pod-alternative",
+          "product-required-attributes"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "case-pod-alternative"
+      ],
+      "after_ids": [
+        "case-pod-alternative",
+        "product-required-attributes"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "no-logo",
+        "query": "không in logo",
+        "public_facts_only": false,
+        "expected_any": [
+          "product-negative-printing"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "product-negative-printing",
+        "product-customization",
+        "case-pod-alternative"
+      ],
+      "after_ids": [
+        "product-negative-printing",
+        "case-pod-alternative",
+        "product-customization"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "pod-template",
+        "query": "POD template thiết kế",
+        "public_facts_only": false,
+        "expected_any": [
+          "pod-template-and-design"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "pod-template-and-design",
+        "service-pod",
+        "product-live-catalog"
+      ],
+      "after_ids": [
+        "pod-template-and-design",
+        "service-pod",
+        "pod-order-workflow"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "similar-offer",
+        "query": "mẫu tương tự",
+        "public_facts_only": false,
+        "expected_any": [
+          "sourcing-similar"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "company-identity",
+        "company-locations",
+        "service-sourcing"
+      ],
+      "after_ids": [
+        "sourcing-similar",
+        "sourcing-platform-scope",
+        "sourcing-platform-scope-conflict"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "supplier-delay",
+        "query": "nhà cung cấp giao chậm",
+        "public_facts_only": false,
+        "expected_any": [
+          "commercial-supplier-delay"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "training-express-inputs",
+        "customer-segments",
+        "sourcing-routing"
+      ],
+      "after_ids": [
+        "shipping-geography",
+        "case-seasonal-supplier",
+        "commercial-supplier-delay"
+      ],
+      "before_passed": false,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "private-evidence",
+        "query": "quyền sử dụng workspace nội bộ",
+        "public_facts_only": false,
+        "expected_any": [
+          "governance-workspace-audience"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "governance-workspace-audience",
+        "company-identity",
+        "company-ecosystem"
+      ],
+      "after_ids": [
+        "governance-workspace-audience",
+        "governance-approved-sop",
+        "shipping-direct-via-warehouse"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "unknown-terms",
+        "query": "axolotl quantum calibration",
+        "public_facts_only": false,
+        "expected_any": [],
+        "top": 3,
+        "expect_no_results": true
+      },
+      "before_ids": [],
+      "after_ids": [],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "warehouse-english",
+        "query": "US warehouse fulfillment",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-warehouse"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-warehouse",
+        "company-ecosystem",
+        "company-locations"
+      ],
+      "after_ids": [
+        "service-warehouse",
+        "company-locations",
+        "company-ecosystem"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "shipping-english",
+        "query": "international shipping",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-express",
+          "shipping-international"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-express",
+        "shipping-international",
+        "shipping-domestic"
+      ],
+      "after_ids": [
+        "service-express",
+        "shipping-international",
+        "shipping-domestic"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    },
+    {
+      "case": {
+        "id": "sourcing-english",
+        "query": "product sourcing buying agent",
+        "public_facts_only": true,
+        "expected_any": [
+          "service-sourcing"
+        ],
+        "top": 3,
+        "expect_no_results": false
+      },
+      "before_ids": [
+        "service-sourcing",
+        "sourcing-platform-scope",
+        "commercial-order-process"
+      ],
+      "after_ids": [
+        "service-sourcing",
+        "sourcing-platform-scope",
+        "commercial-order-process"
+      ],
+      "before_passed": true,
+      "after_passed": true
+    }
+  ]
+}

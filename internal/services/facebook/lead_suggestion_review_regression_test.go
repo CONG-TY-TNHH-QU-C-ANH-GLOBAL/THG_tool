@@ -92,7 +92,7 @@ func TestReviewPODWithoutCatalogLabelsMarketplaceAlternative(t *testing.T) {
 	}
 	result := BuildLeadSuggestion(context.Background(), nil, nil, nil, 1,
 		"Cần mua 300 áo hoodie in logo công ty từ 1688", "Lan", nil, lookup)
-	if result.Supplier == nil || !strings.Contains(result.Reply, "nguồn sản phẩm thay thế") ||
+	if !result.Supplier.HasOffer() || !containsExactReplyURL(result.Reply, result.Supplier.URL) || !strings.Contains(result.Reply, "nguồn sản phẩm thay thế") ||
 		!strings.Contains(result.Reply, "xác nhận khả năng in") {
 		t.Fatalf("POD source alternative must be clearly qualified: %+v", result)
 	}

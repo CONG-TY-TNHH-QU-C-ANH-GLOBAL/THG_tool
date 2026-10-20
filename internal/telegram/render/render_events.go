@@ -42,6 +42,8 @@ type LeadMsg struct {
 	SupplierPlatform, SupplierName, SupplierURL, SupplierSummary, SupplierShipping, SupplierCapturedAt string
 	// SourcingNote warns that nothing matched, so the draft below only asks for details.
 	SourcingNote string
+	ContextNote  string
+	ReplyNote    string
 }
 
 type ActionMsg struct {
@@ -86,6 +88,8 @@ func Lead(m LeadMsg) string {
 	b.WriteString(line("Giá nguồn ghi nhận", m.SupplierCapturedAt))
 	b.WriteString(link("🔗 Link nguồn hàng", m.SupplierURL))
 	b.WriteString(line("⚠️ Tìm nguồn", m.SourcingNote))
+	b.WriteString(line("🖼 Ngữ cảnh ảnh", m.ContextNote))
+	b.WriteString(line("ℹ️ Gợi ý", m.ReplyNote))
 	b.WriteString(block("💬 Gợi ý trả lời", m.SuggestedReply))
 	b.WriteString(line("Trạng thái", m.Status))
 	b.WriteString(link("🔗 Mở bài viết Facebook", m.PostURL))

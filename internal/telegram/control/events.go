@@ -61,6 +61,8 @@ type LeadNotice struct {
 	Supplier *models.SupplierMatch
 	// SourcingNote warns that no product or source matched the lead.
 	SourcingNote string
+	ContextNote  string
+	ReplyNote    string
 }
 
 // NotifyLead emits a rich "new lead" channel notification.
@@ -92,6 +94,8 @@ func (s *Service) NotifyLead(n LeadNotice) {
 		SupplierPlatform:   supplier.Platform,
 		SupplierName:       supplierName(supplier),
 		SourcingNote:       strings.TrimSpace(n.SourcingNote),
+		ContextNote:        strings.TrimSpace(n.ContextNote),
+		ReplyNote:          strings.TrimSpace(n.ReplyNote),
 		SupplierURL:        supplier.URL,
 		SupplierSummary:    supplierSummary(supplier),
 		SupplierShipping:   supplierShipping(supplier),

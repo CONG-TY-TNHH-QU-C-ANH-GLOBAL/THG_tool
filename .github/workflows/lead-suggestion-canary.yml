@@ -8,6 +8,22 @@ on:
         required: true
         type: choice
         options: [check, enable, disable]
+      context_mode:
+        description: Keep, enable, or disable the new need-analysis pipeline
+        required: true
+        default: keep
+        type: choice
+        options: [keep, enable, disable]
+      image_mode:
+        description: Keep, enable, or disable original-photo analysis
+        required: true
+        default: keep
+        type: choice
+        options: [keep, enable, disable]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -21,12 +37,14 @@ jobs:
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           CANARY_OPERATION: ${{ inputs.operation }}
+          CONTEXT_MODE: ${{ inputs.context_mode }}
+          IMAGE_MODE: ${{ inputs.image_mode }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || '22' }}
-          envs: CANARY_OPERATION
+          envs: CANARY_OPERATION,CONTEXT_MODE,IMAGE_MODE
           command_timeout: 3m
           script: |
             set -eu
@@ -43,8 +61,16 @@ jobs:
             from pathlib import Path
 
             operation = sys.argv[1]
+            modes = {b'LEAD_CONTEXT_ANALYSIS_ENABLED': os.environ.get('CONTEXT_MODE', 'keep'),
+                     b'LEAD_IMAGE_CONTEXT_ENABLED': os.environ.get('IMAGE_MODE', 'keep')}
+            if any(mode not in ('keep', 'enable', 'disable') for mode in modes.values()):
+                sys.exit('analysis_mode=invalid')
+            if operation != 'enable' and any(mode != 'keep' for mode in modes.values()):
+                sys.exit('analysis_mode=requires_enable_operation')
             config = Path('/etc/thg-scraper/env')
             services = ('thg-scraper', 'thg-worker')
+            if operation != 'check' and Path('/opt/thg-scraper/.worker-hold').exists():
+                sys.exit('worker=held_no_restart')
             db_uri = 'file:/opt/thg-scraper/data/scraper.db?mode=ro'
 
             with sqlite3.connect(db_uri, uri=True) as db:
@@ -58,9 +84,11 @@ jobs:
             original = config.read_bytes()
             lines = original.splitlines(keepends=True)
 
-            def assignment(name):
+            def assignment(name, required=True):
                 matches = [(i, line) for i, line in enumerate(lines)
                            if re.match(rb'^\s*' + name + rb'\s*=', line)]
+                if not matches and not required:
+                    return None, ''
                 if len(matches) != 1:
                     sys.exit('production_config=unexpected_assignments')
                 index, line = matches[0]
@@ -76,6 +104,9 @@ jobs:
             if raw_allowlist and not re.fullmatch(r'[1-9][0-9]*(,[1-9][0-9]*)*', raw_allowlist):
                 sys.exit('allowlist=invalid_refused')
             if operation == 'check':
+                for name in modes:
+                    _, value = assignment(name, required=False)
+                    print(name.decode('ascii').lower() + '=' + ('on' if value.lower() in ('1', 'true', 'yes', 'y', 'on') else 'off'))
                 print('result=ready')
                 sys.exit(0)
             ids = raw_allowlist.split(',') if raw_allowlist else []
@@ -83,9 +114,22 @@ jobs:
                 ids.append(org_id)
             elif operation == 'disable':
                 ids = [item for item in ids if item != org_id]
+            if 'enable' in modes.values() and ids != [org_id]:
+                sys.exit('analysis_scope=requires_only_thgfulfill_allowlisted')
             expected = operation == 'enable'
             suffix = b'\r\n' if lines[index].endswith(b'\r\n') else b'\n'
             lines[index] = b'LEAD_SUGGESTION_ORG_IDS=' + ','.join(ids).encode('ascii') + suffix
+            for name, mode in modes.items():
+                if mode == 'keep':
+                    continue
+                flag_index, _ = assignment(name, required=False)
+                value = b'true' if mode == 'enable' else b'false'
+                if flag_index is None:
+                    if lines and not lines[-1].endswith(b'\n'):
+                        lines[-1] += b'\n'
+                    lines.append(name + b'=' + value + b'\n')
+                else:
+                    lines[flag_index] = name + b'=' + value + b'\n'
             updated = b''.join(lines)
 
             def write_config(data):
@@ -123,6 +167,20 @@ jobs:
                             allowed = process_env.get(b'LEAD_SUGGESTION_ORG_IDS', b'').decode('ascii')
                             if (org_id in allowed.split(',')) != expected:
                                 raise RuntimeError('effective_allowlist_mismatch_' + service)
+                            for name, mode in modes.items():
+                                if mode == 'keep':
+                                    continue
+                                enabled = process_env.get(name, b'').lower() in (b'1', b'true', b'yes', b'y', b'on')
+                                if enabled != (mode == 'enable'):
+                                    raise RuntimeError('effective_analysis_mismatch_' + service)
+                            if modes[b'LEAD_CONTEXT_ANALYSIS_ENABLED'] == 'enable':
+                                override = [process_env.get(name, b'').strip() for name in
+                                            (b'LEAD_MODEL_API_KEY', b'LEAD_MODEL_BASE_URL', b'LEAD_MODEL_NAME')]
+                                provider_ready = all(override) if any(override) else any(
+                                    process_env.get(name, b'').strip() for name in
+                                    (b'LLM_COMMENT_API_KEY', b'LLM_API_KEY', b'OPENAI_API_KEY'))
+                                if not provider_ready:
+                                    raise RuntimeError('effective_model_config_unavailable_' + service)
                             break
                         except (RuntimeError, subprocess.CalledProcessError, OSError) as exc:
                             if attempt == 9:
@@ -160,4 +218,7 @@ jobs:
                 verify_services()
             print('result=enabled' if expected else 'result=disabled')
             print('services=healthy')
+            for name, mode in modes.items():
+                if mode != 'keep':
+                    print(name.decode('ascii').lower() + '=' + ('on' if mode == 'enable' else 'off'))
             PY
