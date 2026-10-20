@@ -10,11 +10,13 @@ const trainingRoot = resolve(process.argv[argument + 1]);
 const packRoot = new URL('../../docs/business/company-knowledge/', import.meta.url);
 const registry = JSON.parse(await readFile(new URL('sources.json', packRoot), 'utf8'));
 const sha = data => createHash('sha256').update(data).digest('hex');
-const normalizedHash = data => sha(data.toString('utf8').replace(/\r\n/g, '\n'));
-const git = args => execFileSync('git', ['-C', trainingRoot, ...args], { maxBuffer: 8 * 1024 * 1024 });
+const normalizedHash = data => sha(data.toString('utf8').replaceAll('\r\n', '\n'));
+// Resolve a fixed system installation, never an executable from the caller's PATH.
+const gitBinary = process.platform === 'win32' ? String.raw`C:\Program Files\Git\cmd\git.exe` : '/usr/bin/git';
+const git = args => execFileSync(gitBinary, ['-C', trainingRoot, ...args], { maxBuffer: 8 * 1024 * 1024 });
 const revision = git(['rev-parse', 'HEAD']).toString('utf8').trim();
-const clean = text => text.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-const normalize = text => clean(text).normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const clean = text => text.replaceAll(/<[^<>]*>/g, ' ').replaceAll('&amp;', '&').replaceAll('&nbsp;', ' ').replaceAll('&quot;', '"').replaceAll('&#39;', "'");
+const normalize = text => clean(text).normalize('NFD').replaceAll(/\p{M}/gu, '').replaceAll('đ', 'd').toLowerCase().replaceAll(/[^a-z0-9]+/g, ' ').trim();
 const entries = [];
 for (const source of registry.sources.filter(item => item.kind === 'legacy_training_snapshot')) {
   if (source.repository !== 'THG_Training' || source.revision !== revision) throw new Error(`Snapshot mismatch: ${source.id}`);
