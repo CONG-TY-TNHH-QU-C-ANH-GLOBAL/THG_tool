@@ -45,6 +45,7 @@ func TestPODReplyPreservesSelectedCatalogLink(t *testing.T) {
 	for _, tc := range []struct{ name, reply, status string }{
 		{"omitted link", draft, "model_generated"},
 		{"correct link", draft + " " + link, "model_generated"},
+		{"wrong product with correct link", strings.Replace(draft, "cốc sứ", "áo hoodie", 1) + " " + link, "model_rejected"},
 		{"wrong catalog item", draft + " https://thgfulfill.com/vi/catalog?productId=cup-2", "model_rejected"},
 		{"similar URL prefix", draft + " " + link + "-wrong", "model_rejected"},
 		{"marketplace instead", draft + " https://detail.1688.com/offer/1.html", "model_rejected"},
@@ -70,6 +71,7 @@ func TestDropshipReplyPreservesSelectedListingLink(t *testing.T) {
 		for _, tc := range []struct{ name, reply, status string }{
 			{"omitted link", draft, "model_generated"},
 			{"correct link", draft + " " + link, "model_generated"},
+			{"wrong product with correct link", strings.Replace(draft, "hand massager", "hoodie", 1) + " " + link, "model_rejected"},
 			{"another item", draft + " https://detail.1688.com/offer/456.html", "model_rejected"},
 			{"company catalog", draft + " https://thgfulfill.com/vi/catalog?productId=cup-1", "model_rejected"},
 			{"changed price", strings.Replace(draft, "20 CNY", "25 CNY", 1), "model_rejected"},

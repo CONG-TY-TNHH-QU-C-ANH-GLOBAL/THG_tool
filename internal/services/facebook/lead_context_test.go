@@ -60,6 +60,8 @@ func TestNeedContextRoutesTextWithoutSearchingUnspecifiedWinterItems(t *testing.
 func TestNeedContextImprovesSupplierWordingAndRejectsChangedPrice(t *testing.T) {
 	post := "Could somebody locate this item? 100 pcs to the US"
 	need := testNeed(leadcontext.Sourcing, "hand massager", post)
+	need.Visual.Product = "hand massager"
+	need.Visual.Observations = []string{"A hand massager is visible"}
 	const link = "https://detail.1688.com/offer/123.html"
 	want := "We found a similar hand massager from China, reference price 20 CNY (MOQ 2), MOQ 2 pcs. Could you share the parcel dimensions and weight? " + link
 	for _, reply := range []string{want, strings.Replace(want, "20 CNY", "25 CNY", 1), strings.Replace(want, "similar ", "", 1), strings.Replace(want, "China", "Europe", 1)} {
@@ -67,7 +69,7 @@ func TestNeedContextImprovesSupplierWordingAndRejectsChangedPrice(t *testing.T) 
 			calls := 0
 			gen := contextTestGenerator(t, need, reply, &calls)
 			lookup := contextSupplierLookup(t, link)
-			got := BuildLeadSuggestionWithContext(context.Background(), nil, gen, &ai.BusinessProfile{Name: "THG"}, 7, post, "Lan", nil, nil, lookup)
+			got := BuildLeadSuggestionWithContext(context.Background(), nil, gen, &ai.BusinessProfile{Name: "THG"}, 7, post, "Lan", []string{"https://scontent.fbcdn.net/post.jpg"}, nil, lookup)
 			if calls != 2 || got.Reply == "" || !got.Supplier.HasOffer() || !got.Supplier.Similar {
 				t.Fatalf("lost sourced fallback: %+v, calls=%d", got, calls)
 			}

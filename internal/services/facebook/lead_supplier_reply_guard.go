@@ -34,11 +34,24 @@ func supplierReplyNumbersValid(reply, post string, supplier *models.SupplierMatc
 		}
 	}
 	for _, money := range supplierReplyMoney.FindAllString(reply, -1) {
-		if !strings.Contains(supplier.PriceText, money) && (supplier.Shipping == nil || !strings.Contains(supplier.Shipping.PriceText, money)) {
+		if !supplierReplyMoneyKnown(money, supplier) {
 			return false
 		}
 	}
 	return true
+}
+
+func supplierReplyMoneyKnown(money string, supplier *models.SupplierMatch) bool {
+	prices := supplier.PriceText
+	if supplier.Shipping != nil {
+		prices += "\n" + supplier.Shipping.PriceText
+	}
+	for _, allowed := range supplierReplyMoney.FindAllString(prices, -1) {
+		if money == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func supplierReplyLabelsPreserved(reply, post string, supplier *models.SupplierMatch, custom bool) bool {

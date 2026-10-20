@@ -98,9 +98,15 @@ Official references checked 2026-10-19:
 [recommended sampling](https://dev.meta.ai/docs/cookbook/quickstart-chat-completions),
 [access, models and pricing](https://dev.meta.ai/products/meta-model-api).
 
-Analysis has a five-second child deadline, one request and no retry. Reply
-generation has one request, the existing HTTP timeout and the parent's deadline;
-both remain inside the notification runner's total budget (default 12 seconds).
+Analysis has a five-second child deadline, one request and no retry. The
+notification runner retains its configured text-path budget (default 12 seconds).
+Explicit analysis orgs receive at least 24 seconds for analysis, source lookup,
+freight and wording, sharing the same concurrency slots. This avoids consuming
+the nine-second source-search start budget during analysis. A larger explicitly
+configured budget is preserved; other orgs retain their existing budget.
+Optional wording, including public-knowledge retrieval, uses at most four seconds
+and ends at least 400 ms before the runner deadline. A failure keeps the already
+grounded draft instead of letting optional wording erase the source at timeout.
 Provider errors/refusals/truncation are reported using fixed errors without raw
 bodies, keys or photo URLs. A 32 KiB bounded response is decoded.
 
@@ -208,6 +214,33 @@ presence. `model_generated`, `model_rejected`, `model_error`,
 `no_public_knowledge` and `provider_or_profile_unavailable` distinguish wording
 outcomes. No post/author/photo/raw model output is added to these logs.
 `ReplyNote` reaches Telegram through both runtimes; CRM maps only existing fields.
+
+### Follow-up audit of reply correctness
+
+Local regressions reproduced four failures at `4806c0fc`: a contradictory
+model intent could discard a direct sourcing need; a quantity of 20 could become
+an invented 20 CNY fee because it matched a substring of 120 CNY; battery warnings
+in the post were ignored when the supplier title only named ordinary apparel;
+and an unreadable photo with no observations received a successful-analysis note.
+Service fallback templates also asserted warehouse assistance/company identity
+without approved knowledge; they now ask relevant questions without that claim.
+
+The fix keeps direct buyer requests on their text-grounded product path when
+the tentative verdict conflicts, with an operator review note. Explicit service
+requests remain service-only. Recognized service advertisements cannot become
+buyer needs through a model-generated category hint. This is a bounded lexical
+cross-check, not a complete semantic classifier. Financial checks now compare
+complete source amount tokens. Cargo checks inspect both the source name and
+the author's text. A photo without observations is explicitly unconfirmed.
+Product hints without matching text or an observed photo category are removed
+before routing and rewriting. A literal quote showing a supplier need cannot
+authorize an invented product category for a vague text-only post.
+
+New audit cases include noncommercial/shipping/warehouse misclassification,
+advertisements, valid shipping requests, unsupported extra fees, battery warnings,
+unreadable images, analysis latency, shared concurrency and slow wording. Real
+model quality and live Telegram delivery still require observation; healthy
+services and passing fake-provider tests are not proof of correct interpretation.
 
 **Not implemented by this slice:** image-informed upstream crawl classification,
 admission of image-only/very short posts, persistent media/replay, reverse-image

@@ -10,21 +10,21 @@ func serviceReplyText(kind, author, destVI, destEN string, missing []string, eng
 		if name == "" {
 			name = "there"
 		}
-		service := "THG can help with warehousing and fulfillment"
+		service := "warehousing and fulfillment"
 		if kind == serviceExpress {
-			service = "THG can check options for international shipping"
+			service = "international shipping"
 			if destEN != "" {
 				service += " to " + destEN
 			}
 		}
-		return "Hi " + name + ", " + service + ". Could you share " + joinWithAnd(missing, "and") + " so we can suggest the right option?"
+		return "Hi " + name + ", for " + service + ", could you share " + joinWithAnd(missing, "and") + " so we can check suitable options?"
 	}
-	service := "bên mình có dịch vụ kho và fulfillment"
+	service := "dịch vụ kho và fulfillment"
 	if kind == serviceExpress {
-		service = "bên mình có thể kiểm tra phương án vận chuyển quốc tế"
+		service = "vận chuyển quốc tế"
 		if destVI != "" {
 			service += " đi " + destVI
 		}
 	}
-	return leadSalutation(author) + ", " + service + ". Bạn cho mình xin " + joinWithAnd(missing, "và") + " để tư vấn phương án phù hợp nhé?"
+	return leadSalutation(author) + ", về " + service + ", bạn cho mình xin " + joinWithAnd(missing, "và") + " để kiểm tra phương án phù hợp nhé?"
 }

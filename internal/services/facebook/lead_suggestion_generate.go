@@ -32,13 +32,19 @@ func refineLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder
 	if out.Supplier.HasOffer() && need == "" {
 		return out
 	}
-	knowledge, _ := builder.ReplyKnowledgeForLead(ctx, orgID, post)
+	wordingCtx, cancel, available := leadWordingContext(ctx)
+	defer cancel()
+	if !available {
+		out.ReplyStatus = "wording_budget_exhausted"
+		return out
+	}
+	knowledge, _ := builder.ReplyKnowledgeForLead(wordingCtx, orgID, post)
 	if knowledge == "" && out.ProductURL == "" && !out.Supplier.HasOffer() {
 		out.ReplyStatus = "no_public_knowledge"
 		return out
 	}
 	facts := BuildGroundedFacts(SuggestedProduct{Name: out.ProductName, URL: out.ProductURL}, out.Supplier)
-	reply, err := msgGen.GenerateLeadReplySuggestion(ctx, ai.LeadReplyRequest{
+	reply, err := msgGen.GenerateLeadReplySuggestion(wordingCtx, ai.LeadReplyRequest{
 		PostContent: post, AuthorName: author, BusinessContext: profile.ToPromptBlock(),
 		BrandName: profile.Name, GroundedFacts: facts, CompanyKnowledge: knowledge, GroundedDraft: out.Reply,
 		VisualContext: visual, LeadContext: need,
@@ -67,6 +73,16 @@ func refineLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder
 }
 
 func safeAnalyzedReply(reply, post string, out LeadSuggestion) bool {
+	name := out.ProductName
+	if out.Supplier.HasOffer() {
+		name = out.Supplier.Name
+	}
+	// A correct URL/price does not establish that the wording names that item.
+	// Prefer the grounded draft when a rewrite drops or changes its identity.
+	text := podReplyURL.ReplaceAllString(reply, "")
+	if name != "" && !containsLeadPhrase(text, name) && !matchesLeadProduct(text, name) {
+		return false
+	}
 	if out.Supplier.HasOffer() {
 		custom := wantsPersonalizedPOD(post) || containsAnyLeadPhrase(out.Reply, []string{"confirm customization", "xác nhận khả năng in"})
 		return safeSupplierReply(reply, post, out.Supplier, custom)
