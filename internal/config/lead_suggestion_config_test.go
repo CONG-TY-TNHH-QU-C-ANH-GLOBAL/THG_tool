@@ -6,6 +6,7 @@ func TestLoadLeadSuggestionDefaultsFailClosed(t *testing.T) {
 	t.Setenv("LEAD_SUGGESTION_ENABLED", "")
 	t.Setenv("LEAD_IMAGE_CONTEXT_ENABLED", "")
 	t.Setenv("LEAD_CONTEXT_ANALYSIS_ENABLED", "")
+	t.Setenv("LEAD_CONTEXT_ORG_IDS", "")
 	t.Setenv("LEAD_SUGGESTION_ORG_IDS", "")
 	t.Setenv("LEAD_SUGGESTION_TIMEOUT_MS", "")
 	t.Setenv("LEAD_SUGGESTION_MAX_CONCURRENCY", "")
@@ -16,12 +17,16 @@ func TestLoadLeadSuggestionDefaultsFailClosed(t *testing.T) {
 	if cfg.LeadSuggestionTimeoutMS != 12000 || cfg.LeadSuggestionMaxConcurrency != 2 {
 		t.Fatalf("unexpected bounded-runner defaults: timeout=%d concurrency=%d", cfg.LeadSuggestionTimeoutMS, cfg.LeadSuggestionMaxConcurrency)
 	}
+	if cfg.LeadContextOrgIDs != "" {
+		t.Fatal("context analysis must require an explicit org scope")
+	}
 }
 
 func TestLoadLeadSuggestionCanaryConfig(t *testing.T) {
 	t.Setenv("LEAD_SUGGESTION_ENABLED", "true")
 	t.Setenv("LEAD_IMAGE_CONTEXT_ENABLED", "true")
 	t.Setenv("LEAD_CONTEXT_ANALYSIS_ENABLED", "true")
+	t.Setenv("LEAD_CONTEXT_ORG_IDS", "7")
 	t.Setenv("LEAD_SUGGESTION_ORG_IDS", "7")
 	t.Setenv("LEAD_SUGGESTION_TIMEOUT_MS", "2500")
 	t.Setenv("LEAD_SUGGESTION_MAX_CONCURRENCY", "1")
@@ -31,5 +36,8 @@ func TestLoadLeadSuggestionCanaryConfig(t *testing.T) {
 	}
 	if cfg.LeadSuggestionTimeoutMS != 2500 || cfg.LeadSuggestionMaxConcurrency != 1 {
 		t.Fatalf("runner config not loaded: timeout=%d concurrency=%d", cfg.LeadSuggestionTimeoutMS, cfg.LeadSuggestionMaxConcurrency)
+	}
+	if cfg.LeadContextOrgIDs != "7" {
+		t.Fatal("context canary scope not loaded")
 	}
 }

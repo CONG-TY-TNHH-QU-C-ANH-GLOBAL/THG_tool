@@ -69,7 +69,12 @@ Existing gates remain required: `LEAD_SUGGESTION_ENABLED` and an explicit
 ```dotenv
 LEAD_CONTEXT_ANALYSIS_ENABLED=false
 LEAD_IMAGE_CONTEXT_ENABLED=false
+LEAD_CONTEXT_ORG_IDS=
 ```
+
+Both analysis modes also require an explicit `LEAD_CONTEXT_ORG_IDS` allowlist.
+Empty or invalid scope disables analysis even if a global flag is true; the
+existing text suggestion path remains available to otherwise eligible orgs.
 
 `LEAD_MODEL_API_KEY`, `LEAD_MODEL_BASE_URL`, `LEAD_MODEL_NAME` form an isolated
 override. When all are absent, retain the existing comment-provider selection.
@@ -227,8 +232,9 @@ pending knowledge pack as part of this release.
 
 After deploying the new binaries, use `lead-suggestion-canary.yml` with
 `operation=enable`, `context_mode=enable`, `image_mode=enable`. These optional
-analysis switches default to `keep`. Enabling a new switch requires that the
-only allowlisted organization is THGFulfill; the workflow verifies effective
+analysis switches default to `keep`. Enabling a new switch sets the dedicated
+analysis scope to THGFulfill without changing other suggestion allowlist entries;
+an existing different analysis scope is refused. The workflow verifies effective
 process flags and model-key presence, restores the original config on failure,
 and refuses to restart a worker held by the incident marker. Provider-key
 presence does not prove provider health or multimodal support.
