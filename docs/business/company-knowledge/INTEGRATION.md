@@ -8,6 +8,18 @@ related_pr_or_issue: Add Taobao sourcing to replies
 
 # Đưa bộ tri thức vào hệ thống hiện có
 
+## Phê duyệt có giới hạn ngày 21/10/2026
+
+Task owner đã duyệt đúng 8 public fact projections trong
+[bản review](release-review-2026-10-21.json), bằng câu trả lời “Duyệt 8 mục này để nạp”.
+Không duyệt toàn bộ 92 mục, giá cố định, SLA, basecost hoặc đền bù. Bản review giữ
+metadata tại thời điểm gửi duyệt; bằng chứng phê duyệt sau đó và cách nạp/thu hồi
+nằm trong [runbook release](../../engineering/COMPANY_KNOWLEDGE_RELEASE.md).
+Importer mới dùng store owner, giao dịch atomic và nguồn manual riêng; không
+dùng CSV string payload thay cho `company_reply_v1`. Các mô tả “chưa có importer”
+bên dưới là trạng thái xây dựng trước lần bổ sung này. Chỉ kết quả workflow và
+kiểm tra runtime mới xác nhận đã nạp production.
+
 ## Trạng thái thực tế
 
 Đã xây nội dung, nguồn, câu hỏi cần xác nhận và bản đọc cho người/AI. Chưa tạo

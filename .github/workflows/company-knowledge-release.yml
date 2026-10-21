@@ -1,0 +1,69 @@
+name: Release reviewed company facts
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Frozen eight-fact release only; check is read-only
+        type: choice
+        options: ['check', 'apply', 'withdraw', 'model-preview']
+        default: check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: company-knowledge-release-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test importer and knowledge owner before SSH
+        run: |
+          go test ./cmd/company_knowledge_release ./cmd/company_knowledge_preview ./internal/store/knowledge -count=1 -timeout=120s
+          python3 -B -m unittest discover -s scripts/tests -p test_public_release_preview.py -v
+      - name: Build isolated maintenance package
+        env:
+          TARGET_ARCH: ${{ secrets.SERVER_ARCH || 'amd64' }}
+        run: |
+          set -eu
+          case "$TARGET_ARCH" in amd64|arm64) ;; *) exit 2 ;; esac
+          mkdir _knowledge_release
+          GOOS=linux GOARCH="$TARGET_ARCH" CGO_ENABLED=0 go build -trimpath -o _knowledge_release/company-knowledge-release ./cmd/company_knowledge_release
+          GOOS=linux GOARCH="$TARGET_ARCH" CGO_ENABLED=0 go build -trimpath -o _knowledge_release/company-knowledge-preview ./cmd/company_knowledge_preview
+          python3 scripts/knowledge/prepare_public_release_preview.py
+          cp docs/business/company-knowledge/release-review-2026-10-21.json _knowledge_release/review.json
+          cp scripts/knowledge/release_public_facts.sh _knowledge_release/release_public_facts.sh
+          bash -n _knowledge_release/release_public_facts.sh
+      - name: Copy maintenance package without credentials
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          source: _knowledge_release
+          target: /tmp/thg-knowledge-${{ github.run_id }}-${{ github.run_attempt }}/
+      - name: Apply operation to verified runtime database
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          KNOWLEDGE_RELEASE_OPERATION: ${{ inputs.operation }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          envs: KNOWLEDGE_RELEASE_OPERATION
+          command_timeout: 5m
+          script: |
+            set -eu
+            cd /tmp/thg-knowledge-${{ github.run_id }}-${{ github.run_attempt }}/_knowledge_release
+            sudo bash ./release_public_facts.sh "$KNOWLEDGE_RELEASE_OPERATION" '${{ github.run_id }}-${{ github.run_attempt }}'

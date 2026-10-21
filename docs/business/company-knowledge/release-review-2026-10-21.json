@@ -1,0 +1,186 @@
+{
+  "schema": "company_reply_release_review_v1",
+  "reviewed_on": "2026-10-21",
+  "status": "pending_owner_approval",
+  "runtime_state": "not_loaded",
+  "canonical_pack_sha256": "cd8c2ba375fd4b7ced2b2267f5c7b2a970239c3bdedaead78173b788223f0154",
+  "approval_scope": "Only the eight public fact projections below; no approval of the full pack, source prices, service acceptance, guarantees, compensation, basecost or tracking SLA.",
+  "records": [
+    {
+      "id": "service-pod",
+      "title": "Dịch vụ POD",
+      "asset_type": "faq",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "THG Fulfill giới thiệu POD với các bước tiếp nhận thiết kế, in, kiểm tra, đóng gói và chuyển giao vận chuyển."
+        ],
+        "source_ids": [
+          "web-fulfill"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-fulfill",
+          "url": "https://thgfulfill.com/vi/thg-fulfill"
+        }
+      ]
+    },
+    {
+      "id": "service-sourcing",
+      "title": "Dịch vụ tìm nguồn và mua hàng",
+      "asset_type": "faq",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "Trang đặt hàng mô tả hỗ trợ mua từ Taobao/1688 và giao từ Trung Quốc sang Mỹ."
+        ],
+        "source_ids": [
+          "web-order"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-order",
+          "url": "https://thgfulfill.com/vi/thg-order"
+        }
+      ]
+    },
+    {
+      "id": "service-express",
+      "title": "Dịch vụ vận chuyển quốc tế",
+      "asset_type": "faq",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "THG Express công bố vận chuyển từ VN/CN, gồm phương án hàng lẻ và hàng lô; mô tả cả xử lý tại kho và tracking."
+        ],
+        "source_ids": [
+          "web-express"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-express",
+          "url": "https://thgfulfill.com/vi/thg-express"
+        }
+      ]
+    },
+    {
+      "id": "service-warehouse",
+      "title": "Kho Mỹ và fulfillment nội địa",
+      "asset_type": "faq",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "Trang kho Mỹ mô tả nhập kho, quản lý SKU/barcode, xử lý đơn và hàng hoàn."
+        ],
+        "source_ids": [
+          "web-warehouse"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-warehouse",
+          "url": "https://thgfulfill.com/vi/thg-warehouse"
+        }
+      ]
+    },
+    {
+      "id": "shipping-international",
+      "title": "Tra cước quốc tế",
+      "asset_type": "shipping_policy",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "Trang quốc tế cho tra theo nước gửi, nước nhận, dịch vụ, loại hàng và cân nặng; có phân biệt xuất phát VN/CN."
+        ],
+        "source_ids": [
+          "web-international"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-international",
+          "url": "https://thgfulfill.com/vi/international-pricing"
+        }
+      ]
+    },
+    {
+      "id": "shipping-domestic",
+      "title": "Tra phí 3PL và giao nội địa Mỹ",
+      "asset_type": "shipping_policy",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "Biểu phí nội địa tách khoản xử lý tại kho, lưu kho và giao nội địa. Có điều kiện áp dụng ưu đãi và mức phí theo hàng/kiện."
+        ],
+        "source_ids": [
+          "web-domestic"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-domestic",
+          "url": "https://thgfulfill.com/vi/domestic-pricing"
+        }
+      ]
+    },
+    {
+      "id": "shipping-formal",
+      "title": "Chính ngạch VN–Mỹ",
+      "asset_type": "shipping_policy",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "Trang chính ngạch mô tả VN–Mỹ theo Sea/Air, có thành phần chưa bao gồm như trucking, thủ tục và giao cuối chặng."
+        ],
+        "source_ids": [
+          "web-formal"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-formal",
+          "url": "https://thgfulfill.com/vi/chinh-ngach-pricing"
+        }
+      ]
+    },
+    {
+      "id": "commercial-order-process",
+      "title": "Quy trình bắt đầu dịch vụ sourcing",
+      "asset_type": "faq",
+      "payload": {
+        "schema": "company_reply_v1",
+        "audience": "public_reference",
+        "verification": "public_source_checked",
+        "facts": [
+          "Trang đặt hàng mô tả gửi link, kiểm tra/báo giá, xác nhận mua, kiểm hàng và giao Mỹ."
+        ],
+        "source_ids": [
+          "web-order"
+        ]
+      },
+      "sources": [
+        {
+          "id": "web-order",
+          "url": "https://thgfulfill.com/vi/thg-order"
+        }
+      ]
+    }
+  ]
+}
