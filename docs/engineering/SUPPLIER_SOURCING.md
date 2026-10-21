@@ -2,7 +2,7 @@
 doc_type: engineering
 status: active
 owner: platform
-last_reviewed: 2026-10-15
+last_reviewed: 2026-10-21
 related_pr_or_issue: supplier-sourced-lead-suggestions
 ---
 
@@ -51,6 +51,15 @@ live lookup requires `PRICING_HUB_INTEGRATION_KEY` or
 `/etc/thg-scraper/pricing_hub_key`; `PRICING_HUB_BASE_URL` defaults to
 `https://pricingtool.thgfulfill.com`. With no key, only approved indexed items
 are offered. The optional suggestion deadline defaults to 12 seconds.
+
+Sourcing identity retains the `cotton` material qualifier, even though broad
+POD ranking treats it as shared wording. Previously `cotton bags` lost the
+material and became too vague to search, while `cotton tote bags` could accept
+a polyester title. The qualifier is now required at both search and detail
+matching; changing material in detail rejects that item and may try the next
+candidate within the existing request limits. Broad POD ranking is unchanged.
+Regression coverage is in `lead_supplier_material_test.go`. Text matching still
+does not verify the physical composition or understand every negated qualifier.
 
 Explicit English requests such as "dropshipping supplier for this hand massager"
 use English titles for search and detail matching. A Chinese marketplace match
