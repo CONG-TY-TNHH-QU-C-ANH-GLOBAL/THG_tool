@@ -14,9 +14,8 @@ import (
 // fields, links, pricing and company capability still come from their owners.
 func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRuntime.Builder, generator *ai.MessageGenerator, profile *ai.BusinessProfile, orgID int64, post, author string, images []string, shipping ShippingQuoteFunc, sourcing SupplierLookupFunc) LeadSuggestion {
 	post = leadPostBody(post)
-	if containsAnyLeadPhrase(post, serviceOfferTerms) && !directProductRequest(post) {
-		return LeadSuggestion{AnalysisStatus: "offer_review", ReplyStatus: "not_applicable", ReplyNote: "Bài có nội dung chào bán dịch vụ; sale cần xem trước khi tiếp cận."}
-	}
+	// A business description can coexist with a buyer need. Let the analyzer
+	// interpret the whole post instead of rejecting it for an offer phrase.
 	urls := media.URLs(images)
 	need, err := generator.AnalyzeLeadContext(ctx, post, urls)
 	if err != nil {

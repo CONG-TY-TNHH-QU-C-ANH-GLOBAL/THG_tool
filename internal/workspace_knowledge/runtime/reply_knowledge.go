@@ -7,6 +7,7 @@ import (
 	"github.com/thg/scraper/internal/models"
 	"github.com/thg/scraper/internal/workspace_knowledge/assets"
 	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
+	"github.com/thg/scraper/internal/workspace_knowledge/retrieval/hybrid"
 )
 
 var replyKnowledgeTypes = []assets.AssetType{assets.AssetFAQ, assets.AssetShippingPolicy, assets.AssetSalesPlaybook, assets.AssetPricingRule}
@@ -20,7 +21,7 @@ func (b *Builder) ReplyKnowledgeForLead(ctx context.Context, orgID int64, leadTe
 	filter := retrieval.SearchFilter{States: []assets.AssetState{assets.StateApproved}, Types: replyKnowledgeTypes}
 	// Older FAQ rows may lack the explicit public projection. Inspect a
 	// bounded larger pool before choosing at most four eligible entries.
-	hits, _, err := b.Searcher.TopKWithTrace(ctx, orgID, leadText, filter, 12)
+	hits, trace, err := b.Searcher.TopKWithTrace(ctx, orgID, leadText, filter, 12)
 	if err != nil {
 		return "", err
 	}
@@ -30,7 +31,7 @@ func (b *Builder) ReplyKnowledgeForLead(ctx context.Context, orgID int64, leadTe
 		if len(selected) == 4 {
 			break
 		}
-		if !eligibleReplyKnowledge(hit.Asset, orgID) {
+		if !eligibleReplyKnowledge(hit.Asset, orgID) || !replyKnowledgeRelevant(trace, hit.Asset.ID) {
 			continue
 		}
 		item, ok := assets.ReplyKnowledgeFacts(hit.Asset.Payload)
@@ -46,6 +47,21 @@ func (b *Builder) ReplyKnowledgeForLead(ctx context.Context, orgID int64, leadTe
 	}
 	encoded, err := json.Marshal(selected)
 	return string(encoded), err
+}
+
+// Pin/boost/recency affect shared lexical ranking but cannot establish that
+// a fact answers this lead. Keep this policy local to reply facts; semantic
+// searchers retain their own relevance contract when explicitly wired later.
+func replyKnowledgeRelevant(trace retrieval.Trace, assetID int64) bool {
+	if trace.SearcherImpl != hybrid.SearcherImpl && trace.SearcherImpl != hybrid.MultilingualSearcherImpl {
+		return true
+	}
+	for _, selected := range trace.Selected {
+		if selected.AssetID == assetID {
+			return selected.Breakdown.TextMatch > 0
+		}
+	}
+	return false
 }
 
 func eligibleReplyKnowledge(a *assets.Asset, orgID int64) bool {
