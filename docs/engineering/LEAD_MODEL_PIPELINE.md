@@ -104,6 +104,15 @@ Explicit analysis orgs receive at least 24 seconds for analysis, source lookup,
 freight and wording, sharing the same concurrency slots. This avoids consuming
 the nine-second source-search start budget during analysis. A larger explicitly
 configured budget is preserved; other orgs retain their existing budget.
+Analysis-scoped orgs also use a FIFO buffer of at most 32 pending jobs, with
+at most 60 seconds of waiting before an explicit operator fallback. The active
+budget begins when a queued job starts; active provider concurrency is unchanged.
+Other orgs and legacy constructor callers keep fail-fast admission. A full buffer
+still degrades immediately, with an explanation even for a discussion post that
+has no product-specific fallback. Expired jobs make no late model/source calls.
+The buffer is in memory, not a durable outbox; pending work can be lost at process
+restart. It absorbs bounded bursts, not sustained overload. More accepted leads
+can increase total model/source use; per-lead request limits remain unchanged.
 Optional wording, including public-knowledge retrieval, uses at most four seconds
 and ends at least 400 ms before the runner deadline. A failure keeps the already
 grounded draft instead of letting optional wording erase the source at timeout.

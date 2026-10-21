@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/thg/scraper/internal/models"
@@ -14,6 +15,12 @@ type SuggestionRunner struct {
 	slots         chan struct{}
 	timeout       time.Duration
 	timeoutForOrg func(int64) time.Duration
+	mu            sync.Mutex
+	queueForOrg   func(int64) bool
+	pending       []*suggestionJob
+	queueUsed     int // Includes expired jobs until their fallback delivery returns.
+	queueLimit    int
+	queueWait     time.Duration
 }
 
 func NewSuggestionRunner(maxConcurrent int, timeout time.Duration, policies ...func(int64) time.Duration) *SuggestionRunner {
@@ -52,31 +59,33 @@ func (r *SuggestionRunner) TryForOrgWithFallback(orgID int64, build func(context
 			timeout = selected
 		}
 	}
-	select {
-	case r.slots <- struct{}{}:
+	return r.submit(orgID, &suggestionJob{build: build, deliver: deliver, fallback: unavailable, timeout: timeout})
+}
+
+func (r *SuggestionRunner) run(job *suggestionJob) {
+	go func() {
+		defer r.finished()
+		if !job.expires.IsZero() && !time.Now().Before(job.expires) {
+			job.deliver(job.expiredFallback())
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), job.timeout)
+		defer cancel()
+		result := make(chan models.LeadSuggestion, 1)
 		go func() {
-			defer func() { <-r.slots }()
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-			result := make(chan models.LeadSuggestion, 1)
-			go func() {
-				defer func() {
-					if recover() != nil {
-						result <- unavailable
-					}
-				}()
-				result <- build(ctx)
+			defer func() {
+				if recover() != nil {
+					result <- job.fallback
+				}
 			}()
-			select {
-			case suggestion := <-result:
-				deliver(suggestion)
-			case <-ctx.Done():
-				deliver(unavailable)
-				<-result // keep context-ignoring provider work bounded by the slot
-			}
+			result <- job.build(ctx)
 		}()
-		return true
-	default:
-		return false
-	}
+		select {
+		case suggestion := <-result:
+			job.deliver(suggestion)
+		case <-ctx.Done():
+			job.deliver(job.fallback)
+			<-result // keep context-ignoring provider work bounded by the slot
+		}
+	}()
 }

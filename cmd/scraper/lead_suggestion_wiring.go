@@ -67,8 +67,13 @@ func setupLeadSuggestionRuntime(cfg *config.Config, db *store.Store, commentGen 
 		return facebook.BuildLeadSuggestion(ctx, builder, commentGen, ai.LoadProfileForOrg(db, ev.OrgID), ev.OrgID, ev.Excerpt, ev.AuthorName, shippingQuote, supplierLookup)
 	}
 	baseTimeout := time.Duration(cfg.LeadSuggestionTimeoutMS) * time.Millisecond
-	runner := notifications.NewSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, baseTimeout, func(orgID int64) time.Duration {
-		return facebook.LeadSuggestionTimeout(baseTimeout, cfg.LeadContextAnalysisEnabled || cfg.LeadImageContextEnabled, contextAllowlist, orgID)
+	analysisEnabled := cfg.LeadContextAnalysisEnabled || cfg.LeadImageContextEnabled
+	queueScope := contextAllowlist.Allows
+	if !analysisEnabled {
+		queueScope = nil
+	}
+	runner := notifications.NewQueuedSuggestionRunner(cfg.LeadSuggestionMaxConcurrency, baseTimeout, queueScope, func(orgID int64) time.Duration {
+		return facebook.LeadSuggestionTimeout(baseTimeout, analysisEnabled, contextAllowlist, orgID)
 	})
 	return build, allowlist.Allows, runner
 }

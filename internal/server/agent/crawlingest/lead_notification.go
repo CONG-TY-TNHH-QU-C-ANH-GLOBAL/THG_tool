@@ -6,6 +6,7 @@ import (
 
 	"github.com/thg/scraper/internal/leadingest"
 	"github.com/thg/scraper/internal/models"
+	"github.com/thg/scraper/internal/notifications"
 	"github.com/thg/scraper/internal/services/facebook"
 	"github.com/thg/scraper/internal/telegram/control"
 )
@@ -44,7 +45,7 @@ func (h *Handler) notifyCrawlLead(ev leadingest.LeadEvent) {
 		gate = facebook.SuggestionGateNotAllowed
 	}
 	if allowed {
-		unavailable := facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName)
+		unavailable := notifications.ExplainUnavailableSuggestion(facebook.UnavailableLeadSuggestion(ev.Excerpt, ev.AuthorName))
 		gate = facebook.SuggestionGateAttempted
 		if h.suggestionRunner != nil && h.suggestionRunner.TryForOrgWithFallback(ev.OrgID,
 			func(ctx context.Context) models.LeadSuggestion { return h.leadSuggestion(ctx, ev) }, deliver, unavailable,
