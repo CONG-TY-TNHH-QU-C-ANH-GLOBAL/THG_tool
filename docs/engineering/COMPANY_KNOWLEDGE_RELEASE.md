@@ -126,3 +126,25 @@ lookup, live photo, production lead read, DB write or outbound message. Output i
 unreviewed synthetic model replies plus fixed status codes; review their wording
 and factual grounding separately. A successful workflow does not grade quality
 or prove the live org profile, crawl, Telegram and real-image paths end to end.
+
+### First model trial, 2026-10-21
+
+Apply `39576976900` confirmed eight actual DB projections retrievable at
+09:28:04 UTC. Independent read-only check inside model trial `39577283674`
+confirmed the same at 09:30:28 UTC. The existing configured preview model was
+`deepseek-v4-flash`; this is observed configuration for that trial, not a new
+provider/model selection. Warehouse/shipping/process wording returned
+`model_generated` in about 2 seconds each. The noncommercial announcement had
+no reply and an analysis-unavailable fallback note, not a verified model
+noncommercial classification. No outbound messages or sourcing requests.
+
+Manual review found a real gap: the process question got an item/quantity
+clarification instead of the available process explanation. Offline retrieval
+with precisely the eight approved facts ranks `commercial-order-process`
+first for that exact synthetic question. The prompt told the model to preserve
+the fallback's missing-information question. It now allows replacing that
+generic question with a fact-grounded answer to the author's actual question,
+explicitly covering process explanations. Product/quote details, source/link/
+price qualifications and all downstream safety guards stay required. This is
+a narrow wording change that needs another actual-model trial; it is not proof
+of broad intent accuracy or semantic grounding.
