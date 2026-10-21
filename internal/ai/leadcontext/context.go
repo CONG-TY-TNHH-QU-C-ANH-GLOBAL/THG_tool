@@ -20,18 +20,29 @@ const (
 )
 
 type Context struct {
-	Intent   string                `json:"intent"`
-	Product  string                `json:"product"`
-	Evidence []string              `json:"text_evidence"`
-	Missing  []string              `json:"missing_fields"`
-	Visual   visualcontext.Context `json:"visual"`
+	Intent        string                `json:"intent"`
+	Product       string                `json:"product"`
+	Evidence      []string              `json:"text_evidence"`
+	Missing       []string              `json:"missing_fields"`
+	Visual        visualcontext.Context `json:"visual"`
+	ImageEvidence []ImageEvidence       `json:"image_evidence,omitempty"`
 }
 
 // Parse requires literal evidence from the supplied post. Model interpretation
 // remains tentative even when the response is structurally valid.
 func Parse(data []byte, post string, hasImages bool) (Context, error) {
+	imageCount := 0
+	if hasImages {
+		imageCount = 3 // Legacy boolean API only knows that up to three images exist.
+	}
+	return ParseWithImages(data, post, imageCount)
+}
+
+// ParseWithImages binds every image quotation to the actual request's photo
+// count. Quotations remain model observations, not verified numeric facts.
+func ParseWithImages(data []byte, post string, imageCount int) (Context, error) {
 	var fields map[string]json.RawMessage
-	if json.Unmarshal(data, &fields) != nil || len(fields) != 5 {
+	if imageCount < 0 || imageCount > 3 || json.Unmarshal(data, &fields) != nil || !validContextKeys(fields) {
 		return Context{}, errors.New("invalid lead context")
 	}
 	for _, key := range []string{"intent", "product", "text_evidence", "missing_fields", "visual"} {
@@ -44,14 +55,25 @@ func Parse(data []byte, post string, hasImages bool) (Context, error) {
 		return Context{}, errors.New("invalid lead interpretation")
 	}
 	visual, err := visualcontext.Parse(fields["visual"])
-	if err != nil || (!hasImages && (visual.Product != "" || len(visual.Observations) > 0 || visual.Conflict)) {
+	if err != nil || (imageCount == 0 && (visual.Product != "" || len(visual.Observations) > 0 || visual.Conflict)) {
 		return Context{}, errors.New("unsupported image observation")
 	}
-	if !validEvidence(out.Evidence, post) || (out.Intent != Unclear && len(out.Evidence) == 0) {
-		return Context{}, errors.New("lead interpretation lacks text evidence")
+	if !validImageEvidence(fields["image_evidence"], imageCount, visual.Observations) {
+		return Context{}, errors.New("invalid image request evidence")
+	}
+	if !validEvidence(out.Evidence, post) || lacksNeedEvidence(out) {
+		return Context{}, errors.New("lead interpretation lacks request evidence")
 	}
 	out.Product, out.Visual = strings.TrimSpace(out.Product), visual
 	return out, nil
+}
+
+func validContextKeys(fields map[string]json.RawMessage) bool {
+	return len(fields) == 5 || (len(fields) == 6 && fields["image_evidence"] != nil)
+}
+
+func lacksNeedEvidence(c Context) bool {
+	return c.Intent != Unclear && len(c.Evidence) == 0 && len(c.ImageEvidence) == 0
 }
 
 func validIntent(value string) bool {

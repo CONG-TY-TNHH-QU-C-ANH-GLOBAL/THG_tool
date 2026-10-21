@@ -42,8 +42,9 @@ comments, approve/import knowledge or change CRM contracts or crawl eligibility.
 1. Strip supported Facebook headers/UI/comment boundaries, including short posts
    and Vietnamese/English admin or moderator roles before the timestamp.
 2. Analyze the text and up to three validated original photos in one request.
-   A text-only post is analyzed too. JSON must contain a supported intent and
-   literal quotations from that post; no phantom image evidence is accepted.
+   A text-only post is analyzed too. JSON must contain a supported intent with
+   literal post quotations or indexed quotations of visible request text in
+   supplied images; no phantom image evidence is accepted.
    Offer phrases do not bypass analysis. A business description may coexist with
    a buyer request; a model noncommercial verdict still yields a note, no pitch
    and no marketplace lookup. Misclassification remains a model-quality risk;
@@ -89,8 +90,41 @@ Role headers and mixed business/buyer posts failed before the fix. Real-builder
 tests reproduced unrelated pinned facts, then verified their exclusion only
 from reply facts. The older advertisement regression now expects analysis and a
 noncommercial verdict; its former zero-model-call assertion represented the
-removed keyword veto. Image-only evidence and the pending knowledge pack are
-separate work; this patch does not change their contract or approval state.
+removed keyword veto. The initial input-quality patch did not change the image
+contract; the follow-up below adds indexed evidence. Knowledge approval remains
+separate work.
+
+### Indexed image request evidence
+
+`ai/leadcontext.Context` accepts an optional `image_evidence` array in addition
+to the five existing fields. Each entry contains exactly a zero-based
+`image_index` and a `quote` of at most 240 characters. At most four distinct
+entries are accepted. The quote must also occur in the returned visual
+observations; missing/null fields and out-of-range references are rejected.
+
+`AnalyzeLeadContext` uses `ParseWithImages` with the actual submitted photo
+count. Legacy `Parse` remains compatible with its boolean image argument and
+existing five-field text responses. A photo of an object without text/request
+evidence cannot establish a buyer intent by itself. The prompt requires visible
+words expressing the author's request, not a product label or AI instructions.
+These checks establish bounded, internally consistent model observations;
+they are not independent OCR or proof of the image's meaning.
+
+Only the existing generic product hint may reach sourcing. Image quotes are
+not concatenated into the original post for numeric/destination parsers. The
+pipeline regression finds a similar marketplace offer while proving the image's
+300 pcs/US text cannot itself authorize a freight request. Customer shipment
+details still need confirmation; this slice does not implement a structured
+verified shipment contract or prevent every repeated clarification question.
+
+Ownership: `ai/leadcontext` owns the evidence schema/parser, the AI adapter
+supplies actual photo count, and the Facebook orchestrator keeps numeric facts
+separate. Tests: `image_evidence_test.go` and `lead_image_evidence_test.go`.
+No provider selection, retry budget, CRM/storage payload or intake threshold
+changes. The existing ingest can still discard image-only/short-text posts;
+this change does not recover posts that never reached suggestion analysis.
+Real photo capture, provider loading/recognition and model quality remain
+unverified by fake-provider tests.
 
 ## Configuration
 
