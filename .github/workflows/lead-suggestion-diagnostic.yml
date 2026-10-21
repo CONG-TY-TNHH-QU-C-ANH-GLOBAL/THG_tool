@@ -85,6 +85,10 @@ jobs:
                 for label, token in (
                     ('with_reply', ' reply=true '), ('model_generated', ' wording=model_generated '),
                     ('model_rejected', ' wording=model_rejected '), ('model_error', ' wording=model_error '),
+                    ('no_public_knowledge', ' wording=no_public_knowledge '),
+                    ('provider_or_profile_unavailable', ' wording=provider_or_profile_unavailable '),
+                    ('wording_budget_exhausted', ' wording=wording_budget_exhausted '),
+                    ('grounded_template', ' wording=grounded_template '),
                     ('analysis_unavailable', ' analysis=unavailable '),
                     ('analysis_noncommercial', ' analysis=no_commercial_need '),
                     ('queue_expired', ' wording=queue_expired '),
