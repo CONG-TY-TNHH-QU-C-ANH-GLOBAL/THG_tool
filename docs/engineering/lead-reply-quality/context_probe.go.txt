@@ -1,0 +1,13 @@
+// Historical probe executed RED at THG_tool@0a85e36d; not a current CI test.
+// This payload lacks indexed image evidence. Its rejection must not be fixed
+// by relaxing the current #291 evidence contract. See the dated review archive.
+package leadcontext
+
+import "testing"
+
+func TestResearchImageTextCanSupplyNeedEvidence(t *testing.T) {
+	data := []byte(`{"intent":"product_sourcing","product":"cotton bags","text_evidence":[],"missing_fields":["destination"],"visual":{"product":"cotton bags","observations":["Visible request text says: Need a supplier for cotton bags"],"uncertainties":[],"text_image_conflict":false}}`)
+	if _, err := Parse(data, "", true); err != nil {
+		t.Fatal("current contract cannot represent buyer evidence found only in the attached image")
+	}
+}

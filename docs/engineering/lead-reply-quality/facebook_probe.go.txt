@@ -1,0 +1,27 @@
+// Historical probes executed RED at THG_tool@0a85e36d; not current CI tests.
+// Q01/Q02 were subsequently addressed in #290. See the dated review archive.
+package facebook
+
+import (
+	"context"
+	"testing"
+
+	"github.com/thg/scraper/internal/ai/leadcontext"
+)
+
+func TestResearchAdminHeaderSeparatesBody(t *testing.T) {
+	post := "Facebook Sample Author Quản trị viên · 1 ngày trước · Need a supplier for cotton bags Xem bản dịch 3 Sample Comment"
+	if leadPostBody(post) != "Need a supplier for cotton bags" {
+		t.Fatal("admin metadata remains in the model input")
+	}
+}
+
+func TestResearchMixedBusinessAndBuyerNeedGetsAnalyzed(t *testing.T) {
+	post := "We offer handmade products and need a shipping agent from China to the US."
+	calls := 0
+	gen := contextTestGenerator(t, testNeed(leadcontext.Shipping, "", post), "", &calls)
+	got := BuildLeadSuggestionWithContext(context.Background(), nil, gen, nil, 7, post, "Sample", nil, nil, nil)
+	if calls != 1 || got.Reply == "" {
+		t.Fatalf("buyer need bypassed: calls=%d, analysis=%s, reply=%s", calls, got.AnalysisStatus, got.ReplyStatus)
+	}
+}

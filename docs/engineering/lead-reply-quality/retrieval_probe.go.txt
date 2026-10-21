@@ -1,0 +1,25 @@
+// Historical probe executed RED at THG_tool@0a85e36d; not a current CI test.
+// #290 fixed reply-consumer relevance, retaining the shared searcher's pin
+// contract. Do not change global search to satisfy this probe; see the archive.
+package hybrid
+
+import (
+	"context"
+	"testing"
+
+	"github.com/thg/scraper/internal/workspace_knowledge/assets"
+	"github.com/thg/scraper/internal/workspace_knowledge/retrieval"
+)
+
+func TestResearchPinnedKnowledgeNeedsRelevance(t *testing.T) {
+	lister := &fakeLister{all: []*assets.Asset{
+		mkAsset(1, "Custom mugs", "Ceramic printing", assets.AssetFAQ, nil, assets.StateApproved, true, 0, nil),
+	}}
+	hits, trace, err := NewMultilingual(lister).TopKWithTrace(context.Background(), 7, "ocean freight", retrieval.SearchFilter{}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 0 {
+		t.Fatalf("unrelated pinned knowledge returned: hits=%d, text_match=%v", len(hits), trace.Selected[0].Breakdown.TextMatch)
+	}
+}
