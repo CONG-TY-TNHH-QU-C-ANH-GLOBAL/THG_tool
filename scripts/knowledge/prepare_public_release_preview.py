@@ -27,7 +27,9 @@ def prepare(review_path, pack_path, destination):
         for source in item['sources']:
             sources[source['id']] = dict(source, title=source['id'], coverage='reviewed public fact')
     target = Path(destination)
-    target.mkdir(mode=0o700, parents=True, exist_ok=False)
+    # Public facts only: SCP's container user must be able to archive this
+    # directory. Credentials/private configuration never enter this package.
+    target.mkdir(mode=0o755, parents=True, exist_ok=False)
     # Preview simulates approval in memory; it never mutates the authored pack.
     pack = {'schema_version': 1, 'review_state': 'pending', 'runtime_state': 'not_loaded', 'records': records}
     registry = {'schema_version': 1, 'sources': list(sources.values())}
