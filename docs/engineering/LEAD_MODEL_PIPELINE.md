@@ -333,6 +333,19 @@ outcomes. No post/author/photo/raw model output is added to these logs.
 
 ### Follow-up audit of reply correctness
 
+A later owner-provided Vietnamese fulfillment caption exposed another article
+boundary: reaction counts followed by “Xem thêm câu trả lời”, then a commenter
+without a Follow label. The old cleaner retained the comments; a seller's
+“Print on demand” branding could cause the text fallback to offer printing and
+consume sourcing quota. Synthetic-name regressions reproduced that draft.
+The reply-only cleaner now cuts this count-plus-UI boundary (including the
+equivalent English reply/comment labels), preserving ordinary author prose and
+explicit POD requests. The existing fulfillment fallback also recognizes the
+`fullfill` spelling. This does not alter crawl admission or the raw Telegram
+excerpt. A strict analysis test rejects POD evidence quoted only from comments.
+Historical photo use and actual current quota remain separate runtime questions;
+neither the reproduced text bug nor a successful quota endpoint proves them.
+
 Local regressions reproduced four failures at `4806c0fc`: a contradictory
 model intent could discard a direct sourcing need; a quantity of 20 could become
 an invented 20 CNY fee because it matched a substring of 120 CNY; battery warnings

@@ -16,6 +16,11 @@ var leadPostUIBoundary = regexp.MustCompile(`(?i)\s(?:xem bản dịch|see trans
 // "Xem bản dịch" label, so this header is their only boundary.
 var leadCommentHeader = regexp.MustCompile(`(?i)\s(?:\d+\s+){1,3}(?:\S+\s+){1,5}·\s*\d+\s*(?:phút|giờ|ngày|tuần|năm|min|mins|h|hr|hrs|d|w|y)\s*·\s*(?:theo dõi|follow)`)
 
+// Expanded replies can precede a comment with no Follow label. Require the
+// reaction/comment counts plus a UI label; ordinary mentions of replies in
+// the author's prose must stay intact. Cut before counts, not inside them.
+var leadExpandedComments = regexp.MustCompile(`(?i)\s(?:\d+\s+){1,3}(?:xem thêm câu trả lời|xem thêm bình luận|view more replies|view previous replies|view more comments)\b`)
+
 // The article text opens with "Facebook <author> 23 phút trước ·" in the
 // operator's Vietnamese UI. Those accented UI words made every English post
 // look Vietnamese, so the header is dropped before intent and language checks.
@@ -26,7 +31,7 @@ func leadPostBody(text string) string {
 		text = text[at[1]:]
 	}
 	cut := len(text)
-	for _, boundary := range []*regexp.Regexp{leadPostUIBoundary, leadCommentHeader} {
+	for _, boundary := range []*regexp.Regexp{leadPostUIBoundary, leadCommentHeader, leadExpandedComments} {
 		if at := boundary.FindStringIndex(text); at != nil && at[0] < cut {
 			cut = at[0]
 		}
