@@ -91,6 +91,17 @@ jobs:
                     ('processing_unavailable', ' wording=processing_unavailable '),
                     ('gate_disabled', ' gate=disabled '), ('gate_busy', ' gate=runner_busy '),
                     ('gate_not_allowed', ' gate=org_not_allowed '), ('gate_attempted', ' gate=attempted '),
+                    ('event_images_one', ' event_images=1 '), ('event_images_two', ' event_images=2 '),
+                    ('event_images_three', ' event_images=3 '),
+                    ('model_images_one', ' model_images=1 '), ('model_images_two', ' model_images=2 '),
+                    ('model_images_three', ' model_images=3 '),
+                    ('image_none', ' image_analysis=none '),
+                    ('image_observations', ' image_analysis=observations '),
+                    ('image_no_observations', ' image_analysis=no_observations '),
+                    ('image_analysis_failed', ' image_analysis=analysis_failed '),
+                    ('image_references_rejected', ' image_analysis=references_rejected '),
+                    ('image_conflict', ' image_analysis=conflict '),
+                    ('image_unrecorded', ' image_analysis=not_recorded '),
                 ):
                     print(prefix + '_' + label + '=' + str(sum(token in line for line in lines)))
 

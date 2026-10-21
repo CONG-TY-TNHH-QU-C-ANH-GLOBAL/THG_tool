@@ -10,17 +10,59 @@ related_pr_or_issue: Add Taobao sourcing to replies
 
 ## State
 
-Baseline deployed through PRs #286–#289 at `0a85e36d`; runtime revision,
-effective context/image flags and THGFulfill-only analysis scope were verified
-on 2026-10-21. See [diagnostic evidence](LEAD_SUGGESTION_DIAGNOSTIC.md).
-The input-quality follow-up below remains local until its release is recorded.
-The 92-record company knowledge pack remains pending/not_loaded. On 2026-10-19
+Baseline deployed through PR #295 at `8ccf5b1b`; runtime revision, active
+services, context/image flags and THGFulfill analysis scope were verified by
+read-only diagnostic `39580706739` on 2026-10-21. Zero suggestion events in its
+20-minute window establish readiness only. See [diagnostic evidence](LEAD_SUGGESTION_DIAGNOSTIC.md).
+The image-path audit below remains local until its release is recorded.
+The 92-record authoring pack remains pending/not_loaded; exactly eight reviewed
+public projections were separately approved and imported at 09:28 UTC on
+2026-10-21. See [release scope and evidence](COMPANY_KNOWLEDGE_RELEASE.md). On 2026-10-19
 the task owner deferred Muse Spark and chose the existing configured provider/model
 for the next phase. No new Meta account/key or self-hosted model is required.
-Muse Spark has not been called. Authorized local provider configuration is still
-needed to verify actual model output; the production model is not established
-from the source default.
-Real image recognition, reply quality, latency and cost are **unverified**.
+Muse Spark has not been called. Authorized server-side text-only trials used the
+existing configured `deepseek-v4-flash`, observed from actual preview output,
+not inferred from the source default. Trial `39578825596` produced three drafts;
+the process case had an unclear analysis note and the announcement used an
+analysis-unavailable fallback. These are small synthetic observations, not a
+broad quality/latency/cost evaluation. Actual photo recognition and real new-lead
+reply quality remain **unverified**.
+
+### Image-path audit (2026-10-21)
+
+Unified need analysis adds bounded, optional diagnostic metadata only. Per-lead
+logs record `event_images` (0–3 validated photo references in the notification
+event), `model_images` (0–3 references passed to the unified analysis attempt),
+and an allowlisted `image_analysis` result. They never log photo URLs, signed
+queries, image observations or provider bodies. Counts describe references,
+not independently verified delivery or recognition. `analysis_failed` includes
+provider, timeout and response-validation failures; it does not identify their
+root cause. Successful `observations` means validated nonempty observations
+were returned, not that the product/SKU was correctly identified.
+
+States are `none`, `references_rejected`, `analysis_failed`, `observations`,
+`no_observations`, `conflict`; other/legacy paths render `not_recorded`. Old
+logs with absent fields cannot establish that the post had no images. Image
+references rejected before the LeadEvent are not recoverable from these counts.
+An event with images and no recorded analysis can indicate a disabled/unavailable
+or legacy processing path; inspect effective switches/scope before diagnosing.
+
+The read-only lead diagnostic reports only org-scoped aggregate counts, or
+counts for the existing numeric target-post input. It does not replay a lead,
+read image content, send messages or change configuration. The notification
+and worker roots pass event counts to the logger. The service owns the analysis
+audit; shared models only carry its optional metadata. Tests compare audit
+counts with real requests to a fake HTTP provider, including early conflict,
+empty observations, rejected URLs and provider failure, and check redaction.
+
+Upstream intake/scoring still sees text and may reject a short/vague post before
+image analysis. This audit deliberately preserves the existing admission policy;
+changing discovery or accepted-lead counts requires a separate scoped decision.
+A genuine original post link and a current permitted browser session are needed
+to verify collection → intake → provider → suggested reply with a real photo.
+The company-knowledge model trials used text only; they are not vision evidence.
+The existing provider request has a five-second analysis cap; image URL access
+and latency still need an actual trial before changing its budget or model.
 
 This additive feature affects operator suggestions. It does not post Facebook
 comments, approve/import knowledge or change CRM contracts or crawl eligibility.

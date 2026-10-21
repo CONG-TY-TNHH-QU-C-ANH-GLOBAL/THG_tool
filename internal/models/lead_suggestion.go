@@ -20,6 +20,12 @@ type LeadSuggestion struct {
 	ReplyNote      string
 	AnalysisStatus string
 	ReplyStatus    string
+	// Optional diagnostic metadata from unified text/image analysis. These
+	// counts/statuses are not observations or evidence of correct recognition.
+	// ImageInputs counts validated references passed to an analysis attempt,
+	// including failures; it does not prove delivery to the remote provider.
+	ImageInputs   int    `json:",omitempty"`
+	ImageAnalysis string `json:",omitempty"`
 }
 
 // SupplierMatch is the render-ready view of one sourced marketplace item. Every
