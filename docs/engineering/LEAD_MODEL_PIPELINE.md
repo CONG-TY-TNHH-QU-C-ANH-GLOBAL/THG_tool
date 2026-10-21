@@ -10,11 +10,15 @@ related_pr_or_issue: Add Taobao sourcing to replies
 
 ## State
 
-Baseline deployed through PR #295 at `8ccf5b1b`; runtime revision, active
-services, context/image flags and THGFulfill analysis scope were verified by
-read-only diagnostic `39580706739` on 2026-10-21. Zero suggestion events in its
-20-minute window establish readiness only. See [diagnostic evidence](LEAD_SUGGESTION_DIAGNOSTIC.md).
-The image-path audit below remains local until its release is recorded.
+Latest audited deployment is PR #297 at `5303dd6f` (2026-10-21, 18:24 VN),
+including the image audit from #296 and expanded-comment boundary correction.
+Read-only diagnostics `39591823144` and `39592072432` confirmed both running
+binary revisions, active services, context/image flags and THGFulfill scope.
+Their 20-minute windows had zero suggestion events: readiness, not real-photo
+or reply-quality evidence. The Pricing Hub plan probe failed once, then reported
+ready; neither result establishes available sourcing credit. Release evidence,
+historical findings and unresolved proposals are distinguished in the
+[dated research archive](LEAD_REPLY_QUALITY_REVIEW_2026-10-21.md).
 The 92-record authoring pack remains pending/not_loaded; exactly eight reviewed
 public projections were separately approved and imported at 09:28 UTC on
 2026-10-21. See [release scope and evidence](COMPANY_KNOWLEDGE_RELEASE.md). On 2026-10-19

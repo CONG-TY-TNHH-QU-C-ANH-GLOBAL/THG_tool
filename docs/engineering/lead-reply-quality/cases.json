@@ -1,0 +1,420 @@
+{
+  "schema": "lead_reply_quality_cases_v1",
+  "status": "proposed_not_executed",
+  "source": "Synthetic inputs; no customer identities, post IDs or production data.",
+  "notes": [
+    "Decisions are review targets, not model-generated gold labels.",
+    "Source, catalog, rate, approval and provider outcomes must be supplied as controlled fixtures.",
+    "Media scenarios are specifications, not image files; vision quality cannot be scored without real authorized image fixtures.",
+    "Existing admission and Telegram delivery eligibility must remain unchanged.",
+    "This file is not wired into an evaluation runner yet.",
+    "Proposed at THG_tool@0a85e36d; see ../LEAD_REPLY_QUALITY_REVIEW_2026-10-21.md for later fixes and release evidence. Individual regressions do not establish execution of this 36-case suite."
+  ],
+  "cases": [
+    {
+      "id": "input-admin-header",
+      "group": "input",
+      "scope": "suggestion_pipeline",
+      "post": "Facebook Sample Author Quản trị viên · 1 ngày trước · Need a supplier for cotton bags Xem bản dịch 3 Sample Comment",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Body chỉ còn yêu cầu cotton bags; metadata không quyết định ngôn ngữ."
+      }
+    },
+    {
+      "id": "input-comment-offer",
+      "group": "input",
+      "scope": "suggestion_pipeline",
+      "post": "Xin kinh nghiệm bán hàng cho người mới. Xem bản dịch Commenter: We provide sourcing and shipping.",
+      "media": null,
+      "expected": {
+        "decision": "noncommercial",
+        "assertion": "Không dùng lời chào dịch vụ của commenter làm nhu cầu tác giả."
+      }
+    },
+    {
+      "id": "input-mixed-business",
+      "group": "input",
+      "scope": "suggestion_pipeline",
+      "post": "We offer handmade products and need a shipping agent from China to the US.",
+      "media": null,
+      "expected": {
+        "decision": "shipping",
+        "assertion": "AI vẫn đọc và nhận ra nhu cầu mua dịch vụ; không bỏ vì we offer."
+      }
+    },
+    {
+      "id": "input-truncated",
+      "group": "input",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a supplier for... See more",
+      "media": null,
+      "expected": {
+        "decision": "needs_clarification",
+        "assertion": "Không tự chọn sản phẩm từ phần chưa thu được; ghi bài chưa đầy đủ."
+      }
+    },
+    {
+      "id": "input-product-image",
+      "group": "input",
+      "scope": "suggestion_pipeline",
+      "post": "Can anyone source this item?",
+      "media": {
+        "scenario": "original_photo_hand_massager",
+        "requires_real_image": true
+      },
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Dùng ảnh gốc để đề xuất category; không khẳng định đúng SKU."
+      }
+    },
+    {
+      "id": "input-image-rfq",
+      "group": "input",
+      "scope": "analysis_facade",
+      "post": "",
+      "media": {
+        "scenario": "original_image_text_request_cotton_bags",
+        "requires_real_image": true
+      },
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Chỉ thử facade phân tích: chữ nhu cầu trong ảnh có evidence riêng. Không thay admission hiện có."
+      }
+    },
+    {
+      "id": "triage-virtual-assistant",
+      "group": "triage",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a virtual assistant to manage Amazon listings.",
+      "media": null,
+      "expected": {
+        "decision": "noncommercial",
+        "assertion": "Có lý do không tạo pitch sourcing/POD."
+      }
+    },
+    {
+      "id": "triage-news",
+      "group": "triage",
+      "scope": "suggestion_pipeline",
+      "post": "Reminder to sellers: review reimbursement records regularly.",
+      "media": null,
+      "expected": {
+        "decision": "noncommercial",
+        "assertion": "Không biến tin chia sẻ thành yêu cầu mua dịch vụ."
+      }
+    },
+    {
+      "id": "triage-advert",
+      "group": "triage",
+      "scope": "suggestion_pipeline",
+      "post": "We provide worldwide shipping. Contact us for our services.",
+      "media": null,
+      "expected": {
+        "decision": "noncommercial",
+        "assertion": "Bài chào dịch vụ thuần không nhận pitch mua hàng."
+      }
+    },
+    {
+      "id": "triage-discussion",
+      "group": "triage",
+      "scope": "suggestion_pipeline",
+      "post": "How do you verify suppliers when researching a market?",
+      "media": null,
+      "expected": {
+        "decision": "noncommercial",
+        "assertion": "Phân biệt thảo luận chung với tác giả đang tìm hàng cụ thể."
+      }
+    },
+    {
+      "id": "triage-warehouse",
+      "group": "triage",
+      "scope": "suggestion_pipeline",
+      "post": "Need a US warehouse for my Shopify orders.",
+      "media": null,
+      "expected": {
+        "decision": "warehousing",
+        "assertion": "Hỏi dữ kiện vận hành còn thiếu; không gắn hàng Taobao."
+      }
+    },
+    {
+      "id": "triage-ambiguous-pain",
+      "group": "triage",
+      "scope": "suggestion_pipeline",
+      "post": "My parcels keep arriving late. What should I check?",
+      "media": null,
+      "expected": {
+        "decision": "needs_review",
+        "assertion": "Không tự suy là đang tìm supplier; lời đáp chỉ nói phần có căn cứ."
+      }
+    },
+    {
+      "id": "product-pod-match",
+      "group": "products",
+      "scope": "suggestion_pipeline",
+      "post": "Need custom printed cotton T-shirts for my designs.",
+      "media": null,
+      "expected": {
+        "decision": "pod",
+        "assertion": "Chọn catalog phù hợp khi fixture có đúng loại; URL catalog trong draft."
+      }
+    },
+    {
+      "id": "product-pod-miss",
+      "group": "products",
+      "scope": "suggestion_pipeline",
+      "post": "Need custom logo on stainless steel bottles.",
+      "media": null,
+      "expected": {
+        "decision": "pod",
+        "assertion": "Catalog miss được dùng nguồn sàn ghi rõ thay thế, chưa xác nhận in."
+      }
+    },
+    {
+      "id": "product-bulk",
+      "group": "products",
+      "scope": "suggestion_pipeline",
+      "post": "Need a supplier for 300 cotton bags.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Đi sourcing; không chọn sản phẩm công ty chỉ vì cùng danh mục."
+      }
+    },
+    {
+      "id": "product-europe",
+      "group": "products",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a European supplier for a hand massager.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Nguồn China phải ghi China alternative và similar, không gọi là nguồn EU."
+      }
+    },
+    {
+      "id": "product-winter-vague",
+      "group": "products",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a reliable supplier for winter products.",
+      "media": null,
+      "expected": {
+        "decision": "needs_clarification",
+        "assertion": "Hỏi loại sản phẩm; không tự chọn găng tay hoặc áo."
+      }
+    },
+    {
+      "id": "product-variant",
+      "group": "products",
+      "scope": "suggestion_pipeline",
+      "post": "Need 100 cotton tote bags, black, large size, not polyester.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Giữ material, màu và size; loại ứng viên trái điều kiện dù giá rẻ."
+      }
+    },
+    {
+      "id": "shipping-monthly",
+      "group": "shipping",
+      "scope": "suggestion_pipeline",
+      "post": "Need 300 boxes of pet supplements per month from China to the US.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Monthly demand không thành tổng lô; cargo chưa được duyệt thì không báo tuyến standard."
+      }
+    },
+    {
+      "id": "shipping-weight-missing",
+      "group": "shipping",
+      "scope": "suggestion_pipeline",
+      "post": "Need a supplier for 100 mugs to the US.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Có source vẫn giữ link; không tự bịa weight để báo cước."
+      }
+    },
+    {
+      "id": "shipping-reference",
+      "group": "shipping",
+      "scope": "suggestion_pipeline",
+      "post": "Need 1 cotton shirt from China to the US.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Fixture có weight và rate đủ điều kiện: giữ reference per parcel, không thêm phí."
+      }
+    },
+    {
+      "id": "shipping-battery",
+      "group": "shipping",
+      "scope": "suggestion_pipeline",
+      "post": "Need 50 heated hoodies with batteries shipped to the US.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Không xếp standard chỉ vì hoodie."
+      }
+    },
+    {
+      "id": "shipping-location",
+      "group": "shipping",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a supplier in Dubai for cotton bags.",
+      "media": null,
+      "expected": {
+        "decision": "product_sourcing",
+        "assertion": "Supplier location không tự là nơi giao."
+      }
+    },
+    {
+      "id": "shipping-two-lots",
+      "group": "shipping",
+      "scope": "suggestion_pipeline",
+      "post": "Need 100 bags to the US and 20 mugs to the UK.",
+      "media": null,
+      "expected": {
+        "decision": "needs_review",
+        "assertion": "Không ghép số đầu với đích cuối; tách nhu cầu hoặc hỏi rõ trước báo cước."
+      }
+    },
+    {
+      "id": "knowledge-paraphrase-vi",
+      "group": "knowledge",
+      "scope": "suggestion_pipeline",
+      "post": "Đơn sang Mỹ giao chậm, cần bên xử lý lưu kho và gửi đơn.",
+      "media": null,
+      "expected": {
+        "decision": "warehousing",
+        "assertion": "Tra đúng kho/fulfillment theo ý nghĩa, không ép catalog."
+      }
+    },
+    {
+      "id": "knowledge-paraphrase-en",
+      "group": "knowledge",
+      "scope": "suggestion_pipeline",
+      "post": "Who can hold my stock and dispatch customer orders in America?",
+      "media": null,
+      "expected": {
+        "decision": "warehousing",
+        "assertion": "Tìm được facts kho Mỹ dù không dùng cùng cụm từ trong tài liệu."
+      }
+    },
+    {
+      "id": "knowledge-pinned-unrelated",
+      "group": "knowledge",
+      "scope": "suggestion_pipeline",
+      "post": "Need an ocean freight partner.",
+      "media": null,
+      "expected": {
+        "decision": "shipping",
+        "assertion": "FAQ in cốc được pin không được cấp như facts liên quan."
+      }
+    },
+    {
+      "id": "knowledge-pending",
+      "group": "knowledge",
+      "scope": "suggestion_pipeline",
+      "post": "Need a warehouse service.",
+      "media": null,
+      "expected": {
+        "decision": "warehousing",
+        "assertion": "Fixture chỉ có pending: không đọc như capability đã duyệt."
+      }
+    },
+    {
+      "id": "knowledge-private",
+      "group": "knowledge",
+      "scope": "suggestion_pipeline",
+      "post": "Need your service price and internal margin.",
+      "media": null,
+      "expected": {
+        "decision": "needs_review",
+        "assertion": "Không đưa margin/private SOP vào draft; chưa có giá thì hỏi/kiểm tra."
+      }
+    },
+    {
+      "id": "knowledge-expired",
+      "group": "knowledge",
+      "scope": "suggestion_pipeline",
+      "post": "Can you guarantee the old promotional delivery rate?",
+      "media": null,
+      "expected": {
+        "decision": "needs_review",
+        "assertion": "Không dùng policy/giá hết hiệu lực để hứa nhận đơn."
+      }
+    },
+    {
+      "id": "failure-no-source",
+      "group": "failures",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a supplier for cotton bags, 100 pcs to the US.",
+      "media": null,
+      "expected": {
+        "decision": "needs_clarification",
+        "assertion": "Fixture no match: hỏi phần thiếu cần thiết, không bịa đã có nguồn."
+      }
+    },
+    {
+      "id": "failure-quota",
+      "group": "failures",
+      "scope": "suggestion_pipeline",
+      "post": "Looking for a supplier for cotton bags, 100 pcs to the US.",
+      "media": null,
+      "expected": {
+        "decision": "source_unavailable",
+        "assertion": "Hết quota phải khác tìm không thấy, vẫn có fallback có căn cứ."
+      }
+    },
+    {
+      "id": "failure-analysis-timeout",
+      "group": "failures",
+      "scope": "suggestion_pipeline",
+      "post": "Need a supplier for cotton bags.",
+      "media": null,
+      "expected": {
+        "decision": "model_unavailable",
+        "assertion": "Giữ đường text dự phòng, không ghi khách không có nhu cầu."
+      }
+    },
+    {
+      "id": "failure-rewrite-mutation",
+      "group": "failures",
+      "scope": "suggestion_pipeline",
+      "post": "Need a supplier for a hand massager.",
+      "media": null,
+      "expected": {
+        "decision": "draft_ready",
+        "assertion": "Rewrite đổi thành hoodie hoặc thêm phí bị loại; giữ offer/draft đã chọn."
+      }
+    },
+    {
+      "id": "failure-media-unavailable",
+      "group": "failures",
+      "scope": "suggestion_pipeline",
+      "post": "Who can source this model?",
+      "media": {
+        "scenario": "expired_original_photo",
+        "requires_real_image": true
+      },
+      "expected": {
+        "decision": "needs_clarification",
+        "assertion": "Ảnh không tải được phải hỏi lại ảnh/mã, không báo đã hiểu ảnh."
+      }
+    },
+    {
+      "id": "failure-burst",
+      "group": "failures",
+      "scope": "suggestion_pipeline",
+      "post": "Synthetic enabled-org notification burst.",
+      "media": null,
+      "expected": {
+        "decision": "processing_unavailable",
+        "assertion": "Những lượt hết queue/deadline có lý do đúng, mỗi lượt giao tối đa một lần."
+      }
+    }
+  ]
+}
