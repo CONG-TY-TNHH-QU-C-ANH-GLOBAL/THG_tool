@@ -37,17 +37,17 @@ except (OSError, ValueError, subprocess.SubprocessError):
 print('runtime_database=verified')
 PY
 
-if [ "$operation" = apply ] || [ "$operation" = withdraw ]; then
+if [[ "$operation" = apply || "$operation" = withdraw ]]; then
   backup_dir=/opt/thg-scraper/backups/company-knowledge
   install -d -m 0700 "$backup_dir"
   backup="$backup_dir/release-$slot.db"
-  test ! -e "$backup"
+  [[ ! -e "$backup" ]]
   (umask 077; sqlite3 "$db" ".backup '$backup'")
-  test "$(sqlite3 -readonly "$backup" 'PRAGMA quick_check;')" = ok
+  [[ "$(sqlite3 -readonly "$backup" 'PRAGMA quick_check;')" = ok ]]
   echo 'release_backup=verified'
 fi
 
-if [ "$operation" = model-preview ]; then
+if [[ "$operation" = model-preview ]]; then
   checked=$(./company-knowledge-release -db "$db" -operation check -manifest review.json)
   printf '%s\n' "$checked"
   printf '%s' "$checked" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)["status"] == "loaded_and_retrievable" else 1)'

@@ -15,7 +15,7 @@ import (
 
 	"github.com/thg/scraper/internal/store/dbutil"
 	"github.com/thg/scraper/internal/store/knowledge"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the existing pure-Go SQLite driver; no DB migrations run here.
 )
 
 func main() {

@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
           cache: true
@@ -39,12 +39,12 @@ jobs:
           mkdir _knowledge_release
           GOOS=linux GOARCH="$TARGET_ARCH" CGO_ENABLED=0 go build -trimpath -o _knowledge_release/company-knowledge-release ./cmd/company_knowledge_release
           GOOS=linux GOARCH="$TARGET_ARCH" CGO_ENABLED=0 go build -trimpath -o _knowledge_release/company-knowledge-preview ./cmd/company_knowledge_preview
-          python3 scripts/knowledge/prepare_public_release_preview.py docs/business/company-knowledge/release-review-2026-10-21.json docs/business/company-knowledge/knowledge.json _knowledge_release/public-preview
+          python3 scripts/knowledge/prepare_public_release_preview.py
           cp docs/business/company-knowledge/release-review-2026-10-21.json _knowledge_release/review.json
           cp scripts/knowledge/release_public_facts.sh _knowledge_release/release_public_facts.sh
           bash -n _knowledge_release/release_public_facts.sh
       - name: Copy maintenance package without credentials
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
