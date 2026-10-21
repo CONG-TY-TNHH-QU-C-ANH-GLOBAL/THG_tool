@@ -44,3 +44,31 @@ no creation of a missing DB and absence of raw log values from summaries.
 
 This is diagnostic tooling only. Run it from an explicitly selected ref; source
 changes or a successful diagnostic do not establish production reply quality.
+
+## 2026-10-21 incident and correction
+
+Check-only run `39536897217` on the diagnostic branch confirmed that both running
+processes match deployed `58b6e606`, analysis is enabled for THGFulfill, and the
+reported post has one persisted lead and one `runner_busy` outcome. It was not
+an analyzed noncommercial verdict. Across its 24-hour window, 11 of 23 events
+were busy; no history cap was reached. This corrects the earlier 20-minute
+diagnostic, which could not explain the older notice.
+
+The notifications component now has an opt-in bounded FIFO queue (32 pending,
+60-second maximum wait), wired only for enabled analysis orgs in both roots.
+The legacy constructor and outside-scope admission stay fail-fast. Provider
+concurrency and active budgets are preserved. Expiry sends the safe operator
+fallback once without starting the expired provider work. Expired callbacks
+still occupy pending capacity until delivery returns. A busy/timeout fallback
+always includes a review note, even for a discussion with no sales draft.
+
+Tests: `go test ./internal/notifications ./internal/services/facebook -count=1
+-timeout=120s`, including a 23-job burst, FIFO/active concurrency, scope isolation,
+queue capacity, fresh active budget, hung-provider/expiry behavior, bounded hung
+fallback delivery and discussion-note rendering. Existing panic/timeout tests
+remain relevant. CI race detection is a release gate.
+
+This queue is memory-only and does not guarantee delivery across a process
+restart or sustained overload. Eligible accepted leads can consume more API
+calls than the previously dropped jobs. No automatic old-lead replay, duplicate
+Telegram notices, schema, provider credential or knowledge approval is added.

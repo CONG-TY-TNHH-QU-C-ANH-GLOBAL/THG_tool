@@ -87,6 +87,8 @@ jobs:
                     ('model_rejected', ' wording=model_rejected '), ('model_error', ' wording=model_error '),
                     ('analysis_unavailable', ' analysis=unavailable '),
                     ('analysis_noncommercial', ' analysis=no_commercial_need '),
+                    ('queue_expired', ' wording=queue_expired '),
+                    ('processing_unavailable', ' wording=processing_unavailable '),
                     ('gate_disabled', ' gate=disabled '), ('gate_busy', ' gate=runner_busy '),
                     ('gate_not_allowed', ' gate=org_not_allowed '), ('gate_attempted', ' gate=attempted '),
                 ):
