@@ -100,16 +100,18 @@ func TestAuditUnreadablePhotoCannotBeReportedAsRead(t *testing.T) {
 	}
 }
 
-func TestAuditAdvertCannotBeTurnedIntoBuyerByModel(t *testing.T) {
+func TestAuditAnalyzedAdvertDoesNotSearchOrPitch(t *testing.T) {
 	const post = "We offer hand massagers and provide sourcing services worldwide"
 	calls := 0
-	gen := contextTestGenerator(t, testNeed(leadcontext.Sourcing, "hand massagers", post), "", &calls)
+	// All posts reach semantic analysis, including offer phrases. An analyzed
+	// seller intent must stop sourcing; there is no pre-model keyword veto.
+	gen := contextTestGenerator(t, testNeed(leadcontext.NonCommercial, "", post), "", &calls)
 	lookup := func(context.Context, string) (*ResolvedSupplier, error) {
 		t.Error("an obvious service offer must not spend sourcing requests")
 		return nil, nil
 	}
 	got := BuildLeadSuggestionWithContext(context.Background(), nil, gen, nil, 7, post, "Seller", nil, nil, lookup)
-	if got.Reply != "" || got.ReplyNote == "" || calls != 0 {
+	if got.Reply != "" || got.ReplyNote == "" || calls != 1 {
 		t.Fatalf("advertisement became a buyer request: %+v calls=%d", got, calls)
 	}
 }

@@ -19,7 +19,7 @@ var leadCommentHeader = regexp.MustCompile(`(?i)\s(?:\d+\s+){1,3}(?:\S+\s+){1,5}
 // The article text opens with "Facebook <author> 23 phút trước ·" in the
 // operator's Vietnamese UI. Those accented UI words made every English post
 // look Vietnamese, so the header is dropped before intent and language checks.
-var leadPostHeader = regexp.MustCompile(`(?i)^\s*facebook\s+[^·]{1,80}?\s\d+\s*(?:phút|giờ|ngày|tuần|tháng|năm|mins?|minutes?|hrs?|hours?|h|days?|d|weeks?|w|years?|y)(?:\s+trước|\s+ago)?\s*·\s*`)
+var leadPostHeader = regexp.MustCompile(`(?i)^\s*facebook\s+[^·]{1,80}?(?:(?:\s*·)?\s+(?:quản trị viên|người kiểm duyệt|administrator|admin|moderator)\s*·)?\s+\d+\s*(?:phút|giờ|ngày|tuần|tháng|năm|mins?|minutes?|hrs?|hours?|h|days?|d|weeks?|w|years?|y)(?:\s+trước|\s+ago)?\s*·\s*`)
 
 func leadPostBody(text string) string {
 	if at := leadPostHeader.FindStringIndex(text); at != nil && strings.TrimSpace(text[at[1]:]) != "" {

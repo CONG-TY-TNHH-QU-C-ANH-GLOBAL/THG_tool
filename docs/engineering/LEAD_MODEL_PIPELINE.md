@@ -2,7 +2,7 @@
 doc_type: engineering
 status: draft
 owner: platform
-last_reviewed: 2026-10-20
+last_reviewed: 2026-10-21
 related_pr_or_issue: Add Taobao sourcing to replies
 ---
 
@@ -10,8 +10,11 @@ related_pr_or_issue: Add Taobao sourcing to replies
 
 ## State
 
-Implemented locally on `feat/company-knowledge-foundation`, base `b2a3cf6d`.
-No commit, push, deployment or production enablement is implied. On 2026-10-19
+Baseline deployed through PRs #286–#289 at `0a85e36d`; runtime revision,
+effective context/image flags and THGFulfill-only analysis scope were verified
+on 2026-10-21. See [diagnostic evidence](LEAD_SUGGESTION_DIAGNOSTIC.md).
+The input-quality follow-up below remains local until its release is recorded.
+The 92-record company knowledge pack remains pending/not_loaded. On 2026-10-19
 the task owner deferred Muse Spark and chose the existing configured provider/model
 for the next phase. No new Meta account/key or self-hosted model is required.
 Muse Spark has not been called. Authorized local provider configuration is still
@@ -36,10 +39,15 @@ comments, approve/import knowledge or change CRM contracts or crawl eligibility.
 
 ## Behavior
 
-1. Strip supported Facebook headers/UI/comment boundaries, including short posts.
+1. Strip supported Facebook headers/UI/comment boundaries, including short posts
+   and Vietnamese/English admin or moderator roles before the timestamp.
 2. Analyze the text and up to three validated original photos in one request.
    A text-only post is analyzed too. JSON must contain a supported intent and
    literal quotations from that post; no phantom image evidence is accepted.
+   Offer phrases do not bypass analysis. A business description may coexist with
+   a buyer request; a model noncommercial verdict still yields a note, no pitch
+   and no marketplace lookup. Misclassification remains a model-quality risk;
+   source/claim guards do not prove the intent is correct.
 3. Service intents use service questions; product requests use the existing
    catalog/sourcing rules. Explicit text products and marketplace links outrank
    a generated category. A vague category stays vague and asks for details.
@@ -60,6 +68,29 @@ comments, approve/import knowledge or change CRM contracts or crawl eligibility.
 These checks are conservative syntax checks, **not semantic proof**. They can
 reject valid wording (for example a quoted transit duration) and cannot establish
 that a visually similar listing is the exact SKU. Human review remains required.
+
+### Input-quality follow-up on 2026-10-21
+
+The Facebook suggestion component owns role-header normalization and semantic
+admission through `BuildLeadSuggestionWithContext`. Shared keyword/scoring and
+Telegram delivery eligibility are untouched. Removing the pre-model offer veto
+means pure promotions now consume one bounded analysis request too. The legacy
+text fallback still uses its existing heuristics if analysis is unavailable.
+
+The knowledge runtime's `ReplyKnowledgeForLead` now requires a positive text
+contribution from the currently wired lexical searcher. A pin, boost or recency
+alone cannot supply company facts to a reply. Shared search ranking and pinned
+assets elsewhere retain their behavior; other searcher implementations retain
+their relevance contract. This is a narrow zero-match filter, not semantic
+retrieval or a proof that every returned fact is relevant.
+
+Regression tests: `lead_input_quality_test.go` and `reply_relevance_test.go`.
+Role headers and mixed business/buyer posts failed before the fix. Real-builder
+tests reproduced unrelated pinned facts, then verified their exclusion only
+from reply facts. The older advertisement regression now expects analysis and a
+noncommercial verdict; its former zero-model-call assertion represented the
+removed keyword veto. Image-only evidence and the pending knowledge pack are
+separate work; this patch does not change their contract or approval state.
 
 ## Configuration
 
