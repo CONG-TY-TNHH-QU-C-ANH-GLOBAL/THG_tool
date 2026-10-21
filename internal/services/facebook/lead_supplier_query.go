@@ -151,7 +151,9 @@ func supplierIdentitySequence(text string) []string {
 		case "handheld":
 			word = "hand"
 		}
-		if len([]rune(word)) >= 2 && !leadProductStopWords[word] && word != "viên" && word != "mẫu" && !allDigits(word) && !seen[word] {
+		// Broad POD ranking treats cotton as shared wording. For sourcing it
+		// is a requested material, both in query specificity and title checks.
+		if len([]rune(word)) >= 2 && (!leadProductStopWords[word] || word == "cotton") && word != "viên" && word != "mẫu" && !allDigits(word) && !seen[word] {
 			words = append(words, word)
 			seen[word] = true
 		}
