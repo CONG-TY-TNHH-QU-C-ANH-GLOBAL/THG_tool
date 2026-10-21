@@ -36,7 +36,7 @@ func (mg *MessageGenerator) AnalyzeLeadContext(ctx context.Context, post string,
 	if err != nil {
 		return leadcontext.Context{}, err
 	}
-	return leadcontext.Parse([]byte(content), post, len(urls) > 0)
+	return leadcontext.ParseWithImages([]byte(content), post, len(urls))
 }
 
 func (mg *MessageGenerator) requestLeadAnalysis(ctx context.Context, prompt string, urls []string) (string, error) {
