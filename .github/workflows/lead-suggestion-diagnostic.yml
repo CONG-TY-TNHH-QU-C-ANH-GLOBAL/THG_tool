@@ -2,6 +2,20 @@ name: Diagnose lead suggestions
 
 on:
   workflow_dispatch:
+    inputs:
+      lookback_minutes:
+        description: Bounded history window in minutes
+        type: choice
+        options: ['20', '1440', '2880']
+        default: '20'
+      post_fbid:
+        description: Optional numeric post ID; reports status only, never content
+        type: string
+        default: ''
+      expected_revision:
+        description: Optional full deployed commit SHA to check in running binaries
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -11,16 +25,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Validate historical probe before SSH
+        run: python3 -B -m unittest discover -s scripts/tests -p test_lead_suggestion_diagnostic.py -v
       - name: Check effective production settings without printing secrets
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         env:
           PRICING_HUB_SOURCING_KEY: ${{ secrets.PRICING_HUB_SOURCING_KEY }}
+          DIAGNOSTIC_LOOKBACK: ${{ inputs.lookback_minutes || '20' }}
+          DIAGNOSTIC_POST_FBID: ${{ inputs.post_fbid }}
+          DIAGNOSTIC_REVISION: ${{ inputs.expected_revision }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || '22' }}
-          envs: PRICING_HUB_SOURCING_KEY
+          envs: PRICING_HUB_SOURCING_KEY,DIAGNOSTIC_LOOKBACK,DIAGNOSTIC_POST_FBID,DIAGNOSTIC_REVISION
           command_timeout: 3m
           script: |
             set -eu
@@ -37,26 +57,123 @@ jobs:
             esac
             echo 'thgfulfill_org=found'
 
-            # Aggregate fixed result codes only; never emit raw leads/journal lines.
-            sudo python3 - "$org_id" <<'PY'
+            # Read-only historical probe. Tests extract this block without running main.
+            sudo --preserve-env=DIAGNOSTIC_LOOKBACK,DIAGNOSTIC_POST_FBID,DIAGNOSTIC_REVISION python3 - "$org_id" <<'PY'
+            import mmap
+            import os
+            import re
+            import sqlite3
             import subprocess
             import sys
+            from contextlib import closing
+            from pathlib import Path
 
-            journal = subprocess.check_output(
-                ['journalctl', '-u', 'thg-scraper', '-u', 'thg-worker', '--since', '20 minutes ago',
-                 '-n', '2000', '--no-pager', '-o', 'cat'], text=True,
-            )
-            lines = [line for line in journal.splitlines()
-                     if '[LeadSuggestion]' in line and (' org_id=' + sys.argv[1] + ' ') in line]
-            print('recent_suggestion_events=' + str(len(lines)))
-            for label, token in (
-                ('recent_with_reply', ' reply=true '),
-                ('recent_model_generated', ' wording=model_generated '),
-                ('recent_model_rejected', ' wording=model_rejected '),
-                ('recent_model_error', ' wording=model_error '),
-                ('recent_analysis_unavailable', ' analysis=unavailable '),
-            ):
-                print(label + '=' + str(sum(token in line for line in lines)))
+            def validate_inputs(window, post, revision):
+                if window not in ('20', '1440', '2880'):
+                    raise ValueError('invalid window')
+                if post and not re.fullmatch(r'[1-9][0-9]{0,24}', post):
+                    raise ValueError('invalid post')
+                if revision and not re.fullmatch(r'[0-9a-f]{40}', revision):
+                    raise ValueError('invalid revision')
+
+            def scoped_lines(journal, org):
+                return [line for line in journal.splitlines()
+                        if '[LeadSuggestion]' in line and (' org_id=' + str(org) + ' ') in line]
+
+            def summarize(lines, prefix):
+                print(prefix + '_suggestion_events=' + str(len(lines)))
+                for label, token in (
+                    ('with_reply', ' reply=true '), ('model_generated', ' wording=model_generated '),
+                    ('model_rejected', ' wording=model_rejected '), ('model_error', ' wording=model_error '),
+                    ('analysis_unavailable', ' analysis=unavailable '),
+                    ('analysis_noncommercial', ' analysis=no_commercial_need '),
+                    ('gate_disabled', ' gate=disabled '), ('gate_busy', ' gate=runner_busy '),
+                    ('gate_not_allowed', ' gate=org_not_allowed '), ('gate_attempted', ' gate=attempted '),
+                ):
+                    print(prefix + '_' + label + '=' + str(sum(token in line for line in lines)))
+
+            def target_ids(db_path, org, post):
+                # No raw content, author, URL or payload is selected.
+                with closing(sqlite3.connect(Path(db_path).as_uri() + '?mode=ro', uri=True, timeout=3)) as db:
+                    db.execute('PRAGMA query_only=ON')
+                    rows = db.execute(
+                        'SELECT id FROM leads WHERE org_id=? AND (post_fbid=? OR source_url LIKE ? OR source_url LIKE ? OR source_url LIKE ? OR source_url LIKE ?) LIMIT 20',
+                        (org, post, '%/posts/' + post + '/%', '%/posts/' + post,
+                         '%/permalink/' + post + '/%', '%/permalink/' + post),
+                    ).fetchall()
+                    return {int(row[0]) for row in rows}
+
+            def running_process(service, org, post, revision):
+                prefix = 'runtime_' + service.replace('-', '_')
+                pid = subprocess.check_output(['systemctl', 'show', service, '--property=MainPID', '--value'], text=True).strip()
+                if not pid.isdigit() or int(pid) <= 0:
+                    print(prefix + '=unavailable')
+                    return set()
+                entries = Path('/proc/' + pid + '/environ').read_bytes().split(b'\0')
+                env = dict(entry.split(b'=', 1) for entry in entries if b'=' in entry)
+                for label, key in (('context', b'LEAD_CONTEXT_ANALYSIS_ENABLED'), ('images', b'LEAD_IMAGE_CONTEXT_ENABLED')):
+                    enabled = env.get(key, b'').strip().lower() in (b'1', b'true', b'yes', b'y', b'on')
+                    print(prefix + '_' + label + '=' + ('on' if enabled else 'off'))
+                scope = env.get(b'LEAD_CONTEXT_ORG_IDS', b'').decode('ascii', errors='ignore').split(',')
+                print(prefix + '_analysis_allowed=' + ('yes' if str(org) in scope else 'no'))
+                with Path('/proc/' + pid + '/exe').open('rb') as binary:
+                    with mmap.mmap(binary.fileno(), 0, access=mmap.ACCESS_READ) as data:
+                        marker = data.find(b'wording_budget_exhausted') >= 0
+                        print(prefix + '_audit_marker=' + ('present' if marker else 'absent'))
+                        if revision:
+                            matches = data.find(('vcs.revision=' + revision).encode('ascii')) >= 0
+                            print(prefix + '_expected_revision=' + ('match' if matches else 'not_confirmed'))
+                if not post:
+                    return set()
+                raw_db = env.get(b'DB_PATH', b'data/scraper.db').decode('utf-8')
+                cwd = Path('/proc/' + pid + '/cwd').resolve()
+                db_path = (cwd / raw_db).resolve()
+                if not db_path.is_relative_to(Path('/opt/thg-scraper')):
+                    print(prefix + '_target_store=unsupported')
+                    return set()
+                try:
+                    ids = target_ids(db_path, org, post)
+                    print(prefix + '_target_matches=' + str(len(ids)))
+                    return ids
+                except sqlite3.Error:
+                    print(prefix + '_target_store=unavailable')
+                    return set()
+
+            def main():
+                window = os.environ.get('DIAGNOSTIC_LOOKBACK', '20')
+                post = os.environ.get('DIAGNOSTIC_POST_FBID', '')
+                revision = os.environ.get('DIAGNOSTIC_REVISION', '')
+                validate_inputs(window, post, revision)
+                org = int(sys.argv[1])
+                ids = set()
+                for service in ('thg-scraper', 'thg-worker'):
+                    try:
+                        ids.update(running_process(service, org, post, revision))
+                    except (OSError, ValueError, subprocess.SubprocessError):
+                        print('runtime_probe=unavailable')
+                history = subprocess.run(
+                    ['journalctl', '-u', 'thg-scraper', '-u', 'thg-worker', '--since', window + ' minutes ago',
+                     '--grep', r'\[LeadSuggestion\]', '-n', '20000', '--no-pager', '-o', 'cat'],
+                    text=True, timeout=25, capture_output=True,
+                )
+                empty = not history.stderr and history.stdout.strip() in ('', '-- No entries --')
+                if history.returncode != 0 and not (history.returncode == 1 and empty):
+                    raise OSError('history unavailable')
+                journal = history.stdout
+                print('history_window_minutes=' + window)
+                print('history_cap_reached=' + ('yes' if len(journal.splitlines()) >= 20000 else 'no'))
+                lines = scoped_lines(journal, org)
+                summarize(lines, 'recent')
+                if post:
+                    target = [line for line in lines if any(' lead_id=' + str(i) + ' ' in line for i in ids)]
+                    print('target_lead_matches=' + str(len(ids)))
+                    summarize(target, 'target')
+
+            if __name__ == '__main__':
+                try:
+                    main()
+                except (ValueError, OSError, subprocess.SubprocessError):
+                    sys.exit('history_probe=unavailable')
             PY
 
             for service in thg-scraper thg-worker; do
