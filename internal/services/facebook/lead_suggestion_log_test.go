@@ -16,7 +16,7 @@ func TestLeadSuggestionLogOmitsLeadContent(t *testing.T) {
 	defer log.SetOutput(os.Stderr)
 	LogLeadSuggestionOutcome("crawl", 7, 42, SuggestionGateAttempted, models.LeadSuggestion{
 		Reply: "Hi Secret Person, call 0909123456", SourcingNote: noOfferSourcingNote,
-	})
+	}, 0)
 	got := buf.String()
 	for _, want := range []string{"path=crawl", "org_id=7", "lead_id=42", "gate=attempted", "reply=true", "supplier=false"} {
 		if !strings.Contains(got, want) {

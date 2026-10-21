@@ -12,11 +12,15 @@ import (
 
 // BuildLeadSuggestionWithContext is the opt-in need-analysis workflow. Numeric
 // fields, links, pricing and company capability still come from their owners.
-func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRuntime.Builder, generator *ai.MessageGenerator, profile *ai.BusinessProfile, orgID int64, post, author string, images []string, shipping ShippingQuoteFunc, sourcing SupplierLookupFunc) LeadSuggestion {
+func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRuntime.Builder, generator *ai.MessageGenerator, profile *ai.BusinessProfile, orgID int64, post, author string, images []string, shipping ShippingQuoteFunc, sourcing SupplierLookupFunc) (out LeadSuggestion) {
 	post = leadPostBody(post)
 	// A business description can coexist with a buyer need. Let the analyzer
 	// interpret the whole post instead of rejecting it for an offer phrase.
 	urls := media.URLs(images)
+	imageStatus := pendingImageStatus(len(images), len(urls))
+	defer func() {
+		out.ImageInputs, out.ImageAnalysis = len(urls), imageStatus
+	}()
 	need, err := generator.AnalyzeLeadContext(ctx, post, urls)
 	if err != nil {
 		out := BuildLeadSuggestion(ctx, builder, generator, profile, orgID, post, author, shipping, sourcing)
@@ -24,6 +28,7 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		out.ReplyNote = "Chưa phân tích được đầy đủ ngữ cảnh; gợi ý dự phòng dựa trên nội dung chữ."
 		return out
 	}
+	imageStatus = completedImageStatus(imageStatus, len(urls), len(need.Visual.Observations) > 0, need.Visual.Conflict)
 	unconfirmedProduct := !supportedLeadProductHint(post, need)
 	if unconfirmedProduct {
 		need.Product = ""
@@ -39,7 +44,7 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		out.ReplyNote = "Phân tích nhu cầu chưa khớp yêu cầu sản phẩm rõ trong bài; gợi ý dựa trên nội dung chữ, sale cần đối chiếu."
 		return out
 	}
-	out := groundedForLeadContext(ctx, builder, orgID, post, author, need, shipping, sourcing)
+	out = groundedForLeadContext(ctx, builder, orgID, post, author, need, shipping, sourcing)
 	out.AnalysisStatus = need.Intent
 	if unconfirmedProduct {
 		out.ReplyNote = "Chưa có căn cứ xác nhận loại sản phẩm model đề xuất; cần làm rõ sản phẩm, không tự chọn nguồn thay khách."

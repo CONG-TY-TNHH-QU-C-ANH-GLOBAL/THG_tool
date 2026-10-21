@@ -73,6 +73,26 @@ class DiagnosticTests(unittest.TestCase):
                 probe['target_ids'](Path(folder) / 'missing.db', 7, '123')
             self.assertFalse((Path(folder) / 'missing.db').exists())
 
+    def test_image_counts_are_scoped_without_echoing_references(self):
+        logs = [
+            '[LeadSuggestion] org_id=7 lead_id=1 event_images=1 model_images=1 image_analysis=observations note="PRIVATE_URL"',
+            '[LeadSuggestion] org_id=7 lead_id=2 event_images=2 model_images=2 image_analysis=analysis_failed note="PRIVATE_ERROR"',
+            '[LeadSuggestion] org_id=70 lead_id=3 event_images=3 model_images=3 image_analysis=conflict note="OTHER_ORG"',
+        ]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            probe['summarize'](probe['scoped_lines']('\n'.join(logs), 7), 'target')
+        summary = output.getvalue()
+        self.assertIn('target_event_images_one=1', summary)
+        self.assertIn('target_model_images_two=1', summary)
+        self.assertIn('target_image_observations=1', summary)
+        self.assertIn('target_image_analysis_failed=1', summary)
+        self.assertIn('target_image_conflict=0', summary)
+        self.assertNotIn('PRIVATE', summary)
+        self.assertNotIn('OTHER_ORG', summary)
+        for line in summary.splitlines():
+            self.assertRegex(line, r'^target_[a-z_]+=\d+$')
+
     def test_allowed_windows_and_revision(self):
         for window in ('20', '1440', '2880'):
             probe['validate_inputs'](window, '123456789', 'a' * 40)
