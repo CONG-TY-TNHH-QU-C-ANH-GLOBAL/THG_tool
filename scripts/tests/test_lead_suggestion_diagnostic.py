@@ -97,6 +97,35 @@ class DiagnosticTests(unittest.TestCase):
         for window in ('20', '1440', '2880'):
             probe['validate_inputs'](window, '123456789', 'a' * 40)
 
+    def test_connector_versions_are_scoped_private_and_read_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'fixture.db'
+            with contextlib.closing(sqlite3.connect(path)) as db:
+                db.execute('CREATE TABLE agent_tokens (org_id INTEGER, active INTEGER, version TEXT, last_seen TEXT)')
+                db.executemany("INSERT INTO agent_tokens VALUES (?,?,?,datetime('now'))", [
+                    (7, 1, '0.5.57.1257'), (7, 1, 'PRIVATE-TOKEN'),
+                    (8, 1, '9.9.9'), (7, 0, '8.8.8'),
+                ])
+                db.commit()
+            before = hashlib.sha256(path.read_bytes()).digest()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                probe['connector_versions'](path, 7, 'runtime_test')
+            self.assertEqual(before, hashlib.sha256(path.read_bytes()).digest())
+            self.assertIn('connector_version=0.5.57.1257 count=1', output.getvalue())
+            self.assertIn('connector_version=unreported count=1', output.getvalue())
+            for forbidden in ('PRIVATE', '9.9.9', '8.8.8'):
+                self.assertNotIn(forbidden, output.getvalue())
+
+    def test_missing_connector_store_is_not_created(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'missing.db'
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                probe['connector_versions'](path, 7, 'runtime_test')
+            self.assertFalse(path.exists())
+            self.assertEqual(output.getvalue().strip(), 'runtime_test_connector_versions=unavailable')
+
 
 if __name__ == '__main__':
     unittest.main()
