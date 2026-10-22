@@ -26,6 +26,7 @@ type Context struct {
 	Missing       []string              `json:"missing_fields"`
 	Visual        visualcontext.Context `json:"visual"`
 	ImageEvidence []ImageEvidence       `json:"image_evidence,omitempty"`
+	Scope         *ScopeClarification   `json:"scope_clarification,omitempty"`
 }
 
 // Parse requires literal evidence from the supplied post. Model interpretation
@@ -61,15 +62,25 @@ func ParseWithImages(data []byte, post string, imageCount int) (Context, error) 
 	if !validImageEvidence(fields["image_evidence"], imageCount, visual.Observations) {
 		return Context{}, errors.New("invalid image request evidence")
 	}
-	if !validEvidence(out.Evidence, post) || lacksNeedEvidence(out) {
-		return Context{}, errors.New("lead interpretation lacks request evidence")
+	if !validEvidence(out.Evidence, post) || lacksNeedEvidence(out) || !validScopeClarification(fields["scope_clarification"], out, post, imageCount) {
+		return Context{}, errors.New("lead interpretation lacks grounded request or clarification evidence")
 	}
 	out.Product, out.Visual = strings.TrimSpace(out.Product), visual
 	return out, nil
 }
 
 func validContextKeys(fields map[string]json.RawMessage) bool {
-	return len(fields) == 5 || (len(fields) == 6 && fields["image_evidence"] != nil)
+	if len(fields) < 5 || len(fields) > 7 {
+		return false
+	}
+	for key := range fields {
+		switch key {
+		case "intent", "product", "text_evidence", "missing_fields", "visual", "image_evidence", "scope_clarification":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func lacksNeedEvidence(c Context) bool {

@@ -2,7 +2,7 @@
 doc_type: engineering
 status: draft
 owner: platform
-last_reviewed: 2026-10-21
+last_reviewed: 2026-10-22
 related_pr_or_issue: Add Taobao sourcing to replies
 ---
 
@@ -14,7 +14,8 @@ Baseline deployed through PR #295 at `8ccf5b1b`; runtime revision, active
 services, context/image flags and THGFulfill analysis scope were verified by
 read-only diagnostic `39580706739` on 2026-10-21. Zero suggestion events in its
 20-minute window establish readiness only. See [diagnostic evidence](LEAD_SUGGESTION_DIAGNOSTIC.md).
-The image-path audit below remains local until its release is recorded.
+The image-path audit was released in #296 and the expanded-comment fix in #297;
+read-only revision checks confirmed both running binaries at `5303dd6f`.
 The 92-record authoring pack remains pending/not_loaded; exactly eight reviewed
 public projections were separately approved and imported at 09:28 UTC on
 2026-10-21. See [release scope and evidence](COMPANY_KNOWLEDGE_RELEASE.md). On 2026-10-19
@@ -64,8 +65,97 @@ The company-knowledge model trials used text only; they are not vision evidence.
 The existing provider request has a five-second analysis cap; image URL access
 and latency still need an actual trial before changing its budget or model.
 
+### Capture dependency and purchase-scope clarification (2026-10-22)
+
+Read-only connector-version probe `39711376425` found recent active versions
+`0.5.29.878`, `0.5.56.992`, `0.5.56.1000`, and `0.5.57.1228` in THGFulfill.
+Versions are self-reported, not proof which connector produced a target lead.
+The published deploy #1228 maps to `25f33d02`, before #286, and that tree lacks
+the photo collector. Server deployment does not update an installed extension.
+The currently served official beta `0.5.57.1284` was downloaded and inspected:
+its manifest loads `platforms/facebook/crawl_images.js`, matching main's source.
+Use the Web Store release or CI-built dashboard beta, never a repo folder;
+after updating, reload the existing Facebook tab so its scripts are current.
+Do this on the actual scanner's Chrome profile. Do not interrupt an active job,
+change accounts, reveal pairing tokens, or replay an old lead as a test.
+
+The read-only diagnostic now reports bounded org-scoped recent connector-version
+counts. It selects no token hash, hostname, browser identity or content; invalid
+version strings are `unreported`. Missing/unsupported SQLite tables return an
+unavailable code, not a cross-plane fallback or an empty DB creation.
+
+An optional `scope_clarification` response contains kind `purchase_scope` and
+exactly two short category alternatives. Only sourcing/POD with request evidence
+can use it. Each phrase must occur as whole words in the post or in observations
+of an actually supplied image. Numbers, URLs, unknown keys, duplicate/blank
+options and unsupported photo categories are rejected. Observations remain
+tentative model output, not independent visual truth. Legacy responses omitting
+the field keep the existing catalog/sourcing paths.
+
+This asks a focused purchase-target question before product/rate lookup or
+wording refinement, with status `needs_scope_confirmation` / `scope_clarification`.
+It does not select a supplier, quote a price or create a product link. Known
+quantity is not asked again. The model is instructed to keep explicit material
+requests as material requests even if a photo shows a finished object; visible
+personalization alone does not establish POD. Model detection still needs real
+quality evaluation; the typed route is not proof that every ambiguity is caught.
+The existing text quantity parser recognizes explicit cuộn/roll(s)/skein(s)
+counts too; it does not infer weight or convert material units from appearance.
+
+After confirmation, POD still requires a matching company catalog link and
+Dropship a verified Taobao/1688 listing under the existing source/claim checks.
+No fallback may invent a link to make this requirement appear satisfied.
+
 This additive feature affects operator suggestions. It does not post Facebook
 comments, approve/import knowledge or change CRM contracts or crawl eligibility.
+
+#### Isolated real-model observation
+
+Run `39713017297` at `08c763a7` used the configured `deepseek-v4-flash` with
+six public synthetic text cases, eight approved facts and no live sourcing,
+freight, database writes or Telegram messages. Workflow success means the
+preview ran, not that all six interpretations passed semantic acceptance.
+
+| Case | Observed result |
+|---|---|
+| Warehouse question | Relevant service draft; `model_generated` |
+| US shipping question | Guard rejected rewrite; grounded service question retained, `model_rejected` |
+| Sourcing process | Process draft generated, but analysis remained `unclear` |
+| Announcement | Analysis unavailable and no draft; not a successful noncommercial verdict |
+| Undecided yarn versus finished baskets | Focused alternatives question; `needs_scope_confirmation` / `scope_clarification` |
+| Explicit 50 rolls of yarn, basket only a color reference | Material sourcing clarification; no basket/POD switch and no repeated quantity; no live offer |
+
+The last two cases verify the new text branch with the real model. None supplied
+photos. Photo recognition, actual supplier lookup and Telegram delivery still
+require a fresh permitted lead after the scanner extension is updated.
+
+#### Scanner operator handoff
+
+The task owner cannot currently access the company scanning PC. A person with
+authorized access to that PC must complete the browser-side update:
+
+1. Wait for its current crawl to finish. Use the existing Chrome profile and
+   account slot; do not create a second concurrent scanner or change FB login.
+2. Check the installed connector version at `chrome://extensions`. Prefer the
+   approved Web Store release if it includes photo capture. If using the internal
+   fallback, open `https://sale.thgfulfill.com/extension-beta`, check the served
+   version, download its CI-built zip and follow the page's install instructions.
+   Do not load the repository's extension source folder.
+3. The beta page instructs removing the old beta, loading the newly extracted
+   package and pairing again through the Browser dashboard. Retain the previous
+   package for rollback; keep one active scanner for this account. If the user
+   lacks pairing access, obtain an authorized dashboard operator instead of
+   copying pairing credentials or guessing the workspace/account slot.
+4. Reload the existing Facebook tab between jobs, then confirm the connector
+   is online in the same workspace/account slot. Report only the installed
+   version and success/failure; do not send pairing codes, tokens or passwords.
+5. Observe the next naturally collected photo lead. Verify event/model photo
+   counts and analysis status, then compare the actual Telegram draft with the
+   original post. A version update alone is not photo-path acceptance.
+
+Backend deploy, package publication and installed browser update are separate
+steps. Do not force a remote restart, replay an old post or send a synthetic
+message to the live sales group to conceal this remaining dependency.
 
 ## Component ownership
 

@@ -116,6 +116,23 @@ jobs:
                     ).fetchall()
                     return {int(row[0]) for row in rows}
 
+            def connector_versions(db_path, org, prefix):
+                try:
+                    with closing(sqlite3.connect(Path(db_path).as_uri() + '?mode=ro', uri=True, timeout=3)) as db:
+                        db.execute('PRAGMA query_only=ON')
+                        rows = db.execute(
+                            "SELECT version, COUNT(*) FROM agent_tokens WHERE org_id=? AND active=1 "
+                            "AND datetime(last_seen)>=datetime('now','-1 day') GROUP BY version LIMIT 8",
+                            (org,),
+                        ).fetchall()
+                    if not rows:
+                        print(prefix + '_connector_versions=none_recent')
+                    for version, count in rows:
+                        safe = version if isinstance(version, str) and re.fullmatch(r'[0-9]{1,5}(?:\.[0-9]{1,5}){1,3}', version) else 'unreported'
+                        print(prefix + '_connector_version=' + safe + ' count=' + str(count))
+                except sqlite3.Error:
+                    print(prefix + '_connector_versions=unavailable')
+
             def running_process(service, org, post, revision):
                 prefix = 'runtime_' + service.replace('-', '_')
                 pid = subprocess.check_output(['systemctl', 'show', service, '--property=MainPID', '--value'], text=True).strip()
@@ -136,13 +153,14 @@ jobs:
                         if revision:
                             matches = data.find(('vcs.revision=' + revision).encode('ascii')) >= 0
                             print(prefix + '_expected_revision=' + ('match' if matches else 'not_confirmed'))
-                if not post:
-                    return set()
                 raw_db = env.get(b'DB_PATH', b'data/scraper.db').decode('utf-8')
                 cwd = Path('/proc/' + pid + '/cwd').resolve()
                 db_path = (cwd / raw_db).resolve()
                 if not db_path.is_relative_to(Path('/opt/thg-scraper')):
                     print(prefix + '_target_store=unsupported')
+                    return set()
+                connector_versions(db_path, org, prefix)
+                if not post:
                     return set()
                 try:
                     ids = target_ids(db_path, org, post)
