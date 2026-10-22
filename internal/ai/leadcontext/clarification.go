@@ -6,9 +6,9 @@ import (
 	"unicode"
 )
 
-// ScopeClarification postpones product selection when the requested purchase
-// could refer to two grounded categories, such as a material or finished item.
-// It never supplies a query, price, route or company capability.
+// ScopeClarification records purchase uncertainty for operator review. It is
+// not an instruction to ask the customer a question or block source retrieval.
+// It never supplies a price, route or company capability.
 type ScopeClarification struct {
 	Kind         string   `json:"kind"`
 	Alternatives []string `json:"alternatives"`

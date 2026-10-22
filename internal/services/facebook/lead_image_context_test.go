@@ -46,7 +46,7 @@ func TestImageContextCanSupplyMissingGenericProduct(t *testing.T) {
 	}
 }
 
-func TestConflictingImagesAskBeforeLookup(t *testing.T) {
+func TestConflictingImagesKeepReviewInternalBeforeLookup(t *testing.T) {
 	conflict := strings.Replace(imageTestContext, `"text_image_conflict":false`, `"text_image_conflict":true`, 1)
 	lookup := func(context.Context, string) (*ResolvedSupplier, error) {
 		t.Error("conflicting text/images must not trigger sourcing")
@@ -56,6 +56,9 @@ func TestConflictingImagesAskBeforeLookup(t *testing.T) {
 		"Need cotton bags, 100 pcs to the US", "Lan", []string{imageTestURL}, nil, lookup)
 	if got.Supplier != nil || got.ProductURL != "" || got.Reply == "" || !strings.Contains(got.ContextNote, "chưa khớp") {
 		t.Fatalf("conflict must remain a clarification: %+v", got)
+	}
+	if strings.Contains(got.Reply, "Which item") || !strings.Contains(got.Reply, "check sourcing options") {
+		t.Fatalf("internal conflict became a customer questionnaire: %+v", got)
 	}
 }
 
