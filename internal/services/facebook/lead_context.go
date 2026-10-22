@@ -38,6 +38,9 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		out.AnalysisStatus = "conflict"
 		return out
 	}
+	if need.Scope != nil {
+		return scopeClarificationSuggestion(post, need)
+	}
 	if directProductRequest(post) && contradictsProductIntent(need.Intent) {
 		out := buildGroundedLeadSuggestion(ctx, builder, orgID, post, author, shipping, sourcing)
 		out.AnalysisStatus, out.ReplyStatus = "intent_conflict", "grounded_template"

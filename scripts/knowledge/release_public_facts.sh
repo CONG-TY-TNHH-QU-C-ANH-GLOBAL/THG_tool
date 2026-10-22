@@ -55,7 +55,9 @@ if [[ "$operation" = model-preview ]]; then
     'Mình cần kho tại Mỹ để lưu hàng, xử lý đơn và hàng hoàn. Bên bạn hỗ trợ không?' \
     'I am looking for a shipping agent from China to the US for 200 kg monthly. Can you help?' \
     'Mình muốn tìm nguồn hàng 1688, quy trình bắt đầu thế nào?' \
-    'Welcome to our Amazon community. Here are this week’s announcements.'; do
+    'Welcome to our Amazon community. Here are this week’s announcements.' \
+    'I need a supplier for yarn or finished baskets, but I have not decided which one to buy yet.' \
+    'I need to buy 50 rolls of cotton yarn. The basket is only a color reference, not the item I want to purchase.'; do
     ./company-knowledge-preview -pack public-preview -live-pipeline -review-draft -public-facts-only \
       -env-file /etc/thg-scraper/env -query "$post" -author 'Synthetic review'
   done
