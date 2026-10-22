@@ -61,10 +61,6 @@ func visualContextBlock(contexts []visualcontext.Context) string {
 	return contexts[0].PromptBlock()
 }
 
-func conflictingImageSuggestion(post, author string) LeadSuggestion {
-	reply := leadSalutation(author) + ", nội dung chữ và ảnh chưa thống nhất về sản phẩm. Bạn xác nhận giúp mẫu cần tìm hoặc gửi mã/link sản phẩm nhé?"
-	if supplierQueryLanguage(post) == "en" {
-		reply = "The text and images appear to refer to different products. Which item should we use as the reference, or could you share its model or product link?"
-	}
-	return LeadSuggestion{Reply: reply, ContextNote: "Chữ và ảnh có điểm chưa khớp; cần xác nhận trước khi ghép sản phẩm hoặc báo giá."}
+func conflictingImageSuggestion(post, _ string) LeadSuggestion {
+	return LeadSuggestion{Reply: proactiveSourcingReply(post), ContextNote: "Chữ và ảnh có điểm chưa khớp; sale cần đối chiếu trước khi ghép sản phẩm hoặc báo giá."}
 }

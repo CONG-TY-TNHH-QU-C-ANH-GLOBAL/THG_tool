@@ -1,25 +1,53 @@
 package facebook
 
-import "github.com/thg/scraper/internal/ai/leadcontext"
+import (
+	"context"
 
-// A validated purchase ambiguity asks one focused question before any catalog,
-// marketplace or rate lookup. Category names are tentative, not matched offers.
-func scopeClarificationSuggestion(post string, need leadcontext.Context) LeadSuggestion {
-	a, b := need.Scope.Alternatives[0], need.Scope.Alternatives[1]
-	out := LeadSuggestion{
-		AnalysisStatus: "needs_scope_confirmation", ReplyStatus: "scope_clarification",
-		ReplyNote: "Cần xác nhận đối tượng khách muốn tìm nguồn trước khi chọn sản phẩm.",
+	"github.com/thg/scraper/internal/ai/leadcontext"
+	knowledgeRuntime "github.com/thg/scraper/internal/workspace_knowledge/runtime"
+)
+
+// Scope uncertainty is an operator review concern, not a mandatory customer
+// questionnaire. Try the existing bounded lookup for a supported primary item.
+// Never quote freight while the purchase target still needs review.
+func scopeSourcingSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder, orgID int64, post, author string, need leadcontext.Context, sourcing SupplierLookupFunc) LeadSuggestion {
+	if early, ok := earlyLeadSuggestion(post, author); ok && early.Reply == "" {
+		return early // Preserve explicit non-product exclusions, e.g. VA recruitment.
 	}
-	if supplierQueryLanguage(post) == "en" {
-		out.Reply = "Are you looking for " + a + " or " + b + "?"
-		if leadQuantity(post) == 0 {
-			out.Reply += " Please share your planned quantity so we can check sourcing options."
-		}
-		return out
+	out := LeadSuggestion{}
+	if primary, ok := scopeSourcingNeed(post, need); ok {
+		out = buildGroundedLeadSuggestion(ctx, builder, orgID, leadContextSearchText(post, primary), author, nil, sourcing)
 	}
-	out.Reply = "Bạn đang cần tìm nguồn " + a + " hay " + b + " ạ?"
-	if leadQuantity(post) == 0 {
-		out.Reply += " Bạn cho mình xin số lượng dự kiến để kiểm tra nguồn phù hợp nhé."
+	out.AnalysisStatus, out.ReplyStatus = "scope_review", "grounded_template"
+	out.ReplyNote = "Đối tượng khách muốn tìm nguồn còn cần đối chiếu; phương án tìm được chỉ để tham khảo, chưa xác nhận đúng mẫu."
+	if !out.Supplier.HasOffer() && out.ProductURL == "" {
+		out.Reply, out.ReplyStatus = proactiveSourcingReply(post), "proactive_no_offer"
 	}
 	return out
+}
+
+func scopeSourcingNeed(post string, need leadcontext.Context) (leadcontext.Context, bool) {
+	if link, _ := leadMarketplaceURL(post); link != "" {
+		return need, true // An exact listing retains precedence over model hints.
+	}
+	a, b := need.Scope.Alternatives[0], need.Scope.Alternatives[1]
+	aInText, bInText := containsLeadPhrase(post, a), containsLeadPhrase(post, b)
+	if aInText && bInText {
+		return need, false // Do not search a combined "yarn or basket" query.
+	}
+	if supplierQuery(post) != "" {
+		return need, true
+	}
+	if aInText != bInText {
+		need.Product = a
+		if bInText {
+			need.Product = b
+		}
+		return need, true
+	}
+	// With no named text category, a validated visible category may be searched
+	// as a reference. Two explicit undecided text options must not be picked at random.
+	visualPrimary := !aInText && need.Product != "" && need.Product == need.Visual.Product &&
+		(need.Product == a || need.Product == b) && len(need.Visual.Observations) > 0
+	return need, visualPrimary
 }

@@ -43,7 +43,7 @@ func supplierQuery(raw string) string {
 	}
 	return supplierEnglishQuery(raw)
 cut:
-	for _, marker := range []string{" từ 1688", " từ taobao", " về mỹ", " sang mỹ", " đi mỹ", " ship ", " khoảng ", " số lượng ", " in logo", " in theo", " mẫu này", " https://", " http://", "\n", ".", ",", ";"} {
+	for _, marker := range []string{" từ 1688", " từ taobao", " về mỹ", " sang mỹ", " đi mỹ", " ship ", " khoảng ", " số lượng ", " in logo", " in theo", " như mẫu", " theo mẫu", " mẫu này", " https://", " http://", "\n", ".", ",", ";"} {
 		if at := strings.Index(text, marker); at >= 0 {
 			text = text[:at]
 		}

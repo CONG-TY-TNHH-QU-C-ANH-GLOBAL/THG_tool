@@ -39,7 +39,7 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 		return out
 	}
 	if need.Scope != nil {
-		return scopeClarificationSuggestion(post, need)
+		return scopeSourcingSuggestion(ctx, builder, orgID, post, author, need, sourcing)
 	}
 	if directProductRequest(post) && contradictsProductIntent(need.Intent) {
 		out := buildGroundedLeadSuggestion(ctx, builder, orgID, post, author, shipping, sourcing)
@@ -51,6 +51,9 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 	out.AnalysisStatus = need.Intent
 	if unconfirmedProduct {
 		out.ReplyNote = "Chưa có căn cứ xác nhận loại sản phẩm model đề xuất; cần làm rõ sản phẩm, không tự chọn nguồn thay khách."
+	}
+	if observedProductWithoutOffer(need, len(urls), out) {
+		out.Reply = proactiveSourcingReply(post)
 	}
 	if len(urls) > 0 {
 		out.ContextNote = "Đã phân tích ảnh tham chiếu; chưa xác minh đúng mã hàng hoặc mẫu sàn."

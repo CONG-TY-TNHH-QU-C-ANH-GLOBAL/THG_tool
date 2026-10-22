@@ -92,24 +92,40 @@ options and unsupported photo categories are rejected. Observations remain
 tentative model output, not independent visual truth. Legacy responses omitting
 the field keep the existing catalog/sourcing paths.
 
-This asks a focused purchase-target question before product/rate lookup or
-wording refinement, with status `needs_scope_confirmation` / `scope_clarification`.
-It does not select a supplier, quote a price or create a product link. Known
-quantity is not asked again. The model is instructed to keep explicit material
-requests as material requests even if a photo shows a finished object; visible
-personalization alone does not establish POD. Model detection still needs real
-quality evaluation; the typed route is not proof that every ambiguity is caught.
+PR #299 originally made this a blocking customer clarification. Subsequent owner
+review rejected that sales behavior. The revision in this branch keeps uncertainty
+in operator notes (`scope_review`) and tries the existing bounded source/catalog
+path for an explicit listing, a supported named text category, or a validated
+visible primary category when no text category is named. Text retains precedence;
+two explicitly undecided text options cannot become one combined search or a
+random choice. No additional parallel source searches or inferred freight.
+
+If no usable offer is found, the draft offers to check sourcing and invites a
+message, optionally requesting an unknown quantity. It does not ask material
+versus finished item or ask the customer to describe an observed product again.
+Lookup failures remain in operator notes; a contact draft is not a stock or
+successful-source claim. Actual text/image conflict still prevents product/rate
+selection, but its draft is proactive contact and the conflict stays internal.
+The same proactive fallback applies to valid observed sourcing/POD references
+without an offer; service/noncommercial and missing-image paths retain their
+existing behavior. Model rewriting is prompted to lead with a sourced option or
+useful action and never imitate competitors' stock, quote deadlines or promises.
+
+Known quantity is not asked again. Explicit material requests stay material
+requests even if a photo shows a finished object; visible personalization alone
+does not establish POD. Model detection still needs real quality evaluation;
+the typed route is not proof that every ambiguity is caught.
 The existing text quantity parser recognizes explicit cuộn/roll(s)/skein(s)
 counts too; it does not infer weight or convert material units from appearance.
 
-After confirmation, POD still requires a matching company catalog link and
+POD still requires a matching company catalog link and
 Dropship a verified Taobao/1688 listing under the existing source/claim checks.
 No fallback may invent a link to make this requirement appear satisfied.
 
 This additive feature affects operator suggestions. It does not post Facebook
 comments, approve/import knowledge or change CRM contracts or crawl eligibility.
 
-#### Isolated real-model observation
+#### Historical #299 isolated real-model observation
 
 Run `39713017297` at `08c763a7` used the configured `deepseek-v4-flash` with
 six public synthetic text cases, eight approved facts and no live sourcing,
