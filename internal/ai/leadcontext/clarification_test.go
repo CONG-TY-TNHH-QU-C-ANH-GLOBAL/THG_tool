@@ -30,22 +30,27 @@ func TestScopeClarificationBindsAlternativesToAvailableInput(t *testing.T) {
 }
 
 func TestScopeClarificationRejectsUnsupportedChoicesAndFields(t *testing.T) {
+	for name, choices := range map[string][]string{
+		"unknown target": {"thread", "cotton fabric"},
+		"partial word":   {"read", "storage basket"},
+		"duplicate":      {"thread", "THREAD"},
+		"blank":          {"", "storage basket"},
+		"three options":  {"thread", "storage basket", "fabric"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := scopeFixture()
+			c.Scope.Alternatives = choices
+			data, err := json.Marshal(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseWithImages(data, scopePost, 1); err == nil {
+				t.Fatal("unsupported alternatives accepted")
+			}
+		})
+	}
+
 	for name, edit := range map[string]func(map[string]any){
-		"unknown target": func(v map[string]any) {
-			v["scope_clarification"] = ScopeClarification{"purchase_scope", []string{"thread", "cotton fabric"}}
-		},
-		"partial word": func(v map[string]any) {
-			v["scope_clarification"] = ScopeClarification{"purchase_scope", []string{"read", "storage basket"}}
-		},
-		"duplicate": func(v map[string]any) {
-			v["scope_clarification"] = ScopeClarification{"purchase_scope", []string{"thread", "THREAD"}}
-		},
-		"blank": func(v map[string]any) {
-			v["scope_clarification"] = ScopeClarification{"purchase_scope", []string{"", "storage basket"}}
-		},
-		"three options": func(v map[string]any) {
-			v["scope_clarification"] = ScopeClarification{"purchase_scope", []string{"thread", "storage basket", "fabric"}}
-		},
 		"pricing kind": func(v map[string]any) {
 			v["scope_clarification"] = ScopeClarification{"free_shipping", []string{"thread", "storage basket"}}
 		},

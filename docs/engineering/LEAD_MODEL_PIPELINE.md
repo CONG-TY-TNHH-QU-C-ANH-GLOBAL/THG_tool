@@ -109,6 +109,54 @@ No fallback may invent a link to make this requirement appear satisfied.
 This additive feature affects operator suggestions. It does not post Facebook
 comments, approve/import knowledge or change CRM contracts or crawl eligibility.
 
+#### Isolated real-model observation
+
+Run `39713017297` at `08c763a7` used the configured `deepseek-v4-flash` with
+six public synthetic text cases, eight approved facts and no live sourcing,
+freight, database writes or Telegram messages. Workflow success means the
+preview ran, not that all six interpretations passed semantic acceptance.
+
+| Case | Observed result |
+|---|---|
+| Warehouse question | Relevant service draft; `model_generated` |
+| US shipping question | Guard rejected rewrite; grounded service question retained, `model_rejected` |
+| Sourcing process | Process draft generated, but analysis remained `unclear` |
+| Announcement | Analysis unavailable and no draft; not a successful noncommercial verdict |
+| Undecided yarn versus finished baskets | Focused alternatives question; `needs_scope_confirmation` / `scope_clarification` |
+| Explicit 50 rolls of yarn, basket only a color reference | Material sourcing clarification; no basket/POD switch and no repeated quantity; no live offer |
+
+The last two cases verify the new text branch with the real model. None supplied
+photos. Photo recognition, actual supplier lookup and Telegram delivery still
+require a fresh permitted lead after the scanner extension is updated.
+
+#### Scanner operator handoff
+
+The task owner cannot currently access the company scanning PC. A person with
+authorized access to that PC must complete the browser-side update:
+
+1. Wait for its current crawl to finish. Use the existing Chrome profile and
+   account slot; do not create a second concurrent scanner or change FB login.
+2. Check the installed connector version at `chrome://extensions`. Prefer the
+   approved Web Store release if it includes photo capture. If using the internal
+   fallback, open `https://sale.thgfulfill.com/extension-beta`, check the served
+   version, download its CI-built zip and follow the page's install instructions.
+   Do not load the repository's extension source folder.
+3. The beta page instructs removing the old beta, loading the newly extracted
+   package and pairing again through the Browser dashboard. Retain the previous
+   package for rollback; keep one active scanner for this account. If the user
+   lacks pairing access, obtain an authorized dashboard operator instead of
+   copying pairing credentials or guessing the workspace/account slot.
+4. Reload the existing Facebook tab between jobs, then confirm the connector
+   is online in the same workspace/account slot. Report only the installed
+   version and success/failure; do not send pairing codes, tokens or passwords.
+5. Observe the next naturally collected photo lead. Verify event/model photo
+   counts and analysis status, then compare the actual Telegram draft with the
+   original post. A version update alone is not photo-path acceptance.
+
+Backend deploy, package publication and installed browser update are separate
+steps. Do not force a remote restart, replay an old post or send a synthetic
+message to the live sales group to conceal this remaining dependency.
+
 ## Component ownership
 
 | Component | Facade / responsibility | Proof / boundary |
