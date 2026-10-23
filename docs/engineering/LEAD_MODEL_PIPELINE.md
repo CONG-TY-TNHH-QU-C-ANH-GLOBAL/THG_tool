@@ -515,3 +515,32 @@ After release, verify new leads/diagnostic reason codes; do not replay old leads
 or send synthetic notifications to the live sales group. The extension bundle
 on the server still needs operator/browser installation or Web Store release
 before photo capture can be claimed active.
+
+### Product fulfillment fallback, 2026-10-23
+
+A read-only production probe confirmed an original photo reference reached the
+unified analysis attempt, but analysis failed and the legacy text fallback
+treated a request to fulfill a named item as warehousing. The wording model then
+expanded that service into an unrelated US warehouse pitch. Receipt of a photo
+reference does not establish successful provider access or visual understanding.
+
+Direct Vietnamese requests for a provider to fulfill an item now retain that
+product path when analysis fails or contradicts the explicit request. A bounded,
+privacy-checked named item can reach the existing catalog/marketplace lookup;
+an unnamed image reference cannot become an arbitrary search. Real verified
+catalog and marketplace links retain their existing ownership and guards. With
+no offer, a focused contact draft offers to check sourcing/fulfillment options,
+without claiming manufacturing capability, stock, price or destination. It does
+not ask again for the supplied item. This narrow fallback stays deterministic
+instead of letting another wording call replace it with a warehouse brochure.
+Explicit warehouse/order handling requests keep their service path. Crawl
+admission, raw excerpts, notification volume and outbound execution are unchanged.
+
+Analysis failures now carry bounded `AnalysisFailure` codes and log
+`analysis_error`, separating timeout, transport, provider input rejection,
+authentication/rate limits, HTTP failures, invalid/incomplete envelopes and
+context validation. No provider response body, signed image URL or model prose
+is logged. No provider/model/timeout/retry policy is changed. Earlier historical
+failures have no such detail; their cause cannot be reconstructed from the old
+generic unavailable status. Successful real-image interpretation and a live
+source lookup remain separate acceptance checks.

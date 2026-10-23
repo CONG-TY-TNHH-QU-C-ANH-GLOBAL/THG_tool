@@ -67,6 +67,9 @@ func noOfferSuggestionForLookup(leadText, author string, status supplierLookupSt
 // Posts without a product or sourcing need get no draft, so a vague logistics
 // post is not answered with an off-topic question.
 func noOfferSuggestion(leadText, author string) LeadSuggestion {
+	if fulfillmentProductTail(leadText) != "" {
+		return LeadSuggestion{Reply: productFulfillmentReply(leadText), SourcingNote: noOfferSourcingNote}
+	}
 	query := supplierQuery(leadText)
 	if link, _ := leadMarketplaceURL(leadText); link == "" && query == "" && !wantsPersonalizedPOD(leadText) {
 		if service := serviceInquirySuggestion(leadText, author); service.Reply != "" {

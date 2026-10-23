@@ -90,7 +90,7 @@ func TestCommentOnlyPODQuoteCannotGroundUnifiedAnalysis(t *testing.T) {
 		return nil, nil
 	}
 	got := BuildLeadSuggestionWithContext(context.Background(), nil, gen, nil, 7, post, "Sample", nil, nil, lookup)
-	if calls != 1 || got.AnalysisStatus != "unavailable" || got.Reply == "" || strings.Contains(got.Reply, "in theo yêu cầu") || got.SourcingNote != "" {
+	if calls != 1 || got.AnalysisStatus != "unavailable" || got.AnalysisFailure != "context_validation" || got.Reply == "" || strings.Contains(got.Reply, "in theo yêu cầu") {
 		t.Fatalf("comment quote accepted as author evidence: %+v, calls=%d", got, calls)
 	}
 }
@@ -103,7 +103,7 @@ func TestFulfillmentCaptionFallbackDoesNotSourceCommenterPOD(t *testing.T) {
 			return nil, nil
 		}
 		got := BuildLeadSuggestion(context.Background(), nil, nil, nil, 7, post, "Sample", nil, lookup)
-		if got.Reply == "" || !strings.Contains(got.Reply, "loại hàng") || strings.Contains(got.Reply, "in theo yêu cầu") || got.SourcingNote != "" || got.Supplier.HasOffer() {
+		if got.Reply == "" || strings.Contains(got.Reply, "loại hàng") || strings.Contains(got.Reply, "dịch vụ kho") || strings.Contains(got.Reply, "in theo yêu cầu") || got.SourcingNote == "" || got.Supplier.HasOffer() {
 			t.Errorf("fulfillment fallback contaminated by commenter: %+v", got)
 		}
 	}

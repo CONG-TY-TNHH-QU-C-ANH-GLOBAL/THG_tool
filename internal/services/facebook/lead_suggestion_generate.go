@@ -24,6 +24,10 @@ func refineLeadSuggestion(ctx context.Context, builder *knowledgeRuntime.Builder
 		out.ReplyStatus = "not_applicable"
 		return out
 	}
+	if fulfillmentProductTail(post) != "" && out.ProductURL == "" && !out.Supplier.HasOffer() {
+		out.Reply, out.ReplyStatus = productFulfillmentReply(post), "grounded_product_fulfillment"
+		return out
+	}
 	if msgGen == nil || !msgGen.Available() || profile == nil {
 		out.ReplyStatus = "provider_or_profile_unavailable"
 		return out

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -19,7 +18,7 @@ import (
 // fetched on the application server and no provider error body is logged.
 func (mg *MessageGenerator) AnalyzeLeadImages(ctx context.Context, post string, urls []string) (visualcontext.Context, error) {
 	if len(urls) == 0 {
-		return visualcontext.Context{}, errors.New("image context unavailable")
+		return visualcontext.Context{}, leadModelFailure("unavailable")
 	}
 	content, err := mg.requestLeadAnalysis(ctx, visualcontext.Prompt(sanitizeForPrompt(post, 6000)), urls)
 	if err != nil {
@@ -36,12 +35,16 @@ func (mg *MessageGenerator) AnalyzeLeadContext(ctx context.Context, post string,
 	if err != nil {
 		return leadcontext.Context{}, err
 	}
-	return leadcontext.ParseWithImages([]byte(content), post, len(urls))
+	out, err := leadcontext.ParseWithImages([]byte(content), post, len(urls))
+	if err != nil {
+		return leadcontext.Context{}, leadModelFailure("context_validation")
+	}
+	return out, nil
 }
 
 func (mg *MessageGenerator) requestLeadAnalysis(ctx context.Context, prompt string, urls []string) (string, error) {
 	if mg == nil || !mg.Available() || len(urls) > 3 {
-		return "", errors.New("lead analysis unavailable")
+		return "", leadModelFailure("unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -59,23 +62,23 @@ func (mg *MessageGenerator) requestLeadAnalysis(ctx context.Context, prompt stri
 // It does not retry, expose provider bodies, or accept truncated completions.
 func (mg *MessageGenerator) requestLeadCompletion(ctx context.Context, body map[string]any) (string, error) {
 	if mg == nil || !mg.Available() {
-		return "", errors.New("lead model unavailable")
+		return "", leadModelFailure("unavailable")
 	}
 	mg.applyProviderTuning(body)
 	data, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, mg.chatURL(), bytes.NewReader(data))
 	if err != nil {
-		return "", errors.New("invalid lead analysis request")
+		return "", leadModelFailure("invalid_request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+mg.apiKey)
 	response, err := mg.client.Do(req)
 	if err != nil {
-		return "", errors.New("lead analysis request failed")
+		return "", leadTransportFailure(ctx)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", errors.New("lead analysis provider unavailable")
+		return "", leadProviderFailure(response.StatusCode)
 	}
 	var result struct {
 		Choices []struct {
@@ -84,11 +87,14 @@ func (mg *MessageGenerator) requestLeadCompletion(ctx context.Context, body map[
 		} `json:"choices"`
 	}
 	if json.NewDecoder(io.LimitReader(response.Body, 32768)).Decode(&result) != nil || len(result.Choices) != 1 {
-		return "", errors.New("invalid lead analysis response")
+		if ctx.Err() != nil {
+			return "", leadTransportFailure(ctx)
+		}
+		return "", leadModelFailure("invalid_response")
 	}
 	choice := result.Choices[0]
 	if choice.FinishReason == "length" || choice.Message.Refusal != "" || strings.TrimSpace(choice.Message.Content) == "" {
-		return "", errors.New("incomplete lead analysis response")
+		return "", leadModelFailure("incomplete_response")
 	}
 	return choice.Message.Content, nil
 }

@@ -25,6 +25,7 @@ func BuildLeadSuggestionWithContext(ctx context.Context, builder *knowledgeRunti
 	if err != nil {
 		out := BuildLeadSuggestion(ctx, builder, generator, profile, orgID, post, author, shipping, sourcing)
 		out.AnalysisStatus = "unavailable"
+		out.AnalysisFailure = ai.LeadModelFailureCode(err)
 		out.ReplyNote = "Chưa phân tích được đầy đủ ngữ cảnh; gợi ý dự phòng dựa trên nội dung chữ."
 		return out
 	}
@@ -85,6 +86,9 @@ func supportedLeadProductHint(post string, need leadcontext.Context) bool {
 func directProductRequest(post string) bool {
 	if serviceInquiryKind(post) != "" || containsAnyLeadPhrase(post, serviceOfferTerms) {
 		return false
+	}
+	if fulfillmentProductTail(post) != "" {
+		return true
 	}
 	if supplierQuery(post) == "" && !wantsPersonalizedPOD(post) {
 		return false

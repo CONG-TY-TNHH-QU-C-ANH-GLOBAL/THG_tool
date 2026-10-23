@@ -26,6 +26,8 @@ type LeadSuggestion struct {
 	// including failures; it does not prove delivery to the remote provider.
 	ImageInputs   int    `json:",omitempty"`
 	ImageAnalysis string `json:",omitempty"`
+	// AnalysisFailure is a fixed model/validation failure code, never raw errors.
+	AnalysisFailure string `json:",omitempty"`
 }
 
 // SupplierMatch is the render-ready view of one sourced marketplace item. Every
