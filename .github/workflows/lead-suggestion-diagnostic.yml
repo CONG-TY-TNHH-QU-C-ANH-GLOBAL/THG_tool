@@ -282,6 +282,48 @@ jobs:
                     result = json.load(response)
                 if result.get('ok') and not result.get('plan', {}).get('error'):
                     print('pricing_hub=ready')
+                    plan = result.get('plan', {})
+                    usage = plan.get('usage', {})
+                    remaining = usage.get('remaining_quota')
+                    for field in ('remaining_quota', 'included_limit', 'total_requests'):
+                        value = usage.get(field)
+                        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10**12:
+                            print('elim_before_' + field + '=' + str(value))
+                    if not isinstance(remaining, (int, float)) or isinstance(remaining, bool) or remaining < 1:
+                        print('elim_search=skipped_no_confirmed_quota')
+                    else:
+                        # Single authorized fresh public-product search. No detail,
+                        # lead replay, browser job, messages or configuration changes.
+                        payload = json.dumps({'q': 'cotton tote bags', 'platform': 'alibaba',
+                                              'page': 1, 'size': 1, 'lang': 'en', 'refresh': True}).encode('utf-8')
+                        search = urllib.request.Request(
+                            base.rstrip('/') + '/api/scrape/search', data=payload, method='POST',
+                            headers={'x-thg-integration-key': key.decode('ascii'),
+                                     'Content-Type': 'application/json', 'User-Agent': 'Go-http-client/1.1'},
+                        )
+                        with urllib.request.urlopen(search, timeout=20) as response:
+                            found = json.load(response)
+                        if found.get('ok'):
+                            items = found.get('items', [])
+                            print('elim_search=ok')
+                            print('elim_search_cached=' + ('yes' if found.get('cached') else 'no'))
+                            print('elim_search_items=' + str(len(items) if isinstance(items, list) else 0))
+                            first = items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else {}
+                            listing = urllib.parse.urlparse(str(first.get('link', '')))
+                            valid = listing.scheme == 'https' and listing.hostname == 'detail.1688.com' and listing.path.startswith('/offer/')
+                            print('elim_search_listing=' + ('present' if valid else 'unconfirmed'))
+                            price = first.get('price')
+                            usable = isinstance(price, (int, float)) and not isinstance(price, bool) and 0 < price < 10**12
+                            print('elim_search_price=' + ('present' if usable else 'unconfirmed'))
+                        else:
+                            # Never echo an upstream error body, token or account data.
+                            print('elim_search=rejected')
+                        with urllib.request.urlopen(request, timeout=8) as response:
+                            after = json.load(response)
+                        for field in ('remaining_quota', 'included_limit', 'total_requests'):
+                            value = after.get('plan', {}).get('usage', {}).get(field)
+                            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10**12:
+                                print('elim_after_' + field + '=' + str(value))
                 else:
                     print('pricing_hub=upstream_unavailable')
             except urllib.error.HTTPError as exc:
