@@ -299,9 +299,10 @@ jobs:
                         value = usage.get(field)
                         if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10**12:
                             print('elim_before_' + field + '=' + str(value))
-                    has_quota = isinstance(remaining, (int, float)) and not isinstance(remaining, bool) and remaining >= 1
-                    if not has_quota and (credit is None or credit < 1):
-                        print('elim_search=skipped_no_confirmed_balance')
+                    # Earlier probes issued no searches. This one authorized
+                    # smoke request also verifies refusal when balances are zero.
+                    if remaining is None and credit is None:
+                        print('elim_search=skipped_unreported_balance')
                     else:
                         # Single authorized fresh public-product search. No detail,
                         # lead replay, browser job, messages or configuration changes.
@@ -328,7 +329,13 @@ jobs:
                             print('elim_search_price=' + ('present' if usable else 'unconfirmed'))
                         else:
                             # Never echo an upstream error body, token or account data.
-                            print('elim_search=rejected')
+                            reason = str(found.get('error', '')).lower()
+                            if any(token in reason for token in ('hết lượt', 'quota', 'credit', '402')):
+                                print('elim_search=quota_or_credit_exhausted')
+                            elif any(token in reason for token in ('api key', '401')):
+                                print('elim_search=key_rejected')
+                            else:
+                                print('elim_search=rejected')
                         with urllib.request.urlopen(request, timeout=8) as response:
                             after = json.load(response)
                         for field in ('remaining_quota', 'included_limit', 'total_requests'):
