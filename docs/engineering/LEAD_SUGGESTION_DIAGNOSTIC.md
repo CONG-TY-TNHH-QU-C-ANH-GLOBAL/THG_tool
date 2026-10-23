@@ -32,6 +32,14 @@ VCS string is reported as `not_confirmed`, not as proof of an old binary.
 The public Facebook post ID is passed as an input; no customer sample is baked
 into the workflow. Raw errors are not printed by the historical probe.
 
+The probe also counts fixed `analysis_error` categories and the focused
+`grounded_product_fulfillment` fallback. These counters distinguish provider
+input/auth/rate errors from timeout/transport, bad response shape and invalid
+context evidence without printing a provider body. An input rejection does not
+alone prove that the model lacks vision; expired media, unsupported formats or
+other invalid parameters can produce the same category. Older binaries/history
+without this field cannot identify those causes retroactively.
+
 Validation:
 
 ```text

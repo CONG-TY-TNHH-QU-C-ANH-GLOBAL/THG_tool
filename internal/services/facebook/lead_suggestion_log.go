@@ -20,9 +20,9 @@ const (
 // It logs no post text, author or reply: only the org, the gate, whether a
 // reply exists and the fixed operator status note.
 func LogLeadSuggestionOutcome(path string, orgID, leadID int64, gate string, suggestion models.LeadSuggestion, eventImages int) {
-	log.Printf("[LeadSuggestion] path=%s org_id=%d lead_id=%d gate=%s analysis=%s wording=%s reply=%t supplier=%t product=%t event_images=%d model_images=%d image_analysis=%s note=%q",
+	log.Printf("[LeadSuggestion] path=%s org_id=%d lead_id=%d gate=%s analysis=%s wording=%s reply=%t supplier=%t product=%t event_images=%d model_images=%d image_analysis=%s analysis_error=%s note=%q",
 		path, orgID, leadID, gate, suggestion.AnalysisStatus, suggestion.ReplyStatus, strings.TrimSpace(suggestion.Reply) != "", suggestion.Supplier.HasOffer(),
-		strings.TrimSpace(suggestion.ProductURL) != "", boundedImageCount(eventImages), boundedImageCount(suggestion.ImageInputs), imageAnalysisLogCode(suggestion.ImageAnalysis), suggestion.SourcingNote)
+		strings.TrimSpace(suggestion.ProductURL) != "", boundedImageCount(eventImages), boundedImageCount(suggestion.ImageInputs), imageAnalysisLogCode(suggestion.ImageAnalysis), analysisFailureLogCode(suggestion.AnalysisFailure), suggestion.SourcingNote)
 }
 
 func boundedImageCount(count int) int {
@@ -33,6 +33,17 @@ func boundedImageCount(count int) int {
 		return 3
 	}
 	return count
+}
+
+func analysisFailureLogCode(code string) string {
+	switch code {
+	case "none", "unavailable", "invalid_request", "timeout", "canceled", "transport",
+		"provider_rejected_input", "provider_auth", "provider_rate_limit", "provider_http_error",
+		"context_validation", "invalid_response", "incomplete_response", "unclassified":
+		return code
+	default:
+		return "not_recorded"
+	}
 }
 
 func imageAnalysisLogCode(status string) string {

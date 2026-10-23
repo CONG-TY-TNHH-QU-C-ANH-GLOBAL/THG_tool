@@ -35,6 +35,9 @@ func serviceInquiryKind(text string) string {
 	if !containsAnyLeadPhrase(text, serviceNeedTerms) || containsAnyLeadPhrase(text, serviceOfferTerms) {
 		return ""
 	}
+	if fulfillmentProductTail(text) != "" {
+		return "" // A provider for a named item is not automatically a warehouse.
+	}
 	if containsAnyLeadPhrase(text, expressServiceTerms) {
 		return serviceExpress
 	}

@@ -27,6 +27,9 @@ func supplierQueryLanguage(text string) string {
 // supplierQuery extracts a product phrase from buying or POD requests. Vague
 // logistics posts have no query, so they never consume marketplace quota.
 func supplierQuery(raw string) string {
+	if query := fulfillmentProductQuery(raw); query != "" {
+		return query
+	}
 	text := strings.ToLower(raw)
 	if len([]rune(text)) > 1500 {
 		text = string([]rune(text)[:1500])

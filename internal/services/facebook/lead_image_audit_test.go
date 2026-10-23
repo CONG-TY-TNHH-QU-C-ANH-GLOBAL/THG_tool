@@ -56,6 +56,9 @@ func TestUnifiedImageAuditMatchesActualRequestAndFallback(t *testing.T) {
 			if actualImages != tc.inputs || out.ImageInputs != actualImages || out.ImageAnalysis != tc.status {
 				t.Fatalf("request/audit mismatch: actual=%d audit=%+v", actualImages, out)
 			}
+			if tc.fail && out.AnalysisFailure != "provider_http_error" {
+				t.Fatalf("provider failure lost its bounded diagnostic code: %q", out.AnalysisFailure)
+			}
 			assertImageAuditLogPrivate(t, out, len(tc.images))
 		})
 	}
@@ -97,7 +100,7 @@ func TestImageAuditLogRejectsUntrustedStatus(t *testing.T) {
 	log.SetOutput(&buf)
 	defer log.SetOutput(previous)
 	LogLeadSuggestionOutcome("crawl", 7, 42, SuggestionGateAttempted,
-		models.LeadSuggestion{ImageInputs: 9, ImageAnalysis: "https://private.example/photo?secret=PRIVATE"}, 9)
+		models.LeadSuggestion{ImageInputs: 9, ImageAnalysis: "https://private.example/photo?secret=PRIVATE", AnalysisFailure: "PRIVATE_PROVIDER_BODY"}, 9)
 	for _, token := range []string{"event_images=3", "model_images=3", "image_analysis=not_recorded"} {
 		if !strings.Contains(buf.String(), token) {
 			t.Fatalf("missing safe audit field %q", token)

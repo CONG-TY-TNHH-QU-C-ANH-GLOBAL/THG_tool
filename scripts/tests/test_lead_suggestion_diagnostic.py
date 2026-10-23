@@ -20,6 +20,20 @@ exec(compile(textwrap.dedent(block), str(WORKFLOW), 'exec'), probe)
 
 
 class DiagnosticTests(unittest.TestCase):
+    def test_failure_summary_exposes_only_fixed_counts(self):
+        lines = [
+            '[LeadSuggestion] org_id=7 lead_id=1 analysis=unavailable analysis_error=provider_rejected_input wording=grounded_product_fulfillment note="PRIVATE_RESPONSE"',
+            '[LeadSuggestion] org_id=7 lead_id=2 analysis=unavailable analysis_error=timeout note="PRIVATE_URL"',
+            '[LeadSuggestion] org_id=7 lead_id=3 analysis=unavailable analysis_error=context_validation note="PRIVATE_MODEL_TEXT"',
+        ]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            probe['summarize'](lines, 'target')
+        summary = out.getvalue()
+        for token in ('analysis_input_rejected', 'analysis_timeout', 'analysis_invalid_context', 'wording_product_fulfillment'):
+            self.assertIn('target_' + token + '=1', summary)
+        self.assertNotIn('PRIVATE', summary)
+
     def test_invalid_inputs_stop_before_subprocess(self):
         cases = [('999999', '', ''), ('20', '1;DROP TABLE leads', ''),
                  ('20', '', 'not-a-commit'), ('20', '0', ''), ('20', '1' * 26, '')]

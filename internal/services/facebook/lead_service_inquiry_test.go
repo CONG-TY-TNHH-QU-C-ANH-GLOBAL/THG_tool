@@ -12,6 +12,8 @@ func TestServiceInquiriesGetServiceDrafts(t *testing.T) {
 		{"Looking for an FBA prep center in the US, any recommendations?", "warehousing and fulfillment", "model"},
 		{"Cần tìm đơn vị vận chuyển hàng từ Việt Nam đi Mỹ, mỗi tháng khoảng 300kg", "vận chuyển quốc tế đi Mỹ", "khối lượng"},
 		{"Bên nào có kho ở Mỹ nhận fulfill đơn Etsy không ạ?", "dịch vụ kho và fulfillment", "mẫu"},
+		{"Tìm bên fulfill đơn Etsy", "dịch vụ kho và fulfillment", "mẫu"},
+		{"Mình cần bên fulfill túi vải tại kho Mỹ", "dịch vụ kho và fulfillment", "mẫu"},
 		{"Mình bán Amazon, cần tìm bên ship hàng FBA từ Trung Quốc về kho Amazon Mỹ", "vận chuyển quốc tế", "mẫu"},
 		{"Ai có line gửi hàng đi Úc giá tốt không ạ", "vận chuyển quốc tế đi Úc", "nơi nhận"},
 		// English post as crawled through the Vietnamese Facebook UI.
