@@ -285,12 +285,23 @@ jobs:
                     plan = result.get('plan', {})
                     usage = plan.get('usage', {})
                     remaining = usage.get('remaining_quota')
+                    credit = None
+                    for container in (plan, plan.get('billing', {}), plan.get('credits', {})):
+                        if not isinstance(container, dict):
+                            continue
+                        value = container.get('credit_balance')
+                        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10**12:
+                            credit = value
+                            break
+                    print('elim_before_credit_balance=' + ('unreported' if credit is None else str(credit)))
+                    print('elim_subscription_record=' + ('present' if plan.get('subscription') else 'absent'))
                     for field in ('remaining_quota', 'included_limit', 'total_requests'):
                         value = usage.get(field)
                         if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10**12:
                             print('elim_before_' + field + '=' + str(value))
-                    if not isinstance(remaining, (int, float)) or isinstance(remaining, bool) or remaining < 1:
-                        print('elim_search=skipped_no_confirmed_quota')
+                    has_quota = isinstance(remaining, (int, float)) and not isinstance(remaining, bool) and remaining >= 1
+                    if not has_quota and (credit is None or credit < 1):
+                        print('elim_search=skipped_no_confirmed_balance')
                     else:
                         # Single authorized fresh public-product search. No detail,
                         # lead replay, browser job, messages or configuration changes.
