@@ -39,7 +39,7 @@ test('caps original photo references at three', () => {
 
 test('FeedUnit wrapper can expose its first real article without accepting nested comments', () => {
   const post = { parentElement: { closest: () => null } };
-  const wrapper = { contains: node => node === post };
+  const wrapper = { querySelector: () => post };
   const good = 'https://scontent.fbcdn.net/post.jpg';
   const commentOwner = { parentElement: { closest: () => post } };
   const commentPhoto = photo(commentOwner, 'https://scontent.fbcdn.net/comment.jpg');

@@ -24,7 +24,10 @@ var leadExpandedComments = regexp.MustCompile(`(?i)\s(?:\d+\s+){1,3}(?:xem thêm
 // The article text opens with "Facebook <author> 23 phút trước ·" in the
 // operator's Vietnamese UI. Those accented UI words made every English post
 // look Vietnamese, so the header is dropped before intent and language checks.
-var leadPostHeader = regexp.MustCompile(`(?i)^\s*facebook\s+[^·]{1,80}?(?:(?:\s*·)?\s+(?:quản trị viên|người kiểm duyệt|administrator|admin|moderator)\s*·)?\s+\d+\s*(?:phút|giờ|ngày|tuần|tháng|năm|mins?|minutes?|hrs?|hours?|h|days?|d|weeks?|w|years?|y)(?:\s+trước|\s+ago)?\s*·\s*`)
+const leadHeaderStatus = `(?:theo dõi|follow|quản trị viên|người kiểm duyệt|administrator|admin|moderator)`
+const leadHeaderTime = `(?:\d+\s*(?:phút|giờ|ngày|tuần|tháng|năm|mins?|minutes?|hrs?|hours?|h|days?|d|weeks?|w|years?|y)(?:\s+trước|\s+ago)?|vừa xong|just now)`
+
+var leadPostHeader = regexp.MustCompile(`(?i)^\s*facebook\s+[^·]{1,80}?\s*·?(?:\s+` + leadHeaderStatus + `\s*·?){0,2}\s+` + leadHeaderTime + `\s*·\s*`)
 
 func leadPostBody(text string) string {
 	if at := leadPostHeader.FindStringIndex(text); at != nil && strings.TrimSpace(text[at[1]:]) != "" {
