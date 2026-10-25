@@ -10,8 +10,11 @@ related_pr_or_issue: Add Taobao sourcing to replies
 
 ## Trạng thái và phạm vi
 
-Implemented local trong THG_tool worktree `feat/company-knowledge-foundation`,
-nền `b2a3cf6d`; chưa commit, phát hành extension, deploy hoặc bật production.
+Thiết kế ban đầu xuất phát từ worktree `feat/company-knowledge-foundation`,
+nền `b2a3cf6d`. Nhánh chữ/ảnh đã được triển khai sau đó. Trạng thái runtime,
+các lỗi đầu vào và giới hạn còn lại được đối chiếu trong
+[audit ngày 25/10](LEAD_INPUT_AUDIT_2026-10-25.md); receipt URL không chứng minh
+model đã đọc và hiểu ảnh thành công. Xem thêm [luồng phân tích hiện tại](LEAD_MODEL_PIPELINE.md).
 Đường chính đã nối là bài quét từ Chrome Extension → crawl-result → lead event →
 enrichment → Telegram. Bộ phân loại/điều kiện tạo lead vẫn dựa trên luồng cũ;
 đây không phải chức năng tìm lead chỉ từ ảnh hoặc bỏ qua lọc nội dung ngắn.

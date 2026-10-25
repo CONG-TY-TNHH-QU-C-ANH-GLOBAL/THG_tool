@@ -28,10 +28,10 @@ globalThis.THGCrawlImages = globalThis.THGCrawlImages || (() => {
   function belongsToPost(img, article) {
     const owner = img.closest('[role="article"]');
     if (!owner || owner === article) return true;
-    // FeedUnit containers wrap the real article. Accept that first article,
-    // but reject an article nested inside another article (e.g. comments).
-    const parentArticle = owner.parentElement?.closest('[role="article"]');
-    return !parentArticle || (parentArticle !== article && !article.contains(parentArticle));
+    if (article.matches?.('[role="article"]')) return false;
+    // A FeedUnit may also contain sibling articles (comments/related posts).
+    // Only its first real article can supply the primary post's photos.
+    return owner === article.querySelector?.('[role="article"]');
   }
 
   function isPhotoLink(raw) {
