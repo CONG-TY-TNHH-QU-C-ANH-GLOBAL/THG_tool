@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thg/scraper/internal/leadingest"
@@ -12,8 +13,17 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	table string
 }
+
+// Outbox tables a Store may use. Each delivery target has its OWN table so one
+// target being down or slow never delays another (the CRM keeps its own retry
+// schedule while NewHub catches up, and vice versa).
+const (
+	CRMOutboxTable    = "crm_lead_sync_outbox"
+	NewHubOutboxTable = "newhub_lead_sync_outbox"
+)
 
 type item struct {
 	ID       int64
@@ -22,7 +32,16 @@ type item struct {
 }
 
 func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+	return &Store{db: db, table: CRMOutboxTable}
+}
+
+// NewStoreFor returns a Store bound to one of the known outbox tables. The name
+// is never taken from configuration text, so it cannot inject SQL.
+func NewStoreFor(db *sql.DB, table string) *Store {
+	if table != CRMOutboxTable && table != NewHubOutboxTable {
+		panic("crmleadsync: unknown outbox table " + table)
+	}
+	return &Store{db: db, table: table}
 }
 
 func (s *Store) Enqueue(ctx context.Context, event leadingest.LeadEvent, suggestions ...models.LeadSuggestion) error {
@@ -39,8 +58,8 @@ func (s *Store) Enqueue(ctx context.Context, event leadingest.LeadEvent, suggest
 		return fmt.Errorf("marshal CRM lead payload: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO crm_lead_sync_outbox (event_key, payload_json, state, available_at)
-		 VALUES (?, ?, 'pending', 0)`, p.EventKey, string(body))
+		s.q(`INSERT OR IGNORE INTO {outbox} (event_key, payload_json, state, available_at)
+		 VALUES (?, ?, 'pending', 0)`), p.EventKey, string(body))
 	if err != nil {
 		return fmt.Errorf("enqueue CRM lead: %w", err)
 	}
@@ -56,13 +75,13 @@ func (s *Store) Claim(ctx context.Context, now time.Time, limit int) ([]item, er
 	}
 	nowUnix := now.UTC().Unix()
 	if _, err := s.db.ExecContext(ctx,
-		`UPDATE crm_lead_sync_outbox SET state='pending', locked_until=0, available_at=?
-		 WHERE state='sending' AND locked_until > 0 AND locked_until <= ?`, nowUnix, nowUnix); err != nil {
+		s.q(`UPDATE {outbox} SET state='pending', locked_until=0, available_at=?
+		 WHERE state='sending' AND locked_until > 0 AND locked_until <= ?`), nowUnix, nowUnix); err != nil {
 		return nil, fmt.Errorf("reclaim CRM lead sync: %w", err)
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, payload_json, attempts FROM crm_lead_sync_outbox
-		 WHERE state='pending' AND available_at <= ? ORDER BY id LIMIT ?`, nowUnix, limit)
+		s.q(`SELECT id, payload_json, attempts FROM {outbox}
+		 WHERE state='pending' AND available_at <= ? ORDER BY id LIMIT ?`), nowUnix, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list CRM lead sync: %w", err)
 	}
@@ -85,8 +104,8 @@ func (s *Store) Claim(ctx context.Context, now time.Time, limit int) ([]item, er
 	claimed := make([]item, 0, len(candidates))
 	for _, candidate := range candidates {
 		result, err := s.db.ExecContext(ctx,
-			`UPDATE crm_lead_sync_outbox SET state='sending', locked_until=?
-		 WHERE id=? AND state='pending' AND available_at <= ?`, nowUnix+30, candidate.ID, nowUnix)
+			s.q(`UPDATE {outbox} SET state='sending', locked_until=?
+		 WHERE id=? AND state='pending' AND available_at <= ?`), nowUnix+30, candidate.ID, nowUnix)
 		if err != nil {
 			return nil, fmt.Errorf("claim CRM lead sync %d: %w", candidate.ID, err)
 		}
@@ -99,8 +118,8 @@ func (s *Store) Claim(ctx context.Context, now time.Time, limit int) ([]item, er
 
 func (s *Store) Succeed(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE crm_lead_sync_outbox SET state='succeeded', locked_until=0, last_error=''
-		 WHERE id=? AND state='sending'`, id)
+		s.q(`UPDATE {outbox} SET state='succeeded', locked_until=0, last_error=''
+		 WHERE id=? AND state='sending'`), id)
 	return err
 }
 
@@ -108,21 +127,27 @@ func (s *Store) Retry(ctx context.Context, item item, now time.Time, message str
 	attempts := item.Attempts + 1
 	if attempts >= 8 {
 		_, err := s.db.ExecContext(ctx,
-			`UPDATE crm_lead_sync_outbox SET state='failed', attempts=?, locked_until=0, last_error=?
-		 WHERE id=? AND state='sending'`, attempts, truncate(message, 500), item.ID)
+			s.q(`UPDATE {outbox} SET state='failed', attempts=?, locked_until=0, last_error=?
+		 WHERE id=? AND state='sending'`), attempts, truncate(message, 500), item.ID)
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE crm_lead_sync_outbox SET state='pending', attempts=?, available_at=?, locked_until=0, last_error=?
-		 WHERE id=? AND state='sending'`, attempts, now.UTC().Add(retryDelay(attempts)).Unix(), truncate(message, 500), item.ID)
+		s.q(`UPDATE {outbox} SET state='pending', attempts=?, available_at=?, locked_until=0, last_error=?
+		 WHERE id=? AND state='sending'`), attempts, now.UTC().Add(retryDelay(attempts)).Unix(), truncate(message, 500), item.ID)
 	return err
 }
 
 func (s *Store) Block(ctx context.Context, item item, message string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE crm_lead_sync_outbox SET state='blocked', attempts=?, locked_until=0, last_error=?
-		 WHERE id=? AND state='sending'`, item.Attempts+1, truncate(message, 500), item.ID)
+		s.q(`UPDATE {outbox} SET state='blocked', attempts=?, locked_until=0, last_error=?
+		 WHERE id=? AND state='sending'`), item.Attempts+1, truncate(message, 500), item.ID)
 	return err
+}
+
+// q puts this Store's outbox table into a statement (table names cannot be bound
+// as SQL parameters; the name itself comes only from NewStore/NewStoreFor).
+func (s *Store) q(statement string) string {
+	return strings.ReplaceAll(statement, "{outbox}", s.table)
 }
 
 func retryDelay(attempt int) time.Duration {
