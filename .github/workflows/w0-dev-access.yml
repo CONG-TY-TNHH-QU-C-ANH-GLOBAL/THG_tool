@@ -1244,6 +1244,53 @@ jobs:
                       out['manifest'] = dict(status='UNAVAILABLE')
               return out
 
+          def core_distribution_metadata(memory, scoped_erp):
+              core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
+              references = [('sha256:c36e683f65c6075fce246bcb6471bd47213ac98493a19328dfdf66fcb01c9517',4861),
+                            ('sha256:f3ca55ce4bb409e1b65ba5d10e0e789137bc59468957aa942e83adba9e248e0c',564)]
+              out = dict(schema='w0.core-distribution-metadata@1',status='UNAVAILABLE',rootCoreDigest=core,
+                         resourceCondition='LOW_MEMORY' if memory < 128*1024*1024 else 'NORMAL',
+                         labels=dict(status='UNAVAILABLE'),
+                         children=[dict(digest=d,declaredSize=s,status='UNAVAILABLE') for d,s in references])
+              if type(scoped_erp) is not list or len(scoped_erp) != 1 or type(scoped_erp[0]) is not str or not re.fullmatch(r'[a-f0-9]{64}',scoped_erp[0]):
+                  return out
+              cid = scoped_erp[0]
+              expected = cid + '|true|/opt/thg-newhub|erp|' + core + '\n'
+              if public_bundle_identity(cid) != expected:
+                  return out
+              active = out['labels']
+              try:
+                  state,raw = official_metadata_command(['docker','image','inspect','--format','{{json .Config.Labels}}','registry.autonow.vn/core/erp@' + core])
+                  active['status'] = state
+                  if state != 'OK':
+                      out['status'] = state
+                      return out
+                  labels = public_bundle_json(raw.decode('utf-8','strict'))
+                  if labels is None:
+                      labels = {}
+                  # Reuse the bounded annotation/reference/tuple projection, not arbitrary label text.
+                  projected = official_manifest_projection(dict(schemaVersion=2,annotations=labels))
+                  active['projection'] = dict(keys=projected['annotationKeys'],devBundleRefs=projected['devBundleRefs'],releaseTuples=projected['releaseTuples'])
+                  for child in out['children']:
+                      active = child
+                      state,raw = official_metadata_command(['docker','manifest','inspect','registry.autonow.vn/core/erp@' + child['digest']])
+                      active['status'] = state
+                      if state != 'OK':
+                          out['status'] = state
+                          return out
+                      active['projection'] = official_manifest_projection(public_bundle_json(raw.decode('utf-8','strict')))
+                  out['status'] = 'METADATA_ONLY'
+              except (ValueError, UnicodeError, RecursionError, MemoryError):
+                  active['status'] = 'PARSE_ERROR'
+                  active.pop('projection',None)
+                  out['status'] = 'PARSE_ERROR'
+              finally:
+                  if public_bundle_identity(cid) != expected:
+                      out['status'] = 'UNAVAILABLE'
+                      out['labels'] = dict(status='UNAVAILABLE')
+                      out['children'] = [dict(digest=d,declaredSize=s,status='UNAVAILABLE') for d,s in references]
+              return out
+
           try:
               if os.geteuid() != 0 or not TARGET.is_dir():
                   raise ValueError('precondition')
@@ -1370,9 +1417,9 @@ jobs:
               metadata['catalogProbe'] = {'status': 'UNAVAILABLE', 'fileType': 'UNKNOWN', 'schemaKnown': False}
               metadata['signedDiscovery'] = {'status': 'UNAVAILABLE'}
               metadata['publicBundleDocs'] = {'schema':'w0.public-bundle-docs@1','status':'UNAVAILABLE'}
-              metadata['officialDevBundle'] = official_bundle_metadata(metadata['memoryAvailableBytes'], scoped_erp)
+              metadata['coreDistribution'] = core_distribution_metadata(metadata['memoryAvailableBytes'], scoped_erp)
               if metadata['diskAvailableBytes'] < 16*1024*1024:
-                  metadata['officialDevBundle']['resourceCondition'] = 'LOW_DISK'
+                  metadata['coreDistribution']['resourceCondition'] = 'LOW_DISK'
               metadata['containerDiagnostics'] = {'observations': container_diagnostics}
               print('W0_REMOTE_METADATA_JSON=' + json.dumps(metadata, separators=(',', ':')))
           except Exception:
@@ -1702,6 +1749,36 @@ jobs:
                       token(t[key],r'sha256:[a-f0-9]{64}',71)
               return value
 
+          def validate_core_distribution_metadata(value):
+              core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
+              references = [('sha256:c36e683f65c6075fce246bcb6471bd47213ac98493a19328dfdf66fcb01c9517',4861),
+                            ('sha256:f3ca55ce4bb409e1b65ba5d10e0e789137bc59468957aa942e83adba9e248e0c',564)]
+              require(type(value) is dict and set(value) == {'schema','status','rootCoreDigest','resourceCondition','labels','children'})
+              require(value['schema'] == 'w0.core-distribution-metadata@1' and value['rootCoreDigest'] == core)
+              states = {'OK','AUTH_DENIED','NOT_FOUND','NETWORK_ERROR','EXIT_ERROR','TIMEOUT','OUTPUT_LIMIT','UNAVAILABLE','PARSE_ERROR'}
+              require(value['status'] in (states - {'OK'}) | {'METADATA_ONLY'})
+              require(value['resourceCondition'] in ('NORMAL','LOW_MEMORY','LOW_DISK'))
+              def projected_record(record, keys):
+                  require(type(record) is dict and set(record) == keys | ({'projection'} if 'projection' in record else set()))
+                  require(record['status'] in states and (('projection' in record) == (record['status'] == 'OK')))
+                  if 'projection' in record:
+                      p = record['projection']
+                      if keys == {'status'}:
+                          require(type(p) is dict and set(p) == {'keys','devBundleRefs','releaseTuples'})
+                          p = dict(schemaVersion=2,descriptors=[],annotationKeys=p['keys'],devBundleRefs=p['devBundleRefs'],releaseTuples=p['releaseTuples'])
+                      # Internal validation adapter only: no fabricated OCI schema is emitted for labels.
+                      validate_official_bundle_metadata(dict(schema='w0.official-dev-bundle-metadata@1',status='METADATA_ONLY',
+                          tools=dict(docker=True,oras=False,cosign=False),resourceCondition='NORMAL',
+                          cache=dict(status='UNAVAILABLE',images=[]),manifest=dict(status='OK',projection=p)))
+              projected_record(value['labels'],{'status'})
+              require(type(value['children']) is list and len(value['children']) == 2)
+              for child,(digest,size) in zip(value['children'],references):
+                  projected_record(child,{'digest','declaredSize','status'})
+                  require(child['digest'] == digest and type(child['declaredSize']) is int and child['declaredSize'] == size)
+              if value['status'] == 'METADATA_ONLY':
+                  require(value['labels']['status'] == 'OK' and all(c['status'] == 'OK' for c in value['children']))
+              return value
+
           def validate_container_diagnostics(value):
               require(type(value) is dict and set(value) == {'observations'})
               items = value['observations']
@@ -1745,6 +1822,7 @@ jobs:
               catalog = validate_catalog_probe(metadata['catalogProbe'])
               bundle_docs = validate_public_bundle_docs(metadata['publicBundleDocs'])
               official = validate_official_bundle_metadata(metadata['officialDevBundle']) if 'officialDevBundle' in metadata else None
+              distribution = validate_core_distribution_metadata(metadata['coreDistribution']) if 'coreDistribution' in metadata else None
               if bundle_docs['status'] == 'SKIPPED_LOW_MEMORY':
                   require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               if catalog['status'] == 'SKIPPED_LOW_MEMORY':
@@ -1764,6 +1842,8 @@ jobs:
               clean['publicBundleDocs'] = bundle_docs
               if official is not None:
                   clean['officialDevBundle'] = official
+              if distribution is not None:
+                  clean['coreDistribution'] = distribution
               clean['containerDiagnostics'] = diagnostics
               if 'os' in metadata:
                   require(type(metadata['os']) is dict)
