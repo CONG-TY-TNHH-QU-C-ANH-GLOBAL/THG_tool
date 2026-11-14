@@ -121,6 +121,9 @@ jobs:
           import re
           import signal
           import subprocess
+          import stat
+          import time
+          import ipaddress
 
           TARGET = Path('/opt/thg-newhub')
           VERSION = r'v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?'
@@ -136,6 +139,378 @@ jobs:
 
           def version(value):
               return isinstance(value, str) and len(value) <= 80 and re.fullmatch(VERSION, value)
+
+          # W0_PUBLIC_DISCOVERY_BEGIN: public files only; no imports from the application.
+          PUBLIC_ROOTS = ['/repo/packages/core-dev-bundle', '/repo/packages/ext-sdk', '/opt/erp/core-dev-bundle']
+          EXCLUDED = {'.git', '.next', 'dist', 'src', 'node_modules', 'data', 'db', 'database',
+                      'backups', 'backup', 'logs', 'log', 'secrets', 'ext-secrets', 'credentials', 'photos',
+                      'uploads', 'pgdata', 'postgres', 'assistant-home', 'upgrade-control'}
+
+          def public_path(path, roots):
+              if not isinstance(path, str) or len(path) > 512 or not re.fullmatch(r'/[A-Za-z0-9_./@-]+', path):
+                  return False
+              parts = path.split('/')[1:]
+              return (all(p and p not in ('.', '..') and p.lower() not in EXCLUDED and not p.startswith('.') for p in parts)
+                      and any(path.startswith(root + '/') for root in roots))
+
+          def host_safe(path):
+              # Reject symlinks in EVERY component, including the scan root.
+              current = Path('/')
+              for part in Path(path).parts[1:]:
+                  current = current / part
+                  if stat.S_ISLNK(current.lstat().st_mode):
+                      return False
+              return True
+
+          def catalog_summary(document):
+              if type(document) is not dict or document.get('schema') != 'core-dev.capability-catalog@1':
+                  return None
+              entries = document.get('contracts')
+              if type(entries) is not list or len(entries) > 1000:
+                  return None
+              result = []
+              for entry in entries:
+                  if type(entry) is not dict or entry.get('readiness') != 'PUBLIC_STABLE' or entry.get('served') is not True:
+                      continue
+                  name = entry.get('name')
+                  number = entry.get('version')
+                  modes = entry.get('callModes')
+                  refs = [entry.get('requestSchemaRef'), entry.get('responseSchemaRef')]
+                  if (not isinstance(name, str) or not re.fullmatch(r'[a-z][A-Za-z0-9.]+@[1-9][0-9]*', name)
+                          or len(name) > 120 or type(number) is not int or not 1 <= number <= 10000
+                          or not name.endswith('@' + str(number)) or type(modes) is not list or len(modes) > 5
+                          or any(m not in ('ACTOR', 'SELF', 'SERVICE', 'SYSTEM', 'GRANT') for m in modes)
+                          or any(not isinstance(ref, str) or len(ref) > 256 or not re.fullmatch(r'sdk:CONTRACTS_V1#[a-z][A-Za-z0-9.]+@[1-9][0-9]*/(?:request|response)', ref) for ref in refs)):
+                      continue
+                  if refs != ['sdk:CONTRACTS_V1#' + name + '/request', 'sdk:CONTRACTS_V1#' + name + '/response']:
+                      continue
+                  result.append({'name': name, 'version': number, 'callModes': modes,
+                                 'readiness': 'PUBLIC_STABLE', 'served': True,
+                                 'requestSchemaRef': refs[0], 'responseSchemaRef': refs[1]})
+              return {'schema': 'core-dev.capability-catalog@1', 'contracts': result[:60],
+                      'truncated': len(result) > 60, 'schemaFields': 'REFERENCES_ONLY'}
+
+          def discover_public(memory, scoped_erp):
+              coverage = {'hostRoot': '/opt/thg-newhub', 'containerRoots': [], 'maxDepth': 5,
+                          'maxCandidates': 30, 'maxBodyBytes': 1048576, 'entriesVisited': 0,
+                          'truncated': False, 'schemaFields': 'NOT_READ', 'exclusions': 'PUBLIC_ONLY_NO_SYMLINKS'}
+              out = {'status': 'NOT_FOUND_WITHIN_SCOPE', 'coverage': coverage, 'candidates': []}
+              if memory < 128 * 1024 * 1024:
+                  out['status'] = 'SKIPPED_LOW_MEMORY'
+                  return out
+              deadline = time.monotonic() + 18
+              summaries = []
+              reads = 0
+
+              def consume(location, path, read):
+                  nonlocal reads
+                  roots = ['/opt/thg-newhub'] if location == 'HOST' else PUBLIC_ROOTS
+                  if not public_path(path, roots) or len(out['candidates']) >= 30:
+                      return
+                  base = path.rsplit('/', 1)[-1]
+                  kind = {'core-capabilities.json': 'CATALOG', 'manifest.json': 'BUNDLE_MANIFEST',
+                          'package.json': 'SDK_PACKAGE'}.get(base)
+                  if not kind or (kind == 'SDK_PACKAGE' and '/ext-sdk/package.json' not in path):
+                      return
+                  candidate = {'location': location, 'path': path, 'kind': kind, 'proof': 'NAME_ONLY'}
+                  out['candidates'].append(candidate)
+                  # Unknown manifests are NEVER opened. No arbitrary manifest.catalog.path following.
+                  if kind == 'BUNDLE_MANIFEST' or reads >= 4 or time.monotonic() >= deadline:
+                      return
+                  reads += 1
+                  raw = read(path)
+                  if raw is None or len(raw.encode('utf-8')) > 1048576:
+                      return
+                  try:
+                      body = json.loads(raw)
+                  except (ValueError, TypeError):
+                      return
+                  if kind == 'CATALOG':
+                      summary = catalog_summary(body)
+                      if summary is not None:
+                          candidate['proof'] = 'SCHEMA_MARKER_VALIDATED'
+                          summaries.append({'location': location, 'path': path, **summary})
+                  elif type(body) is dict and body.get('name') == '@erp-core/ext-sdk' and version(body.get('version')):
+                      candidate['proof'] = 'SDK_NAME_VALIDATED'
+                      candidate['sdkVersion'] = body['version']
+
+              def host_read(path):
+                  try:
+                      if not host_safe(path):
+                          return None
+                      fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                      with os.fdopen(fd, 'rb') as stream:
+                          info = os.fstat(stream.fileno())
+                          if not stat.S_ISREG(info.st_mode) or info.st_size > 1048576:
+                              return None
+                          return stream.read(1048577).decode('utf-8')
+                  except (OSError, UnicodeError):
+                      return None
+
+              try:
+                  if host_safe('/opt/thg-newhub'):
+                      pending = [('/opt/thg-newhub', 0)]
+                      while pending and time.monotonic() < deadline and coverage['entriesVisited'] < 600 and len(out['candidates']) < 30:
+                          folder, depth = pending.pop()
+                          with os.scandir(folder) as entries:
+                              for entry in entries:
+                                  coverage['entriesVisited'] += 1
+                                  if coverage['entriesVisited'] >= 600 or time.monotonic() >= deadline:
+                                      coverage['truncated'] = True
+                                      break
+                                  if entry.name.startswith('.') or entry.name.lower() in EXCLUDED or entry.is_symlink():
+                                      continue
+                                  if entry.is_dir(follow_symlinks=False) and depth < 5:
+                                      pending.append((entry.path, depth + 1))
+                                  elif entry.is_file(follow_symlinks=False):
+                                      consume('HOST', entry.path, host_read)
+                      if pending:
+                          coverage['truncated'] = True
+              except OSError:
+                  coverage['truncated'] = True
+
+              # Fixed shell program + argv only. No Node/require/eval, environment, mounts or app source.
+              shell_guard = '''p=$1
+          case "$p" in */[eE][xX][tT]-[sS][eE][cC][rR][eE][tT][sS]/*) exit 3;; esac
+          case "$p" in /repo/packages/core-dev-bundle/*|/repo/packages/ext-sdk/*|/opt/erp/core-dev-bundle/*) ;; *) exit 3;; esac
+          current=
+          oldIFS=$IFS; IFS=/; set -- $p; IFS=$oldIFS
+          for part do
+            [ -n "$part" ] || continue
+            current=$current/$part
+            [ ! -L "$current" ] || exit 3
+          done
+          [ -f "$p" ] || exit 3
+          head -c 1048577 "$p"
+          '''
+              find_script = '''for root in /repo/packages/core-dev-bundle /repo/packages/ext-sdk /opt/erp/core-dev-bundle; do
+            current=; oldIFS=$IFS; IFS=/; set -- $root; IFS=$oldIFS; safe=yes
+            for part do
+              [ -n "$part" ] || continue
+              current=$current/$part
+              [ ! -L "$current" ] || safe=no
+            done
+            [ "$safe" = yes ] && [ -d "$root" ] || continue
+            find "$root" -maxdepth 5 \\( -name .git -o -name .next -o -name dist -o -name src -o -name node_modules -o -name data -o -name db -o -name backup -o -name backups -o -name logs -o -name secrets -o -iname ext-secrets \\) -prune -o -type f \\( -name core-capabilities.json -o -name manifest.json -o -path '*/ext-sdk/package.json' \\) -print 2>/dev/null
+          done | head -n 30
+          '''
+              def container_command(cid, script, *args):
+                  if time.monotonic() >= deadline:
+                      coverage['truncated'] = True
+                      return None
+                  # Re-verify actual ID + running state + compose scope before EVERY exec.
+                  identity = command(['docker', 'inspect', '--type', 'container', '--format',
+                                      '{{.Id}}|{{.State.Running}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.service"}}', cid])
+                  if identity != cid + '|true|/opt/thg-newhub|erp\n':
+                      return None
+                  try:
+                      result = subprocess.run(['docker', 'exec', cid, '/bin/sh', '-c', script, 'w0-public', *args],
+                                              capture_output=True, timeout=min(3, max(0.1, deadline - time.monotonic())), check=False)
+                      if result.returncode == 0 and len(result.stdout) <= 1048576:
+                          return result.stdout.decode('utf-8')
+                  except (OSError, UnicodeError, subprocess.TimeoutExpired):
+                      pass
+                  return None
+
+              if len(scoped_erp) == 1 and isinstance(scoped_erp[0], str) and re.fullmatch(r'[a-f0-9]{64}', scoped_erp[0]) and time.monotonic() < deadline:
+                  cid = scoped_erp[0]
+                  paths = container_command(cid, find_script)
+                  if paths is not None and len(paths) <= 16384:
+                      coverage['containerRoots'] = list(PUBLIC_ROOTS)
+                      for path in paths.splitlines()[:30]:
+                          consume('CONTAINER_ERP', path, lambda p: container_command(cid, shell_guard, p))
+              if summaries:
+                  out['publicCatalogs'] = summaries
+                  out['status'] = 'PUBLIC_CATALOG_FOUND'
+                  coverage['schemaFields'] = 'REFERENCES_ONLY'
+              elif out['candidates']:
+                  out['status'] = 'CANDIDATES_ONLY'
+              if time.monotonic() >= deadline or len(out['candidates']) >= 30:
+                  coverage['truncated'] = True
+              return out
+          # W0_PUBLIC_DISCOVERY_END
+
+          # W0_SIGNED_DISCOVERY_BEGIN
+          SIGNED_READ_JS = r'''
+          // SIGNED_FUNCTION_BEGIN
+          async function signedRead({readPublicJson, lookup, loadSdk, privateKey, baseUrl, allowedAddresses}) {
+            if (!privateKey || typeof privateKey !== 'string' || baseUrl !== 'http://erp:3000') return {status:'UNAVAILABLE'};
+            const manifest = readPublicJson('/app/ext.json');
+            const sdk = readPublicJson('/app/node_modules/@erp-core/ext-sdk/package.json');
+            if (!manifest || manifest.id !== 'thg-crm' || manifest.extensionVersion !== '0.7.0' ||
+                !sdk || sdk.name !== '@erp-core/ext-sdk' || sdk.version !== '1.22.1') return {status:'UNAVAILABLE'};
+            const resolved = await lookup('erp', {all:true});
+            if (!Array.isArray(resolved) || !resolved.length || resolved.some(r => !allowedAddresses.includes(r.address))) return {status:'UNAVAILABLE'};
+            const originalFetch = globalThis.fetch;
+            let calls = 0;
+            const controller = new AbortController();
+            const abort = setTimeout(() => controller.abort(), 3000);
+            globalThis.fetch = async (url, options) => {
+              if (++calls !== 1 || url !== 'http://erp:3000/api/ext/v1/platform/contracts/discover' ||
+                  options?.method !== 'POST' || options?.body !== '{}') throw new Error('DENIED');
+              const response = await originalFetch(url, {...options, redirect:'error', signal:controller.signal});
+              const reader = response.body?.getReader();
+              if (!reader) throw new Error('INVALID');
+              const chunks = []; let size = 0;
+              try {
+                for (;;) {
+                  const {done, value} = await reader.read();
+                  if (done) break;
+                  size += value.byteLength;
+                  if (size > 65536) throw new Error('LIMIT');
+                  chunks.push(value);
+                }
+              } finally { await reader.cancel().catch(() => {}); }
+              const body = new Uint8Array(size); let offset = 0;
+              for (const chunk of chunks) {body.set(chunk, offset); offset += chunk.byteLength;}
+              // Never forward error bodies to SDK errors; status is the only error metadata.
+              if (!response.ok) {
+                const error = new Error('HTTP'); error.safeHttpStatus = response.status; throw error;
+              }
+              return new Response(body, {status:response.status, headers:{'content-type':'application/json'}});
+            };
+            try {
+              const {coreClient} = await loadSdk();
+              const result = await coreClient({baseUrl:'http://erp:3000', extId:'thg-crm', privateKey}).discoverContracts(null);
+              if (calls !== 1 || !result || !Array.isArray(result.contracts) || result.contracts.length > 100 ||
+                  typeof result.observedAt !== 'string' || result.observedAt.length > 40 ||
+                  !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(result.observedAt)) throw new Error('INVALID');
+              const contracts = []; const seen = new Set();
+              for (const item of result.contracts) {
+                if (!item || typeof item.contractName !== 'string' || item.contractName.length > 80 ||
+                    !/^[a-z][A-Za-z0-9]*(?:\.[a-z][A-Za-z0-9]*)+(?:@[1-9]\d*)?$/.test(item.contractName) ||
+                    !Number.isSafeInteger(item.contractVersion) || item.contractVersion < 1 ||
+                    !Array.isArray(item.supportedModes) || item.supportedModes.length > 3 ||
+                    new Set(item.supportedModes).size !== item.supportedModes.length ||
+                    item.supportedModes.some(m => !['ACTOR','SELF','SERVICE'].includes(m)) ||
+                    !['AVAILABLE','LICENSE_OFF','UNBOUND','DEPENDENCY_MISSING'].includes(item.availability)) throw new Error('INVALID');
+                const identity = item.contractName + ':' + item.contractVersion;
+                if (seen.has(identity)) throw new Error('DUPLICATE');
+                seen.add(identity);
+                contracts.push({contractName:item.contractName, contractVersion:item.contractVersion,
+                                supportedModes:item.supportedModes, availability:item.availability});
+              }
+              return {status:'AVAILABLE', contracts, observedAt:result.observedAt};
+            } catch (error) {
+              if (controller.signal.aborted) return {status:'TIMEOUT'};
+              if (Number.isInteger(error?.safeHttpStatus) && error.safeHttpStatus >= 100 && error.safeHttpStatus <= 599)
+                return {status:'ERROR', httpStatus:error.safeHttpStatus};
+              return {status:'ERROR'};
+            } finally { clearTimeout(abort); globalThis.fetch = originalFetch; }
+          }
+          // SIGNED_FUNCTION_END
+          // Main process watchdog remains armed until stdout has flushed and process exits.
+          let finished = false;
+          const finish = value => {
+            if (finished) return;
+            finished = true;
+            process.stdout.write('W0_SIGNED_DISCOVERY_JSON=' + JSON.stringify(value) + '\n', () => process.exit(0));
+          };
+          setTimeout(() => {
+            if (!finished) {finished = true; process.stdout.write('W0_SIGNED_DISCOVERY_JSON={"status":"TIMEOUT"}\n');}
+            process.exit(0);
+          }, 4200);
+          try {
+            const fs = await import('node:fs');
+            const dns = await import('node:dns/promises');
+            function readPublicJson(path) {
+              let current = '';
+              for (const part of path.split('/').filter(Boolean)) {
+                current += '/' + part;
+                if (fs.lstatSync(current).isSymbolicLink()) throw new Error('PATH');
+              }
+              const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+              try {
+                const info = fs.fstatSync(fd);
+                if (!info.isFile() || info.size > 1048576) throw new Error('LIMIT');
+                const buffer = Buffer.alloc(1048577);
+                const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
+                if (size > 1048576) throw new Error('LIMIT');
+                return JSON.parse(buffer.subarray(0, size).toString('utf8'));
+              } finally {fs.closeSync(fd);}
+            }
+            const addresses = JSON.parse(process.argv[2]);
+            if (!Array.isArray(addresses) || !addresses.length || addresses.length > 16 || addresses.some(a => typeof a !== 'string')) throw new Error('SCOPE');
+            finish(await signedRead({readPublicJson, lookup:dns.lookup,
+              loadSdk:() => import('@erp-core/ext-sdk'), privateKey:process.env.EXT_SERVICE_KEY,
+              baseUrl:process.env.ERP_CORE_URL ?? 'http://erp:3000', allowedAddresses:addresses}));
+          } catch {finish({status:'UNAVAILABLE'});}
+          '''
+
+          def signed_discovery(memory, scoped_erp):
+              if memory < 128 * 1024 * 1024:
+                  return {'status': 'SKIPPED_LOW_MEMORY'}
+              if len(scoped_erp) != 1 or not re.fullmatch(r'[a-f0-9]{64}', scoped_erp[0]):
+                  return {'status': 'UNAVAILABLE'}
+              # Scope metadata only, kept on the host; never inspect environment values.
+              identity_format = ('{"id":{{json .Id}},"name":{{json .Name}},"running":{{json .State.Running}},'
+                                 '"directory":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},'
+                                 '"service":{{json (index .Config.Labels "com.docker.compose.service")}}}')
+              network_format = ('{{range .NetworkSettings.Networks}}{"id":{{json .NetworkID}},'
+                                '"aliases":{{json .Aliases}},"address":{{json .IPAddress}}}{{println}}{{end}}')
+              def identity(target):
+                  raw = command(['docker', 'inspect', '--type', 'container', '--format', identity_format, target])
+                  try:
+                      value = json.loads(raw)
+                      if not isinstance(value.get('id'), str) or not re.fullmatch(r'[a-f0-9]{64}', value['id']) or value.get('running') is not True:
+                          return None
+                      return value
+                  except (TypeError, ValueError, AttributeError):
+                      return None
+              def networks(cid):
+                  raw = command(['docker', 'inspect', '--type', 'container', '--format', network_format, cid])
+                  result = {}
+                  try:
+                      lines = raw.splitlines()
+                      if len(lines) > 16:
+                          return {}
+                      for line in lines:
+                          if not line.strip():
+                              continue
+                          item = json.loads(line)
+                          if not re.fullmatch(r'[a-f0-9]{64}', item['id']) or type(item['aliases']) is not list or len(item['aliases']) > 32:
+                              return {}
+                          if item['id'] in result:
+                              return {}
+                          result[item['id']] = item
+                      return result
+                  except (TypeError, ValueError, KeyError, AttributeError):
+                      return {}
+              erp = identity(scoped_erp[0])
+              ext = identity('ext-thg-crm')
+              if (not erp or erp['id'] != scoped_erp[0] or erp.get('directory') != '/opt/thg-newhub' or erp.get('service') != 'erp'
+                      or not ext or ext.get('name') != '/ext-thg-crm'):
+                  return {'status': 'UNAVAILABLE'}
+              erp_nets, ext_nets = networks(erp['id']), networks(ext['id'])
+              addresses = []
+              for net in erp_nets.keys() & ext_nets.keys():
+                  if 'erp' in erp_nets[net]['aliases']:
+                      try:
+                          addresses.append(str(ipaddress.ip_address(erp_nets[net]['address'])))
+                      except ValueError:
+                          return {'status': 'UNAVAILABLE'}
+              if not addresses:
+                  return {'status': 'UNAVAILABLE'}
+              # Recheck both identity and networks immediately before exec; no alternate-container fallback.
+              if identity(erp['id']) != erp or identity(ext['id']) != ext or networks(erp['id']) != erp_nets or networks(ext['id']) != ext_nets:
+                  return {'status': 'UNAVAILABLE'}
+              try:
+                  result = subprocess.run(['docker', 'exec', '-i', '--workdir', '/app', ext['id'],
+                                           'node', '--max-old-space-size=32', '--input-type=module', '-',
+                                           json.dumps(sorted(set(addresses)), separators=(',', ':'))],
+                                          input=SIGNED_READ_JS.encode('utf-8'), capture_output=True, timeout=5, check=False)
+                  if result.returncode != 0 or len(result.stdout) > 65536:
+                      return {'status': 'ERROR'}
+                  prefix = 'W0_SIGNED_DISCOVERY_JSON='
+                  lines = result.stdout.decode('utf-8').splitlines()
+                  if len(lines) != 1 or not lines[0].startswith(prefix):
+                      return {'status': 'ERROR'}
+                  return json.loads(lines[0][len(prefix):])
+              except subprocess.TimeoutExpired:
+                  return {'status': 'TIMEOUT'}
+              except (OSError, UnicodeError, ValueError):
+                  return {'status': 'ERROR'}
+          # W0_SIGNED_DISCOVERY_END
 
           try:
               if os.geteuid() != 0 or not TARGET.is_dir():
@@ -172,6 +547,7 @@ jobs:
                       metadata['serverPublicFingerprint'] = fields[1]
 
               containers = []
+              scoped_erp = []
               metadata['containerInspection'] = 'UNAVAILABLE'
               ids_text = command(['docker', 'ps', '--all', '--filter',
                                   'label=com.docker.compose.project.working_dir=/opt/thg-newhub',
@@ -181,7 +557,7 @@ jobs:
                   if len(ids) > 32 or any(not re.fullmatch(r'[a-f0-9]{12,64}', item) for item in ids):
                       raise ValueError('container list')
                   container_format = (
-                      '{"name":{{json .Name}},"image":{{json .Config.Image}},'
+                      '{"containerId":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},'
                       '"imageId":{{json .Image}},"status":{{json .State.Status}},'
                       '"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},'
                       '"workingDirectory":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},'
@@ -195,6 +571,11 @@ jobs:
                           item = json.loads(line)
                           if item.pop('workingDirectory', None) != str(TARGET):
                               raise ValueError('container scope')
+                          actual_id = item.pop('containerId', None)
+                          if not isinstance(actual_id, str) or not re.fullmatch(r'[a-f0-9]{64}', actual_id):
+                              raise ValueError('actual container identity')
+                          if item.get('service') == 'erp' and item.get('status') == 'running':
+                              scoped_erp.append(actual_id)
                           item['name'] = item['name'].lstrip('/')
                           if not version(item.get('version')):
                               item.pop('version', None)
@@ -249,6 +630,8 @@ jobs:
                   signal.alarm(0)
                   connection.close()
               metadata['health'] = health
+              metadata['publicDiscovery'] = discover_public(metadata['memoryAvailableBytes'], scoped_erp)
+              metadata['signedDiscovery'] = signed_discovery(metadata['memoryAvailableBytes'], scoped_erp)
               print('W0_REMOTE_METADATA_JSON=' + json.dumps(metadata, separators=(',', ':')))
           except Exception:
               raise SystemExit('Read-only metadata collection failed.')
@@ -279,6 +662,89 @@ jobs:
                   result[key] = value
               return result
 
+          def validate_public_discovery(value):
+              require(type(value) is dict and set(value) in ({'status', 'coverage', 'candidates'}, {'status', 'coverage', 'candidates', 'publicCatalogs'}))
+              require(value['status'] in ('PUBLIC_CATALOG_FOUND', 'CANDIDATES_ONLY', 'NOT_FOUND_WITHIN_SCOPE', 'SKIPPED_LOW_MEMORY'))
+              roots = ['/repo/packages/core-dev-bundle', '/repo/packages/ext-sdk', '/opt/erp/core-dev-bundle']
+              excluded = {'.git', '.next', 'dist', 'src', 'node_modules', 'data', 'db', 'database', 'backups', 'backup', 'logs', 'log', 'secrets', 'ext-secrets', 'credentials', 'photos', 'uploads', 'pgdata', 'postgres', 'assistant-home', 'upgrade-control'}
+              def path_ok(location, path):
+                  token(path, r'/[A-Za-z0-9_./@-]+', 512)
+                  parts = path.split('/')[1:]
+                  require(all(p and p not in ('.', '..') and p.lower() not in excluded and not p.startswith('.') for p in parts))
+                  allowed = ['/opt/thg-newhub'] if location == 'HOST' else roots
+                  require(any(path.startswith(root + '/') for root in allowed))
+              c = value['coverage']
+              require(type(c) is dict and set(c) == {'hostRoot', 'containerRoots', 'maxDepth', 'maxCandidates', 'maxBodyBytes', 'entriesVisited', 'truncated', 'schemaFields', 'exclusions'})
+              require(c['hostRoot'] == '/opt/thg-newhub' and c['containerRoots'] in ([], roots))
+              for key, constant in (('maxDepth', 5), ('maxCandidates', 30), ('maxBodyBytes', 1048576)):
+                  require(type(c[key]) is int and c[key] == constant)
+              require(type(c['entriesVisited']) is int and 0 <= c['entriesVisited'] <= 600)
+              require(type(c['truncated']) is bool and c['schemaFields'] in ('NOT_READ', 'REFERENCES_ONLY') and c['exclusions'] == 'PUBLIC_ONLY_NO_SYMLINKS')
+              require(type(value['candidates']) is list and len(value['candidates']) <= 30)
+              for item in value['candidates']:
+                  require(type(item) is dict and set(item) in ({'location', 'path', 'kind', 'proof'}, {'location', 'path', 'kind', 'proof', 'sdkVersion'}))
+                  require(item['location'] in ('HOST', 'CONTAINER_ERP'))
+                  path_ok(item['location'], item['path'])
+                  expected = {'CATALOG': 'core-capabilities.json', 'BUNDLE_MANIFEST': 'manifest.json', 'SDK_PACKAGE': 'package.json'}
+                  require(item['kind'] in expected and item['path'].endswith('/' + expected[item['kind']]))
+                  require(item['proof'] in ('NAME_ONLY', 'SCHEMA_MARKER_VALIDATED', 'SDK_NAME_VALIDATED'))
+                  require(item['proof'] != 'SCHEMA_MARKER_VALIDATED' or item['kind'] == 'CATALOG')
+                  require(item['proof'] != 'SDK_NAME_VALIDATED' or item['kind'] == 'SDK_PACKAGE')
+                  require(item['kind'] != 'SDK_PACKAGE' or item['path'].endswith('/ext-sdk/package.json'))
+                  if 'sdkVersion' in item:
+                      require(item['kind'] == 'SDK_PACKAGE' and item['proof'] == 'SDK_NAME_VALIDATED')
+                      token(item['sdkVersion'], r'v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?', 80)
+              catalogs = value.get('publicCatalogs', [])
+              require(type(catalogs) is list and len(catalogs) <= 4)
+              for catalog in catalogs:
+                  require(type(catalog) is dict and set(catalog) == {'location', 'path', 'schema', 'contracts', 'truncated', 'schemaFields'})
+                  require(catalog['location'] in ('HOST', 'CONTAINER_ERP'))
+                  path_ok(catalog['location'], catalog['path'])
+                  require(any(item['location'] == catalog['location'] and item['path'] == catalog['path'] and item['proof'] == 'SCHEMA_MARKER_VALIDATED' for item in value['candidates']))
+                  require(catalog['schema'] == 'core-dev.capability-catalog@1' and catalog['schemaFields'] == 'REFERENCES_ONLY' and type(catalog['truncated']) is bool)
+                  require(type(catalog['contracts']) is list and len(catalog['contracts']) <= 60)
+                  for contract in catalog['contracts']:
+                      require(type(contract) is dict and set(contract) == {'name', 'version', 'callModes', 'readiness', 'served', 'requestSchemaRef', 'responseSchemaRef'})
+                      token(contract['name'], r'[a-z][A-Za-z0-9.]+@[1-9][0-9]*', 120)
+                      require(type(contract['version']) is int and 1 <= contract['version'] <= 10000 and contract['name'].endswith('@' + str(contract['version'])))
+                      require(contract['readiness'] == 'PUBLIC_STABLE' and contract['served'] is True)
+                      require(type(contract['callModes']) is list and len(contract['callModes']) <= 5 and all(m in ('ACTOR', 'SELF', 'SERVICE', 'SYSTEM', 'GRANT') for m in contract['callModes']))
+                      for key, suffix in (('requestSchemaRef', 'request'), ('responseSchemaRef', 'response')):
+                          require(contract[key] == 'sdk:CONTRACTS_V1#' + contract['name'] + '/' + suffix)
+              require((value['status'] == 'PUBLIC_CATALOG_FOUND') == bool(catalogs))
+              require((c['schemaFields'] == 'REFERENCES_ONLY') == bool(catalogs))
+              if value['status'] == 'SKIPPED_LOW_MEMORY':
+                  require(not value['candidates'] and not catalogs and not c['containerRoots'] and c['entriesVisited'] == 0)
+              if value['status'] == 'NOT_FOUND_WITHIN_SCOPE':
+                  require(not value['candidates'])
+              if value['status'] == 'CANDIDATES_ONLY':
+                  require(bool(value['candidates']))
+              return value
+
+          def validate_signed_discovery(value):
+              require(type(value) is dict and 'status' in value)
+              require(value['status'] in ('AVAILABLE', 'UNAVAILABLE', 'SKIPPED_LOW_MEMORY', 'TIMEOUT', 'ERROR'))
+              if value['status'] == 'AVAILABLE':
+                  require(set(value) == {'status', 'contracts', 'observedAt'})
+                  token(value['observedAt'], r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})', 40)
+                  require(type(value['contracts']) is list and len(value['contracts']) <= 100)
+                  seen = set()
+                  for item in value['contracts']:
+                      require(type(item) is dict and set(item) == {'contractName', 'contractVersion', 'supportedModes', 'availability'})
+                      name = token(item['contractName'], r'[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)+(@[1-9][0-9]*)?', 80)
+                      require(type(item['contractVersion']) is int and 1 <= item['contractVersion'] <= 2**53 - 1)
+                      identity = (name, item['contractVersion'])
+                      require(identity not in seen)
+                      seen.add(identity)
+                      modes = item['supportedModes']
+                      require(type(modes) is list and len(modes) <= 3 and all(type(m) is str and m in ('ACTOR', 'SELF', 'SERVICE') for m in modes) and len(set(modes)) == len(modes))
+                      require(item['availability'] in ('AVAILABLE', 'LICENSE_OFF', 'UNBOUND', 'DEPENDENCY_MISSING'))
+              else:
+                  require(set(value) == {'status'} or (value['status'] == 'ERROR' and set(value) == {'status', 'httpStatus'}))
+                  if 'httpStatus' in value:
+                      require(type(value['httpStatus']) is int and 100 <= value['httpStatus'] <= 599)
+              return value
+
           try:
               with Path(sys.argv[1]).open('rb') as stream:
                   raw = stream.read(262145)
@@ -291,12 +757,22 @@ jobs:
               require(type(metadata) is dict)
               require({'schemaVersion', 'euid', 'targetDirectory', 'appDirectoryExists', 'os',
                        'memoryAvailableBytes', 'diskAvailableBytes', 'serverPublicFingerprint',
-                       'paths', 'containerInspection', 'containers', 'health'} <= metadata.keys())
+                        'paths', 'containerInspection', 'containers', 'health'} <= metadata.keys())
+              require('publicDiscovery' in metadata)
+              require('signedDiscovery' in metadata)
+              discovery = validate_public_discovery(metadata['publicDiscovery'])
+              signed = validate_signed_discovery(metadata['signedDiscovery'])
+              if signed['status'] == 'SKIPPED_LOW_MEMORY':
+                  require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
+              if discovery['status'] == 'SKIPPED_LOW_MEMORY':
+                  require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               require(type(metadata.get('schemaVersion')) is int and metadata['schemaVersion'] == 1)
               require(type(metadata.get('euid')) is int and metadata['euid'] == 0)
               require(metadata.get('targetDirectory') == '/opt/thg-newhub')
               require(metadata.get('appDirectoryExists') is True)
               clean = {'schemaVersion': 1, 'euid': 0, 'targetDirectory': '/opt/thg-newhub', 'appDirectoryExists': True}
+              clean['publicDiscovery'] = discovery
+              clean['signedDiscovery'] = signed
               if 'os' in metadata:
                   require(type(metadata['os']) is dict)
                   require({'id', 'versionId'} <= metadata['os'].keys())
