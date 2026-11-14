@@ -130,6 +130,27 @@ jobs:
 
           container_diagnostics = []
 
+          def classify_docker_error(stderr):
+              if not isinstance(stderr, bytes):
+                  return 'OTHER'
+              text = stderr[:16384].decode('utf-8', errors='replace').lower()
+              if ('permission denied while trying to connect to the docker daemon socket' in text
+                      or 'dial unix /var/run/docker.sock: connect: permission denied' in text):
+                  return 'PERMISSION_DENIED'
+              if 'cannot connect to the docker daemon' in text or 'is the docker daemon running' in text:
+                  return 'DAEMON_UNAVAILABLE'
+              if 'no such object:' in text or 'no such container:' in text:
+                  return 'OBJECT_MISSING'
+              if 'template' in text and ('executing' in text or 'parsing error' in text or 'error calling' in text):
+                  if ('<.state.health>' in text or 'map has no entry for key "health"' in text
+                          or "can't evaluate field health in type" in text):
+                      return 'TEMPLATE_HEALTH_FIELD'
+                  if ('<.id>' in text or 'map has no entry for key "id"' in text
+                          or "can't evaluate field id in type" in text):
+                      return 'TEMPLATE_ID_FIELD'
+                  return 'TEMPLATE_OTHER'
+              return 'OTHER'
+
           def command(argv, stage=None):
               def observe(state, result=None):
                   if stage not in ('DOCKER_PS', 'DOCKER_INSPECT') or len(container_diagnostics) >= 2:
@@ -139,6 +160,8 @@ jobs:
                       if type(result.returncode) is int and 0 <= result.returncode <= 255:
                           item['exitCode'] = result.returncode
                       item['stdoutBytes'] = min(len(result.stdout), 131073)
+                      if state == 'EXIT_ERROR':
+                          item['errorKind'] = classify_docker_error(result.stderr)
                   container_diagnostics.append(item)
               try:
                   result = subprocess.run(argv, capture_output=True, timeout=4, check=False)
@@ -776,13 +799,15 @@ jobs:
               items = value['observations']
               require(type(items) is list and 1 <= len(items) <= 2)
               for index, item in enumerate(items):
-                  require(type(item) is dict and {'stage', 'state'} <= set(item) <= {'stage', 'state', 'exitCode', 'stdoutBytes'})
+                  require(type(item) is dict and {'stage', 'state'} <= set(item) <= {'stage', 'state', 'exitCode', 'stdoutBytes', 'errorKind'})
                   require(item['stage'] == ('DOCKER_PS' if index == 0 else 'DOCKER_INSPECT'))
                   require(item['state'] in ('OK', 'EXIT_ERROR', 'TIMEOUT', 'OUTPUT_LIMIT', 'OS_ERROR', 'DECODE_ERROR'))
                   if 'exitCode' in item:
                       require(type(item['exitCode']) is int and 0 <= item['exitCode'] <= 255)
                   if 'stdoutBytes' in item:
                       require(type(item['stdoutBytes']) is int and 0 <= item['stdoutBytes'] <= 131073)
+                  if 'errorKind' in item:
+                      require(item['state'] == 'EXIT_ERROR' and item['errorKind'] in ('TEMPLATE_HEALTH_FIELD', 'TEMPLATE_ID_FIELD', 'TEMPLATE_OTHER', 'OBJECT_MISSING', 'DAEMON_UNAVAILABLE', 'PERMISSION_DENIED', 'OTHER'))
                   if item['state'] == 'OK':
                       require(item.get('exitCode') == 0 and 'stdoutBytes' in item)
                   if item['state'] == 'EXIT_ERROR':
