@@ -835,6 +835,13 @@ jobs:
                   raise ValueError('extra member or truncation')
               return raw[offset + 512:offset + 512 + size]
 
+          def public_bundle_mode_type(mode):
+              # Go io/fs.FileMode.Type (also os.FileMode): ModeDir, Symlink, NamedPipe,
+              # Socket, Device, CharDevice, Irregular. Setuid/setgid/sticky and
+              # append/exclusive/temporary are NOT type bits. Not POSIX st_mode.
+              # https://go.dev/src/io/fs/fs.go — ModeType and FileMode.Type.
+              return mode & sum(1 << bit for bit in (31, 27, 26, 25, 24, 21, 19))
+
           def read_public_bundle_file(cid, relative, cap):
               # Only typed status/hash/public text is returned; archive stays bounded in host memory.
               import hashlib
@@ -853,6 +860,8 @@ jobs:
                   deadline = time.monotonic() + 6
                   absolute = '/repo/packages/core-dev-bundle/' + relative
                   parts, final = absolute.strip('/').split('/'), None
+                  if len(parts) > 16:
+                      return {'status': 'UNSAFE_PATH'}
                   for index in range(len(parts)):
                       path = '/' + '/'.join(parts[:index + 1])
                       status, header, unused = public_bundle_archive_request(cid, path, 'HEAD', 0, deadline)
@@ -862,14 +871,14 @@ jobs:
                       if item['linkTarget'] or item['mode'] & (1 << 27):
                           return {'status': 'UNSAFE_LINK'}
                       # Docker mode uses Go FileMode, not POSIX st_mode.
-                      typebits = item['mode'] & 0xfffff000
+                      typebits = public_bundle_mode_type(item['mode'])
                       if item['name'] != parts[index]:
                           return {'status': 'CHANGED'}
                       if index < len(parts) - 1:
                           if typebits != (1 << 31):
-                              return {'status': 'NOT_REGULAR'}
+                              return {'status': 'NOT_REGULAR', 'typeObservation': {'componentIndex': index, 'mode': item['mode']}}
                       elif typebits:
-                          return {'status': 'NOT_REGULAR'}
+                          return {'status': 'NOT_REGULAR', 'typeObservation': {'componentIndex': index, 'mode': item['mode']}}
                       final = item
                   if final['size'] > cap:
                       return {'status': 'TOO_LARGE'}
@@ -884,9 +893,13 @@ jobs:
                   for index in range(len(parts)):
                       status, header, unused = public_bundle_archive_request(cid, '/' + '/'.join(parts[:index + 1]), 'HEAD', 0, deadline)
                       item = public_bundle_stat(header) if status == 200 else None
-                      if (item is None or item['name'] != parts[index] or item['linkTarget']
-                              or item['mode'] & 0xfffff000 != ((1 << 31) if index < len(parts) - 1 else 0)
-                              or (index == len(parts) - 1 and item != final)):
+                      if item is None or item['name'] != parts[index]:
+                          return {'status': 'CHANGED'}
+                      if item['linkTarget'] or item['mode'] & (1 << 27):
+                          return {'status': 'CHANGED'}
+                      if public_bundle_mode_type(item['mode']) != ((1 << 31) if index < len(parts) - 1 else 0):
+                          return {'status': 'CHANGED'}
+                      if index == len(parts) - 1 and item != final:
                           return {'status': 'CHANGED'}
                   return {'status': 'READ', 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'text': text}
               except TimeoutError:
@@ -964,6 +977,8 @@ jobs:
               def collect():
                   mr = read_public_bundle_file(cid, 'manifest.json', 8388608)
                   out['manifest'] = dict(path='manifest.json', **project(mr,['status','bytes','sha256']))
+                  if mr['status'] == 'NOT_REGULAR' and 'typeObservation' in mr:
+                      out['manifest']['typeObservation'] = mr['typeObservation']
                   if mr['status'] != 'READ':
                       return
                   try:
@@ -988,6 +1003,8 @@ jobs:
                       return
                   cr = read_public_bundle_file(cid, cp, 4194304)
                   out['catalog'] = dict(path=cp, **project(cr,['status','bytes','sha256']))
+                  if cr['status'] == 'NOT_REGULAR' and 'typeObservation' in cr:
+                      out['catalog']['typeObservation'] = cr['typeObservation']
                   if cr['status'] != 'READ':
                       return
                   digest = m['catalog'].get('sha256')
@@ -1368,6 +1385,13 @@ jobs:
                           and not p.startswith('/') and all(s and s not in ('.', '..') and not s.startswith('.') for s in p.split('/'))
                           and not re.search(r'(?:^|[/._-])(?:env|config|private|secret|secrets|ext-secrets|credential|credentials|db|database|pgdata|backup|backups|node_modules|src|dist|data|logs?)(?:$|[/._-])', p, re.I))
               statuses = {'READ', 'UNSAFE_PATH', 'UNSAFE_LINK', 'NOT_REGULAR', 'TOO_LARGE', 'CHANGED', 'MISSING', 'UNREADABLE', 'INVALID_UTF8', 'READ_ERROR', 'PARSE_ERROR', 'SCHEMA_UNKNOWN', 'TIMEOUT'}
+              def type_observation(record):
+                  if 'typeObservation' in record:
+                      require(record['status'] == 'NOT_REGULAR')
+                      observation = record['typeObservation']
+                      require(type(observation) is dict and set(observation) == {'componentIndex','mode'})
+                      require(type(observation['componentIndex']) is int and 0 <= observation['componentIndex'] <= 15)
+                      require(type(observation['mode']) is int and 0 <= observation['mode'] <= 0xffffffff)
               def projection(p, fields, nested=None):
                   require(type(p) is dict and set(p) <= set(fields) | set(nested or {}))
                   for key, v in p.items():
@@ -1379,8 +1403,9 @@ jobs:
                   rec = value[key]
                   if rec is None:
                       continue
-                  require(type(rec) is dict and {'status'} <= set(rec) <= {'path', 'status', 'bytes', 'sha256', 'projection'})
+                  require(type(rec) is dict and {'status'} <= set(rec) <= {'path', 'status', 'bytes', 'sha256', 'projection', 'typeObservation'})
                   require(rec['status'] in statuses)
+                  type_observation(rec)
                   if 'path' in rec:
                       require(safe(rec['path']) and (rec['path'] == 'manifest.json' if key == 'manifest' else rec['path'].startswith('catalog/') and rec['path'].endswith('.json')))
                   if 'bytes' in rec:
@@ -1405,7 +1430,8 @@ jobs:
               require(type(value['files']) is list and len(value['files']) <= 12)
               seen, text_bytes, refs = {}, 0, 0
               for f in value['files']:
-                  require(type(f) is dict and {'path','kind','source','status'} <= set(f) <= {'path','kind','source','status','text','bytes','sha256'})
+                  require(type(f) is dict and {'path','kind','source','status'} <= set(f) <= {'path','kind','source','status','text','bytes','sha256','typeObservation'})
+                  type_observation(f)
                   p, kind = f['path'], f['kind']
                   require(safe(p) and p not in seen and kind in ('SKILL','GAPS','REFERENCE'))
                   if kind == 'SKILL':
@@ -1425,7 +1451,7 @@ jobs:
                       require(len(raw) == f['bytes'] <= 65536 and hashlib.sha256(raw).hexdigest() == f['sha256'])
                       text_bytes += len(raw)
                   else:
-                      require(set(f) == {'path','kind','source','status'})
+                      require(set(f) == {'path','kind','source','status'} | ({'typeObservation'} if 'typeObservation' in f else set()))
                   seen[p] = f
               require(text_bytes == value['textBytes'] and text_bytes <= 196608)
               require(type(value['capabilityDefs']) is list and len(value['capabilityDefs']) <= 7)
