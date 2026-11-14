@@ -128,13 +128,38 @@ jobs:
           TARGET = Path('/opt/thg-newhub')
           VERSION = r'v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?'
 
-          def command(argv):
+          container_diagnostics = []
+
+          def command(argv, stage=None):
+              def observe(state, result=None):
+                  if stage not in ('DOCKER_PS', 'DOCKER_INSPECT') or len(container_diagnostics) >= 2:
+                      return
+                  item = {'stage': stage, 'state': state}
+                  if result is not None:
+                      if type(result.returncode) is int and 0 <= result.returncode <= 255:
+                          item['exitCode'] = result.returncode
+                      item['stdoutBytes'] = min(len(result.stdout), 131073)
+                  container_diagnostics.append(item)
               try:
                   result = subprocess.run(argv, capture_output=True, timeout=4, check=False)
-                  if result.returncode != 0 or len(result.stdout) > 131072:
+                  if result.returncode != 0:
+                      observe('EXIT_ERROR' if 1 <= result.returncode <= 255 else 'OS_ERROR', result)
                       return None
-                  return result.stdout.decode('utf-8')
-              except (OSError, subprocess.TimeoutExpired, UnicodeError):
+                  if len(result.stdout) > 131072:
+                      observe('OUTPUT_LIMIT', result)
+                      return None
+                  try:
+                      text = result.stdout.decode('utf-8')
+                  except UnicodeError:
+                      observe('DECODE_ERROR', result)
+                      return None
+                  observe('OK', result)
+                  return text
+              except subprocess.TimeoutExpired:
+                  observe('TIMEOUT')
+                  return None
+              except OSError:
+                  observe('OS_ERROR')
                   return None
 
           def version(value):
@@ -551,7 +576,7 @@ jobs:
               metadata['containerInspection'] = 'UNAVAILABLE'
               ids_text = command(['docker', 'ps', '--all', '--filter',
                                   'label=com.docker.compose.project.working_dir=/opt/thg-newhub',
-                                  '--format', '{{.ID}}'])
+                                  '--format', '{{.ID}}'], stage='DOCKER_PS')
               if ids_text is not None:
                   ids = ids_text.splitlines()
                   if len(ids) > 32 or any(not re.fullmatch(r'[a-f0-9]{12,64}', item) for item in ids):
@@ -565,7 +590,7 @@ jobs:
                       '"version":{{json (index .Config.Labels "org.opencontainers.image.version")}},'
                       '"revision":{{json (index .Config.Labels "org.opencontainers.image.revision")}}}')
                   records = command(['docker', 'inspect', '--type', 'container', '--format',
-                                     container_format, *ids]) if ids else ''
+                                     container_format, *ids], stage='DOCKER_INSPECT') if ids else ''
                   if records is not None:
                       for line in records.splitlines():
                           item = json.loads(line)
@@ -632,6 +657,7 @@ jobs:
               metadata['health'] = health
               metadata['publicDiscovery'] = discover_public(metadata['memoryAvailableBytes'], scoped_erp)
               metadata['signedDiscovery'] = signed_discovery(metadata['memoryAvailableBytes'], scoped_erp)
+              metadata['containerDiagnostics'] = {'observations': container_diagnostics}
               print('W0_REMOTE_METADATA_JSON=' + json.dumps(metadata, separators=(',', ':')))
           except Exception:
               raise SystemExit('Read-only metadata collection failed.')
@@ -745,6 +771,24 @@ jobs:
                       require(type(value['httpStatus']) is int and 100 <= value['httpStatus'] <= 599)
               return value
 
+          def validate_container_diagnostics(value):
+              require(type(value) is dict and set(value) == {'observations'})
+              items = value['observations']
+              require(type(items) is list and 1 <= len(items) <= 2)
+              for index, item in enumerate(items):
+                  require(type(item) is dict and {'stage', 'state'} <= set(item) <= {'stage', 'state', 'exitCode', 'stdoutBytes'})
+                  require(item['stage'] == ('DOCKER_PS' if index == 0 else 'DOCKER_INSPECT'))
+                  require(item['state'] in ('OK', 'EXIT_ERROR', 'TIMEOUT', 'OUTPUT_LIMIT', 'OS_ERROR', 'DECODE_ERROR'))
+                  if 'exitCode' in item:
+                      require(type(item['exitCode']) is int and 0 <= item['exitCode'] <= 255)
+                  if 'stdoutBytes' in item:
+                      require(type(item['stdoutBytes']) is int and 0 <= item['stdoutBytes'] <= 131073)
+                  if item['state'] == 'OK':
+                      require(item.get('exitCode') == 0 and 'stdoutBytes' in item)
+                  if item['state'] == 'EXIT_ERROR':
+                      require('exitCode' in item and 1 <= item['exitCode'] <= 255)
+              return value
+
           try:
               with Path(sys.argv[1]).open('rb') as stream:
                   raw = stream.read(262145)
@@ -760,6 +804,8 @@ jobs:
                         'paths', 'containerInspection', 'containers', 'health'} <= metadata.keys())
               require('publicDiscovery' in metadata)
               require('signedDiscovery' in metadata)
+              require('containerDiagnostics' in metadata)
+              diagnostics = validate_container_diagnostics(metadata['containerDiagnostics'])
               discovery = validate_public_discovery(metadata['publicDiscovery'])
               signed = validate_signed_discovery(metadata['signedDiscovery'])
               if signed['status'] == 'SKIPPED_LOW_MEMORY':
@@ -773,6 +819,7 @@ jobs:
               clean = {'schemaVersion': 1, 'euid': 0, 'targetDirectory': '/opt/thg-newhub', 'appDirectoryExists': True}
               clean['publicDiscovery'] = discovery
               clean['signedDiscovery'] = signed
+              clean['containerDiagnostics'] = diagnostics
               if 'os' in metadata:
                   require(type(metadata['os']) is dict)
                   require({'id', 'versionId'} <= metadata['os'].keys())
