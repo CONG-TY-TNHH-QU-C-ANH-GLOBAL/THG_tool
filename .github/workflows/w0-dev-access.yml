@@ -679,6 +679,139 @@ jobs:
                   out['status'] = 'READ_ERROR'
               return out
 
+          # One public prerequisite read; no API/discovery or compiled Core fallback.
+          PUBLIC_BUNDLE_DOCS_JS = r'''
+          const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+          const root = '/repo/packages/core-dev-bundle';
+          const MAX_TEXT = 65536, TOTAL_TEXT = 196608;
+          const known = ['task.assign@5','task.edit@2','task.get@2','task.policy.set@2','task.fields.set@3','task.forms.set@3','task.automation.rules.set@3'];
+          const blocked = /(?:^|[\/._-])(?:env|config|private|secret|secrets|ext-secrets|credential|credentials|db|database|pgdata|backup|backups|node_modules|src|dist|data|logs?)(?:$|[\/._-])/i;
+          function safe(p) {
+            return typeof p === 'string' && p.length <= 240 && /^[A-Za-z0-9_/-]+(?:\.[A-Za-z0-9_-]+)?$/.test(p)
+              && !p.startsWith('/') && p.split('/').every(s => s && s !== '.' && s !== '..' && !s.startsWith('.')) && !blocked.test(p);
+          }
+          function read(p, cap) {
+            if (!safe(p)) return {status:'UNSAFE_PATH'};
+            try {
+              let at = '';
+              for (const s of (root + '/' + p).split('/').filter(Boolean)) {
+                at += '/' + s;
+                if (fs.lstatSync(at).isSymbolicLink()) return {status:'UNSAFE_LINK'};
+              }
+              const fd = fs.openSync(root + '/' + p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+              try {
+                const before = fs.fstatSync(fd);
+                if (!before.isFile()) return {status:'NOT_REGULAR'};
+                if (before.size > cap) return {status:'TOO_LARGE'};
+                const b = Buffer.alloc(before.size + 1); let n = 0, k;
+                while (n < b.length && (k = fs.readSync(fd,b,n,b.length-n,null))) n += k;
+                const after = fs.fstatSync(fd);
+                if (n !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) return {status:'CHANGED'};
+                const bytes = b.subarray(0,n), text = new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+                return {status:'READ',bytes:n,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),text};
+              } finally { fs.closeSync(fd); }
+            } catch (e) { return {status: e.code === 'ENOENT' ? 'MISSING' : e.code === 'EACCES' ? 'UNREADABLE' : e.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ? 'INVALID_UTF8' : 'READ_ERROR'}; }
+          }
+          const out = {schema:'w0.public-bundle-docs@1',status:'PARTIAL',manifest:null,catalog:null,taskSkillIds:[],files:[],capabilityDefs:[],otherNames:[],limits:{perTextBytes:MAX_TEXT,totalTextBytes:TOTAL_TEXT,maxTaskSkills:3,maxRefs:3},textBytes:0,truncated:false};
+          const atom = v => (typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+@:/=-]{0,239}$/.test(v)) || (Number.isSafeInteger(v) && v >= 0);
+          function project(v, keys) {
+            const r = {};
+            for (const k of keys) if (v && Object.hasOwn(v,k) && atom(v[k])) r[k] = v[k];
+            return r;
+          }
+          function document(p, kind, source = null) {
+            if (out.files.some(f=>f.path===p)) return null;
+            const remaining = TOTAL_TEXT - out.textBytes;
+            if (remaining <= 0) {out.truncated=true;out.files.push({path:p,kind,source,status:'TOTAL_LIMIT'});return null;}
+            const r = read(p,Math.min(MAX_TEXT,remaining));
+            if (r.status === 'TOO_LARGE' && remaining < MAX_TEXT) r.status='TOTAL_LIMIT';
+            out.files.push({path:p,kind,source,...r});
+            if (r.status !== 'READ') { if(r.status==='TOO_LARGE' || r.status==='TOTAL_LIMIT') out.truncated=true; return null; }
+            out.textBytes += r.bytes; return r.text;
+          }
+          function collect() {
+            // Manifest inventories may exceed 4 MiB; retain only the fixed public projection.
+            const mr = read('manifest.json',8388608);
+            out.manifest = {path:'manifest.json',...project(mr,['status','bytes','sha256'])};
+            if(mr.status!=='READ') return;
+            let m; try { m=JSON.parse(mr.text); } catch { out.manifest.status='PARSE_ERROR'; return; }
+            if(!m || m.schema!=='core-dev.bundle-manifest@1') {out.manifest.status='SCHEMA_UNKNOWN';return;}
+            out.manifest.projection = {...project(m,['schema','bundleVersion','contentDigest','coreContract']),identity:project(m.identity,['coreVersion','coreImageDigest','sdkVersion','contractCatalogVersion','bundleDigest']),catalog:project(m.catalog,['path','sha256']),skills:[]};
+            if(!Array.isArray(m.skills) || m.skills.length>200) {out.manifest.status='SCHEMA_UNKNOWN';return;}
+            const ids = new Set();
+            for(const s of m.skills) if(s && /^[a-z][a-z0-9-]{0,39}$/.test(s.id) && !ids.has(s.id)) { ids.add(s.id); out.manifest.projection.skills.push(project(s,['id','version','treeSha256'])); }
+            if(!m.catalog || !safe(m.catalog.path) || !m.catalog.path.startsWith('catalog/') || !m.catalog.path.endsWith('.json')) {out.catalog={status:'UNSAFE_PATH'};return;}
+            const cr=read(m.catalog.path,4194304);
+            out.catalog={path:m.catalog.path,...project(cr,['status','bytes','sha256'])};
+            if(cr.status!=='READ') return;
+            let c;try {c=JSON.parse(cr.text);}catch{out.catalog.status='PARSE_ERROR';return;}
+            if(!c || c.schema!=='core-dev.capability-catalog@1' || !Array.isArray(c.capabilities) || !Array.isArray(c.capabilityDefs) || c.capabilities.length>1000 || c.capabilityDefs.length>5000){out.catalog.status='SCHEMA_UNKNOWN';return;}
+            out.catalog.projection=project(c,['schema','catalogVersion','coreContract','contractsDigest']);
+            const related = new Set();
+            for(const cap of c.capabilities) if(cap && /task|work/i.test(cap.id || '') && Array.isArray(cap.skills)) for(const id of cap.skills) if(ids.has(id)) related.add(id);
+            const all = [...related].sort();out.taskSkillIds=all.slice(0,3);if(all.length>3)out.truncated=true;
+            for(const d of c.capabilityDefs) {
+              if(!d || typeof d.name!=='string')continue;
+              if(known.includes(d.name)) {
+                // Fixed metadata columns only; never copy unknown fields or input/body values.
+                const item=project(d,['name','effect','risk','scopeModel','idempotency','fingerprint','label']);
+                for(const [k,keys] of [['audience',['HUMAN','AGENT','EXTENSION','SYSTEM']],['permission',['feature','action']],['agentModes',['ceiling','default','trustedContext']],['approval',['human','agent']]]) {
+                item[k]= d[k]===null ? null : project(d[k],keys);
+                if(k==='agentModes' && typeof d[k]?.trustedContext==='boolean')item[k].trustedContext=d[k].trustedContext;
+                if(k==='approval' && d[k] && d[k].agent===null)item[k].agent=null;
+                }
+                out.capabilityDefs.push(item);
+              } else if(/^task\.[A-Za-z0-9.]+@[1-9][0-9]*$/.test(d.name) && /member|part|parent|import|reopen|transition/i.test(d.name)) out.otherNames.push(d.name);
+            }
+            out.otherNames=[...new Set(out.otherNames)].sort((a,b)=>a.split('@')[0].localeCompare(b.split('@')[0]) || Number(b.split('@')[1])-Number(a.split('@')[1]));
+            if(out.otherNames.length>30)out.truncated=true;out.otherNames=out.otherNames.slice(0,30);
+            const sources=[];
+            for(const id of [...new Set(['extension-foundation',...out.taskSkillIds])]) for(const leaf of ['manifest.yaml','SKILL.md']) {
+              const p=`skills/${id}/${leaf}`, text=document(p,'SKILL');if(text!==null)sources.push({p,text});
+            }
+            document('skills/gaps.json','GAPS');
+            let count=0;const refs=new Set();
+            // Conservative explicit Markdown links or YAML path/file scalars only. No guessed recipe names.
+            for(const {p,text} of sources) {
+              const found=[...text.matchAll(/\]\(([^\s()]+)\)|^\s*(?:-\s*)?(?:path|file|ref):\s*["']?([^\s"'#]+)["']?\s*$/gm)];
+              for(const match of found) {
+                let ref=match[1]||match[2];if(!ref || /[:#?%\\]/.test(ref))continue;
+                ref=path.posix.normalize(path.posix.join(path.posix.dirname(p),ref));
+                if(!safe(ref) || !/^(?:skills|docs)\//.test(ref) || !/\.(?:md|yaml|json)$/.test(ref) || /(?:SKILL\.md|manifest\.yaml)$/.test(ref) || refs.has(ref))continue;
+                refs.add(ref);if(count>=3){out.truncated=true;continue;}
+                count++;document(ref,'REFERENCE',p);
+              }
+            }
+            if(!out.truncated && out.files.every(f=>f.status==='READ'))out.status='READ';
+          }
+          try { collect(); } catch { out.status='READ_ERROR'; }
+          process.stdout.write(JSON.stringify(out));
+          '''
+
+          def public_bundle_docs(memory, scoped_erp):
+              if memory < 128 * 1024 * 1024:
+                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'SKIPPED_LOW_MEMORY'}
+              if len(scoped_erp) != 1 or not isinstance(scoped_erp[0], str) or not re.fullmatch(r'[a-f0-9]{64}', scoped_erp[0]):
+                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'UNAVAILABLE'}
+              cid = scoped_erp[0]
+              identity = command(['docker', 'inspect', '--type', 'container', '--format',
+                                  '{{.Id}}|{{.State.Running}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.service"}}', cid])
+              if identity != cid + '|true|/opt/thg-newhub|erp\n':
+                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'UNAVAILABLE'}
+              try:
+                  # OS supervisor is INSIDE the container: client timeout is not a remote-kill guarantee.
+                  # No install/fallback: absent/unsupported timeout fails closed with READ_ERROR.
+                  result = subprocess.run(['docker', 'exec', '-i', cid, '/usr/bin/timeout', '-s', 'KILL', '4', 'node', '--max-old-space-size=48', '-'], input=PUBLIC_BUNDLE_DOCS_JS.encode('utf-8'), capture_output=True, timeout=7, check=False)
+                  if result.returncode in (124, 137):
+                      return {'schema': 'w0.public-bundle-docs@1', 'status': 'TIMEOUT'}
+                  if result.returncode != 0 or len(result.stdout) > 1572864:
+                      return {'schema': 'w0.public-bundle-docs@1', 'status': 'READ_ERROR'}
+                  return json.loads(result.stdout.decode('utf-8'))
+              except subprocess.TimeoutExpired:
+                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'TIMEOUT'}
+              except (OSError, ValueError, UnicodeError):
+                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'READ_ERROR'}
+
           try:
               if os.geteuid() != 0 or not TARGET.is_dir():
                   raise ValueError('precondition')
@@ -802,8 +935,9 @@ jobs:
                   'hostRoot': '/opt/thg-newhub', 'containerRoots': [], 'maxDepth': 5, 'maxCandidates': 30,
                   'maxBodyBytes': 1048576, 'entriesVisited': 0, 'truncated': False, 'schemaFields': 'NOT_READ',
                   'exclusions': 'PUBLIC_ONLY_NO_SYMLINKS'}, 'candidates': []}
-              metadata['catalogProbe'] = catalog_probe(metadata['memoryAvailableBytes'], scoped_erp)
-              metadata['signedDiscovery'] = signed_discovery(metadata['memoryAvailableBytes'], scoped_erp)
+              metadata['catalogProbe'] = {'status': 'UNAVAILABLE', 'fileType': 'UNKNOWN', 'schemaKnown': False}
+              metadata['signedDiscovery'] = {'status': 'UNAVAILABLE'}
+              metadata['publicBundleDocs'] = public_bundle_docs(metadata['memoryAvailableBytes'], scoped_erp)
               metadata['containerDiagnostics'] = {'observations': container_diagnostics}
               print('W0_REMOTE_METADATA_JSON=' + json.dumps(metadata, separators=(',', ':')))
           except Exception:
@@ -964,6 +1098,109 @@ jobs:
                           token(v, r'[A-Za-z][A-Za-z0-9_.:-]{0,79}', 80)
               return value
 
+          def validate_public_bundle_docs(value):
+              import hashlib
+              import posixpath
+              require(type(value) is dict and value.get('schema') == 'w0.public-bundle-docs@1')
+              if set(value) == {'schema', 'status'}:
+                  require(value['status'] in ('UNAVAILABLE', 'SKIPPED_LOW_MEMORY', 'TIMEOUT', 'READ_ERROR'))
+                  return value
+              require(set(value) == {'schema', 'status', 'manifest', 'catalog', 'taskSkillIds', 'files', 'capabilityDefs', 'otherNames', 'limits', 'textBytes', 'truncated'})
+              require(value['status'] in ('PARTIAL', 'READ', 'READ_ERROR'))
+              require(value['limits'] == {'perTextBytes': 65536, 'totalTextBytes': 196608, 'maxTaskSkills': 3, 'maxRefs': 3})
+              require(type(value['truncated']) is bool and type(value['textBytes']) is int)
+              def safe(p):
+                  return (type(p) is str and len(p) <= 240 and re.fullmatch(r'[A-Za-z0-9_/-]+(?:\.[A-Za-z0-9_-]+)?', p)
+                          and not p.startswith('/') and all(s and s not in ('.', '..') and not s.startswith('.') for s in p.split('/'))
+                          and not re.search(r'(?:^|[/._-])(?:env|config|private|secret|secrets|ext-secrets|credential|credentials|db|database|pgdata|backup|backups|node_modules|src|dist|data|logs?)(?:$|[/._-])', p, re.I))
+              statuses = {'READ', 'UNSAFE_PATH', 'UNSAFE_LINK', 'NOT_REGULAR', 'TOO_LARGE', 'CHANGED', 'MISSING', 'UNREADABLE', 'INVALID_UTF8', 'READ_ERROR', 'PARSE_ERROR', 'SCHEMA_UNKNOWN'}
+              def projection(p, fields, nested=None):
+                  require(type(p) is dict and set(p) <= set(fields) | set(nested or {}))
+                  for key, v in p.items():
+                      if nested and key in nested:
+                          projection(v, nested[key])
+                      else:
+                          require((type(v) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+@:/=-]{0,239}', v)) or (type(v) is int and v >= 0))
+              for key, maximum in (('manifest', 8388608), ('catalog', 4194304)):
+                  rec = value[key]
+                  if rec is None:
+                      continue
+                  require(type(rec) is dict and {'status'} <= set(rec) <= {'path', 'status', 'bytes', 'sha256', 'projection'})
+                  require(rec['status'] in statuses)
+                  if 'path' in rec:
+                      require(safe(rec['path']) and (rec['path'] == 'manifest.json' if key == 'manifest' else rec['path'].startswith('catalog/') and rec['path'].endswith('.json')))
+                  if 'bytes' in rec:
+                      require(type(rec['bytes']) is int and 0 <= rec['bytes'] <= maximum)
+                      token(rec.get('sha256'), r'[a-f0-9]{64}', 64)
+                  if 'projection' in rec:
+                      p = rec['projection']
+                      if key == 'manifest':
+                          require(type(p) is dict and {'identity', 'catalog', 'skills'} <= set(p))
+                          require(type(p['skills']) is list and len(p['skills']) <= 200)
+                          for s in p['skills']:
+                              projection(s, ['id', 'version', 'treeSha256'])
+                              token(s.get('id'), r'[a-z][a-z0-9-]{0,39}', 40)
+                          projection({k:v for k,v in p.items() if k != 'skills'}, ['schema','bundleVersion','contentDigest','coreContract'], {'identity':['coreVersion','coreImageDigest','sdkVersion','contractCatalogVersion','bundleDigest'],'catalog':['path','sha256']})
+                      else:
+                          projection(p, ['schema','catalogVersion','coreContract','contractsDigest'])
+              ids = value['taskSkillIds']
+              require(type(ids) is list and len(ids) <= 3 and ids == sorted(set(ids)))
+              for id in ids:
+                  token(id, r'[a-z][a-z0-9-]{0,39}', 40)
+                  require(value['manifest'] is not None and any(s['id'] == id for s in value['manifest'].get('projection', {}).get('skills', [])))
+              require(type(value['files']) is list and len(value['files']) <= 12)
+              seen, text_bytes, refs = {}, 0, 0
+              for f in value['files']:
+                  require(type(f) is dict and {'path','kind','source','status'} <= set(f) <= {'path','kind','source','status','text','bytes','sha256'})
+                  p, kind = f['path'], f['kind']
+                  require(safe(p) and p not in seen and kind in ('SKILL','GAPS','REFERENCE'))
+                  if kind == 'SKILL':
+                      require(f['source'] is None and p in {f'skills/{id}/{leaf}' for id in ['extension-foundation'] + ids for leaf in ('manifest.yaml','SKILL.md')})
+                  elif kind == 'GAPS':
+                      require(f['source'] is None and p == 'skills/gaps.json')
+                  else:
+                      refs += 1
+                      require(refs <= 3 and p.startswith(('skills/','docs/')) and p.endswith(('.md','.yaml','.json')) and f['source'] in seen and seen[f['source']]['kind'] == 'SKILL')
+                      source = seen[f['source']].get('text', '')
+                      matches = re.findall(r'\]\(([^\s()]+)\)|^\s*(?:-\s*)?(?:path|file|ref):\s*["\']?([^\s"\'#]+)["\']?\s*$', source, re.M)
+                      require(any(not re.search(r'[:#?%\\]', a or b) and posixpath.normpath(posixpath.join(posixpath.dirname(f['source']), a or b)) == p for a,b in matches))
+                  require(f['status'] in statuses | {'TOTAL_LIMIT'})
+                  if f['status'] == 'READ':
+                      require(set(f) == {'path','kind','source','status','text','bytes','sha256'} and type(f['text']) is str and type(f['bytes']) is int)
+                      raw = f['text'].encode('utf-8')
+                      require(len(raw) == f['bytes'] <= 65536 and hashlib.sha256(raw).hexdigest() == f['sha256'])
+                      text_bytes += len(raw)
+                  else:
+                      require(set(f) == {'path','kind','source','status'})
+                  seen[p] = f
+              require(text_bytes == value['textBytes'] and text_bytes <= 196608)
+              require(type(value['capabilityDefs']) is list and len(value['capabilityDefs']) <= 7)
+              known = {'task.assign@5','task.edit@2','task.get@2','task.policy.set@2','task.fields.set@3','task.forms.set@3','task.automation.rules.set@3'}
+              names = set()
+              for d in value['capabilityDefs']:
+                  require(type(d) is dict and d.get('name') in known and d['name'] not in names)
+                  names.add(d['name'])
+                  nested = {'audience':['HUMAN','AGENT','EXTENSION','SYSTEM'],'permission':['feature','action'],'agentModes':['ceiling','default','trustedContext'],'approval':['human','agent']}
+                  require(set(d) <= {'name','effect','risk','scopeModel','idempotency','fingerprint','label'} | set(nested))
+                  for k, v in d.items():
+                      if k in nested:
+                          if v is not None:
+                              if k == 'agentModes' and 'trustedContext' in v:
+                                  require(type(v['trustedContext']) is bool)
+                                  v = {a:b for a,b in v.items() if a != 'trustedContext'}
+                              if k == 'approval' and v.get('agent', False) is None:
+                                  v = {a:b for a,b in v.items() if a != 'agent'}
+                              projection(v, nested[k])
+                      else:
+                          projection({k:v}, [k])
+              require(type(value['otherNames']) is list and len(value['otherNames']) <= 30 and len(set(value['otherNames'])) == len(value['otherNames']))
+              for n in value['otherNames']:
+                  token(n, r'task\.[A-Za-z0-9.]+@[1-9][0-9]*', 120)
+                  require(re.search(r'member|part|parent|import|reopen|transition', n, re.I))
+              if value['status'] == 'READ':
+                  require(not value['truncated'] and value['manifest']['status'] == 'READ' and value['catalog']['status'] == 'READ' and bool(seen) and all(f['status'] == 'READ' for f in seen.values()))
+              return value
+
           def validate_container_diagnostics(value):
               require(type(value) is dict and set(value) == {'observations'})
               items = value['observations']
@@ -986,8 +1223,9 @@ jobs:
 
           try:
               with Path(sys.argv[1]).open('rb') as stream:
-                  raw = stream.read(262145)
-              require(len(raw) <= 262144)
+                  raw = stream.read(1572865)
+              # 192 KiB public text can expand sixfold under JSON ensure_ascii.
+              require(len(raw) <= 1572864)
               marker = 'W0_REMOTE_METADATA_JSON='
               records = [line[len(marker):] for line in raw.decode('utf-8').splitlines() if line.startswith(marker)]
               require(len(records) == 1)
@@ -1004,6 +1242,9 @@ jobs:
               discovery = validate_public_discovery(metadata['publicDiscovery'])
               signed = validate_signed_discovery(metadata['signedDiscovery'])
               catalog = validate_catalog_probe(metadata['catalogProbe'])
+              bundle_docs = validate_public_bundle_docs(metadata['publicBundleDocs'])
+              if bundle_docs['status'] == 'SKIPPED_LOW_MEMORY':
+                  require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               if catalog['status'] == 'SKIPPED_LOW_MEMORY':
                   require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               if signed['status'] == 'SKIPPED_LOW_MEMORY':
@@ -1018,6 +1259,7 @@ jobs:
               clean['publicDiscovery'] = discovery
               clean['signedDiscovery'] = signed
               clean['catalogProbe'] = catalog
+              clean['publicBundleDocs'] = bundle_docs
               clean['containerDiagnostics'] = diagnostics
               if 'os' in metadata:
                   require(type(metadata['os']) is dict)
