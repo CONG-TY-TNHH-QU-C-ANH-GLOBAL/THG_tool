@@ -1098,6 +1098,152 @@ jobs:
                   out['status'] = 'READ_ERROR'
               return out
 
+          def official_metadata_command(argv):
+              # Host CLI only, outside RLIMIT_AS. Bounded pipes, absolute deadline, owned cleanup.
+              import selectors
+              proc, selector = None, selectors.DefaultSelector()
+              output, error = bytearray(), bytearray()
+              try:
+                  proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
+                  selector.register(proc.stdout, selectors.EVENT_READ, 'out')
+                  selector.register(proc.stderr, selectors.EVENT_READ, 'err')
+                  deadline = time.monotonic() + 8
+                  while selector.get_map():
+                      remaining = deadline - time.monotonic()
+                      if remaining <= 0:
+                          return 'TIMEOUT', b''
+                      for key, unused in selector.select(remaining):
+                          block = os.read(key.fileobj.fileno(), 16384)
+                          if not block:
+                              selector.unregister(key.fileobj)
+                              continue
+                          target, cap = (output, 262144) if key.data == 'out' else (error, 4096)
+                          if len(target) + len(block) > cap:
+                              return 'OUTPUT_LIMIT', b''
+                          target.extend(block)
+                  try:
+                      code = proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+                  except subprocess.TimeoutExpired:
+                      return 'TIMEOUT', b''
+                  if code == 0:
+                      return 'OK', bytes(output)
+                  text = bytes(error).lower()
+                  kind = ('AUTH_DENIED' if any(s in text for s in (b'unauthorized', b'denied', b'authentication required', b'forbidden')) else
+                          'NOT_FOUND' if any(s in text for s in (b'no such manifest', b'manifest unknown', b'not found')) else
+                          'NETWORK_ERROR' if any(s in text for s in (b'timeout', b'connection refused', b'no such host', b'network is unreachable')) else 'EXIT_ERROR')
+                  return kind, b''
+              except OSError:
+                  return 'UNAVAILABLE', b''
+              finally:
+                  selector.close()
+                  if proc is not None:
+                      if proc.poll() is None:
+                          proc.kill()
+                      proc.wait()
+                      for stream in (proc.stdout, proc.stderr):
+                          if stream is not None:
+                              stream.close()
+
+          def official_manifest_projection(body):
+              digest = r'sha256:[a-f0-9]{64}'
+              core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
+              ref = r'(?:oci://)?registry\.autonow\.vn/core/dev-bundle@sha256:[a-f0-9]{64}'
+              def media(value):
+                  return type(value) is str and len(value) <= 120 and re.fullmatch(r'[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+',value)
+              if type(body) is not dict or type(body.get('schemaVersion')) is not int or body['schemaVersion'] != 2:
+                  raise ValueError('manifest schema')
+              out = dict(schemaVersion=2, descriptors=[], annotationKeys=[], devBundleRefs=[], releaseTuples=[])
+              if 'mediaType' in body:
+                  if not media(body['mediaType']):
+                      raise ValueError('media')
+                  out['mediaType'] = body['mediaType']
+              descriptors = []
+              for key in ('manifests','layers'):
+                  if key in body:
+                      if type(body[key]) is not list:
+                          raise ValueError('descriptors')
+                      descriptors.extend(body[key])
+              if 'config' in body:
+                  descriptors.append(body['config'])
+              if len(descriptors) > 16:
+                  raise ValueError('descriptor cap')
+              for d in descriptors:
+                  if (type(d) is not dict or not media(d.get('mediaType')) or type(d.get('digest')) is not str
+                          or not re.fullmatch(digest,d['digest']) or type(d.get('size')) is not int or not 0 <= d['size'] <= 2**63-1):
+                      raise ValueError('descriptor')
+                  out['descriptors'].append({k:d[k] for k in ('mediaType','digest','size')})
+              annotations = body.get('annotations',{})
+              if type(annotations) is not dict or len(annotations) > 16:
+                  raise ValueError('annotations')
+              for key,value in sorted(annotations.items()):
+                  if type(key) is not str or not re.fullmatch(r'[A-Za-z0-9._:/-]{1,120}',key):
+                      raise ValueError('annotation key')
+                  out['annotationKeys'].append(key)
+                  if type(value) is not str:
+                      raise ValueError('annotation value')
+                  if re.fullmatch(ref,value):
+                      out['devBundleRefs'].append(value if value.startswith('oci://') else 'oci://' + value)
+                  elif value.startswith('{') and len(value) <= 4096:
+                      try:
+                          t = public_bundle_json(value)
+                      except (ValueError, RecursionError):
+                          continue
+                      fields = {'schema','coreVersion','coreImageDigest','devBundleVersion','devBundleSource','devBundleDigest','contentDigest','sdkVersion'}
+                      if (type(t) is dict and set(t) == fields and t['schema'] == 'erp-core.release-tuple@1'
+                              and t['coreImageDigest'] == core and all(type(v) is str and len(v) <= 240 for v in t.values())
+                              and all(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',t[k]) for k in ('coreVersion','devBundleVersion'))
+                              and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?',t['sdkVersion'])
+                              and re.fullmatch('oci://' + ref.removeprefix('(?:oci://)?'),t['devBundleSource'])
+                              and all(re.fullmatch(digest,t[k]) for k in ('devBundleDigest','contentDigest'))):
+                          out['releaseTuples'].append(t)
+              out['devBundleRefs'] = sorted(set(out['devBundleRefs']))
+              return out
+
+          def official_bundle_metadata(memory, scoped_erp):
+              import shutil
+              tools = {k:shutil.which(k) is not None for k in ('docker','oras','cosign')}
+              out = dict(schema='w0.official-dev-bundle-metadata@1',status='UNAVAILABLE',tools=tools,
+                         resourceCondition='LOW_MEMORY' if memory < 128*1024*1024 else 'NORMAL',
+                         cache=dict(status='UNAVAILABLE',images=[]),manifest=dict(status='UNAVAILABLE'))
+              if type(scoped_erp) is not list or len(scoped_erp) != 1 or type(scoped_erp[0]) is not str or not re.fullmatch(r'[a-f0-9]{64}',scoped_erp[0]):
+                  return out
+              cid = scoped_erp[0]
+              core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
+              expected = cid + '|true|/opt/thg-newhub|erp|' + core + '\n'
+              if not tools['docker'] or public_bundle_identity(cid) != expected:
+                  return out
+              try:
+                  state, raw = official_metadata_command(['docker','image','ls','registry.autonow.vn/core/dev-bundle','--digests','--no-trunc','--format','{{.Digest}}|{{.ID}}'])
+                  out['cache']['status'] = state
+                  if state == 'OK':
+                      images = set()
+                      for line in raw.decode('utf-8','strict').splitlines():
+                          if re.fullmatch(r'sha256:[a-f0-9]{64}\|sha256:[a-f0-9]{64}',line):
+                              images.add(tuple(line.split('|')))
+                          elif not re.fullmatch(r'<none>\|sha256:[a-f0-9]{64}',line):
+                              raise ValueError('cache shape')
+                      if len(images) > 8:
+                          raise ValueError('cache cap')
+                      out['cache']['images'] = [dict(digest=d,imageId=i) for d,i in sorted(images)]
+                  else:
+                      out['status'] = state
+                      return out
+                  state, raw = official_metadata_command(['docker','manifest','inspect','registry.autonow.vn/core/erp@' + core])
+                  out['manifest']['status'] = state
+                  if state == 'OK':
+                      out['manifest']['projection'] = official_manifest_projection(public_bundle_json(raw.decode('utf-8','strict')))
+                  out['status'] = 'METADATA_ONLY' if state == 'OK' else state
+              except (ValueError, UnicodeError, RecursionError, MemoryError):
+                  out['status'] = 'PARSE_ERROR'
+                  if out['manifest']['status'] == 'OK':
+                      out['manifest'] = dict(status='PARSE_ERROR')
+              finally:
+                  if public_bundle_identity(cid) != expected:
+                      out['status'] = 'UNAVAILABLE'
+                      out['cache'] = dict(status='UNAVAILABLE',images=[])
+                      out['manifest'] = dict(status='UNAVAILABLE')
+              return out
+
           try:
               if os.geteuid() != 0 or not TARGET.is_dir():
                   raise ValueError('precondition')
@@ -1223,7 +1369,10 @@ jobs:
                   'exclusions': 'PUBLIC_ONLY_NO_SYMLINKS'}, 'candidates': []}
               metadata['catalogProbe'] = {'status': 'UNAVAILABLE', 'fileType': 'UNKNOWN', 'schemaKnown': False}
               metadata['signedDiscovery'] = {'status': 'UNAVAILABLE'}
-              metadata['publicBundleDocs'] = public_bundle_docs(metadata['memoryAvailableBytes'], scoped_erp)
+              metadata['publicBundleDocs'] = {'schema':'w0.public-bundle-docs@1','status':'UNAVAILABLE'}
+              metadata['officialDevBundle'] = official_bundle_metadata(metadata['memoryAvailableBytes'], scoped_erp)
+              if metadata['diskAvailableBytes'] < 16*1024*1024:
+                  metadata['officialDevBundle']['resourceCondition'] = 'LOW_DISK'
               metadata['containerDiagnostics'] = {'observations': container_diagnostics}
               print('W0_REMOTE_METADATA_JSON=' + json.dumps(metadata, separators=(',', ':')))
           except Exception:
@@ -1503,6 +1652,56 @@ jobs:
                   require(not value['truncated'] and value['manifest']['status'] == 'READ' and value['catalog']['status'] == 'READ' and bool(seen) and all(f['status'] == 'READ' for f in seen.values()))
               return value
 
+          def validate_official_bundle_metadata(value):
+              require(type(value) is dict and set(value) == {'schema','status','tools','resourceCondition','cache','manifest'})
+              require(value['schema'] == 'w0.official-dev-bundle-metadata@1')
+              states = {'OK','AUTH_DENIED','NOT_FOUND','NETWORK_ERROR','EXIT_ERROR','TIMEOUT','OUTPUT_LIMIT','UNAVAILABLE','PARSE_ERROR'}
+              require(value['status'] in (states - {'OK'}) | {'METADATA_ONLY'})
+              require(type(value['tools']) is dict and set(value['tools']) == {'docker','oras','cosign'} and all(type(v) is bool for v in value['tools'].values()))
+              require(value['resourceCondition'] in ('NORMAL','LOW_MEMORY','LOW_DISK'))
+              c,m = value['cache'],value['manifest']
+              require(type(c) is dict and set(c) == {'status','images'} and c['status'] in states)
+              require(type(c['images']) is list and len(c['images']) <= 8)
+              for item in c['images']:
+                  require(c['status'] == 'OK' and type(item) is dict and set(item) == {'digest','imageId'})
+                  for v in item.values():
+                      token(v,r'sha256:[a-f0-9]{64}',71)
+              require(len({(i['digest'],i['imageId']) for i in c['images']}) == len(c['images']))
+              require(type(m) is dict and set(m) <= {'status','projection'} and m.get('status') in states)
+              require(('projection' in m) == (m['status'] == 'OK'))
+              require(value['status'] != 'METADATA_ONLY' or m['status'] == 'OK')
+              if 'projection' not in m:
+                  return value
+              p = m['projection']
+              require(type(p) is dict and {'schemaVersion','descriptors','annotationKeys','devBundleRefs','releaseTuples'} <= set(p) <= {'schemaVersion','mediaType','descriptors','annotationKeys','devBundleRefs','releaseTuples'})
+              require(type(p['schemaVersion']) is int and p['schemaVersion'] == 2)
+              if 'mediaType' in p:
+                  token(p['mediaType'],r'[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+',120)
+              require(type(p['descriptors']) is list and len(p['descriptors']) <= 16)
+              for d in p['descriptors']:
+                  require(type(d) is dict and set(d) == {'mediaType','digest','size'})
+                  token(d['mediaType'],r'[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+',120)
+                  token(d['digest'],r'sha256:[a-f0-9]{64}',71)
+                  require(type(d['size']) is int and 0 <= d['size'] <= 2**63-1)
+              for key in ('annotationKeys','devBundleRefs','releaseTuples'):
+                  require(type(p[key]) is list and len(p[key]) <= 16)
+              require(len(set(p['annotationKeys'])) == len(p['annotationKeys']))
+              for key in p['annotationKeys']:
+                  token(key,r'[A-Za-z0-9._:/-]{1,120}',120)
+              require(p['devBundleRefs'] == sorted(set(p['devBundleRefs'])))
+              for ref in p['devBundleRefs']:
+                  token(ref,r'oci://registry\.autonow\.vn/core/dev-bundle@sha256:[a-f0-9]{64}',140)
+              for t in p['releaseTuples']:
+                  require(type(t) is dict and set(t) == {'schema','coreVersion','coreImageDigest','devBundleVersion','devBundleSource','devBundleDigest','contentDigest','sdkVersion'})
+                  require(t['schema'] == 'erp-core.release-tuple@1' and t['coreImageDigest'] == 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb')
+                  for key in ('coreVersion','devBundleVersion'):
+                      token(t[key],r'[0-9]+\.[0-9]+\.[0-9]+',240)
+                  token(t['sdkVersion'],r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?',240)
+                  token(t['devBundleSource'],r'oci://registry\.autonow\.vn/core/dev-bundle@sha256:[a-f0-9]{64}',140)
+                  for key in ('devBundleDigest','contentDigest'):
+                      token(t[key],r'sha256:[a-f0-9]{64}',71)
+              return value
+
           def validate_container_diagnostics(value):
               require(type(value) is dict and set(value) == {'observations'})
               items = value['observations']
@@ -1545,6 +1744,7 @@ jobs:
               signed = validate_signed_discovery(metadata['signedDiscovery'])
               catalog = validate_catalog_probe(metadata['catalogProbe'])
               bundle_docs = validate_public_bundle_docs(metadata['publicBundleDocs'])
+              official = validate_official_bundle_metadata(metadata['officialDevBundle']) if 'officialDevBundle' in metadata else None
               if bundle_docs['status'] == 'SKIPPED_LOW_MEMORY':
                   require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               if catalog['status'] == 'SKIPPED_LOW_MEMORY':
@@ -1562,6 +1762,8 @@ jobs:
               clean['signedDiscovery'] = signed
               clean['catalogProbe'] = catalog
               clean['publicBundleDocs'] = bundle_docs
+              if official is not None:
+                  clean['officialDevBundle'] = official
               clean['containerDiagnostics'] = diagnostics
               if 'os' in metadata:
                   require(type(metadata['os']) is dict)
