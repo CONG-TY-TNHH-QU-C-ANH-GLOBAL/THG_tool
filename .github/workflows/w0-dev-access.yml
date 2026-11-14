@@ -979,25 +979,30 @@ jobs:
                   out['manifest'] = dict(path='manifest.json', **project(mr,['status','bytes','sha256']))
                   if mr['status'] == 'NOT_REGULAR' and 'typeObservation' in mr:
                       out['manifest']['typeObservation'] = mr['typeObservation']
-                  if mr['status'] != 'READ':
+                  missing_manifest = mr['status'] == 'MISSING'
+                  if mr['status'] != 'READ' and not missing_manifest:
                       return
-                  try:
-                      m = public_bundle_json(mr['text'])
-                  except (ValueError, RecursionError):
-                      out['manifest']['status'] = 'PARSE_ERROR'
-                      return
-                  if type(m) is not dict or m.get('schema') != 'core-dev.bundle-manifest@1' or type(m.get('skills')) is not list or len(m['skills']) > 200:
-                      out['manifest']['status'] = 'SCHEMA_UNKNOWN'
-                      return
-                  ids, skills = set(), []
-                  for s in m['skills']:
-                      if type(s) is not dict or type(s.get('id')) is not str or not re.fullmatch(r'[a-z][a-z0-9-]{0,39}', s['id']) or s['id'] in ids:
+                  m, ids, skills = None, set(), []
+                  if missing_manifest:
+                      # Exact public file already observed in actual09; no inventory/release verification.
+                      cp = 'catalog/core-capabilities.json'
+                  else:
+                      try:
+                          m = public_bundle_json(mr['text'])
+                      except (ValueError, RecursionError):
+                          out['manifest']['status'] = 'PARSE_ERROR'
+                          return
+                      if type(m) is not dict or m.get('schema') != 'core-dev.bundle-manifest@1' or type(m.get('skills')) is not list or len(m['skills']) > 200:
                           out['manifest']['status'] = 'SCHEMA_UNKNOWN'
                           return
-                      ids.add(s['id'])
-                      skills.append(project(s,['id','version','treeSha256']))
-                  out['manifest']['projection'] = dict(project(m,['schema','bundleVersion','contentDigest','coreContract']),identity=project(m.get('identity'),['coreVersion','coreImageDigest','sdkVersion','contractCatalogVersion','bundleDigest']),catalog=project(m.get('catalog'),['path','sha256']),skills=skills)
-                  cp = m.get('catalog',{}).get('path') if type(m.get('catalog')) is dict else None
+                      for s in m['skills']:
+                          if type(s) is not dict or type(s.get('id')) is not str or not re.fullmatch(r'[a-z][a-z0-9-]{0,39}', s['id']) or s['id'] in ids:
+                              out['manifest']['status'] = 'SCHEMA_UNKNOWN'
+                              return
+                          ids.add(s['id'])
+                          skills.append(project(s,['id','version','treeSha256']))
+                      out['manifest']['projection'] = dict(project(m,['schema','bundleVersion','contentDigest','coreContract']),identity=project(m.get('identity'),['coreVersion','coreImageDigest','sdkVersion','contractCatalogVersion','bundleDigest']),catalog=project(m.get('catalog'),['path','sha256']),skills=skills)
+                      cp = m.get('catalog',{}).get('path') if type(m.get('catalog')) is dict else None
                   if not public_bundle_safe_path(cp) or not cp.startswith('catalog/') or not cp.endswith('.json'):
                       out['catalog'] = {'status':'UNSAFE_PATH'}
                       return
@@ -1007,7 +1012,7 @@ jobs:
                       out['catalog']['typeObservation'] = cr['typeObservation']
                   if cr['status'] != 'READ':
                       return
-                  digest = m['catalog'].get('sha256')
+                  digest = m['catalog'].get('sha256') if not missing_manifest else None
                   if digest is not None and (type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}',digest) or digest != cr['sha256']):
                       out['catalog']['status'] = 'CHANGED'
                       return
@@ -1024,9 +1029,16 @@ jobs:
                   out['catalog']['projection'] = project(c,['schema','catalogVersion','coreContract','contractsDigest'])
                   related = set()
                   for cap in c['capabilities']:
-                      if type(cap) is dict and type(cap.get('id')) is str and re.search('task|work',cap['id'],re.I) and type(cap.get('skills')) is list:
-                          related.update(id for id in cap['skills'] if type(id) is str and id in ids)
-                  out['taskSkillIds'] = sorted(related)[:3]
+                      if type(cap) is dict and type(cap.get('id')) is str and re.search('task|work',cap['id'],re.I):
+                          if missing_manifest:
+                              if (type(cap.get('skills')) is not list or any(type(id) is not str or not re.fullmatch(r'[a-z][a-z0-9-]{0,39}',id) or not public_bundle_safe_path('skills/' + id + '/SKILL.md') for id in cap['skills'])):
+                                  out['catalog']['status'] = 'SCHEMA_UNKNOWN'
+                                  return
+                              related.update(cap['skills'])
+                          elif type(cap.get('skills')) is list:
+                              related.update(id for id in cap['skills'] if type(id) is str and id in ids)
+                  if not missing_manifest:
+                      out['taskSkillIds'] = sorted(related)[:3]
                   out['truncated'] = len(related) > 3
                   known = {'task.assign@5','task.edit@2','task.get@2','task.policy.set@2','task.fields.set@3','task.forms.set@3','task.automation.rules.set@3'}
                   seen = set()
@@ -1053,6 +1065,9 @@ jobs:
                   names = sorted(set(out['otherNames']), key=lambda n:(n.split('@')[0],-int(n.split('@')[1])))
                   out['truncated'] |= len(names) > 30
                   out['otherNames'] = names[:30]
+                  if missing_manifest:
+                      out['taskSkillIds'] = sorted(related)[:3]
+                      out['catalog']['taskSkills'] = list(out['taskSkillIds'])
                   sources = []
                   for id in dict.fromkeys(['extension-foundation'] + out['taskSkillIds']):
                       for leaf in ('manifest.yaml','SKILL.md'):
@@ -1075,7 +1090,7 @@ jobs:
                               out['truncated'] = True
                               continue
                           document(ref,'REFERENCE',p)
-                  if not out['truncated'] and all(f['status'] == 'READ' for f in out['files']):
+                  if not missing_manifest and not out['truncated'] and all(f['status'] == 'READ' for f in out['files']):
                       out['status'] = 'READ'
               try:
                   collect()
@@ -1403,8 +1418,12 @@ jobs:
                   rec = value[key]
                   if rec is None:
                       continue
-                  require(type(rec) is dict and {'status'} <= set(rec) <= {'path', 'status', 'bytes', 'sha256', 'projection', 'typeObservation'})
+                  require(type(rec) is dict and {'status'} <= set(rec) <= {'path', 'status', 'bytes', 'sha256', 'projection', 'typeObservation', 'taskSkills'})
                   require(rec['status'] in statuses)
+                  if 'taskSkills' in rec:
+                      require(key == 'catalog' and rec['status'] == 'READ' and rec.get('path') == 'catalog/core-capabilities.json')
+                      require(value['manifest'] == {'path':'manifest.json','status':'MISSING'} and value['status'] != 'READ')
+                      require(type(rec['taskSkills']) is list and len(rec['taskSkills']) <= 3 and rec['taskSkills'] == value['taskSkillIds'])
                   type_observation(rec)
                   if 'path' in rec:
                       require(safe(rec['path']) and (rec['path'] == 'manifest.json' if key == 'manifest' else rec['path'].startswith('catalog/') and rec['path'].endswith('.json')))
@@ -1426,7 +1445,10 @@ jobs:
               require(type(ids) is list and len(ids) <= 3 and ids == sorted(set(ids)))
               for id in ids:
                   token(id, r'[a-z][a-z0-9-]{0,39}', 40)
-                  require(value['manifest'] is not None and any(s['id'] == id for s in value['manifest'].get('projection', {}).get('skills', [])))
+                  if value['catalog'] is not None and 'taskSkills' in value['catalog']:
+                      require(id in value['catalog']['taskSkills'])
+                  else:
+                      require(value['manifest'] is not None and any(s['id'] == id for s in value['manifest'].get('projection', {}).get('skills', [])))
               require(type(value['files']) is list and len(value['files']) <= 12)
               seen, text_bytes, refs = {}, 0, 0
               for f in value['files']:
