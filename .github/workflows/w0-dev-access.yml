@@ -679,138 +679,392 @@ jobs:
                   out['status'] = 'READ_ERROR'
               return out
 
-          # One public prerequisite read; no API/discovery or compiled Core fallback.
-          PUBLIC_BUNDLE_DOCS_JS = r'''
-          const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-          const root = '/repo/packages/core-dev-bundle';
-          const MAX_TEXT = 65536, TOTAL_TEXT = 196608;
-          const known = ['task.assign@5','task.edit@2','task.get@2','task.policy.set@2','task.fields.set@3','task.forms.set@3','task.automation.rules.set@3'];
-          const blocked = /(?:^|[\/._-])(?:env|config|private|secret|secrets|ext-secrets|credential|credentials|db|database|pgdata|backup|backups|node_modules|src|dist|data|logs?)(?:$|[\/._-])/i;
-          function safe(p) {
-            return typeof p === 'string' && p.length <= 240 && /^[A-Za-z0-9_/-]+(?:\.[A-Za-z0-9_-]+)?$/.test(p)
-              && !p.startsWith('/') && p.split('/').every(s => s && s !== '.' && s !== '..' && !s.startsWith('.')) && !blocked.test(p);
-          }
-          function read(p, cap) {
-            if (!safe(p)) return {status:'UNSAFE_PATH'};
-            try {
-              let at = '';
-              for (const s of (root + '/' + p).split('/').filter(Boolean)) {
-                at += '/' + s;
-                if (fs.lstatSync(at).isSymbolicLink()) return {status:'UNSAFE_LINK'};
-              }
-              const fd = fs.openSync(root + '/' + p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-              try {
-                const before = fs.fstatSync(fd);
-                if (!before.isFile()) return {status:'NOT_REGULAR'};
-                if (before.size > cap) return {status:'TOO_LARGE'};
-                const b = Buffer.alloc(before.size + 1); let n = 0, k;
-                while (n < b.length && (k = fs.readSync(fd,b,n,b.length-n,null))) n += k;
-                const after = fs.fstatSync(fd);
-                if (n !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) return {status:'CHANGED'};
-                const bytes = b.subarray(0,n), text = new TextDecoder('utf-8',{fatal:true}).decode(bytes);
-                return {status:'READ',bytes:n,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),text};
-              } finally { fs.closeSync(fd); }
-            } catch (e) { return {status: e.code === 'ENOENT' ? 'MISSING' : e.code === 'EACCES' ? 'UNREADABLE' : e.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ? 'INVALID_UTF8' : 'READ_ERROR'}; }
-          }
-          const out = {schema:'w0.public-bundle-docs@1',status:'PARTIAL',manifest:null,catalog:null,taskSkillIds:[],files:[],capabilityDefs:[],otherNames:[],limits:{perTextBytes:MAX_TEXT,totalTextBytes:TOTAL_TEXT,maxTaskSkills:3,maxRefs:3},textBytes:0,truncated:false};
-          const atom = v => (typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._+@:/=-]{0,239}$/.test(v)) || (Number.isSafeInteger(v) && v >= 0);
-          function project(v, keys) {
-            const r = {};
-            for (const k of keys) if (v && Object.hasOwn(v,k) && atom(v[k])) r[k] = v[k];
-            return r;
-          }
-          function document(p, kind, source = null) {
-            if (out.files.some(f=>f.path===p)) return null;
-            const remaining = TOTAL_TEXT - out.textBytes;
-            if (remaining <= 0) {out.truncated=true;out.files.push({path:p,kind,source,status:'TOTAL_LIMIT'});return null;}
-            const r = read(p,Math.min(MAX_TEXT,remaining));
-            if (r.status === 'TOO_LARGE' && remaining < MAX_TEXT) r.status='TOTAL_LIMIT';
-            out.files.push({path:p,kind,source,...r});
-            if (r.status !== 'READ') { if(r.status==='TOO_LARGE' || r.status==='TOTAL_LIMIT') out.truncated=true; return null; }
-            out.textBytes += r.bytes; return r.text;
-          }
-          function collect() {
-            // Manifest inventories may exceed 4 MiB; retain only the fixed public projection.
-            const mr = read('manifest.json',8388608);
-            out.manifest = {path:'manifest.json',...project(mr,['status','bytes','sha256'])};
-            if(mr.status!=='READ') return;
-            let m; try { m=JSON.parse(mr.text); } catch { out.manifest.status='PARSE_ERROR'; return; }
-            if(!m || m.schema!=='core-dev.bundle-manifest@1') {out.manifest.status='SCHEMA_UNKNOWN';return;}
-            out.manifest.projection = {...project(m,['schema','bundleVersion','contentDigest','coreContract']),identity:project(m.identity,['coreVersion','coreImageDigest','sdkVersion','contractCatalogVersion','bundleDigest']),catalog:project(m.catalog,['path','sha256']),skills:[]};
-            if(!Array.isArray(m.skills) || m.skills.length>200) {out.manifest.status='SCHEMA_UNKNOWN';return;}
-            const ids = new Set();
-            for(const s of m.skills) if(s && /^[a-z][a-z0-9-]{0,39}$/.test(s.id) && !ids.has(s.id)) { ids.add(s.id); out.manifest.projection.skills.push(project(s,['id','version','treeSha256'])); }
-            if(!m.catalog || !safe(m.catalog.path) || !m.catalog.path.startsWith('catalog/') || !m.catalog.path.endsWith('.json')) {out.catalog={status:'UNSAFE_PATH'};return;}
-            const cr=read(m.catalog.path,4194304);
-            out.catalog={path:m.catalog.path,...project(cr,['status','bytes','sha256'])};
-            if(cr.status!=='READ') return;
-            let c;try {c=JSON.parse(cr.text);}catch{out.catalog.status='PARSE_ERROR';return;}
-            if(!c || c.schema!=='core-dev.capability-catalog@1' || !Array.isArray(c.capabilities) || !Array.isArray(c.capabilityDefs) || c.capabilities.length>1000 || c.capabilityDefs.length>5000){out.catalog.status='SCHEMA_UNKNOWN';return;}
-            out.catalog.projection=project(c,['schema','catalogVersion','coreContract','contractsDigest']);
-            const related = new Set();
-            for(const cap of c.capabilities) if(cap && /task|work/i.test(cap.id || '') && Array.isArray(cap.skills)) for(const id of cap.skills) if(ids.has(id)) related.add(id);
-            const all = [...related].sort();out.taskSkillIds=all.slice(0,3);if(all.length>3)out.truncated=true;
-            for(const d of c.capabilityDefs) {
-              if(!d || typeof d.name!=='string')continue;
-              if(known.includes(d.name)) {
-                // Fixed metadata columns only; never copy unknown fields or input/body values.
-                const item=project(d,['name','effect','risk','scopeModel','idempotency','fingerprint','label']);
-                for(const [k,keys] of [['audience',['HUMAN','AGENT','EXTENSION','SYSTEM']],['permission',['feature','action']],['agentModes',['ceiling','default','trustedContext']],['approval',['human','agent']]]) {
-                item[k]= d[k]===null ? null : project(d[k],keys);
-                if(k==='agentModes' && typeof d[k]?.trustedContext==='boolean')item[k].trustedContext=d[k].trustedContext;
-                if(k==='approval' && d[k] && d[k].agent===null)item[k].agent=null;
-                }
-                out.capabilityDefs.push(item);
-              } else if(/^task\.[A-Za-z0-9.]+@[1-9][0-9]*$/.test(d.name) && /member|part|parent|import|reopen|transition/i.test(d.name)) out.otherNames.push(d.name);
-            }
-            out.otherNames=[...new Set(out.otherNames)].sort((a,b)=>a.split('@')[0].localeCompare(b.split('@')[0]) || Number(b.split('@')[1])-Number(a.split('@')[1]));
-            if(out.otherNames.length>30)out.truncated=true;out.otherNames=out.otherNames.slice(0,30);
-            const sources=[];
-            for(const id of [...new Set(['extension-foundation',...out.taskSkillIds])]) for(const leaf of ['manifest.yaml','SKILL.md']) {
-              const p=`skills/${id}/${leaf}`, text=document(p,'SKILL');if(text!==null)sources.push({p,text});
-            }
-            document('skills/gaps.json','GAPS');
-            let count=0;const refs=new Set();
-            // Conservative explicit Markdown links or YAML path/file scalars only. No guessed recipe names.
-            for(const {p,text} of sources) {
-              const found=[...text.matchAll(/\]\(([^\s()]+)\)|^\s*(?:-\s*)?(?:path|file|ref):\s*["']?([^\s"'#]+)["']?\s*$/gm)];
-              for(const match of found) {
-                let ref=match[1]||match[2];if(!ref || /[:#?%\\]/.test(ref))continue;
-                ref=path.posix.normalize(path.posix.join(path.posix.dirname(p),ref));
-                if(!safe(ref) || !/^(?:skills|docs)\//.test(ref) || !/\.(?:md|yaml|json)$/.test(ref) || /(?:SKILL\.md|manifest\.yaml)$/.test(ref) || refs.has(ref))continue;
-                refs.add(ref);if(count>=3){out.truncated=true;continue;}
-                count++;document(ref,'REFERENCE',p);
-              }
-            }
-            if(!out.truncated && out.files.every(f=>f.status==='READ'))out.status='READ';
-          }
-          try { collect(); } catch { out.status='READ_ERROR'; }
-          process.stdout.write(JSON.stringify(out));
-          '''
+          # Official Docker daemon archive API only; no container process or private Core API.
+          def public_bundle_safe_path(p):
+              return (type(p) is str and len(p) <= 240
+                      and re.fullmatch(r'[A-Za-z0-9_/-]+(?:\.[A-Za-z0-9_-]+)?', p)
+                      and not p.startswith('/')
+                      and all(s and s not in ('.', '..') and not s.startswith('.') for s in p.split('/'))
+                      and not re.search(r'(?:^|[/._-])(?:env|config|private|secret|secrets|ext-secrets|credential|credentials|db|database|pgdata|backup|backups|node_modules|src|dist|data|logs?)(?:$|[/._-])', p, re.I))
+
+          def public_bundle_json(text):
+              def unique(pairs):
+                  out = {}
+                  for key, value in pairs:
+                      if key in out:
+                          raise ValueError('duplicate key')
+                      out[key] = value
+                  return out
+              def invalid(value):
+                  raise ValueError('nonfinite')
+              return json.loads(text, object_pairs_hook=unique, parse_constant=invalid)
+
+          def public_bundle_identity(cid):
+              if type(cid) is not str or not re.fullmatch(r'[a-f0-9]{64}', cid):
+                  return None
+              value = command(['docker', 'inspect', '--type', 'container', '--format',
+                               '{{.Id}}|{{.State.Running}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Image}}', cid])
+              prefix = cid + '|true|/opt/thg-newhub|erp|'
+              if type(value) is str and value.startswith(prefix) and re.fullmatch(r'sha256:[a-f0-9]{64}\n', value[len(prefix):]):
+                  return value
+              return None
+
+          def public_bundle_archive_request(cid, absolute, method, cap, deadline):
+              import socket
+              import urllib.parse
+              class BoundedResponse(http.client.HTTPResponse):
+                  def begin(self):
+                      original = self.fp
+                      class HeaderReader:
+                          total = 0
+                          def readline(self, limit=-1):
+                              line = original.readline(min(limit if limit >= 0 else 16385, 16385 - self.total))
+                              self.total += len(line)
+                              if self.total > 16384:
+                                  raise ValueError('header cap')
+                              return line
+                      self.fp = HeaderReader()
+                      try:
+                          return super().begin()
+                      finally:
+                          self.fp = original
+              class DockerConnection(http.client.HTTPConnection):
+                  response_class = BoundedResponse
+                  def connect(self):
+                      self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                      self.sock.settimeout(max(0.001, deadline - time.monotonic()))
+                      self.sock.connect('/var/run/docker.sock')
+              conn = DockerConnection('localhost')
+              try:
+                  conn.request(method, '/containers/' + cid + '/archive?path=' + urllib.parse.quote(absolute, safe=''), headers={'Connection': 'close'})
+                  response = conn.getresponse()
+                  if sum(len(k) + len(v) for k, v in response.getheaders()) > 16384:
+                      raise ValueError('headers')
+                  if response.status != 200:
+                      return response.status, None, b''
+                  metadata = response.getheader('X-Docker-Container-Path-Stat')
+                  if method == 'HEAD':
+                      return 200, metadata, b''
+                  length = response.getheader('Content-Length')
+                  if length is not None and (not length.isdecimal() or int(length) > cap):
+                      raise OverflowError('archive cap')
+                  chunks, size = [], 0
+                  while True:
+                      if time.monotonic() >= deadline:
+                          raise TimeoutError('deadline')
+                      block = response.read(min(16384, cap + 1 - size))
+                      if not block:
+                          break
+                      size += len(block)
+                      if size > cap:
+                          raise OverflowError('archive cap')
+                      chunks.append(block)
+                  return 200, metadata, b''.join(chunks)
+              finally:
+                  conn.close()
+
+          def public_bundle_stat(header):
+              import base64
+              if type(header) is not str or len(header) > 8192:
+                  raise ValueError('metadata')
+              item = public_bundle_json(base64.b64decode(header, validate=True).decode('utf-8', 'strict'))
+              if (type(item) is not dict or type(item.get('name')) is not str
+                      or type(item.get('size')) is not int or item['size'] < 0
+                      or type(item.get('mode')) is not int or not 0 <= item['mode'] <= 0xffffffff
+                      or type(item.get('linkTarget')) is not str):
+                  raise ValueError('metadata shape')
+              return item
+
+          def public_bundle_tar_file(raw, basename, size):
+              # One regular ustar member, optionally preceded by one bounded local PAX metadata header.
+              if len(raw) < 1536 or len(raw) % 512:
+                  raise ValueError('tar length')
+              def octal(field):
+                  field = field.rstrip(b'\x00 ').lstrip(b' ')
+                  if not field or not re.fullmatch(b'[0-7]+', field):
+                      raise ValueError('tar number')
+                  return int(field, 8)
+              def checked_header(offset):
+                  header = raw[offset:offset + 512]
+                  if (len(header) != 512 or octal(header[148:156]) != sum(header[:148]) + 256 + sum(header[156:])
+                          or header[257:263] not in (b'ustar\x00', b'ustar ')):
+                      raise ValueError('tar checksum/header')
+                  return header
+              offset = 0
+              header = checked_header(offset)
+              if header[156:157] == b'x':
+                  count = octal(header[124:136])
+                  name = header[:100].split(b'\x00',1)[0]
+                  if (not 0 < count <= 4096 or name.startswith(b'/') or b'..' in name.split(b'/')
+                          or header[157:257].strip(b'\x00') or header[345:500].strip(b'\x00')):
+                      raise ValueError('PAX metadata bounds')
+                  offset = 512 + ((count + 511) // 512) * 512
+                  if len(raw) < offset + 1536 or any(raw[512 + count:offset]):
+                      raise ValueError('PAX truncation/padding')
+                  payload, at, seen = raw[512:512 + count], 0, set()
+                  while at < count:
+                      space = payload.find(b' ',at, min(count,at + 12))
+                      if space < 0 or not re.fullmatch(b'[1-9][0-9]{0,5}',payload[at:space]):
+                          raise ValueError('PAX record length')
+                      end = at + int(payload[at:space])
+                      if end > count or end <= space + 2 or payload[end - 1:end] != b'\n':
+                          raise ValueError('PAX record truncation')
+                      record = payload[space + 1:end - 1].decode('utf-8','strict')
+                      key, separator, value = record.partition('=')
+                      if not separator or key in seen or '\x00' in record:
+                          raise ValueError('PAX record')
+                      seen.add(key)
+                      if key == 'path':
+                          if value != basename:
+                              raise ValueError('PAX path rewrite')
+                      elif key == 'size':
+                          if not re.fullmatch(r'[0-9]{1,12}',value) or int(value) != size:
+                              raise ValueError('PAX size rewrite')
+                      elif key not in ('mtime','atime','ctime','uid','gid','uname','gname') and not re.fullmatch(r'SCHILY\.xattr\.[A-Za-z0-9_.-]{1,160}',key):
+                          raise ValueError('PAX unsupported metadata')
+                      at = end
+                  header = checked_header(offset)
+              if (header[0:100].split(b'\x00', 1)[0] != basename.encode('ascii')
+                      or header[156:157] not in (b'0', b'\x00')
+                      or header[157:257].strip(b'\x00') or header[345:500].strip(b'\x00')
+                      or header[257:263] not in (b'ustar\x00', b'ustar ')
+                      or octal(header[124:136]) != size):
+                  raise ValueError('tar member')
+              end = offset + 512 + ((size + 511) // 512) * 512
+              if len(raw) < end + 1024 or any(raw[offset + 512 + size:]):
+                  raise ValueError('extra member or truncation')
+              return raw[offset + 512:offset + 512 + size]
+
+          def read_public_bundle_file(cid, relative, cap):
+              # Only typed status/hash/public text is returned; archive stays bounded in host memory.
+              import hashlib
+              if not public_bundle_safe_path(relative) or type(cap) is not int or not 0 < cap <= 8388608:
+                  return {'status': 'UNSAFE_PATH'}
+              if type(cid) is not str or not re.fullmatch(r'[a-f0-9]{64}', cid):
+                  return {'status': 'READ_ERROR'}
+              old_handler = signal.getsignal(signal.SIGALRM)
+              if signal.getitimer(signal.ITIMER_REAL) != (0.0, 0.0):
+                  return {'status': 'READ_ERROR'}
+              def expired(signum, frame):
+                  raise TimeoutError('archive deadline')
+              try:
+                  signal.signal(signal.SIGALRM, expired)
+                  signal.setitimer(signal.ITIMER_REAL, 6)
+                  deadline = time.monotonic() + 6
+                  absolute = '/repo/packages/core-dev-bundle/' + relative
+                  parts, final = absolute.strip('/').split('/'), None
+                  for index in range(len(parts)):
+                      path = '/' + '/'.join(parts[:index + 1])
+                      status, header, unused = public_bundle_archive_request(cid, path, 'HEAD', 0, deadline)
+                      if status != 200:
+                          return {'status': 'MISSING' if status == 404 else 'UNREADABLE' if status == 403 else 'READ_ERROR'}
+                      item = public_bundle_stat(header)
+                      if item['linkTarget'] or item['mode'] & (1 << 27):
+                          return {'status': 'UNSAFE_LINK'}
+                      # Docker mode uses Go FileMode, not POSIX st_mode.
+                      typebits = item['mode'] & 0xfffff000
+                      if item['name'] != parts[index]:
+                          return {'status': 'CHANGED'}
+                      if index < len(parts) - 1:
+                          if typebits != (1 << 31):
+                              return {'status': 'NOT_REGULAR'}
+                      elif typebits:
+                          return {'status': 'NOT_REGULAR'}
+                      final = item
+                  if final['size'] > cap:
+                      return {'status': 'TOO_LARGE'}
+                  status, header, raw = public_bundle_archive_request(cid, absolute, 'GET', cap + 10240, deadline)
+                  if status != 200:
+                      return {'status': 'MISSING' if status == 404 else 'READ_ERROR'}
+                  if public_bundle_stat(header) != final:
+                      return {'status': 'CHANGED'}
+                  data = public_bundle_tar_file(raw, parts[-1], final['size'])
+                  text = data.decode('utf-8', 'strict')
+                  # Metadata rechecks detect observed changes, not an atomic mutable-tree snapshot.
+                  for index in range(len(parts)):
+                      status, header, unused = public_bundle_archive_request(cid, '/' + '/'.join(parts[:index + 1]), 'HEAD', 0, deadline)
+                      item = public_bundle_stat(header) if status == 200 else None
+                      if (item is None or item['name'] != parts[index] or item['linkTarget']
+                              or item['mode'] & 0xfffff000 != ((1 << 31) if index < len(parts) - 1 else 0)
+                              or (index == len(parts) - 1 and item != final)):
+                          return {'status': 'CHANGED'}
+                  return {'status': 'READ', 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'text': text}
+              except TimeoutError:
+                  return {'status': 'TIMEOUT'}
+              except OverflowError:
+                  return {'status': 'TOO_LARGE'}
+              except UnicodeError:
+                  return {'status': 'INVALID_UTF8'}
+              except (OSError, ValueError, TypeError, KeyError, RecursionError, http.client.HTTPException):
+                  return {'status': 'READ_ERROR'}
+              finally:
+                  signal.setitimer(signal.ITIMER_REAL, 0)
+                  signal.signal(signal.SIGALRM, old_handler)
 
           def public_bundle_docs(memory, scoped_erp):
-              if memory < 128 * 1024 * 1024:
-                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'SKIPPED_LOW_MEMORY'}
-              if len(scoped_erp) != 1 or not isinstance(scoped_erp[0], str) or not re.fullmatch(r'[a-f0-9]{64}', scoped_erp[0]):
+              # Host budget is total address space, not a claim that low RAM is resolved.
+              # Only the soft limit changes; restore it even on allocation/parse failures.
+              if (type(scoped_erp) is not list or len(scoped_erp) != 1
+                      or type(scoped_erp[0]) is not str or not re.fullmatch(r'[a-f0-9]{64}',scoped_erp[0])):
+                  return {'schema':'w0.public-bundle-docs@1','status':'UNAVAILABLE'}
+              cid = scoped_erp[0]
+              # Docker CLI is a host Go process: never spawn it under Python's address-space cap.
+              before = public_bundle_identity(cid)
+              if before is None:
+                  return {'schema':'w0.public-bundle-docs@1','status':'UNAVAILABLE'}
+              try:
+                  import resource
+                  old = resource.getrlimit(resource.RLIMIT_AS)
+                  budget = 64 * 1024 * 1024
+                  soft = budget if old[0] == resource.RLIM_INFINITY else min(old[0], budget)
+                  if old[1] != resource.RLIM_INFINITY:
+                      soft = min(soft, old[1])
+                  resource.setrlimit(resource.RLIMIT_AS, (soft, old[1]))
+              except (ImportError, AttributeError, OSError, ValueError, MemoryError):
+                  return {'schema':'w0.public-bundle-docs@1','status':'UNAVAILABLE'}
+              try:
+                  result = collect_public_bundle_docs(memory, scoped_erp)
+              except MemoryError:
+                  result = {'schema':'w0.public-bundle-docs@1','status':'READ_ERROR'}
+              finally:
+                  resource.setrlimit(resource.RLIMIT_AS, old)
+              if public_bundle_identity(cid) != before:
+                  return {'schema':'w0.public-bundle-docs@1','status':'UNAVAILABLE'}
+              return result
+
+          def collect_public_bundle_docs(memory, scoped_erp):
+              # Low RAM allowed: no process is created in Core. Existing Node guards unchanged.
+              import posixpath
+              if type(scoped_erp) is not list or len(scoped_erp) != 1:
                   return {'schema': 'w0.public-bundle-docs@1', 'status': 'UNAVAILABLE'}
               cid = scoped_erp[0]
-              identity = command(['docker', 'inspect', '--type', 'container', '--format',
-                                  '{{.Id}}|{{.State.Running}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.service"}}', cid])
-              if identity != cid + '|true|/opt/thg-newhub|erp\n':
-                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'UNAVAILABLE'}
+              out = dict(schema='w0.public-bundle-docs@1', status='PARTIAL', manifest=None, catalog=None,
+                         taskSkillIds=[], files=[], capabilityDefs=[], otherNames=[],
+                         limits=dict(perTextBytes=65536,totalTextBytes=196608,maxTaskSkills=3,maxRefs=3), textBytes=0,truncated=False)
+              def project(value, keys):
+                  if type(value) is not dict:
+                      return {}
+                  return {k:v for k,v in value.items() if k in keys and
+                          ((type(v) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+@:/=-]{0,239}', v))
+                           or (type(v) is int and 0 <= v <= 9007199254740991))}
+              def document(path, kind, source=None):
+                  if any(f['path'] == path for f in out['files']):
+                      return None
+                  remaining = 196608 - out['textBytes']
+                  result = read_public_bundle_file(cid, path, min(65536, remaining)) if remaining > 0 else {'status':'TOTAL_LIMIT'}
+                  if result['status'] == 'TOO_LARGE' and remaining < 65536:
+                      result = {'status':'TOTAL_LIMIT'}
+                  out['files'].append(dict(path=path,kind=kind,source=source,**result))
+                  if result['status'] != 'READ':
+                      if result['status'] in ('TOO_LARGE','TOTAL_LIMIT'):
+                          out['truncated'] = True
+                      return None
+                  out['textBytes'] += result['bytes']
+                  return result['text']
+              def collect():
+                  mr = read_public_bundle_file(cid, 'manifest.json', 8388608)
+                  out['manifest'] = dict(path='manifest.json', **project(mr,['status','bytes','sha256']))
+                  if mr['status'] != 'READ':
+                      return
+                  try:
+                      m = public_bundle_json(mr['text'])
+                  except (ValueError, RecursionError):
+                      out['manifest']['status'] = 'PARSE_ERROR'
+                      return
+                  if type(m) is not dict or m.get('schema') != 'core-dev.bundle-manifest@1' or type(m.get('skills')) is not list or len(m['skills']) > 200:
+                      out['manifest']['status'] = 'SCHEMA_UNKNOWN'
+                      return
+                  ids, skills = set(), []
+                  for s in m['skills']:
+                      if type(s) is not dict or type(s.get('id')) is not str or not re.fullmatch(r'[a-z][a-z0-9-]{0,39}', s['id']) or s['id'] in ids:
+                          out['manifest']['status'] = 'SCHEMA_UNKNOWN'
+                          return
+                      ids.add(s['id'])
+                      skills.append(project(s,['id','version','treeSha256']))
+                  out['manifest']['projection'] = dict(project(m,['schema','bundleVersion','contentDigest','coreContract']),identity=project(m.get('identity'),['coreVersion','coreImageDigest','sdkVersion','contractCatalogVersion','bundleDigest']),catalog=project(m.get('catalog'),['path','sha256']),skills=skills)
+                  cp = m.get('catalog',{}).get('path') if type(m.get('catalog')) is dict else None
+                  if not public_bundle_safe_path(cp) or not cp.startswith('catalog/') or not cp.endswith('.json'):
+                      out['catalog'] = {'status':'UNSAFE_PATH'}
+                      return
+                  cr = read_public_bundle_file(cid, cp, 4194304)
+                  out['catalog'] = dict(path=cp, **project(cr,['status','bytes','sha256']))
+                  if cr['status'] != 'READ':
+                      return
+                  digest = m['catalog'].get('sha256')
+                  if digest is not None and (type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}',digest) or digest != cr['sha256']):
+                      out['catalog']['status'] = 'CHANGED'
+                      return
+                  try:
+                      c = public_bundle_json(cr['text'])
+                  except (ValueError, RecursionError):
+                      out['catalog']['status'] = 'PARSE_ERROR'
+                      return
+                  if (type(c) is not dict or c.get('schema') != 'core-dev.capability-catalog@1'
+                          or type(c.get('capabilities')) is not list or len(c['capabilities']) > 1000
+                          or type(c.get('capabilityDefs')) is not list or len(c['capabilityDefs']) > 5000):
+                      out['catalog']['status'] = 'SCHEMA_UNKNOWN'
+                      return
+                  out['catalog']['projection'] = project(c,['schema','catalogVersion','coreContract','contractsDigest'])
+                  related = set()
+                  for cap in c['capabilities']:
+                      if type(cap) is dict and type(cap.get('id')) is str and re.search('task|work',cap['id'],re.I) and type(cap.get('skills')) is list:
+                          related.update(id for id in cap['skills'] if type(id) is str and id in ids)
+                  out['taskSkillIds'] = sorted(related)[:3]
+                  out['truncated'] = len(related) > 3
+                  known = {'task.assign@5','task.edit@2','task.get@2','task.policy.set@2','task.fields.set@3','task.forms.set@3','task.automation.rules.set@3'}
+                  seen = set()
+                  for d in c['capabilityDefs']:
+                      if type(d) is not dict or type(d.get('name')) is not str:
+                          continue
+                      name = d['name']
+                      if name in known:
+                          if name in seen:
+                              out['catalog']['status'] = 'SCHEMA_UNKNOWN'
+                              out['otherNames'] = []
+                              return
+                          seen.add(name)
+                          item = project(d,['name','effect','risk','scopeModel','idempotency','fingerprint','label'])
+                          for key, keys in [('audience',['HUMAN','AGENT','EXTENSION','SYSTEM']),('permission',['feature','action']),('agentModes',['ceiling','default','trustedContext']),('approval',['human','agent'])]:
+                              item[key] = None if d.get(key) is None else project(d.get(key),keys)
+                              if key == 'agentModes' and type(d.get(key)) is dict and type(d[key].get('trustedContext')) is bool:
+                                  item[key]['trustedContext'] = d[key]['trustedContext']
+                              if key == 'approval' and type(d.get(key)) is dict and 'agent' in d[key] and d[key]['agent'] is None:
+                                  item[key]['agent'] = None
+                          out['capabilityDefs'].append(item)
+                      elif len(name) <= 120 and re.fullmatch(r'task\.[A-Za-z0-9.]+@[1-9][0-9]*',name) and re.search('member|part|parent|import|reopen|transition',name,re.I):
+                          out['otherNames'].append(name)
+                  names = sorted(set(out['otherNames']), key=lambda n:(n.split('@')[0],-int(n.split('@')[1])))
+                  out['truncated'] |= len(names) > 30
+                  out['otherNames'] = names[:30]
+                  sources = []
+                  for id in dict.fromkeys(['extension-foundation'] + out['taskSkillIds']):
+                      for leaf in ('manifest.yaml','SKILL.md'):
+                          p = 'skills/' + id + '/' + leaf
+                          text = document(p,'SKILL')
+                          if text is not None:
+                              sources.append((p,text))
+                  document('skills/gaps.json','GAPS')
+                  refs = set()
+                  for p, text in sources:
+                      for a,b in re.findall(r'\]\(([^\s()]+)\)|^\s*(?:-\s*)?(?:path|file|ref):\s*["\']?([^\s"\'#]+)["\']?\s*$',text,re.M):
+                          ref = a or b
+                          if re.search(r'[:#?%\\]',ref):
+                              continue
+                          ref = posixpath.normpath(posixpath.join(posixpath.dirname(p),ref))
+                          if not public_bundle_safe_path(ref) or not ref.startswith(('skills/','docs/')) or not ref.endswith(('.md','.yaml','.json')) or ref.endswith(('SKILL.md','manifest.yaml')) or ref in refs:
+                              continue
+                          refs.add(ref)
+                          if len(refs) > 3:
+                              out['truncated'] = True
+                              continue
+                          document(ref,'REFERENCE',p)
+                  if not out['truncated'] and all(f['status'] == 'READ' for f in out['files']):
+                      out['status'] = 'READ'
               try:
-                  # OS supervisor is INSIDE the container: client timeout is not a remote-kill guarantee.
-                  # No install/fallback: absent/unsupported timeout fails closed with READ_ERROR.
-                  result = subprocess.run(['docker', 'exec', '-i', cid, '/usr/bin/timeout', '-s', 'KILL', '4', 'node', '--max-old-space-size=48', '-'], input=PUBLIC_BUNDLE_DOCS_JS.encode('utf-8'), capture_output=True, timeout=7, check=False)
-                  if result.returncode in (124, 137):
-                      return {'schema': 'w0.public-bundle-docs@1', 'status': 'TIMEOUT'}
-                  if result.returncode != 0 or len(result.stdout) > 1572864:
-                      return {'schema': 'w0.public-bundle-docs@1', 'status': 'READ_ERROR'}
-                  return json.loads(result.stdout.decode('utf-8'))
-              except subprocess.TimeoutExpired:
-                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'TIMEOUT'}
-              except (OSError, ValueError, UnicodeError):
-                  return {'schema': 'w0.public-bundle-docs@1', 'status': 'READ_ERROR'}
+                  collect()
+              except (OSError, ValueError, TypeError, KeyError, RecursionError):
+                  out['status'] = 'READ_ERROR'
+              return out
 
           try:
               if os.geteuid() != 0 or not TARGET.is_dir():
@@ -1113,7 +1367,7 @@ jobs:
                   return (type(p) is str and len(p) <= 240 and re.fullmatch(r'[A-Za-z0-9_/-]+(?:\.[A-Za-z0-9_-]+)?', p)
                           and not p.startswith('/') and all(s and s not in ('.', '..') and not s.startswith('.') for s in p.split('/'))
                           and not re.search(r'(?:^|[/._-])(?:env|config|private|secret|secrets|ext-secrets|credential|credentials|db|database|pgdata|backup|backups|node_modules|src|dist|data|logs?)(?:$|[/._-])', p, re.I))
-              statuses = {'READ', 'UNSAFE_PATH', 'UNSAFE_LINK', 'NOT_REGULAR', 'TOO_LARGE', 'CHANGED', 'MISSING', 'UNREADABLE', 'INVALID_UTF8', 'READ_ERROR', 'PARSE_ERROR', 'SCHEMA_UNKNOWN'}
+              statuses = {'READ', 'UNSAFE_PATH', 'UNSAFE_LINK', 'NOT_REGULAR', 'TOO_LARGE', 'CHANGED', 'MISSING', 'UNREADABLE', 'INVALID_UTF8', 'READ_ERROR', 'PARSE_ERROR', 'SCHEMA_UNKNOWN', 'TIMEOUT'}
               def projection(p, fields, nested=None):
                   require(type(p) is dict and set(p) <= set(fields) | set(nested or {}))
                   for key, v in p.items():
