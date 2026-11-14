@@ -1,0 +1,61 @@
+name: W0 DEV access admission (no SSH)
+
+'on':
+  push:
+    branches: [work/w0-dev-access]
+
+permissions: {}
+
+jobs:
+  admit:
+    if: github.repository == 'CONG-TY-TNHH-QU-C-ANH-GLOBAL/THG_tool' && github.ref == 'refs/heads/work/w0-dev-access' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Compare configured target without disclosing secret values
+        id: target_gate
+        shell: bash
+        env:
+          TARGET_HOST_MATCH: ${{ secrets.SERVER_HOST == '103.216.117.194' }}
+          TARGET_PORT_MATCH: ${{ secrets.SERVER_PORT == '24700' }}
+          TARGET_USER_MATCH: ${{ secrets.SERVER_USER == 'root' }}
+          SSH_KEY_PRESENT: ${{ secrets.SERVER_SSH_KEY != '' }}
+          CONFIGURED_SSH_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET_HOST_MATCH:-}" != 'true' ||
+                "${TARGET_PORT_MATCH:-}" != 'true' ||
+                "${TARGET_USER_MATCH:-}" != 'true' ||
+                "${SSH_KEY_PRESENT:-}" != 'true' ||
+                "${CONFIGURED_SSH_USER:-}" != 'root' ]]; then
+            printf '%s\n' 'Target admission failed.' >&2
+            exit 1
+          fi
+          printf '%s\n' 'target=matched' 'ssh_key=present'
+
+      - name: Observe a public host key without authentication or trust changes
+        id: public_keyscan
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_file=$(mktemp "${RUNNER_TEMP:?}/w0-public-key.XXXXXX")
+          trap 'rm -f -- "$scan_file"' EXIT
+          if ! ssh-keyscan -T 8 -t ed25519 -p 24700 103.216.117.194 > "$scan_file" 2>/dev/null; then
+            printf '%s\n' 'Public key scan failed.' >&2
+            exit 1
+          fi
+          if ! awk 'NR != 1 || NF != 3 || $1 != "[103.216.117.194]:24700" || $2 != "ssh-ed25519" { exit 1 } END { if (NR != 1) exit 1 }' "$scan_file"; then
+            printf '%s\n' 'Public key scan record rejected.' >&2
+            exit 1
+          fi
+          if ! key_info=$(ssh-keygen -l -E sha256 -f "$scan_file" 2>/dev/null); then
+            printf '%s\n' 'Public key validation failed.' >&2
+            exit 1
+          fi
+          fingerprint=$(printf '%s\n' "$key_info" | awk 'NR == 1 { print $2 }')
+          if [[ ! "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            printf '%s\n' 'Public key fingerprint rejected.' >&2
+            exit 1
+          fi
+          printf 'server_fingerprint_unverified=%s\n' "$fingerprint"
+          printf '%s\n' 'server_identity=UNVERIFIED' 'ssh_auth_attempted=false' 'remote_commands=0'
