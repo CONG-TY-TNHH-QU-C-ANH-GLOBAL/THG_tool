@@ -411,9 +411,15 @@ jobs:
               } finally { await reader.cancel().catch(() => {}); }
               const body = new Uint8Array(size); let offset = 0;
               for (const chunk of chunks) {body.set(chunk, offset); offset += chunk.byteLength;}
-              // Never forward error bodies to SDK errors; status is the only error metadata.
+              // Project only public machine codes; never forward body/message to SDK errors.
               if (!response.ok) {
-                const error = new Error('HTTP'); error.safeHttpStatus = response.status; throw error;
+                const error = new Error('HTTP'); error.safeHttpStatus = response.status;
+                try {
+                  const document = JSON.parse(new TextDecoder().decode(body));
+                  const code = document?.code ?? document?.error?.code;
+                  if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,79}$/.test(code)) error.safeErrorCode = code;
+                } catch {}
+                throw error;
               }
               return new Response(body, {status:response.status, headers:{'content-type':'application/json'}});
             };
@@ -442,7 +448,8 @@ jobs:
             } catch (error) {
               if (controller.signal.aborted) return {status:'TIMEOUT'};
               if (Number.isInteger(error?.safeHttpStatus) && error.safeHttpStatus >= 100 && error.safeHttpStatus <= 599)
-                return {status:'ERROR', httpStatus:error.safeHttpStatus};
+                return {status:'ERROR', httpStatus:error.safeHttpStatus,
+                        ...(typeof error.safeErrorCode === 'string' && /^[A-Z][A-Z0-9_]{1,79}$/.test(error.safeErrorCode) ? {errorCode:error.safeErrorCode} : {})};
               return {status:'ERROR'};
             } finally { clearTimeout(abort); globalThis.fetch = originalFetch; }
           }
@@ -559,6 +566,118 @@ jobs:
               except (OSError, UnicodeError, ValueError):
                   return {'status': 'ERROR'}
           # W0_SIGNED_DISCOVERY_END
+
+          # Focused probe09: exact previously observed public catalog only; no scanning.
+          CATALOG_PATH = '/repo/packages/core-dev-bundle/catalog/core-capabilities.json'
+          CATALOG_KEYS = {'schema', 'catalogVersion', 'coreContract', 'sdk', 'contractsDigest',
+                          'capabilities', 'capabilityDefs', 'contracts', 'reverseApi', 'providerContracts',
+                          'experienceModes', 'intakeModes', 'intakeCapabilities', 'coreToolRoots',
+                          'navigationRoute', 'navigationIcons'}
+
+          def focused_catalog_summary(body):
+              result = catalog_summary(body)
+              if result is None:
+                  return None
+              relevant = lambda name: bool(re.search(r'task|work|project|comment|history|import|migration|customfield|context|guard|maintenance|platform', name, re.I))
+              selected = [c for c in body['contracts'] if type(c) is dict and isinstance(c.get('name'), str) and relevant(c['name'])]
+              # Reuse the existing strict contract projector, in bounded batches, AFTER filtering.
+              contracts = []
+              for start in range(0, len(selected), 60):
+                  contracts.extend(catalog_summary({'schema': body['schema'], 'contracts': selected[start:start + 60]})['contracts'])
+              result.update(contracts=contracts[:150], truncated=len(contracts) > 150, contractsCount=len(body['contracts']))
+              for key in ('catalogVersion', 'coreContract'):
+                  value = body.get(key)
+                  if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+@:-]{0,119}', value):
+                      result[key] = value
+              sdk = body.get('sdk')
+              if type(sdk) is dict and version(sdk.get('version')):
+                  result['sdkVersion'] = sdk['version']
+              defs = body.get('capabilityDefs')
+              projected = []
+              if type(defs) is list and len(defs) <= 5000:
+                  for item in defs:
+                      if type(item) is not dict or not isinstance(item.get('name'), str) or not re.fullmatch(r'[a-z][A-Za-z0-9.]+@[1-9][0-9]*', item['name']) or len(item['name']) > 120 or not re.search('task', item['name'], re.I):
+                          continue
+                      audience, permission = item.get('audience'), item.get('permission')
+                      if (type(audience) is not dict or set(audience) != {'HUMAN', 'AGENT', 'EXTENSION', 'SYSTEM'}
+                              or any(v not in ('PUBLIC', 'EXPERIMENTAL', 'NONE') for v in audience.values()) or 'PUBLIC' not in audience.values()
+                              or type(permission) is not dict or set(permission) != {'feature', 'action'}
+                              or any(not isinstance(v, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_.:-]{0,79}', v) for v in permission.values())
+                              or item.get('scopeModel') not in ('SELF', 'FEATURE_SCOPE', 'SELF_OR_FEATURE_SCOPE', 'TENANT')):
+                          continue
+                      projected.append({'name': item['name'], 'permission': permission, 'scopeModel': item['scopeModel']})
+              result['capabilityDefs'] = projected[:150]
+              result['capabilityDefsTruncated'] = len(projected) > 150
+              return result
+
+          def catalog_probe(memory, scoped_erp):
+              out = {'status': 'UNAVAILABLE', 'fileType': 'UNKNOWN', 'schemaKnown': False}
+              if len(scoped_erp) != 1 or not isinstance(scoped_erp[0], str) or not re.fullmatch(r'[a-f0-9]{64}', scoped_erp[0]):
+                  return out
+              cid = scoped_erp[0]
+              identity = command(['docker', 'inspect', '--type', 'container', '--format',
+                                  '{{.Id}}|{{.State.Running}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.service"}}', cid])
+              if identity != cid + '|true|/opt/thg-newhub|erp\n':
+                  return out
+              script = '''p=/repo/packages/core-dev-bundle/catalog/core-capabilities.json
+          current=; oldIFS=$IFS; IFS=/; set -- $p; IFS=$oldIFS
+          for part do
+            [ -n "$part" ] || continue
+            current=$current/$part
+            [ ! -L "$current" ] || { printf 'UNSAFE_LINK\\n'; exit 0; }
+          done
+          [ -e "$p" ] || { printf 'MISSING\\n'; exit 0; }
+          [ -f "$p" ] || { printf 'NOT_REGULAR\\n'; exit 0; }
+          size=$(stat -c %s "$p") || exit 3
+          case "$size" in ''|*[!0-9]*) exit 3;; esac
+          readable=no; [ ! -r "$p" ] || readable=yes
+          printf 'REGULAR|%s|%s\\n' "$size" "$readable"
+          [ "$readable" = yes ] && [ "$size" -le 4194304 ] && [ "$W0_READ_BODY" = yes ] || exit 0
+          head -c 4194305 "$p"
+          '''
+              # Fixed body-read flag only; no container environment values are read.
+              script = 'W0_READ_BODY=' + ('yes' if memory >= 128 * 1024 * 1024 else 'no') + '\n' + script
+              try:
+                  result = subprocess.run(['docker', 'exec', cid, '/bin/sh', '-c', script], capture_output=True, timeout=5, check=False)
+                  if result.returncode != 0 or len(result.stdout) > 4194560:
+                      out['status'] = 'READ_ERROR'
+                      return out
+                  header, _, raw = result.stdout.partition(b'\n')
+                  if header in (b'UNSAFE_LINK', b'MISSING', b'NOT_REGULAR'):
+                      out.update(status=header.decode(), fileType={b'UNSAFE_LINK': 'SYMLINK', b'MISSING': 'MISSING', b'NOT_REGULAR': 'OTHER'}[header])
+                      return out
+                  match = re.fullmatch(rb'REGULAR\|([0-9]{1,19})\|(yes|no)', header)
+                  if not match:
+                      out['status'] = 'READ_ERROR'
+                      return out
+                  size = int(match[1])
+                  out.update(fileType='REGULAR', byteSize=size, readable=match[2] == b'yes')
+                  if not out['readable']:
+                      out['status'] = 'UNREADABLE'
+                  elif size > 4194304 or len(raw) > 4194304:
+                      out['status'] = 'TOO_LARGE'
+                  elif memory < 128 * 1024 * 1024:
+                      out['status'] = 'SKIPPED_LOW_MEMORY'
+                  elif len(raw) != size:
+                      out['status'] = 'READ_ERROR'
+                  else:
+                      try:
+                          body = json.loads(raw)
+                      except (ValueError, UnicodeError):
+                          out['status'] = 'PARSE_ERROR'
+                          return out
+                      out['schemaKnown'] = type(body) is dict and body.get('schema') == 'core-dev.capability-catalog@1'
+                      out['topLevelKeys'] = sorted(CATALOG_KEYS.intersection(body)) if type(body) is dict else []
+                      summary = focused_catalog_summary(body)
+                      out['status'] = 'PUBLIC_CATALOG_FOUND' if summary is not None else 'SCHEMA_UNKNOWN'
+                      if summary is not None:
+                          out['catalog'] = summary
+                  return out
+              except subprocess.TimeoutExpired:
+                  out['status'] = 'TIMEOUT'
+              except OSError:
+                  out['status'] = 'READ_ERROR'
+              return out
 
           try:
               if os.geteuid() != 0 or not TARGET.is_dir():
@@ -678,7 +797,12 @@ jobs:
                   signal.alarm(0)
                   connection.close()
               metadata['health'] = health
-              metadata['publicDiscovery'] = discover_public(metadata['memoryAvailableBytes'], scoped_erp)
+              # Preserve old publicDiscovery wire shape without repeating its broad scan.
+              metadata['publicDiscovery'] = {'status': 'NOT_FOUND_WITHIN_SCOPE', 'coverage': {
+                  'hostRoot': '/opt/thg-newhub', 'containerRoots': [], 'maxDepth': 5, 'maxCandidates': 30,
+                  'maxBodyBytes': 1048576, 'entriesVisited': 0, 'truncated': False, 'schemaFields': 'NOT_READ',
+                  'exclusions': 'PUBLIC_ONLY_NO_SYMLINKS'}, 'candidates': []}
+              metadata['catalogProbe'] = catalog_probe(metadata['memoryAvailableBytes'], scoped_erp)
               metadata['signedDiscovery'] = signed_discovery(metadata['memoryAvailableBytes'], scoped_erp)
               metadata['containerDiagnostics'] = {'observations': container_diagnostics}
               print('W0_REMOTE_METADATA_JSON=' + json.dumps(metadata, separators=(',', ':')))
@@ -789,9 +913,55 @@ jobs:
                       require(type(modes) is list and len(modes) <= 3 and all(type(m) is str and m in ('ACTOR', 'SELF', 'SERVICE') for m in modes) and len(set(modes)) == len(modes))
                       require(item['availability'] in ('AVAILABLE', 'LICENSE_OFF', 'UNBOUND', 'DEPENDENCY_MISSING'))
               else:
-                  require(set(value) == {'status'} or (value['status'] == 'ERROR' and set(value) == {'status', 'httpStatus'}))
+                  require(set(value) == {'status'} or (value['status'] == 'ERROR' and {'status'} <= set(value) <= {'status', 'httpStatus', 'errorCode'}))
                   if 'httpStatus' in value:
                       require(type(value['httpStatus']) is int and 100 <= value['httpStatus'] <= 599)
+                  if 'errorCode' in value:
+                      token(value['errorCode'], r'[A-Z][A-Z0-9_]{1,79}', 80)
+              return value
+
+          def validate_catalog_probe(value):
+              require(type(value) is dict and {'status', 'fileType', 'schemaKnown'} <= set(value) <= {'status', 'fileType', 'schemaKnown', 'byteSize', 'readable', 'topLevelKeys', 'catalog'})
+              require(value['status'] in ('UNAVAILABLE', 'READ_ERROR', 'TIMEOUT', 'UNSAFE_LINK', 'MISSING', 'NOT_REGULAR', 'UNREADABLE', 'TOO_LARGE', 'SKIPPED_LOW_MEMORY', 'PARSE_ERROR', 'PUBLIC_CATALOG_FOUND', 'SCHEMA_UNKNOWN'))
+              require(value['fileType'] in ('UNKNOWN', 'SYMLINK', 'MISSING', 'OTHER', 'REGULAR') and type(value['schemaKnown']) is bool)
+              if 'byteSize' in value:
+                  require(type(value['byteSize']) is int and 0 <= value['byteSize'] <= 2**63 - 1 and value['fileType'] == 'REGULAR')
+                  require(type(value.get('readable')) is bool)
+              if 'topLevelKeys' in value:
+                  keys = value['topLevelKeys']
+                  allowed = {'schema', 'catalogVersion', 'coreContract', 'sdk', 'contractsDigest', 'capabilities', 'capabilityDefs', 'contracts', 'reverseApi', 'providerContracts', 'experienceModes', 'intakeModes', 'intakeCapabilities', 'coreToolRoots', 'navigationRoute', 'navigationIcons'}
+                  require(type(keys) is list and all(type(k) is str and k in allowed for k in keys) and keys == sorted(set(keys)))
+              require(('catalog' in value) == (value['status'] == 'PUBLIC_CATALOG_FOUND'))
+              if 'catalog' in value:
+                  require(value['schemaKnown'] is True and value['fileType'] == 'REGULAR' and value.get('readable') is True and value.get('byteSize', 4194305) <= 4194304)
+                  c = value['catalog']
+                  base = {'schema', 'contracts', 'truncated', 'schemaFields', 'contractsCount', 'capabilityDefs', 'capabilityDefsTruncated'}
+                  require(type(c) is dict and base <= set(c) <= base | {'catalogVersion', 'coreContract', 'sdkVersion'})
+                  require(type(c['contractsCount']) is int and 0 <= c['contractsCount'] <= 1000)
+                  require(type(c['contracts']) is list and len(c['contracts']) <= 150 and type(c['truncated']) is bool)
+                  require(c['schema'] == 'core-dev.capability-catalog@1' and c['schemaFields'] == 'REFERENCES_ONLY')
+                  for contract in c['contracts']:
+                      require(type(contract) is dict and set(contract) == {'name', 'version', 'callModes', 'readiness', 'served', 'requestSchemaRef', 'responseSchemaRef'})
+                      token(contract['name'], r'[a-z][A-Za-z0-9.]+@[1-9][0-9]*', 120)
+                      require(type(contract['version']) is int and 1 <= contract['version'] <= 10000 and contract['name'].endswith('@' + str(contract['version'])))
+                      require(contract['readiness'] == 'PUBLIC_STABLE' and contract['served'] is True)
+                      require(type(contract['callModes']) is list and len(contract['callModes']) <= 5 and all(m in ('ACTOR', 'SELF', 'SERVICE', 'SYSTEM', 'GRANT') for m in contract['callModes']))
+                      for key, suffix in (('requestSchemaRef', 'request'), ('responseSchemaRef', 'response')):
+                          require(contract[key] == 'sdk:CONTRACTS_V1#' + contract['name'] + '/' + suffix)
+                  for key in ('catalogVersion', 'coreContract'):
+                      if key in c:
+                          token(c[key], r'[A-Za-z0-9][A-Za-z0-9._+@:-]{0,119}', 120)
+                  if 'sdkVersion' in c:
+                      token(c['sdkVersion'], r'v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?', 80)
+                  require(type(c['capabilityDefs']) is list and len(c['capabilityDefs']) <= 150 and type(c['capabilityDefsTruncated']) is bool)
+                  for item in c['capabilityDefs']:
+                      require(type(item) is dict and set(item) == {'name', 'permission', 'scopeModel'})
+                      token(item['name'], r'[a-z][A-Za-z0-9.]+@[1-9][0-9]*', 120)
+                      require(item['scopeModel'] in ('SELF', 'FEATURE_SCOPE', 'SELF_OR_FEATURE_SCOPE', 'TENANT'))
+                      p = item['permission']
+                      require(type(p) is dict and set(p) == {'feature', 'action'})
+                      for v in p.values():
+                          token(v, r'[A-Za-z][A-Za-z0-9_.:-]{0,79}', 80)
               return value
 
           def validate_container_diagnostics(value):
@@ -833,6 +1003,9 @@ jobs:
               diagnostics = validate_container_diagnostics(metadata['containerDiagnostics'])
               discovery = validate_public_discovery(metadata['publicDiscovery'])
               signed = validate_signed_discovery(metadata['signedDiscovery'])
+              catalog = validate_catalog_probe(metadata['catalogProbe'])
+              if catalog['status'] == 'SKIPPED_LOW_MEMORY':
+                  require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               if signed['status'] == 'SKIPPED_LOW_MEMORY':
                   require(type(metadata.get('memoryAvailableBytes')) is int and metadata['memoryAvailableBytes'] < 128 * 1024 * 1024)
               if discovery['status'] == 'SKIPPED_LOW_MEMORY':
@@ -844,6 +1017,7 @@ jobs:
               clean = {'schemaVersion': 1, 'euid': 0, 'targetDirectory': '/opt/thg-newhub', 'appDirectoryExists': True}
               clean['publicDiscovery'] = discovery
               clean['signedDiscovery'] = signed
+              clean['catalogProbe'] = catalog
               clean['containerDiagnostics'] = diagnostics
               if 'os' in metadata:
                   require(type(metadata['os']) is dict)
