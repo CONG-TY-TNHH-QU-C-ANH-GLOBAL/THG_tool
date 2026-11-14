@@ -607,7 +607,7 @@ jobs:
                   container_format = (
                       '{"containerId":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},'
                       '"imageId":{{json .Image}},"status":{{json .State.Status}},'
-                      '"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},'
+                      '"health":{{with (index .State "Health")}}{{json (index . "Status")}}{{else}}null{{end}},'
                       '"workingDirectory":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}},'
                       '"service":{{json (index .Config.Labels "com.docker.compose.service")}},'
                       '"version":{{json (index .Config.Labels "org.opencontainers.image.version")}},'
