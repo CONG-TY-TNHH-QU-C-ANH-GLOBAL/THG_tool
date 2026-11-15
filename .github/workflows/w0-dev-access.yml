@@ -1144,7 +1144,9 @@ jobs:
                           if stream is not None:
                               stream.close()
 
-          def official_manifest_projection(body):
+          def official_manifest_projection(body, descriptor_limit=16):
+              if descriptor_limit not in (16,64):
+                  raise ValueError('descriptor cap')
               digest = r'sha256:[a-f0-9]{64}'
               core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
               ref = r'(?:oci://)?registry\.autonow\.vn/core/dev-bundle@sha256:[a-f0-9]{64}'
@@ -1165,7 +1167,7 @@ jobs:
                       descriptors.extend(body[key])
               if 'config' in body:
                   descriptors.append(body['config'])
-              if len(descriptors) > 16:
+              if len(descriptors) > descriptor_limit:
                   raise ValueError('descriptor cap')
               for d in descriptors:
                   if (type(d) is not dict or not media(d.get('mediaType')) or type(d.get('digest')) is not str
@@ -1248,7 +1250,7 @@ jobs:
               core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
               references = [('sha256:c36e683f65c6075fce246bcb6471bd47213ac98493a19328dfdf66fcb01c9517',4861),
                             ('sha256:f3ca55ce4bb409e1b65ba5d10e0e789137bc59468957aa942e83adba9e248e0c',564)]
-              out = dict(schema='w0.core-distribution-metadata@1',status='UNAVAILABLE',rootCoreDigest=core,
+              out = dict(schema='w0.core-distribution-metadata@1',status='UNAVAILABLE',coreImageDigest=core,
                          resourceCondition='LOW_MEMORY' if memory < 128*1024*1024 else 'NORMAL',
                          labels=dict(status='UNAVAILABLE'),
                          children=[dict(digest=d,declaredSize=s,status='UNAVAILABLE') for d,s in references])
@@ -1259,36 +1261,54 @@ jobs:
               if public_bundle_identity(cid) != expected:
                   return out
               active = out['labels']
+              stage, parsing_json, descriptor_count = 'LABELS', False, None
               try:
                   state,raw = official_metadata_command(['docker','image','inspect','--format','{{json .Config.Labels}}','registry.autonow.vn/core/erp@' + core])
                   active['status'] = state
                   if state != 'OK':
                       out['status'] = state
                       return out
+                  parsing_json = True
                   labels = public_bundle_json(raw.decode('utf-8','strict'))
+                  parsing_json = False
                   if labels is None:
                       labels = {}
                   # Reuse the bounded annotation/reference/tuple projection, not arbitrary label text.
                   projected = official_manifest_projection(dict(schemaVersion=2,annotations=labels))
                   active['projection'] = dict(keys=projected['annotationKeys'],devBundleRefs=projected['devBundleRefs'],releaseTuples=projected['releaseTuples'])
-                  for child in out['children']:
+                  for index,child in enumerate(out['children'],1):
+                      stage,descriptor_count = 'CHILD' + str(index), None
                       active = child
                       state,raw = official_metadata_command(['docker','manifest','inspect','registry.autonow.vn/core/erp@' + child['digest']])
                       active['status'] = state
                       if state != 'OK':
                           out['status'] = state
                           return out
-                      active['projection'] = official_manifest_projection(public_bundle_json(raw.decode('utf-8','strict')))
+                      parsing_json = True
+                      body = public_bundle_json(raw.decode('utf-8','strict'))
+                      parsing_json = False
+                      if type(body) is dict:
+                          descriptor_count = sum(len(body[k]) for k in ('manifests','layers') if type(body.get(k)) is list) + int('config' in body)
+                      active['projection'] = official_manifest_projection(body,64)
                   out['status'] = 'METADATA_ONLY'
-              except (ValueError, UnicodeError, RecursionError, MemoryError):
+              except (ValueError, UnicodeError, RecursionError, MemoryError) as error:
                   active['status'] = 'PARSE_ERROR'
                   active.pop('projection',None)
                   out['status'] = 'PARSE_ERROR'
+                  reason = 'MALFORMED_JSON' if parsing_json and not isinstance(error,MemoryError) else {
+                      'manifest schema':'SCHEMA','media':'SCHEMA','descriptor cap':'DESCRIPTOR_COUNT',
+                      'descriptors':'DESCRIPTOR_SHAPE','descriptor':'DESCRIPTOR_SHAPE',
+                      'annotations':'ANNOTATION','annotation key':'ANNOTATION','annotation value':'ANNOTATION'
+                  }.get(str(error),'OTHER')
+                  out['parseObservation'] = dict(stage=stage,reason=reason)
+                  if reason == 'DESCRIPTOR_COUNT' and type(descriptor_count) is int and 0 <= descriptor_count <= 65535:
+                      out['parseObservation']['descriptorCount'] = descriptor_count
               finally:
                   if public_bundle_identity(cid) != expected:
                       out['status'] = 'UNAVAILABLE'
                       out['labels'] = dict(status='UNAVAILABLE')
                       out['children'] = [dict(digest=d,declaredSize=s,status='UNAVAILABLE') for d,s in references]
+                      out.pop('parseObservation',None)
               return out
 
           try:
@@ -1699,7 +1719,8 @@ jobs:
                   require(not value['truncated'] and value['manifest']['status'] == 'READ' and value['catalog']['status'] == 'READ' and bool(seen) and all(f['status'] == 'READ' for f in seen.values()))
               return value
 
-          def validate_official_bundle_metadata(value):
+          def validate_official_bundle_metadata(value, descriptor_limit=16):
+              require(type(descriptor_limit) is int and descriptor_limit in (16,64))
               require(type(value) is dict and set(value) == {'schema','status','tools','resourceCondition','cache','manifest'})
               require(value['schema'] == 'w0.official-dev-bundle-metadata@1')
               states = {'OK','AUTH_DENIED','NOT_FOUND','NETWORK_ERROR','EXIT_ERROR','TIMEOUT','OUTPUT_LIMIT','UNAVAILABLE','PARSE_ERROR'}
@@ -1724,7 +1745,7 @@ jobs:
               require(type(p['schemaVersion']) is int and p['schemaVersion'] == 2)
               if 'mediaType' in p:
                   token(p['mediaType'],r'[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+',120)
-              require(type(p['descriptors']) is list and len(p['descriptors']) <= 16)
+              require(type(p['descriptors']) is list and len(p['descriptors']) <= descriptor_limit)
               for d in p['descriptors']:
                   require(type(d) is dict and set(d) == {'mediaType','digest','size'})
                   token(d['mediaType'],r'[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+',120)
@@ -1753,8 +1774,16 @@ jobs:
               core = 'sha256:0e49465e84015a35ea2353ad6501e324a458d5049105802077886e2c86414dcb'
               references = [('sha256:c36e683f65c6075fce246bcb6471bd47213ac98493a19328dfdf66fcb01c9517',4861),
                             ('sha256:f3ca55ce4bb409e1b65ba5d10e0e789137bc59468957aa942e83adba9e248e0c',564)]
-              require(type(value) is dict and set(value) == {'schema','status','rootCoreDigest','resourceCondition','labels','children'})
-              require(value['schema'] == 'w0.core-distribution-metadata@1' and value['rootCoreDigest'] == core)
+              require(type(value) is dict and len({'rootCoreDigest','coreImageDigest'} & set(value)) == 1)
+              identity_key = 'coreImageDigest' if 'coreImageDigest' in value else 'rootCoreDigest'
+              require(set(value) == {'schema','status',identity_key,'resourceCondition','labels','children'} | ({'parseObservation'} if 'parseObservation' in value else set()))
+              require(value['schema'] == 'w0.core-distribution-metadata@1' and value[identity_key] == core)
+              if 'parseObservation' in value:
+                  o = value['parseObservation']
+                  require(value['status'] == 'PARSE_ERROR' and type(o) is dict and {'stage','reason'} <= set(o) <= {'stage','reason','descriptorCount'})
+                  require(o['stage'] in ('LABELS','CHILD1','CHILD2') and o['reason'] in ('MALFORMED_JSON','SCHEMA','DESCRIPTOR_COUNT','DESCRIPTOR_SHAPE','ANNOTATION','OTHER'))
+                  if 'descriptorCount' in o:
+                      require(o['reason'] == 'DESCRIPTOR_COUNT' and type(o['descriptorCount']) is int and 0 <= o['descriptorCount'] <= 65535)
               states = {'OK','AUTH_DENIED','NOT_FOUND','NETWORK_ERROR','EXIT_ERROR','TIMEOUT','OUTPUT_LIMIT','UNAVAILABLE','PARSE_ERROR'}
               require(value['status'] in (states - {'OK'}) | {'METADATA_ONLY'})
               require(value['resourceCondition'] in ('NORMAL','LOW_MEMORY','LOW_DISK'))
@@ -1769,12 +1798,16 @@ jobs:
                       # Internal validation adapter only: no fabricated OCI schema is emitted for labels.
                       validate_official_bundle_metadata(dict(schema='w0.official-dev-bundle-metadata@1',status='METADATA_ONLY',
                           tools=dict(docker=True,oras=False,cosign=False),resourceCondition='NORMAL',
-                          cache=dict(status='UNAVAILABLE',images=[]),manifest=dict(status='OK',projection=p)))
+                          cache=dict(status='UNAVAILABLE',images=[]),manifest=dict(status='OK',projection=p)),16 if keys == {'status'} else 64)
               projected_record(value['labels'],{'status'})
               require(type(value['children']) is list and len(value['children']) == 2)
               for child,(digest,size) in zip(value['children'],references):
                   projected_record(child,{'digest','declaredSize','status'})
                   require(child['digest'] == digest and type(child['declaredSize']) is int and child['declaredSize'] == size)
+              if 'parseObservation' in value:
+                  stage = value['parseObservation']['stage']
+                  failed = value['labels'] if stage == 'LABELS' else value['children'][int(stage[-1])-1]
+                  require(failed['status'] == 'PARSE_ERROR')
               if value['status'] == 'METADATA_ONLY':
                   require(value['labels']['status'] == 'OK' and all(c['status'] == 'OK' for c in value['children']))
               return value
